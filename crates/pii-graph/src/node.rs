@@ -64,64 +64,69 @@ impl NodeRegistry {
     }
 }
 
-/// A placeholder whose `run` is replaced once the scheduler pass lands.
-struct StubNode;
-impl GraphNode for StubNode {
-    fn run(&self, _ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
-        Err(PiiError::Invalid(
-            "node runtime is not implemented in this phase (scheduler pass)".into(),
-        ))
+#[doc = "Built-in factory for the `transform` node kind."]
+#[allow(non_camel_case_types)]
+pub struct TransformFactory;
+#[doc = "Built-in factory for the `wait` node kind."]
+#[allow(non_camel_case_types)]
+pub struct WaitFactory;
+#[doc = "Built-in factory for the `emit` node kind."]
+#[allow(non_camel_case_types)]
+pub struct EmitFactory;
+
+impl NodeFactory for TransformFactory {
+    fn kind(&self) -> &'static str {
+        "transform"
+    }
+    fn effects(&self) -> Effects {
+        Effects::Pure
+    }
+    fn required_caps(&self) -> CapKind {
+        CapKind::empty()
+    }
+    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(vec![PortName::from("ok"), PortName::from("err")])
+    }
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        Ok(Box::new(crate::nodes::TransformNode::new(cfg)?))
     }
 }
 
-macro_rules! impl_factory {
-    ($t:ident, $kind:literal, $fx:expr, $req:expr, $default_ports:expr) => {
-        #[doc = concat!("Built-in factory for the `", $kind, "` node kind.")]
-        #[allow(non_camel_case_types)]
-        pub struct $t;
-        impl NodeFactory for $t {
-            fn kind(&self) -> &'static str {
-                $kind
-            }
-            fn effects(&self) -> Effects {
-                $fx
-            }
-            fn required_caps(&self) -> CapKind {
-                $req
-            }
-            fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-                Ok($default_ports)
-            }
-            fn build(&self, _cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
-                Ok(Box::new(StubNode))
-            }
-        }
-    };
+impl NodeFactory for WaitFactory {
+    fn kind(&self) -> &'static str {
+        "wait"
+    }
+    fn effects(&self) -> Effects {
+        Effects::Pure
+    }
+    fn required_caps(&self) -> CapKind {
+        CapKind::empty()
+    }
+    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(vec![PortName::from("fired"), PortName::from("timeout")])
+    }
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        Ok(Box::new(crate::nodes::WaitNode::new(cfg)?))
+    }
 }
 
-impl_factory!(
-    TransformFactory,
-    "transform",
-    Effects::Pure,
-    CapKind::empty(),
-    vec![PortName::from("ok"), PortName::from("err")]
-);
-
-impl_factory!(
-    WaitFactory,
-    "wait",
-    Effects::Pure,
-    CapKind::empty(),
-    vec![PortName::from("fired"), PortName::from("timeout")]
-);
-
-impl_factory!(
-    EmitFactory,
-    "emit",
-    Effects::WritesFs,
-    CapKind::FS_WRITE,
-    vec![PortName::from("ok"), PortName::from("err")]
-);
+impl NodeFactory for EmitFactory {
+    fn kind(&self) -> &'static str {
+        "emit"
+    }
+    fn effects(&self) -> Effects {
+        Effects::WritesFs
+    }
+    fn required_caps(&self) -> CapKind {
+        CapKind::FS_WRITE
+    }
+    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(vec![PortName::from("ok"), PortName::from("err")])
+    }
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        Ok(Box::new(crate::nodes::EmitNode::new(cfg)?))
+    }
+}
 
 /// `route` ports are data-defined by `rules[].port`.
 #[allow(non_camel_case_types)]
@@ -160,8 +165,8 @@ impl NodeFactory for RouteFactory {
         }
         Ok(ports)
     }
-    fn build(&self, _cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
-        Ok(Box::new(StubNode))
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        Ok(Box::new(crate::nodes::RouteNode::new(cfg)?))
     }
 }
 
@@ -174,9 +179,84 @@ mod tests {
         clippy::indexing_slicing
     )]
 
-    use super::NodeRegistry;
-    use pii_abi::Effects;
-    use pii_core::CapKind;
+    use super::*;
+    use crate::nodes::{RouteNode, TransformNode};
+    use pii_abi::NodeInput;
+    use pii_core::{CapKind, CapSet, Ctx};
+
+    fn ctx() -> Ctx {
+        Ctx::root(CapSet::empty(), pii_core::Budget::unlimited())
+    }
+
+    fn test_input() -> NodeInput {
+        NodeInput {
+            input: serde_json::json!({"branch": "a", "n": 3}),
+            payload: serde_json::json!({"x": 1}),
+            nodes: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn transform_expr_evaluates() {
+        let n = TransformNode::new(&serde_json::json!({"expr": "$.input.n"})).unwrap();
+        match n.run(&ctx(), &test_input()).unwrap() {
+            Outcome::Next { port, value } => {
+                assert_eq!(port.as_str(), "ok");
+                assert_eq!(value, serde_json::json!(3));
+            }
+            _ => panic!("expected Next"),
+        }
+    }
+
+    #[test]
+    fn transform_literal_passthrough() {
+        let n = TransformNode::new(&serde_json::json!({"value": 42})).unwrap();
+        let o = n.run(&ctx(), &test_input()).unwrap();
+        assert!(matches!(
+            o,
+            Outcome::Next { ref value, .. } if value == &serde_json::json!(42)
+        ));
+    }
+
+    #[test]
+    fn route_picks_matching_rule() {
+        let n = RouteNode::new(&serde_json::json!({
+            "on": "$.input.branch",
+            "rules": [{"eq": "a", "port": "a"}, {"port": "b"}]
+        }))
+        .unwrap();
+        match n.run(&ctx(), &test_input()).unwrap() {
+            Outcome::Next { port, .. } => assert_eq!(port.as_str(), "a"),
+            _ => panic!("expected Next"),
+        }
+    }
+
+    #[test]
+    fn route_falls_back_to_portless_rule() {
+        let n = RouteNode::new(&serde_json::json!({
+            "on": "$.input.branch",
+            "rules": [{"eq": "zzz", "port": "a"}, {"port": "b"}]
+        }))
+        .unwrap();
+        match n.run(&ctx(), &test_input()).unwrap() {
+            Outcome::Next { port, .. } => assert_eq!(port.as_str(), "b"),
+            _ => panic!("expected Next"),
+        }
+    }
+
+    #[test]
+    fn factory_build_returns_working_nodes() {
+        let reg = NodeRegistry::builtin();
+        let node = reg
+            .factory("transform")
+            .unwrap()
+            .build(&serde_json::json!({"expr": "$.input.n"}))
+            .unwrap();
+        match node.run(&ctx(), &test_input()).unwrap() {
+            Outcome::Next { value, .. } => assert_eq!(value, serde_json::json!(3)),
+            _ => panic!("expected Next"),
+        }
+    }
 
     #[test]
     fn builtin_registry_exposes_four_kinds() {
