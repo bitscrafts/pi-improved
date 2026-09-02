@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 macro_rules! string_id {
     ($(#[$doc:meta])* $name:ident) => {
         #[doc = concat!("Unique identifier newtype (", stringify!($name), ").")]
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+        #[derive(
+            Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize, JsonSchema,
+        )]
         #[serde(transparent)]
         pub struct $name(String);
 

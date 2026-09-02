@@ -9,6 +9,7 @@
 
 pub mod expr;
 pub mod node;
+pub mod sched;
 pub mod spec;
 pub mod toml_load;
 pub mod validate;
