@@ -1,0 +1,7 @@
+target/
+.pidag/
+_tmp/
+_repos/
+**/*.rs.bk
+*.profraw
+.DS_Store

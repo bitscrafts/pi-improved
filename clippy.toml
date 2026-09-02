@@ -1,0 +1,13 @@
+disallowed-methods = [
+    { path = "std::path::Path::canonicalize", reason = "use dunce::canonicalize (Phase 1)" },
+    { path = "std::process::Command::spawn", reason = "use Ctx::proc() (Phase 1)" },
+    { path = "std::time::SystemTime::now", reason = "use Ctx::now() - deterministic in replay" },
+    { path = "std::env::var", reason = "use pii_core::config (Phase 1)" },
+]
+
+disallowed-types = [
+    { path = "std::sync::Mutex", reason = "use parking_lot::Mutex or tokio::sync::Mutex" },
+]
+
+too-many-lines-threshold = 80
+type-complexity-threshold = 250
