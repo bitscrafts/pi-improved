@@ -94,8 +94,17 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
 
     // V3 bounded cycles
     let cycle = find_cycle_error(spec);
-    if let Some(msg) = cycle {
-        errors.push(msg);
+    if let Some(msg) = &cycle {
+        errors.push(msg.clone());
+    }
+
+    // V6 statically unsatisfiable `All` join — only meaningful when the graph
+    // is acyclic (spec part3 §4.6). Skip when V3 found a cycle.
+    if !spec.edges.is_empty()
+        && cycle.is_none()
+        && let Some(vec) = v6_unsatisfiable_join(spec)
+    {
+        errors.extend(vec);
     }
 
     // V9 multi-arm join arity (skip if V3 found a cycle is fine to still run)
@@ -201,6 +210,130 @@ fn find_cycle_error(spec: &GraphSpec) -> Option<String> {
         }
     }
     None
+}
+
+/// V6: statically unsatisfiable `All` join — the routed-diamond deadlock caught
+/// before it runs. Requires the **transitive** formulation (spec part3 §4.6):
+/// the join's edges come from `a`/`b`, not the router, so we propagate per-edge
+/// router/port constraints forward and detect mutually-exclusive ports feeding
+/// one `All` join. Only valid on an acyclic graph (caller skips if V3 found a
+/// cycle).
+#[allow(clippy::too_many_lines)]
+fn v6_unsatisfiable_join(spec: &GraphSpec) -> Option<Vec<String>> {
+    use pii_abi::PortName;
+
+    // constraints[edge_index] : BTreeMap<NodeId /*router*/, BTreeSet<PortName>>
+    let mut constraints: Vec<BTreeMap<NodeId, BTreeSet<PortName>>> =
+        vec![BTreeMap::new(); spec.edges.len()];
+
+    // Topological order over data edges (Kahn). Acyclic guaranteed by caller.
+    let mut indegree: BTreeMap<&str, usize> =
+        spec.nodes.iter().map(|n| (n.id.as_str(), 0)).collect();
+    for e in &spec.edges {
+        if e.kind == EdgeKind::Data
+            && let Some(&deg) = indegree.get(e.to.as_str())
+        {
+            indegree.insert(e.to.as_str(), deg + 1);
+        }
+    }
+    let mut queue: Vec<&str> = spec
+        .nodes
+        .iter()
+        .filter(|n| indegree.get(n.id.as_str()).copied() == Some(0))
+        .map(|n| n.id.as_str())
+        .collect();
+    let mut ready = 0usize;
+    while let Some(u) = queue.pop() {
+        ready += 1;
+        let uid = NodeId::from(u);
+        // c_u = union_per_router(inbound data constraints), empty for entry.
+        let mut c_u: BTreeMap<NodeId, BTreeSet<PortName>> = BTreeMap::new();
+        for ei in spec.inbound(&uid, EdgeKind::Data) {
+            if let Some(m) = constraints.get(ei) {
+                for (r, ps) in m {
+                    c_u.entry(r.clone()).or_default().extend(ps.iter().cloned());
+                }
+            }
+        }
+        // Branching iff outbound data edges use >1 distinct port.
+        let out_data: Vec<usize> = spec
+            .edges
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.from == uid && e.kind == EdgeKind::Data)
+            .map(|(i, _)| i)
+            .collect();
+        let mut distinct_ports = HashSet::new();
+        for &eo in &out_data {
+            if let Some(port) = spec.edges.get(eo).map(|e| e.port.as_str()) {
+                distinct_ports.insert(port);
+            }
+        }
+        let branching = distinct_ports.len() > 1;
+        for &eo in &out_data {
+            if let Some(slot) = constraints.get_mut(eo) {
+                *slot = c_u.clone();
+                if branching && let Some(port) = spec.edges.get(eo).map(|e| e.port.clone()) {
+                    let mut set = BTreeSet::new();
+                    set.insert(port);
+                    slot.insert(uid.clone(), set); // overwrite, not union
+                }
+            }
+        }
+        // Decrement successors' indegree over data edges.
+        for eo in spec.outbound(&uid) {
+            if let Some(e) = spec.edges.get(eo)
+                && e.kind == EdgeKind::Data
+                && let Some(&deg) = indegree.get(e.to.as_str())
+            {
+                indegree.insert(e.to.as_str(), deg - 1);
+                if deg == 1 {
+                    queue.push(e.to.as_str());
+                }
+            }
+        }
+    }
+    if ready != spec.nodes.len() {
+        return None;
+    }
+
+    let mut errors = Vec::new();
+    for j in spec.nodes.iter().filter(|n| n.join == JoinPolicy::All) {
+        let in_data = spec.inbound(&j.id, EdgeKind::Data);
+        for (i1, i2) in pairs(in_data.len()) {
+            let (Some(ei1), Some(ei2)) = (in_data.get(i1), in_data.get(i2)) else {
+                continue;
+            };
+            let (Some(edge1), Some(edge2)) = (spec.edges.get(*ei1), spec.edges.get(*ei2)) else {
+                continue;
+            };
+            let (Some(c1), Some(c2)) = (constraints.get(*ei1), constraints.get(*ei2)) else {
+                continue;
+            };
+            for r in c1.keys().filter(|r2| c2.contains_key(*r2)) {
+                let s1 = c1.get(r);
+                let s2 = c2.get(r);
+                if let (Some(s1), Some(s2)) = (s1, s2)
+                    && s1.is_disjoint(s2)
+                {
+                    errors.push(format!(
+                        "V6: join '{}' can never be satisfied: '{}' and '{}' are on mutually exclusive ports of '{}'",
+                        j.id, edge1.from, edge2.from, r
+                    ));
+                }
+            }
+        }
+    }
+    if errors.is_empty() {
+        None
+    } else {
+        Some(errors)
+    }
+}
+
+/// Yields the unique index pairs `(0,1),(0,2),...` for `n` elements (i1 < i2).
+fn pairs(n: usize) -> impl Iterator<Item = (usize, usize)> {
+    (0..n).flat_map(move |i| (i + 1..n).map(move |j| (i, j)))
 }
 
 fn missing(kinds: CapKind) -> String {

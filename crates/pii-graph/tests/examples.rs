@@ -73,3 +73,26 @@ fn lint_negatives_rejected() {
         "want V9: {errs:?}"
     );
 }
+
+#[test]
+fn validate_rejects_statically_unsatisfiable_join() {
+    let reg = NodeRegistry::builtin();
+    let spec = load("unsatisfiable.toml");
+    let errs = validate(&spec, &reg).unwrap_err();
+    assert!(
+        errs.iter()
+            .any(|e| e.starts_with("V6") && e.contains("join")),
+        "want V6 naming join: {errs:?}"
+    );
+}
+
+#[test]
+fn validate_accepts_allsettled_after_route() {
+    let reg = NodeRegistry::builtin();
+    // routed-diamond uses join="allsettled"; V6 applies to All only.
+    let spec = load("routed-diamond.toml");
+    assert!(
+        validate(&spec, &reg).is_ok(),
+        "routed-diamond must validate clean (V6 is All-only)"
+    );
+}
