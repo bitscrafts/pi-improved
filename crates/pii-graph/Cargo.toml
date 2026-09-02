@@ -1,0 +1,30 @@
+[package]
+name = "pii-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[dependencies]
+pii-abi = { path = "../pii-abi" }
+pii-core = { path = "../pii-core" }
+pii-store = { path = "../pii-store" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+petgraph = { workspace = true }
+toml = { workspace = true }
+parking_lot = { workspace = true }
+blake3 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
+
+[[test]]
+name = "diamond"
+path = "tests/diamond.rs"

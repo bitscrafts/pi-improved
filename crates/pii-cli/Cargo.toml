@@ -12,6 +12,13 @@ name = "pii"
 path = "src/main.rs"
 
 [dependencies]
+pii-abi = { path = "../pii-abi" }
+pii-core = { path = "../pii-core" }
+pii-store = { path = "../pii-store" }
+pii-graph = { path = "../pii-graph" }
+serde_json = { workspace = true }
+
+[dev-dependencies]
 
 [lints]
 workspace = true

@@ -1,0 +1,32 @@
+//! `pii-core`: the enforcing capability context used by the whole engine.
+//!
+//! * **Caps** — [`CapSet`] with monotonic attenuation via intersection.
+//! * **Budget** — carveable, never-duplicated accounting.
+//! * **Cancel** — an ancestor-propagating [`CancelToken`].
+//! * **Ctx** — the enforcing context that combines all four.
+//!
+//! This crate must never reach `redb`, `petgraph`, or `toml`.
+
+#![forbid(unsafe_code)]
+
+mod budget;
+mod cancel;
+mod cap;
+mod ctx;
+mod fscap;
+mod observe;
+mod principal;
+
+pub use budget::{Budget, BudgetKind, BudgetShare};
+pub use cancel::CancelToken;
+pub use cap::{CapKind, CapSet, PathScope, StringScope};
+pub use ctx::Ctx;
+pub use fscap::FsCap;
+pub use observe::{Metric, MultiObserver, NullObserver, ObsEvent, Observer, RecordingObserver};
+pub use principal::{Principal, TraceCtx};
+pub use pii_abi::PiiError;
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+}
