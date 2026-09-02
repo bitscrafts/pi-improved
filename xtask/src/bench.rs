@@ -14,7 +14,7 @@ const MEASURED: usize = 50;
 ///
 /// # Errors
 /// Returns a message if `./target/release/pii` is missing or a run fails.
-pub fn run(budget_ms: Option<u64>) -> Result<(f64, u64), String> {
+fn run(budget_ms: Option<u64>) -> Result<(f64, u64), String> {
     let budget = budget_ms.unwrap_or(DEFAULT_BUDGET_MS);
     let binary = std::path::Path::new("./target/release/pii");
     if !binary.exists() {
@@ -74,13 +74,16 @@ fn write_report(p95_ms: f64, budget: u64) -> Result<(), String> {
         "budget_ms": budget,
     });
     let path = dir.join("version-startup.json");
-    std::fs::write(&path, serde_json::to_vec_pretty(&doc).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("bench-gate: write {}: {e}", path.display()))?;
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&doc).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("bench-gate: write {}: {e}", path.display()))?;
     Ok(())
 }
 
 /// Entry point for `cargo xtask bench-gate [--budget-ms <n>]`.
-pub fn run_cli(args: &[String]) -> Result<(), String> {
+pub(crate) fn run_cli(args: &[String]) -> Result<(), String> {
     let mut budget = None;
     let mut i = 0;
     while i < args.len() {
