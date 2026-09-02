@@ -5,12 +5,14 @@
 // abstractions replacing direct prints arrive in Phase 1.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
+mod bench;
 mod deps;
 mod lint_files;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|lint-files|ci>";
+const USAGE: &str =
+    "usage: cargo xtask <deps-check|lint-files|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {

@@ -22,6 +22,15 @@ pidag sdd specs/01-xxx.md --run --concurrency N
 - **Model chain:** `[worker] default_model = "ollama-cloud/glm-5.3-flash:cloud"` in
   `.pidag/config.toml`. Slash-first form is REQUIRED (pidag split on `:` first broke
   the `:cloud` suffix — fixed in pidag).
+- **MANDATORY — thinking OFF on the workhorse (verified 2026-09-02):** glm-5.3-flash and
+  deepseek-v4-flash on ollama-cloud are 1M-context **REASONING** models with thinking ON by
+  default. On a large one-shot implement prompt they burn the entire output budget on the
+  reasoning trace and emit **zero content** (verified: glm 62,019 reasoning tokens, content 0).
+  They must be called with `reasoning_effort="none"` on the `/v1/chat/completions` wire
+  (verified fix: glm content 22,669 / reasoning 0; deepseek 21,899 / 0 at `max_tokens=6000`).
+  NOTE: `pi --thinking off` does **NOT** forward `reasoning_effort` to ollama-cloud — the
+  request builder must send it explicitly. See ollama/ollama#18121 (low/high mapping is
+  model-fragile for glm; only "none" is reliable).
 - **2 parallel workers:** `--concurrency 2`. Pidag's `PiBackend` sizes a client pool to
   concurrency; per-node session dirs (`_tmp/.pidag-worker-sessions/<node_id>/`) isolate
   parallel workers.
