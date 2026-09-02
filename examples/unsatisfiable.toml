@@ -1,0 +1,66 @@
+name = "unsatisfiable"
+entry = "entry"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "entry"
+kind = "transform"
+expr = "$.input"
+
+[[node]]
+id = "r"
+kind = "route"
+on = "$.input.branch"
+rules = [
+    { eq = "a", port = "a" },
+    { port = "b" },
+]
+
+[[node]]
+id = "a"
+kind = "wait"
+timer_ms = 80
+
+[[node]]
+id = "b"
+kind = "wait"
+timer_ms = 80
+
+[[node]]
+id = "join"
+kind = "transform"
+join = "all"
+expr = "$.payload"
+
+[[edge]]
+from = "entry"
+port = "ok"
+to = "r"
+kind = "data"
+
+[[edge]]
+from = "r"
+port = "a"
+to = "a"
+kind = "data"
+
+[[edge]]
+from = "r"
+port = "b"
+to = "b"
+kind = "data"
+
+[[edge]]
+from = "a"
+port = "fired"
+to = "join"
+kind = "data"
+
+[[edge]]
+from = "b"
+port = "fired"
+to = "join"
+kind = "data"

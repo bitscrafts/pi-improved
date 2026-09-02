@@ -1,0 +1,14 @@
+name = "emit-path"
+entry = "w"
+caps = ["fs_write"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "w"
+kind = "emit"
+path = "$.input.path"
+mode = "write"
+value = "x"

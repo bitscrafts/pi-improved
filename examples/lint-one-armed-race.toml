@@ -1,0 +1,23 @@
+name = "lint-one-armed-race"
+entry = "x"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "x"
+kind = "transform"
+expr = "$.input"
+
+[[node]]
+id = "y"
+kind = "transform"
+expr = "$.input"
+join = "any"
+
+[[edge]]
+from = "x"
+port = "ok"
+to = "y"
+kind = "data"

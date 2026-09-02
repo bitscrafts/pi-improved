@@ -1,0 +1,38 @@
+name = "crash-resume"
+entry = "a"
+caps = ["fs_write"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "a"
+kind = "emit"
+path = "$.input.log"
+mode = "append"
+value = "a\n"
+
+[[node]]
+id = "b"
+kind = "wait"
+timer_ms = 6000
+
+[[node]]
+id = "c"
+kind = "emit"
+path = "$.input.log"
+mode = "append"
+value = "c\n"
+
+[[edge]]
+from = "a"
+port = "ok"
+to = "b"
+kind = "data"
+
+[[edge]]
+from = "b"
+port = "fired"
+to = "c"
+kind = "data"

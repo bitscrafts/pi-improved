@@ -179,7 +179,8 @@ fn find_cycle_error(spec: &GraphSpec) -> Option<String> {
         let is_cycle = scc.len() > 1
             || (scc.len() == 1
                 && scc.first().is_some_and(|&n| {
-                    g.edges_directed(n, petgraph::Direction::Outgoing).count() > 0
+                    // Single-node SCC is a cycle only if it has a self-edge.
+                    g.find_edge(n, n).is_some()
                 }));
         if !is_cycle {
             continue;

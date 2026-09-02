@@ -1,0 +1,51 @@
+name = "diamond"
+entry = "entry"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "entry"
+kind = "transform"
+expr = "$.input"
+
+[[node]]
+id = "a"
+kind = "wait"
+timer_ms = 150
+
+[[node]]
+id = "b"
+kind = "wait"
+timer_ms = 150
+
+[[node]]
+id = "join"
+kind = "transform"
+join = "all"
+expr = "$.payload"
+
+[[edge]]
+from = "entry"
+port = "ok"
+to = "a"
+kind = "data"
+
+[[edge]]
+from = "entry"
+port = "ok"
+to = "b"
+kind = "data"
+
+[[edge]]
+from = "a"
+port = "fired"
+to = "join"
+kind = "data"
+
+[[edge]]
+from = "b"
+port = "fired"
+to = "join"
+kind = "data"

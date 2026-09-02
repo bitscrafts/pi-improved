@@ -1,0 +1,28 @@
+name = "lint-unbounded-cycle"
+entry = "a"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "a"
+kind = "transform"
+expr = "$.input"
+
+[[node]]
+id = "b"
+kind = "transform"
+expr = "$.input"
+
+[[edge]]
+from = "a"
+port = "ok"
+to = "b"
+kind = "data"
+
+[[edge]]
+from = "b"
+port = "ok"
+to = "a"
+kind = "data"

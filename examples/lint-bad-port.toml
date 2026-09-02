@@ -1,0 +1,22 @@
+name = "lint-bad-port"
+entry = "a"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "a"
+kind = "transform"
+expr = "$.input"
+
+[[node]]
+id = "b"
+kind = "transform"
+expr = "$.input"
+
+[[edge]]
+from = "a"
+port = "nope"
+to = "b"
+kind = "data"

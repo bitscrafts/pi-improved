@@ -1,0 +1,51 @@
+name = "race"
+entry = "fanout"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "fanout"
+kind = "transform"
+expr = "$.input"
+
+[[node]]
+id = "slow"
+kind = "wait"
+timer_ms = 5000
+
+[[node]]
+id = "fast"
+kind = "wait"
+timer_ms = 50
+
+[[node]]
+id = "use"
+kind = "transform"
+join = "any:cancel"
+expr = "$.payload"
+
+[[edge]]
+from = "fanout"
+port = "ok"
+to = "slow"
+kind = "data"
+
+[[edge]]
+from = "fanout"
+port = "ok"
+to = "fast"
+kind = "data"
+
+[[edge]]
+from = "slow"
+port = "fired"
+to = "use"
+kind = "data"
+
+[[edge]]
+from = "fast"
+port = "fired"
+to = "use"
+kind = "data"
