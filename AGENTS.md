@@ -49,6 +49,12 @@ pidag sdd specs/01-xxx.md --run --concurrency N
 ## Hard rules
 
 - **NEVER modify `_repos/`** (read-only reference).
+- **MANDATORY: `specs/` are READ-ONLY for the workhorse.** Authoring/editing/creating
+  specs is EXCLUSIVE PLANNER work (Claude Code / opus orchestrator). Pidag `split`
+  may *partition* an existing spec (into numbered parts) but never rewrite its
+  content. If a pi/sonnet/workhorse run writes `specs/`, kill it, `git checkout`
+  the touched specs, and return spec-creation to the planner. Workhorse only
+  *implements* existing specs.
 - **450-line file gate, traits-first, `#![forbid(unsafe_code)]`** except pii-hw/pii-memory
   (see pass-2 `001-...:128` and pass-3).
 - Tests under `_tmp/`, never `/tmp`.
