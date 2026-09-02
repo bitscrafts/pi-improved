@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(Debug, Clone)]
 pub struct CancelToken {
     flag: Arc<AtomicBool>,
-    parent: Option<Arc<CancelToken>>,
+    parent: Option<Arc<Self>>,
 }
 
 impl CancelToken {

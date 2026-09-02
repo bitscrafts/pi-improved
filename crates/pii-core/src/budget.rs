@@ -123,7 +123,7 @@ impl Budget {
     /// Atomically removes the carved share from `self` (or clamps to what
     /// remains) and returns a new budget holding it. Never duplicates.
     #[must_use]
-    pub fn carve(&self, share: &BudgetShare) -> Budget {
+    pub fn carve(&self, share: &BudgetShare) -> Self {
         let (t, tc, m, w) = match share {
             BudgetShare::All => (
                 self.remaining(BudgetKind::Tokens),
@@ -132,17 +132,20 @@ impl Budget {
                 self.remaining(BudgetKind::WallMs),
             ),
             BudgetShare::Fraction(pct) => {
-                let pct = pct.min(100);
+                let pct = u64::from((*pct).min(100));
                 (
-                    self.remaining(BudgetKind::Tokens) * u64::from(pct) / 100,
-                    self.remaining(BudgetKind::ToolCalls) * u64::from(pct) / 100,
-                    self.remaining(BudgetKind::MicroUsd) * u64::from(pct) / 100,
-                    self.remaining(BudgetKind::WallMs) * u64::from(pct) / 100,
+                    self.remaining(BudgetKind::Tokens).saturating_mul(pct) / 100,
+                    self.remaining(BudgetKind::ToolCalls).saturating_mul(pct) / 100,
+                    self.remaining(BudgetKind::MicroUsd).saturating_mul(pct) / 100,
+                    self.remaining(BudgetKind::WallMs).saturating_mul(pct) / 100,
                 )
             }
-            BudgetShare::Absolute { tokens, tool_calls, micro_usd, wall_ms } => {
-                (*tokens, *tool_calls, *micro_usd, *wall_ms)
-            }
+            BudgetShare::Absolute {
+                tokens,
+                tool_calls,
+                micro_usd,
+                wall_ms,
+            } => (*tokens, *tool_calls, *micro_usd, *wall_ms),
         };
         // carve clamps to what actually remains: debit = before - after.
         let take = |kind: BudgetKind, want: u64| -> u64 {
@@ -155,7 +158,7 @@ impl Budget {
         let tc = take(BudgetKind::ToolCalls, tc);
         let m = take(BudgetKind::MicroUsd, m);
         let w = take(BudgetKind::WallMs, w);
-        Budget {
+        Self {
             tokens: AtomicU64::new(t),
             tool_calls: AtomicU64::new(tc),
             micro_usd: AtomicU64::new(m),

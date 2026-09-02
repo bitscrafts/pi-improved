@@ -23,8 +23,8 @@ pub use cap::{CapKind, CapSet, PathScope, StringScope};
 pub use ctx::Ctx;
 pub use fscap::FsCap;
 pub use observe::{Metric, MultiObserver, NullObserver, ObsEvent, Observer, RecordingObserver};
-pub use principal::{Principal, TraceCtx};
 pub use pii_abi::PiiError;
+pub use principal::{Principal, TraceCtx};
 
 #[cfg(test)]
 mod tests {

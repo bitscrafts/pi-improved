@@ -32,7 +32,7 @@ impl std::fmt::Display for Principal {
 }
 
 /// Trace context for correlating journal/diagnostic output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceCtx {
     /// The run this trace belongs to.
     pub run: RunId,

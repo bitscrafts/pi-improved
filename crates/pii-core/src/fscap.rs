@@ -9,6 +9,7 @@
 //! path is theatre; `fscap_symlink_escape_denied` exists to prove it.
 
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use pii_abi::PiiError;
@@ -32,34 +33,39 @@ impl<'a> FsCap<'a> {
         self.ctx.check()?;
         let caps: &CapSet = self.ctx.caps();
         if !caps.kinds.contains(needed) {
-            let name = if needed == CapKind::FS_READ { "fs_read" } else { "fs_write" };
+            let name = if needed == CapKind::FS_READ {
+                "fs_read"
+            } else {
+                "fs_write"
+            };
             return Err(self.deny(name));
         }
         Ok(())
     }
 
     fn deny(&self, cap: &str) -> PiiError {
-        self.ctx
-            .observer()
-            .event(&ObsEvent::Denial {
-                principal: self.ctx.principal_str(),
-                cap: String::from(cap),
-            });
+        self.ctx.observer().event(&ObsEvent::Denial {
+            principal: self.ctx.principal_str(),
+            cap: String::from(cap),
+        });
         PiiError::Denied(cap.to_string())
     }
 
     /// Resolves a possibly-non-existent target to a canonical path: if the
     /// target does not exist, canonicalise its parent and re-join the name.
-    fn canonical_for(&self, p: &Path) -> Result<std::path::PathBuf, PiiError> {
+    fn canonical_for(p: &Path) -> Result<std::path::PathBuf, PiiError> {
         if let Ok(c) = dunce::canonicalize(p) {
             return Ok(c);
         }
-        let parent = p.parent().ok_or_else(|| PiiError::Invalid("no parent".into()))?;
+        let parent = p
+            .parent()
+            .ok_or_else(|| PiiError::Invalid("no parent".into()))?;
         let name = p
             .file_name()
             .ok_or_else(|| PiiError::Invalid("no file name".into()))?;
-        let c_parent = dunce::canonicalize(parent)
-            .map_err(|_| PiiError::NotFound(format!("path parent not found: {}", parent.display())))?;
+        let c_parent = dunce::canonicalize(parent).map_err(|_| {
+            PiiError::NotFound(format!("path parent not found: {}", parent.display()))
+        })?;
         Ok(c_parent.join(name))
     }
 
@@ -70,12 +76,13 @@ impl<'a> FsCap<'a> {
     /// an I/O [`PiiError::Internal`] on failure.
     pub fn read(&self, p: &Path) -> Result<Vec<u8>, PiiError> {
         self.check_access(CapKind::FS_READ)?;
-        let canonical = self.canonical_for(p)?;
+        let canonical = Self::canonical_for(p)?;
         let caps: &CapSet = self.ctx.caps();
         if !caps.fs_read.permits(&canonical) {
             return Err(self.deny("fs_read"));
         }
-        fs::read(&canonical).map_err(|e| PiiError::Internal(format!("read {}: {e}", canonical.display())))
+        fs::read(&canonical)
+            .map_err(|e| PiiError::Internal(format!("read {}: {e}", canonical.display())))
     }
 
     /// Writes bytes to a file, enforcing `FS_WRITE` and the write scope.
@@ -85,7 +92,7 @@ impl<'a> FsCap<'a> {
     /// an I/O [`PiiError::Internal`] on failure.
     pub fn write(&self, p: &Path, bytes: &[u8]) -> Result<(), PiiError> {
         self.check_access(CapKind::FS_WRITE)?;
-        let canonical = self.canonical_for(p)?;
+        let canonical = Self::canonical_for(p)?;
         let caps: &CapSet = self.ctx.caps();
         if !caps.fs_write.permits(&canonical) {
             return Err(self.deny("fs_write"));
@@ -105,7 +112,7 @@ impl<'a> FsCap<'a> {
     /// an I/O [`PiiError::Internal`] on failure.
     pub fn append(&self, p: &Path, bytes: &[u8]) -> Result<(), PiiError> {
         self.check_access(CapKind::FS_WRITE)?;
-        let canonical = self.canonical_for(p)?;
+        let canonical = Self::canonical_for(p)?;
         let caps: &CapSet = self.ctx.caps();
         if !caps.fs_write.permits(&canonical) {
             return Err(self.deny("fs_write"));
@@ -119,7 +126,6 @@ impl<'a> FsCap<'a> {
             .append(true)
             .open(&canonical)
             .map_err(|e| PiiError::Internal(format!("append {}: {e}", canonical.display())))?;
-        use std::io::Write;
         f.write_all(bytes)
             .map_err(|e| PiiError::Internal(format!("append {}: {e}", canonical.display())))
     }

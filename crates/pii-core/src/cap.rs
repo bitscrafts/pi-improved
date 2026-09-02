@@ -32,7 +32,7 @@ bitflags! {
 }
 
 impl CapKind {
-    /// Parses a snake_case capability name.
+    /// Parses a `snake_case` capability name.
     ///
     /// # Errors
     /// Returns [`PiiError::Invalid`] for an unknown name.
@@ -75,7 +75,10 @@ impl PathScope {
     /// A scope allowing exactly the given canonical prefixes.
     #[must_use]
     pub fn new(allow: Vec<PathBuf>) -> Self {
-        Self { allow, deny: Vec::new() }
+        Self {
+            allow,
+            deny: Vec::new(),
+        }
     }
 
     /// Builds from string prefixes.
@@ -157,7 +160,7 @@ impl StringScope {
 }
 
 /// The complete capability set a context holds.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapSet {
     /// Coarse capability bits.
     pub kinds: CapKind,
@@ -171,6 +174,20 @@ pub struct CapSet {
     pub proc_argv0: StringScope,
     /// Allowed secret key prefixes.
     pub secrets: StringScope,
+}
+
+impl Default for CapSet {
+    /// A capability set granting nothing.
+    fn default() -> Self {
+        Self {
+            kinds: CapKind::empty(),
+            fs_read: PathScope::default(),
+            fs_write: PathScope::default(),
+            net_hosts: StringScope::default(),
+            proc_argv0: StringScope::default(),
+            secrets: StringScope::default(),
+        }
+    }
 }
 
 impl CapSet {

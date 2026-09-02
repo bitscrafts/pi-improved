@@ -49,10 +49,15 @@ impl Ctx {
     /// A root context with no attenuation and a null observer.
     #[must_use]
     pub fn root(caps: CapSet, budget: Budget) -> Self {
-        Self::with_observer(caps, budget, Arc::new(NullObserver), TraceCtx {
-            run: pii_abi::RunId::from("root"),
-            span: 0,
-        })
+        Self::with_observer(
+            caps,
+            budget,
+            Arc::new(NullObserver),
+            TraceCtx {
+                run: pii_abi::RunId::from("root"),
+                span: 0,
+            },
+        )
     }
 
     /// A root context with an observer and trace context.
@@ -84,7 +89,7 @@ impl Ctx {
     /// `FS_WRITE`.
     pub fn fs(&self) -> Result<FsCap<'_>, PiiError> {
         let caps = &self.inner.caps.kinds;
-        if caps.contains(crate::cap::CapKind::FS_READ | crate::cap::CapKind::FS_WRITE) {
+        if caps.intersects(crate::cap::CapKind::FS_READ | crate::cap::CapKind::FS_WRITE) {
             Ok(FsCap::new(self))
         } else {
             Err(self.deny("fs"))
@@ -120,18 +125,18 @@ impl Ctx {
     /// increments.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn child(&self, principal: Principal, narrow: &CapSet, share: BudgetShare) -> Ctx {
+    pub fn child(&self, principal: Principal, narrow: &CapSet, share: &BudgetShare) -> Self {
         let caps = Arc::new(self.inner.caps.intersect(narrow));
-        let budget = Arc::new(self.inner.budget.carve(&share));
+        let budget = Arc::new(self.inner.budget.carve(share));
         let cancel = self.inner.cancel.child();
         let trace = TraceCtx {
-            run: self.inner.trace.run,
+            run: self.inner.trace.run.clone(),
             span: self.inner.trace.span + 1,
         };
         let started = self.inner.started;
         let deadline = self.inner.deadline;
         let obs = Arc::clone(&self.inner.obs);
-        Ctx {
+        Self {
             inner: Arc::new(CtxInner {
                 cancel,
                 started,
@@ -154,7 +159,7 @@ impl Ctx {
     /// Milliseconds elapsed since the root context was created.
     #[must_use]
     pub fn elapsed_ms(&self) -> u32 {
-        self.inner.started.elapsed().as_millis().min(u32::MAX as u128) as u32
+        u32::try_from(self.inner.started.elapsed().as_millis()).unwrap_or(u32::MAX)
     }
 
     /// Checks for cancellation then deadline.
@@ -169,7 +174,9 @@ impl Ctx {
         if let Some(deadline) = self.inner.deadline {
             let now = Instant::now();
             if now >= deadline {
-                let after_ms = deadline.duration_since(self.inner.started).as_millis() as u64;
+                let after_ms =
+                    u64::try_from(deadline.duration_since(self.inner.started).as_millis())
+                        .unwrap_or(u64::MAX);
                 return Err(PiiError::Timeout { after_ms });
             }
         }
@@ -203,7 +210,7 @@ impl Ctx {
     /// The trace context.
     #[must_use]
     pub fn trace(&self) -> TraceCtx {
-        self.inner.trace
+        self.inner.trace.clone()
     }
 
     /// The cancel token.
@@ -213,22 +220,23 @@ impl Ctx {
     }
 
     fn deny(&self, cap: &str) -> PiiError {
-        self.observer()
-            .event(&crate::observe::ObsEvent::Denial {
-                principal: self.principal_str(),
-                cap: String::from(cap),
-            });
+        self.observer().event(&crate::observe::ObsEvent::Denial {
+            principal: self.principal_str(),
+            cap: String::from(cap),
+        });
         PiiError::Denied(cap.to_string())
     }
 }
 
-/// Network gate. Phase 1 holds no methods.
+/// Net gate. Phase 1 holds no methods.
+#[derive(Debug)]
 pub struct NetCap<'a> {
     #[allow(unused)]
     ctx: &'a Ctx,
 }
 
 /// Process gate. Phase 1 holds no methods.
+#[derive(Debug)]
 pub struct ProcCap<'a> {
     #[allow(unused)]
     ctx: &'a Ctx,
@@ -236,7 +244,12 @@ pub struct ProcCap<'a> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
 
     use std::path::Path;
     use std::sync::Arc;
@@ -263,7 +276,10 @@ mod tests {
             caps(kinds),
             Budget::unlimited(),
             Arc::new(RecordingObserver::new()),
-            TraceCtx { run: pii_abi::RunId::from("t"), span: 0 },
+            TraceCtx {
+                run: pii_abi::RunId::from("t"),
+                span: 0,
+            },
         )
     }
 
@@ -271,7 +287,7 @@ mod tests {
     fn ctx_child_intersects_caps() {
         let root = root(CapKind::FS_READ | CapKind::FS_WRITE);
         let narrow = caps(CapKind::FS_READ);
-        let child = root.child(Principal::User, &narrow, BudgetShare::All);
+        let child = root.child(Principal::User, &narrow, &BudgetShare::All);
         assert_eq!(child.caps().kinds, CapKind::FS_READ);
         assert!(child.fs().is_ok());
         let err = child
@@ -286,7 +302,7 @@ mod tests {
     fn ctx_child_cannot_widen_caps() {
         let root = root(CapKind::FS_READ);
         let narrow = caps(CapKind::FS_READ | CapKind::NET);
-        let child = root.child(Principal::User, &narrow, BudgetShare::All);
+        let child = root.child(Principal::User, &narrow, &BudgetShare::All);
         assert_eq!(child.caps().kinds, CapKind::FS_READ);
         let err = child.net().unwrap_err();
         assert!(matches!(err, PiiError::Denied(c) if c == "net"));
@@ -294,17 +310,30 @@ mod tests {
 
     #[test]
     fn ctx_child_carves_budget() {
-        let root = root(CapKind::FS_READ);
+        let _root = root(CapKind::FS_READ);
         // Replace the unlimited budget with a token budget for this test.
         let b = Budget::with_tokens(1000);
         let single = Ctx::with_observer(
             caps(CapKind::FS_READ),
             b,
             Arc::new(RecordingObserver::new()),
-            TraceCtx { run: pii_abi::RunId::from("t"), span: 0 },
+            TraceCtx {
+                run: pii_abi::RunId::from("t"),
+                span: 0,
+            },
         );
-        let child = single.child(Principal::User, &caps(CapKind::FS_READ), BudgetShare::Fraction(25));
-        assert_eq!(child.budget().remaining(crate::budget::BudgetKind::Tokens), 250);
-        assert_eq!(single.budget().remaining(crate::budget::BudgetKind::Tokens), 750);
+        let child = single.child(
+            Principal::User,
+            &caps(CapKind::FS_READ),
+            &BudgetShare::Fraction(25),
+        );
+        assert_eq!(
+            child.budget().remaining(crate::budget::BudgetKind::Tokens),
+            250
+        );
+        assert_eq!(
+            single.budget().remaining(crate::budget::BudgetKind::Tokens),
+            750
+        );
     }
 }

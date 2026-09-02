@@ -92,7 +92,10 @@ mod tests {
         for (v, name) in [
             (&PiiError::Denied(String::new()), "Denied"),
             (&PiiError::Invalid(String::new()), "Invalid"),
-            (&PiiError::BudgetExhausted(String::from("Tokens")), "BudgetExhausted"),
+            (
+                &PiiError::BudgetExhausted(String::from("Tokens")),
+                "BudgetExhausted",
+            ),
             (&PiiError::Cancelled, "Cancelled"),
         ] {
             assert!(v.is_terminal(), "{name} should be terminal");

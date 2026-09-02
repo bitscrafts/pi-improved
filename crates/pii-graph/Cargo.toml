@@ -24,7 +24,3 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
-
-[[test]]
-name = "diamond"
-path = "tests/diamond.rs"
