@@ -1,43 +1,52 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 IMPLEMENTATION IN PROGRESS (autonomous run)**
+**Status: GREEN — PHASE 1 CORE ENGINE + LINT SURFACE COMPLETE (autonomous run, 2026-09-02)**
 
 ## What exists
 - 3-pass architecture research in `_docs/06-research/` (passes 1-3, ~48k words total).
 - 5 reference repos cloned in `_repos/` (read-only).
-- pidag initialized with `ollama-cloud/glm-5.3-flash:cloud` workhorse.
-- **Phase 0 COMPLETE + committed** (`1ae1b32`): workspace skeleton + CI gates, 20/20 exit criteria pass.
-  - `pii-abi` kernel ABI (traits only, no transport deps), `pii-cli --version`, `xtask deps-check/lint-files/ci`, workspace lints, `quality-gate.sh`.
-- **2-parallel-workers VALIDATED**: pidag `--run <dag> --concurrency 2`, two glm-5.3-flash:cloud pi processes ran concurrently, both files written, validator passed.
+- pidag initialized + BUG-FIXED (session-dir isolation, model split — commit `6d69f4c`).
+- **Phase 0 COMPLETE**: workspace skeleton + CI gates, 20/20 exit criteria (commit `1ae1b32`).
+- **2-parallel-workers VALIDATED**: pidag `--concurrency 2`.
 
-## pidag bugs FIXED (2026-09-02, commit `6d69f4c`)
-1. **Session:** `pi --session <file>` needs pre-existing file. Fixed `src/worker/pi_print.rs`
-   → `--session-dir <per-node-dir>` (auto-creates + `-c` continues, parallel-workers isolated).
-2. **Model split:** `split_provider_model` (TWO copies: `src/lib.rs` + `src/backend/pi.rs`)
-   mis-split `provider/model:cloud`. Both fixed to split on earliest `:`/`/`.
-Build + installed to both `/root/.local/bin/pidag` and `/projects/.local/bin/pidag`.
+## PHASE 1 — done so far (all authored directly; flaky ollama-cloud worker)
+Spec `specs/03-phase1-core-engine.md` written by opus, split into 4 parts (24 exit criteria).
+Committed milestones:
+- **pii-core** (`7ce9402`...): Ctx, CapSet, Budget, CancelToken, Principal, TraceCtx, Observer, FsCap. 8 compile errors + 8 clippy fixed. 18 tests.
+- **pii-store** (`*`): redb persistence, transactional append_event (one write txn), snapshots, resume index. 5 tests. redb-4.2 trait imports; can't impl external RunStatus.
+- **pii-graph model+validator** (`*`): GraphSpec/JoinPolicy/Edge, load_toml, tiny `$.` expr, NodeFactory/NodeRegistry, validate() V0-V3/V5/V9.
+- **pii-graph sched state** (`*`): EdgeState/Readiness/RunState, readiness (All/Any/Quorum/AllSettled, entry-node-zero-inbound explicit), dead propagation fixpoint.
+- **pii-graph blackboard + built-in nodes** (`*`): transform/route/emit/wait runtimes.
+- **pii-graph run engine + CLI** (`21c3f6a`): tick loop draining all ready, UnsatisfiableJoin, limits; `pii --version` + `pii graph lint` (exit 3 on V-code).
+- `pii-abi` ids now derive Ord/PartialOrd.
 
-## CURRENT TASK — Phase 1: core engine
-- **In-flight:** opus writing `specs/03-phase1-core-engine.md` (spec prompt at `_tmp/phase1_spec_prompt.md`).
-- Deliverables: `pii-core` (Ctx, CapSet, CancelToken, Budget, Principal, TraceCtx, Observer),
-  `pii-graph` (GraphSpec + validate, scheduler = EdgeState/JoinPolicy/readiness/dead-propagation/drain-all,
-  event-sourced journal), `pii-store` (redb run_journal), resume (`kill -9` then resume without
-  re-invoking done nodes), cold-start `--version` p95 < 20 ms gate.
-- Then: `pidag sdd specs/03-phase1-core-engine.md --run --concurrency 2`, verify exit criteria, commit, HANDOFF, agent-memory.
-- Design source of truth: pass-3 §4.2–4.7 (scheduler contract), pass-1 §2.4/§3.1/§3.2/§3.4 (Ctx/graph/validate/journal).
+**Verified:** 46 tests, `quality-gate ALL PASS`; all 9 example TOMLs lint correctly
+(5 functional OK, 4 negatives V1/V2/V3/V9).
+
+## KEY LEARNINGS (see agent-memory `implementation/*`)
+- **ollama-cloud large-prompt instability**: intermittent empty 0-token responses on >15KB implement prompts (both glm-5.3-flash:cloud AND deepseek-v4-flash:cloud). Small probes always work. This made pidag worker runs fail fast regardless of timeout — the model, not pidag. Worked around by authoring deterministic code directly.
+- **Background pi loses OLLAMA_API_KEY**: foreground works (key in shell); spawned subshells report "No API key found".
+- petgraph tarjan_scc single-node cycle = `find_edge(n,n)` self-loop, NOT `edges_directed().count()>0`.
+- GraphSpec.caps / NodeSpec.caps are `u32` bitflags (CapSet scopes empty at spec; CLI applies allow-scopes at runtime).
+
+## REMAINING in Phase 1
+- **redb-backed `pii graph run/resume/trace`** wiring (F5.3/5.4/5.5, F4.11 resume journal replay). CLI `graph run/resume/trace` currently reports "not yet wired".
+- **xtask bench-gate** (F6.2) + `cargo xtask ci` (F6.3).
+- Then verify against part2-4 exit criteria via `pidag validate` / run.
 
 ## NEXT after Phase 1 — Phase 2: client/server split + coding harness
-- Prompt ready at `_tmp/phase2_spec_prompt.md`. Load-bearing gate: `cargo tree -p pii-tui` does NOT contain `pii-graph`.
-- `pii-proto` (wire types), `pii-server` (UDS + loopback), `pii-cli -p`, `pii-tui` thin client,
-  `starter/react` + `starter/verify-fix`, bash mediation + nono Landlock sandbox.
+- Prompt ready at `_tmp/phase2_spec_prompt.md`. **Cron `pii-phase2-opus-spec` fires 2026-09-02 14:55 UTC** (opus quota reset 14:50 UTC).
+- Load-bearing gate: `cargo tree -p pii-tui` does NOT contain `pii-graph`.
+- `pii-proto` (wire types), `pii-server` (UDS + loopback), `pii-cli -p`, `pii-tui` thin client, `starter/react` + `starter/verify-fix`, bash mediation + nono Landlock sandbox.
 
 ## Key files
-- `.pidag/config.toml` — model chain (slash-first form required).
-- `AGENTS.md` — SDD/TDD workflow + hard rules.
-- `specs/` — numbered specs (01 smoke, 02 phase0, 03-parallel, 03-phase1-*).
-- `crates/` — pii-abi (done), + pii-core/pii-graph/pii-store (Phase 1).
+- `specs/03-phase1-core-engine-part{1,2,3,4}.md` — split Phase 1 spec.
+- `examples/*.toml` — 9 functional + lint-negative example graphs.
+- `crates/pii-graph/src/{spec,toml_load,expr,node,nodes,validate,sched/state,blackboard,run}.rs`
+- `crates/pii-store/src/{lib,tables,codec}.rs`, `crates/pii-cli/src/main.rs`
 
 ## Memory keys
-- `pii/architecture/plan`, `pii/architecture/plan-pass2`, `pii/architecture/plan-pass3`
-- `pii/research/repo-findings`, `pii/research/pass2-findings`
-- `pii/implementation/pidag-fixes`, `pii/implementation/phase0-complete`, `pii/implementation/parallel-workers-validated`
+`pii/implementation/phase1-pii-core-complete`, `.../phase1-pii-store-complete`,
+`.../phase1-pii-graph-lint-complete`, `.../phase1-scheduler-state-complete`,
+`.../phase1-blackboard-nodes-complete`, `.../phase1-run-cli-lint-complete`,
+`.../ollama-cloud-large-prompt-instability`
