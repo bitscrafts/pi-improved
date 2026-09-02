@@ -32,7 +32,7 @@ fn main() -> ExitCode {
         Some("ci") => {
             let a = report(deps::run());
             let b = report(lint_files::run());
-            if a.is_success() && b.is_success() {
+            if a == ExitCode::SUCCESS && b == ExitCode::SUCCESS {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE

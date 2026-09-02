@@ -1,5 +1,10 @@
 //! 450-line file-size gate over effective (non-blank, non-comment) lines.
 
+// reason: see deps.rs — `pub(super)` is the correct visibility for these
+// binary-internal helpers; clippy `redundant_pub_crate` conflicts with rustc
+// `unreachable_pub` (deny), allowed narrowly per spec F16.
+#![allow(clippy::redundant_pub_crate)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +15,7 @@ const ROOTS: &[&str] = &["crates", "xtask"];
 /// Counts lines that are non-empty after trimming and do not start
 /// with `//`.
 #[must_use]
-pub(crate) fn count_effective_lines(src: &str) -> usize {
+pub(super) fn count_effective_lines(src: &str) -> usize {
     src.lines()
         .filter(|line| {
             let trimmed = line.trim();
@@ -43,14 +48,14 @@ fn check_counts(files: &[(String, usize)]) -> Result<(), Vec<String>> {
 ///
 /// # Errors
 /// Returns one message per violating file, or an I/O error line.
-pub(crate) fn run() -> Result<(), Vec<String>> {
+pub(super) fn run() -> Result<(), Vec<String>> {
     let mut files: Vec<(String, usize)> = Vec::new();
     for root in ROOTS {
         let mut paths = Vec::new();
         collect_rs_files(Path::new(root), &mut paths);
         for path in paths {
-            let src = fs::read_to_string(&path)
-                .map_err(|e| vec![format!("{}: {e}", path.display())])?;
+            let src =
+                fs::read_to_string(&path).map_err(|e| vec![format!("{}: {e}", path.display())])?;
             files.push((path.display().to_string(), count_effective_lines(&src)));
         }
     }
@@ -97,7 +102,10 @@ mod tests {
         src.push_str(&"\n".repeat(60));
         src.push_str(&"// comment\n".repeat(40));
         assert_eq!(count_effective_lines(&src), 450);
-        let counted = vec![(String::from("crates/x/src/f.rs"), count_effective_lines(&src))];
+        let counted = vec![(
+            String::from("crates/x/src/f.rs"),
+            count_effective_lines(&src),
+        )];
         assert!(check_counts(&counted).is_ok());
     }
 
@@ -107,6 +115,9 @@ mod tests {
         assert_eq!(count_effective_lines(&src), 451);
         let counted = vec![(String::from("crates/x/src/big.rs"), 451)];
         let errs = check_counts(&counted).unwrap_err();
-        assert!(errs.iter().any(|e| e.contains("big.rs") && e.contains("451")));
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("big.rs") && e.contains("451"))
+        );
     }
 }

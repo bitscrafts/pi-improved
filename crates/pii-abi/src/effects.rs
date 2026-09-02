@@ -1,5 +1,6 @@
 //! Effect classification for parallel scheduling decisions.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Classifies what external state a node touches.

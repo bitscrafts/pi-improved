@@ -1,18 +1,25 @@
 //! ABI dependency purity gate: direct allowlist + transitive denylist.
 
+// reason: `pub(super)` is the widest these internal helpers need (used only by
+// the parent `xtask::main` module and in-module tests); clippy pedantic
+// `redundant_pub_crate` conflicts with rustc `unreachable_pub` (deny) here, so
+// it is allowed narrowly per spec F16.
+#![allow(clippy::redundant_pub_crate)]
+
 use serde_json::Value;
 
 const ABI_CRATE: &str = "pii-abi";
 const ABI_ALLOWED_DIRECT: &[&str] = &["serde", "serde_json", "thiserror", "schemars"];
-const FORBIDDEN_TRANSITIVE: &[&str] =
-    &["tokio", "reqwest", "redb", "wasmtime", "axum", "hyper", "rustls"];
+const FORBIDDEN_TRANSITIVE: &[&str] = &[
+    "tokio", "reqwest", "redb", "wasmtime", "axum", "hyper", "rustls",
+];
 
 /// Pure check over parsed `cargo metadata` JSON.
 ///
 /// Rule 1: every non-dev dependency of `pii-abi` must be in the direct
 /// allowlist. Rule 2: BFS over `resolve.nodes` must never reach a crate
 /// on the transitive denylist.
-pub(crate) fn check_abi_purity(metadata: &Value) -> Result<(), Vec<String>> {
+pub(super) fn check_abi_purity(metadata: &Value) -> Result<(), Vec<String>> {
     let mut violations = Vec::new();
 
     let pkg_id = find_package_id(metadata, ABI_CRATE);
@@ -46,9 +53,10 @@ fn check_direct_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<String
     let Some(packages) = metadata.get("packages").and_then(Value::as_array) else {
         return;
     };
-    let Some(pkg) = packages.iter().find(|p| {
-        p.get("id").and_then(Value::as_str) == Some(pkg_id)
-    }) else {
+    let Some(pkg) = packages
+        .iter()
+        .find(|p| p.get("id").and_then(Value::as_str) == Some(pkg_id))
+    else {
         return;
     };
     let Some(deps) = pkg.get("dependencies").and_then(Value::as_array) else {
@@ -71,9 +79,14 @@ fn check_direct_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<String
 }
 
 fn check_transitive_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<String>) {
-    let Some(nodes) = metadata.get("resolve").and_then(|r| r.get("nodes")).and_then(Value::as_array)
+    let Some(nodes) = metadata
+        .get("resolve")
+        .and_then(|r| r.get("nodes"))
+        .and_then(Value::as_array)
     else {
-        violations.push(String::from("metadata has no resolve.nodes (run with --format-version 1)"));
+        violations.push(String::from(
+            "metadata has no resolve.nodes (run with --format-version 1)",
+        ));
         return;
     };
 
@@ -95,9 +108,10 @@ fn check_transitive_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<St
             continue;
         }
         visited.push(current);
-        let Some(node) = nodes.iter().find(|n| {
-            n.get("id").and_then(Value::as_str) == Some(current)
-        }) else {
+        let Some(node) = nodes
+            .iter()
+            .find(|n| n.get("id").and_then(Value::as_str) == Some(current))
+        else {
             continue;
         };
         let Some(deps) = node.get("deps").and_then(Value::as_array) else {
@@ -107,12 +121,12 @@ fn check_transitive_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<St
             let Some(dep_pkg) = dep.get("pkg").and_then(Value::as_str) else {
                 continue;
             };
-            if let Some(dep_name) = name_of(dep_pkg) {
-                if FORBIDDEN_TRANSITIVE.contains(&dep_name) {
-                    violations.push(format!(
-                        "pii-abi: transitive dependency '{dep_name}' is forbidden"
-                    ));
-                }
+            if let Some(dep_name) = name_of(dep_pkg)
+                && FORBIDDEN_TRANSITIVE.contains(&dep_name)
+            {
+                violations.push(format!(
+                    "pii-abi: transitive dependency '{dep_name}' is forbidden"
+                ));
             }
             if !visited.contains(&dep_pkg) {
                 queue.push(dep_pkg);
@@ -126,7 +140,7 @@ fn check_transitive_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<St
 /// # Errors
 /// Returns the violation list, or an error line if metadata cannot be
 /// produced.
-pub(crate) fn run() -> Result<(), Vec<String>> {
+pub(super) fn run() -> Result<(), Vec<String>> {
     let out = std::process::Command::new("cargo")
         .args(["metadata", "--format-version", "1"])
         .output()
@@ -149,9 +163,9 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::check_abi_purity;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
-    fn metadata_with_abi_deps(deps: Value, resolve_nodes: Value) -> Value {
+    fn metadata_with_abi_deps(deps: &Value, resolve_nodes: &Value) -> Value {
         json!({
             "packages": [
                 {
@@ -162,6 +176,19 @@ mod tests {
             ],
             "resolve": { "nodes": resolve_nodes }
         })
+    }
+
+    /// Like `metadata_with_abi_deps` but also records the given packages so
+    /// `name_of` can resolve `resolve.nodes` pkg ids to crate names.
+    fn metadata_with_extra_packages(deps: &Value, resolve_nodes: &Value, extra: &Value) -> Value {
+        let mut packages = serde_json::json!([
+            { "id": "registry+abi-1.0.0", "name": "pii-abi", "dependencies": deps }
+        ]);
+        packages
+            .as_array_mut()
+            .unwrap()
+            .extend(extra.as_array().cloned().unwrap_or_default());
+        json!({ "packages": packages, "resolve": { "nodes": resolve_nodes } })
     }
 
     fn clean_direct_deps() -> Value {
@@ -181,16 +208,18 @@ mod tests {
             ]},
             { "id": "registry+serde-1.0.0", "deps": [] }
         ]);
-        let metadata = metadata_with_abi_deps(clean_direct_deps(), nodes);
+        let metadata = metadata_with_abi_deps(&clean_direct_deps(), &nodes);
         assert!(check_abi_purity(&metadata).is_ok());
     }
 
     #[test]
     fn deps_check_rejects_tokio_in_pii_abi() {
         let mut deps = clean_direct_deps();
-        deps.as_array_mut().unwrap().push(json!({ "name": "tokio", "kind": null }));
+        deps.as_array_mut()
+            .unwrap()
+            .push(json!({ "name": "tokio", "kind": null }));
         let nodes = json!([{ "id": "registry+abi-1.0.0", "deps": [] }]);
-        let metadata = metadata_with_abi_deps(deps, nodes);
+        let metadata = metadata_with_abi_deps(&deps, &nodes);
         let errs = check_abi_purity(&metadata).unwrap_err();
         assert!(errs.iter().any(|e| e.contains("tokio")));
     }
@@ -207,7 +236,11 @@ mod tests {
             ]},
             { "id": "registry+redb-2.0.0", "deps": [] }
         ]);
-        let metadata = metadata_with_abi_deps(clean_direct_deps(), nodes);
+        let extra = json!([
+            { "id": "registry+schemars-1.0.0", "name": "schemars", "dependencies": [] },
+            { "id": "registry+redb-2.0.0", "name": "redb", "dependencies": [] }
+        ]);
+        let metadata = metadata_with_extra_packages(&clean_direct_deps(), &nodes, &extra);
         let errs = check_abi_purity(&metadata).unwrap_err();
         assert!(errs.iter().any(|e| e.contains("redb")));
     }
@@ -215,9 +248,11 @@ mod tests {
     #[test]
     fn deps_check_ignores_dev_dependencies() {
         let mut deps = clean_direct_deps();
-        deps.as_array_mut().unwrap().push(json!({ "name": "walkdir", "kind": "dev" }));
+        deps.as_array_mut()
+            .unwrap()
+            .push(json!({ "name": "walkdir", "kind": "dev" }));
         let nodes = json!([{ "id": "registry+abi-1.0.0", "deps": [] }]);
-        let metadata = metadata_with_abi_deps(deps, nodes);
+        let metadata = metadata_with_abi_deps(&deps, &nodes);
         assert!(check_abi_purity(&metadata).is_ok());
     }
 }

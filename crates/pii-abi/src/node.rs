@@ -1,5 +1,6 @@
 //! Node input/output contract and the synchronous metadata trait.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::effects::Effects;

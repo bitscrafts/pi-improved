@@ -38,9 +38,6 @@ mod tests {
 
     #[test]
     fn version_line_matches_cargo_pkg_version() {
-        assert_eq!(
-            version_line(),
-            format!("pii {}", env!("CARGO_PKG_VERSION"))
-        );
+        assert_eq!(version_line(), format!("pii {}", env!("CARGO_PKG_VERSION")));
     }
 }

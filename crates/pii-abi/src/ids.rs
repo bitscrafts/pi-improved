@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 macro_rules! string_id {
@@ -20,7 +21,7 @@ macro_rules! string_id {
 
             /// Borrows the underlying string.
             #[must_use]
-            pub const fn as_str(&self) -> &str {
+            pub fn as_str(&self) -> &str {
                 &self.0
             }
         }
