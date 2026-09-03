@@ -24,6 +24,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-
 
 [dev-dependencies]
 tempfile = { workspace = true }
+pii-proto = { path = "../pii-proto", features = ["client"] }
 
 [lints]
 workspace = true

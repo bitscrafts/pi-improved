@@ -6,6 +6,7 @@ caps = ["fs_read", "fs_write", "proc"]
 id = "fix"
 kind = "agent"
 loop_budget = 3
+caps = ["fs_read", "fs_write", "proc"]
 system = "You are pii, a coding agent. Fix the failing test."
 tools = ["fs_read", "fs_write", "edit", "multi_edit", "bash"]
 max_turns = 24

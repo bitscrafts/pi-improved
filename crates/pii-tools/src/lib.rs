@@ -45,10 +45,18 @@ impl ToolSet {
     pub fn builtin(workspace: std::path::PathBuf) -> Self {
         let mut tools: BTreeMap<&'static str, Arc<dyn Tool>> = BTreeMap::new();
         for t in [
-            Arc::new(FsReadTool) as Arc<dyn Tool>,
-            Arc::new(FsWriteTool),
-            Arc::new(EditTool),
-            Arc::new(MultiEditTool),
+            Arc::new(FsReadTool {
+                workspace: workspace.clone(),
+            }) as Arc<dyn Tool>,
+            Arc::new(FsWriteTool {
+                workspace: workspace.clone(),
+            }),
+            Arc::new(EditTool {
+                workspace: workspace.clone(),
+            }),
+            Arc::new(MultiEditTool {
+                workspace: workspace.clone(),
+            }),
             Arc::new(BashTool { workspace }) as Arc<dyn Tool>,
         ] {
             tools.insert(t.name(), t);

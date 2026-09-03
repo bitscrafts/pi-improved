@@ -5,6 +5,7 @@ caps = ["fs_read", "fs_write", "proc"]
 [[node]]
 id = "agent"
 kind = "agent"
+caps = ["fs_read", "fs_write", "proc"]
 system = "You are pii, a coding agent. Answer concisely."
 tools = ["fs_read", "fs_write", "edit", "multi_edit", "bash"]
 max_turns = 24

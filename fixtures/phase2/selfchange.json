@@ -1,0 +1,35 @@
+{
+  "turns": [
+    {
+      "text": "I'll fix both files.",
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "name": "edit",
+          "arguments": {
+            "path": "a.txt",
+            "old_string": "old-a",
+            "new_string": "new-a"
+          }
+        },
+        {
+          "id": "call_2",
+          "name": "edit",
+          "arguments": {
+            "path": "b.txt",
+            "old_string": "old-b",
+            "new_string": "new-b"
+          }
+        }
+      ],
+      "tokens_in": 10,
+      "tokens_out": 5
+    },
+    {
+      "text": "Both files fixed.",
+      "tool_calls": [],
+      "tokens_in": 20,
+      "tokens_out": 5
+    }
+  ]
+}

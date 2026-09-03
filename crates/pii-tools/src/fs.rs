@@ -14,8 +14,22 @@ fn require<'a>(args: &'a Value, key: &str) -> Result<&'a str, PiiError> {
         .ok_or_else(|| PiiError::Invalid(format!("{key} must be a string")))
 }
 
+/// Resolves a tool path against the workspace: relative paths are joined to
+/// the workspace root so the capability scope check sees the canonical
+/// location the file would occupy.
+fn resolve_path(workspace: &std::path::Path, p: &std::path::Path) -> std::path::PathBuf {
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        workspace.join(p)
+    }
+}
+
 /// Reads a text file (F3.6 `fs_read { path, offset?, limit? }`).
-pub struct FsReadTool;
+pub struct FsReadTool {
+    /// Workspace root for relative-path resolution.
+    pub workspace: std::path::PathBuf,
+}
 
 impl Tool for FsReadTool {
     fn name(&self) -> &'static str {
@@ -33,8 +47,11 @@ impl Tool for FsReadTool {
     }
 
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
-        let path = std::path::Path::new(require(args, "path")?);
-        let bytes = ctx.fs()?.read(path)?;
+        let path = resolve_path(
+            &self.workspace,
+            std::path::Path::new(require(args, "path")?),
+        );
+        let bytes = ctx.fs()?.read(&path)?;
         let text = String::from_utf8_lossy(&bytes);
         let offset = args.get("offset").and_then(Value::as_u64).unwrap_or(0);
         let limit = args.get("limit").and_then(Value::as_u64);
@@ -52,7 +69,10 @@ impl Tool for FsReadTool {
 }
 
 /// Writes a text file (F3.6 `fs_write { path, content }`).
-pub struct FsWriteTool;
+pub struct FsWriteTool {
+    /// Workspace root for relative-path resolution.
+    pub workspace: std::path::PathBuf,
+}
 
 impl Tool for FsWriteTool {
     fn name(&self) -> &'static str {
@@ -69,15 +89,21 @@ impl Tool for FsWriteTool {
     }
 
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
-        let path = std::path::Path::new(require(args, "path")?);
+        let path = resolve_path(
+            &self.workspace,
+            std::path::Path::new(require(args, "path")?),
+        );
         let content = require(args, "content")?;
-        ctx.fs()?.write(path, content.as_bytes())?;
+        ctx.fs()?.write(&path, content.as_bytes())?;
         Ok(json!({"written": content.len()}))
     }
 }
 
 /// Replaces `old_string` with `new_string`; fails unless the match is unique.
-pub struct EditTool;
+pub struct EditTool {
+    /// Workspace root for relative-path resolution.
+    pub workspace: std::path::PathBuf,
+}
 
 impl Tool for EditTool {
     fn name(&self) -> &'static str {
@@ -95,10 +121,13 @@ impl Tool for EditTool {
     }
 
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
-        let path = std::path::Path::new(require(args, "path")?);
+        let path = resolve_path(
+            &self.workspace,
+            std::path::Path::new(require(args, "path")?),
+        );
         let old = require(args, "old_string")?;
         let new = require(args, "new_string")?;
-        let bytes = ctx.fs()?.read(path)?;
+        let bytes = ctx.fs()?.read(&path)?;
         let text = String::from_utf8(bytes)
             .map_err(|_| PiiError::Invalid(String::from("file is not UTF-8")))?;
         if text.matches(old).count() != 1 {
@@ -108,13 +137,16 @@ impl Tool for EditTool {
             )));
         }
         let updated = text.replacen(old, new, 1);
-        ctx.fs()?.write(path, updated.as_bytes())?;
+        ctx.fs()?.write(&path, updated.as_bytes())?;
         Ok(json!({"edited": true}))
     }
 }
 
 /// Applies ordered edits all-or-nothing, writing the file exactly once.
-pub struct MultiEditTool;
+pub struct MultiEditTool {
+    /// Workspace root for relative-path resolution.
+    pub workspace: std::path::PathBuf,
+}
 
 impl Tool for MultiEditTool {
     fn name(&self) -> &'static str {
@@ -131,12 +163,15 @@ impl Tool for MultiEditTool {
     }
 
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
-        let path = std::path::Path::new(require(args, "path")?);
+        let path = resolve_path(
+            &self.workspace,
+            std::path::Path::new(require(args, "path")?),
+        );
         let edits = args
             .get("edits")
             .and_then(Value::as_array)
             .ok_or_else(|| PiiError::Invalid(String::from("edits must be an array")))?;
-        let bytes = ctx.fs()?.read(path)?;
+        let bytes = ctx.fs()?.read(&path)?;
         let mut text = String::from_utf8(bytes)
             .map_err(|_| PiiError::Invalid(String::from("file is not UTF-8")))?;
         for e in edits {
@@ -156,7 +191,7 @@ impl Tool for MultiEditTool {
             }
             text = text.replacen(old, new, 1);
         }
-        ctx.fs()?.write(path, text.as_bytes())?;
+        ctx.fs()?.write(&path, text.as_bytes())?;
         Ok(json!({"edits_applied": edits.len()}))
     }
 }
