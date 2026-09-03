@@ -1,4 +1,7 @@
-//! Reattach test (F2.5, TDD `server::reattach_since_seq_no_duplicates`).
+//! Reattach test (F2.5, TDD `server::reattach_since_seq_no_duplicates`, F21
+//! opus review). Subscribes to the engine's real bus BEFORE prompting, lets
+//! the run proceed, then reattaches mid-run and asserts the merged stream is
+//! gap-free and duplicate-free across the replay/live seam.
 
 #![allow(
     clippy::unwrap_used,
@@ -7,10 +10,8 @@
     clippy::indexing_slicing
 )]
 
-use pii_core::CapSet;
 use pii_proto::event::Event;
 use pii_proto::run::SeqEvent;
-use pii_server::bus::{BridgeObserver, Bus};
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 use std::sync::Arc;
@@ -76,17 +77,11 @@ async fn reattach_since_seq_no_duplicates() {
     .unwrap();
     let engine = engine_in(dir.path(), &fixture);
 
-    // First subscription: collect the full event stream (live).
-    let bus = Bus::new();
-    let _live = bus.subscribe();
+    // Subscribe to the engine's REAL bus before prompting (F21: the old test
+    // subscribed to an unrelated Bus, so the live-dedup branch never ran).
+    let mut live = engine.bus.subscribe();
+
     // Run to completion while "subscribed".
-    {
-        let bridge = BridgeObserver {
-            run_id: pii_abi::RunId::from("r000000000000"),
-            tx: bus.subscribe_tx(),
-        };
-        let _ = bridge; // the engine's own bridge covers the real run
-    }
     let first = run_one_prompt(&engine).await;
     assert!(
         first.len() >= 4,
@@ -94,18 +89,14 @@ async fn reattach_since_seq_no_duplicates() {
         first.iter().map(|e| e.seq).collect::<Vec<_>>()
     );
     let total = first.len();
+    let run_id = first_run_id(&first);
+
     // "Drop at seq 3": the client last saw seq 3.
     let since = 3u64;
-    // Resubscribe with since_seq = 3: replay must deliver 4..=N exactly once.
+    // Reattach with since_seq = 3: replay must deliver 4..=N exactly once,
+    // and any live events already in the bus buffer must be deduped.
     let mut merged: Vec<SeqEvent> = Vec::new();
-    let mut live_rx = bus.subscribe();
-    let _last = pii_server::bus::reattach(
-        &engine.store,
-        &first_run_id(&first),
-        since,
-        &mut live_rx,
-        &mut merged,
-    );
+    let _last = pii_server::bus::reattach(&engine.store, &run_id, since, &mut live, &mut merged);
     let seqs: Vec<u64> = merged.iter().map(|e| e.seq).collect();
     assert_eq!(seqs.len(), total - usize::try_from(since).unwrap_or(0));
     assert!(
@@ -135,10 +126,4 @@ fn first_run_id(events: &[SeqEvent]) -> pii_abi::RunId {
         return pii_abi::RunId::from(rid.as_str());
     }
     panic!("no RunStarted in stream");
-}
-
-// Unused-in-test helpers stay referenced to satisfy the lints.
-#[allow(dead_code)]
-fn _caps() -> CapSet {
-    CapSet::empty()
 }
