@@ -1,0 +1,468 @@
+{
+  "$defs": {
+    "Event": {
+      "description": "The complete push vocabulary.",
+      "oneOf": [
+        {
+          "description": "A run began.",
+          "properties": {
+            "graph": {
+              "description": "Graph name.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "run_started",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "graph"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A node started executing.",
+          "properties": {
+            "kind": {
+              "const": "node_started",
+              "type": "string"
+            },
+            "node": {
+              "description": "Node id.",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "node"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A node completed on a port.",
+          "properties": {
+            "kind": {
+              "const": "node_finished",
+              "type": "string"
+            },
+            "node": {
+              "description": "Node id.",
+              "type": "string"
+            },
+            "port": {
+              "description": "Port taken.",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            },
+            "value": {
+              "description": "Value produced."
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "node",
+            "port",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A node failed.",
+          "properties": {
+            "error": {
+              "description": "Error text.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "node_failed",
+              "type": "string"
+            },
+            "node": {
+              "description": "Node id.",
+              "type": "string"
+            },
+            "retryable": {
+              "description": "Whether the failure is retryable.",
+              "type": "boolean"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "node",
+            "error",
+            "retryable"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A node was killed by dead propagation.",
+          "properties": {
+            "kind": {
+              "const": "node_dead",
+              "type": "string"
+            },
+            "node": {
+              "description": "Node id.",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "node"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A streaming assistant text chunk.",
+          "properties": {
+            "kind": {
+              "const": "assistant_delta",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            },
+            "session_id": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Text chunk.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "session_id",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tool call began.",
+          "properties": {
+            "args": {
+              "description": "Call arguments."
+            },
+            "kind": {
+              "const": "tool_call",
+              "type": "string"
+            },
+            "node": {
+              "description": "Node id.",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            },
+            "tool": {
+              "description": "Tool name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "node",
+            "tool",
+            "args"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tool call finished.",
+          "properties": {
+            "kind": {
+              "const": "tool_result",
+              "type": "string"
+            },
+            "node": {
+              "description": "Node id.",
+              "type": "string"
+            },
+            "ok": {
+              "description": "Whether the tool succeeded.",
+              "type": "boolean"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            },
+            "summary": {
+              "description": "Short summary.",
+              "type": "string"
+            },
+            "tool": {
+              "description": "Tool name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "node",
+            "tool",
+            "ok",
+            "summary"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A run reached a terminal disposition.",
+          "properties": {
+            "kind": {
+              "const": "run_finished",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            },
+            "terminal": {
+              "$ref": "#/$defs/WireTerminal",
+              "description": "Terminal outcome."
+            }
+          },
+          "required": [
+            "kind",
+            "run_id",
+            "terminal"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A run was cancelled.",
+          "properties": {
+            "kind": {
+              "const": "run_cancelled",
+              "type": "string"
+            },
+            "run_id": {
+              "description": "Run id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "run_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A subscriber fell behind and events were dropped (never silent).",
+          "properties": {
+            "dropped": {
+              "description": "Number of events dropped.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "lagged",
+              "type": "string"
+            },
+            "sub_id": {
+              "description": "Subscription id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "sub_id",
+            "dropped"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SeqEvent": {
+      "description": "One journalled event with its sequence number.",
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/Event",
+          "description": "The event."
+        },
+        "seq": {
+          "description": "Journal sequence.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq",
+        "event"
+      ],
+      "type": "object"
+    },
+    "WireRunHeader": {
+      "description": "Wire run header.",
+      "properties": {
+        "dur_ms": {
+          "description": "Wall duration in ms.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "graph": {
+          "description": "Graph name or hash.",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Run id.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Next journal sequence.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/WireRunStatus",
+          "description": "Status."
+        }
+      },
+      "required": [
+        "run_id",
+        "graph",
+        "status",
+        "seq",
+        "dur_ms"
+      ],
+      "type": "object"
+    },
+    "WireRunStatus": {
+      "description": "Run lifecycle (wire copy of `RunStatus`).",
+      "oneOf": [
+        {
+          "const": "running",
+          "description": "Executing.",
+          "type": "string"
+        },
+        {
+          "const": "suspended",
+          "description": "Awaiting resume.",
+          "type": "string"
+        },
+        {
+          "const": "succeeded",
+          "description": "Completed successfully.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Failed.",
+          "type": "string"
+        }
+      ]
+    },
+    "WireTerminal": {
+      "description": "Terminal disposition of a run (wire copy of `pii_abi::Terminal`).",
+      "oneOf": [
+        {
+          "description": "The run succeeded.",
+          "properties": {
+            "kind": {
+              "const": "success",
+              "type": "string"
+            },
+            "output": {
+              "description": "Terminal output JSON."
+            }
+          },
+          "required": [
+            "kind",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The run failed.",
+          "properties": {
+            "error": {
+              "description": "Failure description.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "failure",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "error"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The run suspended.",
+          "properties": {
+            "key": {
+              "description": "Resume key.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "suspended",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "key"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "`run.trace` result.",
+  "properties": {
+    "events": {
+      "description": "Journal events in order.",
+      "items": {
+        "$ref": "#/$defs/SeqEvent"
+      },
+      "type": "array"
+    },
+    "header": {
+      "$ref": "#/$defs/WireRunHeader",
+      "description": "Run header."
+    }
+  },
+  "required": [
+    "header",
+    "events"
+  ],
+  "title": "TraceResult",
+  "type": "object"
+}

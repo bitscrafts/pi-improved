@@ -9,6 +9,8 @@ description.workspace = true
 
 [dependencies]
 serde_json = { workspace = true }
+schemars = { workspace = true }
+pii-proto = { path = "../crates/pii-proto" }
 
 [lints]
 workspace = true

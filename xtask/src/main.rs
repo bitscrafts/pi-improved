@@ -8,10 +8,11 @@
 mod bench;
 mod deps;
 mod lint_files;
+mod proto_gen;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|lint-files|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|lint-files|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -45,6 +46,8 @@ fn main() -> ExitCode {
     match cmd.as_deref() {
         Some("deps-check") => report(deps::run()),
         Some("lint-files") => report(lint_files::run()),
+        Some("proto-gen") => report(proto_gen::generate().map_err(|e| vec![e])),
+        Some("proto-check") => report(proto_gen::check()),
         Some("bench-gate") => match bench::run_cli(&rest) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -55,6 +58,7 @@ fn main() -> ExitCode {
         Some("ci") => {
             let deps_ok = report(deps::run());
             let lint_ok = report(lint_files::run());
+            let proto_ok = report(proto_gen::check());
             let bench_ok = report(bench::run_cli(&rest).map_err(|e| vec![e]));
             // F8 (opus review): `cargo xtask ci` must run the full gate set —
             // fmt, clippy, tests — not just deps/lint-files/bench. This is
@@ -74,6 +78,7 @@ fn main() -> ExitCode {
             let test_ok = run_cmd("cargo", &["test", "--workspace"]);
             if deps_ok == ExitCode::SUCCESS
                 && lint_ok == ExitCode::SUCCESS
+                && proto_ok == ExitCode::SUCCESS
                 && bench_ok == ExitCode::SUCCESS
                 && fmt_ok == ExitCode::SUCCESS
                 && clippy_ok == ExitCode::SUCCESS

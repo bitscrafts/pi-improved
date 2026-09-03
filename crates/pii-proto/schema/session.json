@@ -1,0 +1,94 @@
+{
+  "$defs": {
+    "SessionStatus": {
+      "description": "Lifecycle of a session.",
+      "oneOf": [
+        {
+          "const": "idle",
+          "description": "No active run.",
+          "type": "string"
+        },
+        {
+          "const": "running",
+          "description": "A run is executing.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "Closed.",
+          "type": "string"
+        }
+      ]
+    },
+    "WireMessage": {
+      "description": "A message in the session transcript (wire shape; duplicated by design).",
+      "properties": {
+        "content": {
+          "description": "Text content.",
+          "type": "string"
+        },
+        "role": {
+          "description": "`system|user|assistant|tool`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "`session.state` result.",
+  "properties": {
+    "cwd": {
+      "description": "Session cwd.",
+      "type": "string"
+    },
+    "messages": {
+      "description": "Transcript so far.",
+      "items": {
+        "$ref": "#/$defs/WireMessage"
+      },
+      "type": "array"
+    },
+    "run_id": {
+      "description": "Active run, if any.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "session_id": {
+      "description": "Session id.",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/SessionStatus",
+      "description": "Session status."
+    },
+    "tokens_in": {
+      "description": "Input tokens (server-computed).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "tokens_out": {
+      "description": "Output tokens (server-computed).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "session_id",
+    "cwd",
+    "status",
+    "messages",
+    "tokens_in",
+    "tokens_out"
+  ],
+  "title": "SessionStateResult",
+  "type": "object"
+}

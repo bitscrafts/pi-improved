@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "Limits": {
+      "description": "Server resource limits.",
+      "properties": {
+        "max_frame_bytes": {
+          "description": "Largest frame the server accepts.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_subscriptions": {
+          "description": "Subscriptions per connection.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_frame_bytes",
+        "max_subscriptions"
+      ],
+      "type": "object"
+    },
+    "PeerInfo": {
+      "description": "Who is calling.",
+      "properties": {
+        "build": {
+          "description": "Build identifier.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Program name.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Program version.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "build"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "`sys.hello` result.",
+  "properties": {
+    "capabilities": {
+      "description": "Capability strings.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "encoding": {
+      "description": "Negotiated encoding (always `\"json\"` in this phase).",
+      "type": "string"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits",
+      "description": "Resource limits."
+    },
+    "protocol": {
+      "description": "Protocol the server speaks (always [`crate::PROTOCOL_VERSION`]).",
+      "type": "string"
+    },
+    "server": {
+      "$ref": "#/$defs/PeerInfo",
+      "description": "Server identity."
+    }
+  },
+  "required": [
+    "protocol",
+    "server",
+    "encoding",
+    "capabilities",
+    "limits"
+  ],
+  "title": "HelloResult",
+  "type": "object"
+}
