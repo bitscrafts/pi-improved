@@ -1,6 +1,40 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES; OPUS PHASE-2 REVIEW DONE (2026-09-03)**
+**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES; OPUS PHASE-2 REVIEW DONE + FIX SET LANDED (2026-09-03)**
+
+## OPUS PHASE-2 REVIEW FIX SET — LANDED (all 5 BLOCKERs + major MAJORs)
+The opus review (report `_tmp/phase2-opus-review.md`) found 5 BLOCKERs and
+16 MAJORs. All 5 BLOCKERs and the major MAJORs are now fixed and committed:
+- **F1** (BLOCKER): `proc_argv0=/bin/sh` granted in runs.rs + cmd_run.rs so
+  the `bash` tool can execute; `starter/verify-fix`'s `test` node is live.
+- **F2** (BLOCKER): `xtask deps-check` enforces all 4 of §12.2's invariants
+  (pii-abi purity, pii-proto purity, pii-tui no pii-graph, single versions).
+- **F3** (BLOCKER): `event.subscribe` filters live events by run_id + kinds.
+- **F4** (BLOCKER): `Event::Lagged` added; bounded per-subscription queue.
+- **F5** (BLOCKER): `selfchange.sh` copies Pii's own repo, drives react, and
+  runs `cargo test --workspace` in the copy. Added `--input` to `pii -p`.
+- **F6** (MAJOR): implemented run.start/run.get/run.list/graph.lint/
+  event.unsubscribe.
+- **F7** (MAJOR): `xtask proto-gen` + checked-in `pii-proto/schema/` +
+  `proto-check` wired into `ci`.
+- **F8** (MAJOR): `cargo xtask ci` now runs fmt/clippy/tests.
+- **F9** (MAJOR): UDS peercred fails CLOSED + writes a 101 frame.
+- **F10** (MAJOR): control dir 0700, socket 0600 after bind.
+- **F11** (MAJOR): `pii tui` subcommand wired; `run_tui` prompts before
+  subscribing.
+- **F12** (MAJOR): agent node emits live ToolCall/ToolResult events.
+- **F13** (MAJOR): `graph run`/`resume` use the server registry (lint/run agree).
+- **F14** (MAJOR): `clippy.toml` has the full disallowed-macros + method bans.
+- **F15** (MAJOR): `lint-files` excludes `#[cfg(test)]` bodies + tests/ dirs.
+- **F16** (MAJOR): bash output cap now covers stdout/stderr fields.
+- **F17** (MAJOR): sandboxed daemon grants write to store/runtime dirs.
+- **F18** (MAJOR): `pii -p --sandbox` applies Landlock before the runtime.
+- **F19** (MAJOR): `RunCancelled` uses the run's real journal seq.
+- **F20** (MAJOR): `session.state` records the assistant reply.
+- **F21** (MAJOR): real peercred (101 frame) + reattach (real bus) tests.
+- **F28/F31/F32** (MINOR/NIT): overflow-checks, TTY-aware --json, real p50.
+
+All 4 part ECs still pass (22/22). quality-gate: PASS.
 
 ## OPUS PHASE-2 REVIEW (report `_tmp/phase2-opus-review.md`, 1118 lines)
 Full adversarial review by opus against `_docs/06-research/` (NOT the specs).
