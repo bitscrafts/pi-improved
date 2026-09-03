@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use pii_abi::{PiiError, RunId, Terminal};
-use pii_core::{Budget, CapKind, CapSet, Ctx, PathScope, TraceCtx};
+use pii_core::{Budget, CapKind, CapSet, Ctx, PathScope, StringScope, TraceCtx};
 
 use crate::cli_util::{next_value, open_store, usage_error};
 use crate::ndjson::NdjsonObserver;
@@ -177,9 +177,10 @@ fn root_ctx(allow_write: &[PathBuf], run: RunId, limits: &pii_graph::GraphLimits
         fs_write.push(canon);
     }
     let caps = CapSet {
-        kinds: CapKind::FS_READ | CapKind::FS_WRITE,
+        kinds: CapKind::FS_READ | CapKind::FS_WRITE | CapKind::PROC,
         fs_read: PathScope::new(vec![cwd]),
         fs_write: PathScope::new(fs_write),
+        proc_argv0: StringScope::new(vec![String::from("/bin/sh")]),
         ..CapSet::default()
     };
     Ctx::with_observer(

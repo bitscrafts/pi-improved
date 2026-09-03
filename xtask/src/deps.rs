@@ -1,4 +1,5 @@
-//! ABI dependency purity gate: direct allowlist + transitive denylist.
+//! Dependency DAG purity gate (pass-2 §12.2): four hard invariants, each a
+//! CI assertion that must provably fail when violated.
 
 // reason: `pub(super)` is the widest these internal helpers need (used only by
 // the parent `xtask::main` module and in-module tests); clippy pedantic
@@ -14,27 +15,96 @@ const FORBIDDEN_TRANSITIVE: &[&str] = &[
     "tokio", "reqwest", "redb", "wasmtime", "axum", "hyper", "rustls",
 ];
 
-/// Pure check over parsed `cargo metadata` JSON.
-///
-/// Rule 1: every non-dev dependency of `pii-abi` must be in the direct
-/// allowlist. Rule 2: BFS over `resolve.nodes` must never reach a crate
-/// on the transitive denylist.
-pub(super) fn check_abi_purity(metadata: &Value) -> Result<(), Vec<String>> {
+/// Invariant 2: `pii-proto` (default features) must never depend on
+/// `pii-core`/`pii-abi`/`pii-store`/`pii-graph`/`axum`. `tokio` is an
+/// *optional* dep (behind the `client` feature) so it is allowed; the
+/// resolved graph legitimately contains it when a client enables the feature.
+const PROTO_FORBIDDEN: &[&str] = &["pii-core", "pii-abi", "pii-store", "pii-graph", "axum"];
+/// Direct non-optional deps of `pii-proto` must be exactly these.
+const PROTO_ALLOWED_DIRECT: &[&str] = &["serde", "serde_json", "schemars", "thiserror"];
+
+/// Invariant 3: `pii-tui` must not have `pii-graph` in its dependency tree.
+const TUI_FORBIDDEN: &[&str] = &["pii-graph"];
+
+/// Invariant 4: exactly one version each of these in the resolved graph.
+const SINGLE_VERSION: &[&str] = &["redb", "reqwest", "wasmtime", "serde"];
+
+/// Runs every invariant and returns the combined violation list.
+pub(super) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
     let mut violations = Vec::new();
-
-    let pkg_id = find_package_id(metadata, ABI_CRATE);
-    let Some(pkg_id) = pkg_id else {
-        violations.push(format!("package '{ABI_CRATE}' not found in metadata"));
-        return Err(violations);
-    };
-
-    check_direct_deps(metadata, pkg_id, &mut violations);
-    check_transitive_deps(metadata, pkg_id, &mut violations);
-
+    check_abi_purity(metadata, &mut violations);
+    check_proto_purity(metadata, &mut violations);
+    check_tui_no_graph(metadata, &mut violations);
+    check_single_versions(metadata, &mut violations);
     if violations.is_empty() {
         Ok(())
     } else {
         Err(violations)
+    }
+}
+
+/// Invariant 1: every non-dev dependency of `pii-abi` is in the direct
+/// allowlist, and BFS over `resolve.nodes` never reaches a forbidden crate.
+fn check_abi_purity(metadata: &Value, violations: &mut Vec<String>) {
+    let Some(pkg_id) = find_package_id(metadata, ABI_CRATE) else {
+        violations.push(format!("package '{ABI_CRATE}' not found in metadata"));
+        return;
+    };
+    check_direct_deps(metadata, pkg_id, ABI_ALLOWED_DIRECT, ABI_CRATE, violations);
+    check_transitive_deps(
+        metadata,
+        pkg_id,
+        FORBIDDEN_TRANSITIVE,
+        ABI_CRATE,
+        violations,
+    );
+}
+
+/// Invariant 2: `pii-proto` (default features) must not reach any forbidden
+/// crate transitively, and its non-optional direct deps must be the allowlist.
+fn check_proto_purity(metadata: &Value, violations: &mut Vec<String>) {
+    let Some(pkg_id) = find_package_id(metadata, "pii-proto") else {
+        violations.push(String::from("package 'pii-proto' not found in metadata"));
+        return;
+    };
+    check_direct_deps(
+        metadata,
+        pkg_id,
+        PROTO_ALLOWED_DIRECT,
+        "pii-proto",
+        violations,
+    );
+    check_transitive_deps(metadata, pkg_id, PROTO_FORBIDDEN, "pii-proto", violations);
+}
+
+/// Invariant 3: `pii-tui` must not reach `pii-graph` transitively.
+fn check_tui_no_graph(metadata: &Value, violations: &mut Vec<String>) {
+    let Some(pkg_id) = find_package_id(metadata, "pii-tui") else {
+        violations.push(String::from("package 'pii-tui' not found in metadata"));
+        return;
+    };
+    check_transitive_deps(metadata, pkg_id, TUI_FORBIDDEN, "pii-tui", violations);
+}
+
+/// Invariant 4: exactly one version of each of the four crates.
+fn check_single_versions(metadata: &Value, violations: &mut Vec<String>) {
+    let Some(packages) = metadata.get("packages").and_then(Value::as_array) else {
+        return;
+    };
+    for name in SINGLE_VERSION {
+        let versions: Vec<&str> = packages
+            .iter()
+            .filter_map(Value::as_object)
+            .filter(|p| p.get("name").and_then(Value::as_str) == Some(name))
+            .filter_map(|p| p.get("version").and_then(Value::as_str))
+            .collect();
+        if versions.len() > 1 {
+            violations.push(format!(
+                "single-version invariant: '{name}' has {} versions: {}",
+                versions.len(),
+                versions.join(", ")
+            ));
+        }
     }
 }
 
@@ -49,7 +119,13 @@ fn find_package_id<'a>(metadata: &'a Value, name: &str) -> Option<&'a str> {
         .and_then(Value::as_str)
 }
 
-fn check_direct_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<String>) {
+fn check_direct_deps(
+    metadata: &Value,
+    pkg_id: &str,
+    allowlist: &[&str],
+    crate_name: &str,
+    violations: &mut Vec<String>,
+) {
     let Some(packages) = metadata.get("packages").and_then(Value::as_array) else {
         return;
     };
@@ -67,18 +143,28 @@ fn check_direct_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<String
             continue;
         };
         let kind = dep.get("kind").and_then(Value::as_str);
-        if kind == Some("dev") {
+        let optional = dep
+            .get("optional")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if kind == Some("dev") || optional {
             continue;
         }
-        if !ABI_ALLOWED_DIRECT.contains(&name) {
+        if !allowlist.contains(&name) {
             violations.push(format!(
-                "pii-abi: direct dependency '{name}' is not in the allowlist"
+                "{crate_name}: direct dependency '{name}' is not in the allowlist"
             ));
         }
     }
 }
 
-fn check_transitive_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<String>) {
+fn check_transitive_deps(
+    metadata: &Value,
+    pkg_id: &str,
+    forbidden: &[&str],
+    crate_name: &str,
+    violations: &mut Vec<String>,
+) {
     let Some(nodes) = metadata
         .get("resolve")
         .and_then(|r| r.get("nodes"))
@@ -122,10 +208,10 @@ fn check_transitive_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<St
                 continue;
             };
             if let Some(dep_name) = name_of(dep_pkg)
-                && FORBIDDEN_TRANSITIVE.contains(&dep_name)
+                && forbidden.contains(&dep_name)
             {
                 violations.push(format!(
-                    "pii-abi: transitive dependency '{dep_name}' is forbidden"
+                    "{crate_name}: transitive dependency '{dep_name}' is forbidden"
                 ));
             }
             if !visited.contains(&dep_pkg) {
@@ -135,11 +221,14 @@ fn check_transitive_deps(metadata: &Value, pkg_id: &str, violations: &mut Vec<St
     }
 }
 
-/// Shells out to `cargo metadata` and runs the pure check.
+/// Shells out to `cargo metadata` and runs every invariant.
 ///
 /// # Errors
 /// Returns the violation list, or an error line if metadata cannot be
 /// produced.
+// reason: xtask is a dev-tooling crate that must shell out to cargo; the
+// Command ban targets the agent runtime (Ctx::proc), not build tooling.
+#[allow(clippy::disallowed_methods)]
 pub(super) fn run() -> Result<(), Vec<String>> {
     let out = std::process::Command::new("cargo")
         .args(["metadata", "--format-version", "1"])
@@ -155,104 +244,168 @@ pub(super) fn run() -> Result<(), Vec<String>> {
     let metadata: Value = serde_json::from_str(stdout.trim())
         .map_err(|e| vec![format!("failed to parse cargo metadata JSON: {e}")])?;
 
-    check_abi_purity(&metadata)
+    check_all(&metadata)
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(clippy::needless_pass_by_value)] // test fixture builders take owned Values
+    #![allow(clippy::indexing_slicing)] // test fixtures index into synthetic metadata
 
-    use super::check_abi_purity;
+    use super::check_all;
     use serde_json::{Value, json};
 
-    fn metadata_with_abi_deps(deps: &Value, resolve_nodes: &Value) -> Value {
-        json!({
-            "packages": [
-                {
-                    "id": "registry+abi-1.0.0",
-                    "name": "pii-abi",
-                    "dependencies": deps
-                }
-            ],
-            "resolve": { "nodes": resolve_nodes }
-        })
+    /// Builds a metadata doc with the given packages and resolve nodes.
+    fn metadata(packages: Value, nodes: Value) -> Value {
+        json!({ "packages": packages, "resolve": { "nodes": nodes } })
     }
 
-    /// Like `metadata_with_abi_deps` but also records the given packages so
-    /// `name_of` can resolve `resolve.nodes` pkg ids to crate names.
-    fn metadata_with_extra_packages(deps: &Value, resolve_nodes: &Value, extra: &Value) -> Value {
-        let mut packages = serde_json::json!([
-            { "id": "registry+abi-1.0.0", "name": "pii-abi", "dependencies": deps }
+    fn pkg(id: &str, name: &str, deps: Value) -> Value {
+        json!({ "id": id, "name": name, "version": "1.0.0", "dependencies": deps })
+    }
+
+    fn node(id: &str, deps: Value) -> Value {
+        json!({ "id": id, "deps": deps })
+    }
+
+    fn dep(pkg: &str) -> Value {
+        json!({ "pkg": pkg })
+    }
+
+    /// A clean graph: pii-abi pure, pii-proto pure, pii-tui no pii-graph,
+    /// single versions.
+    fn clean_metadata() -> Value {
+        let packages = json!([
+            pkg(
+                "abi",
+                "pii-abi",
+                json!([
+                    {"name":"serde","kind":null},{"name":"serde_json","kind":null},
+                    {"name":"thiserror","kind":null},{"name":"schemars","kind":null}
+                ])
+            ),
+            pkg(
+                "proto",
+                "pii-proto",
+                json!([
+                    {"name":"serde","kind":null},{"name":"serde_json","kind":null}
+                ])
+            ),
+            pkg(
+                "tui",
+                "pii-tui",
+                json!([
+                    {"name":"pii-proto","kind":null},{"name":"ratatui","kind":null}
+                ])
+            ),
+            pkg(
+                "serde",
+                "serde",
+                json!([{"name":"serde_derive","kind":null}])
+            ),
+            pkg("serde_json", "serde_json", json!([])),
+            pkg("thiserror", "thiserror", json!([])),
+            pkg("schemars", "schemars", json!([])),
+            pkg("ratatui", "ratatui", json!([])),
+            pkg("redb", "redb", json!([])),
         ]);
-        packages
-            .as_array_mut()
-            .unwrap()
-            .extend(extra.as_array().cloned().unwrap_or_default());
-        json!({ "packages": packages, "resolve": { "nodes": resolve_nodes } })
-    }
-
-    fn clean_direct_deps() -> Value {
-        json!([
-            { "name": "serde", "kind": null },
-            { "name": "serde_json", "kind": null },
-            { "name": "thiserror", "kind": null },
-            { "name": "schemars", "kind": null }
-        ])
+        let nodes = json!([
+            node("abi", json!([dep("serde"), dep("schemars")])),
+            node("proto", json!([dep("serde"), dep("serde_json")])),
+            node("tui", json!([dep("proto"), dep("ratatui")])),
+            node("serde", json!([])),
+            node("serde_json", json!([])),
+            node("thiserror", json!([])),
+            node("schemars", json!([])),
+            node("ratatui", json!([])),
+            node("redb", json!([])),
+        ]);
+        metadata(packages, nodes)
     }
 
     #[test]
-    fn deps_check_accepts_clean_abi() {
-        let nodes = json!([
-            { "id": "registry+abi-1.0.0", "deps": [
-                { "pkg": "registry+serde-1.0.0" }
-            ]},
-            { "id": "registry+serde-1.0.0", "deps": [] }
-        ]);
-        let metadata = metadata_with_abi_deps(&clean_direct_deps(), &nodes);
-        assert!(check_abi_purity(&metadata).is_ok());
+    fn deps_check_accepts_clean_graph() {
+        assert!(check_all(&clean_metadata()).is_ok());
     }
 
     #[test]
     fn deps_check_rejects_tokio_in_pii_abi() {
-        let mut deps = clean_direct_deps();
-        deps.as_array_mut()
+        let mut m = clean_metadata();
+        m["packages"][0]["dependencies"]
+            .as_array_mut()
             .unwrap()
-            .push(json!({ "name": "tokio", "kind": null }));
-        let nodes = json!([{ "id": "registry+abi-1.0.0", "deps": [] }]);
-        let metadata = metadata_with_abi_deps(&deps, &nodes);
-        let errs = check_abi_purity(&metadata).unwrap_err();
+            .push(json!({"name":"tokio","kind":null}));
+        let errs = check_all(&m).unwrap_err();
         assert!(errs.iter().any(|e| e.contains("tokio")));
     }
 
     #[test]
-    fn deps_check_rejects_forbidden_transitive_dep() {
-        // pii-abi -> schemars (allowed) -> redb (forbidden), via resolve nodes.
-        let nodes = json!([
-            { "id": "registry+abi-1.0.0", "deps": [
-                { "pkg": "registry+schemars-1.0.0" }
-            ]},
-            { "id": "registry+schemars-1.0.0", "deps": [
-                { "pkg": "registry+redb-2.0.0" }
-            ]},
-            { "id": "registry+redb-2.0.0", "deps": [] }
-        ]);
-        let extra = json!([
-            { "id": "registry+schemars-1.0.0", "name": "schemars", "dependencies": [] },
-            { "id": "registry+redb-2.0.0", "name": "redb", "dependencies": [] }
-        ]);
-        let metadata = metadata_with_extra_packages(&clean_direct_deps(), &nodes, &extra);
-        let errs = check_abi_purity(&metadata).unwrap_err();
-        assert!(errs.iter().any(|e| e.contains("redb")));
+    fn deps_check_rejects_tui_graph_edge() {
+        // pii-tui -> pii-graph (invariant 3, the load-bearing gate).
+        let mut m = clean_metadata();
+        m["packages"][2]["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"pii-graph","kind":null}));
+        m["resolve"]["nodes"][2]["deps"]
+            .as_array_mut()
+            .unwrap()
+            .push(dep("graph"));
+        m["packages"]
+            .as_array_mut()
+            .unwrap()
+            .push(pkg("graph", "pii-graph", json!([])));
+        m["resolve"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(node("graph", json!([])));
+        let errs = check_all(&m).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("pii-tui") && e.contains("pii-graph"))
+        );
     }
 
     #[test]
-    fn deps_check_ignores_dev_dependencies() {
-        let mut deps = clean_direct_deps();
-        deps.as_array_mut()
+    fn deps_check_rejects_proto_core_edge() {
+        // pii-proto -> pii-core (invariant 2).
+        let mut m = clean_metadata();
+        m["packages"][1]["dependencies"]
+            .as_array_mut()
             .unwrap()
-            .push(json!({ "name": "walkdir", "kind": "dev" }));
-        let nodes = json!([{ "id": "registry+abi-1.0.0", "deps": [] }]);
-        let metadata = metadata_with_abi_deps(&deps, &nodes);
-        assert!(check_abi_purity(&metadata).is_ok());
+            .push(json!({"name":"pii-core","kind":null}));
+        m["resolve"]["nodes"][1]["deps"]
+            .as_array_mut()
+            .unwrap()
+            .push(dep("core"));
+        m["packages"]
+            .as_array_mut()
+            .unwrap()
+            .push(pkg("core", "pii-core", json!([])));
+        m["resolve"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(node("core", json!([])));
+        let errs = check_all(&m).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("pii-proto") && e.contains("pii-core"))
+        );
+    }
+
+    #[test]
+    fn deps_check_rejects_duplicate_serde_versions() {
+        // Two serde versions (invariant 4).
+        let mut m = clean_metadata();
+        m["packages"]
+            .as_array_mut()
+            .unwrap()
+            .push(pkg("serde2", "serde", json!([])));
+        let errs = check_all(&m).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("single-version") && e.contains("serde"))
+        );
     }
 }

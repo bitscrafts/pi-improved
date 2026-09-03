@@ -110,6 +110,11 @@ async fn run_daemon(
         }
     };
 
+    // reason: the daemon binds the UDS control socket; NetService (Phase 3)
+    // is not yet wired. The socket dir is chmod 0700 in prepare_socket (F10)
+    // and the socket is chmod 0600 immediately after bind, so the mode
+    // discipline the ban exists to enforce is honoured here.
+    #[allow(clippy::disallowed_methods)]
     let listener = match UnixListener::bind(&sock_path) {
         Ok(l) => l,
         Err(e) => {
@@ -117,7 +122,6 @@ async fn run_daemon(
             return ExitCode::from(2);
         }
     };
-    #[allow(clippy::disallowed_methods)] // reason: PathFd/chmod scope, not a Command site
     let _ = std::fs::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600));
 
     let daemon_uid = self_uid();
@@ -125,27 +129,52 @@ async fn run_daemon(
         let Ok((stream, _addr)) = listener.accept().await else {
             continue;
         };
-        let peer_uid = stream.peer_cred().ok().map(|c| c.uid());
         let engine = std::sync::Arc::clone(&engine);
         tokio::spawn(async move {
-            if let Some(uid) = peer_uid
-                && let Err(e) = pii_server::uds::authorize_peer(daemon_uid, uid)
-            {
-                // F2.8: log the refusal (EC3 greps for this line).
+            // F9 (opus review): peercred must be readable; an unreadable
+            // credential is a refusal, never a fail-open grant.
+            let Ok(cred) = stream.peer_cred() else {
+                let _ = write_101(stream).await;
+                return;
+            };
+            let uid = cred.uid();
+            if let Err(e) = pii_server::uds::authorize_peer(daemon_uid, uid) {
+                // F2.8/F9: log the refusal AND write a code-101 frame before
+                // closing (EC3 greps for this line).
                 #[allow(clippy::print_stderr)]
                 {
                     eprintln!("refused uid {uid}: {}", e.message);
                 }
+                let _ = write_101(stream).await;
                 return;
             }
             pii_server::conn::serve_connection(
                 engine,
                 stream,
-                pii_server::conn::PeerIdentity::Uds { uid: peer_uid },
+                pii_server::conn::PeerIdentity::Uds { uid: Some(uid) },
             )
             .await;
         });
     }
+}
+
+/// Writes a single code-101 `RpcError` frame to a refused peer before the
+/// connection is dropped (F9: the peer must see the refusal, not a bare EOF).
+async fn write_101(stream: tokio::net::UnixStream) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let resp = pii_proto::Response::err(
+        pii_proto::Id::Num(0),
+        pii_proto::RpcError::new(pii_proto::ErrorCode::Unauthorized, "refused"),
+    );
+    let line = pii_proto::write_frame(&pii_proto::Envelope::Response(resp)).unwrap_or_else(|_| {
+        String::from(
+            "{\"jsonrpc\":\"2.0\",\"id\":0,\"error\":{\"code\":101,\"message\":\"refused\"}}",
+        )
+    });
+    let mut s = stream;
+    s.write_all(line.as_bytes()).await?;
+    s.write_all(b"\n").await?;
+    s.flush().await
 }
 
 fn self_uid() -> u32 {

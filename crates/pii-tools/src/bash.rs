@@ -88,7 +88,9 @@ fn require_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, PiiError> {
         .ok_or_else(|| PiiError::Invalid(format!("{key} must be a string")))
 }
 
-/// Caps combined output at 64 KiB with a marker (F3.7 step 5).
+/// Caps combined output at 64 KiB with a marker (F3.7 step 5). The
+/// `stdout`/`stderr` fields are also capped so the cap cannot be bypassed
+/// through them (F16, opus review).
 #[must_use]
 pub fn render(out: &ProcOutput) -> Value {
     let mut combined = out.stdout.clone();
@@ -101,10 +103,18 @@ pub fn render(out: &ProcOutput) -> Value {
     if truncated {
         text.push_str(TRUNCATION_MARKER);
     }
+    let cap = |b: &[u8]| -> String {
+        let mut s = String::from_utf8_lossy(b).to_string();
+        if s.len() > MAX_OUTPUT {
+            s.truncate(MAX_OUTPUT);
+            s.push_str(TRUNCATION_MARKER);
+        }
+        s
+    };
     json!({
         "exit_code": out.exit_code,
-        "stdout": String::from_utf8_lossy(&out.stdout),
-        "stderr": String::from_utf8_lossy(&out.stderr),
+        "stdout": cap(&out.stdout),
+        "stderr": cap(&out.stderr),
         "truncated": truncated,
         "output": text,
     })

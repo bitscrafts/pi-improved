@@ -117,6 +117,13 @@ pub enum Event {
         /// Run id.
         run_id: String,
     },
+    /// A subscriber fell behind and events were dropped (never silent).
+    Lagged {
+        /// Subscription id.
+        sub_id: String,
+        /// Number of events dropped.
+        dropped: u64,
+    },
 }
 
 /// `event.subscribe` params.
@@ -209,6 +216,10 @@ mod tests {
             },
             Event::RunCancelled {
                 run_id: "r1".into(),
+            },
+            Event::Lagged {
+                sub_id: "sub-1".into(),
+                dropped: 3,
             },
         ];
         for ev in events {

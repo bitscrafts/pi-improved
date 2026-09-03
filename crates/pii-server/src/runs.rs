@@ -55,11 +55,13 @@ pub fn spawn_run(
 }
 
 /// Root capabilities for a server-side run: fs read everything, fs write
-/// scoped to the workspace (tools further attenuate per node).
+/// scoped to the workspace (tools further attenuate per node), and the
+/// `bash` tool's `/bin/sh` argv0 granted (F1, opus review).
 fn root_caps(workspace: &std::path::Path) -> pii_core::CapSet {
     let mut caps = pii_core::CapSet::empty();
     caps.kinds = pii_core::CapKind::FS_READ | pii_core::CapKind::FS_WRITE | pii_core::CapKind::PROC;
     caps.fs_read = pii_core::PathScope::new(vec![std::path::PathBuf::from("/")]);
     caps.fs_write = pii_core::PathScope::new(vec![workspace.to_path_buf()]);
+    caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
     caps
 }

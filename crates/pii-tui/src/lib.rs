@@ -152,6 +152,7 @@ fn render_event(ev: &Event) -> String {
             pii_proto::event::WireTerminal::Suspended { .. } => "… suspended".to_owned(),
         },
         Event::RunCancelled { .. } => "run cancelled".to_owned(),
+        Event::Lagged { dropped, .. } => format!("⚠ lagged: {dropped} dropped"),
     }
 }
 

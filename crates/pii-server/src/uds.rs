@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use pii_abi::PiiError;
 use pii_proto::ErrorCode;
 use pii_proto::RpcError;
+use std::os::unix::fs::PermissionsExt;
 
 /// Resolves the runtime dir (F2.8): `$PII_RUNTIME_DIR` →
 /// `$XDG_RUNTIME_DIR/pii/<instance>` → `/run/user/<uid>/pii/<instance>`.
@@ -63,6 +64,10 @@ pub fn authorize_peer(daemon_uid: u32, peer_uid: u32) -> Result<(), RpcError> {
 pub fn prepare_socket(dir: &std::path::Path) -> Result<PathBuf, PiiError> {
     std::fs::create_dir_all(dir)
         .map_err(|e| PiiError::Internal(format!("mkdir {}: {e}", dir.display())))?;
+    // F10 (opus review): the control dir must be 0700 so the socket inside
+    // it is not world-reachable through a permissive parent.
+    #[allow(clippy::disallowed_methods)] // reason: dir mode 0700, not a Command site
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
     let sock = dir.join("control.sock");
     if sock.exists() {
         match std::os::unix::net::UnixStream::connect(&sock) {

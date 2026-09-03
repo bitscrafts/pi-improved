@@ -245,6 +245,7 @@ fn render_event(ev: &Event, json: bool) {
             pii_proto::event::WireTerminal::Failure { error } => println!("✘ {error}"),
             pii_proto::event::WireTerminal::Suspended { .. } => println!("… suspended"),
         },
+        Event::Lagged { dropped, .. } => println!("⚠ lagged: {dropped} dropped"),
         _ => {}
     }
 }

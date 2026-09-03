@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use pii_abi::PiiError;
-use pii_proto::event::{EventFilter, EventSubscribeResult};
+use pii_proto::event::{Event, EventFilter, EventSubscribeResult};
 use pii_proto::method::Method;
 use pii_proto::run::{SeqEvent, TraceResult, WireRunHeader};
 use pii_proto::session::{
@@ -160,7 +160,9 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
 }
 
 /// `event.subscribe` (F2.5): replay `seq > since`, then attach live with
-/// dedup; the live forwarder sends `event.subscribe` notifications.
+/// dedup. The live forwarder filters by the subscription's run and kinds
+/// (F3) and uses a bounded per-subscription queue that emits `Lagged`
+/// instead of dropping silently (F4).
 fn subscribe(
     engine: &Arc<Engine>,
     req: &Request,
@@ -187,6 +189,8 @@ fn subscribe(
         }
     };
     let since = filter.since_seq.unwrap_or(0);
+    let kinds = filter.kinds;
+    let run_id_str = run_id.to_string();
     let mut live = engine.bus.subscribe();
     let mut merged: Vec<SeqEvent> = Vec::new();
     let mut last = reattach(&engine.store, &run_id, since, &mut live, &mut merged);
@@ -197,29 +201,105 @@ fn subscribe(
         })
         .unwrap_or(serde_json::Value::Null),
     );
-    // Replay first (in order), then forward live with dedup.
+
+    // Per-subscription bounded queue (F4): drop-oldest + Lagged, never silent.
+    let (sub_tx, mut sub_rx) = mpsc::channel::<String>(1024);
+    // Replay first (in order), then forward live with dedup + filtering.
     for se in merged {
-        push_event(wtx, &sub_id, &se);
+        let _ = sub_tx.try_send(event_line(&sub_id, &se));
     }
     let wtx2 = wtx.clone();
+    let sub_id2 = sub_id;
     tokio::spawn(async move {
+        let mut dropped: u64 = 0;
         loop {
-            match live.recv().await {
-                Ok(se) => {
-                    if se.seq > last {
-                        last = se.seq;
-                        push_event(&wtx2, &sub_id, &se);
+            tokio::select! {
+                // Drain the bounded queue to the connection writer.
+                out = sub_rx.recv() => {
+                    match out {
+                        Some(l) => { if wtx2.send(l).is_err() { break; } }
+                        None => break,
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                Err(_) => break,
+                // Read the next live bus event.
+                se = live.recv() => {
+                    match se {
+                        Ok(se) => {
+                            // F3: filter by the subscription's run and kinds.
+                            if !event_matches_run(&se.event, &run_id_str) { continue; }
+                            if !event_matches_kinds(&se.event, &kinds) { continue; }
+                            if se.seq <= last { continue; }
+                            last = se.seq;
+                            let frame = event_line(&sub_id2, &se);
+                            if sub_tx.try_send(frame).is_err() {
+                                // Full: drop oldest, count, emit Lagged.
+                                let _ = sub_rx.try_recv();
+                                dropped += 1;
+                                let lag = event_line(&sub_id2, &SeqEvent {
+                                    seq: 0,
+                                    event: Event::Lagged { sub_id: sub_id2.clone(), dropped },
+                                });
+                                let _ = sub_tx.try_send(lag);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            // Never drop silently (F4): report the gap.
+                            dropped += n;
+                            let lag = event_line(&sub_id2, &SeqEvent {
+                                seq: 0,
+                                event: Event::Lagged { sub_id: sub_id2.clone(), dropped },
+                            });
+                            let _ = sub_tx.try_send(lag);
+                        }
+                        Err(_) => break,
+                    }
+                }
             }
         }
     });
     Ok(result)
 }
 
-fn push_event(wtx: &mpsc::UnboundedSender<String>, sub_id: &str, se: &SeqEvent) {
+/// True when the event belongs to `run_id` (all variants except `Lagged`
+/// carry a run id; `Lagged` is subscription-scoped and always forwarded).
+fn event_matches_run(ev: &Event, run_id: &str) -> bool {
+    match ev {
+        Event::RunStarted { run_id: r, .. }
+        | Event::NodeStarted { run_id: r, .. }
+        | Event::NodeFinished { run_id: r, .. }
+        | Event::NodeFailed { run_id: r, .. }
+        | Event::NodeDead { run_id: r, .. }
+        | Event::AssistantDelta { run_id: r, .. }
+        | Event::ToolCall { run_id: r, .. }
+        | Event::ToolResult { run_id: r, .. }
+        | Event::RunFinished { run_id: r, .. }
+        | Event::RunCancelled { run_id: r } => r == run_id,
+        Event::Lagged { .. } => true,
+    }
+}
+
+/// True when the event's kind is in `kinds` (empty `kinds` = all).
+fn event_matches_kinds(ev: &Event, kinds: &[String]) -> bool {
+    if kinds.is_empty() {
+        return true;
+    }
+    let kind = match ev {
+        Event::RunStarted { .. } => "run_started",
+        Event::NodeStarted { .. } => "node_started",
+        Event::NodeFinished { .. } => "node_finished",
+        Event::NodeFailed { .. } => "node_failed",
+        Event::NodeDead { .. } => "node_dead",
+        Event::AssistantDelta { .. } => "assistant_delta",
+        Event::ToolCall { .. } => "tool_call",
+        Event::ToolResult { .. } => "tool_result",
+        Event::RunFinished { .. } => "run_finished",
+        Event::RunCancelled { .. } => "run_cancelled",
+        Event::Lagged { .. } => "lagged",
+    };
+    kinds.iter().any(|k| k == kind)
+}
+
+fn event_line(sub_id: &str, se: &SeqEvent) -> String {
     let push = serde_json::json!({
         "sub_id": sub_id,
         "seq": se.seq,
@@ -230,9 +310,7 @@ fn push_event(wtx: &mpsc::UnboundedSender<String>, sub_id: &str, se: &SeqEvent) 
         method: Method::EventSubscribe,
         params: push,
     });
-    if let Ok(line) = write_frame(&note) {
-        let _ = wtx.send(line);
-    }
+    write_frame(&note).unwrap_or_default()
 }
 
 /// Handles notifications (no response expected).

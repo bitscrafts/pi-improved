@@ -1,8 +1,23 @@
 disallowed-methods = [
     { path = "std::path::Path::canonicalize", reason = "use dunce::canonicalize (Phase 1)" },
     { path = "std::process::Command::spawn", reason = "use Ctx::proc() (Phase 1)" },
+    { path = "std::process::Command::output", reason = "use Ctx::proc() (Phase 1)" },
+    { path = "std::process::Command::status", reason = "use Ctx::proc() (Phase 1)" },
     { path = "std::time::SystemTime::now", reason = "use Ctx::now() - deterministic in replay" },
     { path = "std::env::var", reason = "use pii_core::config (Phase 1)" },
+    { path = "tokio::net::UnixListener::bind", reason = "use NetService::listen_uds() - socket mode 0600 is checked there" },
+    { path = "tokio::net::TcpListener::bind", reason = "use NetService::listen() - grants, accounting, shutdown" },
+    { path = "tokio::net::TcpStream::connect", reason = "use Ctx::net()?.connect() - host allowlist is checked there" },
+    { path = "tokio::process::Command::spawn", reason = "use Ctx::proc()" },
+    { path = "reqwest::Client::new", reason = "use pii_model::http::shared_client() - one TLS root store, one pool" },
+    { path = "dirs::home_dir", reason = "use pii_core::paths::home() - respects PII_HOME" },
+]
+
+disallowed-macros = [
+    { path = "tracing::info", reason = "use pii_obs::record! - closed Action taxonomy" },
+    { path = "tracing::warn", reason = "use pii_obs::record!" },
+    { path = "tracing::error", reason = "use pii_obs::record!" },
+    { path = "println", reason = "use pii_obs::record! or, in pii-cli only, the UI writer" },
 ]
 
 disallowed-types = [

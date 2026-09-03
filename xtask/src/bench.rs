@@ -50,6 +50,9 @@ fn run(budget_ms: Option<u64>) -> Result<(f64, u64), String> {
 }
 
 /// Invokes the binary via `output()` (never `.spawn()`).
+// reason: xtask is dev-tooling that must run the built binary; the Command
+// ban targets the agent runtime (Ctx::proc), not build tooling.
+#[allow(clippy::disallowed_methods)]
 fn spawn_version(binary: &std::path::Path) -> Result<(), String> {
     let out = std::process::Command::new(binary)
         .arg("--version")
