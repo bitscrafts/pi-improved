@@ -93,7 +93,7 @@ impl NodeFactory for TransformFactory {
         "transform"
     }
     fn effects(&self) -> Effects {
-        Effects::Pure
+        Effects::PURE
     }
     fn required_caps(&self) -> CapKind {
         CapKind::empty()
@@ -111,7 +111,7 @@ impl NodeFactory for WaitFactory {
         "wait"
     }
     fn effects(&self) -> Effects {
-        Effects::Pure
+        Effects::PURE
     }
     fn required_caps(&self) -> CapKind {
         CapKind::empty()
@@ -129,7 +129,7 @@ impl NodeFactory for EmitFactory {
         "emit"
     }
     fn effects(&self) -> Effects {
-        Effects::WritesFs
+        Effects::WRITES_FS
     }
     fn required_caps(&self) -> CapKind {
         CapKind::FS_WRITE
@@ -151,7 +151,7 @@ impl NodeFactory for RouteFactory {
         "route"
     }
     fn effects(&self) -> Effects {
-        Effects::Pure
+        Effects::PURE
     }
     fn required_caps(&self) -> CapKind {
         CapKind::empty()
@@ -285,8 +285,8 @@ mod tests {
     #[test]
     fn factories_report_effects_and_caps() {
         let reg = NodeRegistry::builtin();
-        assert_eq!(reg.factory("transform").unwrap().effects(), Effects::Pure);
-        assert_eq!(reg.factory("emit").unwrap().effects(), Effects::WritesFs);
+        assert_eq!(reg.factory("transform").unwrap().effects(), Effects::PURE);
+        assert_eq!(reg.factory("emit").unwrap().effects(), Effects::WRITES_FS);
         assert_eq!(
             reg.factory("emit").unwrap().required_caps(),
             CapKind::FS_WRITE

@@ -9,7 +9,7 @@
 use serde_json::Value;
 
 const ABI_CRATE: &str = "pii-abi";
-const ABI_ALLOWED_DIRECT: &[&str] = &["serde", "serde_json", "thiserror", "schemars"];
+const ABI_ALLOWED_DIRECT: &[&str] = &["serde", "serde_json", "thiserror", "schemars", "bitflags"];
 const FORBIDDEN_TRANSITIVE: &[&str] = &[
     "tokio", "reqwest", "redb", "wasmtime", "axum", "hyper", "rustls",
 ];
