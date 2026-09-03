@@ -123,12 +123,17 @@ pub trait ModelProvider: Send + Sync {
 pub struct ScriptedProvider {
     turns: Vec<ChatResponse>,
     calls: AtomicUsize,
+    /// Optional per-call sleep (ms) before returning, for latency tests.
+    sleep_ms: u64,
 }
 
 /// Wire shape for `scripted:<path>` fixtures: `{"turns": [ChatResponse, ...]}`.
 #[derive(Deserialize)]
 struct ScriptedFixture {
     turns: Vec<ChatResponse>,
+    /// Optional per-call sleep (ms) before returning.
+    #[serde(default)]
+    sleep_ms: u64,
 }
 
 impl ScriptedProvider {
@@ -139,6 +144,7 @@ impl ScriptedProvider {
         Self {
             turns: Vec::new(),
             calls: AtomicUsize::new(0),
+            sleep_ms: 0,
         }
     }
 
@@ -154,6 +160,7 @@ impl ScriptedProvider {
         Ok(Self {
             turns: f.turns,
             calls: AtomicUsize::new(0),
+            sleep_ms: f.sleep_ms,
         })
     }
 }
@@ -165,6 +172,9 @@ impl ModelProvider for ScriptedProvider {
 
     fn chat(&self, _ctx: &Ctx, _req: &ChatRequest) -> Result<ChatResponse, PiiError> {
         let n = self.calls.fetch_add(1, Ordering::Relaxed);
+        if self.sleep_ms > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(self.sleep_ms));
+        }
         self.turns
             .get(n)
             .cloned()

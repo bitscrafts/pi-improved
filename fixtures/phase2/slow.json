@@ -1,0 +1,11 @@
+{
+  "sleep_ms": 2000,
+  "turns": [
+    {
+      "text": "slow turn",
+      "tool_calls": [],
+      "tokens_in": 3,
+      "tokens_out": 5
+    }
+  ]
+}
