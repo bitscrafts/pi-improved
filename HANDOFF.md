@@ -37,6 +37,14 @@ Full adversarial review by opus against the research docs (report `_tmp/phase1-o
 
 **Exit criteria — parts 2/3/4 6/6 met; part 1 4/6** (EC1 asserts pii-abi has no bitflags — superseded by F6; EC6 asserts diamond '4 passed' — now 5 after F8's Test E. Both are stale criteria, not regressions; specs are planner-owned so not edited). `quality-gate ALL PASS`.
 
+## CAVEATS (open items from the opus review — read before Phase 2)
+1. **F7 half-done — node ABI still in `pii-graph`, not `pii-abi`.** `GraphNode`/`NodeFactory` live in `pii-graph` and depend on `pii_core::Ctx`/`CapKind`. Moving them into `pii-abi` is blocked by a circular dependency (`GraphNode::run` takes `&Ctx` from `pii-core`, which depends on `pii-abi`). `CapKind` IS now in `pii-abi` (the load-bearing half). The full trait move needs a Phase-2-scale refactor of `Ctx` (and `Budget`/`CancelToken`/`Observer`) into `pii-abi`. Until then a WASM/worker node must depend on `pii-graph` (drags petgraph/toml/redb).
+2. **Part-1 exit-criteria EC1/EC6 are stale, not regressions.** EC1 asserts `pii-abi` has no `bitflags` (superseded by F6 — bitflags is now a deliberate ABI dep). EC6 asserts the diamond suite is exactly `'4 passed'` (now 5 after F8's Test E). The specs are planner-owned (read-only for the workhorse), so these two criteria were NOT edited — a planner pass should update them.
+3. **`pii-store/src/lib.rs` (383) and `validate.rs` (409) exceed the 380-line warn threshold** (both under the 450 hard limit). `lint-files` passes but warns. Consider splitting when next touched.
+4. **`Ctx::deadline` is inert** (opus F19, not yet fixed): no constructor sets it, so `PiiError::Timeout` (the only retryable variant) is unreachable and the retry loop is dead code. Needs `Ctx::with_deadline` or deriving from `GraphLimits::max_wall_ms`.
+5. **Snapshots written but never read** (opus F12): `resume()` replays the whole journal; `latest_snapshot` has no non-test caller. Correct (full replay is a superset) but O(total events) resume cost + snapshot writes are pure overhead until seeded.
+6. **`max_steps` counts ticks, not nodes** (opus F20): a 500-wide batch counts as one step. Weakened (not absent) guard; wall-clock still bounds the run.
+
 ## KEY LEARNINGS (see agent-memory `implementation/*`, pidag `docs/`)
 - **pidag worker error-swallowing (D1)**: worker `Err`/empty failures collapsed to "execution failed"; fixed in pidag `execute.rs`.
 - **Stale-binary shadow**: `/usr/local/bin/pidag` (pre-D1) + `/usr/local/bin/pi` shadowed patched copies → phantom "No API key". USER DIRECTIVE: built binaries ONLY in `~/.local/bin`.
