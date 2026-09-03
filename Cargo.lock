@@ -13,6 +13,9 @@ name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "blake3"
@@ -224,6 +227,7 @@ dependencies = [
 name = "pii-abi"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "schemars",
  "serde",
  "serde_json",
@@ -234,6 +238,7 @@ dependencies = [
 name = "pii-cli"
 version = "0.1.0"
 dependencies = [
+ "dunce",
  "pii-abi",
  "pii-core",
  "pii-graph",
