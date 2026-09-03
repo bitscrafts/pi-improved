@@ -19,6 +19,7 @@ pii-graph = { path = "../pii-graph" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 pii-server = { path = "../pii-server" }
 pii-tools = { path = "../pii-tools" }
+pii-tui = { path = "../pii-tui" }
 serde_json = { workspace = true }
 dunce = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

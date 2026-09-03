@@ -156,8 +156,8 @@ fn render_event(ev: &Event) -> String {
     }
 }
 
-/// Runs the TUI over any async byte pair (F5.3): hello → session.create →
-/// event.subscribe → session.state → render loop.
+/// Runs the TUI over any async byte pair (F5.3, F11 opus review): hello →
+/// session.create → session.prompt → event.subscribe{run} → render loop.
 ///
 /// # Errors
 /// Returns [`TuiError`] on protocol or transport failure.
@@ -193,12 +193,30 @@ where
     let created: pii_proto::session::SessionCreateResult =
         serde_json::from_value(created).map_err(|e| TuiError::Client(e.to_string()))?;
 
+    // Prompt first so the run exists, then subscribe to it (F11: subscribing
+    // before any prompt returned "session has no runs").
+    let prompt = client
+        .call(
+            Method::SessionPrompt,
+            serde_json::to_value(pii_proto::session::SessionPromptParams {
+                session_id: created.session_id.clone(),
+                content: vec![pii_proto::session::ContentBlock::Text {
+                    text: String::from("hello"),
+                }],
+            })
+            .map_err(|e| TuiError::Client(e.to_string()))?,
+        )
+        .await
+        .map_err(|e| TuiError::Client(e.message))?;
+    let prompt: pii_proto::session::SessionPromptResult =
+        serde_json::from_value(prompt).map_err(|e| TuiError::Client(e.to_string()))?;
+
     client
         .call(
             Method::EventSubscribe,
             serde_json::to_value(EventFilter {
-                run: None,
-                session: Some(created.session_id.clone()),
+                run: Some(prompt.run_id.clone()),
+                session: None,
                 kinds: Vec::new(),
                 since_seq: Some(0),
             })

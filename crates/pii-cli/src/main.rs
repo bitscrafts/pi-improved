@@ -10,6 +10,7 @@ mod cmd_oneshot;
 mod cmd_run;
 mod cmd_sandbox_exec;
 mod cmd_trace;
+mod cmd_tui;
 mod ndjson;
 
 use std::process::ExitCode;
@@ -84,6 +85,9 @@ fn main() -> ExitCode {
     }
     if cmd == "sandbox-exec" {
         return cmd_sandbox_exec::cmd_sandbox_exec(&mut args);
+    }
+    if cmd == "tui" {
+        return cmd_tui::cmd_tui(&mut args);
     }
     if cmd == "graph" {
         return cmd_graph(&mut args);
