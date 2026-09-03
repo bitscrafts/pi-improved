@@ -1,6 +1,49 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES (2026-09-03)**
+**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES; OPUS PHASE-2 REVIEW DONE (2026-09-03)**
+
+## OPUS PHASE-2 REVIEW (report `_tmp/phase2-opus-review.md`, 1118 lines)
+Full adversarial review by opus against `_docs/06-research/` (NOT the specs).
+Verdict: **FAIL — 5 BLOCKERs, 16 MAJORs, 8 MINORs, 4 NITs.** The architecture
+*shape* is right (pii-proto pure, pii-tui tree clean, one transport path,
+journal is the only redb writer, Ctx/ProcCap/Landlock careful) but the
+enforcement layer and last mile fail. The 5 BLOCKERs:
+- **F1**: `proc_argv0` is never granted anywhere → `ProcCap::run` denies
+  unconditionally → the `bash` tool (advertised in every default session and
+  both starter graphs) can never execute → `starter/verify-fix`'s `test` node
+  is dead and Phase-2 exit criterion 1 is unreachable by construction.
+- **F2**: `xtask deps-check` implements only 1 of §12.2's 4 invariants; the
+  `pii-tui → pii-graph` gate does not exist.
+- **F3**: `event.subscribe` ignores its own filter — every subscriber receives
+  every run's events (cross-session leak on a multi-session daemon), and the
+  single seq cursor drops events across runs.
+- **F4**: backpressure inverted — silent drops (`dispatch.rs:214` discards the
+  count), no `Lagged` variant on the wire, unbounded per-connection queue.
+- **F5**: `selfchange.sh` uses `starter/react` not `verify-fix`, a toy two-file
+  repo not Pii's own, a fixture that hard-codes the edits the assertions grep
+  for, and never runs `cargo test`.
+
+Notable MAJORs: F6 (10 of 22 wire methods unimplemented incl. `run.start`),
+F7 (no `pii-proto/schema/` + `xtask proto-gen`), F8 (`xtask ci` runs neither
+fmt/clippy/tests), F9 (UDS peercred fails OPEN when `SO_PEERCRED` unreadable +
+no 101 frame), F10 (socket dir never 0700, 0600 applied after bind = TOCTOU),
+F11 (`pii-tui` unreachable from the binary + `run_tui` always fails with
+"session has no runs"), F12 (3 of 10 Event variants never emitted — no live
+bus), F13 (`pii graph run` is a second execution path bypassing the protocol),
+F14 (`clippy.toml` missing `disallowed-macros` + 6 of 11 method bans), F15
+(`lint-files` counts `#[cfg(test)]` bodies), F16 (64 KiB bash cap bypassed by
+uncapped stdout/stderr fields), F17 (workspace sandbox doesn't grant write to
+store/runtime dir → `pii daemon --sandbox workspace` can't open its DB), F18
+(Landlock applied per-thread; `pii -p --sandbox` applies it inside a running
+multi-threaded runtime), F19 (`RunCancelled` broadcast with `seq: u64::MAX`
+permanently poisons every subscriber's dedup cursor), F20 (`session.state` not
+a full snapshot — assistant turns never recorded, tokens hardcoded 0), F21
+(`peercred`/`reattach` tests are test theatre).
+
+**Recommended order**: F1 (grant proc) unblocks the harness + F5; F2+F8 restore
+the gates; F3/F4/F19 fix the event stream; F9/F10 close the local-auth hole;
+F21 replaces the two certifying-nothing tests; F6/F7/F11/F12 are the remaining
+contract surface.
 
 ## PRE-REVIEW BUG FIXES (commit `851a6f5`) — fixed before the opus review
 Five bugs found while preparing the Phase-2 opus review, verified against
