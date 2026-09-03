@@ -72,6 +72,18 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
         return ExitCode::from(5);
     };
 
+    // F18 (opus review): apply the sandbox BEFORE building the multi-threaded
+    // runtime so every worker thread inherits the Landlock domain. Applying
+    // it inside block_on only restricts the calling thread, leaving the
+    // spawn_blocking threads that actually run tools unrestricted.
+    if !matches!(a.sandbox, SandboxProfileName::Off)
+        && let Err(e) =
+            pii_tools::sandbox::apply_workspace(&a.workspace, &[], std::path::Path::new("/etc"))
+    {
+        eprintln!("{e}");
+        return ExitCode::from(4);
+    }
+
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -91,14 +103,6 @@ async fn run_oneshot(a: OneshotArgs, model: String) -> ExitCode {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         build: String::from("debug"),
     };
-
-    if !matches!(a.sandbox, SandboxProfileName::Off)
-        && let Err(e) =
-            pii_tools::sandbox::apply_workspace(&a.workspace, &[], std::path::Path::new("/etc"))
-    {
-        eprintln!("{e}");
-        return ExitCode::from(4);
-    }
 
     // F5.6: a live daemon socket wins; the daemon is never auto-started.
     let socket = match a.connect.as_deref() {

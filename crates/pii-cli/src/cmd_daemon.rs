@@ -47,12 +47,27 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             }
         }
     }
+    // Resolve the runtime dir and store path BEFORE applying the sandbox so
+    // the store/runtime dirs can be granted read-write (F17, opus review):
+    // a sandboxed daemon must be able to open its own database.
+    let Some(runtime_dir) = pii_server::uds::runtime_dir("default") else {
+        eprintln!("error: no usable runtime dir (set PII_RUNTIME_DIR)");
+        return ExitCode::from(2);
+    };
+    let store_path = store.unwrap_or_else(|| runtime_dir.join("store.redb"));
+    let store_parent = store_path
+        .parent()
+        .map_or_else(|| PathBuf::from("."), PathBuf::from);
+
     // Sandbox enforcement is verified BEFORE the model lookup: a requested
     // profile that cannot be positively enforced must exit 4 regardless of
     // whether a model is configured (F3.10, part-2 EC6).
     if !matches!(sandbox, SandboxProfileName::Off)
-        && let Err(e) =
-            pii_tools::sandbox::apply_workspace(&workspace, &[], std::path::Path::new("/etc"))
+        && let Err(e) = pii_tools::sandbox::apply_workspace(
+            &workspace,
+            &[store_parent, runtime_dir.clone()],
+            std::path::Path::new("/etc"),
+        )
     {
         eprintln!("{e}");
         return ExitCode::from(4);
@@ -74,19 +89,22 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    rt.block_on(run_daemon(workspace, sandbox, store, model))
+    rt.block_on(run_daemon(
+        workspace,
+        sandbox,
+        store_path,
+        runtime_dir,
+        model,
+    ))
 }
 
 async fn run_daemon(
     workspace: PathBuf,
     sandbox: SandboxProfileName,
-    store: Option<PathBuf>,
+    store_path: PathBuf,
+    runtime_dir: PathBuf,
     model: String,
 ) -> ExitCode {
-    let Some(runtime_dir) = pii_server::uds::runtime_dir("default") else {
-        eprintln!("error: no usable runtime dir (set PII_RUNTIME_DIR)");
-        return ExitCode::from(2);
-    };
     let sock_path = match pii_server::uds::prepare_socket(&runtime_dir) {
         Ok(p) => p,
         Err(e) => {
@@ -96,7 +114,7 @@ async fn run_daemon(
     };
 
     let cfg = EngineConfig {
-        store_path: store.unwrap_or_else(|| runtime_dir.join("store.redb")),
+        store_path,
         workspace,
         model,
         sandbox,

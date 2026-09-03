@@ -39,10 +39,13 @@ impl Bus {
         self.tx.clone()
     }
 
-    /// Broadcasts a run cancellation (not journalled by the engine).
-    pub fn broadcast_cancelled(&self, run_id: &str) {
+    /// Broadcasts a run cancellation (not journalled by the engine). Uses the
+    /// run's current journal seq so the subscriber's dedup cursor is not
+    /// poisoned (F19, opus review): a `u64::MAX` seq would permanently silence
+    /// every open subscription.
+    pub fn broadcast_cancelled(&self, run_id: &str, seq: u64) {
         let _ = self.tx.send(SeqEvent {
-            seq: u64::MAX,
+            seq,
             event: Event::RunCancelled {
                 run_id: run_id.to_owned(),
             },

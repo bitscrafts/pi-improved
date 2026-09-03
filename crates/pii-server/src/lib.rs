@@ -228,7 +228,15 @@ impl Engine {
         if let Some(h) = self.runs.lock().get(run_id) {
             h.cancel.cancel();
         }
-        self.bus.broadcast_cancelled(run_id);
+        // F19: use the run's current journal seq so the cancellation event
+        // does not poison the subscriber dedup cursor.
+        let seq = self
+            .store
+            .get_run(&RunId::from(run_id))
+            .ok()
+            .flatten()
+            .map_or(0, |h| h.seq);
+        self.bus.broadcast_cancelled(run_id, seq);
         let mut map = self.sessions.lock();
         if let Some(s) = map
             .values_mut()
