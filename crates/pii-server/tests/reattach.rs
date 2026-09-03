@@ -37,6 +37,7 @@ async fn run_one_prompt(engine: &Arc<Engine>) -> Vec<SeqEvent> {
             &[pii_proto::session::ContentBlock::Text {
                 text: String::from("hello"),
             }],
+            None,
         )
         .expect("prompt");
     // Wait for the run to finish by tracing the journal.

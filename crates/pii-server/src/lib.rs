@@ -156,6 +156,7 @@ impl Engine {
         self: &Arc<Self>,
         session_id: &str,
         content: &[ContentBlock],
+        extra_input: Option<serde_json::Value>,
     ) -> Result<RunId, PiiError> {
         let prompt_text = content
             .iter()
@@ -195,6 +196,7 @@ impl Engine {
             run_id.clone(),
             prompt_text,
             session_id.to_owned(),
+            extra_input,
         )?;
         Ok(run_id)
     }
@@ -222,6 +224,7 @@ impl Engine {
             run_id.clone(),
             prompt,
             String::new(),
+            None,
         )?;
         Ok(run_id)
     }

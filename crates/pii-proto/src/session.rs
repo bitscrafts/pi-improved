@@ -53,6 +53,10 @@ pub struct SessionPromptParams {
     pub session_id: String,
     /// Prompt content.
     pub content: Vec<ContentBlock>,
+    /// Optional extra graph input (F5): merged into the run input so
+    /// verify-fix graphs receive `test_command`/`workspace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
 }
 
 /// `session.prompt` result — returned before the run finishes (< 50 ms).

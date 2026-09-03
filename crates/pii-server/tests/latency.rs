@@ -82,6 +82,7 @@ async fn prompt_returns_before_run_finishes() {
                 content: vec![ContentBlock::Text {
                     text: "hello".into(),
                 }],
+                input: None,
             })
             .expect("params"),
         )

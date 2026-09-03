@@ -20,6 +20,7 @@ pub fn spawn_run(
     run_id: RunId,
     prompt: String,
     session_id: String,
+    extra_input: Option<serde_json::Value>,
 ) -> Result<(), PiiError> {
     let cancel = pii_core::CancelToken::new();
     engine.register_run(&run_id, cancel);
@@ -37,7 +38,18 @@ pub fn spawn_run(
         },
     );
     tokio::task::spawn_blocking(move || {
-        let input = serde_json::json!({ "prompt": prompt, "session": session_id });
+        // F5: merge any extra graph input (test_command/workspace) into the
+        // run input so verify-fix graphs receive their params.
+        let mut input = serde_json::json!({ "prompt": prompt, "session": session_id });
+        if let Some(extra) = extra_input
+            && let Some(obj) = extra.as_object()
+        {
+            for (k, v) in obj {
+                input
+                    .as_object_mut()
+                    .map(|m| m.insert(k.clone(), v.clone()));
+            }
+        }
         // The Phase-1 `run` journals every event (bridge → bus) and writes
         // the terminal to the journal; nothing else writes redb.
         let terminal =

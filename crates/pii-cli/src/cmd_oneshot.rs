@@ -24,6 +24,9 @@ struct OneshotArgs {
     workspace: PathBuf,
     sandbox: SandboxProfileName,
     connect: Option<String>,
+    /// Extra graph input (F5, opus review): `--input '{"test_command":..}'`
+    /// is merged into the run input so verify-fix graphs get their params.
+    input: serde_json::Value,
 }
 
 /// `pii -p "<prompt>" [--json] [--model M] [--graph G] [--workspace D]
@@ -41,6 +44,7 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
         workspace: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         sandbox: SandboxProfileName::Off,
         connect: None,
+        input: serde_json::Value::Null,
     };
     while let Some(flag) = args.next() {
         let flag = flag.to_str().unwrap_or_default().to_owned();
@@ -63,6 +67,19 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
                 }
             }
             "--connect" => a.connect = next_owned(args),
+            "--input" => {
+                let Some(v) = next_owned(args) else {
+                    eprintln!("error: --input needs a JSON value");
+                    return ExitCode::from(2);
+                };
+                match serde_json::from_str(&v) {
+                    Ok(val) => a.input = val,
+                    Err(e) => {
+                        eprintln!("error: --input is not valid JSON: {e}");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
             other => {
                 eprintln!("error: unknown flag '{other}'");
                 return ExitCode::from(2);
@@ -199,6 +216,11 @@ where
         content: vec![ContentBlock::Text {
             text: a.prompt.clone(),
         }],
+        input: if a.input.is_null() {
+            None
+        } else {
+            Some(a.input.clone())
+        },
     })
     .map_err(|e| e.to_string())?;
     let started = client

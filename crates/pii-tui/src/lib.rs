@@ -203,6 +203,7 @@ where
                 content: vec![pii_proto::session::ContentBlock::Text {
                     text: String::from("hello"),
                 }],
+                input: None,
             })
             .map_err(|e| TuiError::Client(e.to_string()))?,
         )

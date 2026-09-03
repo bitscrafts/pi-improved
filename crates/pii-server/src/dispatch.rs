@@ -67,7 +67,7 @@ pub fn dispatch(
         }
         Method::SessionPrompt => {
             match serde_json::from_value::<SessionPromptParams>(req.params.clone()) {
-                Ok(p) => match engine.prompt(&p.session_id, &p.content) {
+                Ok(p) => match engine.prompt(&p.session_id, &p.content, p.input) {
                     Ok(run_id) => value_response(
                         req,
                         serde_json::to_value(SessionPromptResult {
