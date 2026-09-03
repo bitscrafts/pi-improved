@@ -111,7 +111,11 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
     for n in &spec.nodes {
         let in_data = spec.inbound(&n.id, EdgeKind::Data).len();
         match &n.join {
-            JoinPolicy::Any { .. } | JoinPolicy::AllSettled if in_data < 2 => {
+            // `Any` and `Quorum` require >= 2 inbound Data edges (pass-3 §4.6
+            // V9: a one-armed race is a typo). `AllSettled` is NOT over-
+            // enforced: a single-arm AllSettled is a legitimate "proceed
+            // whether or not this branch died" idiom.
+            JoinPolicy::Any { .. } if in_data < 2 => {
                 errors.push(format!(
                     "V9: node '{}' uses a multi-arm join with {in_data} inbound data edges",
                     n.id
@@ -120,6 +124,11 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
             JoinPolicy::Quorum { k, .. } => {
                 if *k < 1 {
                     errors.push(format!("V9: node '{}' quorum k must be >= 1", n.id));
+                } else if in_data < 2 {
+                    errors.push(format!(
+                        "V9: node '{}' uses a multi-arm join with {in_data} inbound data edges",
+                        n.id
+                    ));
                 } else if in_data < *k as usize {
                     errors.push(format!(
                         "V9: node '{}' quorum k={} exceeds its {} inbound data edges",
@@ -153,6 +162,32 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
     for n in &spec.nodes {
         if !reachable.contains(n.id.as_str()) {
             warnings.push(format!("V5: node '{}' is unreachable from entry", n.id));
+        }
+    }
+
+    // V5 second clause (pass-1 §3.2 rule 5): a declared port with no outgoing
+    // edge is a warning — it points at a missing edge before the run reaches
+    // "no progress: node ... never became ready".
+    for n in &spec.nodes {
+        let Ok(factory) = reg.factory(&n.kind) else {
+            continue; // unknown kind is already a V0 error
+        };
+        let Ok(ports) = factory.ports(&n.cfg) else {
+            continue; // malformed cfg is surfaced elsewhere
+        };
+        let used: BTreeSet<&str> = spec
+            .outbound(&n.id)
+            .iter()
+            .filter_map(|&ei| spec.edges.get(ei))
+            .map(|e| e.port.as_str())
+            .collect();
+        for p in &ports {
+            if !used.contains(p.as_str()) {
+                warnings.push(format!(
+                    "V5: node '{}' declares port '{}' with no outgoing edge",
+                    n.id, p
+                ));
+            }
         }
     }
 
