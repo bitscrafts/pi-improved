@@ -291,3 +291,44 @@ fn diamond_race_cancels_loser() {
         out.wall_ms
     );
 }
+
+/// Test E (opus review F8): a multi-node losing arm is cancelled transitively.
+/// `fanout -> {slowA -> slowB, fast} -> use(any:cancel)`. When `fast` wins,
+/// BOTH `slowA` and `slowB` must be cancelled (not just `slowB`, the direct
+/// feeder of `use`), so the run stops paying for the whole losing arm.
+#[test]
+fn diamond_race_cancels_multi_node_arm() {
+    let out = run_example("race-multi-arm.toml", serde_json::json!({}));
+    assert!(
+        matches!(out.terminal, Terminal::Success { .. }),
+        "want Success, got {:?}",
+        out.terminal
+    );
+    let use_fin = finished(&out.journal, "use");
+    assert_eq!(use_fin.len(), 1, "use finished exactly once");
+    // slowA was running when fast won -> it is cancelled (not failed).
+    assert!(
+        has_cancelled(&out.journal, "slowA"),
+        "slowA must have a NodeCancelled event"
+    );
+    assert!(
+        !has_failed(&out.journal, "slowA"),
+        "slowA must NOT be failed"
+    );
+    // slowB never started (it was waiting for slowA, which was cancelled), so
+    // it becomes DEAD via dead propagation, not cancelled.
+    assert!(
+        has_dead(&out.journal, "slowB"),
+        "slowB must have a NodeDead event (its feeder slowA was cancelled)"
+    );
+    assert!(
+        !has_failed(&out.journal, "slowB"),
+        "slowB must NOT be failed"
+    );
+    // The run must end well before the 5000 ms loser timers expire.
+    assert!(
+        out.wall_ms < 2000,
+        "wall {}ms must be < 2000ms although slowA/slowB timer_ms == 5000",
+        out.wall_ms
+    );
+}

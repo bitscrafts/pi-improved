@@ -1,0 +1,64 @@
+name = "race-multi-arm"
+entry = "fanout"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "fanout"
+kind = "transform"
+expr = "$.input"
+
+# Losing arm is TWO nodes: slowA -> slowB. When fast wins, both slowA and
+# slowB must be cancelled (transitive cancel_losers, opus review F8).
+[[node]]
+id = "slowA"
+kind = "wait"
+timer_ms = 5000
+
+[[node]]
+id = "slowB"
+kind = "wait"
+timer_ms = 5000
+
+[[node]]
+id = "fast"
+kind = "wait"
+timer_ms = 50
+
+[[node]]
+id = "use"
+kind = "transform"
+join = "any:cancel"
+expr = "$.payload"
+
+[[edge]]
+from = "fanout"
+port = "ok"
+to = "slowA"
+kind = "data"
+
+[[edge]]
+from = "fanout"
+port = "ok"
+to = "fast"
+kind = "data"
+
+[[edge]]
+from = "slowA"
+port = "fired"
+to = "slowB"
+kind = "data"
+
+[[edge]]
+from = "slowB"
+port = "fired"
+to = "use"
+kind = "data"
+
+[[edge]]
+from = "fast"
+port = "fired"
+to = "use"
+kind = "data"

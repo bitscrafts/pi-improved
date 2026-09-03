@@ -318,6 +318,11 @@ pub fn apply(
 
 /// Cancels the still-pending feeders of every ready `Any:cancel` / `Quorum:
 /// cancel` joiner. Called AFTER every single applied result (spec F4.9).
+///
+/// Cancellation is transitive within the losing arm (opus review F8): when a
+/// feeder is still pending, its own data-ancestors are cancelled too, so a
+/// multi-node losing arm (`fanout -> {slowA -> slowB, fast} -> use`) stops
+/// paying for the whole arm, not just the node directly feeding the joiner.
 pub fn cancel_losers(env: &Env<'_>, st: &RunState) {
     for j in &env.spec.nodes {
         let wants_cancel = matches!(
@@ -341,9 +346,27 @@ pub fn cancel_losers(env: &Env<'_>, st: &RunState) {
                 continue;
             };
             let pending = st.edges.get(ei).is_none_or(|s| *s == EdgeState::Pending);
-            if pending && let Some(tok) = env.tokens.get(&edge.from) {
-                tok.cancel();
+            if pending {
+                cancel_arm(env, st, &edge.from);
             }
+        }
+    }
+}
+
+/// Cancels `node`'s token and, transitively, every data-ancestor of `node`
+/// that is still pending (part of the same losing arm). Stops at nodes that
+/// have already fired or are dead/executed.
+fn cancel_arm(env: &Env<'_>, st: &RunState, node: &NodeId) {
+    if let Some(tok) = env.tokens.get(node) {
+        tok.cancel();
+    }
+    for &ei in &env.spec.inbound(node, EdgeKind::Data) {
+        let Some(edge) = env.spec.edges.get(ei) else {
+            continue;
+        };
+        let pending = st.edges.get(ei).is_none_or(|s| *s == EdgeState::Pending);
+        if pending {
+            cancel_arm(env, st, &edge.from);
         }
     }
 }
