@@ -20,6 +20,9 @@ pub struct AgentNode {
     provider: Arc<dyn ModelProvider>,
     toolset: pii_tools::ToolSet,
     workspace: std::path::PathBuf,
+    /// Live-event sender (F12, opus review): emits `ToolCall`/`ToolResult`/
+    /// `AssistantDelta` to the bus without touching the journal.
+    live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
 }
 
 /// Factory registered into the engine's registry.
@@ -28,6 +31,8 @@ pub struct AgentFactory {
     pub provider: Arc<dyn ModelProvider>,
     /// Workspace bound to bash mediation.
     pub workspace: std::path::PathBuf,
+    /// Live-event sender (F12).
+    pub live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
 }
 
 impl pii_graph::node::NodeFactory for AgentFactory {
@@ -87,6 +92,7 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             provider: self.provider.clone(),
             toolset,
             workspace: self.workspace.clone(),
+            live: self.live.clone(),
         }))
     }
 }
@@ -146,7 +152,16 @@ impl GraphNode for AgentNode {
                 tool_call_id: None,
                 tool_calls: resp.tool_calls.clone(),
             });
-            self.run_tool_calls(ctx, &resp.tool_calls, &mut files_changed, &mut messages);
+            let run_id = ctx.trace().run.to_string();
+            let node = ctx.trace().span.to_string();
+            self.run_tool_calls(
+                ctx,
+                &run_id,
+                &node,
+                &resp.tool_calls,
+                &mut files_changed,
+                &mut messages,
+            );
         }
         Ok(Outcome::Next {
             port: PortName::from("budget"),
@@ -156,16 +171,32 @@ impl GraphNode for AgentNode {
 }
 
 impl AgentNode {
-    /// Executes each tool call, appends the tool-result messages, and records
-    /// any files the agent actually changed (F2.10 `files_changed`).
+    /// Emits a live, bus-only event (F12, opus review): never journalled.
+    fn emit_live(&self, event: pii_proto::event::Event) {
+        if let Some(tx) = &self.live {
+            let _ = tx.send(pii_proto::run::SeqEvent { seq: 0, event });
+        }
+    }
+
+    /// Executes each tool call, appends the tool-result messages, records
+    /// any files the agent actually changed (F2.10 `files_changed`), and
+    /// emits live ToolCall/ToolResult events (F12).
     fn run_tool_calls(
         &self,
         ctx: &Ctx,
+        run_id: &str,
+        node: &str,
         calls: &[pii_model::ToolCall],
         files_changed: &mut Vec<String>,
         messages: &mut Vec<ChatMessage>,
     ) {
         for call in calls {
+            self.emit_live(pii_proto::event::Event::ToolCall {
+                run_id: run_id.to_owned(),
+                node: node.to_owned(),
+                tool: call.name.clone(),
+                args: call.arguments.clone(),
+            });
             let result = self.toolset.get(&call.name).map_or_else(
                 || Err(format!("unknown tool '{}'", call.name)),
                 |tool| tool.call(ctx, &call.arguments).map_err(|e| e.to_string()),
@@ -174,6 +205,13 @@ impl AgentNode {
                 Ok(v) => (true, v.to_string()),
                 Err(e) => (false, e),
             };
+            self.emit_live(pii_proto::event::Event::ToolResult {
+                run_id: run_id.to_owned(),
+                node: node.to_owned(),
+                tool: call.name.clone(),
+                ok,
+                summary: content.clone(),
+            });
             // Record files the agent actually changed (F2.10 files_changed).
             if ok
                 && matches!(call.name.as_str(), "edit" | "multi_edit" | "fs_write")

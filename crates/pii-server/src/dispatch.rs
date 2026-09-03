@@ -302,6 +302,9 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
 /// dedup. The live forwarder filters by the subscription's run and kinds
 /// (F3) and uses a bounded per-subscription queue that emits `Lagged`
 /// instead of dropping silently (F4).
+// reason: the forwarder is a single select! loop; splitting it would obscure
+// the replay/live/dedup/lag handling.
+#[allow(clippy::too_many_lines)]
 fn subscribe(
     engine: &Arc<Engine>,
     req: &Request,
@@ -367,8 +370,13 @@ fn subscribe(
                             // F3: filter by the subscription's run and kinds.
                             if !event_matches_run(&se.event, &run_id_str) { continue; }
                             if !event_matches_kinds(&se.event, &kinds) { continue; }
-                            if se.seq <= last { continue; }
-                            last = se.seq;
+                            // Live-only events (ToolCall/ToolResult/AssistantDelta)
+                            // carry seq 0 and must always be forwarded (F12);
+                            // journalled events are deduped by seq.
+                            if !is_live_only(&se.event) {
+                                if se.seq <= last { continue; }
+                                last = se.seq;
+                            }
                             let frame = event_line(&sub_id2, &se);
                             if sub_tx.try_send(frame).is_err() {
                                 // Full: drop oldest, count, emit Lagged.
@@ -397,6 +405,15 @@ fn subscribe(
         }
     });
     Ok(result)
+}
+
+/// True when the event is a live-only, bus-only event (F12): never journalled,
+/// so it carries no meaningful seq and must always be forwarded.
+fn is_live_only(ev: &Event) -> bool {
+    matches!(
+        ev,
+        Event::AssistantDelta { .. } | Event::ToolCall { .. } | Event::ToolResult { .. }
+    )
 }
 
 /// True when the event belongs to `run_id` (all variants except `Lagged`

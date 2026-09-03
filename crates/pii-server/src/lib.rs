@@ -101,7 +101,8 @@ impl Engine {
     pub fn new(cfg: EngineConfig) -> Result<Arc<Self>, PiiError> {
         let store = Arc::new(pii_store::Store::open(&cfg.store_path)?);
         let provider = pii_model::provider_from_spec(&cfg.model)?;
-        let reg = registry(&cfg, provider.clone());
+        let bus = Bus::new();
+        let reg = registry(&cfg, provider.clone(), bus.subscribe_tx());
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
             cfg,
@@ -109,7 +110,7 @@ impl Engine {
             reg,
             provider,
             tools,
-            bus: Bus::new(),
+            bus,
             started_at: Instant::now(),
             sessions: parking_lot::Mutex::new(BTreeMap::new()),
             runs: parking_lot::Mutex::new(BTreeMap::new()),
@@ -341,11 +342,16 @@ impl Engine {
 
 /// Builds the registry with the built-ins plus `agent` and `tool` (F2.2).
 #[must_use]
-pub fn registry(cfg: &EngineConfig, provider: Arc<dyn ModelProvider>) -> NodeRegistry {
+pub fn registry(
+    cfg: &EngineConfig,
+    provider: Arc<dyn ModelProvider>,
+    live: tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>,
+) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
         provider,
         workspace: cfg.workspace.clone(),
+        live: Some(live),
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(cfg.workspace.clone()),
@@ -362,6 +368,7 @@ pub fn lint_registry(workspace: &std::path::Path) -> NodeRegistry {
     reg.register(Arc::new(agent::AgentFactory {
         provider: Arc::new(pii_model::ScriptedProvider::empty()),
         workspace: workspace.to_path_buf(),
+        live: None,
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),
