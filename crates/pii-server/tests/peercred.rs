@@ -27,6 +27,11 @@ fn peercred_rejects_foreign_uid() {
     let err = authorize_peer(0, 65534).expect_err("foreign uid must be refused");
     assert_eq!(err.code, i32::from(ErrorCode::Unauthorized));
     assert!(err.message.contains("65534"), "message should name the uid");
+    // Print the exact line the part-2 EC3 greps for (--nocapture).
+    #[allow(clippy::print_stderr)] // reason: EC3 greps this line from --nocapture
+    {
+        eprintln!("refused uid 65534: {}", err.message);
+    }
     // Same-uid is allowed.
     assert!(authorize_peer(0, 0).is_ok());
 }
