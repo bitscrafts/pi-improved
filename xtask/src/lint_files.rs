@@ -12,16 +12,38 @@ const MAX_EFFECTIVE_LINES: usize = 450;
 const WARN_EFFECTIVE_LINES: usize = 380;
 const ROOTS: &[&str] = &["crates", "xtask"];
 
-/// Counts lines that are non-empty after trimming and do not start
-/// with `//`.
+/// Counts lines that are non-empty after trimming and do not start with
+/// `//`, **excluding `#[cfg(test)]` module bodies** (F15, opus review: tests
+/// do not count against the budget — otherwise the gate punishes testing).
 #[must_use]
 pub(super) fn count_effective_lines(src: &str) -> usize {
-    src.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.is_empty() && !trimmed.starts_with("//")
-        })
-        .count()
+    let mut count = 0usize;
+    let mut in_cfg_test = false;
+    let mut cfg_test_depth: i32 = 0;
+    for line in src.lines() {
+        let trimmed = line.trim();
+        // Detect a `#[cfg(test)]` attribute line.
+        if trimmed.starts_with("#[cfg(test)]") {
+            in_cfg_test = true;
+            continue;
+        }
+        // Track brace depth to know when the cfg(test) module body ends.
+        let opens = trimmed.matches('{').count() as i32;
+        let closes = trimmed.matches('}').count() as i32;
+        if in_cfg_test {
+            cfg_test_depth += opens - closes;
+            if cfg_test_depth <= 0 {
+                in_cfg_test = false;
+                cfg_test_depth = 0;
+            }
+            continue; // every line inside a cfg(test) body is excluded
+        }
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
+        count += 1;
+    }
+    count
 }
 
 /// Pure check over pre-counted files; fails on any file over the gate.
@@ -71,7 +93,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if path.is_dir() {
-            if name == "target" {
+            if name == "target" || name == "tests" {
                 continue;
             }
             collect_rs_files(&path, out);
@@ -119,5 +141,15 @@ mod tests {
             errs.iter()
                 .any(|e| e.contains("big.rs") && e.contains("451"))
         );
+    }
+
+    #[test]
+    fn lint_files_excludes_cfg_test_bodies() {
+        // 10 code lines + a cfg(test) module with 200 lines of tests.
+        let mut src = code_lines(10);
+        src.push_str("\n#[cfg(test)]\nmod tests {\n");
+        src.push_str(&code_lines(200));
+        src.push_str("\n}\n");
+        assert_eq!(count_effective_lines(&src), 10);
     }
 }

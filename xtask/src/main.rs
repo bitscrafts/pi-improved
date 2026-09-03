@@ -25,6 +25,20 @@ fn report(result: Result<(), Vec<String>>) -> ExitCode {
     }
 }
 
+/// Runs a subcommand and reports its exit status (F8: `xtask ci` shells out
+/// to fmt/clippy/test). Dev-tooling, so the Command ban does not apply.
+#[allow(clippy::disallowed_methods)]
+fn run_cmd(prog: &str, args: &[&str]) -> ExitCode {
+    match std::process::Command::new(prog).args(args).status() {
+        Ok(status) if status.success() => ExitCode::SUCCESS,
+        Ok(_) => ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("error: failed to run {prog}: {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let cmd = std::env::args().nth(1);
     let rest: Vec<String> = std::env::args().skip(2).collect();
@@ -42,7 +56,29 @@ fn main() -> ExitCode {
             let a = report(deps::run());
             let b = report(lint_files::run());
             let c = report(bench::run_cli(&rest).map_err(|e| vec![e]));
-            if a == ExitCode::SUCCESS && b == ExitCode::SUCCESS && c == ExitCode::SUCCESS {
+            // F8 (opus review): `cargo xtask ci` must run the full gate set —
+            // fmt, clippy, tests — not just deps/lint-files/bench. This is
+            // the local runner that §1.6 calls "the real gate".
+            let d = run_cmd("cargo", &["fmt", "--all", "--check"]);
+            let e = run_cmd(
+                "cargo",
+                &[
+                    "clippy",
+                    "--workspace",
+                    "--all-targets",
+                    "--",
+                    "-D",
+                    "warnings",
+                ],
+            );
+            let f = run_cmd("cargo", &["test", "--workspace"]);
+            if a == ExitCode::SUCCESS
+                && b == ExitCode::SUCCESS
+                && c == ExitCode::SUCCESS
+                && d == ExitCode::SUCCESS
+                && e == ExitCode::SUCCESS
+                && f == ExitCode::SUCCESS
+            {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE
