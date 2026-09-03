@@ -14,7 +14,8 @@ use std::path::Path;
 
 use pii_abi::PiiError;
 
-use crate::cap::{CapKind, CapSet};
+use crate::CapKind;
+use crate::cap::CapSet;
 use crate::ctx::Ctx;
 use crate::observe::ObsEvent;
 
@@ -163,8 +164,9 @@ mod tests {
 
     use pii_abi::PiiError;
 
+    use crate::CapKind;
     use crate::budget::Budget;
-    use crate::cap::{CapKind, CapSet, PathScope};
+    use crate::cap::{CapSet, PathScope};
     use crate::ctx::Ctx;
 
     fn tmp_root() -> PathBuf {

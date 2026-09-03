@@ -1,57 +1,14 @@
-//! Capability bits and canonicalised path/string scopes.
+//! Capability scopes and the complete capability set.
 //!
 //! Every capability is a monotone lattice: the only operation is
 //! `intersect`, which never widens. There is intentionally no `union` here.
+//!
+//! The coarse [`CapKind`] bits live in `pii-abi` (the stable ABI surface);
+//! this crate re-exports them and adds the path/string scopes.
 
 use std::path::{Path, PathBuf};
 
-use bitflags::bitflags;
-use pii_abi::PiiError;
-
-bitflags! {
-    /// Coarse capability bits. Values must remain stable forever.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct CapKind: u32 {
-        /// Read files within an allow path scope.
-        const FS_READ = 1;
-        /// Write files within an allow path scope.
-        const FS_WRITE = 2;
-        /// Reach the network.
-        const NET = 4;
-        /// Spawn/talk to processes.
-        const PROC = 8;
-        /// Touch hardware.
-        const HW = 16;
-        /// Access secrets.
-        const SECRETS = 32;
-        /// Write into the agent's memory.
-        const MEMORY_WRITE = 64;
-        /// Spawn subprocesses.
-        const SPAWN = 128;
-    }
-}
-
-impl CapKind {
-    /// Parses a `snake_case` capability name.
-    ///
-    /// # Errors
-    /// Returns [`PiiError::Invalid`] for an unknown name.
-    pub fn parse_kind(s: &str) -> Result<Self, PiiError> {
-        match s {
-            "fs_read" => Ok(Self::FS_READ),
-            "fs_write" => Ok(Self::FS_WRITE),
-            "net" => Ok(Self::NET),
-            "proc" => Ok(Self::PROC),
-            "hw" => Ok(Self::HW),
-            "secrets" => Ok(Self::SECRETS),
-            "memory_write" => Ok(Self::MEMORY_WRITE),
-            "spawn" => Ok(Self::SPAWN),
-            other => Err(PiiError::Invalid(format!(
-                "unknown capability kind '{other}'"
-            ))),
-        }
-    }
-}
+use pii_abi::CapKind;
 
 /// A canonicalised allow/deny set of path prefixes.
 ///

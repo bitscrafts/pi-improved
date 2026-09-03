@@ -89,7 +89,7 @@ impl Ctx {
     /// `FS_WRITE`.
     pub fn fs(&self) -> Result<FsCap<'_>, PiiError> {
         let caps = &self.inner.caps.kinds;
-        if caps.intersects(crate::cap::CapKind::FS_READ | crate::cap::CapKind::FS_WRITE) {
+        if caps.intersects(crate::CapKind::FS_READ | crate::CapKind::FS_WRITE) {
             Ok(FsCap::new(self))
         } else {
             Err(self.deny("fs"))
@@ -101,7 +101,7 @@ impl Ctx {
     /// # Errors
     /// Returns [`PiiError::Denied`] unless the context grants `NET`.
     pub fn net(&self) -> Result<NetCap<'_>, PiiError> {
-        if self.inner.caps.kinds.contains(crate::cap::CapKind::NET) {
+        if self.inner.caps.kinds.contains(crate::CapKind::NET) {
             Ok(NetCap { ctx: self })
         } else {
             Err(self.deny("net"))
@@ -113,7 +113,7 @@ impl Ctx {
     /// # Errors
     /// Returns [`PiiError::Denied`] unless the context grants `PROC`.
     pub fn proc(&self) -> Result<ProcCap<'_>, PiiError> {
-        if self.inner.caps.kinds.contains(crate::cap::CapKind::PROC) {
+        if self.inner.caps.kinds.contains(crate::CapKind::PROC) {
             Ok(ProcCap { ctx: self })
         } else {
             Err(self.deny("proc"))
@@ -277,8 +277,9 @@ mod tests {
     use pii_abi::PiiError;
 
     use super::Ctx;
+    use crate::CapKind;
     use crate::budget::{Budget, BudgetShare};
-    use crate::cap::{CapKind, CapSet, PathScope};
+    use crate::cap::{CapSet, PathScope};
     use crate::observe::RecordingObserver;
     use crate::principal::{Principal, TraceCtx};
 

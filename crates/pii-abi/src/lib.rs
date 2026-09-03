@@ -5,12 +5,14 @@
 
 #![forbid(unsafe_code)]
 
+mod cap;
 mod effects;
 mod error;
 mod ids;
 mod journal;
 mod node;
 
+pub use cap::CapKind;
 pub use effects::Effects;
 pub use error::PiiError;
 pub use ids::{NodeId, PortName, RunId};
