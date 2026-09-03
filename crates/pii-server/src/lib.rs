@@ -198,6 +198,33 @@ impl Engine {
         Ok(run_id)
     }
 
+    /// Starts a graph run directly (F6, opus review: `run.start`). Allocates
+    /// the run and returns BEFORE execution (< 50 ms, N4). The input is the
+    /// graph's run input; the prompt is derived from it for the agent node.
+    ///
+    /// # Errors
+    /// Unknown graph, or run start failure.
+    pub fn start_run(
+        self: &Arc<Self>,
+        graph: &str,
+        input: &serde_json::Value,
+    ) -> Result<RunId, PiiError> {
+        let spec = self.load_spec(graph)?;
+        let run_id = self.store.next_run_id()?;
+        let prompt = input
+            .get("prompt")
+            .and_then(serde_json::Value::as_str)
+            .map_or_else(|| input.to_string(), str::to_owned);
+        runs::spawn_run(
+            Arc::clone(self),
+            spec,
+            run_id.clone(),
+            prompt,
+            String::new(),
+        )?;
+        Ok(run_id)
+    }
+
     /// Loads a graph by name: `graph_dir/<name>.toml`, falling back to the
     /// built-in `default` agent graph.
     ///
@@ -286,19 +313,18 @@ impl Engine {
     /// transcript (F20, opus review): `session.state` must be a full
     /// snapshot, not just the user's prompts.
     pub fn record_assistant(&self, session_id: &str, terminal: &pii_abi::Terminal) {
-        let mut map = self.sessions.lock();
-        let Some(s) = map.get_mut(session_id) else {
-            return;
-        };
         let text = match terminal {
             pii_abi::Terminal::Success { output } => output.to_string(),
             pii_abi::Terminal::Failure { error } => error.clone(),
             pii_abi::Terminal::Suspended { .. } => String::from("(suspended)"),
         };
-        s.messages.push(WireMessage {
-            role: "assistant".to_owned(),
-            content: text,
-        });
+        let mut map = self.sessions.lock();
+        if let Some(s) = map.get_mut(session_id) {
+            s.messages.push(WireMessage {
+                role: "assistant".to_owned(),
+                content: text,
+            });
+        }
     }
 
     /// The run ids spawned by a session, oldest first (for session-scoped

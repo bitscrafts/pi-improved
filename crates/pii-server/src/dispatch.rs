@@ -9,7 +9,10 @@ use tokio::sync::mpsc;
 use pii_abi::PiiError;
 use pii_proto::event::{Event, EventFilter, EventSubscribeResult};
 use pii_proto::method::Method;
-use pii_proto::run::{SeqEvent, TraceResult, WireRunHeader};
+use pii_proto::run::{
+    GraphLintParams, GraphLintResult, RunListParams, RunStartParams, RunStartResult, SeqEvent,
+    TraceResult, WireRunHeader, WireRunStatus,
+};
 use pii_proto::session::{
     SessionCreateParams, SessionCreateResult, SessionPromptParams, SessionPromptResult,
 };
@@ -21,6 +24,9 @@ use crate::bus::reattach;
 use crate::conn::PeerIdentity;
 
 /// Dispatches one request to a response (F2.7).
+// reason: a method-match dispatch is the natural form; extracting every arm
+// into a helper would obscure the routing table.
+#[allow(clippy::too_many_lines)]
 pub fn dispatch(
     engine: &Arc<Engine>,
     req: &Request,
@@ -97,12 +103,145 @@ pub fn dispatch(
             }
         }
         Method::EventSubscribe => subscribe(engine, req, wtx).unwrap_or_else(|e| err_code(err, &e)),
+        Method::RunStart => run_start(engine, req, &err),
+        Method::RunGet => run_get(engine, req, &err),
+        Method::RunList => run_list(engine, req, &err),
+        Method::GraphLint => graph_lint_dispatch(engine, req, &err),
+        Method::EventUnsubscribe => {
+            // F6: subscriptions die with their connection in this pass; a
+            // no-op ack keeps the client from hanging.
+            Response::ok(req.id.clone(), serde_json::json!({"unsubscribed": true}))
+        }
         // The remaining methods return clean refusals in this pass; they are
         // owned by later parts of the phase (documented in the handoff).
         m => err(
             ErrorCode::MethodNotFound,
             &format!("method '{m}' is not served by this build"),
         ),
+    }
+}
+
+/// `run.start` (F6): start a graph run by name, return its id immediately.
+fn run_start(
+    engine: &Arc<Engine>,
+    req: &Request,
+    err: &impl Fn(ErrorCode, &str) -> Response,
+) -> Response {
+    match serde_json::from_value::<RunStartParams>(req.params.clone()) {
+        Ok(p) => match engine.start_run(&p.graph, &p.input) {
+            Ok(run_id) => value_response(
+                req,
+                serde_json::to_value(RunStartResult {
+                    run_id: run_id.to_string(),
+                })
+                .ok(),
+                err,
+            ),
+            Err(e) => err_code(err, &e),
+        },
+        Err(_) => err(ErrorCode::InvalidParams, "bad run.start params"),
+    }
+}
+
+/// `run.get` (F6): fetch a run header.
+fn run_get(
+    engine: &Arc<Engine>,
+    req: &Request,
+    err: &impl Fn(ErrorCode, &str) -> Response,
+) -> Response {
+    let rid = req.params.get("run_id").and_then(|v| v.as_str());
+    match rid.map(RunId::from).map(|r| run_header(engine, &r)) {
+        Some(Ok(h)) => value_response(req, serde_json::to_value(h).ok(), err),
+        Some(Err(e)) => err_code(err, &e),
+        None => err(ErrorCode::InvalidParams, "run.get needs run_id"),
+    }
+}
+
+/// `run.list` (F6): list run headers, optionally filtered by status.
+fn run_list(
+    engine: &Arc<Engine>,
+    req: &Request,
+    err: &impl Fn(ErrorCode, &str) -> Response,
+) -> Response {
+    let params: RunListParams =
+        serde_json::from_value(req.params.clone()).unwrap_or(RunListParams {
+            status: None,
+            since: None,
+        });
+    let status = params.status.map(|s| match s {
+        WireRunStatus::Running => pii_abi::RunStatus::Running,
+        WireRunStatus::Suspended => pii_abi::RunStatus::Suspended,
+        WireRunStatus::Succeeded => pii_abi::RunStatus::Succeeded,
+        WireRunStatus::Failed => pii_abi::RunStatus::Failed,
+    });
+    let runs = status.map_or_else(Vec::new, |st| {
+        engine.store.runs_by_status(st).unwrap_or_default()
+    });
+    let headers: Vec<WireRunHeader> = runs
+        .iter()
+        .filter_map(|r| run_header(engine, r).ok())
+        .collect();
+    value_response(req, serde_json::to_value(headers).ok(), err)
+}
+
+/// `graph.lint` (F6): lint a TOML graph source.
+fn graph_lint_dispatch(
+    engine: &Arc<Engine>,
+    req: &Request,
+    err: &impl Fn(ErrorCode, &str) -> Response,
+) -> Response {
+    match serde_json::from_value::<GraphLintParams>(req.params.clone()) {
+        Ok(p) => {
+            let result = graph_lint(engine, &p.toml);
+            value_response(req, serde_json::to_value(result).ok(), err)
+        }
+        Err(_) => err(ErrorCode::InvalidParams, "bad graph.lint params"),
+    }
+}
+
+/// Reads a run header as a wire header (F6: `run.get`/`run.list`).
+fn run_header(engine: &Arc<Engine>, run_id: &RunId) -> Result<WireRunHeader, PiiError> {
+    let header = engine
+        .store
+        .get_run(run_id)?
+        .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}'")))?;
+    Ok(WireRunHeader {
+        run_id: header.run.to_string(),
+        graph: header.graph.clone(),
+        status: match header.status {
+            pii_abi::RunStatus::Running => WireRunStatus::Running,
+            pii_abi::RunStatus::Suspended => WireRunStatus::Suspended,
+            pii_abi::RunStatus::Succeeded => WireRunStatus::Succeeded,
+            pii_abi::RunStatus::Failed => WireRunStatus::Failed,
+        },
+        seq: header.seq,
+        dur_ms: header.dur_ms,
+    })
+}
+
+/// Lints a TOML graph source (F6: `graph.lint`).
+fn graph_lint(engine: &Arc<Engine>, toml: &str) -> GraphLintResult {
+    match pii_graph::load_toml(toml) {
+        Ok(spec) => {
+            let reg = crate::lint_registry(&engine.cfg.workspace);
+            match pii_graph::validate(&spec, &reg) {
+                Ok(warnings) => GraphLintResult {
+                    ok: true,
+                    errors: Vec::new(),
+                    warnings,
+                },
+                Err(errors) => GraphLintResult {
+                    ok: false,
+                    errors,
+                    warnings: Vec::new(),
+                },
+            }
+        }
+        Err(e) => GraphLintResult {
+            ok: false,
+            errors: vec![e.to_string()],
+            warnings: Vec::new(),
+        },
     }
 }
 
@@ -147,10 +286,10 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
             run_id: header.run.to_string(),
             graph: header.graph.clone(),
             status: match header.status {
-                pii_abi::RunStatus::Running => pii_proto::run::WireRunStatus::Running,
-                pii_abi::RunStatus::Suspended => pii_proto::run::WireRunStatus::Suspended,
-                pii_abi::RunStatus::Succeeded => pii_proto::run::WireRunStatus::Succeeded,
-                pii_abi::RunStatus::Failed => pii_proto::run::WireRunStatus::Failed,
+                pii_abi::RunStatus::Running => WireRunStatus::Running,
+                pii_abi::RunStatus::Suspended => WireRunStatus::Suspended,
+                pii_abi::RunStatus::Succeeded => WireRunStatus::Succeeded,
+                pii_abi::RunStatus::Failed => WireRunStatus::Failed,
             },
             seq: header.seq,
             dur_ms: header.dur_ms,
