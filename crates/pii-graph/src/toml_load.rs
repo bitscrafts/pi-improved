@@ -75,6 +75,13 @@ pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
             limits.max_micro_usd = u64::try_from(n)
                 .map_err(|_| PiiError::Invalid("max_micro_usd out of range".into()))?;
         }
+        if let Some(v) = t.get("max_parallel") {
+            let n: i64 = v
+                .as_integer()
+                .ok_or_else(|| PiiError::Invalid("max_parallel must be an integer".into()))?;
+            limits.max_parallel = u32::try_from(n)
+                .map_err(|_| PiiError::Invalid("max_parallel out of range".into()))?;
+        }
     }
 
     // nodes

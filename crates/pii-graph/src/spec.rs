@@ -103,6 +103,10 @@ pub struct GraphLimits {
     pub max_tokens: u64,
     /// Maximum micro-dollar budget (default `u64::MAX` = unbounded).
     pub max_micro_usd: u64,
+    /// Maximum concurrent parallel-safe nodes per tick (default 0 = use
+    /// `available_parallelism()`). Bounds the OS-thread fan-out of a wide
+    /// `PURE`/`READS_FS` batch (pass-1 §3.5: concurrency is bounded per run).
+    pub max_parallel: u32,
 }
 
 impl Default for GraphLimits {
@@ -112,6 +116,7 @@ impl Default for GraphLimits {
             max_wall_ms: 600_000,
             max_tokens: u64::MAX,
             max_micro_usd: u64::MAX,
+            max_parallel: 0,
         }
     }
 }

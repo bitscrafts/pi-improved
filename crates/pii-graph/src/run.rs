@@ -347,27 +347,42 @@ impl Engine<'_> {
             let mut suspended: Option<ResumeKey> = None;
 
             if !par.is_empty() {
-                let (tx, rx) = std::sync::mpsc::channel::<(NodeId, DispatchOutcome)>();
-                std::thread::scope(|s| {
-                    for n in &par {
-                        let tx = tx.clone();
-                        let env = &env;
-                        s.spawn(move || {
-                            let out = dispatch(env, n);
-                            let _ = tx.send((n.id.clone(), out));
-                        });
-                    }
-                    drop(tx);
-                    // Apply results as they arrive; cancel losers after EACH.
-                    for (node, out) in rx {
-                        if let Some(key) = apply(&env, st, fin, failure, &node, out) {
-                            suspended = Some(key);
+                // Bound the OS-thread fan-out (pass-1 §3.5): a wide PURE/READS_FS
+                // batch must not spawn one thread per node. Chunk by
+                // max_parallel (or available_parallelism() when 0), running
+                // each chunk's threads in a scope and applying results as they
+                // arrive (cancel_losers after EACH result, per F4.9).
+                let limit = if spec.limits.max_parallel == 0 {
+                    std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+                } else {
+                    spec.limits.max_parallel as usize
+                };
+                for chunk in par.chunks(limit.max(1)) {
+                    let (tx, rx) = std::sync::mpsc::channel::<(NodeId, DispatchOutcome)>();
+                    std::thread::scope(|s| {
+                        for n in chunk {
+                            let tx = tx.clone();
+                            let env = &env;
+                            s.spawn(move || {
+                                let out = dispatch(env, n);
+                                let _ = tx.send((n.id.clone(), out));
+                            });
                         }
-                        cancel_losers(&env, st);
+                        drop(tx);
+                        // Apply results as they arrive; cancel losers after EACH.
+                        for (node, out) in rx {
+                            if let Some(key) = apply(&env, st, fin, failure, &node, out) {
+                                suspended = Some(key);
+                            }
+                            cancel_losers(&env, st);
+                        }
+                    });
+                    if self.root.cancelled() {
+                        return Err(PiiError::Cancelled);
                     }
-                });
-                if self.root.cancelled() {
-                    return Err(PiiError::Cancelled);
+                    if suspended.is_some() {
+                        break;
+                    }
                 }
             }
             if suspended.is_none() {
