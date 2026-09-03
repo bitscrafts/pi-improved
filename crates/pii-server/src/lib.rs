@@ -282,6 +282,25 @@ impl Engine {
         }
     }
 
+    /// Records the assistant reply from a run terminal into the session
+    /// transcript (F20, opus review): `session.state` must be a full
+    /// snapshot, not just the user's prompts.
+    pub fn record_assistant(&self, session_id: &str, terminal: &pii_abi::Terminal) {
+        let mut map = self.sessions.lock();
+        let Some(s) = map.get_mut(session_id) else {
+            return;
+        };
+        let text = match terminal {
+            pii_abi::Terminal::Success { output } => output.to_string(),
+            pii_abi::Terminal::Failure { error } => error.clone(),
+            pii_abi::Terminal::Suspended { .. } => String::from("(suspended)"),
+        };
+        s.messages.push(WireMessage {
+            role: "assistant".to_owned(),
+            content: text,
+        });
+    }
+
     /// The run ids spawned by a session, oldest first (for session-scoped
     /// `event.subscribe`). Empty when the session is unknown or has no runs.
     #[must_use]

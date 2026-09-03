@@ -40,14 +40,23 @@ pub fn spawn_run(
         let input = serde_json::json!({ "prompt": prompt, "session": session_id });
         // The Phase-1 `run` journals every event (bridge → bus) and writes
         // the terminal to the journal; nothing else writes redb.
-        if let Err(e) = pii_graph::run::run(&engine.store, &spec, &engine.reg, &ctx, &run_id, input)
-        {
-            // No tracing dep wired yet (Phase-2-scale addition); stderr is the
-            // only channel for a run failure that predates journal write.
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!("pii: run {run_id} failed: {e}");
-            }
+        let terminal =
+            match pii_graph::run::run(&engine.store, &spec, &engine.reg, &ctx, &run_id, input) {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    // No tracing dep wired yet (Phase-2-scale addition); stderr is the
+                    // only channel for a run failure that predates journal write.
+                    #[allow(clippy::print_stderr)]
+                    {
+                        eprintln!("pii: run {run_id} failed: {e}");
+                    }
+                    None
+                }
+            };
+        // F20 (opus review): record the assistant reply in the session so
+        // session.state is a full snapshot, not just the user's prompts.
+        if let Some(t) = terminal {
+            engine.record_assistant(&session_id, &t);
         }
         engine.session_finished(&run_id.to_string());
     });

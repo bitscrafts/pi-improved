@@ -82,7 +82,10 @@ pub(crate) fn cmd_run(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(store) = open_store(&common.db) else {
         return ExitCode::from(2);
     };
-    let reg = pii_graph::NodeRegistry::builtin();
+    // F13 (opus review): use the server registry (built-ins + agent + tool)
+    // so `graph run` accepts the same graphs `graph lint` accepts. The
+    // builtin-only registry rejected starter graphs with unknown node kinds.
+    let reg = pii_server::lint_registry(std::path::Path::new("."));
     let spec = match load_and_validate(&file, &reg, common.no_validate) {
         Ok(spec) => spec,
         Err(code) => return code,
@@ -123,7 +126,8 @@ pub(crate) fn cmd_resume(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(store) = open_store(&common.db) else {
         return ExitCode::from(2);
     };
-    let reg = pii_graph::NodeRegistry::builtin();
+    // F13 (opus review): server registry so resume accepts agent/tool graphs.
+    let reg = pii_server::lint_registry(std::path::Path::new("."));
     let run_id = RunId::from(run);
     // Resume recovers the spec (and its limits) inside `resume()`; the root
     // budget here is unbounded so a continuation is not spuriously cut off.
