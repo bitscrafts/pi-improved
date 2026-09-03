@@ -1,6 +1,18 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES; OPUS PHASE-2 REVIEW DONE + FIX SET LANDED (2026-09-03)**
+**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES; OPUS PHASE-2 REVIEW DONE + FIX SET LANDED; PHASE-3 SPEC AUTHORED BY OPUS (2026-09-03)**
+
+## PHASE-3 SPEC — AUTHORED (master + 4 parts, committed `b555549`)
+Opus authored `specs/05-phase3-assistant-gateway.md` + `-part1..4.md`
+(1354 lines) against `_docs/06-research/`. Load-bearing requirement:
+`cargo xtask net-check` (pii-net is the only socket/resolve call site).
+Explicit scope cuts: gateway/TLS/ACP → `specs/06-phase3b-gateway-mcp.md`,
+hickory-resolver cut, agent-memory-core cut (pii-memory first-party),
+L2/L3 generative cuts, consolidation LLM cut, 72h soak → `rss-gate`,
+reactive triggers → Phase 4. Protocol bumps to `pii.v2` (one required test
+change: `hello_skew_is_hard_refusal` offers `pii.v99`). 31 runnable exit
+criteria with script contracts. Next: implement via pidag (workhorse
+glm-5.3-flash:cloud, thinking off), specs/ read-only for the workhorse.
 
 ## OPUS PHASE-2 REVIEW FIX SET — LANDED (all 5 BLOCKERs + major MAJORs)
 The opus review (report `_tmp/phase2-opus-review.md`) found 5 BLOCKERs and
