@@ -1,6 +1,6 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 CORE ENGINE COMPLETE ALL 24/24 EXIT CRITERIA (2026-09-03)**
+**Status: GREEN — PHASE 1 CORE ENGINE COMPLETE + OPUS REVIEW FIXES LANDED (2026-09-03)**
 
 ## What exists
 - 3-pass architecture research in `_docs/06-research/` (passes 1-3, ~48k words total).
@@ -22,7 +22,20 @@ Committed milestones:
 - **pii-graph journal + run/resume/trace CLI** (`64d1bda`): journal emission + cap-narrowing, `sched/dispatch.rs` (parallel+sequential, cancel_losers), `cmd_run`/`cmd_resume`/`cmd_trace`, ndjson observer, four-test diamond suite (4 passed, incl. unsatisfiable V6 runtime + race cancel).
 - **Phase-1 EC closure** (`c3e94fc`): readiness test naming, budget.rs test-name collision, bench-gate compact JSON (F6.2).
 
-**Exit criteria — 6/6 met in ALL FOUR parts (24/24)**, `quality-gate ALL PASS` (fmt + clippy -D warnings + test).
+## OPUS REVIEW (contract = `_docs/06-research/`, NOT the spec) — all findings fixed
+Full adversarial review by opus against the research docs (report `_tmp/phase1-opus-review.md`, 642 lines). Verdict: **PASS-WITH-FINDINGS, no BLOCKER**. The scheduler (the part a sibling project got wrong) is correct. Fixes landed:
+- **F3** (`0fe39ba`): engine now validates before storing/executing; `run_with_validate` keeps the `--no-validate` escape hatch for the runtime UnsatisfiableJoin path.
+- **F1/F2** (`0fe39ba`): budget wired into the scheduler (GraphLimits max_tokens/max_micro_usd); `BudgetShare::Shared` so same-process nodes share one budget (no first-node-drains-parent starvation).
+- **F4** (`2a93750`): automated resume/crash-recovery test (`tests/resume.rs`) — the property was previously only verified by hand.
+- **F6** (`e4d078d`): Effects as fail-closed bitflags (Default = WRITES_FS|MUTATES_EXTERNAL; adds NET/SPAWNS_PROC/LONG_RUNNING).
+- **F7 part 1** (`510cbea`): CapKind moved to pii-abi (stable ABI surface). Full GraphNode move BLOCKED by circular dep (GraphNode::run takes &Ctx from pii-core, which depends on pii-abi) — documented, deferred.
+- **F5** (`f1b2783`): bounded parallel dispatch (chunk by max_parallel / available_parallelism).
+- **F8** (`1ebf756`): transitive cancel_losers (whole losing arm) + diamond Test E (5/5).
+- **F9/F10** (`f8801a5`): V9 arity for Quorum; V5 port-with-no-edge warning.
+- **F14/F15/F16** (`dffcf41`): PiiError doc/partition test; --allow-write canonicalisation; release profile (panic=abort) + perf profile.
+- **run.rs split** (`d46af42`): run_helpers.rs to stay under the 450-line budget.
+
+**Exit criteria — parts 2/3/4 6/6 met; part 1 4/6** (EC1 asserts pii-abi has no bitflags — superseded by F6; EC6 asserts diamond '4 passed' — now 5 after F8's Test E. Both are stale criteria, not regressions; specs are planner-owned so not edited). `quality-gate ALL PASS`.
 
 ## KEY LEARNINGS (see agent-memory `implementation/*`, pidag `docs/`)
 - **pidag worker error-swallowing (D1)**: worker `Err`/empty failures collapsed to "execution failed"; fixed in pidag `execute.rs`.
