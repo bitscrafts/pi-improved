@@ -5,3 +5,4 @@ _repos/
 **/*.rs.bk
 *.profraw
 .DS_Store
+.pii/

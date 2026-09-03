@@ -63,18 +63,26 @@ pub fn apply_workspace(
     let abi = landlock::ABI::V2;
     let all = AccessFs::from_all(abi);
     let read = AccessFs::from_read(abi);
+    // Device nodes are not directories: granting the full directory-rights
+    // set (MakeDir/RemoveDir/...) on them makes the kernel downgrade the
+    // whole ruleset to PartiallyEnforced. File-content rights only.
+    let file_rw = AccessFs::ReadFile | AccessFs::WriteFile;
     let ruleset = Ruleset::default()
         .handle_access(all)
         .map_err(|e| PiiError::Internal(format!("sandbox: {e}")))?
         .create()
         .map_err(|e| PiiError::Internal(format!("sandbox: {e}")))?;
     let mut rules = ruleset;
-    for (path, access) in ro_paths()
-        .into_iter()
-        .map(|p| (p, read))
-        .chain(rw_paths(workspace, extra_rw).into_iter().map(|p| (p, all)))
-    {
+    for path in ro_paths() {
         if let Ok(fd) = landlock::PathFd::new(&path) {
+            rules = rules
+                .add_rule(PathBeneath::new(fd, read))
+                .map_err(|e| PiiError::Internal(format!("sandbox: {e}")))?;
+        }
+    }
+    for (path, is_dir) in rw_paths(workspace, extra_rw) {
+        if let Ok(fd) = landlock::PathFd::new(&path) {
+            let access = if is_dir { all } else { file_rw };
             rules = rules
                 .add_rule(PathBeneath::new(fd, access))
                 .map_err(|e| PiiError::Internal(format!("sandbox: {e}")))?;
@@ -103,17 +111,20 @@ fn ro_paths() -> Vec<PathBuf> {
     vec![PathBuf::from("/"), PathBuf::from("/dev")]
 }
 
-fn rw_paths(workspace: &Path, extra_rw: &[PathBuf]) -> Vec<PathBuf> {
-    let mut v = vec![workspace.to_path_buf()];
-    v.extend(extra_rw.iter().cloned());
+fn rw_paths(workspace: &Path, extra_rw: &[PathBuf]) -> Vec<(PathBuf, bool)> {
+    let mut v: Vec<(PathBuf, bool)> = vec![(workspace.to_path_buf(), true)];
+    v.extend(extra_rw.iter().cloned().map(|p| (p, true)));
     for dev in ["/dev/null", "/dev/zero", "/dev/urandom", "/dev/tty"] {
         let p = PathBuf::from(dev);
         if p.exists() {
-            v.push(p);
+            v.push((p, false));
         }
     }
-    if let Some(tmp) = env_var("TMPDIR").map(PathBuf::from) {
-        v.push(tmp);
+    if let Some(tmp) = env_var("TMPDIR")
+        .filter(|t| !t.is_empty())
+        .map(PathBuf::from)
+    {
+        v.push((tmp, true));
     }
     v
 }

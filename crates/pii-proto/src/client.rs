@@ -92,7 +92,7 @@ impl Client {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let (wtx, wrx) = mpsc::unbounded_channel::<String>();
-        tokio::spawn(write_task(w, wrx));
+        tokio::spawn(writer_task(w, wrx));
         let pending: PendingMap = Arc::new(Mutex::new(BTreeMap::new()));
         let (etx, _) = tokio::sync::broadcast::channel::<EventPush>(1024);
         tokio::spawn(reader_task(
@@ -101,7 +101,7 @@ impl Client {
             etx.clone(),
             1u64 << 20,
         ));
-        let client = Self {
+        let mut client = Self {
             next_id: AtomicU64::new(0),
             pending,
             writer: wtx,
@@ -153,7 +153,7 @@ impl Client {
             .map_err(|_| RpcError::new(ErrorCode::Internal, "writer closed"))?;
         rx.recv()
             .await
-            .unwrap_or_else(|| Err(RpcError::new(ErrorCode::Internal, "connection closed")))?
+            .unwrap_or_else(|| Err(RpcError::new(ErrorCode::Internal, "connection closed")))
     }
 
     /// Subscribes to push notifications. Multiple subscribers allowed.
@@ -213,7 +213,8 @@ async fn reader_task<R: AsyncRead + Unpin + Send + 'static>(
         }
         match parse_frame(&line) {
             Ok(Envelope::Response(resp)) => {
-                if let Some(tx) = pending.lock().await.remove(&id_key(&resp.id)) {
+                let removed = pending.lock().await.remove(&id_key(&resp.id));
+                if let Some(tx) = removed {
                     let out = match (resp.result, resp.error) {
                         (Some(v), _) => Ok(v),
                         (None, Some(e)) => Err(e),
@@ -235,13 +236,10 @@ async fn reader_task<R: AsyncRead + Unpin + Send + 'static>(
     }
     // EOF: fail every pending call so callers do not hang.
     let mut map = pending.lock().await;
-    for (_, tx) in map.drain() {
-        let _ = tx.send(Err(RpcError::new(ErrorCode::Internal, "connection closed")));
+    let ids: Vec<String> = map.keys().cloned().collect();
+    for id in ids {
+        if let Some(tx) = map.remove(&id) {
+            let _ = tx.send(Err(RpcError::new(ErrorCode::Internal, "connection closed")));
+        }
     }
-}
-
-// Response carrying a `result` is converted by `call` directly; this shim
-// keeps the Response import meaningful for the demux below.
-impl Client {
-    fn _assert_response(_: &Response) {}
 }

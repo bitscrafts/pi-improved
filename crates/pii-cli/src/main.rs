@@ -5,13 +5,16 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 mod cli_util;
+mod cmd_daemon;
+mod cmd_oneshot;
 mod cmd_run;
+mod cmd_sandbox_exec;
 mod cmd_trace;
 mod ndjson;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii graph {lint|run|resume|trace} ...";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|run|resume|trace} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]
@@ -68,6 +71,19 @@ fn main() -> ExitCode {
     if cmd == "--version" || cmd == "-V" {
         println!("{}", version_line());
         return ExitCode::SUCCESS;
+    }
+    if cmd == "-p" {
+        let Some(prompt) = args.next().and_then(|a| a.into_string().ok()) else {
+            eprintln!("usage: pii -p \"<prompt>\" [--json] [--model M] ...");
+            return ExitCode::from(2);
+        };
+        return cmd_oneshot::cmd_oneshot(prompt, &mut args);
+    }
+    if cmd == "daemon" {
+        return cmd_daemon::cmd_daemon(&mut args);
+    }
+    if cmd == "sandbox-exec" {
+        return cmd_sandbox_exec::cmd_sandbox_exec(&mut args);
     }
     if cmd == "graph" {
         return cmd_graph(&mut args);

@@ -290,8 +290,12 @@ dependencies = [
  "pii-abi",
  "pii-core",
  "pii-graph",
+ "pii-proto",
+ "pii-server",
  "pii-store",
+ "pii-tools",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
