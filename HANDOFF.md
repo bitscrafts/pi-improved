@@ -1,13 +1,47 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 CORE ENGINE COMPLETE + OPUS REVIEW FIXES LANDED (2026-09-03)**
+**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES LANDED; PHASE 2 PART 1 COMPLETE (6/6 EC) (2026-09-03)**
+
+## PHASE 2 PART 1 — COMPLETE (6/6 exit criteria)
+Spec `specs/04-phase2-client-server-part1.md` (client/server split: `pii-proto`
+wire contract, `pii-server` daemon, `pii-model`/`pii-tools`, `pii-cli` `-p`/
+`daemon`/`sandbox-exec`). Commits `7800539` (crates scaffolding, worker-
+produced + hand-fixed) and `25cbf5b` (CLI subcommands, hand-written after
+two worker attempts stalled — see Errors & Fixes below).
+
+**pidag/worker infra fixes landed this session** (both durable, both
+committed to their respective repos):
+- **pidag worker hang fixed** (`pidag` commit, `src/worker/pi_print.rs`):
+  `wait_with_output()` blocks on pipe EOF, not process exit — a pi bash
+  tool grandchild holding the stdout/stderr pipe open hung the worker
+  indefinitely after pi itself exited. Now waits on `child.wait()` and
+  drains pipes concurrently. Verified: a run that previously hung 10+ min
+  now completes iterations cleanly.
+- **nvidia model EOL**: `deepseek-ai/deepseek-v4-flash` returned HTTP 410
+  (EOL 2026-08-07); current id is `deepseek-ai/deepseek-v4-flash-0731`.
+  Updated in `~/.pi/agent/models.json` worker.free[0] and this project's
+  `.pidag/config.toml`. **The nvidia deepseek-v4-flash-0731 worker was
+  unproductive on this large a spec** (4/4 implement iterations failed —
+  timeouts and a silent fallback to the still-quota-blocked ollama-cloud
+  mid-run); the missing `pii-cli` subcommands (F5.5-F5.9) were
+  hand-implemented by the orchestrator instead of retried through pidag.
+- **ollama-cloud session-usage-limit (HTTP 429)** hit mid-run on the
+  glm-5.3-flash:cloud path; not a payment error, no reset time given.
+  Not scheduled around this session — worker chain failed over to nvidia
+  per AGENTS.md instead of waiting.
+
+**Caveats / not yet exercised**: `pii daemon` (UDS path) was validated
+indirectly via `scripts/phase2/uds-vs-loopback.sh` (spawns the built
+binary as a real subprocess) but has no direct unit test; `pii tui`
+(F5.1-F5.4, `pii-tui` crate) is Part 2/3/4 scope, not started.
 
 ## What exists
 - 3-pass architecture research in `_docs/06-research/` (passes 1-3, ~48k words total).
 - 5 reference repos cloned in `_repos/` (read-only).
-- pidag initialized + BUG-FIXED (D1 worker-error swallowing, AlreadyDone fast-fail, binary/PATH/API-key hygiene — pidag commits `b2399f9`..`d21a0a8`).
+- pidag initialized + BUG-FIXED (D1 worker-error swallowing, AlreadyDone fast-fail, binary/PATH/API-key hygiene, worker pipe-EOF hang — pidag commits `b2399f9`..`d21a0a8` + this session's `pi_print.rs` fix).
 - **Phase 0 COMPLETE**: workspace skeleton + CI gates (commit `1ae1b32`).
-- **Phase 1 COMPLETE**: core engine (Ctx + graph engine + journal + scheduler + validator + run/resume/trace CLI).
+- **Phase 1 COMPLETE**: core engine (Ctx + graph engine + journal + scheduler + validator + run/resume/trace CLI) + opus review fixes (F1-F16).
+- **Phase 2 Part 1 COMPLETE**: client/server split, wire protocol, headless CLI, sandbox (6/6 EC, see above).
 
 ## PHASE 1 — COMPLETE
 Spec `specs/03-phase1-core-engine.md` authored by opus, split into 4 parts (**24 exit criteria**). The pidag+glm-5.3-flash-worker path was debugged end-to-end and now genuinely implements code.
