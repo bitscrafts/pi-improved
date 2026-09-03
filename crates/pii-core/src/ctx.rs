@@ -142,7 +142,13 @@ impl Ctx {
         token: CancelToken,
     ) -> Self {
         let caps = Arc::new(self.inner.caps.intersect(narrow));
-        let budget = Arc::new(self.inner.budget.carve(share));
+        // `Shared` shares the parent's budget Arc (no carve); every other
+        // share carves out of the parent (never duplicated). Same-process
+        // nodes share one budget; carving is for subgraph/worker boundaries.
+        let budget = match share {
+            BudgetShare::Shared => Arc::clone(&self.inner.budget),
+            _ => Arc::new(self.inner.budget.carve(share)),
+        };
         let trace = TraceCtx {
             run: self.inner.trace.run.clone(),
             span: self.inner.trace.span + 1,
@@ -348,6 +354,49 @@ mod tests {
         assert_eq!(
             single.budget().remaining(crate::budget::BudgetKind::Tokens),
             750
+        );
+    }
+
+    #[test]
+    fn ctx_child_shared_budget_does_not_starve_siblings() {
+        // F2 (opus review): same-process nodes share one budget; a `Shared`
+        // child must not drain the parent so a later sibling still has budget.
+        let b = Budget::with_tokens(1000);
+        let root = Ctx::with_observer(
+            caps(CapKind::FS_READ),
+            b,
+            Arc::new(RecordingObserver::new()),
+            TraceCtx {
+                run: pii_abi::RunId::from("t"),
+                span: 0,
+            },
+        );
+        let a = root.child(
+            Principal::User,
+            &caps(CapKind::FS_READ),
+            &BudgetShare::Shared,
+        );
+        let b2 = root.child(
+            Principal::User,
+            &caps(CapKind::FS_READ),
+            &BudgetShare::Shared,
+        );
+        // Both children see the same shared budget (1000), not a drained one.
+        assert_eq!(
+            a.budget().remaining(crate::budget::BudgetKind::Tokens),
+            1000
+        );
+        assert_eq!(
+            b2.budget().remaining(crate::budget::BudgetKind::Tokens),
+            1000
+        );
+        // A charge by one is visible to the other (they share the Arc).
+        a.budget()
+            .charge(crate::budget::BudgetKind::Tokens, 300)
+            .unwrap();
+        assert_eq!(
+            b2.budget().remaining(crate::budget::BudgetKind::Tokens),
+            700
         );
     }
 }

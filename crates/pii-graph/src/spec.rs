@@ -99,6 +99,10 @@ pub struct GraphLimits {
     pub max_steps: u32,
     /// Maximum wall-clock budget in ms (default `600_000`).
     pub max_wall_ms: u64,
+    /// Maximum token budget (default `u64::MAX` = unbounded).
+    pub max_tokens: u64,
+    /// Maximum micro-dollar budget (default `u64::MAX` = unbounded).
+    pub max_micro_usd: u64,
 }
 
 impl Default for GraphLimits {
@@ -106,6 +110,8 @@ impl Default for GraphLimits {
         Self {
             max_steps: 1000,
             max_wall_ms: 600_000,
+            max_tokens: u64::MAX,
+            max_micro_usd: u64::MAX,
         }
     }
 }

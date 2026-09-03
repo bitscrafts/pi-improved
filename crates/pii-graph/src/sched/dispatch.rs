@@ -162,7 +162,10 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
             node: ns.id.clone(),
         },
         &caps,
-        &BudgetShare::All,
+        // Same-process nodes share the run's budget (opus review F2): carving
+        // `All` per node would drain the parent on the first dispatch and
+        // starve every later node. Carving is for subgraph/worker boundaries.
+        &BudgetShare::Shared,
         token.clone(),
     );
 

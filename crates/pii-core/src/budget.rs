@@ -48,6 +48,13 @@ pub enum BudgetShare {
         /// Wall-clock milliseconds.
         wall_ms: u64,
     },
+    /// Share the parent's budget without carving (same-process nodes).
+    ///
+    /// Same-process nodes in one run draw from one shared budget; carving is
+    /// reserved for `subgraph`/`worker` boundaries (pass-1 §3.3) where a child
+    /// must be isolated. Using `All` for every node would drain the parent on
+    /// the first carve and starve every later node (opus review F2).
+    Shared,
 }
 
 /// An atomic, carveable budget across four dimensions.
@@ -68,6 +75,17 @@ impl Budget {
             tool_calls: AtomicU64::new(u64::MAX),
             micro_usd: AtomicU64::new(u64::MAX),
             wall_ms: AtomicU64::new(u64::MAX),
+        }
+    }
+
+    /// A budget with explicit limits in every dimension.
+    #[must_use]
+    pub fn new(tokens: u64, tool_calls: u64, micro_usd: u64, wall_ms: u64) -> Self {
+        Self {
+            tokens: AtomicU64::new(tokens),
+            tool_calls: AtomicU64::new(tool_calls),
+            micro_usd: AtomicU64::new(micro_usd),
+            wall_ms: AtomicU64::new(wall_ms),
         }
     }
 
@@ -125,7 +143,10 @@ impl Budget {
     #[must_use]
     pub fn carve(&self, share: &BudgetShare) -> Self {
         let (t, tc, m, w) = match share {
-            BudgetShare::All => (
+            // `Shared` is handled by `Ctx::child_with_token` (it clones the
+            // parent's Arc and never calls `carve`). Defensive: treat it as
+            // `All` if it ever reaches here.
+            BudgetShare::All | BudgetShare::Shared => (
                 self.remaining(BudgetKind::Tokens),
                 self.remaining(BudgetKind::ToolCalls),
                 self.remaining(BudgetKind::MicroUsd),

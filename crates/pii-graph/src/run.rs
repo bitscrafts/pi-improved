@@ -30,6 +30,7 @@ use crate::sched::dispatch::{
 };
 use crate::sched::state::{Readiness, RunState, propagate_dead, readiness};
 use crate::spec::{EdgeKind, GraphSpec, NodeSpec};
+use crate::validate::validate;
 
 /// Runs a graph to a terminal disposition, journaling every event to the
 /// store under `run_id`.
@@ -46,8 +47,35 @@ pub fn run(
     run_id: &RunId,
     input: serde_json::Value,
 ) -> Result<Terminal, PiiError> {
+    run_with_validate(store, spec, reg, ctx, run_id, input, true)
+}
+
+/// [`run`] with an explicit validation switch.
+///
+/// `validate` defaults to `true` (the library always validates unless a caller
+/// opts out). The CLI's `--no-validate` passes `false` so the runtime
+/// `UnsatisfiableJoin` path (pass-3 Test C) can be exercised on a graph that
+/// V6 rejects at load time.
+///
+/// # Errors
+/// Returns [`PiiError::Invalid`] for cyclic specs (Phase-1 boundary), node
+/// build failures, or (when `validate` is true) load-time validation errors;
+/// [`PiiError::Cancelled`] when the root context is torn down mid-run; and
+/// store errors from journaling.
+pub fn run_with_validate(
+    store: &Store,
+    spec: &GraphSpec,
+    reg: &NodeRegistry,
+    ctx: &Ctx,
+    run_id: &RunId,
+    input: serde_json::Value,
+    validate: bool,
+) -> Result<Terminal, PiiError> {
     if spec_has_cycle(spec) {
         return Err(PiiError::Invalid(PHASE2_CYCLE.to_string()));
+    }
+    if validate {
+        validate_for_exec(spec, reg)?;
     }
     let built = build_nodes(spec, reg)?;
     let spec_json = spec.to_json()?;
@@ -109,6 +137,7 @@ pub fn resume(
     if spec_has_cycle(&spec) {
         return Err(PiiError::Invalid(PHASE2_CYCLE.to_string()));
     }
+    validate_for_exec(&spec, reg)?;
     let journal = store.read_journal(run_id)?;
 
     // Recover the run input from the content-addressed store.
@@ -208,6 +237,26 @@ impl Engine<'_> {
                 return self.finish(
                     &Terminal::Failure {
                         error: "max_wall_ms exceeded".into(),
+                    },
+                    RunStatus::Failed,
+                );
+            }
+            // Budget is checked before dispatch (pass-1 §3.5): a run whose
+            // token or micro-dollar budget is exhausted is terminal and
+            // non-retryable. Nodes share the run's budget (BudgetShare::Shared),
+            // so a charge by any node is visible here on the next tick.
+            if self.root.budget().remaining(pii_core::BudgetKind::Tokens) == 0 {
+                return self.finish(
+                    &Terminal::Failure {
+                        error: "budget exhausted: Tokens".into(),
+                    },
+                    RunStatus::Failed,
+                );
+            }
+            if self.root.budget().remaining(pii_core::BudgetKind::MicroUsd) == 0 {
+                return self.finish(
+                    &Terminal::Failure {
+                        error: "budget exhausted: MicroUsd".into(),
                     },
                     RunStatus::Failed,
                 );
@@ -372,6 +421,22 @@ impl Engine<'_> {
         })?;
         Ok(terminal.clone())
     }
+}
+
+/// Runs `validate()` and maps any errors to a single `PiiError::Invalid`.
+///
+/// The engine must never store or execute a graph that fails load-time
+/// validation (pass-1 §3.2: *"`validate()` runs before a graph can be stored or
+/// executed"*). The CLI's `--no-validate` skips its own pre-flight only; the
+/// library entry points always validate.
+fn validate_for_exec(spec: &GraphSpec, reg: &NodeRegistry) -> Result<(), PiiError> {
+    if let Err(errors) = validate(spec, reg) {
+        return Err(PiiError::Invalid(format!(
+            "graph failed validation: {}",
+            errors.join("; ")
+        )));
+    }
+    Ok(())
 }
 
 /// Builds every node instance up front (build errors surface before journalling).

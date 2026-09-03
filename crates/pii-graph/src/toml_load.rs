@@ -61,6 +61,20 @@ pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
             limits.max_wall_ms = u64::try_from(w)
                 .map_err(|_| PiiError::Invalid("max_wall_ms out of range".into()))?;
         }
+        if let Some(v) = t.get("max_tokens") {
+            let n: i64 = v
+                .as_integer()
+                .ok_or_else(|| PiiError::Invalid("max_tokens must be an integer".into()))?;
+            limits.max_tokens = u64::try_from(n)
+                .map_err(|_| PiiError::Invalid("max_tokens out of range".into()))?;
+        }
+        if let Some(v) = t.get("max_micro_usd") {
+            let n: i64 = v
+                .as_integer()
+                .ok_or_else(|| PiiError::Invalid("max_micro_usd must be an integer".into()))?;
+            limits.max_micro_usd = u64::try_from(n)
+                .map_err(|_| PiiError::Invalid("max_micro_usd out of range".into()))?;
+        }
     }
 
     // nodes

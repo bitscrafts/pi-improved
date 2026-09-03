@@ -97,8 +97,16 @@ pub(crate) fn cmd_run(args: &mut std::env::ArgsOs) -> ExitCode {
             }
         },
     };
-    let ctx = root_ctx(&common.allow_write, run_id.clone());
-    let result = pii_graph::run::run(&store, &spec, &reg, &ctx, &run_id, common.input);
+    let ctx = root_ctx(&common.allow_write, run_id.clone(), &spec.limits);
+    let result = pii_graph::run::run_with_validate(
+        &store,
+        &spec,
+        &reg,
+        &ctx,
+        &run_id,
+        common.input,
+        !common.no_validate,
+    );
     report(result)
 }
 
@@ -117,7 +125,13 @@ pub(crate) fn cmd_resume(args: &mut std::env::ArgsOs) -> ExitCode {
     };
     let reg = pii_graph::NodeRegistry::builtin();
     let run_id = RunId::from(run);
-    let ctx = root_ctx(&common.allow_write, run_id.clone());
+    // Resume recovers the spec (and its limits) inside `resume()`; the root
+    // budget here is unbounded so a continuation is not spuriously cut off.
+    let ctx = root_ctx(
+        &common.allow_write,
+        run_id.clone(),
+        &pii_graph::GraphLimits::default(),
+    );
     let result = pii_graph::run::resume(&store, &reg, &ctx, &run_id);
     report(result)
 }
@@ -147,8 +161,10 @@ fn load_and_validate(
 
 /// Root capabilities per F5.4: `fs_read` allow = `[cwd]`; `fs_write` allow =
 /// `[cwd/_tmp]` plus every `--allow-write <dir>`; all other bits clear. The
-/// graph's declared caps are intersected per node inside the engine.
-fn root_ctx(allow_write: &[PathBuf], run: RunId) -> Ctx {
+/// graph's declared caps are intersected per node inside the engine. The root
+/// budget is built from the graph's `limits` (pass-1 §3.5: budget checked
+/// before dispatch and after each node).
+fn root_ctx(allow_write: &[PathBuf], run: RunId, limits: &pii_graph::GraphLimits) -> Ctx {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut fs_write = vec![cwd.join("_tmp")];
     fs_write.extend(allow_write.iter().cloned());
@@ -160,7 +176,12 @@ fn root_ctx(allow_write: &[PathBuf], run: RunId) -> Ctx {
     };
     Ctx::with_observer(
         caps,
-        Budget::unlimited(),
+        Budget::new(
+            limits.max_tokens,
+            u64::MAX,
+            limits.max_micro_usd,
+            limits.max_wall_ms,
+        ),
         Arc::new(NdjsonObserver),
         TraceCtx { run, span: 0 },
     )

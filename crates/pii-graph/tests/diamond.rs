@@ -53,6 +53,13 @@ struct RunOut {
 }
 
 fn run_example(name: &str, input: serde_json::Value) -> RunOut {
+    run_example_with_validate(name, input, true)
+}
+
+/// Like [`run_example`] but with an explicit validation switch, so Test C can
+/// exercise the runtime `UnsatisfiableJoin` path on a graph that V6 rejects at
+/// load time (pass-3 §4.7 Test C).
+fn run_example_with_validate(name: &str, input: serde_json::Value, validate: bool) -> RunOut {
     let spec = load_example(name);
     let dir = tempfile::Builder::new()
         .prefix("diamond-test-")
@@ -72,7 +79,8 @@ fn run_example(name: &str, input: serde_json::Value) -> RunOut {
     );
     let reg = NodeRegistry::builtin();
     let started = Instant::now();
-    let terminal = run::run(&store, &spec, &reg, &ctx, &run_id, input).expect("run");
+    let terminal =
+        run::run_with_validate(&store, &spec, &reg, &ctx, &run_id, input, validate).expect("run");
     let wall_ms = started.elapsed().as_millis();
     let journal = store.read_journal(&run_id).expect("journal");
     RunOut {
@@ -207,7 +215,14 @@ fn diamond_routed_marks_branch_dead_and_joins_once() {
 /// spec is rejected at lint time with a V6 error.
 #[test]
 fn diamond_unsatisfiable_join_fails_loudly() {
-    let out = run_example("unsatisfiable.toml", serde_json::json!({"branch": "a"}));
+    // The runtime path is only reachable when validation is skipped (V6
+    // rejects this graph at load time); the load-time rejection is asserted
+    // at the end of this test.
+    let out = run_example_with_validate(
+        "unsatisfiable.toml",
+        serde_json::json!({"branch": "a"}),
+        false,
+    );
     match &out.terminal {
         Terminal::Failure { error } => {
             assert!(
