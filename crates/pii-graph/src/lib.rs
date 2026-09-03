@@ -13,6 +13,7 @@ pub mod journal;
 pub mod node;
 pub mod nodes;
 pub mod run;
+pub mod run_helpers;
 pub mod sched;
 pub mod spec;
 pub mod toml_load;
