@@ -36,6 +36,59 @@ The opus review (report `_tmp/phase2-opus-review.md`) found 5 BLOCKERs and
 
 All 4 part ECs still pass (22/22). quality-gate: PASS.
 
+## PHASE-2 CAVEATS / DEFERRED (from the opus review — read before Phase 3)
+The opus review's "Contract points NOT implemented" table (report lines
+957-983) lists requirements that are absent. The BLOCKER/MAJOR ones are now
+fixed (F1-F21 above). The following remain genuinely deferred or cut, and
+are NOT advertised as done:
+1. **`pii acp` (Phase-2 EC3) is absent** — no `pii-acp` crate, no `acp`
+   subcommand. The Zed-connect exit criterion was never implemented and is
+   NOT flagged as deferred in the completion claim. Needs a planner decision:
+   cut it, or carry it into Phase 3.
+2. **Remote transport (`wss://host:7420/v1/ws`, TLS, `pii pair` bearer
+   tokens)** — absent. Reasonably deferred (§14 puts networking in Phase 3)
+   but not stated as deferred anywhere. Phase 3 owns this.
+3. **`operator`/`viewer` roles** — absent. `dispatch.rs` discards
+   `PeerIdentity`; no role exists in `HelloResult`. Phase 3 (gateway/auth).
+4. **`run.await` sugar** over subscribe-until-terminal — absent from
+   `Method`; `cmd_oneshot` hand-rolls the wait loop. Low value.
+5. **`thinking` status line** (empty string clears) — absent. No
+   `LlmThinking`/`thinking` variant anywhere.
+6. **`NodeProgress`/`ToolProgress`** (bus-only progress) — absent; the
+   bus-only stream has no producers (consistent with F12's live events).
+7. **`ApprovalRequested`/`approve.resolve` suspend-resume approvals** —
+   absent. Phase-3 by §14, but §8.8 is "the shape that pays for all of this".
+8. **`RunRegistry`/`RunHandle` with `progress` + `done` watch channels;
+   `run.attach`** — partial: `RunHandle` holds only a `CancelToken`; no
+   `progress`, no `done`. `run.attach` unimplemented.
+9. **Compaction gate (`compact_at_tokens`)** — declared in
+   `graphs/starter/react.toml:12`, consumed nowhere. `AgentFactory::build`
+   reads `system`/`tools`/`max_turns`/`model` only. `compact.json` fixture
+   absent.
+10. **`xtask size-gate` / `xtask rss-gate`** (the `contracts` job) — absent;
+    only `bench-gate` exists. `cargo deny`/`deny.toml`, `cargo machete`,
+    `typos`, `nextest` — absent.
+11. **Postcard as a negotiated encoding over UDS** — cut to a refusal
+    (`conn.rs:118-127`). Deliberate and documented in-code; acceptable.
+12. **`Ctx::deadline` inert** (Phase-1 opus F19, still open): no constructor
+    sets it, so `PiiError::Timeout` (the only retryable variant) is
+    unreachable and the retry loop is dead code. Needs `Ctx::with_deadline`
+    or deriving from `GraphLimits::max_wall_ms`.
+13. **Snapshots written but never read** (Phase-1 opus F12): `resume()`
+    replays the whole journal; `latest_snapshot` has no non-test caller.
+    Correct (full replay is a superset) but O(total events) resume cost +
+    snapshot writes are pure overhead until seeded.
+14. **`max_steps` counts ticks, not nodes** (Phase-1 opus F20): a 500-wide
+    batch counts as one step. Weakened (not absent) guard; wall-clock still
+    bounds the run.
+15. **Part-1 EC1/EC6 stale, not regressions** (Phase-1 caveat 2): EC1 asserts
+    `pii-abi` has no `bitflags` (superseded by F6); EC6 asserts the diamond
+    suite is exactly `'4 passed'` (now 5 after F8's Test E). Specs are
+    planner-owned; a planner pass should update them.
+16. **`pii-store/src/lib.rs` (383) and `validate.rs` (409) exceed the 380-line
+    warn threshold** (both under the 450 hard limit). `lint-files` passes but
+    warns. Consider splitting when next touched.
+
 ## OPUS PHASE-2 REVIEW (report `_tmp/phase2-opus-review.md`, 1118 lines)
 Full adversarial review by opus against `_docs/06-research/` (NOT the specs).
 Verdict: **FAIL — 5 BLOCKERs, 16 MAJORs, 8 MINORs, 4 NITs.** The architecture
