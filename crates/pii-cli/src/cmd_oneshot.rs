@@ -174,9 +174,11 @@ async fn run_over_uds(
     client_info: &PeerInfo,
     model: &str,
 ) -> Result<ExitCode, String> {
-    let stream = tokio::net::UnixStream::connect(sock)
+    // Socket opening is centralized in pii-server::uds (net-check allowlist);
+    // the CLI only consumes the already-open stream.
+    let stream = pii_server::uds::client_connect(sock)
         .await
-        .map_err(|e| format!("connect {}: {e}", sock.display()))?;
+        .map_err(|e| e.to_string())?;
     let (r, w) = tokio::io::split(stream);
     drive_session(r, w, client_info.clone(), a, model).await
 }

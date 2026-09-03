@@ -16,6 +16,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+parking_lot = { workspace = true }
+pii-net = { path = "../pii-net", features = ["testing"] }
 
 [lints]
 workspace = true

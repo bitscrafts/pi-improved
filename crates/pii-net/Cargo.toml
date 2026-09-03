@@ -1,0 +1,29 @@
+[package]
+name = "pii-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The one socket: grants, authorize, resolve-once-pin, HTTP/1.1 codec"
+
+[dependencies]
+pii-abi = { path = "../pii-abi" }
+pii-core = { path = "../pii-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+
+[features]
+default = []
+testing = []
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
+[dev-dependencies.pii-net]
+path = "."
+features = ["testing"]

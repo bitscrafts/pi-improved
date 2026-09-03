@@ -55,10 +55,12 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
     };
 
     let result = if let Some(sock) = socket {
-        let stream = match tokio::net::UnixStream::connect(&sock).await {
+        // Socket opening is centralized in pii-server::uds (net-check
+        // allowlist); the TUI only consumes the already-open stream.
+        let stream = match pii_server::uds::client_connect(&sock).await {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("error: connect {}: {e}", sock.display());
+                eprintln!("error: {e}");
                 return ExitCode::from(1);
             }
         };

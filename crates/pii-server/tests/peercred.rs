@@ -14,7 +14,6 @@
     clippy::indexing_slicing
 )]
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use pii_proto::{Envelope, ErrorCode, Id, Response, parse_frame};
@@ -46,11 +45,9 @@ async fn refusal_writes_101_frame() {
         .expect("tempdir");
     let sock_path: PathBuf = dir.path().join("control.sock");
 
-    // reason: the test binds a real UDS socket to exercise the accept loop;
-    // NetService (Phase 3) is not wired. The socket is chmod 0600 after bind.
-    #[allow(clippy::disallowed_methods)]
-    let listener = tokio::net::UnixListener::bind(&sock_path).expect("bind");
-    std::fs::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    // Socket bind/connect are centralized in pii-server::uds's testkit
+    // (the net-check allowlist file); the test only orchestrates.
+    let listener = pii_server::uds::test_bind_socket(&sock_path).expect("bind");
 
     // Accept loop: refuse (as if a foreign uid) with a 101 frame — this
     // exercises the daemon's refusal + frame-writer path (F9/F21).
@@ -66,7 +63,7 @@ async fn refusal_writes_101_frame() {
     });
 
     // Same-uid connect reaches the accept loop; the peer reads the 101 frame.
-    let mut stream = tokio::net::UnixStream::connect(&sock_path)
+    let mut stream = pii_server::uds::test_connect_socket(&sock_path)
         .await
         .expect("connect");
     let mut line = String::new();

@@ -182,6 +182,9 @@ impl ModelProvider for ScriptedProvider {
     }
 }
 
+pub mod ollama;
+pub use ollama::OllamaProvider;
+
 /// Resolves a model spec: `scripted:<path>` (F3.4). The `ollama:` backend
 /// lands with the HTTP provider pass; asking for it here is `Invalid`.
 ///

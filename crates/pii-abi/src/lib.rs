@@ -8,6 +8,7 @@
 mod cap;
 mod effects;
 mod error;
+mod http;
 mod ids;
 mod journal;
 mod node;
@@ -15,6 +16,7 @@ mod node;
 pub use cap::CapKind;
 pub use effects::Effects;
 pub use error::PiiError;
+pub use http::{HttpMethod, HttpRequest, HttpResponse};
 pub use ids::{NodeId, PortName, RunId};
 pub use journal::{RunEvent, RunHeader, RunStatus, Terminal};
 pub use node::{NodeInput, NodeMeta, Outcome, ResumeKey, SuspendReason};

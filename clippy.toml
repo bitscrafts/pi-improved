@@ -11,8 +11,10 @@ disallowed-methods = [
     { path = "tokio::process::Command::spawn", reason = "use Ctx::proc()" },
     { path = "reqwest::Client::new", reason = "use pii_model::http::shared_client() - one TLS root store, one pool" },
     { path = "dirs::home_dir", reason = "use pii_core::paths::home() - respects PII_HOME" },
+    { path = "std::net::TcpListener::bind", reason = "use NetService - grants, accounting, resolve-once-pin (§4)" },
+    { path = "std::net::TcpStream::connect", reason = "use NetService - grants, accounting, resolve-once-pin (§4)" },
+    { path = "std::net::UdpSocket::bind", reason = "use NetService - grants, accounting, resolve-once-pin (§4)" },
 ]
-
 disallowed-macros = [
     { path = "tracing::info", reason = "use pii_obs::record! - closed Action taxonomy" },
     { path = "tracing::warn", reason = "use pii_obs::record!" },

@@ -8,6 +8,7 @@ members = [
     "crates/pii-cli",
     "crates/pii-proto",
     "crates/pii-model",
+    "crates/pii-net",
     "crates/pii-tools",
     "crates/pii-server",
     "crates/pii-tui",

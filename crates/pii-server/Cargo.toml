@@ -22,6 +22,9 @@ parking_lot = { workspace = true }
 dunce = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 
+[features]
+testkit = []
+
 [dev-dependencies]
 tempfile = { workspace = true }
 pii-proto = { path = "../pii-proto", features = ["client"] }

@@ -8,11 +8,12 @@
 mod bench;
 mod deps;
 mod lint_files;
+pub mod net_check;
 mod proto_gen;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|lint-files|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -45,6 +46,7 @@ fn main() -> ExitCode {
     let rest: Vec<String> = std::env::args().skip(2).collect();
     match cmd.as_deref() {
         Some("deps-check") => report(deps::run()),
+        Some("net-check") => report(net_check::run()),
         Some("lint-files") => report(lint_files::run()),
         Some("proto-gen") => report(proto_gen::generate().map_err(|e| vec![e])),
         Some("proto-check") => report(proto_gen::check()),
@@ -57,6 +59,7 @@ fn main() -> ExitCode {
         },
         Some("ci") => {
             let deps_ok = report(deps::run());
+            let net_ok = report(net_check::run());
             let lint_ok = report(lint_files::run());
             let proto_ok = report(proto_gen::check());
             let bench_ok = report(bench::run_cli(&rest).map_err(|e| vec![e]));
@@ -77,6 +80,7 @@ fn main() -> ExitCode {
             );
             let test_ok = run_cmd("cargo", &["test", "--workspace"]);
             if deps_ok == ExitCode::SUCCESS
+                && net_ok == ExitCode::SUCCESS
                 && lint_ok == ExitCode::SUCCESS
                 && proto_ok == ExitCode::SUCCESS
                 && bench_ok == ExitCode::SUCCESS
@@ -94,4 +98,27 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// F2.14: the gate fails on a synthetic file outside the allowlist, naming
+/// the file and the symbol. Top-level so `-- --exact` matches the bare path
+/// named in the spec's exit criterion.
+#[test]
+fn net_check_rejects_socket_outside_pii_net() {
+    let src = concat!(
+        "fn f() {\n    let _ = std::net::TcpStream",
+        "::connect(\"h:80\");\n}\n"
+    );
+    let v = net_check::scan_one("crates/pii-x/src/a.rs", src, net_check::ALLOWLIST);
+    assert_eq!(v.len(), 1, "one violation: {v:?}");
+    let first = v.first().map_or("", String::as_str);
+    assert!(
+        first.contains("crates/pii-x/src/a.rs"),
+        "names file: {first}"
+    );
+    assert!(
+        first.contains(concat!("TcpStream", "::connect")),
+        "names symbol: {first}"
+    );
+    assert!(first.starts_with("NET-CHECK FAIL: "), "prefix: {first}");
 }

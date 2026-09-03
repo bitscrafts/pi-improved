@@ -34,13 +34,17 @@ pub enum PiiError {
     /// An unrecoverable internal fault.
     #[error("internal: {0}")]
     Internal(String),
+    /// A transient dependency failure; the operation may succeed on retry
+    /// (F1.2). Worker death and HTTP 429/5xx are its producers.
+    #[error("unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl PiiError {
     /// True when re-running the failed operation is worth trying.
     #[must_use]
     pub const fn is_retryable(&self) -> bool {
-        matches!(self, Self::Timeout { .. })
+        matches!(self, Self::Timeout { .. } | Self::Unavailable(_))
     }
 
     /// True when the operation can never succeed, so retrying is pointless.

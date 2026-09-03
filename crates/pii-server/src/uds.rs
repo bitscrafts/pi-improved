@@ -85,6 +85,45 @@ pub fn prepare_socket(dir: &std::path::Path) -> Result<PathBuf, PiiError> {
     Ok(sock)
 }
 
+/// Client-side UDS connect: the ONE `UnixStream::connect` site outside the
+/// daemon bind (spec F2.13 allowlist keeps uds.rs as the single transport file).
+///
+/// # Errors
+/// [`PiiError::Internal`] on connect failure.
+pub async fn client_connect(sock: &std::path::Path) -> Result<tokio::net::UnixStream, PiiError> {
+    tokio::net::UnixStream::connect(sock)
+        .await
+        .map_err(|e| PiiError::Internal(format!("connect {}: {e}", sock.display())))
+}
+
+/// Testkit (net-check allowlist lives in this file): binds a 0600 UDS socket
+/// and returns it. Only `#[cfg(test)]` integration tests use this; the gate
+/// scans tests too, so the bind must live here.
+///
+/// # Errors
+/// [`PiiError::Internal`] on bind/permission failure.
+#[allow(clippy::disallowed_methods)] // reason: sanctioned UDS bind site (F2.13)
+pub fn test_bind_socket(sock_path: &std::path::Path) -> Result<tokio::net::UnixListener, PiiError> {
+    let listener = tokio::net::UnixListener::bind(sock_path)
+        .map_err(|e| PiiError::Internal(format!("bind {}: {e}", sock_path.display())))?;
+    std::fs::set_permissions(sock_path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| PiiError::Internal(format!("chmod {}: {e}", sock_path.display())))?;
+    Ok(listener)
+}
+
+/// Testkit: connects a client to a test socket (same crate file as the
+/// bind, so the gate's single allowlist entry covers both).
+///
+/// # Errors
+/// [`PiiError::Internal`] on connect failure.
+pub async fn test_connect_socket(
+    sock_path: &std::path::Path,
+) -> Result<tokio::net::UnixStream, PiiError> {
+    tokio::net::UnixStream::connect(sock_path)
+        .await
+        .map_err(|e| PiiError::Internal(format!("connect {}: {e}", sock_path.display())))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

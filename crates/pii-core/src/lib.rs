@@ -12,18 +12,22 @@
 mod budget;
 mod cancel;
 mod cap;
+mod clock;
 mod config;
 mod ctx;
 mod fscap;
+mod net;
 mod observe;
 mod principal;
 
 pub use budget::{Budget, BudgetKind, BudgetShare};
 pub use cancel::CancelToken;
 pub use cap::{CapSet, PathScope, StringScope};
+pub use clock::{Clock, FixedClock, SystemClock};
 pub use config::env_var;
-pub use ctx::{Ctx, ProcOutput};
+pub use ctx::{ChildProc, Ctx, ProcOutput};
 pub use fscap::FsCap;
+pub use net::HttpTransport;
 pub use observe::{Metric, MultiObserver, NullObserver, ObsEvent, Observer, RecordingObserver};
 pub use pii_abi::{CapKind, PiiError};
 pub use principal::{Principal, TraceCtx};

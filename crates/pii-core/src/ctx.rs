@@ -15,6 +15,7 @@ use pii_abi::{CapKind, PiiError};
 use crate::budget::{Budget, BudgetShare};
 use crate::cancel::CancelToken;
 use crate::cap::CapSet;
+use crate::clock::Clock;
 use crate::fscap::FsCap;
 use crate::observe::{NullObserver, Observer};
 use crate::principal::{Principal, TraceCtx};
@@ -23,6 +24,8 @@ struct CtxInner {
     cancel: CancelToken,
     started: Instant,
     deadline: Option<Instant>,
+    deadline_ms: Option<u64>,
+    clock: Arc<dyn Clock>,
     budget: Arc<Budget>,
     caps: Arc<CapSet>,
     principal: Principal,
@@ -74,11 +77,57 @@ impl Ctx {
                 cancel: CancelToken::new(),
                 started: Instant::now(),
                 deadline: None,
+                deadline_ms: None,
+                clock: Arc::new(crate::clock::SystemClock),
                 budget: Arc::new(budget),
                 caps: Arc::new(caps),
                 principal: Principal::User,
                 trace,
                 obs,
+            }),
+        }
+    }
+
+    /// Replaces the clock (F1.3): used by tests and by the daemon, which
+    /// installs the process-wide clock once at startup.
+    #[must_use]
+    pub fn with_clock(self, clock: Arc<dyn Clock>) -> Self {
+        Self {
+            inner: Arc::new(CtxInner {
+                cancel: self.inner.cancel.clone(),
+                started: self.inner.started,
+                deadline: self.inner.deadline,
+                deadline_ms: self.inner.deadline_ms,
+                clock,
+                budget: Arc::clone(&self.inner.budget),
+                caps: Arc::clone(&self.inner.caps),
+                principal: self.inner.principal.clone(),
+                trace: self.inner.trace.clone(),
+                obs: Arc::clone(&self.inner.obs),
+            }),
+        }
+    }
+
+    /// Sets an absolute deadline `ms_from_now` milliseconds from the
+    /// context's clock (F1.6). One deadline spans all stages of a run.
+    #[must_use]
+    pub fn with_deadline(self, ms_from_now: u64) -> Self {
+        let now = self.inner.clock.now_ms();
+        let at = now.saturating_add(ms_from_now);
+        let remaining = std::time::Duration::from_millis(ms_from_now);
+        let deadline = Some(self.inner.started + remaining);
+        Self {
+            inner: Arc::new(CtxInner {
+                cancel: self.inner.cancel.clone(),
+                started: self.inner.started,
+                deadline,
+                deadline_ms: Some(at),
+                clock: Arc::clone(&self.inner.clock),
+                budget: Arc::clone(&self.inner.budget),
+                caps: Arc::clone(&self.inner.caps),
+                principal: self.inner.principal.clone(),
+                trace: self.inner.trace.clone(),
+                obs: Arc::clone(&self.inner.obs),
             }),
         }
     }
@@ -156,12 +205,16 @@ impl Ctx {
         };
         let started = self.inner.started;
         let deadline = self.inner.deadline;
+        let deadline_ms = self.inner.deadline_ms;
+        let clock = Arc::clone(&self.inner.clock);
         let obs = Arc::clone(&self.inner.obs);
         Self {
             inner: Arc::new(CtxInner {
                 cancel: token,
                 started,
                 deadline,
+                deadline_ms,
+                clock,
                 budget,
                 caps,
                 principal,
@@ -181,6 +234,19 @@ impl Ctx {
     #[must_use]
     pub fn elapsed_ms(&self) -> u32 {
         u32::try_from(self.inner.started.elapsed().as_millis()).unwrap_or(u32::MAX)
+    }
+
+    /// Current wall-clock time in ms since the epoch, via the injected
+    /// clock (F1.3).
+    #[must_use]
+    pub fn now_ms(&self) -> u64 {
+        self.inner.clock.now_ms()
+    }
+
+    /// The absolute deadline in epoch-ms, when set (F1.6).
+    #[must_use]
+    pub fn deadline_ms(&self) -> Option<u64> {
+        self.inner.deadline_ms
     }
 
     /// Checks for cancellation then deadline.
@@ -262,6 +328,102 @@ pub struct ProcCap<'a> {
     ctx: &'a Ctx,
 }
 
+/// A live child process with piped stdio (F1.5). Owned by the worker
+/// supervisor; `kill` is the sanctioned way to stop it.
+#[derive(Debug)]
+pub struct ChildProc {
+    inner: std::process::Child,
+}
+
+impl ChildProc {
+    #[allow(clippy::disallowed_methods)] // reason: ProcCap::spawn_child is
+    // the second sanctioned Command site (spec F1.5); the supervisor needs
+    // piped stdio and the live handle for kill/try_wait.
+    fn spawn(argv: &[String], cwd: &Path, env: &[(String, String)]) -> Result<Self, PiiError> {
+        use std::process::{Command, Stdio};
+
+        let Some(argv0) = argv.first() else {
+            return Err(PiiError::Invalid(String::from("spawn_child: empty argv")));
+        };
+        let mut cmd = Command::new(argv0);
+        cmd.args(argv.get(1..).unwrap_or(&[]))
+            .current_dir(cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let child = cmd
+            .spawn()
+            .map_err(|e| PiiError::Internal(format!("spawn {argv0}: {e}")))?;
+        Ok(Self { inner: child })
+    }
+
+    /// The child's pid.
+    #[must_use]
+    pub fn pid(&self) -> u32 {
+        self.inner.id()
+    }
+
+    /// Takes the child's stdin handle (the supervisor owns the writer).
+    pub fn stdin(&mut self) -> Option<std::process::ChildStdin> {
+        self.inner.stdin.take()
+    }
+
+    /// Takes the child's stdout handle (the reader thread demuxes frames).
+    pub fn stdout(&mut self) -> Option<std::process::ChildStdout> {
+        self.inner.stdout.take()
+    }
+
+    /// Takes the child's stderr handle (drained so a chatty worker cannot
+    /// fill the pipe and deadlock).
+    pub fn stderr(&mut self) -> Option<std::process::ChildStderr> {
+        self.inner.stderr.take()
+    }
+
+    /// Non-blocking exit check.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] when the OS reports a wait failure.
+    pub fn try_wait(&mut self) -> Result<Option<i32>, PiiError> {
+        self.inner
+            .try_wait()
+            .map(|s| s.and_then(|st| st.code()))
+            .map_err(|e| PiiError::Internal(format!("try_wait: {e}")))
+    }
+
+    /// Blocks up to `d` for exit; `Ok(None)` when still running.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] when the OS reports a wait failure.
+    pub fn wait_timeout(&mut self, d: std::time::Duration) -> Result<Option<i32>, PiiError> {
+        let deadline = Instant::now() + d;
+        loop {
+            match self.inner.try_wait() {
+                Err(e) => return Err(PiiError::Internal(format!("wait: {e}"))),
+                Ok(Some(st)) => return Ok(st.code()),
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        return Ok(None);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            }
+        }
+    }
+
+    /// Forcibly kills the child (kill -9 semantics via `kill()`).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] when the kill fails.
+    pub fn kill(&mut self) -> Result<(), PiiError> {
+        let _ = self.inner.kill();
+        let _ = self.inner.wait();
+        Ok(())
+    }
+}
+
 /// Result of a completed child process.
 #[derive(Debug, Clone)]
 pub struct ProcOutput {
@@ -300,6 +462,32 @@ impl ProcCap<'_> {
             return Err(self.ctx.deny("proc"));
         }
         run_child(argv, cwd, timeout)
+    }
+
+    /// Spawns a long-lived child with piped stdio (F1.5): the second and
+    /// last `std::process::Command` construction site in the workspace.
+    /// Enforces `SPAWN` and the `proc_argv0` scope like [`ProcCap::run`].
+    ///
+    /// # Errors
+    /// [`PiiError::Denied`] when `SPAWN` is missing or `argv[0]` is out of
+    /// scope; [`PiiError::Internal`] on spawn failure.
+    pub fn spawn_child(
+        &self,
+        argv: &[String],
+        cwd: &Path,
+        env: &[(String, String)],
+    ) -> Result<ChildProc, PiiError> {
+        self.ctx.check()?;
+        if !self.ctx.caps().kinds.contains(CapKind::SPAWN) {
+            return Err(self.ctx.deny("spawn"));
+        }
+        let Some(argv0) = argv.first() else {
+            return Err(PiiError::Invalid(String::from("spawn_child: empty argv")));
+        };
+        if !self.ctx.caps().proc_argv0.permits(argv0.as_str()) {
+            return Err(self.ctx.deny("spawn"));
+        }
+        ChildProc::spawn(argv, cwd, env)
     }
 }
 
