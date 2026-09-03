@@ -1,6 +1,6 @@
 //! Scheduler run-state machine (spec F4.7, pass-3 §4.3).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use pii_abi::NodeId;
 use serde::{Deserialize, Serialize};
@@ -47,6 +47,8 @@ pub struct RunState {
     pub cancelled: BTreeSet<NodeId>,
     /// Nodes that failed terminally.
     pub failed: BTreeSet<NodeId>,
+    /// Per-node loop re-entry count (F4.5), keyed by node id.
+    pub iters: BTreeMap<NodeId, u32>,
 }
 
 impl RunState {
@@ -59,6 +61,7 @@ impl RunState {
             dead: BTreeSet::new(),
             cancelled: BTreeSet::new(),
             failed: BTreeSet::new(),
+            iters: BTreeMap::new(),
         }
     }
 }
@@ -85,6 +88,13 @@ fn is_fired(e: &EdgeState) -> bool {
 ///    else `Ready`.
 #[must_use]
 pub fn readiness(spec: &GraphSpec, st: &RunState, n: &NodeId) -> Readiness {
+    // The entry node is ready on its first pass even when it has inbound
+    // edges (a loop back-edge from a downstream node is Pending initially).
+    // This is what lets a cyclic graph's entry start the run (F4.5).
+    if n == &spec.entry && !st.executed.contains(n) {
+        return Readiness::Ready;
+    }
+
     // Order edges gate readiness first: wait for settle.
     for (i, e) in spec.edges.iter().enumerate() {
         if e.to == *n
@@ -155,14 +165,66 @@ pub fn readiness(spec: &GraphSpec, st: &RunState, n: &NodeId) -> Readiness {
 }
 
 /// Applies the edge transitions when node `n` completes on port `P` with `value`.
+///
+/// F4.5 loop re-entry: if an outbound edge targets a node already in
+/// `executed`, that target must have a `loop_budget`. The budget is
+/// incremented; exceeding it is a terminal failure. Otherwise the target and
+/// its downstream reachable set are reset (removed from `executed`/`dead`,
+/// their outbound edges back to `Pending`) so the cycle can iterate.
+///
+/// # Errors
+/// Returns `Err` on re-entry into a node without a `loop_budget`, or when a
+/// `loop_budget` is exceeded.
 pub fn apply_completion(
     spec: &GraphSpec,
     st: &mut RunState,
     n: &NodeId,
     port: &pii_abi::PortName,
     value: &serde_json::Value,
-) {
+) -> Result<(), String> {
+    // Detect re-entry BEFORE firing any edge: an outbound edge on the taken
+    // port whose target is already executed.
+    for (i, e) in spec.edges.iter().enumerate() {
+        if &e.from != n {
+            continue;
+        }
+        let fires = e.kind == EdgeKind::Order || &e.port == port;
+        if !fires || !st.executed.contains(&e.to) {
+            continue;
+        }
+        let budget = spec.node(&e.to).and_then(|t| t.loop_budget);
+        if budget.is_none() {
+            // Re-entry into a non-budgeted node is only an error when it is
+            // NOT part of a cycle (V3 makes that unreachable via lint, so
+            // this is a defence). A non-budgeted loop member (e.g. `retry`)
+            // is allowed to re-run; reset it so it can, without touching any
+            // budget counter.
+            if !crate::sched::loop_helpers::is_in_cycle(spec, &e.to) {
+                return Err(format!("re-entry into node '{}' without loop_budget", e.to));
+            }
+            crate::sched::loop_helpers::reset_loop(spec, st, &e.to);
+            continue;
+        }
+        // Re-entry into a budgeted node: reset it so it can re-run. The
+        // budget itself is enforced at execution time (see below), so a
+        // non-budgeted loop member resetting the head downstream cannot
+        // bypass it.
+        crate::sched::loop_helpers::reset_loop(spec, st, &e.to);
+        let _ = i;
+    }
+
     st.executed.insert(n.clone());
+    // Count every execution of a budgeted node; the (budget+1)th is a
+    // terminal failure (F4.5: budget=3 → exactly 3 runs). This is checked on
+    // execution, not re-entry, so a non-budgeted loop member resetting the
+    // head downstream cannot bypass the budget.
+    if let Some(b) = spec.node(n).and_then(|t| t.loop_budget) {
+        let it = st.iters.get(n).copied().unwrap_or(0) + 1;
+        if it > b {
+            return Err(format!("loop_budget exceeded for node '{n}'"));
+        }
+        st.iters.insert(n.clone(), it);
+    }
     for (i, e) in spec.edges.iter().enumerate() {
         if &e.from != n {
             continue;
@@ -178,6 +240,7 @@ pub fn apply_completion(
             *slot = new;
         }
     }
+    Ok(())
 }
 
 /// Applies transitions when a node failed or was cancelled: all outbound Data
@@ -318,7 +381,8 @@ mod tests {
             &NodeId::from("entry"),
             &PortName::from("ok"),
             &serde_json::json!(1),
-        );
+        )
+        .unwrap();
         // only a fired
         apply_completion(
             &g,
@@ -326,7 +390,8 @@ mod tests {
             &NodeId::from("a"),
             &PortName::from("ok"),
             &serde_json::json!("a"),
-        );
+        )
+        .unwrap();
         assert_eq!(
             readiness(&g, &st, &NodeId::from("join")),
             Readiness::NotReady
@@ -337,7 +402,8 @@ mod tests {
             &NodeId::from("b"),
             &PortName::from("ok"),
             &serde_json::json!("b"),
-        );
+        )
+        .unwrap();
         assert_eq!(readiness(&g, &st, &NodeId::from("join")), Readiness::Ready);
     }
 
@@ -370,14 +436,16 @@ mod tests {
             &NodeId::from("entry"),
             &PortName::from("ok"),
             &serde_json::json!(1),
-        );
+        )
+        .unwrap();
         apply_completion(
             &g,
             &mut st,
             &NodeId::from("fast"),
             &PortName::from("ok"),
             &serde_json::json!("fast"),
-        );
+        )
+        .unwrap();
         assert_eq!(readiness(&g, &st, &NodeId::from("use")), Readiness::Ready);
     }
 
@@ -404,7 +472,8 @@ mod tests {
             &NodeId::from("entry"),
             &PortName::from("ok"),
             &serde_json::json!(1),
-        );
+        )
+        .unwrap();
         apply_failed_or_cancelled(&g, &mut st, &NodeId::from("a"));
         let _newly = propagate_dead(&g, &mut st);
         assert!(st.dead.contains(&NodeId::from("use")));
@@ -434,14 +503,16 @@ mod tests {
             &NodeId::from("entry"),
             &PortName::from("ok"),
             &serde_json::json!(1),
-        );
+        )
+        .unwrap();
         apply_completion(
             &g,
             &mut st,
             &NodeId::from("a"),
             &PortName::from("ok"),
             &serde_json::json!("a"),
-        );
+        )
+        .unwrap();
         apply_failed_or_cancelled(&g, &mut st, &NodeId::from("b"));
         assert_eq!(
             readiness(&g, &st, &NodeId::from("join")),

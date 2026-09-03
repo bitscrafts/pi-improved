@@ -290,7 +290,15 @@ pub fn apply(
     match out {
         DispatchOutcome::Next { port, value } => {
             env.bb.write().record(node.as_str(), value.clone());
-            apply_completion(env.spec, st, node, &port, &value);
+            if let Err(e) = apply_completion(env.spec, st, node, &port, &value) {
+                // F4.5 loop-budget violation: a terminal failure.
+                apply_failed_or_cancelled(env.spec, st, node);
+                st.failed.insert(node.clone());
+                if failure.is_none() {
+                    *failure = Some(e);
+                }
+                return None;
+            }
             fin.push(FinishedNode {
                 node: node.clone(),
                 port,

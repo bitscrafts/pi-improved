@@ -5,6 +5,7 @@
 //! entry point in a dedicated pass.
 
 pub mod dispatch;
+pub mod loop_helpers;
 pub mod state;
 
 pub use state::{

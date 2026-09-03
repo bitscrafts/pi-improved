@@ -12,6 +12,7 @@ pub mod conn;
 pub mod dispatch;
 pub mod loopback;
 pub mod runs;
+pub mod tool;
 pub mod uds;
 
 use std::collections::BTreeMap;
@@ -266,13 +267,32 @@ impl Engine {
     }
 }
 
-/// Builds the registry with the built-ins plus `agent` (F2.2).
+/// Builds the registry with the built-ins plus `agent` and `tool` (F2.2).
 #[must_use]
 pub fn registry(cfg: &EngineConfig, provider: Arc<dyn ModelProvider>) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
         provider,
         workspace: cfg.workspace.clone(),
+    }));
+    reg.register(Arc::new(tool::ToolFactory {
+        toolset: ToolSet::builtin(cfg.workspace.clone()),
+    }));
+    reg
+}
+
+/// A registry for static linting only: registers `agent`/`tool` so
+/// `pii graph lint` accepts starter graphs, with a provider that is never
+/// called (lint never executes a node).
+#[must_use]
+pub fn lint_registry(workspace: &std::path::Path) -> NodeRegistry {
+    let mut reg = NodeRegistry::builtin();
+    reg.register(Arc::new(agent::AgentFactory {
+        provider: Arc::new(pii_model::ScriptedProvider::empty()),
+        workspace: workspace.to_path_buf(),
+    }));
+    reg.register(Arc::new(tool::ToolFactory {
+        toolset: ToolSet::builtin(workspace.to_path_buf()),
     }));
     reg
 }

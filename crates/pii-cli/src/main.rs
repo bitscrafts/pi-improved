@@ -39,7 +39,7 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let reg = pii_graph::NodeRegistry::builtin();
+    let reg = pii_server::lint_registry(std::path::Path::new("."));
     match pii_graph::validate(&spec, &reg) {
         Ok(warnings) => {
             for w in &warnings {

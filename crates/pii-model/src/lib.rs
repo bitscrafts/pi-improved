@@ -132,6 +132,16 @@ struct ScriptedFixture {
 }
 
 impl ScriptedProvider {
+    /// A provider with no turns (used where a provider is required but never
+    /// called, e.g. static linting).
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            turns: Vec::new(),
+            calls: AtomicUsize::new(0),
+        }
+    }
+
     /// Loads `{"turns": [ChatResponse, ...]}`.
     ///
     /// # Errors

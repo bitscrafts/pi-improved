@@ -1,0 +1,37 @@
+name = "starter/react"
+entry = "agent"
+caps = ["fs_read", "fs_write", "proc"]
+
+[[node]]
+id = "agent"
+kind = "agent"
+system = "You are pii, a coding agent. Answer concisely."
+tools = ["fs_read", "fs_write", "edit", "multi_edit", "bash"]
+max_turns = 24
+compact_at_tokens = 24000
+
+[[node]]
+id = "done"
+kind = "transform"
+expr = "$.payload"
+
+[[node]]
+id = "fail"
+kind = "transform"
+join = "any"
+expr = "$.payload"
+
+[[edge]]
+from = "agent"
+port = "ok"
+to = "done"
+
+[[edge]]
+from = "agent"
+port = "err"
+to = "fail"
+
+[[edge]]
+from = "agent"
+port = "budget"
+to = "fail"

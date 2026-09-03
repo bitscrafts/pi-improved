@@ -47,6 +47,17 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             }
         }
     }
+    // Sandbox enforcement is verified BEFORE the model lookup: a requested
+    // profile that cannot be positively enforced must exit 4 regardless of
+    // whether a model is configured (F3.10, part-2 EC6).
+    if !matches!(sandbox, SandboxProfileName::Off)
+        && let Err(e) =
+            pii_tools::sandbox::apply_workspace(&workspace, &[], std::path::Path::new("/etc"))
+    {
+        eprintln!("{e}");
+        return ExitCode::from(4);
+    }
+
     let model = pii_core::env_var("PII_MODEL");
     let Some(model) = model else {
         eprintln!("no model configured (set PII_MODEL)");
@@ -72,14 +83,6 @@ async fn run_daemon(
     store: Option<PathBuf>,
     model: String,
 ) -> ExitCode {
-    if !matches!(sandbox, SandboxProfileName::Off)
-        && let Err(e) =
-            pii_tools::sandbox::apply_workspace(&workspace, &[], std::path::Path::new("/etc"))
-    {
-        eprintln!("{e}");
-        return ExitCode::from(4);
-    }
-
     let Some(runtime_dir) = pii_server::uds::runtime_dir("default") else {
         eprintln!("error: no usable runtime dir (set PII_RUNTIME_DIR)");
         return ExitCode::from(2);
@@ -126,8 +129,13 @@ async fn run_daemon(
         let engine = std::sync::Arc::clone(&engine);
         tokio::spawn(async move {
             if let Some(uid) = peer_uid
-                && pii_server::uds::authorize_peer(daemon_uid, uid).is_err()
+                && let Err(e) = pii_server::uds::authorize_peer(daemon_uid, uid)
             {
+                // F2.8: log the refusal (EC3 greps for this line).
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!("refused uid {uid}: {}", e.message);
+                }
                 return;
             }
             pii_server::conn::serve_connection(

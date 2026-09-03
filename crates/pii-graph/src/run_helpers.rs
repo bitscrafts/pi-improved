@@ -79,7 +79,7 @@ pub(crate) fn replay(
             RunEvent::NodeFinished {
                 node, port, value, ..
             } => {
-                crate::sched::state::apply_completion(spec, st, node, port, value);
+                let _ = crate::sched::state::apply_completion(spec, st, node, port, value);
                 bb.write().record(node.as_str(), value.clone());
                 fin.push(FinishedNode {
                     node: node.clone(),

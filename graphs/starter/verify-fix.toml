@@ -1,0 +1,62 @@
+name = "starter/verify-fix"
+entry = "fix"
+caps = ["fs_read", "fs_write", "proc"]
+
+[[node]]
+id = "fix"
+kind = "agent"
+loop_budget = 3
+system = "You are pii, a coding agent. Fix the failing test."
+tools = ["fs_read", "fs_write", "edit", "multi_edit", "bash"]
+max_turns = 24
+compact_at_tokens = 24000
+
+[[node]]
+id = "test"
+kind = "tool"
+tool = "bash"
+args = { command = "$.input.test_command", cwd = "$.input.workspace" }
+
+[[node]]
+id = "gate"
+kind = "route"
+on = "$.payload.exit_code"
+rules = [
+  { eq = 0, port = "pass" },
+  { port = "fail" },
+]
+
+[[node]]
+id = "done"
+kind = "transform"
+expr = "$.payload"
+
+[[node]]
+id = "retry"
+kind = "transform"
+expr = "$.payload"
+
+[[edge]]
+from = "fix"
+port = "ok"
+to = "test"
+
+[[edge]]
+from = "test"
+port = "ok"
+to = "gate"
+
+[[edge]]
+from = "gate"
+port = "pass"
+to = "done"
+
+[[edge]]
+from = "gate"
+port = "fail"
+to = "retry"
+
+[[edge]]
+from = "retry"
+port = "ok"
+to = "fix"

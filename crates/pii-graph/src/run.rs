@@ -26,8 +26,8 @@ use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
 use crate::node::{GraphNode, NodeRegistry};
 use crate::run_helpers::{
-    CancelTokenSet, build_nodes, fresh_tokens, replay, spec_has_cycle, terminal_determination,
-    terminal_status, validate_for_exec,
+    CancelTokenSet, build_nodes, fresh_tokens, replay, terminal_determination, terminal_status,
+    validate_for_exec,
 };
 use crate::sched::dispatch::{
     DispatchOutcome, Env, FinishedNode, apply, build_node_input, cancel_losers, dispatch,
@@ -74,9 +74,6 @@ pub fn run_with_validate(
     input: serde_json::Value,
     validate: bool,
 ) -> Result<Terminal, PiiError> {
-    if spec_has_cycle(spec) {
-        return Err(PiiError::Invalid(PHASE2_CYCLE.to_string()));
-    }
     if validate {
         validate_for_exec(spec, reg)?;
     }
@@ -137,9 +134,6 @@ pub fn resume(
         .get_graph(&header.graph)?
         .ok_or_else(|| PiiError::NotFound(format!("graph body '{}'", header.graph)))?;
     let spec = GraphSpec::from_json(&spec_bytes)?;
-    if spec_has_cycle(&spec) {
-        return Err(PiiError::Invalid(PHASE2_CYCLE.to_string()));
-    }
     validate_for_exec(&spec, reg)?;
     let journal = store.read_journal(run_id)?;
 
@@ -192,10 +186,6 @@ pub fn resume(
     };
     engine.tick_loop(&mut st, &mut fin, &mut failure)
 }
-
-/// The documented Phase-1 boundary (scope decision 3, part-2 spec).
-const PHASE2_CYCLE: &str = "cyclic execution lands in Phase 2 (the Phase-1 scheduler executes DAGs only; \
-     loop_budget permits a bounded cycle at validate time, not at run time)";
 
 struct Engine<'a> {
     spec: &'a GraphSpec,
@@ -297,6 +287,18 @@ impl Engine<'_> {
                         && readiness(spec, st, &n.id) == Readiness::Ready
                 })
                 .collect();
+            // F4.5 budget enforcement at dispatch time: a budgeted node that
+            // has already run `budget` times must not run again — the run
+            // fails instead (exactly `budget` executions, then terminal).
+            if let Some(n) = batch.iter().find(|n| {
+                n.loop_budget.is_some()
+                    && st.iters.get(&n.id).copied().unwrap_or(0) >= n.loop_budget.unwrap_or(0)
+            }) {
+                let terminal = Terminal::Failure {
+                    error: format!("loop_budget exceeded for node '{}'", n.id),
+                };
+                return self.finish(&terminal, RunStatus::Failed);
+            }
             if batch.is_empty() {
                 let terminal = terminal_determination(spec, st, fin, failure.as_deref());
                 let status = terminal_status(&terminal);
