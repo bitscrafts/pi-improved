@@ -34,8 +34,8 @@ pub fn dispatch(
         Method::SysStatus => {
             let status = StatusResult {
                 uptime_ms: u64::try_from(engine.started_at.elapsed().as_millis()).unwrap_or(0),
-                runs_active: 0,
-                sessions: 0,
+                runs_active: u32::try_from(engine.runs.lock().len()).unwrap_or(u32::MAX),
+                sessions: u32::try_from(engine.sessions.lock().len()).unwrap_or(u32::MAX),
                 sandbox_profile: pii_tools::sandbox::profile_name(engine.cfg.sandbox).to_owned(),
             };
             value_response(req, serde_json::to_value(status).ok(), err)
@@ -169,20 +169,27 @@ fn subscribe(
     let filter: EventFilter = serde_json::from_value(req.params.clone())
         .map_err(|_| PiiError::Invalid(String::from("bad event.subscribe params")))?;
     let sub_id = format!("sub-{}", engine.started_at.elapsed().as_nanos());
-    let run_id = filter
-        .run
-        .clone()
-        .ok_or_else(|| PiiError::Invalid(String::from("event.subscribe needs run")))?;
+    // Resolve the target run: an explicit `run` wins; otherwise a `session`
+    // subscribes to that session's most recent run (F2.5). Neither → invalid.
+    let run_id = match (&filter.run, &filter.session) {
+        (Some(r), _) => RunId::from(r.as_str()),
+        (None, Some(s)) => {
+            let runs = engine.session_run_ids(s);
+            let latest = runs
+                .last()
+                .ok_or_else(|| PiiError::Invalid(String::from("session has no runs")))?;
+            RunId::from(latest.as_str())
+        }
+        (None, None) => {
+            return Err(PiiError::Invalid(String::from(
+                "event.subscribe needs run or session",
+            )));
+        }
+    };
     let since = filter.since_seq.unwrap_or(0);
     let mut live = engine.bus.subscribe();
     let mut merged: Vec<SeqEvent> = Vec::new();
-    let mut last = reattach(
-        &engine.store,
-        &RunId::from(run_id.as_str()),
-        since,
-        &mut live,
-        &mut merged,
-    );
+    let mut last = reattach(&engine.store, &run_id, since, &mut live, &mut merged);
     let result = Response::ok(
         req.id.clone(),
         serde_json::to_value(EventSubscribeResult {

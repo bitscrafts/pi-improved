@@ -19,6 +19,7 @@ pub struct AgentNode {
     model: Option<String>,
     provider: Arc<dyn ModelProvider>,
     toolset: pii_tools::ToolSet,
+    workspace: std::path::PathBuf,
 }
 
 /// Factory registered into the engine's registry.
@@ -85,6 +86,7 @@ impl pii_graph::node::NodeFactory for AgentFactory {
                 .map(str::to_owned),
             provider: self.provider.clone(),
             toolset,
+            workspace: self.workspace.clone(),
         }))
     }
 }
@@ -100,6 +102,7 @@ impl GraphNode for AgentNode {
             ChatMessage::new(Role::System, &self.system),
             ChatMessage::new(Role::User, &user_text),
         ];
+        let mut files_changed: Vec<String> = Vec::new();
         for turn in 1..=self.max_turns {
             let req = ChatRequest {
                 model: self
@@ -111,14 +114,29 @@ impl GraphNode for AgentNode {
                 max_tokens: 4096,
                 temperature: 0.0,
             };
-            let resp = self.provider.chat(ctx, &req)?;
+            // A retryable provider error is retried once (F2.10), then the
+            // node fails on `err`. A non-retryable error propagates as a node
+            // failure (run failure), not a routable `err`.
+            let resp = match self.provider.chat(ctx, &req) {
+                Ok(r) => r,
+                Err(e) if e.is_retryable() => match self.provider.chat(ctx, &req) {
+                    Ok(r) => r,
+                    Err(e2) => {
+                        return Ok(Outcome::Next {
+                            port: PortName::from("err"),
+                            value: serde_json::json!({ "error": e2.to_string() }),
+                        });
+                    }
+                },
+                Err(e) => return Err(e),
+            };
             if resp.tool_calls.is_empty() {
                 return Ok(Outcome::Next {
                     port: PortName::from("ok"),
                     value: serde_json::json!({
                         "text": resp.text,
                         "turns": turn,
-                        "files_changed": [],
+                        "files_changed": files_changed,
                     }),
                 });
             }
@@ -128,28 +146,59 @@ impl GraphNode for AgentNode {
                 tool_call_id: None,
                 tool_calls: resp.tool_calls.clone(),
             });
-            for call in &resp.tool_calls {
-                let result = self.toolset.get(&call.name).map_or_else(
-                    || Err(format!("unknown tool '{}'", call.name)),
-                    |tool| tool.call(ctx, &call.arguments).map_err(|e| e.to_string()),
-                );
-                let (ok, content) = match result {
-                    Ok(v) => (true, v.to_string()),
-                    Err(e) => (false, e),
-                };
-                messages.push(ChatMessage {
-                    role: Role::Tool,
-                    content,
-                    tool_call_id: Some(call.id.clone()),
-                    tool_calls: Vec::new(),
-                });
-                let _ = ok;
-            }
+            self.run_tool_calls(ctx, &resp.tool_calls, &mut files_changed, &mut messages);
         }
         Ok(Outcome::Next {
             port: PortName::from("budget"),
             value: serde_json::json!({"error": "max_turns exceeded", "turns": self.max_turns}),
         })
+    }
+}
+
+impl AgentNode {
+    /// Executes each tool call, appends the tool-result messages, and records
+    /// any files the agent actually changed (F2.10 `files_changed`).
+    fn run_tool_calls(
+        &self,
+        ctx: &Ctx,
+        calls: &[pii_model::ToolCall],
+        files_changed: &mut Vec<String>,
+        messages: &mut Vec<ChatMessage>,
+    ) {
+        for call in calls {
+            let result = self.toolset.get(&call.name).map_or_else(
+                || Err(format!("unknown tool '{}'", call.name)),
+                |tool| tool.call(ctx, &call.arguments).map_err(|e| e.to_string()),
+            );
+            let (ok, content) = match result {
+                Ok(v) => (true, v.to_string()),
+                Err(e) => (false, e),
+            };
+            // Record files the agent actually changed (F2.10 files_changed).
+            if ok
+                && matches!(call.name.as_str(), "edit" | "multi_edit" | "fs_write")
+                && let Some(p) = call
+                    .arguments
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+            {
+                let resolved = if std::path::Path::new(p).is_absolute() {
+                    p.to_owned()
+                } else {
+                    self.workspace.join(p).display().to_string()
+                };
+                if !files_changed.contains(&resolved) {
+                    files_changed.push(resolved);
+                }
+            }
+            messages.push(ChatMessage {
+                role: Role::Tool,
+                content,
+                tool_call_id: Some(call.id.clone()),
+                tool_calls: Vec::new(),
+            });
+            let _ = ok;
+        }
     }
 }
 

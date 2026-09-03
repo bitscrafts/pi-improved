@@ -169,3 +169,43 @@ async fn valid_hello_creates_session() {
         .expect("session.create");
     assert!(sid.get("session_id").is_some());
 }
+
+/// A hello offering only non-`json` encodings is refused (encoding
+/// negotiation is cut to a refusal; the server speaks json only).
+#[tokio::test]
+async fn hello_non_json_encoding_refused() {
+    let dir = tempfile::Builder::new()
+        .prefix("handshake-")
+        .tempdir_in("/projects/pi-improved/_tmp")
+        .expect("tempdir");
+    let engine = engine_in(dir.path());
+    let stream = pii_server::loopback::spawn_loopback(engine);
+    let (mut r, mut w) = tokio::io::split(stream);
+
+    let req = Request {
+        jsonrpc: "2.0".into(),
+        id: Id::Num(1),
+        method: Method::SysHello,
+        params: serde_json::json!({
+            "protocol": PROTOCOL_VERSION,
+            "client": {"name": "test", "version": "0", "build": "test"},
+            "encodings": ["postcard"],
+            "features": []
+        }),
+    };
+    let line = serde_json::to_string(&Envelope::Request(req)).expect("ser");
+    w.write_all(line.as_bytes()).await.expect("write");
+    w.write_all(b"\n").await.expect("write nl");
+    w.flush().await.expect("flush");
+
+    let mut reader = tokio::io::BufReader::new(&mut r);
+    let mut resp_line = String::new();
+    reader.read_line(&mut resp_line).await.expect("read");
+    let env = parse_frame(resp_line.trim()).expect("parse");
+    let Envelope::Response(resp) = env else {
+        panic!("expected a response, got {env:?}");
+    };
+    let err = resp.error.expect("non-json hello must be refused");
+    assert_eq!(err.code, i32::from(ErrorCode::InvalidParams));
+    assert!(err.message.contains("encoding"), "{}", err.message);
+}

@@ -115,6 +115,16 @@ fn hello_result(params: &HelloParams) -> Result<serde_json::Value, RpcError> {
             serde_json::json!({"expected": PROTOCOL_VERSION, "got": params.protocol}),
         ));
     }
+    // Encoding negotiation is CUT to a refusal (spec F1.4/part-1 scope): the
+    // server answers "json", and a client offering only non-json encodings is
+    // refused. An empty list is treated as "no acceptable encoding".
+    if !params.encodings.iter().any(|e| e == "json") {
+        return Err(RpcError::with_data(
+            ErrorCode::InvalidParams,
+            "no acceptable encoding (server speaks json)",
+            serde_json::json!({"offered": params.encodings}),
+        ));
+    }
     serde_json::to_value(HelloResult {
         protocol: PROTOCOL_VERSION.to_owned(),
         server: PeerInfo {

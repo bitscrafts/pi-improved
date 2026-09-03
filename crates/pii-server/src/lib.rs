@@ -70,6 +70,8 @@ pub struct Engine {
     pub started_at: Instant,
     sessions: parking_lot::Mutex<BTreeMap<String, Session>>,
     runs: parking_lot::Mutex<BTreeMap<String, RunHandle>>,
+    /// Session → runs it has spawned (for session-scoped `event.subscribe`).
+    session_runs: parking_lot::Mutex<BTreeMap<String, Vec<String>>>,
 }
 
 /// A conversation session.
@@ -111,6 +113,7 @@ impl Engine {
             started_at: Instant::now(),
             sessions: parking_lot::Mutex::new(BTreeMap::new()),
             runs: parking_lot::Mutex::new(BTreeMap::new()),
+            session_runs: parking_lot::Mutex::new(BTreeMap::new()),
         }))
     }
 
@@ -180,6 +183,11 @@ impl Engine {
         if let Some(s) = self.sessions.lock().get_mut(session_id) {
             s.run_id = Some(run_id.to_string());
         }
+        self.session_runs
+            .lock()
+            .entry(session_id.to_owned())
+            .or_default()
+            .push(run_id.to_string());
         runs::spawn_run(
             Arc::clone(self),
             spec,
@@ -264,6 +272,17 @@ impl Engine {
             s.status = SessionStatus::Idle;
             s.run_id = None;
         }
+    }
+
+    /// The run ids spawned by a session, oldest first (for session-scoped
+    /// `event.subscribe`). Empty when the session is unknown or has no runs.
+    #[must_use]
+    pub fn session_run_ids(&self, session_id: &str) -> Vec<String> {
+        self.session_runs
+            .lock()
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
