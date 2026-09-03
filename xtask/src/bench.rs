@@ -78,7 +78,10 @@ fn write_report(p95_ms: f64, budget: u64) -> Result<(), String> {
     let path = dir.join("version-startup.json");
     std::fs::write(
         &path,
-        serde_json::to_vec_pretty(&doc).map_err(|e| e.to_string())?,
+        // F6.2 documents a compact single-line doc: {"samples":..,"p50_ms":..,
+        // "p95_ms":..,"budget_ms":<n>}. Pretty-printing would insert spaces and
+        // break the exact-match grep in part-4 exit-criterion 5.
+        serde_json::to_vec(&doc).map_err(|e| e.to_string())?,
     )
     .map_err(|e| format!("bench-gate: write {}: {e}", path.display()))?;
     Ok(())

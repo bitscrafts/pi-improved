@@ -174,7 +174,7 @@ mod tests {
     use super::{Budget, BudgetKind, BudgetShare};
 
     #[test]
-    fn ctx_child_carves_budget() {
+    fn carve_fraction_removes_from_parent() {
         let parent = Budget::with_tokens(1000);
         let child = parent.carve(&BudgetShare::Fraction(25));
         assert_eq!(child.remaining(BudgetKind::Tokens), 250);

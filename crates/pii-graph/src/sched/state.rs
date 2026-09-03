@@ -280,8 +280,10 @@ mod tests {
     }
 
     /// entry -> a (All join) -> b
+    /// Spec EC requires the `readiness_` name so the readiness family is
+    /// greppable under one prefix (part 2 exit-criterion 6).
     #[test]
-    fn entry_node_with_no_inbound_is_ready() {
+    fn readiness_entry_node_with_no_inbound_is_ready() {
         let g = spec(
             vec![node("entry", JoinPolicy::All), node("a", JoinPolicy::All)],
             vec![data("entry", "a")],
