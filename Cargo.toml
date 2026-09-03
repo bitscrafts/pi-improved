@@ -86,6 +86,7 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+overflow-checks = true
 
 # A perf-tuned profile for local benchmarking (kept separate from release so
 # the size-optimised release stays the shipped artifact).
@@ -93,4 +94,7 @@ strip = true
 inherits = "release"
 opt-level = 3
 lto = "thin"
+debug = 1
+strip = false
+panic = "unwind"
 

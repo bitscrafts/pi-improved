@@ -32,7 +32,10 @@ struct OneshotArgs {
 pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCode {
     let mut a = OneshotArgs {
         prompt,
-        json: true,
+        // F31 (opus review): json is the default only when stdout is not a
+        // TTY (spec F5.7); on a TTY the human line format is used unless
+        // --json is passed.
+        json: !std::io::IsTerminal::is_terminal(&std::io::stdout()),
         model: None,
         graph: None,
         workspace: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),

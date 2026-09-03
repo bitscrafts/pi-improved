@@ -19,7 +19,7 @@ const ROOTS: &[&str] = &["crates", "xtask"];
 pub(super) fn count_effective_lines(src: &str) -> usize {
     let mut count = 0usize;
     let mut in_cfg_test = false;
-    let mut cfg_test_depth: i32 = 0;
+    let mut cfg_test_depth: isize = 0;
     for line in src.lines() {
         let trimmed = line.trim();
         // Detect a `#[cfg(test)]` attribute line.
@@ -28,8 +28,8 @@ pub(super) fn count_effective_lines(src: &str) -> usize {
             continue;
         }
         // Track brace depth to know when the cfg(test) module body ends.
-        let opens = trimmed.matches('{').count() as i32;
-        let closes = trimmed.matches('}').count() as i32;
+        let opens = trimmed.matches('{').count().cast_signed();
+        let closes = trimmed.matches('}').count().cast_signed();
         if in_cfg_test {
             cfg_test_depth += opens - closes;
             if cfg_test_depth <= 0 {

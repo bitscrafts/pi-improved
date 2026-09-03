@@ -16,11 +16,11 @@ const DEFAULT_BUDGET_MS: u64 = 20;
 const WARMUP: usize = 10;
 const MEASURED: usize = 50;
 
-/// Runs the benchmark and returns (`p95_ms`, `budget_ms`).
+/// Runs the benchmark and returns (`p50_ms`, `p95_ms`, `budget_ms`).
 ///
 /// # Errors
 /// Returns a message if `./target/release/pii` is missing or a run fails.
-fn run(budget_ms: Option<u64>) -> Result<(f64, u64), String> {
+fn run(budget_ms: Option<u64>) -> Result<(f64, f64, u64), String> {
     let budget = budget_ms.unwrap_or(DEFAULT_BUDGET_MS);
     let binary = std::path::Path::new("./target/release/pii");
     if !binary.exists() {
@@ -42,11 +42,15 @@ fn run(budget_ms: Option<u64>) -> Result<(f64, u64), String> {
     }
     samples.sort_unstable();
 
+    let p50_index = ((MEASURED as f64 * 0.50).ceil() as usize).saturating_sub(1); // 0-based
+    let p50 = samples.get(p50_index).copied().unwrap_or(Duration::ZERO);
+    let p50_ms = p50.as_secs_f64() * 1000.0;
+
     let p95_index = ((MEASURED as f64 * 0.95).ceil() as usize).saturating_sub(1); // 0-based
     let p95 = samples.get(p95_index).copied().unwrap_or(Duration::ZERO);
     let p95_ms = p95.as_secs_f64() * 1000.0;
 
-    Ok((p95_ms, budget))
+    Ok((p50_ms, p95_ms, budget))
 }
 
 /// Invokes the binary via `output()` (never `.spawn()`).
@@ -69,12 +73,12 @@ fn spawn_version(binary: &std::path::Path) -> Result<(), String> {
 }
 
 /// Writes `_tmp/bench/version-startup.json` with the sample stats.
-fn write_report(p95_ms: f64, budget: u64) -> Result<(), String> {
+fn write_report(p50_ms: f64, p95_ms: f64, budget: u64) -> Result<(), String> {
     let dir = std::path::Path::new("_tmp/bench");
     std::fs::create_dir_all(dir).map_err(|e| format!("bench-gate: mkdir _tmp/bench: {e}"))?;
     let doc = serde_json::json!({
         "samples": MEASURED,
-        "p50_ms": 0.0,   // p50 not computed here; p95 is the gate
+        "p50_ms": p50_ms,
         "p95_ms": p95_ms,
         "budget_ms": budget,
     });
@@ -109,9 +113,9 @@ pub(crate) fn run_cli(args: &[String]) -> Result<(), String> {
             i += 1;
         }
     }
-    let (p95, budget) = run(budget)?;
-    write_report(p95, budget)?;
-    println!("p95_ms={p95} budget_ms={budget}");
+    let (p50, p95, budget) = run(budget)?;
+    write_report(p50, p95, budget)?;
+    println!("p50_ms={p50} p95_ms={p95} budget_ms={budget}");
     if p95 > budget as f64 {
         return Err(format!(
             "bench-gate: p95 {p95:.2}ms exceeds budget {budget}ms (cold-start gate)"

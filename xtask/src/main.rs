@@ -53,14 +53,14 @@ fn main() -> ExitCode {
             }
         },
         Some("ci") => {
-            let a = report(deps::run());
-            let b = report(lint_files::run());
-            let c = report(bench::run_cli(&rest).map_err(|e| vec![e]));
+            let deps_ok = report(deps::run());
+            let lint_ok = report(lint_files::run());
+            let bench_ok = report(bench::run_cli(&rest).map_err(|e| vec![e]));
             // F8 (opus review): `cargo xtask ci` must run the full gate set —
             // fmt, clippy, tests — not just deps/lint-files/bench. This is
             // the local runner that §1.6 calls "the real gate".
-            let d = run_cmd("cargo", &["fmt", "--all", "--check"]);
-            let e = run_cmd(
+            let fmt_ok = run_cmd("cargo", &["fmt", "--all", "--check"]);
+            let clippy_ok = run_cmd(
                 "cargo",
                 &[
                     "clippy",
@@ -71,13 +71,13 @@ fn main() -> ExitCode {
                     "warnings",
                 ],
             );
-            let f = run_cmd("cargo", &["test", "--workspace"]);
-            if a == ExitCode::SUCCESS
-                && b == ExitCode::SUCCESS
-                && c == ExitCode::SUCCESS
-                && d == ExitCode::SUCCESS
-                && e == ExitCode::SUCCESS
-                && f == ExitCode::SUCCESS
+            let test_ok = run_cmd("cargo", &["test", "--workspace"]);
+            if deps_ok == ExitCode::SUCCESS
+                && lint_ok == ExitCode::SUCCESS
+                && bench_ok == ExitCode::SUCCESS
+                && fmt_ok == ExitCode::SUCCESS
+                && clippy_ok == ExitCode::SUCCESS
+                && test_ok == ExitCode::SUCCESS
             {
                 ExitCode::SUCCESS
             } else {
