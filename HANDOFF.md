@@ -1,6 +1,29 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES LANDED; PHASE 2 PART 1 COMPLETE (6/6 EC) (2026-09-03)**
+**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) (2026-09-03)**
+
+## PHASE 2 — COMPLETE (all 4 parts, 22/22 exit criteria)
+Spec `specs/04-phase2-client-server.md` split into 4 parts. All four are
+done and committed:
+- **Part 1** (6/6): `pii-proto` wire contract, `pii-server` daemon, `pii-model`/`pii-tools`, `pii-cli` `-p`/`daemon`/`sandbox-exec`. Commits `7800539`, `25cbf5b`.
+- **Part 2** (6/6): starter graphs `react.toml`/`verify-fix.toml`, `tool` node kind, F4.5 loop re-entry, `peercred` test, daemon sandbox-before-model. Commit `1f441d4`.
+- **Part 3** (5/5): `pii-tui` crate (pure protocol client), `handshake` tests, `selfchange.sh` E13 (real multi-file change). Commit `09809b8`.
+- **Part 4** (5/5): `latency` test (N4 < 50 ms), scripted provider sleep. Commit `22535eb`.
+
+**Key fixes landed across parts 2-4** (all root-caused, not papered over):
+- **F4.5 loop re-entry**: engine now executes bounded cycles (was rejecting
+  them at run time). `apply_completion` returns Result; re-entry resets the
+  target + downstream reachable set; budget enforced at dispatch time
+  (exactly `budget` executions). Split into `sched/loop_helpers.rs`.
+- **fs tools relative-path bug**: `edit a.txt` resolved against process CWD,
+  not the session workspace → "path parent not found". Each fs tool now
+  carries a workspace and joins relative paths to it.
+- **agent node caps bug**: TOML loader defaults node caps to
+  `required_caps_of(kind)`, empty for `agent`/`tool` (builtin registry
+  doesn't know them) → every edit denied `Ctx::fs()`. Starter graphs now
+  declare explicit `caps = ["fs_read","fs_write","proc"]`.
+- **Landlock PartiallyEnforced** (part 1): device nodes need file-only
+  access rights, not the full directory-rights set.
 
 ## PHASE 2 PART 1 — COMPLETE (6/6 exit criteria)
 Spec `specs/04-phase2-client-server-part1.md` (client/server split: `pii-proto`
