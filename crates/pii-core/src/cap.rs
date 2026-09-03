@@ -167,6 +167,16 @@ impl CapSet {
             secrets: self.secrets.intersect(&other.secrets),
         }
     }
+
+    /// Narrows only the kind bits, keeping every path/host scope intact
+    /// (F4.3: node capability narrowing — scopes are inherited from the run
+    /// context; only the kind bits attenuate).
+    #[must_use]
+    pub fn narrow_kinds(&self, kinds: CapKind) -> Self {
+        let mut cs = Self::clone(self);
+        cs.kinds &= kinds;
+        cs
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,10 @@
+{
+  "turns": [
+    {
+      "text": "hello from the scripted fixture",
+      "tool_calls": [],
+      "tokens_in": 3,
+      "tokens_out": 5
+    }
+  ]
+}

@@ -6,10 +6,11 @@
 //! attenuation by construction: capabilities are intersected, budget is
 //! carved (never duplicated), cancel is a child token, and span increments.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use pii_abi::PiiError;
+use pii_abi::{CapKind, PiiError};
 
 use crate::budget::{Budget, BudgetShare};
 use crate::cancel::CancelToken;
@@ -89,7 +90,7 @@ impl Ctx {
     /// `FS_WRITE`.
     pub fn fs(&self) -> Result<FsCap<'_>, PiiError> {
         let caps = &self.inner.caps.kinds;
-        if caps.intersects(crate::CapKind::FS_READ | crate::CapKind::FS_WRITE) {
+        if caps.intersects(CapKind::FS_READ | CapKind::FS_WRITE) {
             Ok(FsCap::new(self))
         } else {
             Err(self.deny("fs"))
@@ -101,7 +102,7 @@ impl Ctx {
     /// # Errors
     /// Returns [`PiiError::Denied`] unless the context grants `NET`.
     pub fn net(&self) -> Result<NetCap<'_>, PiiError> {
-        if self.inner.caps.kinds.contains(crate::CapKind::NET) {
+        if self.inner.caps.kinds.contains(CapKind::NET) {
             Ok(NetCap { ctx: self })
         } else {
             Err(self.deny("net"))
@@ -113,7 +114,7 @@ impl Ctx {
     /// # Errors
     /// Returns [`PiiError::Denied`] unless the context grants `PROC`.
     pub fn proc(&self) -> Result<ProcCap<'_>, PiiError> {
-        if self.inner.caps.kinds.contains(crate::CapKind::PROC) {
+        if self.inner.caps.kinds.contains(CapKind::PROC) {
             Ok(ProcCap { ctx: self })
         } else {
             Err(self.deny("proc"))
@@ -255,11 +256,120 @@ pub struct NetCap<'a> {
     ctx: &'a Ctx,
 }
 
-/// Process gate. Phase 1 holds no methods.
+/// Process gate (F3.8): `run` is the single sanctioned child-process site.
 #[derive(Debug)]
 pub struct ProcCap<'a> {
-    #[allow(unused)]
     ctx: &'a Ctx,
+}
+
+/// Result of a completed child process.
+#[derive(Debug, Clone)]
+pub struct ProcOutput {
+    /// Exit status code (124 when the timeout fired).
+    pub exit_code: i32,
+    /// Captured stdout.
+    pub stdout: Vec<u8>,
+    /// Captured stderr.
+    pub stderr: Vec<u8>,
+    /// True when the timeout fired and the child was killed.
+    pub timed_out: bool,
+}
+
+impl ProcCap<'_> {
+    /// Runs `argv` in `cwd` with a wall-clock `timeout`, enforcing the
+    /// `PROC` kind and the `proc_argv0` scope (F3.8).
+    ///
+    /// # Errors
+    /// [`PiiError::Denied`] when `PROC` is missing or `argv[0]` is out of
+    /// scope; [`PiiError::Timeout`] when the child exceeds the timeout;
+    /// [`PiiError::Internal`] on spawn/wait failure.
+    pub fn run(
+        &self,
+        argv: &[String],
+        cwd: &Path,
+        timeout: std::time::Duration,
+    ) -> Result<ProcOutput, PiiError> {
+        self.ctx.check()?;
+        if !self.ctx.caps().kinds.contains(CapKind::PROC) {
+            return Err(self.ctx.deny("proc"));
+        }
+        let Some(argv0) = argv.first() else {
+            return Err(PiiError::Invalid(String::from("run: empty argv")));
+        };
+        if !self.ctx.caps().proc_argv0.permits(argv0.as_str()) {
+            return Err(self.ctx.deny("proc"));
+        }
+        run_child(argv, cwd, timeout)
+    }
+}
+
+/// The ONLY place in the workspace that constructs a `std::process::Command`
+/// (F3.8). `Command::output()` cannot enforce a timeout, so `spawn` is used
+/// (with the F3.8-sanctioned per-item allow) to keep the child handle for
+/// `try_wait`/`kill`. Captured streams are drained on joinable threads.
+fn run_child(
+    argv: &[String],
+    cwd: &Path,
+    timeout: std::time::Duration,
+) -> Result<ProcOutput, PiiError> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let Some(argv0) = argv.first() else {
+        return Err(PiiError::Invalid(String::from("run: empty argv")));
+    };
+    let mut cmd = Command::new(argv0);
+    cmd.args(argv.get(1..).unwrap_or(&[]))
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[allow(clippy::disallowed_methods)] // reason: ProcCap::run is the single
+    // sanctioned Command site (spec F3.8); the timeout needs the child handle.
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| PiiError::Internal(format!("spawn {argv0}: {e}")))?;
+    let drain = |pipe: std::process::ChildStdout| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let mut p = pipe;
+            let _ = p.read_to_end(&mut buf);
+            buf
+        })
+    };
+    let out_t = child.stdout.take().map(drain);
+    let err_t = child.stderr.take().map(|pipe| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let mut p = pipe;
+            let _ = p.read_to_end(&mut buf);
+            buf
+        })
+    });
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Err(e) => return Err(PiiError::Internal(format!("wait {argv0}: {e}"))),
+            Ok(Some(status)) => {
+                return Ok(ProcOutput {
+                    exit_code: status.code().unwrap_or(1),
+                    stdout: out_t.map_or_else(Vec::new, |h| h.join().unwrap_or_default()),
+                    stderr: err_t.map_or_else(Vec::new, |h| h.join().unwrap_or_default()),
+                    timed_out: false,
+                });
+            }
+            Ok(None) => {
+                if started.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(PiiError::Timeout {
+                        after_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    });
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
 }
 
 #[cfg(test)]

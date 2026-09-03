@@ -6,6 +6,10 @@ members = [
     "crates/pii-store",
     "crates/pii-graph",
     "crates/pii-cli",
+    "crates/pii-proto",
+    "crates/pii-model",
+    "crates/pii-tools",
+    "crates/pii-server",
     "xtask",
 ]
 
@@ -30,6 +34,8 @@ toml = "1.1"
 blake3 = "1.8"
 dunce = "1.0"
 tempfile = "3"
+tokio = { version = "1.53", default-features = false }
+landlock = "0.4"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

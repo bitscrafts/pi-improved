@@ -1,0 +1,22 @@
+[package]
+name = "pii-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pii wire protocol: JSON-RPC 2.0 envelopes, methods, and events"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["io-util", "sync", "time", "rt"] }
+
+[features]
+default = []
+client = ["dep:tokio"]
+
+[lints]
+workspace = true

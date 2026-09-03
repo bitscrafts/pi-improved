@@ -1,0 +1,29 @@
+[package]
+name = "pii-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pii daemon: engine, JSON-RPC dispatch, UDS/loopback transports"
+
+[dependencies]
+pii-abi = { path = "../pii-abi" }
+pii-core = { path = "../pii-core" }
+pii-store = { path = "../pii-store" }
+pii-graph = { path = "../pii-graph" }
+pii-proto = { path = "../pii-proto" }
+pii-model = { path = "../pii-model" }
+pii-tools = { path = "../pii-tools" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+dunce = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

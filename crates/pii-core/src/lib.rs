@@ -12,6 +12,7 @@
 mod budget;
 mod cancel;
 mod cap;
+mod config;
 mod ctx;
 mod fscap;
 mod observe;
@@ -20,7 +21,8 @@ mod principal;
 pub use budget::{Budget, BudgetKind, BudgetShare};
 pub use cancel::CancelToken;
 pub use cap::{CapSet, PathScope, StringScope};
-pub use ctx::Ctx;
+pub use config::env_var;
+pub use ctx::{Ctx, ProcOutput};
 pub use fscap::FsCap;
 pub use observe::{Metric, MultiObserver, NullObserver, ObsEvent, Observer, RecordingObserver};
 pub use pii_abi::{CapKind, PiiError};
