@@ -1,6 +1,28 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) (2026-09-03)**
+**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES (2026-09-03)**
+
+## PRE-REVIEW BUG FIXES (commit `851a6f5`) — fixed before the opus review
+Five bugs found while preparing the Phase-2 opus review, verified against
+the spec and fixed first:
+- **A (F2.5)**: `event.subscribe` required an explicit `run` and rejected
+  the TUI's session-scoped subscribe (`run:None, session:Some`) with
+  "needs run" — the TUI could never attach. Engine now tracks
+  session→runs; a session-scoped subscribe resolves to that session's most
+  recent run. Neither run nor session → `Invalid`.
+- **B (F1.4)**: `sys.status` hardcoded `runs_active:0`/`sessions:0`. Now
+  reports the live run-registry and session-map lengths.
+- **C (F1.4/part-1 scope)**: hello encoding negotiation was not enforced —
+  a client offering only non-json encodings was accepted. Server now
+  refuses (code `-32602`) any hello whose `encodings` do not include
+  `json`. New test `hello_non_json_encoding_refused`.
+- **D (F2.10)**: agent node did not retry-once a retryable provider error.
+  Now retries once, then routes to `err`. A non-retryable error still
+  propagates as a node failure (run failure) — preserves the `fail.json`
+  EC (exit 1).
+- **E (F2.10)**: agent node always reported `files_changed: []`. Now
+  records the resolved path of every successful `edit`/`multi_edit`/
+  `fs_write` call.
 
 ## PHASE 2 — COMPLETE (all 4 parts, 22/22 exit criteria)
 Spec `specs/04-phase2-client-server.md` split into 4 parts. All four are
