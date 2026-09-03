@@ -1,52 +1,50 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 CORE ENGINE + LINT SURFACE COMPLETE (autonomous run, 2026-09-02)**
+**Status: GREEN — PHASE 1 CORE ENGINE COMPLETE ALL 24/24 EXIT CRITERIA (2026-09-03)**
 
 ## What exists
 - 3-pass architecture research in `_docs/06-research/` (passes 1-3, ~48k words total).
 - 5 reference repos cloned in `_repos/` (read-only).
-- pidag initialized + BUG-FIXED (session-dir isolation, model split — commit `6d69f4c`).
-- **Phase 0 COMPLETE**: workspace skeleton + CI gates, 20/20 exit criteria (commit `1ae1b32`).
-- **2-parallel-workers VALIDATED**: pidag `--concurrency 2`.
+- pidag initialized + BUG-FIXED (D1 worker-error swallowing, AlreadyDone fast-fail, binary/PATH/API-key hygiene — pidag commits `b2399f9`..`d21a0a8`).
+- **Phase 0 COMPLETE**: workspace skeleton + CI gates (commit `1ae1b32`).
+- **Phase 1 COMPLETE**: core engine (Ctx + graph engine + journal + scheduler + validator + run/resume/trace CLI).
 
-## PHASE 1 — done so far (all authored directly; flaky ollama-cloud worker)
-Spec `specs/03-phase1-core-engine.md` written by opus, split into 4 parts (24 exit criteria).
+## PHASE 1 — COMPLETE
+Spec `specs/03-phase1-core-engine.md` authored by opus, split into 4 parts (**24 exit criteria**). The pidag+glm-5.3-flash-worker path was debugged end-to-end and now genuinely implements code.
+
 Committed milestones:
-- **pii-core** (`7ce9402`...): Ctx, CapSet, Budget, CancelToken, Principal, TraceCtx, Observer, FsCap. 8 compile errors + 8 clippy fixed. 18 tests.
-- **pii-store** (`*`): redb persistence, transactional append_event (one write txn), snapshots, resume index. 5 tests. redb-4.2 trait imports; can't impl external RunStatus.
-- **pii-graph model+validator** (`*`): GraphSpec/JoinPolicy/Edge, load_toml, tiny `$.` expr, NodeFactory/NodeRegistry, validate() V0-V3/V5/V9.
-- **pii-graph sched state** (`*`): EdgeState/Readiness/RunState, readiness (All/Any/Quorum/AllSettled, entry-node-zero-inbound explicit), dead propagation fixpoint.
-- **pii-graph blackboard + built-in nodes** (`*`): transform/route/emit/wait runtimes.
-- **pii-graph run engine + CLI** (`21c3f6a`): tick loop draining all ready, UnsatisfiableJoin, limits; `pii --version` + `pii graph lint` (exit 3 on V-code).
-- `pii-abi` ids now derive Ord/PartialOrd.
+- **pii-core** (`7ce9402`): Ctx, CapSet, Budget, CancelToken, Principal, TraceCtx, Observer, FsCap. 18 tests.
+- **pii-store**: redb persistence, transactional append_event (one write txn), snapshots, resume index. 5 tests.
+- **pii-graph model+validator**: GraphSpec/JoinPolicy/Edge, load_toml, tiny `$.` expr, NodeFactory/NodeRegistry, validate() V0-V3/V5/V6/V9.
+- **pii-graph sched state**: EdgeState/Readiness/RunState, readiness (All/Any/Quorum/AllSettled, entry-node-zero-inbound explicit), dead propagation fixpoint.
+- **pii-graph blackboard + built-in nodes**: transform/route/emit/wait runtimes.
+- **pii-graph run engine + CLI** (`21c3f6a`): tick loop draining all ready, UnsatisfiableJoin, limits; `pii --version` + `pii graph lint`.
+- **pii-graph journal + run/resume/trace CLI** (`64d1bda`): journal emission + cap-narrowing, `sched/dispatch.rs` (parallel+sequential, cancel_losers), `cmd_run`/`cmd_resume`/`cmd_trace`, ndjson observer, four-test diamond suite (4 passed, incl. unsatisfiable V6 runtime + race cancel).
+- **Phase-1 EC closure** (`c3e94fc`): readiness test naming, budget.rs test-name collision, bench-gate compact JSON (F6.2).
 
-**Verified:** 46 tests, `quality-gate ALL PASS`; all 9 example TOMLs lint correctly
-(5 functional OK, 4 negatives V1/V2/V3/V9).
+**Exit criteria — 6/6 met in ALL FOUR parts (24/24)**, `quality-gate ALL PASS` (fmt + clippy -D warnings + test).
 
-## KEY LEARNINGS (see agent-memory `implementation/*`)
-- **ollama-cloud large-prompt instability**: intermittent empty 0-token responses on >15KB implement prompts (both glm-5.3-flash:cloud AND deepseek-v4-flash:cloud). Small probes always work. This made pidag worker runs fail fast regardless of timeout — the model, not pidag. Worked around by authoring deterministic code directly.
-- **Background pi loses OLLAMA_API_KEY**: foreground works (key in shell); spawned subshells report "No API key found".
-- petgraph tarjan_scc single-node cycle = `find_edge(n,n)` self-loop, NOT `edges_directed().count()>0`.
-- GraphSpec.caps / NodeSpec.caps are `u32` bitflags (CapSet scopes empty at spec; CLI applies allow-scopes at runtime).
+## KEY LEARNINGS (see agent-memory `implementation/*`, pidag `docs/`)
+- **pidag worker error-swallowing (D1)**: worker `Err`/empty failures collapsed to "execution failed"; fixed in pidag `execute.rs`.
+- **Stale-binary shadow**: `/usr/local/bin/pidag` (pre-D1) + `/usr/local/bin/pi` shadowed patched copies → phantom "No API key". USER DIRECTIVE: built binaries ONLY in `~/.local/bin`.
+- **Background env drops OLLAMA_API_KEY**; background shells lack `/root/.local/bin` on PATH.
+- **ollama-cloud large-prompt instability**: empty 0-token responses on >15KB prompts (glm-5.3-flash + deepseek-v4-flash). reasoning_effort:"none" + small prompts.
+- **granite-4.2 tier-1 nano probe**: `_docs/06-research/004-granite-nano-tier-probe.md` — granite4.2:3b needs `--reasoning off`; Tier 0 stays pure-Rust embedder.
 
-## REMAINING in Phase 1
-- **redb-backed `pii graph run/resume/trace`** wiring (F5.3/5.4/5.5, F4.11 resume journal replay). CLI `graph run/resume/trace` currently reports "not yet wired".
-- **xtask bench-gate** (F6.2) + `cargo xtask ci` (F6.3).
-- Then verify against part2-4 exit criteria via `pidag validate` / run.
-
-## NEXT after Phase 1 — Phase 2: client/server split + coding harness
-- Prompt ready at `_tmp/phase2_spec_prompt.md`. **Cron `pii-phase2-opus-spec` fires 2026-09-02 14:55 UTC** (opus quota reset 14:50 UTC).
+## NEXT — Phase 2: client/server split + coding harness
+- Prompt ready at `_tmp/phase2_spec_prompt_2026-09-02.md`. Specs `04-phase2-client-server{,-part1..4}.md` partially authored by planner.
 - Load-bearing gate: `cargo tree -p pii-tui` does NOT contain `pii-graph`.
-- `pii-proto` (wire types), `pii-server` (UDS + loopback), `pii-cli -p`, `pii-tui` thin client, `starter/react` + `starter/verify-fix`, bash mediation + nono Landlock sandbox.
+- `pii-proto` (wire types), `pii-server` (UDS + loopback), `pii-cli -p`, `pii-tui` thin client, `starter/react` + `starter/verify-fix`, bash mediation + Landlock sandbox.
 
 ## Key files
-- `specs/03-phase1-core-engine-part{1,2,3,4}.md` — split Phase 1 spec.
-- `examples/*.toml` — 9 functional + lint-negative example graphs.
-- `crates/pii-graph/src/{spec,toml_load,expr,node,nodes,validate,sched/state,blackboard,run}.rs`
-- `crates/pii-store/src/{lib,tables,codec}.rs`, `crates/pii-cli/src/main.rs`
+- `specs/03-phase1-core-engine-part{1,2,3,4}.md` — Phase 1 split spec (all ECs now met).
+- `examples/*.toml` — 10 functional + lint-negative example graphs (incl. crash-resume.toml).
+- `crates/pii-graph/src/{spec,toml_load,expr,node,nodes,validate,sched/state,sched/dispatch,blackboard,journal,run}.rs`
+- `crates/pii-store/src/{lib,tables,codec}.rs`, `crates/pii-cli/src/{main,cmd_run,cmd_trace,cli_util,ndjson}.rs`
+- `crates/pii-graph/tests/diamond.rs` — four-test diamond suite.
 
 ## Memory keys
 `pii/implementation/phase1-pii-core-complete`, `.../phase1-pii-store-complete`,
 `.../phase1-pii-graph-lint-complete`, `.../phase1-scheduler-state-complete`,
 `.../phase1-blackboard-nodes-complete`, `.../phase1-run-cli-lint-complete`,
-`.../ollama-cloud-large-prompt-instability`
+`.../phase1-journal-run-resume-trace-complete`, `.../ollama-cloud-large-prompt-instability`
