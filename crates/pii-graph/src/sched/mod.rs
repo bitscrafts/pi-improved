@@ -4,6 +4,7 @@
 //! loop, dispatch with `cancel_losers`, and the blackboard land with the run
 //! entry point in a dedicated pass.
 
+pub mod dispatch;
 pub mod state;
 
 pub use state::{

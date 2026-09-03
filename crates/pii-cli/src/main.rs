@@ -4,6 +4,11 @@
 // reason: the CLI must write to stdout/stderr directly (spec F5.5).
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
+mod cli_util;
+mod cmd_run;
+mod cmd_trace;
+mod ndjson;
+
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: pii [--version] | pii graph {lint|run|resume|trace} ...";
@@ -77,22 +82,25 @@ fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
         return ExitCode::from(2);
     };
     let sub = sub.to_str().map_or_else(|| "?".to_owned(), str::to_owned);
-    if let Some(file_arg) = args.next()
-        && sub == "lint"
-    {
+    // Consume the lint positional ONLY for lint — an unconditional args.next()
+    // here would eat `graph run`'s <file.toml>.
+    if sub == "lint" {
+        let Some(file_arg) = args.next() else {
+            eprintln!("usage: pii graph lint <file.toml>");
+            return ExitCode::from(2);
+        };
         let file = file_arg.into_string().unwrap_or_default();
         return cmd_graph_lint(&file);
     }
-    if sub == "run" || sub == "resume" || sub == "trace" {
-        // Journal-backed run/resume/trace needs the Store integration, which
-        // lands with the scheduler run-entry pass. Cleanly report the gap.
-        eprintln!(
-            "error: 'graph {sub}' is not yet wired (store-backed run lands with the run engine pass)"
-        );
-        return ExitCode::from(2);
+    match sub.as_str() {
+        "run" => cmd_run::cmd_run(args),
+        "resume" => cmd_run::cmd_resume(args),
+        "trace" => cmd_trace::cmd_trace(args),
+        _ => {
+            eprintln!("usage: pii graph {{lint|run|resume|trace}} ...");
+            ExitCode::from(2)
+        }
     }
-    eprintln!("usage: pii graph {{lint|run|resume|trace}} ...");
-    ExitCode::from(2)
 }
 
 #[cfg(test)]

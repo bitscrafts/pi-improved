@@ -62,6 +62,20 @@ impl NodeRegistry {
             .get(kind)
             .ok_or_else(|| PiiError::NotFound(format!("unknown node kind '{kind}'")))
     }
+
+    /// Registers an additional factory (custom kinds; tests, plugins).
+    pub fn register(&mut self, factory: Arc<dyn NodeFactory>) {
+        let kind = factory.kind();
+        self.map.insert(kind, factory);
+    }
+
+    /// The kind's `required_caps()`; empty for an unknown kind. Unknown kinds
+    /// are rejected by `validate()` — the default must not invent capabilities.
+    #[must_use]
+    pub fn required_caps_of(&self, kind: &str) -> CapKind {
+        self.factory(kind)
+            .map_or_else(|_| CapKind::empty(), |f| f.required_caps())
+    }
 }
 
 #[doc = "Built-in factory for the `transform` node kind."]

@@ -66,6 +66,9 @@ pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
     // nodes
     let mut nodes = Vec::new();
     let mut ids_seen = std::collections::HashSet::new();
+    // For the node-caps default (kind's required_caps()); builtin registry is
+    // fine here — custom factories only matter through validate()/run's own.
+    let reg = crate::node::NodeRegistry::builtin();
     if let Some(toml::Value::Array(arr)) = doc.get("node") {
         for item in arr {
             let t = item
@@ -107,10 +110,11 @@ pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
                 },
                 Some(_) => return Err(PiiError::Invalid("'retry' must be a table".into())),
             };
-            // caps: optional array; default to kind's required caps (filled by
-            // caller/registry later; here default FS_WRITE for emit, else none).
+            // caps: optional array; defaults to the kind's required_caps()
+            // (spec part3: "Node caps default to the kind's required_caps()").
+            // Unknown kinds keep empty — validate() rejects them separately.
             let caps = match t.get("caps") {
-                None => CapKind::empty(),
+                None => reg.required_caps_of(&kind),
                 Some(toml::Value::Array(items)) => {
                     let mut k = CapKind::empty();
                     for item in items {

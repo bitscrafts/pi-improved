@@ -7,8 +7,17 @@ use parking_lot::Mutex;
 /// An observation about the engine's execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObsEvent {
-    /// A journal event was appended.
+    /// A journal event was appended (unsequenced form, for callers that
+    /// emit events outside a run journal).
     Run(pii_abi::RunEvent),
+    /// A journal event was appended at the given sequence number. Emitted by
+    /// the run engine so observers can stream `{"seq":n,"event":..}` lines.
+    Journal {
+        /// The journal sequence the event was written at.
+        seq: u64,
+        /// The appended event.
+        event: pii_abi::RunEvent,
+    },
     /// A capability denial occurred.
     Denial {
         /// The principal that was denied.

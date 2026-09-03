@@ -52,21 +52,40 @@ impl<'a> FsCap<'a> {
     }
 
     /// Resolves a possibly-non-existent target to a canonical path: if the
-    /// target does not exist, canonicalise its parent and re-join the name.
+    /// target does not exist, canonicalise its *nearest existing ancestor*
+    /// and re-join the non-existent tail. This keeps the scope check honest
+    /// for targets whose parent directories do not exist yet — the check
+    /// still happens on the canonical location the file *would* occupy.
     fn canonical_for(p: &Path) -> Result<std::path::PathBuf, PiiError> {
         if let Ok(c) = dunce::canonicalize(p) {
             return Ok(c);
         }
-        let parent = p
-            .parent()
-            .ok_or_else(|| PiiError::Invalid("no parent".into()))?;
-        let name = p
-            .file_name()
-            .ok_or_else(|| PiiError::Invalid("no file name".into()))?;
-        let c_parent = dunce::canonicalize(parent).map_err(|_| {
-            PiiError::NotFound(format!("path parent not found: {}", parent.display()))
-        })?;
-        Ok(c_parent.join(name))
+        let mut existing = p.to_path_buf();
+        let mut tail: Vec<std::ffi::OsString> = Vec::new();
+        loop {
+            let parent = existing.parent().ok_or_else(|| {
+                PiiError::NotFound(format!("path has no parent: {}", p.display()))
+            })?;
+            let name = existing
+                .file_name()
+                .ok_or_else(|| PiiError::Invalid(format!("no file name: {}", p.display())))?
+                .to_os_string();
+            tail.push(name);
+            if parent.as_os_str().is_empty() {
+                return Err(PiiError::NotFound(format!(
+                    "path parent not found: {}",
+                    p.display()
+                )));
+            }
+            if let Ok(c) = dunce::canonicalize(parent) {
+                let mut canon = c;
+                for part in tail.iter().rev() {
+                    canon.push(part);
+                }
+                return Ok(canon);
+            }
+            existing = parent.to_path_buf();
+        }
     }
 
     /// Reads a file, enforcing `FS_READ` and the read scope.
@@ -128,5 +147,72 @@ impl<'a> FsCap<'a> {
             .map_err(|e| PiiError::Internal(format!("append {}: {e}", canonical.display())))?;
         f.write_all(bytes)
             .map_err(|e| PiiError::Internal(format!("append {}: {e}", canonical.display())))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use std::path::{Path, PathBuf};
+
+    use pii_abi::PiiError;
+
+    use crate::budget::Budget;
+    use crate::cap::{CapKind, CapSet, PathScope};
+    use crate::ctx::Ctx;
+
+    fn tmp_root() -> PathBuf {
+        PathBuf::from("/projects/pi-improved/_tmp")
+    }
+
+    /// A root context granting `FS_WRITE` over exactly `allow`.
+    fn write_ctx(allow: &[PathBuf]) -> Ctx {
+        let mut caps = CapSet::empty();
+        caps.kinds = CapKind::FS_WRITE;
+        caps.fs_write = PathScope::new(allow.to_vec());
+        Ctx::root(caps, Budget::unlimited())
+    }
+
+    #[test]
+    fn fscap_write_outside_scope_denied() {
+        let dir = tempfile::Builder::new()
+            .prefix("fscap-out-")
+            .tempdir_in(tmp_root())
+            .unwrap();
+        let ok_dir = dir.path().join("ok");
+        std::fs::create_dir_all(&ok_dir).unwrap();
+        let ok_canon = dunce::canonicalize(&ok_dir).unwrap();
+
+        let ctx = write_ctx(&[ok_canon]);
+        let outside = dir.path().join("nope").join("f");
+        let err = ctx.fs().unwrap().write(&outside, b"x").unwrap_err();
+        assert!(matches!(err, PiiError::Denied(_)), "got {err:?}");
+        assert!(!outside.exists(), "file must not be created");
+    }
+
+    #[test]
+    fn fscap_symlink_escape_denied() {
+        let dir = tempfile::Builder::new()
+            .prefix("fscap-link-")
+            .tempdir_in(tmp_root())
+            .unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink("/etc", &link).unwrap();
+
+        let scope = dunce::canonicalize(dir.path()).unwrap();
+        let ctx = write_ctx(&[scope]);
+
+        let target = link.join("pii-escape");
+        let result = ctx.fs().unwrap().write(&target, b"escape");
+        assert!(matches!(result, Err(PiiError::Denied(_))), "got {result:?}");
+        assert!(!Path::new("/etc/pii-escape").exists());
+
+        std::fs::remove_file(&link).unwrap();
     }
 }

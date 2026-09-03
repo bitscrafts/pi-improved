@@ -159,7 +159,6 @@ impl Store {
     /// Returns [`PiiError::Internal`] on a redb failure.
     pub fn append_event(&self, header: &mut RunHeader, event: &RunEvent) -> Result<u64, PiiError> {
         let seq = header.seq;
-        let old_status = header.status;
         // The caller bumps status before/after via header mutation; here we
         // store whatever status the header currently reports.
         let bytes = to_bytes(event)?;
@@ -190,9 +189,19 @@ impl Store {
             let mut status_tbl = write
                 .open_table(RUN_BY_STATUS)
                 .map_err(|e| PiiError::Internal(format!("store: open status: {e}")))?;
-            status_tbl
-                .remove((status_name(old_status), header.run.as_str()))
-                .map_err(|e| PiiError::Internal(format!("store: remove old status: {e}")))?;
+            // Repoint, don't append: drop the run from every status bucket,
+            // then list it under its current status. (Removing only the
+            // previous key would leave a stale Running row behind forever.)
+            for st in [
+                RunStatus::Running,
+                RunStatus::Suspended,
+                RunStatus::Succeeded,
+                RunStatus::Failed,
+            ] {
+                status_tbl
+                    .remove((status_name(st), header.run.as_str()))
+                    .map_err(|e| PiiError::Internal(format!("store: remove status: {e}")))?;
+            }
             status_tbl
                 .insert((status_name(header.status), header.run.as_str()), ())
                 .map_err(|e| PiiError::Internal(format!("store: insert status: {e}")))?;
@@ -374,7 +383,8 @@ mod tests {
     use crate::Store;
 
     fn tmp_store(name: &str) -> Store {
-        let dir = std::env::temp_dir().join("pii-store-test");
+        // N8: all test artifacts live under /projects/pi-improved/_tmp.
+        let dir = std::path::Path::new("/projects/pi-improved/_tmp/pi-store-test").to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("{}-{}.redb", name, std::process::id()));
         let _ = std::fs::remove_file(&path);

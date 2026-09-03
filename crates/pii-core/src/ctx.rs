@@ -124,11 +124,25 @@ impl Ctx {
     /// duplicated); cancel is a child token; principal is replaced; span
     /// increments.
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
     pub fn child(&self, principal: Principal, narrow: &CapSet, share: &BudgetShare) -> Self {
+        let cancel = self.inner.cancel.child();
+        self.child_with_token(principal, narrow, share, cancel)
+    }
+
+    /// Like [`Ctx::child`], but installs `token` as this context's own cancel
+    /// token (which may still observe its ancestors). The scheduler uses this
+    /// so a per-node token registered in a side table is the *same* token the
+    /// node observes — `cancel_losers` must reach the running thread.
+    #[must_use]
+    pub fn child_with_token(
+        &self,
+        principal: Principal,
+        narrow: &CapSet,
+        share: &BudgetShare,
+        token: CancelToken,
+    ) -> Self {
         let caps = Arc::new(self.inner.caps.intersect(narrow));
         let budget = Arc::new(self.inner.budget.carve(share));
-        let cancel = self.inner.cancel.child();
         let trace = TraceCtx {
             run: self.inner.trace.run.clone(),
             span: self.inner.trace.span + 1,
@@ -138,7 +152,7 @@ impl Ctx {
         let obs = Arc::clone(&self.inner.obs);
         Self {
             inner: Arc::new(CtxInner {
-                cancel,
+                cancel: token,
                 started,
                 deadline,
                 budget,
