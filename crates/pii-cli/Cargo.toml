@@ -17,6 +17,7 @@ pii-core = { path = "../pii-core" }
 pii-store = { path = "../pii-store" }
 pii-graph = { path = "../pii-graph" }
 serde_json = { workspace = true }
+dunce = { workspace = true }
 
 [dev-dependencies]
 

@@ -4,9 +4,10 @@ use thiserror::Error;
 
 /// Errors surfaced by the Pii kernel ABI.
 ///
-/// Retryable and terminal are mutually exclusive (see the partition test);
-/// every non-terminal variant is transient, every terminal variant never
-/// succeeds by retrying.
+/// `is_retryable` and `is_terminal` are mutually exclusive but NOT exhaustive:
+/// a variant can be neither (e.g. `NotFound`, `Internal`), meaning it is
+/// neither worth retrying nor guaranteed to never succeed. Do not route on
+/// `!is_terminal()` as "retry this" — that would retry `Internal` forever.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum PiiError {
     /// An input or parameter was not valid.
@@ -89,6 +90,19 @@ mod tests {
         }
         assert!(PiiError::Timeout { after_ms: 1 }.is_retryable());
         assert!(!PiiError::Timeout { after_ms: 1 }.is_terminal());
+        // The third class: neither retryable nor terminal (NotFound, Internal).
+        // Pinned deliberately so a future change cannot silently make them
+        // retryable (which would retry Internal forever).
+        assert!(
+            !PiiError::NotFound(String::new()).is_retryable()
+                && !PiiError::NotFound(String::new()).is_terminal(),
+            "NotFound must be neither retryable nor terminal"
+        );
+        assert!(
+            !PiiError::Internal(String::new()).is_retryable()
+                && !PiiError::Internal(String::new()).is_terminal(),
+            "Internal must be neither retryable nor terminal"
+        );
         for (v, name) in [
             (&PiiError::Denied(String::new()), "Denied"),
             (&PiiError::Invalid(String::new()), "Invalid"),

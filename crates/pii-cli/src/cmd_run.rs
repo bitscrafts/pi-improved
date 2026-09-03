@@ -167,7 +167,15 @@ fn load_and_validate(
 fn root_ctx(allow_write: &[PathBuf], run: RunId, limits: &pii_graph::GraphLimits) -> Ctx {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut fs_write = vec![cwd.join("_tmp")];
-    fs_write.extend(allow_write.iter().cloned());
+    // Canonicalise each --allow-write so the grant matches the canonical
+    // target FsCap checks (opus review F15): a relative or symlinked grant
+    // otherwise silently grants nothing. Create the dir first if absent so
+    // dunce::canonicalize succeeds.
+    for p in allow_write {
+        let _ = std::fs::create_dir_all(p);
+        let canon = dunce::canonicalize(p).unwrap_or_else(|_| p.clone());
+        fs_write.push(canon);
+    }
     let caps = CapSet {
         kinds: CapKind::FS_READ | CapKind::FS_WRITE,
         fs_read: PathScope::new(vec![cwd]),

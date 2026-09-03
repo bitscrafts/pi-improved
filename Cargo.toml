@@ -42,7 +42,6 @@ rust_2018_idioms = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
-
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
@@ -68,3 +67,21 @@ must_use_candidate = "allow"
 missing_const_for_fn = "allow"
 multiple_crate_versions = "allow"
 cargo_common_metadata = "allow"
+
+# Release profile per pass-1 §4.2 (opus review F16): size-optimised, LTO,
+# panic=abort (a panic inside a thread::scope worker must not unwind into the
+# scheduler and abort the process without a journal Finished event), stripped.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# A perf-tuned profile for local benchmarking (kept separate from release so
+# the size-optimised release stays the shipped artifact).
+[profile.perf]
+inherits = "release"
+opt-level = 3
+lto = "thin"
+
