@@ -8,8 +8,11 @@
 //! "one write txn per event" property hold (pass-1 §3.4, pass-3 §4.8).
 #![forbid(unsafe_code)]
 
+pub mod approval;
+pub mod channel;
 mod codec;
 pub mod mem;
+pub mod timer;
 pub use mem::MemStore;
 mod tables;
 

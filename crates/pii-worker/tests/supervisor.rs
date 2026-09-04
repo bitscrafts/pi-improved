@@ -202,7 +202,7 @@ fn stderr_flood_does_not_deadlock() {
     // A flood worker: writes 10 MB to stderr while answering echo (F3.2).
     let scratch = std::path::PathBuf::from("/projects/pi-improved/_tmp/phase3/test");
     let _ = std::fs::create_dir_all(&scratch);
-    let prog = scratch.join(format!("flood-{}.sh", std::process::id()));
+    let prog = scratch.join(format!("flood-{}-{}.sh", std::process::id(), line!()));
     // Atomic write (tmp + rename): a leftover running instance from a prior
     // run holds flood.sh busy, and in-place writes fail with ETXTBSY.
     let tmp = prog.with_extension("tmp");
@@ -247,7 +247,7 @@ fn reload_swaps_program_and_tag() {
     let ctx = full_ctx();
     let scratch = std::path::PathBuf::from("/projects/pi-improved/_tmp/phase3/test");
     let _ = std::fs::create_dir_all(&scratch);
-    let prog = scratch.join(format!("swap-{}.sh", std::process::id()));
+    let prog = scratch.join(format!("swap-{}-{}.sh", std::process::id(), line!()));
     let pii_bin = std::path::PathBuf::from("/projects/pi-improved/target/debug/pii");
     let write_prog = |tag: &str| {
         // Operators never write in place over a running program (ETXTBSY);

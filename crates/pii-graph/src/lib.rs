@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod blackboard;
+pub mod cron;
 pub mod expr;
 pub mod journal;
 pub mod node;

@@ -78,6 +78,30 @@ pub enum Method {
     /// Reload a worker (drain → respawn).
     #[serde(rename = "worker.reload")]
     WorkerReload,
+    /// List pending approvals.
+    #[serde(rename = "approve.list")]
+    ApproveList,
+    /// Resolve an approval (allow/deny).
+    #[serde(rename = "approve.resolve")]
+    ApproveResolve,
+    /// List cron entries.
+    #[serde(rename = "cron.list")]
+    CronList,
+    /// List configured channels.
+    #[serde(rename = "channel.list")]
+    ChannelList,
+    /// Memory search.
+    #[serde(rename = "memory.search")]
+    MemorySearch,
+    /// Memory put.
+    #[serde(rename = "memory.put")]
+    MemoryPut,
+    /// Memory consolidate.
+    #[serde(rename = "memory.consolidate")]
+    MemoryConsolidate,
+    /// Reload config (channels/workers), never restarts the process.
+    #[serde(rename = "sys.reload")]
+    SysReload,
 }
 
 impl std::fmt::Display for Method {
@@ -107,6 +131,14 @@ impl std::fmt::Display for Method {
             Self::EventUnsubscribe => "event.unsubscribe",
             Self::WorkerList => "worker.list",
             Self::WorkerReload => "worker.reload",
+            Self::ApproveList => "approve.list",
+            Self::ApproveResolve => "approve.resolve",
+            Self::CronList => "cron.list",
+            Self::ChannelList => "channel.list",
+            Self::MemorySearch => "memory.search",
+            Self::MemoryPut => "memory.put",
+            Self::MemoryConsolidate => "memory.consolidate",
+            Self::SysReload => "sys.reload",
         })
     }
 }
@@ -140,6 +172,14 @@ impl std::str::FromStr for Method {
             "event.unsubscribe" => Self::EventUnsubscribe,
             "worker.list" => Self::WorkerList,
             "worker.reload" => Self::WorkerReload,
+            "approve.list" => Self::ApproveList,
+            "approve.resolve" => Self::ApproveResolve,
+            "cron.list" => Self::CronList,
+            "channel.list" => Self::ChannelList,
+            "memory.search" => Self::MemorySearch,
+            "memory.put" => Self::MemoryPut,
+            "memory.consolidate" => Self::MemoryConsolidate,
+            "sys.reload" => Self::SysReload,
             other => return Err(other.to_owned()),
         })
     }

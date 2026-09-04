@@ -232,3 +232,67 @@ impl super::GraphNode for WaitNode {
         })
     }
 }
+
+/// `timer` (F5.6): cfg `{ in_ms: u64 }` or `{ cron: "<5 fields>" }`.
+///
+/// Returns
+/// `Outcome::Suspend { reason: Timer { in_ms }, key: "timer:<node>:<fire>" }`
+/// — the scheduler wheel owns the actual waiting. The blocking `wait` node
+/// is unchanged; this kind never blocks.
+#[derive(Debug)]
+pub struct TimerNode {
+    /// Delay for the plain form (0 = cron-driven).
+    in_ms: u64,
+    /// The parsed cron expression (`None` for the plain `in_ms` form).
+    cron: Option<crate::cron::Cron>,
+    /// Raw cron spec (for the key).
+    #[allow(dead_code)] // reason: cron-sourced timers land with the
+    // scheduler pass (F5.x); the parse keeps TOML load total.
+    cron_spec: Option<String>,
+}
+
+impl TimerNode {
+    /// Builds from cfg.
+    ///
+    /// # Errors
+    /// [`PiiError::Invalid`] when neither `in_ms` nor a valid `cron` is given.
+    pub fn new(cfg: &serde_json::Value) -> Result<Self, PiiError> {
+        let in_ms = cfg.get("in_ms").and_then(serde_json::Value::as_u64);
+        let cron_spec = cfg
+            .get("cron")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        if in_ms.is_none() && cron_spec.is_none() {
+            return Err(PiiError::Invalid(
+                "timer requires 'in_ms' (u64) or 'cron' (5-field string)".into(),
+            ));
+        }
+        let parsed = match &cron_spec {
+            Some(spec) => Some(crate::cron::Cron::parse(spec)?),
+            None => None,
+        };
+        Ok(Self {
+            in_ms: in_ms.unwrap_or(0),
+            cron: parsed,
+            cron_spec,
+        })
+    }
+
+    /// The next fire delay in ms: `in_ms`, or the cron's next fire from `now`.
+    #[must_use]
+    pub fn next_in_ms(&self, now_ms: u64) -> u64 {
+        self.cron
+            .as_ref()
+            .map_or(self.in_ms, |c| c.next_after(now_ms).saturating_sub(now_ms))
+    }
+}
+
+impl super::GraphNode for TimerNode {
+    fn run(&self, ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
+        let in_ms = self.next_in_ms(ctx.now_ms());
+        Ok(Outcome::Suspend {
+            reason: pii_abi::SuspendReason::Timer { in_ms },
+            key: pii_abi::ResumeKey(format!("timer:{in_ms}")),
+        })
+    }
+}

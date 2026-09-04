@@ -177,9 +177,31 @@ impl Supervisor {
     // cohesive F3.4 unit; splitting it would obscure the handshake ordering.
     pub(crate) fn spawn_and_hello(&self, ctx: &Ctx) -> Result<(), PiiError> {
         let spec = &self.inner.spec;
-        let proc = ctx
-            .proc()?
-            .spawn_child(&child_argv(spec), &cwd_for(), &spec.env)?;
+        // ETXTBSY retry: a concurrent exec/rename on the program file makes
+        // one spawn fail with "Text file busy"; a short bounded retry is
+        // the operator-honest fix (never a panic, never a busy-wait).
+        let mut proc = None;
+        for attempt in 0..10u32 {
+            match ctx
+                .proc()?
+                .spawn_child(&child_argv(spec), &cwd_for(), &spec.env)
+            {
+                Ok(p) => {
+                    proc = Some(p);
+                    break;
+                }
+                Err(e) if e.to_string().contains("Text file busy") && attempt < 9 => {
+                    std::thread::sleep(Duration::from_millis(20 * u64::from(attempt + 1)));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        let proc = proc.ok_or_else(|| {
+            PiiError::Unavailable(format!(
+                "worker '{}' program stayed busy across retries",
+                spec.name
+            ))
+        })?;
         let pid = proc.pid();
         let mut child = Some(proc);
         let Some(mut writer) = child.as_mut().and_then(ChildProc::stdin) else {

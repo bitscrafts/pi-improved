@@ -152,6 +152,20 @@ fn render_event(ev: &Event) -> String {
             pii_proto::event::WireTerminal::Suspended { .. } => "… suspended".to_owned(),
         },
         Event::RunCancelled { .. } => "run cancelled".to_owned(),
+        Event::RunSuspended { key, reason, .. } => format!("… suspended ({reason}) key={key}"),
+        Event::RunResumed { key, .. } => format!("▶ resumed key={key}"),
+        Event::ApprovalRequested { prompt, .. } => format!("? approval: {prompt}"),
+        Event::ApprovalResolved { allow, .. } => {
+            format!("  approval {}", if *allow { "allowed" } else { "denied" })
+        }
+        Event::WorkerDied { worker, pid, .. } => format!("✘ worker {worker} pid {pid} died"),
+        Event::WorkerRestarted { worker, pid, .. } => {
+            format!("▶ worker {worker} pid {pid} restarted")
+        }
+        Event::ChannelMessage { channel, chat, .. } => {
+            format!("✉ {channel}/{chat}")
+        }
+        Event::MemoryDegraded { lanes, .. } => format!("⚠ memory degraded: {}", lanes.join(",")),
         Event::Lagged { dropped, .. } => format!("⚠ lagged: {dropped} dropped"),
     }
 }

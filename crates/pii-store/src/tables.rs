@@ -61,3 +61,14 @@ pub(crate) const MEM_META: TableDefinition<'_, &str, u64> = TableDefinition::new
 /// Archived (never deleted) documents: doc id -> encoded `Doc`.
 pub(crate) const MEM_ARCHIVE: TableDefinition<'_, &str, &[u8]> =
     TableDefinition::new("mem_archive");
+
+/// Timer wheel `(fire_at_ms, run_id)` -> resume key (F5.5).
+pub(crate) const TIMER_WHEEL: TableDefinition<'_, (u64, &str), &str> =
+    TableDefinition::new("timer_wheel");
+
+/// Approvals `approval_id` -> encoded record (F5.10).
+pub(crate) const APPROVAL: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("approval");
+
+/// Channel cursor + last started run: channel -> encoded `{cursor,run_id}`.
+pub(crate) const CHANNEL_CURSOR: TableDefinition<'_, &str, &[u8]> =
+    TableDefinition::new("channel_cursor");

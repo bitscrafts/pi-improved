@@ -1,0 +1,35 @@
+name = "starter/consolidate"
+entry = "tick"
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+max_tokens = 100000
+max_model_calls = 10
+
+[[node]]
+id = "tick"
+kind = "timer"
+cron = "*/15 * * * *"
+
+[[node]]
+id = "run"
+kind = "memory"
+op = "consolidate"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "consolidated"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "run"
+kind = "data"
+
+[[edge]]
+from = "run"
+port = "ok"
+to = "done"
+kind = "data"

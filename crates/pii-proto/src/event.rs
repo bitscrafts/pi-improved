@@ -117,6 +117,72 @@ pub enum Event {
         /// Run id.
         run_id: String,
     },
+    /// A run suspended (gate/timer) and awaits a resume key.
+    RunSuspended {
+        /// Run id.
+        run_id: String,
+        /// The resume key.
+        key: String,
+        /// Human-readable reason.
+        reason: String,
+    },
+    /// A suspended run was resumed.
+    RunResumed {
+        /// Run id.
+        run_id: String,
+        /// The resume key used.
+        key: String,
+    },
+    /// A gate requested an approval decision.
+    ApprovalRequested {
+        /// Approval id.
+        approval_id: String,
+        /// Run id.
+        run_id: String,
+        /// Policy name.
+        policy: String,
+        /// Prompt for the approver.
+        prompt: String,
+    },
+    /// An approval decision was recorded.
+    ApprovalResolved {
+        /// Approval id.
+        approval_id: String,
+        /// `true` = allow, `false` = deny.
+        allow: bool,
+    },
+    /// A worker died (supervisor event).
+    WorkerDied {
+        /// Worker name.
+        worker: String,
+        /// Dead pid.
+        pid: u32,
+    },
+    /// A worker was respawned.
+    WorkerRestarted {
+        /// Worker name.
+        worker: String,
+        /// Fresh pid.
+        pid: u32,
+        /// Death-to-hello milliseconds.
+        took_ms: u64,
+    },
+    /// A channel message produced a run.
+    ChannelMessage {
+        /// Channel name.
+        channel: String,
+        /// Chat id.
+        chat: String,
+        /// Run id.
+        run_id: String,
+    },
+    /// Memory search degraded (vector lane down).
+    MemoryDegraded {
+        /// The lanes that still ran.
+        lanes: Vec<String>,
+        /// Why the lane was skipped.
+        reason: String,
+    },
     /// A subscriber fell behind and events were dropped (never silent).
     Lagged {
         /// Subscription id.

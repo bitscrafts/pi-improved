@@ -429,8 +429,18 @@ fn event_matches_run(ev: &Event, run_id: &str) -> bool {
         | Event::ToolCall { run_id: r, .. }
         | Event::ToolResult { run_id: r, .. }
         | Event::RunFinished { run_id: r, .. }
-        | Event::RunCancelled { run_id: r } => r == run_id,
-        Event::Lagged { .. } => true,
+        | Event::RunCancelled { run_id: r }
+        | Event::RunSuspended { run_id: r, .. }
+        | Event::RunResumed { run_id: r, .. }
+        | Event::ApprovalRequested { run_id: r, .. } => r == run_id,
+        // ApprovalResolved/Worker*/ChannelMessage/MemoryDegraded/Lagged are
+        // process-scoped bus events, not per-run; forward them always.
+        Event::ApprovalResolved { .. }
+        | Event::WorkerDied { .. }
+        | Event::WorkerRestarted { .. }
+        | Event::ChannelMessage { .. }
+        | Event::MemoryDegraded { .. }
+        | Event::Lagged { .. } => true,
     }
 }
 
@@ -450,6 +460,14 @@ fn event_matches_kinds(ev: &Event, kinds: &[String]) -> bool {
         Event::ToolResult { .. } => "tool_result",
         Event::RunFinished { .. } => "run_finished",
         Event::RunCancelled { .. } => "run_cancelled",
+        Event::RunSuspended { .. } => "run_suspended",
+        Event::RunResumed { .. } => "run_resumed",
+        Event::ApprovalRequested { .. } => "approval_requested",
+        Event::ApprovalResolved { .. } => "approval_resolved",
+        Event::WorkerDied { .. } => "worker_died",
+        Event::WorkerRestarted { .. } => "worker_restarted",
+        Event::ChannelMessage { .. } => "channel_message",
+        Event::MemoryDegraded { .. } => "memory_degraded",
         Event::Lagged { .. } => "lagged",
     };
     kinds.iter().any(|k| k == kind)

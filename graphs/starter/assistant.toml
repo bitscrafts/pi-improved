@@ -1,0 +1,47 @@
+name = "starter/assistant"
+entry = "agent"
+caps = ["fs_read", "fs_write", "proc"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "agent"
+kind = "agent"
+memory = { enabled = true, top_k = 6 }
+tools = ["fs_read"]
+max_turns = 4
+
+[[node]]
+id = "reply"
+kind = "transform"
+expr = "$.payload"
+
+[[node]]
+id = "fail_err"
+kind = "transform"
+value = "error"
+
+[[node]]
+id = "fail_budget"
+kind = "transform"
+value = "budget exceeded"
+
+[[edge]]
+from = "agent"
+port = "ok"
+to = "reply"
+kind = "data"
+
+[[edge]]
+from = "agent"
+port = "err"
+to = "fail_err"
+kind = "data"
+
+[[edge]]
+from = "agent"
+port = "budget"
+to = "fail_budget"
+kind = "data"

@@ -50,6 +50,7 @@ impl NodeRegistry {
         map.insert("route", Arc::new(RouteFactory));
         map.insert("emit", Arc::new(EmitFactory));
         map.insert("wait", Arc::new(WaitFactory));
+        map.insert("timer", Arc::new(TimerFactory));
         Self { map }
     }
 
@@ -181,6 +182,32 @@ impl NodeFactory for RouteFactory {
     }
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
         Ok(Box::new(crate::nodes::RouteNode::new(cfg)?))
+    }
+}
+/// Built-in factory for the `timer` node kind (F5.6).
+#[allow(non_camel_case_types)]
+#[doc = "Built-in factory for the `timer` node kind."]
+pub struct TimerFactory;
+
+impl NodeFactory for TimerFactory {
+    fn kind(&self) -> &'static str {
+        "timer"
+    }
+
+    fn effects(&self) -> Effects {
+        Effects::PURE
+    }
+
+    fn required_caps(&self) -> CapKind {
+        CapKind::empty()
+    }
+
+    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(vec![PortName::from("fired"), PortName::from("timeout")])
+    }
+
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        Ok(Box::new(crate::nodes::TimerNode::new(cfg)?))
     }
 }
 
