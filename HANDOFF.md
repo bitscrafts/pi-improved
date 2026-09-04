@@ -1,91 +1,69 @@
 # Pii — Session Handoff
 
-**Status: YELLOW — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS — 5/13 EC; ANTHROPIC SESSION CAP ACTIVE until 2026-09-05 03:10 UTC; TOKEN-BLEED ROOT-CAUSED (session --resume); FRESH-SESSION resume cron `pii-part4-fresh-session-resume` (job c50f625a0644) fires 03:15 UTC (2026-09-04, ollama weekly quota near exhaustion, Anthropic session cap active)**
+**Status: YELLOW (FROZEN) — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS — 5/13 EC; USER DIRECTIVE 2026-09-04 22:54 UTC: "NO MORE CLAUDE CODE ON THIS! KEEP LESSONS LEARNED! NO MORE TOKENS TO TRY!" — part4 RESUME IS PAUSED INDEFINITELY pending user go-ahead. DO NOT spend Anthropic or ollama-cloud tokens on part4 without explicit user direction. Work is SAFE at checkpoint `db1de5f` + handoff `5ac882f`.**
 
-## TOKEN-BLEED POST-MORTEM (2026-09-04, user: "spending tokens like hell!") — READ FIRST
-**Root cause: `claude -p --resume <session>` re-reads the ENTIRE accumulated
-conversation (all prior tool output + file dumps) on every turn.** Five runs
-against one resumed session (`bec5796c-8862-4b2e-ad6f-5af4d658d108`) spent
-~$35, overwhelmingly on cache-read tokens replaying history, not new work:
-run1 $7.69 (26.8M cache-read), run2 $5.91 (18.6M), run4 $16.12 (**63.8M**),
-run6 $3.08 (2.6M in ONE turn). Each 5h session window was exhausted in
-~20 min of real work because every resumed turn starts at 50-80% window
-utilization before doing anything. Session caps reset at fixed UTC times.
-**THE FIX — STANDING RULE for all Claude Code delegation in this project:
-NEVER `--resume` for continuation. Always launch FRESH `claude -p`
-sessions (~0% utilization, pay only for real work) with a compact brief**
-(`_tmp/phase3/part4-fresh-brief.md`). If a fresh session runs out of turns,
-launch another fresh one with the state written to a file — do not resume.
+## ⛔ STOP — USER ORDER: NO MORE TOKEN SPEND ON PART4 (2026-09-04 22:54 UTC)
+User directive, verbatim intent: no more Claude Code on part4, keep the
+lessons learned, no more tokens to try. All resume machinery has been
+removed: the 03:15 UTC fresh-session cron (job c50f625a0644) was deleted.
+Nothing is scheduled. No live claude/pidag/pi processes. The next agent
+must NOT launch claude -p, pidag, or any paid/cloud work on part4 without
+the user saying so. If part4 is later resumed, use FRESH `claude -p`
+sessions only (see the token-bleed rule below) or whatever the user
+directs at that time. The 8 remaining EC are documented below so a human
+or a future free/approved run can pick up exactly where it stopped.
 
-## PHASE 3 PART 4 — IN PROGRESS (5/13 EC; work SAFE at checkpoint `db1de5f`)
-All work from sonnet runs 1-6 was CHECKPOINT-COMMITTED at `db1de5f`
+## LESSONS LEARNED (recorded for good — do not un-learn these)
+1. **NEVER `claude --resume` for continuation** — it re-reads the whole
+   accumulated conversation every turn (26-64M cache-read tokens per run)
+   and exhausts the 5h Anthropic window in ~20 min of real work. Five
+   resumed runs burned ~$35, ~90% on history replay. Fresh `claude -p`
+   sessions start near 0% utilization and pay only for real work.
+2. **Fresh session per run + compact brief + state in a file** is the
+   correct delegation pattern for long implementation tasks.
+3. Anthropic 5h session caps reset at fixed UTC times; ollama-cloud
+   session caps give no reset time; ollama weekly quota resets Mon 07:00
+   local (10:00 UTC); glm-5.3-flash:cloud may 404 in the live catalog.
+4. Specs are planner-only; never let a workhorse edit them.
+5. Checkpoint-commit clean-building work at every natural stop — the
+   part4 work was checkpointed (`db1de5f`) and nothing was lost.
+
+## PHASE 3 PART 4 — FROZEN STATE (5/13 EC; work SAFE)
+All work from sonnet runs 1-6 is committed at checkpoint `db1de5f`
 ("chore(phase3 part4): checkpoint daemon, channels, node kinds, CLI,
-fixtures mid-implementation (builds clean)") — nothing is at risk, and
-HANDOFF below is committed at that same point. Tree builds clean;
-`./quality-gate.sh` ALL PASS (fmt/clippy/test).
+fixtures mid-implementation (builds clean)") + handoff `5ac882f`. Tree
+builds clean; `./quality-gate.sh` ALL PASS (fmt/clippy/test).
 
 **EXIT CRITERIA 5/13 PASS** (validate: `/root/.pi/agent/skills/validate-exit-criteria/run.sh specs/05-phase3-assistant-gateway-part4.md /projects/pi-improved`):
-- PASS: build, quality-gate (green after fmt+clippy fixes), lint-files, shutdown.sh, graph-lint.
-- FAIL (8, all needing implementation, ~1-2 more FRESH sonnet sessions): `scripts/phase3/{discord-e2e,cron,crash,secret-scan}.sh` (crash.sh can use graphs/starter/crash.toml; cron.sh soak_cron.toml), `cargo test -p pii-server --test {channels,approvals,scheduler}` (test files not yet written or not passing — check `crates/pii-server/tests/`), `cargo xtask rss-gate --secs 300 --interval 10 --max-mb 50 --runs 3000` (finishes compiling then fails/hangs — fix the gate, do NOT weaken thresholds).
+- PASS: build, quality-gate, lint-files, shutdown.sh, graph-lint.
+- FAIL (8, remaining when/if resumed): `scripts/phase3/{discord-e2e,cron,
+  crash,secret-scan}.sh` (crash.sh can use graphs/starter/crash.toml;
+  cron.sh soak_cron.toml), `cargo test -p pii-server --test {channels,
+  approvals,scheduler}` (test files not yet written or not passing —
+  check `crates/pii-server/tests/`), `cargo xtask rss-gate --secs 300
+  --interval 10 --max-mb 50 --runs 3000` (finishes compiling then fails/
+  hangs — fix the gate, do NOT weaken thresholds).
 
-**NEXT RESUME POINTER**: Anthropic session resets **2026-09-05 03:10 UTC**.
-One-shot cron `pii-part4-fresh-session-resume` (job c50f625a0644) fires
-**03:15 UTC**: PONG-probes the cap, then runs up to 2 FRESH (non-resume)
-sonnet sessions against the compact brief `_tmp/phase3/part4-fresh-brief.md`
-(finish 8 failing EC, commit only at 13/13 + quality-gate green, neutral
-message "feat(phase3 part4): daemon lifecycle, timer wheel, cron, approvals,
-Discord channel, RSS gate (13/13 EC)"). Cron output is local-only (not
-delivered to the user's terminal).
-
-## SONNET RUNS 1-6 SUMMARY (session `bec5796c-8862-4b2e-ad6f-5af4d658d108`, ~$35 total)
-- **runs 1-3** (~$13.6, before 22:10 UTC cap): survey + pii-channels
-  crate (discord.rs DiscordChannel + cli.rs CliChannel, tests pass),
-  pii-server/src/nodes/{gate,memory,crash}.rs wired into registry,
-  pii-server/src/daemon/ full module (approvals/config/methods/mod/
-  router/scheduler/status; lib.rs attach_daemon_ctx), RunSuspended/
-  RunResumed bus mapping, FakeHttpServer stateful routes, StatusResult
-  extended, dispatch.rs delegating arms. Tree left mid-break (missing
-  `pub mod methods;`) — fixed at start of run4.
-- **run4** (22:15-22:37, 121 turns, hit max-turns not quota): fixed the
-  mid-break (build green), implemented CLI subcommands (cmd_ctl/cmd_soak/
-  cmd_sys: net/worker/memory/approve/cron/soak/worker-exec via UDS control
-  socket), daemon SIGTERM shutdown (scripts/phase3/shutdown.sh PASSES),
-  fixtures (discord routes.json, model assistant.json/atoms.json,
-  soak.toml, workers.toml, ollama chat.json), graphs/starter/{crash,slow,
-  soak,soak_cron}.toml.
-- **run5** (22:42): hit 429 session limit · resets 3:10am (UTC) after 24
-  turns. Orchestrator ran cargo fmt --all + fixed
-  clippy::redundant_pub_crate/unreachable_pub in cmd_ctl.rs afterwards.
-- **run6** (22:42, stray duplicate launch): 6 turns, same 429. Dead.
-No stray daemons running.
-
-**IMPLEMENTER SWITCHED FROM PIDAG TO CLAUDE CODE + SONNET** per user
-directive: ollama-cloud (`glm-5.3-flash:cloud`) hit repeated session
-usage-limit 429s on part4 (2 quota walls), user flagged the ollama
-weekly quota near exhaustion, and directed "wait, stop, dispatch claude
-code + sonnet to finish the part 4". Uses the Anthropic subscription
-(account tier) per AGENTS.md's two-layer cost policy. Stale ollama-cloud
-quota-retry crons were removed; do NOT recreate without user direction.
+**DELIVERED (committed `db1de5f`)**: `crates/pii-channels/` (discord.rs
+DiscordChannel + cli.rs CliChannel, tests pass), `pii-server/src/nodes/
+{gate,memory,crash}.rs` in registry, `pii-server/src/daemon/` full module
+(approvals/config/methods/mod/router/scheduler/status + attach_daemon_ctx),
+RunSuspended/RunResumed bus mapping, FakeHttpServer stateful routes,
+StatusResult extended, dispatch.rs delegating arms, CLI subcommands
+(cmd_ctl/cmd_soak/cmd_sys + main.rs wiring + cmd_daemon), daemon SIGTERM
+shutdown (shutdown.sh PASSES), fixtures (discord routes.json, model
+assistant.json/atoms.json, soak.toml, workers.toml, ollama chat.json),
+graphs/starter/{crash,slow,soak,soak_cron}.toml.
 
 **REMOTE CHANNEL CHANGED: Telegram → Discord (user directive, 2026-09-04).**
-Both `specs/05-phase3-assistant-gateway.md` and `-part4.md` were edited
-by the planner (this is spec authoring, exclusively planner work) to
-replace every Telegram reference with Discord:
-`PII_DISCORD_TOKEN`/`PII_DISCORD_CHANNEL_ID`/`PII_DISCORD_API_BASE`
-(was `PII_TELEGRAM_TOKEN`/`PII_TELEGRAM_API_BASE`), `DiscordChannel`
-(`src/discord.rs`, was `TelegramChannel`/`telegram.rs`) polling
-`GET /channels/{id}/messages?after={cursor}` (was `getUpdates`) and
-sending `POST /channels/{id}/messages` with `{"content":…}` (was
-`sendMessage`/`{"chat_id":…,"text":…}`), auth via `Authorization: Bot
-<token>` header (was a URL path segment `/bot<token>/`), script
-`discord-e2e.sh` (was `telegram-e2e.sh`), fixtures under
-`fixtures/phase3/discord/` (was `telegram/`). Redaction rule changed from
-"redact `/bot<token>/` to `/bot<redacted>/`" to "the `Authorization`
-header is never logged; any URL that would carry a credential is
-redacted to `<redacted>`". **If any workhorse regenerates Telegram code,
-it is reading a stale committed file or hallucinating — the specs are
-now Discord-only; do not revert.** Spec-edit commit: `5e212ed`
-(parent-spec Discord completion + HANDOFF refresh).
+Both `specs/05-phase3-assistant-gateway.md` and `-part4.md` are fully
+Discord-edited (planner work, commits `562eb93`+`5e212ed`):
+`PII_DISCORD_TOKEN`/`PII_DISCORD_CHANNEL_ID`/`PII_DISCORD_API_BASE`,
+`DiscordChannel` in src/discord.rs, poll `GET /channels/{id}/messages?
+after={cursor}`, send `POST /channels/{id}/messages` `{"content":…}`,
+auth `Authorization: Bot <token>` header (never logged), script
+`discord-e2e.sh`, fixtures under `fixtures/phase3/discord/`. **Never
+revert to Telegram; specs are authoritative and Discord-only.**
 
 **Next after part4 13/13 + committed** — user-requested, queued:
 1. Opus deep analysis of the full implementation against
