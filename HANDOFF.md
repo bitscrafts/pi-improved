@@ -290,3 +290,10 @@ Full adversarial review by opus against the research docs (report `_tmp/phase1-o
 `.../phase1-pii-graph-lint-complete`, `.../phase1-scheduler-state-complete`,
 `.../phase1-blackboard-nodes-complete`, `.../phase1-run-cli-lint-complete`,
 `.../phase1-journal-run-resume-trace-complete`, `.../ollama-cloud-large-prompt-instability`
+
+## 2026-09-04 — PART 3 (pii-memory) NOT STARTED — incomplete handoff written
+Iteration budget expired during reconnaissance; zero code written, working
+tree clean (nothing to commit). Full starting-position facts + remaining
+work order in `_tmp/phase3/incomplete-handoff-part3-2026-09-04.md`.
+Next: implement pii-store/mem.rs + pii-memory + xtask invariant 5 +
+memory-eval + fixtures per specs/05-...-part3.md.
