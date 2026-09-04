@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use pii_core::{Budget, CapKind, CapSet, Ctx, Principal, TraceCtx};
+use pii_core::{Budget, CapKind, CapSet, Ctx, PathScope, Principal, TraceCtx};
 use pii_proto::event::Event;
 
 use crate::Engine;
@@ -38,8 +38,17 @@ pub fn spawn_all(
 }
 
 fn channel_ctx(name: &str) -> Ctx {
+    // The channel needs NET (Discord) AND FS (the cli channel's inbox/
+    // outbox files are read/written through Ctx::fs). Capability denial is
+    // enforced by Ctx::fs/ctx.net; the router grants both.
     let mut caps = CapSet::empty();
-    caps.kinds = CapKind::NET;
+    caps.kinds = CapKind::NET | CapKind::FS_READ | CapKind::FS_WRITE;
+    caps.fs_read = PathScope::new(vec![std::path::PathBuf::from(
+        "/projects/pi-improved/_tmp/phase3",
+    )]);
+    caps.fs_write = PathScope::new(vec![std::path::PathBuf::from(
+        "/projects/pi-improved/_tmp/phase3",
+    )]);
     Ctx::with_observer(
         caps,
         Budget::unlimited(),
@@ -53,7 +62,13 @@ fn channel_ctx(name: &str) -> Ctx {
         Principal::Channel(name.to_owned()),
         &{
             let mut c = CapSet::empty();
-            c.kinds = CapKind::NET;
+            c.kinds = CapKind::NET | CapKind::FS_READ | CapKind::FS_WRITE;
+            c.fs_read = PathScope::new(vec![std::path::PathBuf::from(
+                "/projects/pi-improved/_tmp/phase3",
+            )]);
+            c.fs_write = PathScope::new(vec![std::path::PathBuf::from(
+                "/projects/pi-improved/_tmp/phase3",
+            )]);
             c
         },
         &pii_core::BudgetShare::Shared,

@@ -165,7 +165,17 @@ async fn run_daemon(
         }
     };
 
-    let clock: std::sync::Arc<dyn pii_core::Clock> = std::sync::Arc::new(pii_core::SystemClock);
+    // PII_TEST_CLOCK_MS (test-only): when set, the daemon uses a FixedClock
+    // starting at that epoch so scripts can drive timers deterministically.
+    let clock: std::sync::Arc<dyn pii_core::Clock> =
+        match pii_core::env_var("PII_TEST_CLOCK_MS").and_then(|v| v.parse().ok()) {
+            Some(start_ms) => {
+                let fc = pii_core::FixedClock::new();
+                fc.advance(start_ms);
+                std::sync::Arc::new(fc)
+            }
+            None => std::sync::Arc::new(pii_core::SystemClock),
+        };
     let daemon = match Daemon::build(engine.clone(), &cfg, &runtime_dir, config_path, clock) {
         Ok(d) => d,
         Err(e) => {

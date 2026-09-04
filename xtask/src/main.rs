@@ -11,10 +11,11 @@ mod lint_files;
 mod memory_eval;
 pub mod net_check;
 mod proto_gen;
+mod rss_gate;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|memory-eval|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|memory-eval|rss-gate|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -48,6 +49,20 @@ fn main() -> ExitCode {
     match cmd.as_deref() {
         Some("deps-check") => report(deps::run()),
         Some("net-check") => report(net_check::run()),
+        Some("rss-gate") => match parse_rss_gate(&rest) {
+            Ok((secs, interval, max_mb, runs)) => match rss_gate::run(secs, interval, max_mb, runs)
+            {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            },
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("memory-eval") => match parse_mem_eval(&rest) {
             Ok((c, q, k)) => match memory_eval::run(&c, &q, k) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -296,4 +311,31 @@ fn memory_eval_fixture_is_not_rigged() {
             );
         }
     }
+}
+
+/// Parses `rss-gate [--secs N] [--interval N] [--max-mb N] [--runs N]` (F5.14).
+fn parse_rss_gate(rest: &[String]) -> Result<(u64, u64, u64, u32), String> {
+    let mut secs = 300u64;
+    let mut interval = 10u64;
+    let mut max_mb = 50u64;
+    let mut runs = 3000u32;
+    let mut it = rest.iter();
+    while let Some(arg) = it.next() {
+        let next_u64 = |name: &str, it: &mut std::slice::Iter<'_, String>| -> Result<u64, String> {
+            it.next()
+                .and_then(|v| v.parse().ok())
+                .ok_or_else(|| format!("{name} needs a number"))
+        };
+        match arg.as_str() {
+            "--secs" => secs = next_u64("--secs", &mut it)?,
+            "--interval" => interval = next_u64("--interval", &mut it)?,
+            "--max-mb" => max_mb = next_u64("--max-mb", &mut it)?,
+            "--runs" => {
+                let v = next_u64("--runs", &mut it)?;
+                runs = v.try_into().map_err(|_| "--runs too large")?;
+            }
+            other => return Err(format!("unknown rss-gate arg '{other}'")),
+        }
+    }
+    Ok((secs, interval, max_mb, runs))
 }
