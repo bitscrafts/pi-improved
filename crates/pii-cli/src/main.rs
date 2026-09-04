@@ -11,6 +11,7 @@ mod cmd_run;
 mod cmd_sandbox_exec;
 mod cmd_trace;
 mod cmd_tui;
+mod cmd_worker_exec;
 mod ndjson;
 
 use std::process::ExitCode;
@@ -82,6 +83,9 @@ fn main() -> ExitCode {
     }
     if cmd == "daemon" {
         return cmd_daemon::cmd_daemon(&mut args);
+    }
+    if cmd == "worker-exec" {
+        return cmd_worker_exec::cmd_worker_exec();
     }
     if cmd == "sandbox-exec" {
         return cmd_sandbox_exec::cmd_sandbox_exec(&mut args);

@@ -9,6 +9,7 @@ members = [
     "crates/pii-proto",
     "crates/pii-model",
     "crates/pii-net",
+    "crates/pii-worker",
     "crates/pii-tools",
     "crates/pii-server",
     "crates/pii-tui",

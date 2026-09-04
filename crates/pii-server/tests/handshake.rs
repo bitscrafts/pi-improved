@@ -38,8 +38,10 @@ fn fixtures_hello() -> PathBuf {
         .join("fixtures/phase2/hello.json")
 }
 
-/// A hello with `protocol:"pii.v2"` is refused with code 100, data.expected
-/// == "pii.v1", and the connection is closed (no session created).
+/// A hello with `protocol:"pii.v99"` is refused with code 100,
+/// data.expected == "pii.v2", and the connection is closed (no session
+/// created). The version under test was bumped from "pii.v2" when the
+/// protocol itself became pii.v2 (Phase 3) — the single authorised change.
 #[tokio::test]
 async fn hello_skew_is_hard_refusal() {
     let dir = tempfile::Builder::new()
@@ -56,7 +58,7 @@ async fn hello_skew_is_hard_refusal() {
         id: Id::Num(1),
         method: Method::SysHello,
         params: serde_json::json!({
-            "protocol": "pii.v2",
+            "protocol": "pii.v99",
             "client": {"name": "test", "version": "0", "build": "test"},
             "encodings": ["json"],
             "features": []

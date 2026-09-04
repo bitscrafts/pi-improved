@@ -72,6 +72,12 @@ pub enum Method {
     /// Unsubscribe.
     #[serde(rename = "event.unsubscribe")]
     EventUnsubscribe,
+    /// List workers and their state.
+    #[serde(rename = "worker.list")]
+    WorkerList,
+    /// Reload a worker (drain → respawn).
+    #[serde(rename = "worker.reload")]
+    WorkerReload,
 }
 
 impl std::fmt::Display for Method {
@@ -99,6 +105,8 @@ impl std::fmt::Display for Method {
             Self::GraphLint => "graph.lint",
             Self::EventSubscribe => "event.subscribe",
             Self::EventUnsubscribe => "event.unsubscribe",
+            Self::WorkerList => "worker.list",
+            Self::WorkerReload => "worker.reload",
         })
     }
 }
@@ -130,6 +138,8 @@ impl std::str::FromStr for Method {
             "graph.lint" => Self::GraphLint,
             "event.subscribe" => Self::EventSubscribe,
             "event.unsubscribe" => Self::EventUnsubscribe,
+            "worker.list" => Self::WorkerList,
+            "worker.reload" => Self::WorkerReload,
             other => return Err(other.to_owned()),
         })
     }

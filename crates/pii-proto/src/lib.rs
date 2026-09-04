@@ -17,8 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::method::Method;
 
-/// The protocol version every `sys.hello` must agree on.
-pub const PROTOCOL_VERSION: &str = "pii.v1";
+/// The protocol version every `sys.hello` must agree on (Phase 3: worker,
+/// timer and memory methods join the wire vocabulary — a breaking change,
+/// hence the bump to `pii.v2`).
+pub const PROTOCOL_VERSION: &str = "pii.v2";
 
 /// A JSON-RPC id: number or string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -1049,6 +1049,7 @@ dependencies = [
  "pii-store",
  "pii-tools",
  "pii-tui",
+ "pii-worker",
  "serde_json",
  "tokio",
 ]
@@ -1183,6 +1184,18 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+]
+
+[[package]]
+name = "pii-worker"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "pii-abi",
+ "pii-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
