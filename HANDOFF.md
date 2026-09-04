@@ -1,22 +1,53 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS (3/13 EC) — DISPATCHED TO CLAUDE CODE + SONNET-5 (2026-09-04, ollama-cloud weekly quota near exhaustion)**
+**Status: YELLOW — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS — CLAUDE CODE + SONNET-5 MID-IMPLEMENTATION, HIT ANTHROPIC 5h SESSION CAP, RESUME SCHEDULED 2026-09-04 22:15 UTC (2026-09-04, ollama weekly quota near exhaustion, Anthropic session cap active)**
 
-## PHASE 3 PART 4 — IN PROGRESS, DISPATCHED TO CLAUDE CODE (2026-09-04)
+## PHASE 3 PART 4 — IN PROGRESS, CLAUDE CODE + SONNET-5 (2026-09-04)
 `specs/05-phase3-assistant-gateway-part4.md` (W5 daemon lifecycle + timer
 wheel + cron + approvals, W6 pii-channels, W7 CLI/gates/fixtures/scripts).
-3/13 EC pass (build, quality-gate, lint-files) as of commit `d75d1e2`
-("fix pass2: clippy lints in pii-store/pii-graph/pii-server; quality-gate
-ALL PASS"). Plumbing is committed: proto methods (`approve.list/resolve`,
-`cron.list`, `channel.list`), proto events (`ApprovalRequested/Resolved`,
-`ChannelMessage`), store tables (`timer_wheel`, `approval`,
-`channel_cursor`), `pii-graph/src/cron.rs`, starter graphs
-(`graphs/starter/assistant.toml`, `consolidate.toml`). **NOT yet built**:
-`crates/pii-channels` crate, `pii-server/src/daemon/` dir, the `memory`/
-`timer`/`gate` node kinds in `pii-server`, `pii-cli` subcommands (net/
-worker/approve/cron/soak/worker-exec), `scripts/phase3/{discord-e2e,cron,
-shutdown,crash,secret-scan}.sh`, `fixtures/phase3/{discord,model,soak.toml,
-workers.toml,ollama}`.
+3/13 EC pass (build, quality-gate, lint-files) as of the last clean
+commit `d75d1e2`.
+
+**IMPLEMENTER SWITCHED FROM PIDAG TO CLAUDE CODE + SONNET** per user
+directive: ollama-cloud (`glm-5.3-flash:cloud`) hit repeated session
+usage-limit 429s on part4 (2 quota walls), user flagged the ollama
+weekly quota near exhaustion, and directed "wait, stop, dispatch claude
+code + sonnet to finish the part 4". Uses the Anthropic subscription
+(account tier) per AGENTS.md's two-layer cost policy. Stale ollama-cloud
+quota-retry crons were removed; do NOT recreate without user direction.
+
+**SONNET RUN PROGRESS (3 runs, ~$13.6 spent, session bec5796c-8862-
+4b2e-ad6f-5af4d658d108)**: survey of pii-core/graph/server/store/net/
+cli done; committed-state plumbing untouched; NEW uncommitted work:
+`crates/pii-channels/` (discord.rs + cli.rs, verified building +
+tests), `crates/pii-server/src/nodes/{gate,memory}.rs` wired into the
+registry, `crates/pii-server/src/daemon/` (mod.rs declares
+approvals/config/router/scheduler/status; methods.rs + config.rs +
+router.rs + status.rs written; lib.rs gains attach_daemon_ctx +
+daemon_ctx + RunSuspended/RunResumed bus mapping in bus.rs),
+`FakeHttpServer` stateful route matching (testing.rs), `StatusResult`
+extended in proto/src/sys.rs (channels/listeners/memory/… fields),
+dispatch.rs reworked with delegating arms to daemon::methods.
+**TREE IS MID-BREAK** (do not build until fixed): `daemon/mod.rs` never
+declares `pub mod methods;` though dispatch.rs calls
+`crate::daemon::methods::{status_result, worker_list, worker_reload,
+approve_list, …}` — ~14 build errors, ALL uncommitted (HEAD `5e212ed`
+is clean). No commit has been made by sonnet yet.
+
+**ANTHROPIC 5h SESSION CAP HIT at ~17:46 UTC 2026-09-04**: error
+"You've hit your session limit · resets 10:10pm (UTC)" = 22:10 UTC.
+Per quota policy, one-shot cron `pii-part4-sonnet-resume-after-claude-
+limit` (job 9822dae82183) is scheduled for **2026-09-04 22:15 UTC**
+(reset + 5 min): self-probes with a 1-turn PONG, then resumes the same
+session (`--resume bec5796c-8862-4b2e-ad6f-5af4d658d108`) with the
+exact fix pointer (`pub mod methods;` in daemon/mod.rs), continues the
+remaining 10 EC (CLI subcommands, scripts, fixtures, channels/
+approvals/scheduler tests, rss-gate), commits only at 13/13 EC +
+quality-gate green with the neutral message "feat(phase3 part4): daemon
+lifecycle, timer wheel, cron, approvals, Discord channel, RSS gate
+(13/13 EC)". Cron is local-only (no live delivery to the user's
+terminal). If the user is present before 22:15 UTC they may prefer to
+let the cron run or re-dispatch manually — ask.
 
 **REMOTE CHANNEL CHANGED: Telegram → Discord (user directive, 2026-09-04).**
 Both `specs/05-phase3-assistant-gateway.md` and `-part4.md` were edited
@@ -35,30 +66,14 @@ sending `POST /channels/{id}/messages` with `{"content":…}` (was
 header is never logged; any URL that would carry a credential is
 redacted to `<redacted>`". **If any workhorse regenerates Telegram code,
 it is reading a stale committed file or hallucinating — the specs are
-now Discord-only; do not revert.**
+now Discord-only; do not revert.** Spec-edit commit: `5e212ed`
+(parent-spec Discord completion + HANDOFF refresh).
 
-**WHY DISPATCHED TO CLAUDE CODE INSTEAD OF PIDAG**: ollama-cloud
-(`glm-5.3-flash:cloud` workhorse) hit repeated session usage-limit 429s
-implementing part4 (2 separate quota walls in one session), and the user
-flagged the ollama weekly quota is near exhaustion — continuing to spend
-it on part4 risks starving other in-flight work. User directive: "wait,
-stop, dispatch claude code + sonnet to finish the part 4." This uses the
-Anthropic subscription (account tier, not the ollama worker chain) per
-AGENTS.md's two-layer cost policy. The stale `pii-phase3-part4-quota-
-retry` and `pii-phase3-part3-quota-retry` cron jobs were removed — do
-NOT recreate an ollama-cloud retry cron for part4 without explicit user
-direction.
-
-**Next**: verify the Claude Code + sonnet run against the 13 EC in
-`specs/05-phase3-assistant-gateway-part4.md`, commit only at 13/13 EC +
-quality-gate PASS (commit message must NOT mention any AI assistant/tool
-name). Then user-requested next steps (queued, not yet started):
+**Next after part4 13/13 + committed** — user-requested, queued:
 1. Opus deep analysis of the full implementation against
    `_docs/06-research/`, with **sonnet-5 actively fixing found faults**
-   (not just reporting them — this differs from the Phase 1/2 opus
-   reviews, which only produced a fix list for later action).
-2. Ask Opus for a **path to an MVP** as the first delivery — a distinct
-   deliverable from "Phase 3 complete", likely a subset/repackaging.
+   (not just reporting them — differs from the Phase 1/2 opus reviews).
+2. Ask Opus for a **path to an MVP** as the first delivery.
 
 ## PHASE 3 PARTS 1-3 — COMPLETE (28/28 EC across 3 parts)
 - **Part 1** (11/11 EC, commit `9b181b2`): `pii-net` (authorize/dial/
