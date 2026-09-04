@@ -1,8 +1,86 @@
 # Pii — Session Handoff
 
-**Status: GREEN — PHASE 1 COMPLETE + OPUS REVIEW FIXES; PHASE 2 COMPLETE (ALL 4 PARTS, 22/22 EC) + PRE-REVIEW BUG FIXES; OPUS PHASE-2 REVIEW DONE + FIX SET LANDED; PHASE-3 SPEC AUTHORED BY OPUS (2026-09-03)**
+**Status: GREEN — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS (3/13 EC) — DISPATCHED TO CLAUDE CODE + SONNET-5 (2026-09-04, ollama-cloud weekly quota near exhaustion)**
 
-## PHASE-3 SPEC — AUTHORED (master + 4 parts, committed `b555549`)
+## PHASE 3 PART 4 — IN PROGRESS, DISPATCHED TO CLAUDE CODE (2026-09-04)
+`specs/05-phase3-assistant-gateway-part4.md` (W5 daemon lifecycle + timer
+wheel + cron + approvals, W6 pii-channels, W7 CLI/gates/fixtures/scripts).
+3/13 EC pass (build, quality-gate, lint-files) as of commit `d75d1e2`
+("fix pass2: clippy lints in pii-store/pii-graph/pii-server; quality-gate
+ALL PASS"). Plumbing is committed: proto methods (`approve.list/resolve`,
+`cron.list`, `channel.list`), proto events (`ApprovalRequested/Resolved`,
+`ChannelMessage`), store tables (`timer_wheel`, `approval`,
+`channel_cursor`), `pii-graph/src/cron.rs`, starter graphs
+(`graphs/starter/assistant.toml`, `consolidate.toml`). **NOT yet built**:
+`crates/pii-channels` crate, `pii-server/src/daemon/` dir, the `memory`/
+`timer`/`gate` node kinds in `pii-server`, `pii-cli` subcommands (net/
+worker/approve/cron/soak/worker-exec), `scripts/phase3/{discord-e2e,cron,
+shutdown,crash,secret-scan}.sh`, `fixtures/phase3/{discord,model,soak.toml,
+workers.toml,ollama}`.
+
+**REMOTE CHANNEL CHANGED: Telegram → Discord (user directive, 2026-09-04).**
+Both `specs/05-phase3-assistant-gateway.md` and `-part4.md` were edited
+by the planner (this is spec authoring, exclusively planner work) to
+replace every Telegram reference with Discord:
+`PII_DISCORD_TOKEN`/`PII_DISCORD_CHANNEL_ID`/`PII_DISCORD_API_BASE`
+(was `PII_TELEGRAM_TOKEN`/`PII_TELEGRAM_API_BASE`), `DiscordChannel`
+(`src/discord.rs`, was `TelegramChannel`/`telegram.rs`) polling
+`GET /channels/{id}/messages?after={cursor}` (was `getUpdates`) and
+sending `POST /channels/{id}/messages` with `{"content":…}` (was
+`sendMessage`/`{"chat_id":…,"text":…}`), auth via `Authorization: Bot
+<token>` header (was a URL path segment `/bot<token>/`), script
+`discord-e2e.sh` (was `telegram-e2e.sh`), fixtures under
+`fixtures/phase3/discord/` (was `telegram/`). Redaction rule changed from
+"redact `/bot<token>/` to `/bot<redacted>/`" to "the `Authorization`
+header is never logged; any URL that would carry a credential is
+redacted to `<redacted>`". **If any workhorse regenerates Telegram code,
+it is reading a stale committed file or hallucinating — the specs are
+now Discord-only; do not revert.**
+
+**WHY DISPATCHED TO CLAUDE CODE INSTEAD OF PIDAG**: ollama-cloud
+(`glm-5.3-flash:cloud` workhorse) hit repeated session usage-limit 429s
+implementing part4 (2 separate quota walls in one session), and the user
+flagged the ollama weekly quota is near exhaustion — continuing to spend
+it on part4 risks starving other in-flight work. User directive: "wait,
+stop, dispatch claude code + sonnet to finish the part 4." This uses the
+Anthropic subscription (account tier, not the ollama worker chain) per
+AGENTS.md's two-layer cost policy. The stale `pii-phase3-part4-quota-
+retry` and `pii-phase3-part3-quota-retry` cron jobs were removed — do
+NOT recreate an ollama-cloud retry cron for part4 without explicit user
+direction.
+
+**Next**: verify the Claude Code + sonnet run against the 13 EC in
+`specs/05-phase3-assistant-gateway-part4.md`, commit only at 13/13 EC +
+quality-gate PASS (commit message must NOT mention any AI assistant/tool
+name). Then user-requested next steps (queued, not yet started):
+1. Opus deep analysis of the full implementation against
+   `_docs/06-research/`, with **sonnet-5 actively fixing found faults**
+   (not just reporting them — this differs from the Phase 1/2 opus
+   reviews, which only produced a fix list for later action).
+2. Ask Opus for a **path to an MVP** as the first delivery — a distinct
+   deliverable from "Phase 3 complete", likely a subset/repackaging.
+
+## PHASE 3 PARTS 1-3 — COMPLETE (28/28 EC across 3 parts)
+- **Part 1** (11/11 EC, commit `9b181b2`): `pii-net` (authorize/dial/
+  listen/resolve/service/testing/clock/limits), `xtask net-check` gate,
+  `pii-model::OllamaProvider`.
+- **Part 2** (6/6 EC, commit `835efbb`): `pii-worker` crate (frame/spec/
+  supervisor/control), `pii worker-exec`, 5-test supervisor integration
+  suite (kill-9→WorkerDied, restart<2s, crash-loop cap, hot-reload drops
+  nothing, stderr-flood no-deadlock), `scripts/phase3/{worker-kill,
+  hot-reload}.sh`.
+- **Part 3** (10/10 EC, commit `a87e637`): `pii-memory` crate (BM25 +
+  i8-quantised vectors + graph co-occurrence lane, RRF k=60 fusion,
+  temporal decay, consolidation with hard candidate cap, honest
+  degradation), `xtask memory-eval` (anti-rigging fixture gate),
+  `fixtures/phase3/memory/{corpus.jsonl,queries.jsonl}`.
+
+Each part's pidag workhorse run hit its 50-tool-call iteration budget
+1-2 times per part (normal, not a bug) — relaunching `launch-partN.sh`
+resumes from committed state and made real incremental progress each
+time; this is the expected pattern, not a stall.
+
+## PHASE-3 SPEC — AUTHORED (master + 4 parts, committed `b555549`; part4 Discord-edited `562eb93`)
 Opus authored `specs/05-phase3-assistant-gateway.md` + `-part1..4.md`
 (1354 lines) against `_docs/06-research/`. Load-bearing requirement:
 `cargo xtask net-check` (pii-net is the only socket/resolve call site).
@@ -11,10 +89,24 @@ hickory-resolver cut, agent-memory-core cut (pii-memory first-party),
 L2/L3 generative cuts, consolidation LLM cut, 72h soak → `rss-gate`,
 reactive triggers → Phase 4. Protocol bumps to `pii.v2` (one required test
 change: `hello_skew_is_hard_refusal` offers `pii.v99`). 31 runnable exit
-criteria with script contracts. Next: implement via pidag (workhorse
-glm-5.3-flash:cloud, thinking off), specs/ read-only for the workhorse.
+criteria with script contracts. specs/ read-only for the workhorse.
+
+## OLLAMA-CLOUD QUOTA — near weekly exhaustion (2026-09-04)
+Repeated HTTP 429 "session usage limit" errors on `glm-5.3-flash:cloud`
+during part4 (2 distinct quota walls same session, ~11:00 and ~11:59
+UTC). User confirmed the weekly ollama quota is close to exhausted.
+**Do NOT launch more pidag/ollama-cloud work this week without explicit
+user go-ahead** — prefer Claude Code (Anthropic subscription, account
+tier) for remaining Phase 3 part4 work and the Opus-review/MVP-path
+follow-ups. Also note: `glm-5.3-flash:cloud` (the id in
+`.pidag/config.toml`'s `[worker] default_model`) no longer resolves in
+the ollama-cloud catalog as of this session — only `glm-5.2:cloud`,
+`kimi-k2.7-code:cloud`, `deepseek-v4-flash:cloud` are listed. Probing
+with `glm-5.3-flash:cloud` returns "Model ... not found", NOT a quota
+error — use `glm-5.2:cloud` for any future ollama-cloud PONG probes.
 
 ## OPUS PHASE-2 REVIEW FIX SET — LANDED (all 5 BLOCKERs + major MAJORs)
+
 The opus review (report `_tmp/phase2-opus-review.md`) found 5 BLOCKERs and
 16 MAJORs. All 5 BLOCKERs and the major MAJORs are now fixed and committed:
 - **F1** (BLOCKER): `proc_argv0=/bin/sh` granted in runs.rs + cmd_run.rs so
@@ -290,10 +382,3 @@ Full adversarial review by opus against the research docs (report `_tmp/phase1-o
 `.../phase1-pii-graph-lint-complete`, `.../phase1-scheduler-state-complete`,
 `.../phase1-blackboard-nodes-complete`, `.../phase1-run-cli-lint-complete`,
 `.../phase1-journal-run-resume-trace-complete`, `.../ollama-cloud-large-prompt-instability`
-
-## 2026-09-04 — PART 3 (pii-memory) NOT STARTED — incomplete handoff written
-Iteration budget expired during reconnaissance; zero code written, working
-tree clean (nothing to commit). Full starting-position facts + remaining
-work order in `_tmp/phase3/incomplete-handoff-part3-2026-09-04.md`.
-Next: implement pii-store/mem.rs + pii-memory + xtask invariant 5 +
-memory-eval + fixtures per specs/05-...-part3.md.
