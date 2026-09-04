@@ -1,12 +1,21 @@
 # Pii — Session Handoff
 
-**Status: YELLOW — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS — CLAUDE CODE + SONNET-5 MID-IMPLEMENTATION, HIT ANTHROPIC 5h SESSION CAP, RESUME SCHEDULED 2026-09-04 22:15 UTC (2026-09-04, ollama weekly quota near exhaustion, Anthropic session cap active)**
+**Status: YELLOW — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS — 5/13 EC; SONNET HIT ANTHROPIC 5h SESSION CAP AGAIN AT 22:42 UTC; NEXT RESET 2026-09-05 03:10 UTC — ONE-SHOT CRON 9822dae82183 HAS COMPLETED (will NOT re-fire); RESUME MUST BE RE-SCHEDULED MANUALLY (2026-09-04, ollama weekly quota near exhaustion, Anthropic session cap active)**
 
-## PHASE 3 PART 4 — IN PROGRESS, CLAUDE CODE + SONNET-5 (2026-09-04)
-`specs/05-phase3-assistant-gateway-part4.md` (W5 daemon lifecycle + timer
-wheel + cron + approvals, W6 pii-channels, W7 CLI/gates/fixtures/scripts).
-3/13 EC pass (build, quality-gate, lint-files) as of the last clean
-commit `d75d1e2`.
+## PHASE 3 PART 4 — IN PROGRESS, CLAUDE CODE + SONNET-5 (2026-09-04, run 4-6)
+
+**RESUME CRON RUN (job 9822dae82183, fired 22:15 UTC) RESULT — 3 more sonnet runs on session `bec5796c-8862-4b2e-ad6f-5af4d658d108` (~$21.7 more, total ~$35):**
+- **run4** (22:15-22:37): 121 turns, hit **max-turns (120), not quota**. Fixed the mid-break (`pub mod methods;` in daemon/mod.rs — build green), implemented CLI subcommands (cmd_ctl/cmd_soak/cmd_sys: net/worker/memory/approve/cron/soak/worker-exec via UDS control socket), daemon SIGTERM shutdown handling (scripts/phase3/shutdown.sh now PASSES — daemon exits cleanly), fixtures (discord routes.json, model assistant.json/atoms.json, soak.toml, workers.toml, ollama chat.json), graphs/starter/{crash,slow,soak,soak_cron}.toml. Was mid-debug of shutdown when turns ran out.
+- **run5** (22:42): 24 turns then **429 session limit · resets 3:10am (UTC)**. Formatting/clippy fixes for the new code were applied by the orchestrator AFTER the run (see below). No commit made.
+- **run6** (22:42, stray duplicate launch): 6 turns, same 429. Dead.
+
+**TREE STATE NOW: `cargo build --workspace --all-targets` GREEN; `./quality-gate.sh` ALL PASS (fmt/clippy/test)** — orchestrator ran `cargo fmt --all` and fixed `clippy::redundant_pub_crate`/`unreachable_pub` false-positive in `crates/pii-cli/src/cmd_ctl.rs` (module is private but helpers `run_call`/`print_result`/`next_str` are used from sibling `cmd_sys.rs`/`cmd_soak.rs`; kept `pub(crate)` + per-item `#[allow(clippy::redundant_pub_crate)]`). **STILL ALL UNCOMMITTED** (HEAD `473afe8` is the resume-cron handoff commit). No stray daemons running.
+
+**EXIT CRITERIA 5/13 PASS** (validate: `/root/.pi/agent/skills/validate-exit-criteria/run.sh specs/05-phase3-assistant-gateway-part4.md /projects/pi-improved`):
+- PASS: build, quality-gate (now green after fmt+clippy fixes), lint-files, shutdown.sh, graph-lint.
+- FAIL (8, all needing implementation, ~1-2 more sonnet sessions): `scripts/phase3/{discord-e2e,cron,crash,secret-scan}.sh` (crash.sh can use graphs/starter/crash.toml; cron.sh soak_cron.toml), `cargo test -p pii-server --test {channels,approvals,scheduler}` (test files not yet written or not passing — check `crates/pii-server/tests/`), `cargo xtask rss-gate --secs 300 --interval 10 --max-mb 50 --runs 3000` (finishes compiling then fails/hangs — fix the gate, do NOT weaken thresholds).
+
+**NEXT RESUME POINTER**: Anthropic session resets **2026-09-05 03:10 UTC**. The one-shot cron has completed (`repeat.times: 1, completed: 1`) — **a human must re-create/reschedule the resume job** (or run manually): self-probe PONG first, then `claude -p "<state above>" --model sonnet --resume bec5796c-8862-4b2e-ad6f-5af4d658d108` (same flags as before), finish the 8 failing EC, commit only at 13/13 + quality-gate green with neutral message "feat(phase3 part4): daemon lifecycle, timer wheel, cron, approvals, Discord channel, RSS gate (13/13 EC)".
 
 **IMPLEMENTER SWITCHED FROM PIDAG TO CLAUDE CODE + SONNET** per user
 directive: ollama-cloud (`glm-5.3-flash:cloud`) hit repeated session
@@ -16,38 +25,7 @@ code + sonnet to finish the part 4". Uses the Anthropic subscription
 (account tier) per AGENTS.md's two-layer cost policy. Stale ollama-cloud
 quota-retry crons were removed; do NOT recreate without user direction.
 
-**SONNET RUN PROGRESS (3 runs, ~$13.6 spent, session bec5796c-8862-
-4b2e-ad6f-5af4d658d108)**: survey of pii-core/graph/server/store/net/
-cli done; committed-state plumbing untouched; NEW uncommitted work:
-`crates/pii-channels/` (discord.rs + cli.rs, verified building +
-tests), `crates/pii-server/src/nodes/{gate,memory}.rs` wired into the
-registry, `crates/pii-server/src/daemon/` (mod.rs declares
-approvals/config/router/scheduler/status; methods.rs + config.rs +
-router.rs + status.rs written; lib.rs gains attach_daemon_ctx +
-daemon_ctx + RunSuspended/RunResumed bus mapping in bus.rs),
-`FakeHttpServer` stateful route matching (testing.rs), `StatusResult`
-extended in proto/src/sys.rs (channels/listeners/memory/… fields),
-dispatch.rs reworked with delegating arms to daemon::methods.
-**TREE IS MID-BREAK** (do not build until fixed): `daemon/mod.rs` never
-declares `pub mod methods;` though dispatch.rs calls
-`crate::daemon::methods::{status_result, worker_list, worker_reload,
-approve_list, …}` — ~14 build errors, ALL uncommitted (HEAD `5e212ed`
-is clean). No commit has been made by sonnet yet.
-
-**ANTHROPIC 5h SESSION CAP HIT at ~17:46 UTC 2026-09-04**: error
-"You've hit your session limit · resets 10:10pm (UTC)" = 22:10 UTC.
-Per quota policy, one-shot cron `pii-part4-sonnet-resume-after-claude-
-limit` (job 9822dae82183) is scheduled for **2026-09-04 22:15 UTC**
-(reset + 5 min): self-probes with a 1-turn PONG, then resumes the same
-session (`--resume bec5796c-8862-4b2e-ad6f-5af4d658d108`) with the
-exact fix pointer (`pub mod methods;` in daemon/mod.rs), continues the
-remaining 10 EC (CLI subcommands, scripts, fixtures, channels/
-approvals/scheduler tests, rss-gate), commits only at 13/13 EC +
-quality-gate green with the neutral message "feat(phase3 part4): daemon
-lifecycle, timer wheel, cron, approvals, Discord channel, RSS gate
-(13/13 EC)". Cron is local-only (no live delivery to the user's
-terminal). If the user is present before 22:15 UTC they may prefer to
-let the cron run or re-dispatch manually — ask.
+**EARLIER SONNET RUNS (runs 1-3, ~$13.6, same session `bec5796c-8862-4b2e-ad6f-5af4d658d108`)** created the bulk of the uncommitted work described below in the 22:15-run summary; committed-state plumbing untouched. That work is now all in the tree and BUILDING GREEN (see summary above); no commit has been made by sonnet yet.
 
 **REMOTE CHANNEL CHANGED: Telegram → Discord (user directive, 2026-09-04).**
 Both `specs/05-phase3-assistant-gateway.md` and `-part4.md` were edited
