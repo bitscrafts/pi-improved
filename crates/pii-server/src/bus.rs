@@ -51,6 +51,14 @@ impl Bus {
             },
         });
     }
+
+    /// Broadcasts a process-scoped, never-journalled event (F5.11/F6.5):
+    /// `ApprovalRequested`/`ApprovalResolved`/`WorkerDied`/`WorkerRestarted`/
+    /// `ChannelMessage`. Seq is irrelevant for these — `is_live_only`-style
+    /// events are always forwarded regardless of the subscriber's cursor.
+    pub fn broadcast(&self, event: Event) {
+        let _ = self.tx.send(SeqEvent { seq: 0, event });
+    }
 }
 
 /// Per-run observer bridging the journal to the bus (F2.4).
@@ -85,9 +93,16 @@ pub fn map_event(run_id: &RunId, ev: &RunEvent) -> Option<Event> {
             run_id: run_id.to_string(),
             graph: graph.clone(),
         },
-        RunEvent::TickStarted { .. } | RunEvent::Suspended { .. } | RunEvent::Resumed { .. } => {
-            return None;
-        }
+        RunEvent::TickStarted { .. } => return None,
+        RunEvent::Suspended { reason, key, .. } => Event::RunSuspended {
+            run_id: run_id.to_string(),
+            key: key.0.clone(),
+            reason: reason_str(reason),
+        },
+        RunEvent::Resumed { key, .. } => Event::RunResumed {
+            run_id: run_id.to_string(),
+            key: key.0.clone(),
+        },
         RunEvent::NodeStarted { node, .. } => Event::NodeStarted {
             run_id: run_id.to_string(),
             node: node.to_string(),
@@ -120,6 +135,16 @@ pub fn map_event(run_id: &RunId, ev: &RunEvent) -> Option<Event> {
             terminal: map_terminal(terminal),
         },
     })
+}
+
+/// Human-readable reason string for `run_suspended` (F5.11).
+fn reason_str(reason: &pii_abi::SuspendReason) -> String {
+    match reason {
+        pii_abi::SuspendReason::Approval { policy, .. } => format!("approval:{policy}"),
+        pii_abi::SuspendReason::Timer { in_ms } => format!("timer:{in_ms}"),
+        pii_abi::SuspendReason::Event { topic } => format!("event:{topic}"),
+        pii_abi::SuspendReason::HumanInput { channel, .. } => format!("human_input:{channel}"),
+    }
 }
 
 fn map_terminal(t: &pii_abi::Terminal) -> WireTerminal {

@@ -1,0 +1,26 @@
+{
+  "routes": [
+    {
+      "method": "GET",
+      "path_prefix": "/channels/123456789/messages",
+      "status": 200,
+      "body": [
+        { "id": "1001", "content": "hello pii, message one", "author": { "username": "tester" } },
+        { "id": "1002", "content": "hello pii, message two", "author": { "username": "tester" } }
+      ],
+      "max_uses": 1
+    },
+    {
+      "method": "GET",
+      "path_prefix": "/channels/123456789/messages",
+      "status": 200,
+      "body": []
+    },
+    {
+      "method": "POST",
+      "path_prefix": "/channels/123456789/messages",
+      "status": 200,
+      "body": { "ok": true }
+    }
+  ]
+}

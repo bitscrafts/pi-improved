@@ -34,6 +34,11 @@ struct Route {
     /// Optional delay before answering (ms), for deadline tests.
     #[serde(default)]
     delay_ms: u64,
+    /// Optional use cap: once exhausted, this route is skipped and matching
+    /// falls through to the next route (stateful sequencing, e.g. "one batch
+    /// of messages, then empty batches" for a polling fixture).
+    #[serde(default)]
+    max_uses: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -43,6 +48,7 @@ struct RoutesFixture {
 
 struct Router {
     routes: Vec<Route>,
+    uses: Vec<std::sync::atomic::AtomicU32>,
     recorded: PLMutex<Vec<RecordedRequest>>,
 }
 
@@ -60,20 +66,30 @@ impl HttpHandler for Router {
             body: req.body.clone(),
         });
         let m = req.method.to_string();
-        for r in &self.routes {
-            if r.method.eq_ignore_ascii_case(&m) && req.url.starts_with(&r.path_prefix) {
-                if r.delay_ms > 0 {
-                    std::thread::sleep(Duration::from_millis(r.delay_ms));
-                }
-                return HttpResponse {
-                    status: r.status,
-                    headers: vec![(
-                        String::from("Content-Type"),
-                        String::from("application/json"),
-                    )],
-                    body: serde_json::to_vec(&r.body).unwrap_or_default(),
-                };
+        for (i, r) in self.routes.iter().enumerate() {
+            if !(r.method.eq_ignore_ascii_case(&m) && req.url.starts_with(&r.path_prefix)) {
+                continue;
             }
+            if let Some(max) = r.max_uses {
+                let used = self
+                    .uses
+                    .get(i)
+                    .map_or(0, |c| c.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                if used >= max {
+                    continue; // exhausted: fall through to the next route
+                }
+            }
+            if r.delay_ms > 0 {
+                std::thread::sleep(Duration::from_millis(r.delay_ms));
+            }
+            return HttpResponse {
+                status: r.status,
+                headers: vec![(
+                    String::from("Content-Type"),
+                    String::from("application/json"),
+                )],
+                body: serde_json::to_vec(&r.body).unwrap_or_default(),
+            };
         }
         HttpResponse {
             status: 404,
@@ -104,8 +120,14 @@ impl FakeHttpServer {
     pub fn start(routes_json: &str) -> Result<Self, PiiError> {
         let fixture: RoutesFixture = serde_json::from_str(routes_json)
             .map_err(|e| PiiError::Invalid(format!("fake routes: {e}")))?;
+        let uses = fixture
+            .routes
+            .iter()
+            .map(|_| std::sync::atomic::AtomicU32::new(0))
+            .collect();
         let router = Arc::new(Router {
             routes: fixture.routes,
+            uses,
             recorded: PLMutex::new(Vec::new()),
         });
         let grants = Arc::new(crate::grant::StaticGrants::default());

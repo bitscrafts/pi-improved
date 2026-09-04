@@ -1,0 +1,5 @@
+{
+  "message": { "role": "assistant", "content": "hello from ollama (fake)", "tool_calls": [] },
+  "prompt_eval_count": 12,
+  "eval_count": 6
+}

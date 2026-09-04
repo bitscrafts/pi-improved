@@ -1,0 +1,22 @@
+name = "starter/soak_cron"
+entry = "tick"
+
+[limits]
+max_steps = 100
+max_wall_ms = 600000
+
+[[node]]
+id = "tick"
+kind = "timer"
+cron = "* * * * *"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "tick"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "done"
+kind = "data"

@@ -1,0 +1,12 @@
+name = "starter/soak"
+entry = "step"
+caps = []
+
+[limits]
+max_steps = 100
+max_wall_ms = 30000
+
+[[node]]
+id = "step"
+kind = "transform"
+value = "ok"

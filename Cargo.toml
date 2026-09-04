@@ -12,6 +12,7 @@ members = [
     "crates/pii-memory",
     "crates/pii-worker",
     "crates/pii-tools",
+    "crates/pii-channels",
     "crates/pii-server",
     "crates/pii-tui",
     "xtask",

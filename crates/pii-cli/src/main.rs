@@ -5,10 +5,13 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 mod cli_util;
+mod cmd_ctl;
 mod cmd_daemon;
 mod cmd_oneshot;
 mod cmd_run;
 mod cmd_sandbox_exec;
+mod cmd_soak;
+mod cmd_sys;
 mod cmd_trace;
 mod cmd_tui;
 mod cmd_worker_exec;
@@ -95,6 +98,30 @@ fn main() -> ExitCode {
     }
     if cmd == "graph" {
         return cmd_graph(&mut args);
+    }
+    if cmd == "net" {
+        return cmd_ctl::cmd_net(&mut args);
+    }
+    if cmd == "worker" {
+        return cmd_ctl::cmd_worker(&mut args);
+    }
+    if cmd == "memory" {
+        return cmd_ctl::cmd_memory(&mut args);
+    }
+    if cmd == "approve" {
+        return cmd_ctl::cmd_approve(&mut args);
+    }
+    if cmd == "cron" {
+        return cmd_ctl::cmd_cron(&mut args);
+    }
+    if cmd == "soak" {
+        return cmd_soak::cmd_soak(&mut args);
+    }
+    if cmd == "sys" {
+        return cmd_sys::cmd_sys(&mut args);
+    }
+    if cmd == "run" {
+        return cmd_sys::cmd_run_ctl(&mut args);
     }
     eprintln!("{USAGE}");
     ExitCode::from(2)

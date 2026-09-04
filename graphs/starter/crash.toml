@@ -1,0 +1,9 @@
+# Deliberate crash trigger (F5.4 test seam), used only by
+# scripts/phase3/crash.sh to exercise the daemon's panic hook.
+name = "starter/crash"
+entry = "boom"
+caps = []
+
+[[node]]
+id = "boom"
+kind = "debug_crash"

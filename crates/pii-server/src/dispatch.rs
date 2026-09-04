@@ -16,7 +16,6 @@ use pii_proto::run::{
 use pii_proto::session::{
     SessionCreateParams, SessionCreateResult, SessionPromptParams, SessionPromptResult,
 };
-use pii_proto::sys::StatusResult;
 use pii_proto::{Envelope, ErrorCode, Notification, Request, Response, RpcError, write_frame};
 
 use crate::Engine;
@@ -37,15 +36,11 @@ pub fn dispatch(
     let err = |c: ErrorCode, m: &str| Response::err(req.id.clone(), RpcError::new(c, m));
     match req.method {
         Method::SysHello => err(ErrorCode::InvalidRequest, "hello already handled"),
-        Method::SysStatus => {
-            let status = StatusResult {
-                uptime_ms: u64::try_from(engine.started_at.elapsed().as_millis()).unwrap_or(0),
-                runs_active: u32::try_from(engine.runs.lock().len()).unwrap_or(u32::MAX),
-                sessions: u32::try_from(engine.sessions.lock().len()).unwrap_or(u32::MAX),
-                sandbox_profile: pii_tools::sandbox::profile_name(engine.cfg.sandbox).to_owned(),
-            };
-            value_response(req, serde_json::to_value(status).ok(), err)
-        }
+        Method::SysStatus => value_response(
+            req,
+            serde_json::to_value(crate::daemon::methods::status_result(engine)).ok(),
+            err,
+        ),
         Method::SysVersion => value_response(
             req,
             Some(serde_json::json!({"version": env!("CARGO_PKG_VERSION")})),
@@ -112,6 +107,17 @@ pub fn dispatch(
             // no-op ack keeps the client from hanging.
             Response::ok(req.id.clone(), serde_json::json!({"unsubscribed": true}))
         }
+        Method::WorkerList => crate::daemon::methods::worker_list(engine, req),
+        Method::WorkerReload => crate::daemon::methods::worker_reload(engine, req),
+        Method::ApproveList => crate::daemon::methods::approve_list(engine, req),
+        Method::ApproveResolve => crate::daemon::methods::approve_resolve(engine, req),
+        Method::CronList => crate::daemon::methods::cron_list(engine, req),
+        Method::ChannelList => crate::daemon::methods::channel_list(engine, req),
+        Method::MemorySearch => crate::daemon::methods::memory_search(engine, req),
+        Method::MemoryPut => crate::daemon::methods::memory_put(engine, req),
+        Method::MemoryConsolidate => crate::daemon::methods::memory_consolidate(engine, req),
+        Method::SysReload => crate::daemon::methods::sys_reload(engine, req),
+        Method::RunResume => crate::daemon::methods::run_resume(engine, req),
         // The remaining methods return clean refusals in this pass; they are
         // owned by later parts of the phase (documented in the handoff).
         m => err(
@@ -247,7 +253,7 @@ fn graph_lint(engine: &Arc<Engine>, toml: &str) -> GraphLintResult {
 
 use pii_abi::RunId;
 
-fn err_code(err: impl Fn(ErrorCode, &str) -> Response, e: &PiiError) -> Response {
+pub(crate) fn err_code(err: impl Fn(ErrorCode, &str) -> Response, e: &PiiError) -> Response {
     let code = match e {
         PiiError::NotFound(_) => ErrorCode::NotFound,
         PiiError::Denied(_) => ErrorCode::Denied,
@@ -258,7 +264,7 @@ fn err_code(err: impl Fn(ErrorCode, &str) -> Response, e: &PiiError) -> Response
     err(code, &e.to_string())
 }
 
-fn value_response(
+pub(crate) fn value_response(
     req: &Request,
     value: Option<serde_json::Value>,
     err: impl Fn(ErrorCode, &str) -> Response,
@@ -407,12 +413,20 @@ fn subscribe(
     Ok(result)
 }
 
-/// True when the event is a live-only, bus-only event (F12): never journalled,
-/// so it carries no meaningful seq and must always be forwarded.
+/// True when the event is a live-only, bus-only event (F12/F5.11/F6.5):
+/// never journalled, so it carries no meaningful seq and must always be
+/// forwarded rather than deduped against the replay cursor.
 fn is_live_only(ev: &Event) -> bool {
     matches!(
         ev,
-        Event::AssistantDelta { .. } | Event::ToolCall { .. } | Event::ToolResult { .. }
+        Event::AssistantDelta { .. }
+            | Event::ToolCall { .. }
+            | Event::ToolResult { .. }
+            | Event::ApprovalResolved { .. }
+            | Event::WorkerDied { .. }
+            | Event::WorkerRestarted { .. }
+            | Event::ChannelMessage { .. }
+            | Event::MemoryDegraded { .. }
     )
 }
 

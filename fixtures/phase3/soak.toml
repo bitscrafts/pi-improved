@@ -1,0 +1,26 @@
+# Daemon config for `cargo xtask rss-gate` (F5.14/N4): a listener (the
+# control socket, always on), one worker, one channel and one cron entry,
+# all active for the whole gate window.
+
+[net]
+grants = ["127.0.0.1:*"]
+allow_private = true
+
+[[worker]]
+name = "soak-worker"
+program = "/projects/pi-improved/target/debug/pii"
+args = ["worker-exec", "--name", "soak-worker"]
+
+[[channel]]
+name = "soak-channel"
+kind = "cli"
+graph = "starter/soak"
+poll_interval_ms = 500
+
+[memory]
+embedder = "trigram"
+
+[[cron]]
+name = "soak-cron"
+graph = "starter/soak_cron"
+schedule = "* * * * *"

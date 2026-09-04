@@ -289,10 +289,21 @@ impl TimerNode {
 
 impl super::GraphNode for TimerNode {
     fn run(&self, ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
-        let in_ms = self.next_in_ms(ctx.now_ms());
+        let now_ms = ctx.now_ms();
+        let in_ms = self.next_in_ms(now_ms);
+        let fire_at_ms = now_ms.saturating_add(in_ms);
+        // The key must be unique per (run, node, fire time): two runs whose
+        // timers happen to compute the same delay must not collide in the
+        // resume index (F5.6).
+        let key = match ctx.principal() {
+            pii_core::Principal::GraphNode { run, node } => {
+                format!("timer:{run}:{node}:{fire_at_ms}")
+            }
+            _ => format!("timer:{fire_at_ms}"),
+        };
         Ok(Outcome::Suspend {
             reason: pii_abi::SuspendReason::Timer { in_ms },
-            key: pii_abi::ResumeKey(format!("timer:{in_ms}")),
+            key: pii_abi::ResumeKey(key),
         })
     }
 }

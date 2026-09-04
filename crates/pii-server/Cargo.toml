@@ -14,13 +14,19 @@ pii-store = { path = "../pii-store" }
 pii-graph = { path = "../pii-graph" }
 pii-proto = { path = "../pii-proto" }
 pii-model = { path = "../pii-model" }
+pii-memory = { path = "../pii-memory" }
 pii-tools = { path = "../pii-tools" }
+pii-net = { path = "../pii-net" }
+pii-worker = { path = "../pii-worker" }
+pii-channels = { path = "../pii-channels" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
 dunce = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+blake3 = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "signal", "process", "test-util"] }
 
 [features]
 testkit = []
@@ -28,6 +34,7 @@ testkit = []
 [dev-dependencies]
 tempfile = { workspace = true }
 pii-proto = { path = "../pii-proto", features = ["client"] }
+pii-net = { path = "../pii-net", features = ["testing"] }
 
 [lints]
 workspace = true

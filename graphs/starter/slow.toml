@@ -1,0 +1,21 @@
+# A deliberately long-running graph (F5.3 test seam), used only by
+# scripts/phase3/shutdown.sh to have an active run in flight at SIGTERM.
+name = "starter/slow"
+entry = "wait"
+caps = []
+
+[[node]]
+id = "wait"
+kind = "wait"
+timer_ms = 30000
+
+[[edge]]
+from = "wait"
+port = "fired"
+to = "done"
+kind = "data"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"

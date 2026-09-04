@@ -88,6 +88,38 @@ impl Ctx {
         }
     }
 
+    /// A root context with an observer, trace context, and an explicit
+    /// cancel token (F5.3).
+    ///
+    /// Callers that need to trip cancellation from outside the context tree
+    /// (a run registry keeping the token to cancel later) must supply that
+    /// SAME token here — [`Ctx::with_observer`] mints a fresh, unreachable
+    /// one, so a token registered elsewhere would never actually reach the
+    /// running node.
+    #[must_use]
+    pub fn with_observer_and_cancel(
+        caps: CapSet,
+        budget: Budget,
+        obs: Arc<dyn Observer>,
+        trace: TraceCtx,
+        cancel: CancelToken,
+    ) -> Self {
+        Self {
+            inner: Arc::new(CtxInner {
+                cancel,
+                started: Instant::now(),
+                deadline: None,
+                deadline_ms: None,
+                clock: Arc::new(crate::clock::SystemClock),
+                budget: Arc::new(budget),
+                caps: Arc::new(caps),
+                principal: Principal::User,
+                trace,
+                obs,
+            }),
+        }
+    }
+
     /// Replaces the clock (F1.3): used by tests and by the daemon, which
     /// installs the process-wide clock once at startup.
     #[must_use]
@@ -292,6 +324,14 @@ impl Ctx {
     #[must_use]
     pub fn principal_str(&self) -> String {
         self.inner.principal.to_string()
+    }
+
+    /// The principal acting through this context (F5.6: node kinds that need
+    /// a run/node-scoped resume key read it from here rather than parsing
+    /// [`Ctx::principal_str`]).
+    #[must_use]
+    pub fn principal(&self) -> &Principal {
+        &self.inner.principal
     }
 
     /// The trace context.

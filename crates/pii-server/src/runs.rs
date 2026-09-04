@@ -23,12 +23,12 @@ pub fn spawn_run(
     extra_input: Option<serde_json::Value>,
 ) -> Result<(), PiiError> {
     let cancel = pii_core::CancelToken::new();
-    engine.register_run(&run_id, cancel);
+    engine.register_run(&run_id, cancel.clone());
     let bridge = BridgeObserver {
         run_id: run_id.clone(),
         tx: engine.bus.subscribe_tx(),
     };
-    let ctx = pii_core::Ctx::with_observer(
+    let ctx = pii_core::Ctx::with_observer_and_cancel(
         root_caps(&engine.cfg.workspace),
         pii_core::Budget::unlimited(),
         Arc::new(bridge),
@@ -36,6 +36,7 @@ pub fn spawn_run(
             run: run_id.clone(),
             span: 0,
         },
+        cancel,
     );
     tokio::task::spawn_blocking(move || {
         // F5: merge any extra graph input (test_command/workspace) into the
@@ -70,6 +71,48 @@ pub fn spawn_run(
         if let Some(t) = terminal {
             engine.record_assistant(&session_id, &t);
         }
+        engine.session_finished(&run_id.to_string());
+    });
+    Ok(())
+}
+
+/// Continues a suspended run (F5.5/F5.9/F5.10: timer fire, approval resolve).
+///
+/// Runs on a blocking thread and returns at once, mirroring [`spawn_run`]'s
+/// shape so a resume looks identical to a fresh run to every subscriber on
+/// the bus.
+///
+/// # Errors
+/// None currently; kept `Result` for symmetry with [`spawn_run`].
+pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> {
+    let cancel = pii_core::CancelToken::new();
+    engine.register_run(&run_id, cancel.clone());
+    let bridge = BridgeObserver {
+        run_id: run_id.clone(),
+        tx: engine.bus.subscribe_tx(),
+    };
+    let ctx = pii_core::Ctx::with_observer_and_cancel(
+        root_caps(&engine.cfg.workspace),
+        pii_core::Budget::unlimited(),
+        Arc::new(bridge),
+        pii_core::TraceCtx {
+            run: run_id.clone(),
+            span: 0,
+        },
+        cancel,
+    );
+    tokio::task::spawn_blocking(move || {
+        let terminal = match pii_graph::run::resume(&engine.store, &engine.reg, &ctx, &run_id) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!("pii: resume {run_id} failed: {e}");
+                }
+                None
+            }
+        };
+        let _ = terminal;
         engine.session_finished(&run_id.to_string());
     });
     Ok(())

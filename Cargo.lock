@@ -1037,6 +1037,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pii-channels"
+version = "0.1.0"
+dependencies = [
+ "pii-abi",
+ "pii-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "pii-cli"
 version = "0.1.0"
 dependencies = [
@@ -1142,20 +1154,26 @@ dependencies = [
 name = "pii-server"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "dunce",
  "parking_lot",
  "pii-abi",
+ "pii-channels",
  "pii-core",
  "pii-graph",
+ "pii-memory",
  "pii-model",
+ "pii-net",
  "pii-proto",
  "pii-store",
  "pii-tools",
+ "pii-worker",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "toml",
 ]
 
 [[package]]
@@ -1879,6 +1897,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys",

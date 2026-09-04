@@ -1,19 +1,24 @@
-//! `pii daemon` — binds the UDS control socket and serves connections
-//! (F2.8/F2.9, F5.5).
+//! `pii daemon` — binds the UDS control socket, starts the daemon
+//! subsystems, and serves connections (F2.8/F2.9, F5.1-F5.5).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use pii_server::daemon::{Daemon, ShutdownSignal, config::Config};
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 use tokio::net::UnixListener;
 
-/// `pii daemon [--sandbox off|workspace] [--workspace D] [--store S]`.
+/// `pii daemon [--config P] [--sandbox off|workspace] [--workspace D] [--store S]`.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+#[allow(clippy::too_many_lines)] // reason: flag parsing + sandbox + config
+// resolution is one cohesive startup sequence (pre-existing pattern in this
+// file); splitting it would scatter the ordering invariants across helpers.
 pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     let mut workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut sandbox = SandboxProfileName::Off;
     let mut store: Option<PathBuf> = None;
+    let mut config: Option<PathBuf> = None;
     while let Some(flag) = args.next() {
         let flag = flag.to_str().unwrap_or_default().to_owned();
         match flag.as_str() {
@@ -24,6 +29,12 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             }
             "--store" => {
                 store = args
+                    .next()
+                    .and_then(|a| a.into_string().ok())
+                    .map(PathBuf::from);
+            }
+            "--config" => {
+                config = args
                     .next()
                     .and_then(|a| a.into_string().ok())
                     .map(PathBuf::from);
@@ -58,6 +69,9 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     let store_parent = store_path
         .parent()
         .map_or_else(|| PathBuf::from("."), PathBuf::from);
+    let config_path = config
+        .or_else(|| pii_core::env_var("PII_CONFIG").map(PathBuf::from))
+        .unwrap_or_else(|| runtime_dir.join("pii.toml"));
 
     // Sandbox enforcement is verified BEFORE the model lookup: a requested
     // profile that cannot be positively enforced must exit 4 regardless of
@@ -79,6 +93,18 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         return ExitCode::from(5);
     };
 
+    let cfg = if config_path.exists() {
+        match Config::load(&config_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    } else {
+        Config::default()
+    };
+
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -94,15 +120,26 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         sandbox,
         store_path,
         runtime_dir,
+        config_path,
+        cfg,
         model,
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
+// reason: every argument is a distinct
+// resolved startup value; bundling them into a struct would not shrink this
+// one call site, only move the field list elsewhere.
+#[allow(clippy::too_many_lines)] // reason: one cohesive daemon-startup
+// sequence (engine, daemon context, listener, accept loop, shutdown race);
+// splitting it would scatter the ordering invariants across helpers.
 async fn run_daemon(
     workspace: PathBuf,
     sandbox: SandboxProfileName,
     store_path: PathBuf,
     runtime_dir: PathBuf,
+    config_path: PathBuf,
+    cfg: Config,
     model: String,
 ) -> ExitCode {
     let sock_path = match pii_server::uds::prepare_socket(&runtime_dir) {
@@ -113,20 +150,32 @@ async fn run_daemon(
         }
     };
 
-    let cfg = EngineConfig {
+    let engine_cfg = EngineConfig {
         store_path,
         workspace,
         model,
         sandbox,
         graph_dir: runtime_dir.join("graphs"),
     };
-    let engine = match Engine::new(cfg) {
+    let engine = match Engine::new(engine_cfg) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
     };
+
+    let clock: std::sync::Arc<dyn pii_core::Clock> = std::sync::Arc::new(pii_core::SystemClock);
+    let daemon = match Daemon::build(engine.clone(), &cfg, &runtime_dir, config_path, clock) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    daemon.install_panic_hook();
+    daemon.start_cron_entries();
+    let mut handles = daemon.spawn_background();
 
     // reason: the daemon binds the UDS control socket; NetService (Phase 3)
     // is not yet wired. The socket dir is chmod 0700 in prepare_socket (F10)
@@ -143,36 +192,59 @@ async fn run_daemon(
     let _ = std::fs::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600));
 
     let daemon_uid = self_uid();
-    loop {
-        let Ok((stream, _addr)) = listener.accept().await else {
-            continue;
-        };
-        let engine = std::sync::Arc::clone(&engine);
-        tokio::spawn(async move {
-            // F9 (opus review): peercred must be readable; an unreadable
-            // credential is a refusal, never a fail-open grant.
-            let Ok(cred) = stream.peer_cred() else {
-                let _ = write_101(stream).await;
-                return;
+    let accept_engine = engine.clone();
+    let accept = tokio::spawn(async move {
+        loop {
+            let Ok((stream, _addr)) = listener.accept().await else {
+                continue;
             };
-            let uid = cred.uid();
-            if let Err(e) = pii_server::uds::authorize_peer(daemon_uid, uid) {
-                // F2.8/F9: log the refusal AND write a code-101 frame before
-                // closing (EC3 greps for this line).
-                #[allow(clippy::print_stderr)]
-                {
-                    eprintln!("refused uid {uid}: {}", e.message);
+            let engine = std::sync::Arc::clone(&accept_engine);
+            tokio::spawn(async move {
+                // F9 (opus review): peercred must be readable; an unreadable
+                // credential is a refusal, never a fail-open grant.
+                let Ok(cred) = stream.peer_cred() else {
+                    let _ = write_101(stream).await;
+                    return;
+                };
+                let uid = cred.uid();
+                if let Err(e) = pii_server::uds::authorize_peer(daemon_uid, uid) {
+                    // F2.8/F9: log the refusal AND write a code-101 frame before
+                    // closing (EC3 greps for this line).
+                    #[allow(clippy::print_stderr)]
+                    {
+                        eprintln!("refused uid {uid}: {}", e.message);
+                    }
+                    let _ = write_101(stream).await;
+                    return;
                 }
-                let _ = write_101(stream).await;
-                return;
+                pii_server::conn::serve_connection(
+                    engine,
+                    stream,
+                    pii_server::conn::PeerIdentity::Uds { uid: Some(uid) },
+                )
+                .await;
+            });
+        }
+    });
+    handles.push(accept);
+
+    // F5.3: exit 0 within 2s of the first SIGTERM/SIGINT; a second signal
+    // while shutting down aborts immediately (exit 130).
+    let shutdown = ShutdownSignal::new();
+    let sock_for_cleanup = sock_path.clone();
+    shutdown
+        .wait_then_race(async move {
+            for h in &handles {
+                h.abort();
             }
-            pii_server::conn::serve_connection(
-                engine,
-                stream,
-                pii_server::conn::PeerIdentity::Uds { uid: Some(uid) },
-            )
-            .await;
-        });
+            engine.cancel_all();
+            let _ = std::fs::remove_file(&sock_for_cleanup);
+        })
+        .await;
+    if shutdown.was_forced() {
+        ExitCode::from(130)
+    } else {
+        ExitCode::SUCCESS
     }
 }
 

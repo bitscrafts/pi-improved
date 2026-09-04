@@ -1,0 +1,7 @@
+# A standalone daemon config exercising `[[worker]]` only (F7.4): the
+# reference worker (`pii worker-exec`) under a supervised name.
+
+[[worker]]
+name = "w1"
+program = "/projects/pi-improved/target/debug/pii"
+args = ["worker-exec", "--name", "w1"]

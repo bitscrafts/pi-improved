@@ -9,8 +9,10 @@
 pub mod agent;
 pub mod bus;
 pub mod conn;
+pub mod daemon;
 pub mod dispatch;
 pub mod loopback;
+pub mod nodes;
 pub mod runs;
 pub mod tool;
 pub mod uds;
@@ -58,6 +60,12 @@ pub struct Engine {
     pub cfg: EngineConfig,
     /// Shared store.
     pub store: Arc<pii_store::Store>,
+    /// Shared approval table (F5.9/F5.10): the `gate` node's decision
+    /// source, and `approve.*`'s backing store.
+    pub approvals: Arc<pii_store::approval::ApprovalStore>,
+    /// Shared memory store (F6.7): the `memory` node's backing store, and
+    /// `memory.*`'s backing store.
+    pub memory: Arc<pii_store::MemStore>,
     /// Node registry (built-ins + `agent`).
     pub reg: NodeRegistry,
     /// The model provider.
@@ -72,6 +80,9 @@ pub struct Engine {
     runs: parking_lot::Mutex<BTreeMap<String, RunHandle>>,
     /// Session → runs it has spawned (for session-scoped `event.subscribe`).
     session_runs: parking_lot::Mutex<BTreeMap<String, Vec<String>>>,
+    /// Set once by `pii daemon` (F5.1): `None` for a bare `Engine` (oneshot,
+    /// tui, tests), `Some` once the daemon has built its runtime context.
+    daemon_ctx: parking_lot::Mutex<Option<Arc<daemon::status::DaemonContext>>>,
 }
 
 /// A conversation session.
@@ -100,13 +111,30 @@ impl Engine {
     /// Store open failure or unknown model spec.
     pub fn new(cfg: EngineConfig) -> Result<Arc<Self>, PiiError> {
         let store = Arc::new(pii_store::Store::open(&cfg.store_path)?);
+        let sibling = |name: &str| -> PathBuf {
+            cfg.store_path
+                .parent()
+                .map_or_else(|| PathBuf::from(name), |p| p.join(name))
+        };
+        let approvals = Arc::new(pii_store::approval::ApprovalStore::open(&sibling(
+            "approval.redb",
+        ))?);
+        let memory = Arc::new(pii_store::MemStore::open(&sibling("memory.redb"))?);
         let provider = pii_model::provider_from_spec(&cfg.model)?;
         let bus = Bus::new();
-        let reg = registry(&cfg, provider.clone(), bus.subscribe_tx());
+        let reg = registry(
+            &cfg,
+            provider.clone(),
+            bus.subscribe_tx(),
+            Arc::clone(&approvals),
+            Arc::clone(&memory),
+        );
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
             cfg,
             store,
+            approvals,
+            memory,
             reg,
             provider,
             tools,
@@ -115,7 +143,29 @@ impl Engine {
             sessions: parking_lot::Mutex::new(BTreeMap::new()),
             runs: parking_lot::Mutex::new(BTreeMap::new()),
             session_runs: parking_lot::Mutex::new(BTreeMap::new()),
+            daemon_ctx: parking_lot::Mutex::new(None),
         }))
+    }
+
+    /// Attaches the daemon's runtime context (F5.1), set once at daemon
+    /// startup after the engine is already `Arc`-shared.
+    pub fn attach_daemon_ctx(&self, ctx: Arc<daemon::status::DaemonContext>) {
+        *self.daemon_ctx.lock() = Some(ctx);
+    }
+
+    /// The daemon's runtime context, when this engine is running under
+    /// `pii daemon` (F5.1). `None` for a bare `Engine`.
+    #[must_use]
+    pub fn daemon_ctx(&self) -> Option<Arc<daemon::status::DaemonContext>> {
+        self.daemon_ctx.lock().clone()
+    }
+
+    /// Trips every active run's cancel token (F5.3 graceful shutdown).
+    pub fn cancel_all(&self) {
+        let ids: Vec<String> = self.runs.lock().keys().cloned().collect();
+        for id in ids {
+            self.cancel(&id);
+        }
     }
 
     /// Creates a session (F2.7 `session.create`).
@@ -343,12 +393,15 @@ impl Engine {
     }
 }
 
-/// Builds the registry with the built-ins plus `agent` and `tool` (F2.2).
+/// Builds the registry with the built-ins plus `agent`, `tool`, `gate` and
+/// `memory` (F2.2, F5.9, F6.7).
 #[must_use]
 pub fn registry(
     cfg: &EngineConfig,
     provider: Arc<dyn ModelProvider>,
     live: tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>,
+    approvals: Arc<pii_store::approval::ApprovalStore>,
+    memory: Arc<pii_store::MemStore>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
@@ -359,12 +412,17 @@ pub fn registry(
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(cfg.workspace.clone()),
     }));
+    reg.register(Arc::new(nodes::gate::GateFactory { approvals }));
+    reg.register(Arc::new(nodes::memory::MemoryFactory { store: memory }));
+    reg.register(Arc::new(nodes::crash::DebugCrashFactory));
     reg
 }
 
-/// A registry for static linting only: registers `agent`/`tool` so
-/// `pii graph lint` accepts starter graphs, with a provider that is never
-/// called (lint never executes a node).
+/// A registry for static linting only.
+///
+/// Registers `agent`/`tool`/`gate`/`memory` so `pii graph lint` accepts
+/// starter graphs, with a provider that is never called and scratch stores
+/// that are never meaningfully written (lint never executes a node).
 #[must_use]
 pub fn lint_registry(workspace: &std::path::Path) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
@@ -376,6 +434,20 @@ pub fn lint_registry(workspace: &std::path::Path) -> NodeRegistry {
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),
     }));
+    if let Ok(approvals) = pii_store::approval::ApprovalStore::open(std::path::Path::new(
+        "/projects/pi-improved/_tmp/phase3/lint-approval.redb",
+    )) {
+        reg.register(Arc::new(nodes::gate::GateFactory {
+            approvals: Arc::new(approvals),
+        }));
+    }
+    if let Ok(memory) = pii_store::MemStore::open(std::path::Path::new(
+        "/projects/pi-improved/_tmp/phase3/lint-memory.redb",
+    )) {
+        reg.register(Arc::new(nodes::memory::MemoryFactory {
+            store: Arc::new(memory),
+        }));
+    }
     reg
 }
 
