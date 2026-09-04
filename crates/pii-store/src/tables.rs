@@ -36,3 +36,28 @@ pub(crate) const RUN_BY_STATUS: TableDefinition<'_, (&str, &str), ()> =
 /// Resume key -> run id, the durable lookup for [`super::Store::put_resume_key`].
 pub(crate) const RESUME_INDEX: TableDefinition<'_, &str, &str> =
     TableDefinition::new("resume_index");
+
+/// Memory documents: doc id -> encoded `Doc` (F4.2).
+pub(crate) const MEM_DOC: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("mem_doc");
+
+/// Postings `(term, doc_id)` -> term frequency (F4.5: redb-resident, no
+/// in-RAM inverted index).
+pub(crate) const MEM_TERM: TableDefinition<'_, (&str, &str), u32> =
+    TableDefinition::new("mem_term");
+
+/// Document frequencies: term -> number of docs carrying it.
+pub(crate) const MEM_DF: TableDefinition<'_, &str, u64> = TableDefinition::new("mem_df");
+
+/// Quantised i8 vectors + f32 scale: doc id -> packed bytes.
+pub(crate) const MEM_VEC: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("mem_vec");
+
+/// Concept co-occurrence `(concept, doc_id)` -> weight.
+pub(crate) const MEM_EDGE: TableDefinition<'_, (&str, &str), u64> =
+    TableDefinition::new("mem_edge");
+
+/// Scalar corpus metadata: `n_docs`, `sum_dl`, `dims`.
+pub(crate) const MEM_META: TableDefinition<'_, &str, u64> = TableDefinition::new("mem_meta");
+
+/// Archived (never deleted) documents: doc id -> encoded `Doc`.
+pub(crate) const MEM_ARCHIVE: TableDefinition<'_, &str, &[u8]> =
+    TableDefinition::new("mem_archive");

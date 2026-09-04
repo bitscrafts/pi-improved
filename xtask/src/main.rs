@@ -8,12 +8,13 @@
 mod bench;
 mod deps;
 mod lint_files;
+mod memory_eval;
 pub mod net_check;
 mod proto_gen;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|memory-eval|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -47,6 +48,19 @@ fn main() -> ExitCode {
     match cmd.as_deref() {
         Some("deps-check") => report(deps::run()),
         Some("net-check") => report(net_check::run()),
+        Some("memory-eval") => match parse_mem_eval(&rest) {
+            Ok((c, q, k)) => match memory_eval::run(&c, &q, k) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            },
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("lint-files") => report(lint_files::run()),
         Some("proto-gen") => report(proto_gen::generate().map_err(|e| vec![e])),
         Some("proto-check") => report(proto_gen::check()),
@@ -100,25 +114,186 @@ fn main() -> ExitCode {
     }
 }
 
-/// F2.14: the gate fails on a synthetic file outside the allowlist, naming
-/// the file and the symbol. Top-level so `-- --exact` matches the bare path
-/// named in the spec's exit criterion.
+/// Parses `memory-eval --corpus <f> --queries <f> [--top-k N]` (F4.16).
+fn parse_mem_eval(rest: &[String]) -> Result<(String, String, usize), String> {
+    let mut corpus = String::new();
+    let mut queries = String::new();
+    let mut top_k = 10usize;
+    let mut i = 0usize;
+    while i < rest.len() {
+        match rest.get(i).map(String::as_str) {
+            Some("--corpus") => {
+                i += 1;
+                corpus = rest.get(i).cloned().ok_or("--corpus needs a value")?;
+            }
+            Some("--queries") => {
+                i += 1;
+                queries = rest.get(i).cloned().ok_or("--queries needs a value")?;
+            }
+            Some("--top-k") => {
+                i += 1;
+                top_k = rest
+                    .get(i)
+                    .and_then(|v| v.parse().ok())
+                    .ok_or("--top-k needs a number")?;
+            }
+            other => return Err(format!("unknown memory-eval arg '{other:?}'")),
+        }
+        i += 1;
+    }
+    if corpus.is_empty() || queries.is_empty() {
+        return Err(String::from("memory-eval needs --corpus and --queries"));
+    }
+    Ok((corpus, queries, top_k))
+}
+
+/// spec's exit criterion.
+#[cfg(test)]
+mod top_level_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(clippy::indexing_slicing)] // tests assert on indexed fixture shapes
+    use crate::memory_eval;
+    use crate::net_check;
+
+    #[test]
+    fn net_check_rejects_socket_outside_pii_net() {
+        let src = concat!(
+            "fn f() {\n    let _ = std::net::TcpStream",
+            "::connect(\"h:80\");\n}\n"
+        );
+        let v = net_check::scan_one("crates/pii-x/src/a.rs", src, net_check::ALLOWLIST);
+        assert_eq!(v.len(), 1, "one violation: {v:?}");
+        let first = v.first().map_or("", String::as_str);
+        assert!(
+            first.contains("crates/pii-x/src/a.rs"),
+            "names file: {first}"
+        );
+        assert!(
+            first.contains(concat!("TcpStream", "::connect")),
+            "names symbol: {first}"
+        );
+        assert!(first.starts_with("NET-CHECK FAIL: "), "prefix: {first}");
+    }
+
+    #[test]
+    fn memory_eval_fixture_is_not_rigged() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root");
+        let (docs, queries) = memory_eval::parse_fixtures(
+            root.join("fixtures/phase3/memory/corpus.jsonl")
+                .to_str()
+                .expect("corpus path"),
+            root.join("fixtures/phase3/memory/queries.jsonl")
+                .to_str()
+                .expect("queries path"),
+        )
+        .expect("fixtures parse");
+        assert!(docs.len() >= 200, "corpus must have >= 200 docs");
+        assert_eq!(queries.len(), 20, "exactly 20 queries");
+        for q in &queries {
+            for rid in &q.relevant {
+                let doc_text = docs
+                    .iter()
+                    .find(|d| &d.id == rid)
+                    .map_or(String::new(), |d| d.text.clone());
+                assert!(
+                    !doc_text.contains(&q.q),
+                    "query {:?} appears verbatim in doc {rid}",
+                    q.q
+                );
+            }
+        }
+    }
+}
+/// F4.16/exit-criterion test (top-level so `-- --exact` matches the bare path).
+#[cfg(test)]
 #[test]
-fn net_check_rejects_socket_outside_pii_net() {
-    let src = concat!(
-        "fn f() {\n    let _ = std::net::TcpStream",
-        "::connect(\"h:80\");\n}\n"
+fn deps_check_rejects_redb_outside_store() {
+    #![allow(clippy::panic)] // reason: test asserts a violation exists
+    let m = deps::tests::clean_metadata();
+    let m2 = deps::tests::push_package(
+        m,
+        serde_json::json!({"id":"mem","name":"pii-memory","version":"1.0.0",
+               "dependencies":[{"name":"redb","kind":null}]}),
+        serde_json::json!([{"pkg":"redb"}]),
     );
-    let v = net_check::scan_one("crates/pii-x/src/a.rs", src, net_check::ALLOWLIST);
-    assert_eq!(v.len(), 1, "one violation: {v:?}");
-    let first = v.first().map_or("", String::as_str);
+    let errs = match deps::check_all(&m2) {
+        Ok(v) => panic!("pii-memory -> redb must violate invariant 5, got ok: {v:?}"),
+        Err(e) => e,
+    };
     assert!(
-        first.contains("crates/pii-x/src/a.rs"),
-        "names file: {first}"
+        errs.iter()
+            .any(|e| e.contains("pii-memory") && e.contains("redb")),
+        "invariant 5 violation naming pii-memory: {errs:?}"
     );
-    assert!(
-        first.contains(concat!("TcpStream", "::connect")),
-        "names symbol: {first}"
-    );
-    assert!(first.starts_with("NET-CHECK FAIL: "), "prefix: {first}");
+}
+/// F4.17 (top-level so `-- --exact` matches the bare path): the fixture is
+/// not rigged — machine-checked corpus/query constraints.
+#[test]
+fn memory_eval_fixture_is_not_rigged() {
+    #![allow(clippy::expect_used)] // test fixture: fixture files must exist
+    #![allow(clippy::panic)] // test fixture: missing relevant doc is a hard failure
+    use std::collections::BTreeMap;
+
+    let corpus =
+        std::fs::read_to_string("/projects/pi-improved/fixtures/phase3/memory/corpus.jsonl")
+            .expect("corpus fixture");
+    let queries =
+        std::fs::read_to_string("/projects/pi-improved/fixtures/phase3/memory/queries.jsonl")
+            .expect("queries fixture");
+    let mut docs: Vec<(String, String)> = Vec::new();
+    for line in corpus.lines().filter(|l| !l.trim().is_empty()) {
+        let v: serde_json::Value = serde_json::from_str(line).expect("corpus json");
+        docs.push((
+            v.get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            v.get("text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        ));
+    }
+    let mut qs: Vec<(String, Vec<String>)> = Vec::new();
+    for line in queries.lines().filter(|l| !l.trim().is_empty()) {
+        let v: serde_json::Value = serde_json::from_str(line).expect("query json");
+        let rel = v
+            .get("relevant")
+            .and_then(serde_json::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+        qs.push((
+            v.get("q")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            rel,
+        ));
+    }
+    // ≥ 200 docs; exactly 20 queries; 1–3 relevant each.
+    assert!(docs.len() >= 200, "corpus must have >= 200 docs");
+    assert_eq!(qs.len(), 20, "exactly 20 queries");
+    let by_id: BTreeMap<String, String> = docs.iter().cloned().collect();
+    for (q, rel) in &qs {
+        assert!(
+            !rel.is_empty() && rel.len() <= 3,
+            "1-3 relevant docs per query"
+        );
+        for r in rel {
+            let text = by_id
+                .get(r)
+                .unwrap_or_else(|| panic!("relevant doc {r} missing from corpus"));
+            assert!(
+                !text.contains(q.as_str()),
+                "query '{q}' appears verbatim in relevant doc {r} — rigged"
+            );
+        }
+    }
 }

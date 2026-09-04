@@ -18,9 +18,10 @@ fn full_ctx() -> Ctx {
         String::from("/projects/pi-improved/target/debug/pii"),
         String::from("/usr/bin/kill"),
         String::from("/bin/sh"),
-        // Test worker wrapper scripts (flood/tag-swap fixtures).
-        String::from("/projects/pi-improved/_tmp/phase3/test/flood.sh"),
-        String::from("/projects/pi-improved/_tmp/phase3/test/swap.sh"),
+        // Test worker wrapper scripts (flood/tag-swap fixtures): the
+        // flood fixture gets a per-run pid suffix to dodge ETXTBSY races.
+        String::from("/projects/pi-improved/_tmp/phase3/test/swap"),
+        String::from("/projects/pi-improved/_tmp/phase3/test/flood"),
     ]);
     Ctx::root(caps, Budget::unlimited())
 }
@@ -201,7 +202,7 @@ fn stderr_flood_does_not_deadlock() {
     // A flood worker: writes 10 MB to stderr while answering echo (F3.2).
     let scratch = std::path::PathBuf::from("/projects/pi-improved/_tmp/phase3/test");
     let _ = std::fs::create_dir_all(&scratch);
-    let prog = scratch.join("flood.sh");
+    let prog = scratch.join(format!("flood-{}.sh", std::process::id()));
     // Atomic write (tmp + rename): a leftover running instance from a prior
     // run holds flood.sh busy, and in-place writes fail with ETXTBSY.
     let tmp = prog.with_extension("tmp");
@@ -246,7 +247,7 @@ fn reload_swaps_program_and_tag() {
     let ctx = full_ctx();
     let scratch = std::path::PathBuf::from("/projects/pi-improved/_tmp/phase3/test");
     let _ = std::fs::create_dir_all(&scratch);
-    let prog = scratch.join("swap.sh");
+    let prog = scratch.join(format!("swap-{}.sh", std::process::id()));
     let pii_bin = std::path::PathBuf::from("/projects/pi-improved/target/debug/pii");
     let write_prog = |tag: &str| {
         // Operators never write in place over a running program (ETXTBSY);

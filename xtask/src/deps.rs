@@ -29,13 +29,70 @@ const TUI_FORBIDDEN: &[&str] = &["pii-graph"];
 /// Invariant 4: exactly one version each of these in the resolved graph.
 const SINGLE_VERSION: &[&str] = &["redb", "reqwest", "wasmtime", "serde"];
 
+/// Invariant 5 (F4.2/F7.3): `redb` may appear only under `pii-store` — the
+/// memory index lives in `pii-store/src/mem.rs`; `pii-memory` consumes it
+/// without touching redb.
+const REDB_ALLOWED: &[&str] = &["pii-store"];
+
+/// Invariant 5: no package outside `pii-store` may depend on `redb`.
+/// Node deps are `{"pkg": id}` entries resolved against the package list,
+/// matching the shape `check_transitive_deps` already consumes.
+fn check_redb_confined(metadata: &Value, violations: &mut Vec<String>) {
+    let Some(nodes) = metadata
+        .get("resolve")
+        .and_then(|r| r.get("nodes"))
+        .and_then(Value::as_array)
+    else {
+        violations.push(String::from(
+            "metadata has no resolve.nodes (run with --format-version 1)",
+        ));
+        return;
+    };
+    let packages = metadata
+        .get("packages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let name_of_id = |id: &str| -> String {
+        packages
+            .iter()
+            .find_map(|p| {
+                (p.get("id").and_then(Value::as_str) == Some(id))
+                    .then(|| p.get("name").and_then(Value::as_str).unwrap_or_default())
+            })
+            .unwrap_or_default()
+            .to_string()
+    };
+    for node in nodes {
+        let node_id = node.get("id").and_then(Value::as_str).unwrap_or_default();
+        let name = name_of_id(node_id);
+        if REDB_ALLOWED.contains(&name.as_str()) {
+            continue;
+        }
+        for d in node
+            .get("deps")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let dep_id = d.get("pkg").and_then(Value::as_str).unwrap_or_default();
+            if name_of_id(dep_id) == "redb" {
+                violations.push(format!(
+                    "deps-check: invariant 5 — '{name}' depends on redb outside pii-store"
+                ));
+            }
+        }
+    }
+}
+
 /// Runs every invariant and returns the combined violation list.
-pub(super) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
+pub(crate) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
     let mut violations = Vec::new();
     check_abi_purity(metadata, &mut violations);
     check_proto_purity(metadata, &mut violations);
     check_tui_no_graph(metadata, &mut violations);
     check_single_versions(metadata, &mut violations);
+    check_redb_confined(metadata, &mut violations);
     if violations.is_empty() {
         Ok(())
     } else {
@@ -248,7 +305,7 @@ pub(super) fn run() -> Result<(), Vec<String>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     #![allow(clippy::needless_pass_by_value)] // test fixture builders take owned Values
     #![allow(clippy::indexing_slicing)] // test fixtures index into synthetic metadata
@@ -257,25 +314,37 @@ mod tests {
     use serde_json::{Value, json};
 
     /// Builds a metadata doc with the given packages and resolve nodes.
-    fn metadata(packages: Value, nodes: Value) -> Value {
+    pub(super) fn metadata(packages: Value, nodes: Value) -> Value {
         json!({ "packages": packages, "resolve": { "nodes": nodes } })
     }
 
-    fn pkg(id: &str, name: &str, deps: Value) -> Value {
+    pub(super) fn pkg(id: &str, name: &str, deps: Value) -> Value {
         json!({ "id": id, "name": name, "version": "1.0.0", "dependencies": deps })
     }
 
-    fn node(id: &str, deps: Value) -> Value {
+    pub(crate) fn node(id: &str, deps: Value) -> Value {
         json!({ "id": id, "deps": deps })
     }
 
-    fn dep(pkg: &str) -> Value {
+    pub(crate) fn dep(pkg: &str) -> Value {
         json!({ "pkg": pkg })
     }
 
     /// A clean graph: pii-abi pure, pii-proto pure, pii-tui no pii-graph,
     /// single versions.
-    fn clean_metadata() -> Value {
+    ///
+    /// Appends a package (and its node) to the fixture; used by invariant-5.
+    pub(crate) fn push_package(m: Value, pkg_v: Value, deps_v: Value) -> Value {
+        let mut m = m;
+        m["packages"].as_array_mut().expect("packages").push(pkg_v);
+        m["resolve"]["nodes"]
+            .as_array_mut()
+            .expect("nodes")
+            .push(node("mem", deps_v));
+        m
+    }
+
+    pub(crate) fn clean_metadata() -> Value {
         let packages = json!([
             pkg(
                 "abi",

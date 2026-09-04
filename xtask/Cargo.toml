@@ -11,6 +11,10 @@ description.workspace = true
 serde_json = { workspace = true }
 schemars = { workspace = true }
 pii-proto = { path = "../crates/pii-proto" }
+pii-store = { path = "../crates/pii-store" }
+pii-memory = { path = "../crates/pii-memory" }
+pii-core = { path = "../crates/pii-core" }
+serde = { workspace = true }
 
 [lints]
 workspace = true

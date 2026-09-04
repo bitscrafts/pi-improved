@@ -9,6 +9,8 @@
 #![forbid(unsafe_code)]
 
 mod codec;
+pub mod mem;
+pub use mem::MemStore;
 mod tables;
 
 use std::path::Path;

@@ -1,0 +1,240 @@
+{"id": "doc000", "text": "The redb locking subsystem keeps redb isolated so lock cannot be corrupted by transaction during normal operation. Note 0 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc001", "text": "When redb locking changes state, redb is checked before lock, otherwise transaction would silently diverge. Note 1 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc002", "text": "Operators tune redb through lock; the redb locking path never widens transaction on its own. Note 2 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc003", "text": "A failed redb inside redb locking surfaces as an error, never a panic; lock and transaction stay consistent. Note 3 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc004", "text": "The redb locking lane trades redb for lock, which is why transaction is measured before tuning. Note 4 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc005", "text": "Every redb in redb locking is journalled so a crash between lock and transaction replays deterministically. Note 5 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc006", "text": "Tests pin redb locking behaviour: redb stays bounded, lock completes, and transaction is refused. Note 6 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc007", "text": "During review we found redb locking conflating redb with lock; the fix moved transaction to a pure function. Note 7 about redb locking.", "concepts": ["redb", "lock"]}
+{"id": "doc010", "text": "The container build keeps bm25 out of bm25 scoring so idf and tf remain dependency-free. Note 0 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc011", "text": "After the reload, bm25 scoring re-derives bm25 from idf before serving tf again. Note 1 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc012", "text": "The bm25 scoring subsystem keeps bm25 isolated so idf cannot be corrupted by tf during normal operation. Note 2 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc013", "text": "When bm25 scoring changes state, bm25 is checked before idf, otherwise tf would silently diverge. Note 3 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc014", "text": "Operators tune bm25 through idf; the bm25 scoring path never widens tf on its own. Note 4 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc015", "text": "A failed bm25 inside bm25 scoring surfaces as an error, never a panic; idf and tf stay consistent. Note 5 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc016", "text": "The bm25 scoring lane trades bm25 for idf, which is why tf is measured before tuning. Note 6 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc017", "text": "Every bm25 in bm25 scoring is journalled so a crash between idf and tf replays deterministically. Note 7 about bm25 scoring.", "concepts": ["bm25", "idf"]}
+{"id": "doc020", "text": "Tests pin trigram embedding behaviour: trigram stays bounded, hash completes, and bucket is refused. Note 0 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc021", "text": "During review we found trigram embedding conflating trigram with hash; the fix moved bucket to a pure function. Note 1 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc022", "text": "The container build keeps trigram out of trigram embedding so hash and bucket remain dependency-free. Note 2 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc023", "text": "After the reload, trigram embedding re-derives trigram from hash before serving bucket again. Note 3 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc024", "text": "The trigram embedding subsystem keeps trigram isolated so hash cannot be corrupted by bucket during normal operation. Note 4 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc025", "text": "When trigram embedding changes state, trigram is checked before hash, otherwise bucket would silently diverge. Note 5 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc026", "text": "Operators tune trigram through hash; the trigram embedding path never widens bucket on its own. Note 6 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc027", "text": "A failed trigram inside trigram embedding surfaces as an error, never a panic; hash and bucket stay consistent. Note 7 about trigram embedding.", "concepts": ["trigram", "hash"]}
+{"id": "doc030", "text": "The quantised vectors lane trades quantise for i8, which is why scale is measured before tuning. Note 0 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc031", "text": "Every quantise in quantised vectors is journalled so a crash between i8 and scale replays deterministically. Note 1 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc032", "text": "Tests pin quantised vectors behaviour: quantise stays bounded, i8 completes, and scale is refused. Note 2 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc033", "text": "During review we found quantised vectors conflating quantise with i8; the fix moved scale to a pure function. Note 3 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc034", "text": "The container build keeps quantise out of quantised vectors so i8 and scale remain dependency-free. Note 4 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc035", "text": "After the reload, quantised vectors re-derives quantise from i8 before serving scale again. Note 5 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc036", "text": "The quantised vectors subsystem keeps quantise isolated so i8 cannot be corrupted by scale during normal operation. Note 6 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc037", "text": "When quantised vectors changes state, quantise is checked before i8, otherwise scale would silently diverge. Note 7 about quantised vectors.", "concepts": ["quantise", "i8"]}
+{"id": "doc040", "text": "Operators tune concept through edge; the co-occurrence graph path never widens cooccur on its own. Note 0 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc041", "text": "A failed concept inside co-occurrence graph surfaces as an error, never a panic; edge and cooccur stay consistent. Note 1 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc042", "text": "The co-occurrence graph lane trades concept for edge, which is why cooccur is measured before tuning. Note 2 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc043", "text": "Every concept in co-occurrence graph is journalled so a crash between edge and cooccur replays deterministically. Note 3 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc044", "text": "Tests pin co-occurrence graph behaviour: concept stays bounded, edge completes, and cooccur is refused. Note 4 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc045", "text": "During review we found co-occurrence graph conflating concept with edge; the fix moved cooccur to a pure function. Note 5 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc046", "text": "The container build keeps concept out of co-occurrence graph so edge and cooccur remain dependency-free. Note 6 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc047", "text": "After the reload, co-occurrence graph re-derives concept from edge before serving cooccur again. Note 7 about co-occurrence graph.", "concepts": ["concept", "edge"]}
+{"id": "doc050", "text": "The rrf fusion subsystem keeps rrf isolated so fuse cannot be corrupted by lane during normal operation. Note 0 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc051", "text": "When rrf fusion changes state, rrf is checked before fuse, otherwise lane would silently diverge. Note 1 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc052", "text": "Operators tune rrf through fuse; the rrf fusion path never widens lane on its own. Note 2 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc053", "text": "A failed rrf inside rrf fusion surfaces as an error, never a panic; fuse and lane stay consistent. Note 3 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc054", "text": "The rrf fusion lane trades rrf for fuse, which is why lane is measured before tuning. Note 4 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc055", "text": "Every rrf in rrf fusion is journalled so a crash between fuse and lane replays deterministically. Note 5 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc056", "text": "Tests pin rrf fusion behaviour: rrf stays bounded, fuse completes, and lane is refused. Note 6 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc057", "text": "During review we found rrf fusion conflating rrf with fuse; the fix moved lane to a pure function. Note 7 about rrf fusion.", "concepts": ["rrf", "fuse"]}
+{"id": "doc060", "text": "The container build keeps decay out of temporal decay so atom and scene remain dependency-free. Note 0 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc061", "text": "After the reload, temporal decay re-derives decay from atom before serving scene again. Note 1 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc062", "text": "The temporal decay subsystem keeps decay isolated so atom cannot be corrupted by scene during normal operation. Note 2 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc063", "text": "When temporal decay changes state, decay is checked before atom, otherwise scene would silently diverge. Note 3 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc064", "text": "Operators tune decay through atom; the temporal decay path never widens scene on its own. Note 4 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc065", "text": "A failed decay inside temporal decay surfaces as an error, never a panic; atom and scene stay consistent. Note 5 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc066", "text": "The temporal decay lane trades decay for atom, which is why scene is measured before tuning. Note 6 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc067", "text": "Every decay in temporal decay is journalled so a crash between atom and scene replays deterministically. Note 7 about temporal decay.", "concepts": ["decay", "atom"]}
+{"id": "doc070", "text": "Tests pin worker supervision behaviour: worker stays bounded, supervisor completes, and spawn is refused. Note 0 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc071", "text": "During review we found worker supervision conflating worker with supervisor; the fix moved spawn to a pure function. Note 1 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc072", "text": "The container build keeps worker out of worker supervision so supervisor and spawn remain dependency-free. Note 2 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc073", "text": "After the reload, worker supervision re-derives worker from supervisor before serving spawn again. Note 3 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc074", "text": "The worker supervision subsystem keeps worker isolated so supervisor cannot be corrupted by spawn during normal operation. Note 4 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc075", "text": "When worker supervision changes state, worker is checked before supervisor, otherwise spawn would silently diverge. Note 5 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc076", "text": "Operators tune worker through supervisor; the worker supervision path never widens spawn on its own. Note 6 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc077", "text": "A failed worker inside worker supervision surfaces as an error, never a panic; supervisor and spawn stay consistent. Note 7 about worker supervision.", "concepts": ["worker", "supervisor"]}
+{"id": "doc080", "text": "The crash loop cap lane trades restart for window, which is why cap is measured before tuning. Note 0 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc081", "text": "Every restart in crash loop cap is journalled so a crash between window and cap replays deterministically. Note 1 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc082", "text": "Tests pin crash loop cap behaviour: restart stays bounded, window completes, and cap is refused. Note 2 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc083", "text": "During review we found crash loop cap conflating restart with window; the fix moved cap to a pure function. Note 3 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc084", "text": "The container build keeps restart out of crash loop cap so window and cap remain dependency-free. Note 4 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc085", "text": "After the reload, crash loop cap re-derives restart from window before serving cap again. Note 5 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc086", "text": "The crash loop cap subsystem keeps restart isolated so window cannot be corrupted by cap during normal operation. Note 6 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc087", "text": "When crash loop cap changes state, restart is checked before window, otherwise cap would silently diverge. Note 7 about crash loop cap.", "concepts": ["restart", "window"]}
+{"id": "doc090", "text": "Operators tune reload through drain; the hot reload drain path never widens queue on its own. Note 0 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc091", "text": "A failed reload inside hot reload drain surfaces as an error, never a panic; drain and queue stay consistent. Note 1 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc092", "text": "The hot reload drain lane trades reload for drain, which is why queue is measured before tuning. Note 2 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc093", "text": "Every reload in hot reload drain is journalled so a crash between drain and queue replays deterministically. Note 3 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc094", "text": "Tests pin hot reload drain behaviour: reload stays bounded, drain completes, and queue is refused. Note 4 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc095", "text": "During review we found hot reload drain conflating reload with drain; the fix moved queue to a pure function. Note 5 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc096", "text": "The container build keeps reload out of hot reload drain so drain and queue remain dependency-free. Note 6 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc097", "text": "After the reload, hot reload drain re-derives reload from drain before serving queue again. Note 7 about hot reload drain.", "concepts": ["reload", "drain"]}
+{"id": "doc100", "text": "The uds peercred subsystem keeps socket isolated so peercred cannot be corrupted by uid during normal operation. Note 0 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc101", "text": "When uds peercred changes state, socket is checked before peercred, otherwise uid would silently diverge. Note 1 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc102", "text": "Operators tune socket through peercred; the uds peercred path never widens uid on its own. Note 2 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc103", "text": "A failed socket inside uds peercred surfaces as an error, never a panic; peercred and uid stay consistent. Note 3 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc104", "text": "The uds peercred lane trades socket for peercred, which is why uid is measured before tuning. Note 4 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc105", "text": "Every socket in uds peercred is journalled so a crash between peercred and uid replays deterministically. Note 5 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc106", "text": "Tests pin uds peercred behaviour: socket stays bounded, peercred completes, and uid is refused. Note 6 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc107", "text": "During review we found uds peercred conflating socket with peercred; the fix moved uid to a pure function. Note 7 about uds peercred.", "concepts": ["socket", "peercred"]}
+{"id": "doc110", "text": "The container build keeps netcheck out of netcheck gate so socket and allowlist remain dependency-free. Note 0 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc111", "text": "After the reload, netcheck gate re-derives netcheck from socket before serving allowlist again. Note 1 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc112", "text": "The netcheck gate subsystem keeps netcheck isolated so socket cannot be corrupted by allowlist during normal operation. Note 2 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc113", "text": "When netcheck gate changes state, netcheck is checked before socket, otherwise allowlist would silently diverge. Note 3 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc114", "text": "Operators tune netcheck through socket; the netcheck gate path never widens allowlist on its own. Note 4 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc115", "text": "A failed netcheck inside netcheck gate surfaces as an error, never a panic; socket and allowlist stay consistent. Note 5 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc116", "text": "The netcheck gate lane trades netcheck for socket, which is why allowlist is measured before tuning. Note 6 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc117", "text": "Every netcheck in netcheck gate is journalled so a crash between socket and allowlist replays deterministically. Note 7 about netcheck gate.", "concepts": ["netcheck", "socket"]}
+{"id": "doc120", "text": "Tests pin egress grants behaviour: grant stays bounded, scope completes, and host is refused. Note 0 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc121", "text": "During review we found egress grants conflating grant with scope; the fix moved host to a pure function. Note 1 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc122", "text": "The container build keeps grant out of egress grants so scope and host remain dependency-free. Note 2 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc123", "text": "After the reload, egress grants re-derives grant from scope before serving host again. Note 3 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc124", "text": "The egress grants subsystem keeps grant isolated so scope cannot be corrupted by host during normal operation. Note 4 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc125", "text": "When egress grants changes state, grant is checked before scope, otherwise host would silently diverge. Note 5 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc126", "text": "Operators tune grant through scope; the egress grants path never widens host on its own. Note 6 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc127", "text": "A failed grant inside egress grants surfaces as an error, never a panic; scope and host stay consistent. Note 7 about egress grants.", "concepts": ["grant", "scope"]}
+{"id": "doc130", "text": "The mixed answer dns lane trades dns for mixed, which is why public is measured before tuning. Note 0 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc131", "text": "Every dns in mixed answer dns is journalled so a crash between mixed and public replays deterministically. Note 1 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc132", "text": "Tests pin mixed answer dns behaviour: dns stays bounded, mixed completes, and public is refused. Note 2 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc133", "text": "During review we found mixed answer dns conflating dns with mixed; the fix moved public to a pure function. Note 3 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc134", "text": "The container build keeps dns out of mixed answer dns so mixed and public remain dependency-free. Note 4 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc135", "text": "After the reload, mixed answer dns re-derives dns from mixed before serving public again. Note 5 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc136", "text": "The mixed answer dns subsystem keeps dns isolated so mixed cannot be corrupted by public during normal operation. Note 6 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc137", "text": "When mixed answer dns changes state, dns is checked before mixed, otherwise public would silently diverge. Note 7 about mixed answer dns.", "concepts": ["dns", "mixed"]}
+{"id": "doc140", "text": "Operators tune landlock through sandbox; the landlock sandbox path never widens profile on its own. Note 0 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc141", "text": "A failed landlock inside landlock sandbox surfaces as an error, never a panic; sandbox and profile stay consistent. Note 1 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc142", "text": "The landlock sandbox lane trades landlock for sandbox, which is why profile is measured before tuning. Note 2 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc143", "text": "Every landlock in landlock sandbox is journalled so a crash between sandbox and profile replays deterministically. Note 3 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc144", "text": "Tests pin landlock sandbox behaviour: landlock stays bounded, sandbox completes, and profile is refused. Note 4 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc145", "text": "During review we found landlock sandbox conflating landlock with sandbox; the fix moved profile to a pure function. Note 5 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc146", "text": "The container build keeps landlock out of landlock sandbox so sandbox and profile remain dependency-free. Note 6 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc147", "text": "After the reload, landlock sandbox re-derives landlock from sandbox before serving profile again. Note 7 about landlock sandbox.", "concepts": ["landlock", "sandbox"]}
+{"id": "doc150", "text": "The cli oneshot subsystem keeps oneshot isolated so loopback cannot be corrupted by prompt during normal operation. Note 0 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc151", "text": "When cli oneshot changes state, oneshot is checked before loopback, otherwise prompt would silently diverge. Note 1 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc152", "text": "Operators tune oneshot through loopback; the cli oneshot path never widens prompt on its own. Note 2 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc153", "text": "A failed oneshot inside cli oneshot surfaces as an error, never a panic; loopback and prompt stay consistent. Note 3 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc154", "text": "The cli oneshot lane trades oneshot for loopback, which is why prompt is measured before tuning. Note 4 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc155", "text": "Every oneshot in cli oneshot is journalled so a crash between loopback and prompt replays deterministically. Note 5 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc156", "text": "Tests pin cli oneshot behaviour: oneshot stays bounded, loopback completes, and prompt is refused. Note 6 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc157", "text": "During review we found cli oneshot conflating oneshot with loopback; the fix moved prompt to a pure function. Note 7 about cli oneshot.", "concepts": ["oneshot", "loopback"]}
+{"id": "doc160", "text": "The container build keeps hello out of protocol version skew so protocol and skew remain dependency-free. Note 0 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc161", "text": "After the reload, protocol version skew re-derives hello from protocol before serving skew again. Note 1 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc162", "text": "The protocol version skew subsystem keeps hello isolated so protocol cannot be corrupted by skew during normal operation. Note 2 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc163", "text": "When protocol version skew changes state, hello is checked before protocol, otherwise skew would silently diverge. Note 3 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc164", "text": "Operators tune hello through protocol; the protocol version skew path never widens skew on its own. Note 4 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc165", "text": "A failed hello inside protocol version skew surfaces as an error, never a panic; protocol and skew stay consistent. Note 5 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc166", "text": "The protocol version skew lane trades hello for protocol, which is why skew is measured before tuning. Note 6 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc167", "text": "Every hello in protocol version skew is journalled so a crash between protocol and skew replays deterministically. Note 7 about protocol version skew.", "concepts": ["hello", "protocol"]}
+{"id": "doc170", "text": "Tests pin memory persistence behaviour: persist stays bounded, reopen completes, and recall is refused. Note 0 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc171", "text": "During review we found memory persistence conflating persist with reopen; the fix moved recall to a pure function. Note 1 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc172", "text": "The container build keeps persist out of memory persistence so reopen and recall remain dependency-free. Note 2 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc173", "text": "After the reload, memory persistence re-derives persist from reopen before serving recall again. Note 3 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc174", "text": "The memory persistence subsystem keeps persist isolated so reopen cannot be corrupted by recall during normal operation. Note 4 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc175", "text": "When memory persistence changes state, persist is checked before reopen, otherwise recall would silently diverge. Note 5 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc176", "text": "Operators tune persist through reopen; the memory persistence path never widens recall on its own. Note 6 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc177", "text": "A failed persist inside memory persistence surfaces as an error, never a panic; reopen and recall stay consistent. Note 7 about memory persistence.", "concepts": ["persist", "reopen"]}
+{"id": "doc180", "text": "The consolidation merge lane trades merge for jaccard, which is why shared is measured before tuning. Note 0 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc181", "text": "Every merge in consolidation merge is journalled so a crash between jaccard and shared replays deterministically. Note 1 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc182", "text": "Tests pin consolidation merge behaviour: merge stays bounded, jaccard completes, and shared is refused. Note 2 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc183", "text": "During review we found consolidation merge conflating merge with jaccard; the fix moved shared to a pure function. Note 3 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc184", "text": "The container build keeps merge out of consolidation merge so jaccard and shared remain dependency-free. Note 4 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc185", "text": "After the reload, consolidation merge re-derives merge from jaccard before serving shared again. Note 5 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc186", "text": "The consolidation merge subsystem keeps merge isolated so jaccard cannot be corrupted by shared during normal operation. Note 6 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc187", "text": "When consolidation merge changes state, merge is checked before jaccard, otherwise shared would silently diverge. Note 7 about consolidation merge.", "concepts": ["merge", "jaccard"]}
+{"id": "doc190", "text": "Operators tune negation through window; the negation veto path never widens veto on its own. Note 0 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc191", "text": "A failed negation inside negation veto surfaces as an error, never a panic; window and veto stay consistent. Note 1 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc192", "text": "The negation veto lane trades negation for window, which is why veto is measured before tuning. Note 2 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc193", "text": "Every negation in negation veto is journalled so a crash between window and veto replays deterministically. Note 3 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc194", "text": "Tests pin negation veto behaviour: negation stays bounded, window completes, and veto is refused. Note 4 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc195", "text": "During review we found negation veto conflating negation with window; the fix moved veto to a pure function. Note 5 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc196", "text": "The container build keeps negation out of negation veto so window and veto remain dependency-free. Note 6 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc197", "text": "After the reload, negation veto re-derives negation from window before serving veto again. Note 7 about negation veto.", "concepts": ["negation", "window"]}
+{"id": "doc200", "text": "The label propagation subsystem keeps label isolated so community cannot be corrupted by round during normal operation. Note 0 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc201", "text": "When label propagation changes state, label is checked before community, otherwise round would silently diverge. Note 1 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc202", "text": "Operators tune label through community; the label propagation path never widens round on its own. Note 2 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc203", "text": "A failed label inside label propagation surfaces as an error, never a panic; community and round stay consistent. Note 3 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc204", "text": "The label propagation lane trades label for community, which is why round is measured before tuning. Note 4 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc205", "text": "Every label in label propagation is journalled so a crash between community and round replays deterministically. Note 5 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc206", "text": "Tests pin label propagation behaviour: label stays bounded, community completes, and round is refused. Note 6 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc207", "text": "During review we found label propagation conflating label with community; the fix moved round to a pure function. Note 7 about label propagation.", "concepts": ["label", "community"]}
+{"id": "doc210", "text": "The container build keeps batch out of streaming scan so stream and heap remain dependency-free. Note 0 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc211", "text": "After the reload, streaming scan re-derives batch from stream before serving heap again. Note 1 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc212", "text": "The streaming scan subsystem keeps batch isolated so stream cannot be corrupted by heap during normal operation. Note 2 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc213", "text": "When streaming scan changes state, batch is checked before stream, otherwise heap would silently diverge. Note 3 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc214", "text": "Operators tune batch through stream; the streaming scan path never widens heap on its own. Note 4 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc215", "text": "A failed batch inside streaming scan surfaces as an error, never a panic; stream and heap stay consistent. Note 5 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc216", "text": "The streaming scan lane trades batch for stream, which is why heap is measured before tuning. Note 6 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc217", "text": "Every batch in streaming scan is journalled so a crash between stream and heap replays deterministically. Note 7 about streaming scan.", "concepts": ["batch", "stream"]}
+{"id": "doc220", "text": "Tests pin idempotent doc ids behaviour: doc stays bounded, id completes, and content is refused. Note 0 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc221", "text": "During review we found idempotent doc ids conflating doc with id; the fix moved content to a pure function. Note 1 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc222", "text": "The container build keeps doc out of idempotent doc ids so id and content remain dependency-free. Note 2 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc223", "text": "After the reload, idempotent doc ids re-derives doc from id before serving content again. Note 3 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc224", "text": "The idempotent doc ids subsystem keeps doc isolated so id cannot be corrupted by content during normal operation. Note 4 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc225", "text": "When idempotent doc ids changes state, doc is checked before id, otherwise content would silently diverge. Note 5 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc226", "text": "Operators tune doc through id; the idempotent doc ids path never widens content on its own. Note 6 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc227", "text": "A failed doc inside idempotent doc ids surfaces as an error, never a panic; id and content stay consistent. Note 7 about idempotent doc ids.", "concepts": ["doc", "id"]}
+{"id": "doc230", "text": "The stoplist tokenise lane trades tokenise for stoplist, which is why split is measured before tuning. Note 0 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc231", "text": "Every tokenise in stoplist tokenise is journalled so a crash between stoplist and split replays deterministically. Note 1 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc232", "text": "Tests pin stoplist tokenise behaviour: tokenise stays bounded, stoplist completes, and split is refused. Note 2 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc233", "text": "During review we found stoplist tokenise conflating tokenise with stoplist; the fix moved split to a pure function. Note 3 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc234", "text": "The container build keeps tokenise out of stoplist tokenise so stoplist and split remain dependency-free. Note 4 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc235", "text": "After the reload, stoplist tokenise re-derives tokenise from stoplist before serving split again. Note 5 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc236", "text": "The stoplist tokenise subsystem keeps tokenise isolated so stoplist cannot be corrupted by split during normal operation. Note 6 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc237", "text": "When stoplist tokenise changes state, tokenise is checked before stoplist, otherwise split would silently diverge. Note 7 about stoplist tokenise.", "concepts": ["tokenise", "stoplist"]}
+{"id": "doc240", "text": "Operators tune degrade through lane; the embedder degrade path never widens null on its own. Note 0 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc241", "text": "A failed degrade inside embedder degrade surfaces as an error, never a panic; lane and null stay consistent. Note 1 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc242", "text": "The embedder degrade lane trades degrade for lane, which is why null is measured before tuning. Note 2 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc243", "text": "Every degrade in embedder degrade is journalled so a crash between lane and null replays deterministically. Note 3 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc244", "text": "Tests pin embedder degrade behaviour: degrade stays bounded, lane completes, and null is refused. Note 4 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc245", "text": "During review we found embedder degrade conflating degrade with lane; the fix moved null to a pure function. Note 5 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc246", "text": "The container build keeps degrade out of embedder degrade so lane and null remain dependency-free. Note 6 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc247", "text": "After the reload, embedder degrade re-derives degrade from lane before serving null again. Note 7 about embedder degrade.", "concepts": ["degrade", "lane"]}
+{"id": "doc250", "text": "The cron timer wheel subsystem keeps timer isolated so wheel cannot be corrupted by sleep during normal operation. Note 0 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc251", "text": "When cron timer wheel changes state, timer is checked before wheel, otherwise sleep would silently diverge. Note 1 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc252", "text": "Operators tune timer through wheel; the cron timer wheel path never widens sleep on its own. Note 2 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc253", "text": "A failed timer inside cron timer wheel surfaces as an error, never a panic; wheel and sleep stay consistent. Note 3 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc254", "text": "The cron timer wheel lane trades timer for wheel, which is why sleep is measured before tuning. Note 4 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc255", "text": "Every timer in cron timer wheel is journalled so a crash between wheel and sleep replays deterministically. Note 5 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc256", "text": "Tests pin cron timer wheel behaviour: timer stays bounded, wheel completes, and sleep is refused. Note 6 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc257", "text": "During review we found cron timer wheel conflating timer with wheel; the fix moved sleep to a pure function. Note 7 about cron timer wheel.", "concepts": ["timer", "wheel"]}
+{"id": "doc260", "text": "The container build keeps approval out of approval gate so gate and suspend remain dependency-free. Note 0 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc261", "text": "After the reload, approval gate re-derives approval from gate before serving suspend again. Note 1 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc262", "text": "The approval gate subsystem keeps approval isolated so gate cannot be corrupted by suspend during normal operation. Note 2 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc263", "text": "When approval gate changes state, approval is checked before gate, otherwise suspend would silently diverge. Note 3 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc264", "text": "Operators tune approval through gate; the approval gate path never widens suspend on its own. Note 4 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc265", "text": "A failed approval inside approval gate surfaces as an error, never a panic; gate and suspend stay consistent. Note 5 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc266", "text": "The approval gate lane trades approval for gate, which is why suspend is measured before tuning. Note 6 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc267", "text": "Every approval in approval gate is journalled so a crash between gate and suspend replays deterministically. Note 7 about approval gate.", "concepts": ["approval", "gate"]}
+{"id": "doc270", "text": "Tests pin channel cursor behaviour: channel stays bounded, cursor completes, and telegram is refused. Note 0 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc271", "text": "During review we found channel cursor conflating channel with cursor; the fix moved telegram to a pure function. Note 1 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc272", "text": "The container build keeps channel out of channel cursor so cursor and telegram remain dependency-free. Note 2 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc273", "text": "After the reload, channel cursor re-derives channel from cursor before serving telegram again. Note 3 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc274", "text": "The channel cursor subsystem keeps channel isolated so cursor cannot be corrupted by telegram during normal operation. Note 4 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc275", "text": "When channel cursor changes state, channel is checked before cursor, otherwise telegram would silently diverge. Note 5 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc276", "text": "Operators tune channel through cursor; the channel cursor path never widens telegram on its own. Note 6 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc277", "text": "A failed channel inside channel cursor surfaces as an error, never a panic; cursor and telegram stay consistent. Note 7 about channel cursor.", "concepts": ["channel", "cursor"]}
+{"id": "doc280", "text": "The graph scheduler lane trades scheduler for ready, which is why batch is measured before tuning. Note 0 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc281", "text": "Every scheduler in graph scheduler is journalled so a crash between ready and batch replays deterministically. Note 1 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc282", "text": "Tests pin graph scheduler behaviour: scheduler stays bounded, ready completes, and batch is refused. Note 2 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc283", "text": "During review we found graph scheduler conflating scheduler with ready; the fix moved batch to a pure function. Note 3 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc284", "text": "The container build keeps scheduler out of graph scheduler so ready and batch remain dependency-free. Note 4 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc285", "text": "After the reload, graph scheduler re-derives scheduler from ready before serving batch again. Note 5 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc286", "text": "The graph scheduler subsystem keeps scheduler isolated so ready cannot be corrupted by batch during normal operation. Note 6 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc287", "text": "When graph scheduler changes state, scheduler is checked before ready, otherwise batch would silently diverge. Note 7 about graph scheduler.", "concepts": ["scheduler", "ready"]}
+{"id": "doc290", "text": "Operators tune bench through budget; the bench gate budget path never widens p95 on its own. Note 0 about bench gate budget.", "concepts": ["bench", "budget"]}
+{"id": "doc291", "text": "A failed bench inside bench gate budget surfaces as an error, never a panic; budget and p95 stay consistent. Note 1 about bench gate budget.", "concepts": ["bench", "budget"]}
+{"id": "doc292", "text": "The bench gate budget lane trades bench for budget, which is why p95 is measured before tuning. Note 2 about bench gate budget.", "concepts": ["bench", "budget"]}
+{"id": "doc293", "text": "Every bench in bench gate budget is journalled so a crash between budget and p95 replays deterministically. Note 3 about bench gate budget.", "concepts": ["bench", "budget"]}
+{"id": "doc294", "text": "Tests pin bench gate budget behaviour: bench stays bounded, budget completes, and p95 is refused. Note 4 about bench gate budget.", "concepts": ["bench", "budget"]}
+{"id": "doc295", "text": "During review we found bench gate budget conflating bench with budget; the fix moved p95 to a pure function. Note 5 about bench gate budget.", "concepts": ["bench", "budget"]}
+{"id": "doc296", "text": "The container build keeps bench out of bench gate budget so budget and p95 remain dependency-free. Note 6 about bench gate budget.", "concepts": ["bench", "budget"]}
+{"id": "doc297", "text": "After the reload, bench gate budget re-derives bench from budget before serving p95 again. Note 7 about bench gate budget.", "concepts": ["bench", "budget"]}

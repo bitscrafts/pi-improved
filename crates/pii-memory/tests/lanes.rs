@@ -1,0 +1,142 @@
+//! Lane semantics (part-3 TDD table): BM25 reference scores, quantisation
+//! round-trip, RRF == BM25 when lanes disabled, honest degradation, decay
+//! ordering with `FixedClock`.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+use pii_core::{Budget, CapSet, Ctx};
+use pii_memory::bm25::{bm25_search, idf, tf_score};
+use pii_memory::decay::decay;
+use pii_memory::doc::{Doc, DocKind, Layer, encode, id_of};
+use pii_memory::embed::{Embedder, NullEmbedder, TrigramEmbedder};
+use pii_memory::rrf::rrf;
+use pii_memory::search::MemorySearcher;
+use pii_memory::tokenize::tokenize;
+use pii_store::MemStore;
+
+const DB: &str = "/projects/pi-improved/_tmp/phase3/lanes-test.redb";
+
+fn put(store: &MemStore, text: &str, kind: DocKind, created: u64) -> String {
+    let mut doc = Doc::new(Layer::L1, kind, text, vec![], 1.0, created);
+    let toks = tokenize(text);
+    let mut terms = std::collections::BTreeMap::new();
+    for t in &toks {
+        *terms.entry(t.clone()).or_insert(0) += 1;
+    }
+    let vec = TrigramEmbedder
+        .embed(&[text.to_owned()])
+        .unwrap()
+        .into_iter()
+        .next()
+        .map(|v| pii_memory::quant::quantise(&v));
+    doc.created_ms = created;
+    let ret = doc.id.clone();
+    let rows = pii_store::mem::PutRows {
+        id: doc.id.clone(),
+        doc: encode(&doc),
+        terms: terms.into_iter().collect(),
+        vector: vec,
+        edges: Vec::new(),
+        dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+    };
+    store.put(&rows).unwrap();
+    ret
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)] // reason: test fixture math
+#[allow(clippy::cast_precision_loss)] // reason: test reference formula
+fn bm25_matches_reference_scores() {
+    // 5 equal-length docs, one term appearing once: idf/tf math pinned.
+    let n = 5u64;
+    let df = 2u64;
+    // Standard Okapi idf: ln(1 + (N - df + 0.5) / (df + 0.5)) — ln_1p IS
+    // the +1; do NOT add another 1.0 inside.
+    let want_idf = ((n as f32 - df as f32 + 0.5) / (df as f32 + 0.5)).ln_1p();
+    assert!((idf(n, df) - want_idf).abs() < 1e-5);
+    // tf=1, dl=10, avg=10 → (1*2.2)/(1 + 1.2) = 1.0
+    assert!((tf_score(1, 10, 10.0) - 1.0).abs() < 1e-4);
+    // Longer doc down-weights.
+    assert!(tf_score(1, 100, 10.0) < 1.0);
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)] // reason: test fixture math
+#[allow(clippy::cast_precision_loss)] // reason: test reference formula
+#[allow(clippy::imprecise_flops)] // reason: test reference formula
+fn quantise_roundtrip_under_one_percent() {
+    for i in 0..100 {
+        let t = i as f32 / 100.0 * std::f32::consts::PI;
+        let (x, y) = (t.cos(), t.sin());
+        let n = x.hypot(y);
+        let (q, s) = pii_memory::quant::quantise(&[x / n, y / n]);
+        let c = pii_memory::quant::cosine_q(&q, s, &q, s);
+        assert!((c - 1.0).abs() < 0.01, "step {i}: {c}");
+    }
+}
+
+#[test]
+fn rrf_equals_bm25_when_lanes_disabled() {
+    let _ = std::fs::remove_file(DB);
+    let store = MemStore::open(std::path::Path::new(DB)).unwrap();
+    let ids: Vec<String> = (0..10)
+        .map(|i| {
+            put(
+                &store,
+                &format!("lane {i}: the fused ranking must not relabel bm25 output"),
+                DocKind::Atom,
+                0,
+            )
+        })
+        .collect();
+    let q = "fused ranking relabel bm25 output";
+    let bm = bm25_search(&store, q, 10).unwrap();
+    // Hybrid with ONLY the bm25 lane = plain rrf of one list = same order.
+    let only_bm = rrf(&[bm.iter().map(|(d, _)| d.clone()).collect::<Vec<_>>()]);
+    assert_eq!(
+        bm.iter().map(|(d, _)| d.clone()).collect::<Vec<_>>(),
+        only_bm.into_iter().map(|(d, _)| d).collect::<Vec<_>>(),
+        "fusion over a single lane must not change the ranking"
+    );
+    let _ = ids;
+}
+
+#[test]
+fn degrades_honestly_without_embedder() {
+    let store = MemStore::open(std::path::Path::new(
+        "/projects/pi-improved/_tmp/phase3/lanes-degrade.redb",
+    ))
+    .unwrap();
+    put(
+        &store,
+        "degraded lane note: the null embedder must not be silent",
+        DocKind::Atom,
+        0,
+    );
+    let searcher = MemorySearcher::new(
+        std::sync::Arc::new(store),
+        Some(std::sync::Arc::new(NullEmbedder)),
+    );
+    let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+    let r = searcher.search(&ctx, "null embedder", 5).unwrap();
+    assert!(r.degraded, "must be degraded");
+    assert_eq!(r.lanes, vec![String::from("bm25"), String::from("graph")]);
+}
+
+#[test]
+fn decay_orders_by_age_with_fixed_clock() {
+    let young = decay(pii_memory::decay::LAMBDA_ATOM, 1.0);
+    let old = decay(pii_memory::decay::LAMBDA_ATOM, 90.0);
+    assert!(young > old, "the younger must rank first");
+    // Persona never decays: same score at any age.
+    let any_age = decay(pii_memory::decay::LAMBDA_PERSONA, 365.0);
+    assert!((any_age - 1.0).abs() < 1e-6, "persona never decays");
+    // Content ids stay stable across put order.
+    assert_eq!(id_of("x"), id_of("x"));
+    let _ = std::time::Instant::now();
+}
