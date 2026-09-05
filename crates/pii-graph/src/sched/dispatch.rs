@@ -117,15 +117,33 @@ pub fn build_node_input(
     let payload = if in_data.is_empty() {
         bb.input.clone()
     } else {
-        let mut obj = serde_json::Map::new();
+        // Collect the fired inbound values. A node with exactly ONE inbound
+        // Data edge in the SPEC receives that value directly as `$.payload`
+        // — `route`/`transform` nodes fed by a single source address it as
+        // `$.payload.exit_code` etc. (spec F6.2's gate shape, every starter
+        // graph, Phase-2's verify-fix all rely on this). A node whose SPEC
+        // declares several inbound edges is a join: its payload stays the
+        // object keyed by source node id so each arm is addressable — even
+        // when only one arm fired (race/any:cancel semantics, diamond.rs).
+        let mut fired: Vec<(&NodeId, &serde_json::Value)> = Vec::new();
         for &ei in &in_data {
             if let (Some(edge), Some(EdgeState::Fired { value })) =
                 (spec.edges.get(ei), st.edges.get(ei))
             {
-                obj.insert(edge.from.as_str().to_string(), value.clone());
+                fired.push((&edge.from, value));
             }
         }
-        serde_json::Value::Object(obj)
+        if in_data.len() == 1 {
+            fired
+                .first()
+                .map_or(serde_json::Value::Null, |(_from, value)| (*value).clone())
+        } else {
+            let mut obj = serde_json::Map::new();
+            for (from, value) in fired {
+                obj.insert(from.as_str().to_string(), value.clone());
+            }
+            serde_json::Value::Object(obj)
+        }
     };
     NodeInput {
         input: bb.input.clone(),

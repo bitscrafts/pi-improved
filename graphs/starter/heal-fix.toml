@@ -1,11 +1,13 @@
 # Slice-1 heal-fix graph (S1.3): localize -> patch -> validate -> escalate.
-# Runs in a disposable worktree whose path arrives in the run input
-# (`scope_root`); confinement is the ctx fs_write PathScope = the worktree
-# (a capability, not a policy). No bash for the agent; repair uses the
-# fs_read/fs_write/edit/multi_edit toolset only. On a detected break the
-# run suspends on a `gate` for human approval; nothing auto-resumes.
+# Runs in a disposable worktree; the run's ctx fs_write PathScope IS the
+# worktree (scope_root in run input) — confinement is a capability, not a
+# policy. The fix agent has fs/edit tools ONLY (NO bash): every write it
+# makes goes through Ctx::fs() and is mechanically bound to the worktree.
+# bash runs only in `tool` nodes, from human-authored graph commands.
+# Nothing auto-resumes: the terminal step suspends on a `gate` node for
+# human approval; a patch leaves the sandbox only via `xtask heal-collect`.
 name = "starter/heal-fix"
-entry = "localize"
+entry = "probe"
 caps = ["fs_read", "fs_write", "proc"]
 
 [limits]
@@ -13,11 +15,7 @@ max_steps = 1000
 max_wall_ms = 600000
 max_tokens = 20000
 
-[[node]]
-id = "localize"
-kind = "heal_detect"
-gate = "quality-gate"
-
+# --- localize: run the seeded failing test in the worktree (compiler gives file:line) ---
 [[node]]
 id = "probe"
 kind = "tool"
@@ -25,72 +23,128 @@ tool = "bash"
 args = { command = "$.input.test_command", cwd = "$.input.worktree" }
 
 [[node]]
-id = "route"
+id = "route_probe"
 kind = "route"
 on = "$.payload.exit_code"
 rules = [
-    { eq = 0, port = "ok" },
-    { port = "still_broken" },
+  { eq = 0, port = "ok" },
+  { port = "broken" },
 ]
 
+# A seeded break that did NOT reproduce is itself an anomaly — human eyes.
+[[node]]
+id = "unexpected_ok"
+kind = "gate"
+policy = "heal-escalation"
+prompt = "heal-fix: the seeded break did not reproduce (probe exited 0). Nothing to repair; review before closing."
+
+# --- patch: agent confined to the worktree (no bash tool) ---
 [[node]]
 id = "fix"
 kind = "agent"
-system = "Repair the single broken assertion in the worktree. Use multi_edit to flip the seeded constant back to its original value, then run the failing test with the bash tool to confirm. Do not touch anything outside the worktree."
-max_turns = 4
-tools = ["fs_read", "fs_write", "edit", "multi_edit", "bash"]
+# Two inbound branches (first detection via route_probe, retry via retry.ok)
+# must each be able to fire the node alone — verify-fix's entry special-case
+# doesn't apply here, so this needs an explicit Any join.
+join = "any"
+loop_budget = 2
+max_turns = 6
+tools = ["fs_read", "fs_write", "edit", "multi_edit"]
 memory = { enabled = false, top_k = 0 }
+system = "You are repairing one deliberately seeded source break in a disposable git worktree. The failing test output is in your input; the compiler's file:line localizes the break. Make the minimal change in the worktree that makes the test pass again (typically restoring one flipped constant). You have fs_read/fs_write/edit/multi_edit only — never attempt shell commands; you cannot run them. Do not touch any file outside the worktree."
 
+# --- validate: re-run the exact same test ---
+[[node]]
+id = "retest"
+kind = "tool"
+tool = "bash"
+args = { command = "$.input.test_command", cwd = "$.input.worktree" }
+
+[[node]]
+id = "route_retest"
+kind = "route"
+on = "$.payload.exit_code"
+rules = [
+  { eq = 0, port = "ok" },
+  { port = "still_broken" },
+]
+
+# Retry path (verify-fix's proven shape): failure output feeds the agent.
+[[node]]
+id = "retry"
+kind = "transform"
+expr = "$.payload"
+
+# The patch text, captured for the human approver.
+[[node]]
+id = "summarize"
+kind = "tool"
+tool = "bash"
+args = { command = "git diff", cwd = "$.input.worktree" }
+
+# Human gate: the ONLY way past this point. allow/deny both close the run;
+# nothing here pushes, merges, or replaces the running daemon.
 [[node]]
 id = "escalate"
 kind = "gate"
 policy = "heal-escalation"
-prompt = "heal-fix: a quality-gate failure reproduced twice in the disposable worktree; human decision required before any patch leaves the sandbox."
+prompt = "heal-fix: the seeded break was repaired and the test passes in the disposable worktree (patch above). Approve to make the patch collectable via `xtask heal-collect`, or deny to discard. The main repo was never touched."
 
 [[node]]
 id = "done"
 kind = "transform"
-join = "allsettled"
+join = "any"
 value = "done"
-
-[[edge]]
-from = "localize"
-port = "ok"
-to = "done"
-kind = "data"
-
-[[edge]]
-from = "localize"
-port = "flake"
-to = "done"
-kind = "data"
-
-[[edge]]
-from = "localize"
-port = "detected"
-to = "probe"
-kind = "data"
 
 [[edge]]
 from = "probe"
 port = "ok"
-to = "route"
+to = "route_probe"
 kind = "data"
 
 [[edge]]
-from = "route"
+from = "route_probe"
 port = "ok"
-to = "done"
+to = "unexpected_ok"
 kind = "data"
 
 [[edge]]
-from = "route"
-port = "still_broken"
+from = "route_probe"
+port = "broken"
 to = "fix"
 kind = "data"
 
 [[edge]]
 from = "fix"
+port = "ok"
+to = "retest"
+kind = "data"
+
+[[edge]]
+from = "retest"
+port = "ok"
+to = "route_retest"
+kind = "data"
+
+[[edge]]
+from = "route_retest"
+port = "ok"
+to = "summarize"
+kind = "data"
+
+[[edge]]
+from = "route_retest"
+port = "still_broken"
+to = "retry"
+kind = "data"
+
+[[edge]]
+from = "retry"
+port = "ok"
+to = "fix"
+kind = "data"
+
+[[edge]]
+from = "summarize"
 port = "ok"
 to = "escalate"
 kind = "data"
@@ -103,6 +157,18 @@ kind = "data"
 
 [[edge]]
 from = "escalate"
+port = "deny"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "unexpected_ok"
+port = "allow"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "unexpected_ok"
 port = "deny"
 to = "done"
 kind = "data"

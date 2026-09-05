@@ -28,13 +28,27 @@ pub fn spawn_run(
         run_id: run_id.clone(),
         tx: engine.bus.subscribe_tx(),
     };
+    // Slice 1 (S1.2): an optional `scope_root` in the run input confines the
+    // run's fs_write PathScope to a disposable worktree — the heal agent's
+    // fs/edit tools then CANNOT touch anything outside it (a capability,
+    // not a policy). The scope is read BEFORE the ctx is built; invalid
+    // roots (outside the workspace) are rejected here, surfacing as a
+    // `run.start` error rather than a silently permissive run.
+    let scope_root = extra_input
+        .as_ref()
+        .and_then(|v| v.get("scope_root"))
+        .and_then(serde_json::Value::as_str)
+        .map(std::path::PathBuf::from);
+    scope_root.as_deref().map_or(Ok(()), |root| {
+        validate_scope_root(&engine.cfg.workspace, root)
+    })?;
     // B6 (opus review): a graph's declared `[limits] max_tokens` used to be
     // parsed and then discarded — every run got `Budget::unlimited()`
     // regardless. `Budget::with_tokens` charges the SAME `Ctx::budget()`
     // the `agent` node already calls, so a graph that declares
     // `max_tokens = N` now actually enforces N.
     let ctx = pii_core::Ctx::with_observer_and_cancel(
-        root_caps(&engine.cfg.workspace),
+        run_caps(&engine.cfg.workspace, scope_root.as_deref()),
         pii_core::Budget::with_tokens(spec.limits.max_tokens),
         Arc::new(bridge),
         pii_core::TraceCtx {
@@ -113,7 +127,7 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
         .and_then(|bytes| GraphSpec::from_json(&bytes).ok())
         .map_or(u64::MAX, |spec| spec.limits.max_tokens);
     let ctx = pii_core::Ctx::with_observer_and_cancel(
-        root_caps(&engine.cfg.workspace),
+        run_caps(&engine.cfg.workspace, None),
         pii_core::Budget::with_tokens(max_tokens),
         Arc::new(bridge),
         pii_core::TraceCtx {
@@ -140,14 +154,124 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
     Ok(())
 }
 
-/// Root capabilities for a server-side run: fs read everything, fs write
-/// scoped to the workspace (tools further attenuate per node), and the
-/// `bash` tool's `/bin/sh` argv0 granted (F1, opus review).
-fn root_caps(workspace: &std::path::Path) -> pii_core::CapSet {
+/// Root capabilities for a server-side run: fs read everything (or the
+/// workspace for scoped runs), fs write scoped to the workspace — or to
+/// `scope_root` alone when one is given (S1.2 heal confinement) — and the
+/// `bash` tool's `/bin/sh` argv0 granted (F1, opus review). Tools further
+/// attenuate per node via `node_capset`.
+fn run_caps(workspace: &std::path::Path, scope_root: Option<&std::path::Path>) -> pii_core::CapSet {
     let mut caps = pii_core::CapSet::empty();
     caps.kinds = pii_core::CapKind::FS_READ | pii_core::CapKind::FS_WRITE | pii_core::CapKind::PROC;
-    caps.fs_read = pii_core::PathScope::new(vec![std::path::PathBuf::from("/")]);
-    caps.fs_write = pii_core::PathScope::new(vec![workspace.to_path_buf()]);
+    caps.fs_read = scope_root.map_or_else(
+        || pii_core::PathScope::new(vec![std::path::PathBuf::from("/")]),
+        // A scoped (heal) run reads its worktree plus the repo read-only.
+        |root| pii_core::PathScope::new(vec![root.to_path_buf(), workspace.to_path_buf()]),
+    );
+    caps.fs_write = pii_core::PathScope::new(vec![
+        scope_root.map_or_else(|| workspace.to_path_buf(), std::path::Path::to_path_buf),
+    ]);
     caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
     caps
+}
+
+/// Rejects a `scope_root` that is not an absolute path inside the
+/// workspace — a scope root outside the workspace would let a run's
+/// `fs_write` cover arbitrary directories (an escalation for any graph whose
+/// input is not human-authored, e.g. channel/router events).
+fn validate_scope_root(
+    workspace: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<(), PiiError> {
+    if !root.is_absolute() {
+        return Err(PiiError::Invalid(format!(
+            "scope_root must be an absolute path: {}",
+            root.display()
+        )));
+    }
+    // Canonicalize both sides: `..` tricks and symlinks must not smuggle a
+    // root outside the workspace.
+    let ws = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let canon = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    if !canon.starts_with(&ws) {
+        return Err(PiiError::Invalid(format!(
+            "scope_root must be inside the workspace ({}): {}",
+            ws.display(),
+            root.display()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::{run_caps, validate_scope_root};
+    use pii_core::Ctx;
+    use tempfile::Builder;
+
+    fn ctx_for(caps: pii_core::CapSet) -> Ctx {
+        Ctx::with_observer(
+            caps,
+            pii_core::Budget::unlimited(),
+            std::sync::Arc::new(pii_core::NullObserver),
+            pii_core::TraceCtx {
+                run: pii_abi::RunId::from("r"),
+                span: 0,
+            },
+        )
+    }
+
+    #[test]
+    fn run_caps_none_is_workspace_scoped_write() {
+        let ws = Builder::new()
+            .prefix("heal-caps-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let ctx = ctx_for(run_caps(ws.path(), None));
+        // fs_write allows workspace paths…
+        let ws_spec = ws.path().join("specs/x.md");
+        assert!(ctx.fs().unwrap().write(&ws_spec, b"").is_ok());
+        // …and denies paths outside the workspace PathScope.
+        let denied = ctx
+            .fs()
+            .unwrap()
+            .write(std::path::Path::new("/etc/passwd"), b"");
+        assert!(matches!(denied, Err(pii_abi::PiiError::Denied(_))));
+    }
+
+    #[test]
+    fn run_caps_scoped_write_is_worktree_only() {
+        let ws = Builder::new()
+            .prefix("heal-caps-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let wt = ws.path().join("_tmp/heal-worktrees/s1");
+        std::fs::create_dir_all(&wt).unwrap();
+        let ctx = ctx_for(run_caps(ws.path(), Some(&wt)));
+        // The worktree is writable…
+        assert!(ctx.fs().unwrap().write(&wt.join("x.rs"), b"").is_ok());
+        // …but the main repo's specs/ is NOT (the mechanical guardrail:
+        // a heal agent cannot edit specs/ because its fs_write scope is
+        // the worktree only).
+        let spec_write = ctx
+            .fs()
+            .unwrap()
+            .write(&ws.path().join("specs/08-x.md"), b"");
+        assert!(matches!(spec_write, Err(pii_abi::PiiError::Denied(_))));
+    }
+
+    #[test]
+    fn scope_root_must_be_absolute_and_inside_workspace() {
+        let ws = Builder::new()
+            .prefix("heal-caps-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        assert!(validate_scope_root(ws.path(), std::path::Path::new("relative/root")).is_err());
+        assert!(validate_scope_root(ws.path(), std::path::Path::new("/etc")).is_err());
+        assert!(validate_scope_root(ws.path(), std::path::Path::new("/tmp")).is_err());
+        // A real directory inside the workspace is accepted.
+        let inside = ws.path().join("_tmp/heal-worktrees/ok");
+        std::fs::create_dir_all(&inside).unwrap();
+        assert!(validate_scope_root(ws.path(), &inside).is_ok());
+    }
 }

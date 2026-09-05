@@ -8,6 +8,9 @@
 mod bench;
 mod deps;
 mod doc_drift;
+mod heal_collect;
+mod heal_prune;
+mod heal_seed;
 mod lint_files;
 mod memory_eval;
 pub mod net_check;
@@ -17,7 +20,7 @@ mod rss_gate;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|memory-eval|rss-gate|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|memory-eval|rss-gate|heal-seed|heal-collect <sig>|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -126,6 +129,36 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Some("heal-seed") => match heal_seed::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("heal-collect") => {
+            let Some(sig) = rest.first() else {
+                eprintln!("error: heal-collect needs a <sig>");
+                return ExitCode::from(2);
+            };
+            match heal_collect::run(sig) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Some("heal-prune") => {
+            let all = rest.iter().any(|a| a == "--all");
+            match heal_prune::run(all) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("lint-files") => report(lint_files::run()),
         Some("proto-gen") => report(proto_gen::generate().map_err(|e| vec![e])),
         Some("proto-check") => report(proto_gen::check()),

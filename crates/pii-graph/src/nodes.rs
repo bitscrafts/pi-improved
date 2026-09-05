@@ -105,27 +105,29 @@ impl super::GraphNode for RouteNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         let ec = eval_ctx(input);
         let on_val = eval(&ec, &self.on)?;
-        for (eq, port) in &self.rules {
-            match eq {
-                Some(expected) if *expected == on_val => {
-                    return Ok(Outcome::Next {
-                        port: port.clone(),
-                        value: on_val,
-                    });
-                }
-                Some(_) => {}
-                None => {
-                    // fallback rule (no eq)
-                    return Ok(Outcome::Next {
-                        port: port.clone(),
-                        value: on_val,
-                    });
-                }
-            }
-        }
-        Err(PiiError::Invalid(format!(
-            "route: no rule matched value {on_val} and no fallback"
-        )))
+        // The routed payload travels on the chosen port (not just `on_val`):
+        // downstream agents/gates need the WHOLE input (test stdout/stderr
+        // next to exit_code) to localize and re-route — spec F6.2's gate
+        // feeds <test output> back to the fix agent.
+        let port = self.rules.iter().find_map(|(eq, port)| match eq {
+            Some(expected) if *expected == on_val => Some(port),
+            Some(_) => None,
+            // fallback rule (no eq)
+            None => Some(port),
+        });
+        port.map_or_else(
+            || {
+                Err(PiiError::Invalid(format!(
+                    "route: no rule matched value {on_val} and no fallback"
+                )))
+            },
+            |port| {
+                Ok(Outcome::Next {
+                    port: port.clone(),
+                    value: input.payload.clone(),
+                })
+            },
+        )
     }
 }
 

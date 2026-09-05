@@ -304,10 +304,13 @@ impl Engine {
 
     /// Starts a graph run directly (F6, opus review: `run.start`). Allocates
     /// the run and returns BEFORE execution (< 50 ms, N4). The input is the
-    /// graph's run input; the prompt is derived from it for the agent node.
+    /// graph's run input — it is forwarded to the graph (`$.input`) so
+    /// parameterised graphs (verify-fix's `test_command`/`workspace`,
+    /// heal-fix's `scope_root`/`worktree`/`test_command`) receive their
+    /// params — and the prompt is derived from it for the agent node.
     ///
     /// # Errors
-    /// Unknown graph, or run start failure.
+    /// Unknown graph, invalid `scope_root`, or run start failure.
     pub fn start_run(
         self: &Arc<Self>,
         graph: &str,
@@ -325,7 +328,7 @@ impl Engine {
             run_id.clone(),
             prompt,
             String::new(),
-            None,
+            Some(input.clone()),
         )?;
         Ok(run_id)
     }
