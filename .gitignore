@@ -6,3 +6,4 @@ _repos/
 *.profraw
 .DS_Store
 .pii/
+lint-heal.redb

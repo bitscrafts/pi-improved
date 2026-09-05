@@ -9,6 +9,11 @@
 //! root. Semantic claim verification is out of scope — this is the first
 //! rung the future checks build on.
 
+// Module is consumed only from `main.rs` binary paths and its own tests;
+// `pub(crate)` inside a private module trips redundant_pub_crate under this
+// lint config, so the lint is relaxed for the whole file.
+#![allow(clippy::redundant_pub_crate)] // reason: module private by design
+
 use std::path::Path;
 
 /// Prefixes that make a token look like a repo-relative path.
@@ -56,8 +61,8 @@ pub(crate) fn run(root: &Path) -> Result<(), Vec<String>> {
     }
 }
 
-/// Extracts single-backtick-quoted tokens from `src`. Fenced (```) spans
-/// contain newlines and are skipped by the newline filter.
+/// Extracts single-backtick-quoted tokens from `src`. Fenced code-block
+/// spans contain newlines and are skipped by the newline filter.
 fn backtick_tokens(src: &str) -> Vec<String> {
     let parts: Vec<&str> = src.split('`').collect();
     // split alternates outside/inside; inside tokens are the odd indices.

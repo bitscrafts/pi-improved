@@ -128,7 +128,7 @@ impl Engine {
         ))?);
         let heals = Arc::new(pii_store::heal::HealStore::open(&sibling("heal.redb"))?);
         let memory = Arc::new(pii_store::MemStore::open(&sibling("memory.redb"))?);
-        let workers = Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::<
+        let workers = Arc::new(parking_lot::Mutex::new(BTreeMap::<
             String,
             pii_worker::Supervisor,
         >::new()));
@@ -512,7 +512,7 @@ pub fn registry(
 pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(nodes::worker::WorkerFactory {
-        pool: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::<
+        pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<
             String,
             pii_worker::Supervisor,
         >::new())),

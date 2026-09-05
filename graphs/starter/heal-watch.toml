@@ -32,6 +32,7 @@ prompt = "quality-gate failed twice in a row (reproducible). Review the failure,
 [[node]]
 id = "done"
 kind = "transform"
+join = "any"
 value = "no-reproducible-failure"
 
 [[edge]]

@@ -141,7 +141,7 @@ impl HealStore {
         gate: &str,
         run: HealAttemptRun,
     ) -> Result<HealAttempt, PiiError> {
-        let mut existing = self.get_attempt(sig)?.unwrap_or(HealAttempt {
+        let mut existing = self.get_attempt(sig)?.unwrap_or_else(|| HealAttempt {
             signature_hash: sig.to_owned(),
             gate: gate.to_owned(),
             first_seen_ms: run.ts_ms,

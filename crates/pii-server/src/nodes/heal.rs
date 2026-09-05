@@ -1,6 +1,8 @@
-//! `heal_detect` node kind (S0.2): runs an `xtask` gate; a non-zero exit is
-//! reproduced once before a ledger row is written — a single flaky run never
-//! creates an entry. **Never granted FS_WRITE** (read-only detection).
+//! `heal_detect` node kind (S0.2): runs an `xtask` gate and records failures.
+//!
+//! A non-zero exit is reproduced once before a ledger row is written — a
+//! single flaky run never creates an entry. **Never granted `FS_WRITE`**
+//! (read-only detection).
 
 use std::sync::Arc;
 
@@ -48,7 +50,7 @@ impl GateRunner for CargoXtaskRunner {
                 format!("cargo xtask {gate}"),
             ],
             &self.workspace,
-            std::time::Duration::from_secs(120),
+            std::time::Duration::from_mins(2),
         )?;
         let mut detail = String::from_utf8_lossy(&out.stderr).into_owned();
         if detail.trim().is_empty() {
@@ -140,9 +142,9 @@ impl GraphNode for HealDetectNode {
         // Both failed: reproducible. Write ONE ledger row for the signature.
         let run_id = ctx.trace().run.to_string();
         let detail = if second.detail.is_empty() {
-            first.detail.clone()
+            first.detail
         } else {
-            second.detail.clone()
+            second.detail
         };
         let sig = signature(&self.gate, &detail);
         self.heals.record_run(
@@ -174,7 +176,7 @@ pub fn signature(gate: &str, detail: &str) -> String {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
 
     use pii_abi::{Outcome, PiiError};
     use pii_core::{Budget, CapKind, CapSet, Ctx, TraceCtx};
@@ -192,7 +194,7 @@ mod tests {
 
     impl GateRunner for Scripted {
         fn run_gate(&self, _ctx: &Ctx, _gate: &str) -> Result<GateResult, PiiError> {
-            let mut r = self.results.lock().unwrap();
+            let mut r = self.results.lock();
             Ok(if r.is_empty() {
                 GateResult {
                     pass: true,
@@ -207,7 +209,7 @@ mod tests {
     fn ctx() -> Ctx {
         let mut caps = CapSet::empty();
         caps.kinds = CapKind::PROC;
-        pii_core::Ctx::with_observer(
+        Ctx::with_observer(
             caps,
             Budget::unlimited(),
             std::sync::Arc::new(pii_core::NullObserver),

@@ -42,7 +42,7 @@ pub struct DaemonContext {
     /// The egress service (may be absent when `[net]` grants nothing).
     pub net: Arc<pii_net::NetService>,
     /// Supervised workers, keyed by name.
-    pub workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
+    pub workers: Arc<Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
     /// Configured channels, keyed by name.
     pub channels: Mutex<BTreeMap<String, ChannelRuntime>>,
     /// The channel cursor table.

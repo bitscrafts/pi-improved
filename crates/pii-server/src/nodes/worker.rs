@@ -1,8 +1,10 @@
 //! `worker` node kind (F3.7): invokes a supervised worker through the
-//! daemon's supervisor map. Lives in `pii-server` (not `pii-graph`'s
-//! builtins) because only the daemon owns supervisors. An `Unavailable`
-//! error (dead worker mid-flight) propagates UNCHANGED so the scheduler's
-//! retry path sees `is_retryable() == true` and retries — the F3.7 contract.
+//! daemon's supervisor map.
+//!
+//! Lives in `pii-server` (not `pii-graph`'s builtins) because only the
+//! daemon owns supervisors. An `Unavailable` error (dead worker mid-flight)
+//! propagates UNCHANGED so the scheduler's retry path sees
+//! `is_retryable() == true` and retries — the F3.7 contract.
 
 use std::sync::Arc;
 

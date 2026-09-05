@@ -45,22 +45,60 @@ fn run_cmd(prog: &str, args: &[&str]) -> ExitCode {
     }
 }
 
+/// Resolves the workspace root from `xtask`'s own manifest dir — used by
+/// both `reachability-check` and `doc-drift-check`.
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf()
+}
+
+/// Runs the full local gate set (F8): deps/net/lint/proto/bench plus
+/// fmt/clippy/test — "the real gate" per §1.6. Split out of `main` to keep
+/// it under the 80-line function-length lint.
+fn run_ci(rest: &[String]) -> ExitCode {
+    let deps_ok = report(deps::run());
+    let net_ok = report(net_check::run());
+    let lint_ok = report(lint_files::run());
+    let proto_ok = report(proto_gen::check());
+    let bench_ok = report(bench::run_cli(rest).map_err(|e| vec![e]));
+    let fmt_ok = run_cmd("cargo", &["fmt", "--all", "--check"]);
+    let clippy_ok = run_cmd(
+        "cargo",
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    );
+    let test_ok = run_cmd("cargo", &["test", "--workspace"]);
+    if deps_ok == ExitCode::SUCCESS
+        && net_ok == ExitCode::SUCCESS
+        && lint_ok == ExitCode::SUCCESS
+        && proto_ok == ExitCode::SUCCESS
+        && bench_ok == ExitCode::SUCCESS
+        && fmt_ok == ExitCode::SUCCESS
+        && clippy_ok == ExitCode::SUCCESS
+        && test_ok == ExitCode::SUCCESS
+    {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 fn main() -> ExitCode {
     let cmd = std::env::args().nth(1);
     let rest: Vec<String> = std::env::args().skip(2).collect();
     match cmd.as_deref() {
         Some("deps-check") => report(deps::run()),
         Some("net-check") => report(net_check::run()),
-        Some("reachability-check") => report(reachability::run(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap_or(std::path::Path::new(".")),
-        )),
-        Some("doc-drift-check") => report(doc_drift::run(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap_or(std::path::Path::new(".")),
-        )),
+        Some("reachability-check") => report(reachability::run(&workspace_root())),
+        Some("doc-drift-check") => report(doc_drift::run(&workspace_root())),
         Some("rss-gate") => match parse_rss_gate(&rest) {
             Ok((secs, interval, max_mb, runs)) => match rss_gate::run(secs, interval, max_mb, runs)
             {
@@ -98,42 +136,7 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
-        Some("ci") => {
-            let deps_ok = report(deps::run());
-            let net_ok = report(net_check::run());
-            let lint_ok = report(lint_files::run());
-            let proto_ok = report(proto_gen::check());
-            let bench_ok = report(bench::run_cli(&rest).map_err(|e| vec![e]));
-            // F8 (opus review): `cargo xtask ci` must run the full gate set —
-            // fmt, clippy, tests — not just deps/lint-files/bench. This is
-            // the local runner that §1.6 calls "the real gate".
-            let fmt_ok = run_cmd("cargo", &["fmt", "--all", "--check"]);
-            let clippy_ok = run_cmd(
-                "cargo",
-                &[
-                    "clippy",
-                    "--workspace",
-                    "--all-targets",
-                    "--",
-                    "-D",
-                    "warnings",
-                ],
-            );
-            let test_ok = run_cmd("cargo", &["test", "--workspace"]);
-            if deps_ok == ExitCode::SUCCESS
-                && net_ok == ExitCode::SUCCESS
-                && lint_ok == ExitCode::SUCCESS
-                && proto_ok == ExitCode::SUCCESS
-                && bench_ok == ExitCode::SUCCESS
-                && fmt_ok == ExitCode::SUCCESS
-                && clippy_ok == ExitCode::SUCCESS
-                && test_ok == ExitCode::SUCCESS
-            {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            }
-        }
+        Some("ci") => run_ci(&rest),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)
