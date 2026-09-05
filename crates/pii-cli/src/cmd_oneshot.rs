@@ -281,19 +281,120 @@ fn render_event(ev: &Event, json: bool) {
         }
         return;
     }
+    if let Some(line) = human_line(ev) {
+        println!("{line}");
+    }
+}
+
+/// Pure formatting for `pii -p`'s human (non `--json`) output — split out
+/// from [`render_event`] (2026-09-05) so it is unit-testable without a
+/// TTY/live daemon. Returns `None` for events that print nothing.
+///
+/// # Note on the bug this fixed
+/// Before this, `RunFinished`'s `Success` case printed a fixed "done"
+/// marker and threw away `output` entirely — the actual model answer was
+/// never shown in human mode (`pii -p 'hello'` printed only progress
+/// lines). The lack of any test on this path (there was no `#[cfg(test)]`
+/// module in this file at all) is exactly how that shipped unnoticed;
+/// `human_line`'s tests below cover it.
+fn human_line(ev: &Event) -> Option<String> {
     match ev {
-        Event::NodeStarted { node, .. } => println!("⏵ {node}"),
-        Event::ToolCall { tool, .. } => println!("  ↳ {tool}"),
+        Event::NodeStarted { node, .. } => Some(format!("[{node}] started")),
+        Event::ToolCall { tool, .. } => Some(format!("  tool: {tool}")),
         Event::RunFinished { terminal, .. } => match terminal {
-            pii_proto::event::WireTerminal::Success { .. } => println!("✔ done"),
-            pii_proto::event::WireTerminal::Failure { error } => println!("✘ {error}"),
-            pii_proto::event::WireTerminal::Suspended { .. } => println!("… suspended"),
+            pii_proto::event::WireTerminal::Success { output } => output
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(
+                    || {
+                        if output.is_null() {
+                            None
+                        } else {
+                            Some(output.to_string())
+                        }
+                    },
+                    |text| Some(text.to_owned()),
+                ),
+            pii_proto::event::WireTerminal::Failure { error } => Some(format!("error: {error}")),
+            pii_proto::event::WireTerminal::Suspended { .. } => Some(String::from("(suspended)")),
         },
-        Event::Lagged { dropped, .. } => println!("⚠ lagged: {dropped} dropped"),
-        _ => {}
+        Event::Lagged { dropped, .. } => Some(format!("warning: lagged, {dropped} dropped")),
+        _ => None,
     }
 }
 
 fn next_owned(args: &mut std::env::ArgsOs) -> Option<String> {
     args.next().and_then(|a| a.into_string().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::human_line;
+    use pii_proto::event::{Event, WireTerminal};
+
+    #[test]
+    fn run_finished_success_prints_the_answer_text() {
+        let ev = Event::RunFinished {
+            run_id: String::from("r1"),
+            terminal: WireTerminal::Success {
+                output: serde_json::json!({"text": "6", "turns": 1, "files_changed": []}),
+            },
+        };
+        assert_eq!(human_line(&ev).as_deref(), Some("6"));
+    }
+
+    #[test]
+    fn run_finished_success_with_no_text_field_prints_raw_json() {
+        let ev = Event::RunFinished {
+            run_id: String::from("r1"),
+            terminal: WireTerminal::Success {
+                output: serde_json::json!({"other": 1}),
+            },
+        };
+        assert_eq!(human_line(&ev).as_deref(), Some(r#"{"other":1}"#));
+    }
+
+    #[test]
+    fn run_finished_success_with_null_output_prints_nothing() {
+        let ev = Event::RunFinished {
+            run_id: String::from("r1"),
+            terminal: WireTerminal::Success {
+                output: serde_json::Value::Null,
+            },
+        };
+        assert_eq!(human_line(&ev), None);
+    }
+
+    #[test]
+    fn run_finished_failure_prints_the_error() {
+        let ev = Event::RunFinished {
+            run_id: String::from("r1"),
+            terminal: WireTerminal::Failure {
+                error: String::from("capability denied: net"),
+            },
+        };
+        assert_eq!(
+            human_line(&ev).as_deref(),
+            Some("error: capability denied: net")
+        );
+    }
+
+    #[test]
+    fn node_started_and_tool_call_print_progress_lines() {
+        let started = Event::NodeStarted {
+            run_id: String::from("r1"),
+            node: String::from("agent"),
+        };
+        assert_eq!(human_line(&started).as_deref(), Some("[agent] started"));
+
+        let tool = Event::ToolCall {
+            run_id: String::from("r1"),
+            node: String::from("agent"),
+            tool: String::from("fs_read"),
+            args: serde_json::Value::Null,
+        };
+        assert_eq!(human_line(&tool).as_deref(), Some("  tool: fs_read"));
+    }
 }

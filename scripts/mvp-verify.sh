@@ -107,6 +107,29 @@ if [ -n "$RUN_ID" ]; then
 fi
 
 echo
+echo "== 6b. pii -p human-readable (TTY) output actually shows the answer =="
+# 2026-09-05: closes the exact gap the user caught — every earlier check
+# here only exercised --json/non-TTY output (run start/ls), never pii -p's
+# human-readable rendering path, which had a real bug (RunFinished printed
+# a fixed "done" marker and threw away the model's actual answer). `script`
+# gives pii -p a real pty so it takes the human-format branch, matching
+# what a real interactive user sees.
+if command -v script > /dev/null 2>&1; then
+    PP_OUT=$(script -qec "PII_RUNTIME_DIR=$RUNTIME $BIN -p 'Say exactly: PP_HUMAN_OK'" /dev/null 2>&1)
+    if echo "$PP_OUT" | grep -q "PP_HUMAN_OK"; then
+        echo "PASS: pii -p (human/TTY mode) prints the actual answer text"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL: pii -p (human/TTY mode) did not print the answer"
+        echo "    $PP_OUT"
+        FAIL=$((FAIL + 1))
+        FAILED_NAMES+=("pii -p human-mode answer text")
+    fi
+else
+    echo "SKIP: pii -p human-mode check ('script' command not available)"
+fi
+
+echo
 echo "== 7. Self-healing ledger (Slice 0/1) =="
 check "heal ls returns valid JSON" bash -c "PII_RUNTIME_DIR=$RUNTIME $BIN heal ls | python3 -m json.tool > /dev/null"
 
