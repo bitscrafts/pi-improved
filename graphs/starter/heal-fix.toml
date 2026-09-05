@@ -1,0 +1,108 @@
+# Slice-1 heal-fix graph (S1.3): localize -> patch -> validate -> escalate.
+# Runs in a disposable worktree whose path arrives in the run input
+# (`scope_root`); confinement is the ctx fs_write PathScope = the worktree
+# (a capability, not a policy). No bash for the agent; repair uses the
+# fs_read/fs_write/edit/multi_edit toolset only. On a detected break the
+# run suspends on a `gate` for human approval; nothing auto-resumes.
+name = "starter/heal-fix"
+entry = "localize"
+caps = ["fs_read", "fs_write", "proc"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+max_tokens = 20000
+
+[[node]]
+id = "localize"
+kind = "heal_detect"
+gate = "quality-gate"
+
+[[node]]
+id = "probe"
+kind = "tool"
+tool = "bash"
+args = { command = "$.input.test_command", cwd = "$.input.worktree" }
+
+[[node]]
+id = "route"
+kind = "route"
+on = "$.payload.exit_code"
+rules = [
+    { eq = 0, port = "ok" },
+    { port = "still_broken" },
+]
+
+[[node]]
+id = "fix"
+kind = "agent"
+system = "Repair the single broken assertion in the worktree. Use multi_edit to flip the seeded constant back to its original value, then run the failing test with the bash tool to confirm. Do not touch anything outside the worktree."
+max_turns = 4
+tools = ["fs_read", "fs_write", "edit", "multi_edit", "bash"]
+memory = { enabled = false, top_k = 0 }
+
+[[node]]
+id = "escalate"
+kind = "gate"
+policy = "heal-escalation"
+prompt = "heal-fix: a quality-gate failure reproduced twice in the disposable worktree; human decision required before any patch leaves the sandbox."
+
+[[node]]
+id = "done"
+kind = "transform"
+join = "allsettled"
+value = "done"
+
+[[edge]]
+from = "localize"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "localize"
+port = "flake"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "localize"
+port = "detected"
+to = "probe"
+kind = "data"
+
+[[edge]]
+from = "probe"
+port = "ok"
+to = "route"
+kind = "data"
+
+[[edge]]
+from = "route"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "route"
+port = "still_broken"
+to = "fix"
+kind = "data"
+
+[[edge]]
+from = "fix"
+port = "ok"
+to = "escalate"
+kind = "data"
+
+[[edge]]
+from = "escalate"
+port = "allow"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "escalate"
+port = "deny"
+to = "done"
+kind = "data"
