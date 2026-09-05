@@ -1,6 +1,48 @@
 # Pii — Session Handoff
 
-**Status: GREEN (part4 accepted at 12/13 EC by user decision 2026-09-05) — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 COMPLETE-AS-ACCEPTED (12/13 EC, commits `34a1ade`+`11fbe73`) — ONE KNOWN OPEN EC: rss-gate (daemon RSS ~70MB > 50MB cap under soak). NEXT: OPUS DEEP ANALYSIS + MVP PATH (user-requested, part4-gated). Ollama weekly quota exhausted; Anthropic spend halted by user; DeepSeek direct is the approved worker tier.**
+**Status: YELLOW (PAUSED) — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 ACCEPTED AT 12/13 EC; OPUS REVIEW DONE (FAIL, 6 blockers); PHASE 3.5 MVP HARDENING IN PROGRESS — B5 partially fixed (client-side only, committed `1a0ccf6`), B1/B2/B3/B6/M1 not started. PAUSED for the night — no live processes, clarify() call timed out with no user response, defaulted to safe pause per policy.**
+
+## PHASE 3.5 MVP HARDENING — IN PROGRESS (paused, resume here)
+Spec: `specs/06-phase3-mvp-hardening.md` (planner-authored, covers
+B1/B2/B3/B5/B6/M1 from the opus review, explicitly excludes B4/Discord/
+TLS). Launcher: `_tmp/phase3/launch-phase35-deepseek.sh`. Worker:
+`deepseek/deepseek-v4-flash` via pidag (`.pidag/config.toml` already
+points there, ollama-cloud removed).
+
+**Progress so far (one ~1hr DeepSeek/pidag run, then manually stopped
++ verified + committed by the orchestrator):**
+- **B5 (connection leak) — PARTIALLY fixed, committed `1a0ccf6`**:
+  `pii-proto/src/client.rs::Client` gained `shutdown()` (aborts both
+  reader/writer task handles) + a `Drop` impl as a backstop. Callers
+  (`cmd_ctl.rs`, `cmd_oneshot.rs`, `cmd_soak.rs`) now call
+  `client.shutdown()` explicitly. Build/clippy/test/fmt all PASS.
+  **BUT the server side was never touched** — `conn.rs`/`cmd_daemon.rs`
+  still have no idle timeout, no connection cap. Verified with a fast
+  gate (`--secs 60 --interval 5 --runs 2000`): **still FAILS**, now on
+  **slope** (`slope_kb=30168 >= 2048`, was previously failing on max).
+  The client fix alone did not close the leak — confirms the opus
+  review's read that BOTH sides need a fix. **Next**: add the
+  server-side idle timeout/conn cap the spec already asks for (B5
+  section), then re-verify with the fast gate before the full 300s one.
+- **B1, B2, B3, B6, M1 — NOT STARTED.**
+
+**Process note (repeat pattern, third time seeing this)**: pidag's
+baseline-then-implement-then-validate cycle re-runs the FULL 300s
+rss-gate as part of validation on every iteration when it's one of the
+spec's exit criteria — this alone eats 6+ min per cycle before/after
+any real work, same as it did on part4. Consider: (a) drop rss-gate
+from `06-phase3-mvp-hardening.md`'s exit criteria and verify it
+manually with the fast-gate params only at the very end, or (b) accept
+the slow cycle and budget for it (each DeepSeek+pidag run this pass
+took ~50-60 min real time before the orchestrator stopped it to check
+progress). The user has twice said "too much" / "more than an hour" —
+prefer (a) next time, or run shorter, more frequent stop/checkpoints.
+
+**User was asked how to proceed (keep going with DeepSeek / pause /
+orchestrator does it directly / just finish B5) via `clarify()` —
+timed out with no response.** Defaulted to the safest option: paused,
+everything clean-committed, no processes left running. **Ask the user
+this again at the start of the next session before resuming.**
 
 ## ⚠️ OPEN ITEM — rss-gate EC (13th of part4): daemon RSS over budget under soak
 **User decision (2026-09-05): accept part4 at 12/13 now; fix later.** The
