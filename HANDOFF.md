@@ -49,6 +49,20 @@ corruption (see "Errors & Fixes" below) still outstanding:
 
 
 ## rss-gate — STATUS CHANGED, NOT YET GREEN (2026-09-05)
+**NEW DIAGNOSTIC DATA (2026-09-05, decision: deferred by user — see
+bottom of this section):** sampled `/proc/<daemon>/task/*/comm` during a
+live soak: **279 threads, of which 279 named `tokio-rt-worker`** (the
+tokio runtime's thread-name — shared by BOTH worker threads AND the
+`spawn_blocking` blocking pool). With 32 cores the worker pool is ~32,
+so **~247 are blocking-pool threads** — the tokio blocking pool
+explodes toward its 512 cap even under *sequential* soak (concurrency
+1). This refines the diagnosis: it is not merely "a thread churned per
+run" but "the blocking pool grows and its threads stay warm for the 10s
+keep-alive, holding glibc stacks/arenas". The cheap, likely-effective
+fix for a future pass: cap the daemon's runtime with
+`.max_blocking_threads(N)` (e.g. 8-16) + shorter `thread_keep_alive` in
+`cmd_daemon.rs` — but **user chose to defer this** to keep the MVP
+review moving; recorded here so it is a 15-minute fix next time.
 **Good news: the original leak (leaked UDS connection per run, B5) is
 confirmed FIXED.** Verified directly: `ls /proc/<daemon-pid>/fd | wc -l`
 stayed flat at 19 across a 90s/3000-run soak (was previously unbounded
