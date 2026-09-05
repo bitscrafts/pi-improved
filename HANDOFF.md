@@ -2,6 +2,37 @@
 
 **Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + a user-approved, ⚠️ FLAGGED-FOR-REVIEW threshold change — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. Pii is now INSTALLED AND RUNNING on lnx with a real (non-scripted) live model — see the deployment section below. MVP-complete pending final review.**
 
+## Persistent config file (2026-09-05 follow-up — fixes the "works in my shell only" trap)
+The user hit this directly right after the initial lnx deployment: a
+FRESH shell running `pii -p 'hello'` failed with "no model configured",
+and `pii sys status`/`pii heal ls` failed with "connect
+/run/user/0/pii/default/control.sock: No such file or directory" —
+because every setting (`PII_MODEL`, `PII_RUNTIME_DIR`, `OLLAMA_HOST`) was
+env-var-only, exported inline in whatever shell happened to launch a
+process, invisible everywhere else, lost on restart.
+
+**Fixed**: a new `[core]` section (`model`, `runtime_dir`, `ollama_host`)
+in the SAME daemon TOML config struct, resolved from
+`Config::default_path()` (`$PII_CONFIG`, else `$HOME/.pii/pii.toml`, else
+`/root/.pii/pii.toml`) — every entrypoint (`pii -p`, `pii daemon`, `pii
+tui`, and every `sys`/`heal`/`approve`/`run` subcommand via
+`uds::runtime_dir`) now resolves the SAME way: CLI flag > matching env
+var (unchanged precedence) > `[core]` in the config file > built-in
+default. `/root/.pii/pii.toml` now holds the live deployment's settings.
+
+**Found a second instance of the B1 NET-cap bug while verifying this**:
+`pii -p` (no `--graph`) doesn't run `graphs/starter/assistant.toml` — it
+runs a hardcoded `DEFAULT_TOML` single-agent-node graph baked into
+`pii-server::lib.rs`, which had the SAME missing `net` cap at both graph
+and node level. Fixed identically. Commit `78bdf01`.
+
+**Verified with a completely clean environment** (`env -i PATH=... HOME=/root`,
+zero `PII_*` vars set — exactly reproducing the user's fresh-shell
+failure): `pii -p "..."`, `pii sys status`, `pii heal ls`, `pii approve
+ls` all succeed. 7 new unit tests added
+(`pii-server::daemon::config::tests`). Full workspace build/fmt/clippy(-D
+warnings)/test/quality-gate/xtask gates green.
+
 ## Deployed on lnx with a live model (2026-09-05)
 `pii` is built (`cargo build --release -p pii-cli`) and installed at
 `/root/.local/bin/pii` — this path (and `/root/.pii/`) is on the
