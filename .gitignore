@@ -7,3 +7,5 @@ _repos/
 .DS_Store
 .pii/
 lint-heal.redb
+lint-approval.redb
+lint-memory.redb
