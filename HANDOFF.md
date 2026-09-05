@@ -99,21 +99,151 @@ does not violate this).
 found this session. This is the 13th/last EC of the original part4
 spec AND effectively re-surfaces as this spec's own EC too.
 
-## NEXT STEPS (for whoever picks this up)
-1. Diagnose the RSS growth with fd count ruled out — see "Method to
-   continue diagnosing" above. Fastest path is probably instrumenting
-   `Bus`/journal/session code with periodic size counters rather than
-   guessing further.
-2. Once found and fixed, re-run the FULL `cargo xtask rss-gate --secs
-   300 --interval 10 --max-mb 50 --runs 3000` (only at the very end —
-   iterate with the fast form first, per this session's hard-learned
-   lesson about 6-minute-per-cycle waits).
-3. Commit, update this HANDOFF, and Phase 3 + 3.5 will be genuinely
-   complete (13/13 + all opus blockers closed).
-4. After that: the MVP acceptance criteria from the opus review's
-   "Part 2 — Path to an MVP" section (10 machine-checkable criteria,
-   `_tmp/phase3-opus-review.md`) become the next real milestone —
-   B1-B6 were prerequisites for those, not the finish line themselves.
+## OPUS: RSS-growth diagnosis + self-healing module review — DONE (2026-09-05, $3.99, 46 turns, read-only)
+Full response: `_tmp/phase3/opus-heal-and-rss-response.md`. Brief:
+`_tmp/phase3/opus-heal-and-rss-brief.md`. Concept doc opus reviewed:
+`_tmp/phase3/self-healing-concept.md`. Caveats doc that seeded Part A:
+`_tmp/phase3/rss-growth-caveats.md`.
+
+### Part A — RSS-growth root cause: LIKELY FOUND (~70% confidence, needs one runtime check)
+Candidates 1-4 (bus ring, redb cache, sessions/runs maps, journaler
+per-run state) are **ruled OUT with file:line evidence** — none of
+them can hold 100MB+ given the actual data sizes measured (redb files
+total ~5.8MB; bus ring is a fixed 4096-slot cap holding ~4-byte
+payloads for this soak graph; runs/sessions maps confirmed empty on
+the `run.start` soak path).
+
+**Leading cause: OS-thread churn -> glibc allocator retention (stack
+cache + per-thread arenas), NOT a code-level leak.** `pii-graph/src/
+run.rs:363-382` spawns a fresh `std::thread::scope`/`std::thread::spawn`
+for EVERY parallel-safe node on EVERY tick — and the soak graph's one
+`transform` node is `Effects::PURE` -> `is_parallel_safe` -> always
+takes this path. 3000 soak runs = 3000+ thread create/destroy cycles
+on a 32-core host (glibc default: 256 arenas, 40MiB stack cache) —
+exactly the profile that produces flat-fd + monotonic-but-sublinear
+RSS growth with no growing collection anywhere in the code. The
+sublinear shape (18->61MB by t=40s, only to 18->115MB by t=300s) is
+opus's strongest single piece of evidence — a bounded pool filling up,
+not a true leak.
+
+**Zero-code discriminator (~90s, not yet run)**:
+```
+MALLOC_ARENA_MAX=1 GLIBC_TUNABLES=glibc.malloc.arena_max=1:glibc.pthread.stack_cache_size=0 \
+cargo xtask rss-gate --secs 60 --interval 5 --max-mb 500 --runs 2000
+```
+plus sampling `Threads` and `/proc/<pid>/maps` line count alongside
+the existing VmRSS/fd samples. If slope collapses -> confirmed
+allocator retention, not a leak.
+
+**Recommended fix (does NOT touch gate thresholds)**: dispatch inline
+instead of spawning a thread when a parallel chunk has exactly one
+node (`run.rs:363-382` — behaviour-identical to the existing serial
+branch at `run.rs:391-403`, since there's no parallelism to win from a
+single-element chunk). Secondary/fallback: pin the allocator
+(`MALLOC_ARENA_MAX` in the daemon's launch env, or swap to `mimalloc`
+— `xtask/src/deps.rs` doesn't forbid an allocator crate today, flagged
+as "a decision to record, not a loophole to use quietly").
+
+**Bonus finding (not the RSS cause, logged for the tracker)**:
+`run_with_validate` calls `store.put_graph` twice per run with
+byte-identical content (`run.rs:82,87`) — 6000 wasted redb write
+transactions over a full gate window.
+
+**Next step for whoever continues**: run the discriminator above
+first (90s), confirm/deny, THEN apply the inline-dispatch fix, THEN
+re-verify with the fast gate, THEN the full 300s gate only at the end.
+
+### Part B — Self-healing module: reviewed, corrected, sequenced
+Opus's verdict: the substrate-reuse instinct is right, but the draft
+has factual errors and a wrong first target. Key corrections (full
+detail in the response file):
+1. **Repo scope**: Pii's own repo ONLY for v1 (parameterize the paths,
+   don't build a generic multi-repo abstraction — unvalidatable until
+   the single-repo case works).
+2. **git/pr as node kinds -> WRONG, use tools instead.** Node kinds
+   caused B2 (the two-registry hazard); adding more kinds while
+   `subgraph` (the actual composition primitive) is still missing is
+   the wrong order. A `git` TOOL is cheap (existing `ProcCap`/argv0
+   capset mechanism already does exactly this for `bash`). **A `pr`
+   tool CANNOT be built yet — blocked by B4 (no TLS, `api.github.com`
+   is https-only)** — the draft missed this entirely. Cut PR-opening
+   from v1; end at "validated patch on a pushed branch"; a human runs
+   `gh pr create`.
+3. **"Validate daily operations"** = existing gates (quality-gate,
+   lint-files, deps-check, net-check, rss-gate, bench-gate) on cron,
+   PLUS one new deterministic (non-AI) check: a **module-reachability
+   gate** asserting every declared capability has a non-test call
+   path — would have caught B1 and M3 mechanically, for free, before
+   any model was involved. Build this BEFORE pii-heal, as a plain
+   xtask, not inside the healing module.
+4. **Ledger**: one small redb table `heal_attempt: signature_hash ->
+   [(run_id, outcome, ts_ms)]` (matches `approval`/`channel_cursor`
+   pattern) for the rate-limit lookup the journal can't answer
+   ("have we tried this exact failure before?") — NOT a duplicate
+   journaling path, NOT markdown-as-source-of-truth (render markdown
+   FROM the table for humans instead).
+5. **The RSS bug is the WORST possible first target** — 4 independent
+   reasons: violates reproduce-before-patch (5-6min reproduction burns
+   the whole budget), zero localization signal (a number, not a
+   file:line), may not even be a code defect (allocator behavior —
+   exactly the case that should escalate to human, not get "fixed"),
+   and decisively: **the cheapest passing "fix" is weakening
+   `SLOPE_KB` — the one thing explicitly forbidden.** Use a seeded,
+   deterministic failure instead (a deliberately broken unit test in
+   a worktree — sub-minute reproduction, file:line from the compiler,
+   unambiguous green/red).
+
+**Missing from the draft** (opus's list): TLS/B4 blocks `pr`; the
+budget guardrail is only half-built (`max_tokens` real, `max_model_calls`
+still doesn't exist anywhere, `Terminal::BudgetBreach` isn't wired
+despite a wire error code existing); no concrete stop-condition
+numbers for the rate limiter; nothing about the healer breaking its
+OWN running daemon (rule: build/test its own patch, never replace the
+running binary — deploy stays human, permanently); no commit
+provenance trailer scheme; no secrets-capability plan for a future
+`pr` tool; no worktree lifecycle/disk-ceiling plan (mv-to-trash per
+the standing no-rm-rf rule, not delete).
+
+**Overscoped**: arbitrary repos day 1, git/pr as node kinds, any
+auto-merge discussion. **Most important cut**: "always improving"
+(proposing unprompted improvements) has NO ORACLE and should be a
+SEPARATE design — self-healing has a pass/fail oracle (the gate),
+self-improving doesn't, and conflating them collapses the Validate
+guardrail to "tests still pass" which any no-op satisfies.
+
+**Recommended build order**:
+- Slice -1: the module-reachability gate + one doc-drift check
+  (deterministic, no AI, catches B1/M3/HANDOFF-drift classes for free)
+- **Slice 0 (build this first)**: cron graph runs quality-gate, on red
+  records signature to the ledger, re-runs once to confirm
+  reproducibility, suspends on a `gate` node for human ack. **No
+  patching, no worktree, no fs_write at all.** Proves the entire
+  substrate (cron->graph->gate->journal->ledger->approval-suspend)
+  with zero model risk and zero write authority before spending a
+  token on repair.
+- Slice 1: localize+patch+validate in a disposable worktree against a
+  deliberately broken unit test, write capability PathScope-limited to
+  the worktree only.
+- Slice 2: commit+push with a provenance trailer, stop — human opens PR.
+- Slice 3: the `pr` tool, only after TLS/B4 lands.
+- Slice 4: widen failure classes one at a time, gated by ledger
+  success rate on the previous class.
+
+**No new crate needed for v1** — slices 0-1 need zero new Rust beyond
+a `git` tool in `pii-tools`; everything else is graphs + one xtask.
+
+## NEXT STEP (not started, awaiting user go-ahead)
+Two independent workstreams now unblocked:
+1. **RSS-growth fix**: run the 90s discriminator, confirm/deny the
+   allocator theory, apply the inline-dispatch fix in `run.rs`, cheap
+   via DeepSeek or the orchestrator directly (small, well-localized
+   change).
+2. **Self-healing module, Slice -1 + Slice 0**: write a proper spec
+   (planner work) for the module-reachability gate + the "detect and
+   escalate" cron graph, per opus's build order. This is new,
+   substantial work — needs its own spec file and likely its own
+   DAG/session, not squeezed into this one.
+Ask the user which to prioritize, or whether both proceed in parallel.
 
 ## PHASE 3 PART 4 — COMPLETE AS ACCEPTED (12/13 EC)
 `specs/05-phase3-assistant-gateway-part4.md` (W5 daemon lifecycle +
