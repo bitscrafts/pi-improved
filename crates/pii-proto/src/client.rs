@@ -72,6 +72,8 @@ pub struct Client {
     events_tx: tokio::sync::broadcast::Sender<EventPush>,
     /// Cap on inbound lines (fatal when exceeded).
     pub max_frame_bytes: u64,
+    reader_h: tokio::task::JoinHandle<()>,
+    writer_h: tokio::task::JoinHandle<()>,
 }
 
 impl Client {
@@ -92,10 +94,10 @@ impl Client {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let (wtx, wrx) = mpsc::unbounded_channel::<String>();
-        tokio::spawn(writer_task(w, wrx));
+        let writer_h = tokio::spawn(writer_task(w, wrx));
         let pending: PendingMap = Arc::new(Mutex::new(BTreeMap::new()));
         let (etx, _) = tokio::sync::broadcast::channel::<EventPush>(1024);
-        tokio::spawn(reader_task(
+        let reader_h = tokio::spawn(reader_task(
             r,
             Arc::clone(&pending),
             etx.clone(),
@@ -107,6 +109,8 @@ impl Client {
             writer: wtx,
             events_tx: etx,
             max_frame_bytes: 1 << 20,
+            reader_h,
+            writer_h,
         };
         let params = serde_json::to_value(HelloParams {
             protocol: PROTOCOL_VERSION.to_owned(),
@@ -169,6 +173,27 @@ impl Client {
         self.writer
             .send(line)
             .map_err(|_| RpcError::new(ErrorCode::Internal, "writer closed"))
+    }
+
+    /// Closes the connection (B5): aborts both halves' tasks so the split
+    /// reader no longer parks on the socket and the server sees EOF.
+    ///
+    /// `tokio::io::split` only closes the underlying fd when BOTH halves
+    /// drop; dropping a [`Client`] without calling this leaves the reader
+    /// task parked forever and pins the server's per-connection state
+    /// (the rss-gate leak). Call this on every one-shot path.
+    pub fn shutdown(&self) {
+        self.reader_h.abort();
+        self.writer_h.abort();
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        // Best-effort backstop: a client dropped without `shutdown()` must
+        // still release the socket so the server connection is not pinned.
+        self.reader_h.abort();
+        self.writer_h.abort();
     }
 }
 

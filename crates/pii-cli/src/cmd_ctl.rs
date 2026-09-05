@@ -32,10 +32,14 @@ async fn call_async(
     let (client, _hello) = Client::connect(r, w, client_info())
         .await
         .map_err(|e| e.to_string())?;
-    client
+    let result = client
         .call(method, params)
         .await
-        .map_err(|e| format!("{}: {}", e.code, e.message))
+        .map_err(|e| format!("{}: {}", e.code, e.message));
+    // B5: one-shot ctl calls must release the connection (the Drop backstop
+    // is best-effort; be explicit here).
+    client.shutdown();
+    result
 }
 
 // Shared helpers are used from sibling modules (`cmd_sys`, `cmd_soak`), so the

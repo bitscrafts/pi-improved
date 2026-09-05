@@ -128,6 +128,15 @@ async fn one_run(sock: &Path, graph: &str) -> bool {
     let Ok((client, _hello)) = Client::connect(r, w, client_info()).await else {
         return false;
     };
+    // B5: every path must release the connection — dropping a Client alone
+    // leaves the split reader parked on the socket (server-side leak).
+    let outcome = run_one(&client, graph).await;
+    client.shutdown();
+    outcome
+}
+
+/// Runs one graph and polls it to a terminal (shared by the soak driver).
+async fn run_one(client: &Client, graph: &str) -> bool {
     let Ok(result) = client
         .call(
             Method::RunStart,

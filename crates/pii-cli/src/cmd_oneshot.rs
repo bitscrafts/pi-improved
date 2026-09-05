@@ -258,6 +258,9 @@ where
             break;
         }
     }
+    // B5: release the connection before returning (the split reader must
+    // not keep the server's per-connection state pinned).
+    client.shutdown();
     Ok(exit)
 }
 
