@@ -283,6 +283,14 @@ impl Engine {
     /// Loads a graph by name: `graph_dir/<name>.toml`, falling back to the
     /// built-in `default` agent graph.
     ///
+    /// Uses `self.reg` (B2, opus review) — the SAME registry that will
+    /// actually execute the graph — so each node's default caps match what
+    /// `pii-graph`'s dispatcher will enforce at runtime. Loading through
+    /// plain `pii_graph::load_toml` here would silently default
+    /// `agent`/`tool`/`gate`/`memory`/`crash` nodes to `CapKind::empty()`,
+    /// since those kinds only exist on this engine's registry, not on
+    /// `pii-graph`'s built-in one.
+    ///
     /// # Errors
     /// [`PiiError::NotFound`] when neither exists; loader errors otherwise.
     pub fn load_spec(&self, name: &str) -> Result<GraphSpec, PiiError> {
@@ -290,10 +298,10 @@ impl Engine {
         if path.exists() {
             let src = std::fs::read_to_string(&path)
                 .map_err(|e| PiiError::Internal(format!("read {}: {e}", path.display())))?;
-            return pii_graph::load_toml(&src);
+            return pii_graph::load_toml_with_registry(&src, &self.reg);
         }
         if name == "default" {
-            return pii_graph::load_toml(DEFAULT_TOML);
+            return pii_graph::load_toml_with_registry(DEFAULT_TOML, &self.reg);
         }
         Err(PiiError::NotFound(format!("graph '{name}'")))
     }
@@ -431,8 +439,18 @@ pub fn registry(
 /// Registers `agent`/`tool`/`gate`/`memory` so `pii graph lint` accepts
 /// starter graphs, with a provider that is never called and scratch stores
 /// that are never meaningfully written (lint never executes a node).
+///
+/// **B3 (opus review)**: the lint scratch DBs used to be hardcoded to
+/// `/projects/pi-improved/_tmp/phase3/lint-{approval,memory}.redb`, so on
+/// any other machine (or a different runtime dir) both opens failed and
+/// `gate`/`memory` were silently dropped from the registry — `pii graph
+/// lint` then reported a false `V0: unknown kind 'memory'` for graphs that
+/// are actually fine. They are now placed under `runtime_dir` (the same
+/// directory the caller's real store/config already lives in), which is
+/// always a real, writable path in this process, not a literal string that
+/// only exists in this checkout.
 #[must_use]
-pub fn lint_registry(workspace: &std::path::Path) -> NodeRegistry {
+pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
         provider: Arc::new(pii_model::ScriptedProvider::empty()),
@@ -442,19 +460,36 @@ pub fn lint_registry(workspace: &std::path::Path) -> NodeRegistry {
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),
     }));
-    if let Ok(approvals) = pii_store::approval::ApprovalStore::open(std::path::Path::new(
-        "/projects/pi-improved/_tmp/phase3/lint-approval.redb",
-    )) {
-        reg.register(Arc::new(nodes::gate::GateFactory {
+    // B2 (opus review): these opens are best-effort (lint must still work
+    // when the runtime dir isn't writable), but a failure here means
+    // `gate`/`memory` graphs will fail lint with `unknown kind` rather than
+    // silently validating against an empty capset — surfaced via the
+    // eprintln below instead of vanishing.
+    match pii_store::approval::ApprovalStore::open(&runtime_dir.join("lint-approval.redb")) {
+        Ok(approvals) => reg.register(Arc::new(nodes::gate::GateFactory {
             approvals: Arc::new(approvals),
-        }));
+        })),
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!(
+                    "lint_registry: gate unavailable (approval store: {e}); 'gate' nodes will fail lint as unknown kind"
+                );
+            }
+        }
     }
-    if let Ok(memory) = pii_store::MemStore::open(std::path::Path::new(
-        "/projects/pi-improved/_tmp/phase3/lint-memory.redb",
-    )) {
-        reg.register(Arc::new(nodes::memory::MemoryFactory {
+    match pii_store::MemStore::open(&runtime_dir.join("lint-memory.redb")) {
+        Ok(memory) => reg.register(Arc::new(nodes::memory::MemoryFactory {
             store: Arc::new(memory),
-        }));
+        })),
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!(
+                    "lint_registry: memory unavailable (mem store: {e}); 'memory' nodes will fail lint as unknown kind"
+                );
+            }
+        }
     }
     reg
 }

@@ -37,14 +37,14 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let spec = match pii_graph::load_toml(&src) {
+    let reg = pii_server::lint_registry(std::path::Path::new("."), std::path::Path::new("."));
+    let spec = match pii_graph::load_toml_with_registry(&src, &reg) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
     };
-    let reg = pii_server::lint_registry(std::path::Path::new("."));
     match pii_graph::validate(&spec, &reg) {
         Ok(warnings) => {
             for w in &warnings {

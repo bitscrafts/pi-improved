@@ -6,12 +6,39 @@ use toml::Table;
 
 use crate::spec::{Edge, EdgeKind, GraphLimits, GraphSpec, JoinPolicy, NodeSpec, RetryPolicy};
 
-/// Loads a graph spec from a TOML document (spec F4.2).
+/// Loads a graph spec from a TOML document (spec F4.2), defaulting each
+/// node's caps from the **built-in** registry only.
+///
+/// # Errors
+/// Returns [`PiiError::Invalid`] on a structural or type error in the TOML.
+pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
+    load_toml_with_registry(src, &crate::node::NodeRegistry::builtin())
+}
+
+/// Loads a graph spec from a TOML document (spec F4.2), defaulting each
+/// node's caps from `registry` (B2, opus review).
+///
+/// **Why this exists**: [`load_toml`] alone defaults every node's caps from
+/// [`crate::node::NodeRegistry::builtin`] — 4-5 kinds (`transform`, `route`,
+/// `emit`, `wait`, `timer`). A caller that will actually *run* the graph
+/// typically registers more kinds on top of that (e.g. `pii-server`
+/// registers `agent`/`tool`/`gate`/`memory`/`crash`). If that caller loads
+/// through plain [`load_toml`], every node of a non-builtin kind gets
+/// [`CapKind::empty`] as its default caps — silently, because
+/// [`crate::validate::validate`] checks caps against the *factory's*
+/// declared `required_caps()` via its own registry, so lint stays green
+/// while the runtime capset used by [`crate::dispatch`] is actually empty.
+/// The fix is not a validator change: it is making sure the loader that
+/// feeds a real execution passes the registry that will actually execute
+/// it. Callers that only lint (no execution) may keep using [`load_toml`].
 ///
 /// # Errors
 /// Returns [`PiiError::Invalid`] on a structural or type error in the TOML.
 #[allow(clippy::too_many_lines)]
-pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
+pub fn load_toml_with_registry(
+    src: &str,
+    registry: &crate::node::NodeRegistry,
+) -> Result<GraphSpec, PiiError> {
     let doc: Table =
         toml::from_str(src).map_err(|e| PiiError::Invalid(format!("graph toml parse: {e}")))?;
 
@@ -87,9 +114,6 @@ pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
     // nodes
     let mut nodes = Vec::new();
     let mut ids_seen = std::collections::HashSet::new();
-    // For the node-caps default (kind's required_caps()); builtin registry is
-    // fine here — custom factories only matter through validate()/run's own.
-    let reg = crate::node::NodeRegistry::builtin();
     if let Some(toml::Value::Array(arr)) = doc.get("node") {
         for item in arr {
             let t = item
@@ -135,7 +159,7 @@ pub fn load_toml(src: &str) -> Result<GraphSpec, PiiError> {
             // (spec part3: "Node caps default to the kind's required_caps()").
             // Unknown kinds keep empty — validate() rejects them separately.
             let caps = match t.get("caps") {
-                None => reg.required_caps_of(&kind),
+                None => registry.required_caps_of(&kind),
                 Some(toml::Value::Array(items)) => {
                     let mut k = CapKind::empty();
                     for item in items {

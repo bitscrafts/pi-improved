@@ -22,5 +22,5 @@ pub mod validate;
 
 pub use node::{GraphNode, NodeFactory, NodeRegistry};
 pub use spec::{Edge, EdgeKind, GraphLimits, GraphSpec, JoinPolicy, NodeSpec, RetryPolicy};
-pub use toml_load::load_toml;
+pub use toml_load::{load_toml, load_toml_with_registry};
 pub use validate::validate;

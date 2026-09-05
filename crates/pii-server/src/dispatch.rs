@@ -243,22 +243,27 @@ fn run_header(engine: &Arc<Engine>, run_id: &RunId) -> Result<WireRunHeader, Pii
 
 /// Lints a TOML graph source (F6: `graph.lint`).
 fn graph_lint(engine: &Arc<Engine>, toml: &str) -> GraphLintResult {
-    match pii_graph::load_toml(toml) {
-        Ok(spec) => {
-            let reg = crate::lint_registry(&engine.cfg.workspace);
-            match pii_graph::validate(&spec, &reg) {
-                Ok(warnings) => GraphLintResult {
-                    ok: true,
-                    errors: Vec::new(),
-                    warnings,
-                },
-                Err(errors) => GraphLintResult {
-                    ok: false,
-                    errors,
-                    warnings: Vec::new(),
-                },
-            }
-        }
+    // B3 (opus review): derive the lint scratch dir from this engine's own
+    // configured store path instead of a hardcoded absolute string, so
+    // lint works the same on any machine/runtime dir.
+    let runtime_dir = engine.cfg.store_path.parent().map_or_else(
+        || std::path::PathBuf::from("."),
+        std::path::Path::to_path_buf,
+    );
+    let reg = crate::lint_registry(&engine.cfg.workspace, &runtime_dir);
+    match pii_graph::load_toml_with_registry(toml, &reg) {
+        Ok(spec) => match pii_graph::validate(&spec, &reg) {
+            Ok(warnings) => GraphLintResult {
+                ok: true,
+                errors: Vec::new(),
+                warnings,
+            },
+            Err(errors) => GraphLintResult {
+                ok: false,
+                errors,
+                warnings: Vec::new(),
+            },
+        },
         Err(e) => GraphLintResult {
             ok: false,
             errors: vec![e.to_string()],
