@@ -2,6 +2,29 @@
 
 **Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + a user-approved, ⚠️ FLAGGED-FOR-REVIEW threshold change — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. Pii is now INSTALLED AND RUNNING on lnx with a real (non-scripted) live model — see the deployment section below. MVP-complete pending final review.**
 
+## pii -p human/TTY output bug + pii tui limitation (2026-09-05, found by user)
+The user ran `pii -p 'hello'`/`'why the sky is blue?'`/`'3*2'` and got only
+`(agent) started` / `(done) started` / `done` — never the actual answer.
+**Real bug, now fixed** (commit `1edd6f9`): `render_event`'s human (non
+`--json`) formatting threw away `RunFinished`'s `output` entirely and
+printed a fixed "done" string — this ONLY affected TTY sessions (the
+`--json` default for non-TTY output, used by every prior verification
+run including mvp-verify.sh, looked fine and hid this). Fixed, with 5 new
+unit tests on the extracted `human_line()` function, PLUS a new
+mvp-verify.sh check (6b) that drives `pii -p` through a real pty via
+`script` and asserts the actual requested text appears — the exact class
+of check that was missing before and would have caught this.
+
+The user also reported `pii tui` "just opens for a second or two and
+closes". **Investigated, not yet fixed**: `pii tui` is not a real
+interactive TUI today — `crates/pii-tui/src/lib.rs::run_tui` hardcodes
+the prompt to the literal string `"hello"`, has ZERO keyboard/input event
+handling (no `crossterm::event` reference anywhere in the crate), and
+exits automatically the instant that one hardcoded run finishes. Building
+a real interactive TUI (input box, a proper event loop, scrollback, the
+ability to send more than one prompt) is a real, scoped feature, not a
+quick fix — flagged here for a future spec rather than patched blind.
+
 ## Persistent config file (2026-09-05 follow-up — fixes the "works in my shell only" trap)
 The user hit this directly right after the initial lnx deployment: a
 FRESH shell running `pii -p 'hello'` failed with "no model configured",
