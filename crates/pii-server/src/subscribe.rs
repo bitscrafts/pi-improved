@@ -19,9 +19,11 @@ use crate::bus::reattach;
 use crate::conn::SubscriptionRegistry;
 
 /// Advertised in `sys.hello`'s `capabilities`/limits (F1.10) and enforced
-/// here (M1, opus review): a connection offering an unbounded number of
-/// live subscriptions is an unbounded number of tasks + bounded queues, so
-/// the cap is a real ceiling, not documentation.
+/// here (M1, opus review).
+///
+/// A connection offering an unbounded number of live subscriptions is an
+/// unbounded number of tasks + bounded queues, so the cap is a real
+/// ceiling, not documentation.
 pub const MAX_SUBSCRIPTIONS_PER_CONN: usize = 32;
 
 /// `event.subscribe` (F2.5): replay `seq > since`, then attach live with

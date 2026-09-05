@@ -160,6 +160,17 @@ fn resolve_with_transport_dispatches_ollama() {
 
 /// A `scripted:` spec must still resolve without touching the transport
 /// (B1 must not regress the common test path).
+struct NeverCalled;
+impl pii_core::HttpTransport for NeverCalled {
+    fn request(
+        &self,
+        _ctx: &Ctx,
+        _req: &pii_abi::HttpRequest,
+    ) -> Result<pii_abi::HttpResponse, PiiError> {
+        panic!("scripted: must not touch the transport");
+    }
+}
+
 #[test]
 fn resolve_with_transport_passes_through_scripted() {
     let dir = tempfile::Builder::new()
@@ -168,16 +179,6 @@ fn resolve_with_transport_passes_through_scripted() {
         .unwrap();
     let f = dir.path().join("one.json");
     std::fs::write(&f, r#"{"turns":[{"text":"scripted-ok"}]}"#).unwrap();
-    struct NeverCalled;
-    impl pii_core::HttpTransport for NeverCalled {
-        fn request(
-            &self,
-            _ctx: &Ctx,
-            _req: &pii_abi::HttpRequest,
-        ) -> Result<pii_abi::HttpResponse, PiiError> {
-            panic!("scripted: must not touch the transport");
-        }
-    }
     let provider = pii_model::resolve_with_transport(
         &format!("scripted:{}", f.display()),
         Arc::new(NeverCalled),

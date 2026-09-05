@@ -26,7 +26,13 @@ use crate::dispatch;
 /// forever. Chosen well above any single RPC's expected round-trip so it
 /// never fires on a live, idle-but-connected client (e.g. `pii tui`
 /// between commands) under any existing test.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+const IDLE_TIMEOUT: Duration = Duration::from_mins(5);
+
+/// A live subscription's cancel handle and task.
+type SubEntry = (
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+);
 
 /// One connection's live `event.subscribe` tasks (M1, opus review).
 ///
@@ -34,19 +40,12 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 /// teardown) sends on the stored `oneshot` sender, which the subscriber
 /// task races in its `select!` loop and exits on. This is what makes
 /// `event.unsubscribe` a real cancellation instead of an ack-only no-op,
-/// and what makes connection teardown release every subscriber task
-/// instead of leaving them running until the process exits.
+/// and what makes connection teardown release every subscriber task.
+///
+/// It would otherwise keep running until the process exits.
 #[derive(Default)]
 pub struct SubscriptionRegistry {
-    inner: std::sync::Mutex<
-        HashMap<
-            String,
-            (
-                tokio::sync::oneshot::Sender<()>,
-                tokio::task::JoinHandle<()>,
-            ),
-        >,
-    >,
+    inner: parking_lot::Mutex<HashMap<String, SubEntry>>,
 }
 
 impl SubscriptionRegistry {
@@ -54,10 +53,7 @@ impl SubscriptionRegistry {
     /// `dispatch::MAX_SUBSCRIPTIONS_PER_CONN`).
     #[must_use]
     pub fn len(&self) -> usize {
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len()
+        self.inner.lock().len()
     }
 
     /// True when no subscriptions are live.
@@ -73,19 +69,12 @@ impl SubscriptionRegistry {
         cancel: tokio::sync::oneshot::Sender<()>,
         handle: tokio::task::JoinHandle<()>,
     ) {
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(sub_id, (cancel, handle));
+        self.inner.lock().insert(sub_id, (cancel, handle));
     }
 
     /// Cancels one subscription by id. Returns `true` if it existed.
     pub fn cancel(&self, sub_id: &str) -> bool {
-        let entry = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(sub_id);
+        let entry = self.inner.lock().remove(sub_id);
         match entry {
             Some((tx, _handle)) => {
                 let _ = tx.send(());
@@ -97,12 +86,7 @@ impl SubscriptionRegistry {
 
     /// Cancels every live subscription (connection teardown).
     fn cancel_all(&self) {
-        let entries: Vec<_> = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .drain()
-            .collect();
+        let entries: Vec<_> = self.inner.lock().drain().collect();
         for (_, (tx, _handle)) in entries {
             let _ = tx.send(());
         }
@@ -149,11 +133,10 @@ where
         // periodic protocol traffic); a vanished one (crash, `kill -9`,
         // an abort that hasn't unwound yet) now gets reaped instead of
         // parking the reader + writer task + mpsc channel forever.
-        let next = match tokio::time::timeout(IDLE_TIMEOUT, lines.next_line()).await {
-            Ok(Ok(Some(line))) => line,
-            Ok(Ok(None)) => break, // EOF — client closed cleanly.
-            Ok(Err(_)) => break,   // read error — treat like EOF.
-            Err(_) => break,       // idle timeout — reap the connection.
+        let Ok(Ok(Some(next))) = tokio::time::timeout(IDLE_TIMEOUT, lines.next_line()).await else {
+            // EOF, read error, or idle timeout all mean the same thing
+            // here: stop serving this connection.
+            break;
         };
         match parse_frame(&next) {
             Ok(Envelope::Request(req)) => {

@@ -185,18 +185,19 @@ impl ModelProvider for ScriptedProvider {
 pub mod ollama;
 pub use ollama::OllamaProvider;
 
-/// Resolves a model spec: `scripted:<path>` needs no transport. `ollama:`
-/// (B1, opus review) is now wired through [`ollama::provider_from_env`],
-/// which was correct and complete but had zero non-test call sites — every
-/// green exit criterion touching an `agent` node was satisfied by a
-/// hand-written fixture, never a live LLM turn. This entry point still
-/// cannot construct an `ollama:` provider itself (it has no
-/// `HttpTransport` — the real transport is `pii-net`'s `NetService`,
-/// constructed by the caller with its egress policy already wired), so a
-/// caller that wants `ollama:` must call [`ollama::provider_from_env`]
-/// directly with its own transport, or use [`resolve_with_transport`],
-/// which does both in one call for callers that don't care about the
-/// distinction.
+/// Resolves a model spec: `scripted:<path>` needs no transport.
+///
+/// `ollama:` (B1, opus review) is now wired through
+/// [`ollama::provider_from_env`], which was correct and complete but had
+/// zero non-test call sites — every green exit criterion touching an
+/// `agent` node was satisfied by a hand-written fixture, never a live LLM
+/// turn. This entry point still cannot construct an `ollama:` provider
+/// itself (it has no `HttpTransport` — the real transport is `pii-net`'s
+/// `NetService`, constructed by the caller with its egress policy already
+/// wired), so a caller that wants `ollama:` must call
+/// [`ollama::provider_from_env`] directly with its own transport, or use
+/// [`resolve_with_transport`], which does both in one call for callers
+/// that don't care about the distinction.
 ///
 /// # Errors
 /// [`PiiError::Invalid`] for an unknown spec, a fixture failure, or an
@@ -216,11 +217,12 @@ pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError
     }
 }
 
-/// Resolves any supported model spec, constructing an `ollama:` provider
-/// through `transport` when the spec calls for one (B1, opus review). This
-/// is the entry point a real caller (the daemon, `pii -p`) should use
-/// instead of [`provider_from_spec`] alone, since it is the one place that
-/// can actually honour `ollama:`.
+/// Resolves any supported model spec.
+///
+/// Constructs an `ollama:` provider through `transport` when the spec
+/// calls for one (B1, opus review). This is the entry point a real caller
+/// (the daemon, `pii -p`) should use instead of [`provider_from_spec`]
+/// alone, since it is the one place that can actually honour `ollama:`.
 ///
 /// # Errors
 /// [`PiiError::Invalid`] for an unknown spec or a fixture/env failure.
