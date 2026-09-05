@@ -72,6 +72,7 @@ pub fn spawn_run(
             engine.record_assistant(&session_id, &t);
         }
         engine.session_finished(&run_id.to_string());
+        engine.unregister_run(&run_id.to_string());
     });
     Ok(())
 }
@@ -114,6 +115,7 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
         };
         let _ = terminal;
         engine.session_finished(&run_id.to_string());
+        engine.unregister_run(&run_id.to_string());
     });
     Ok(())
 }

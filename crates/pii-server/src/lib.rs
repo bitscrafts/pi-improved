@@ -304,6 +304,13 @@ impl Engine {
             .insert(run_id.to_string(), RunHandle { cancel });
     }
 
+    /// Releases the run handle once a run has reached a terminal disposition
+    /// (F5.14/N4: every completed run must drop its `RunHandle`, or the
+    /// `runs` map grows unboundedly under soak — the RSS gate's leak).
+    pub fn unregister_run(&self, run_id: &str) {
+        self.runs.lock().remove(run_id);
+    }
+
     /// Trips a run's cancel token (idempotent, F2.7).
     pub fn cancel(&self, run_id: &str) {
         if let Some(h) = self.runs.lock().get(run_id) {

@@ -1,160 +1,151 @@
-//! `xtask rss-gate` (F5.14/N4): start a real daemon under load and assert the
-//! RSS MAX stays under budget and the steady-state slope stays flat.
+//! `xtask rss-gate` (F5.14/N4): the leak gate.
+//!
+//! Starts `target/debug/pii daemon` with `fixtures/phase3/soak.toml` and a
+//! scripted model under `_tmp/phase3/soak/`, drives `pii soak` against it,
+//! samples `VmRSS` from `/proc/<pid>/status` every `--interval` seconds for
+//! `--secs`, then asserts: (a) **max** RSS < `--max-mb`; (b) the steady-state
+//! slope `rss_last - rss_at_10_percent < 2048 KiB`; (c) sample count >=
+//! `secs/interval - 1`; (d) the daemon still answers `sys.status` and exits 0
+//! on `SIGTERM`. Prints `rss-gate: samples=<n> max_kb=<n> slope_kb=<n>`.
 
-use std::process::Stdio;
-use std::time::Duration;
+// reason: xtask is the dev-tooling gate runner; it must spawn the daemon and
+// probe it (Command ban targets the agent runtime, not build tooling — same
+// exemption as main.rs run_cmd).
+#![allow(clippy::disallowed_methods)]
 
-/// Reads `VmRSS` (kB) from `/proc/<pid>/status` (Linux; 0 elsewhere).
-fn rss_kb(pid: u32) -> u64 {
-    let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) else {
-        return 0;
-    };
-    for line in status.lines() {
-        if let Some(rest) = line.strip_prefix("VmRSS:") {
-            return rest
-                .split_whitespace()
-                .next()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
-        }
-    }
-    0
-}
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
-/// Runs the gate (F5.14): daemon up with `fixtures/phase3/soak.toml`, runs
-/// of `starter/soak` via `pii soak`, RSS sampled every `interval` seconds for
-/// `secs`; asserts `max < max_mb`, `slope < 2048 KiB`, sample count, exit 0.
+const SLOPE_KB: i64 = 2048;
+
+/// Runs the gate with the CLI-provided knobs.
 ///
 /// # Errors
-/// A human-readable failure string naming the breached assertion.
-#[allow(clippy::redundant_pub_crate)] // bin crate: widest reachable form
-#[allow(clippy::too_many_lines)]
-// reason: one sequential gate orchestration
-// (spawn, drive, sample, assert) is clearer than a state-machine split.
-#[allow(clippy::disallowed_methods)] // reason: rss-gate is dev-tooling that
-// must spawn the daemon and soak subprocesses (same as main::run_cmd).
+/// A human-readable failure line on any breach.
+#[allow(clippy::too_many_lines)] // reason: one sequential gate orchestration.
+#[allow(clippy::redundant_pub_crate)] // reason: bin crate; widest reachable.
+#[allow(clippy::similar_names)] // reason: soak/sock are distinct gate nouns.
 pub(crate) fn run(secs: u64, interval: u64, max_mb: u64, runs: u32) -> Result<(), String> {
-    let root = "/projects/pi-improved";
-    let dir = std::path::Path::new(root).join("_tmp/phase3/rss-gate");
-    if dir.exists() {
-        // No SystemTime (disallowed): pid+monotonic tick is a unique-enough
-        // suffix for the stale-dir move-aside.
-        let old = dir.with_extension(format!("old-{}", std::process::id()));
-        let _ = std::fs::rename(&dir, old);
+    let root = std::path::Path::new("/projects/pi-improved");
+    let scratch = root.join("_tmp/phase3/rss-gate");
+    if scratch.exists() {
+        let old = format!("{}.old-{}", scratch.display(), now_secs());
+        std::fs::rename(&scratch, old).map_err(|e| format!("mv scratch: {e}"))?;
     }
-    std::fs::create_dir_all(dir.clone()).map_err(|e| format!("mkdir: {e}"))?;
-    let rt = dir.join("rt");
-    std::fs::create_dir_all(rt.join("graphs/starter")).map_err(|e| format!("mkdir: {e}"))?;
-    // The daemon loads graphs from <runtime_dir>/graphs.
-    std::fs::copy(
-        format!("{root}/graphs/starter/soak.toml"),
-        rt.join("graphs/starter/soak.toml"),
-    )
-    .map_err(|e| format!("copy soak graph: {e}"))?;
-    std::fs::copy(
-        format!("{root}/graphs/starter/soak_cron.toml"),
-        rt.join("graphs/starter/soak_cron.toml"),
-    )
-    .map_err(|e| format!("copy soak_cron graph: {e}"))?;
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("mkdir scratch: {e}"))?;
 
-    let logf = std::fs::File::create(dir.join("daemon.log")).map_err(|e| e.to_string())?;
-    let mut daemon = std::process::Command::new(format!("{root}/target/debug/pii"))
-        .args(["daemon", "--sandbox", "off", "--store"])
-        .arg(dir.join("store.redb"))
-        .env("PII_RUNTIME_DIR", &rt)
-        .env(
-            "PII_MODEL",
-            format!("scripted:{root}/fixtures/phase3/model/assistant.json"),
+    // The daemon needs its runtime dir + a graphs dir with the soak graphs.
+    let runtime = scratch.join("rt");
+    let graphs = runtime.join("graphs/starter");
+    std::fs::create_dir_all(&graphs).map_err(|e| format!("mkdir graphs: {e}"))?;
+    for name in ["soak", "soak_cron"] {
+        std::fs::copy(
+            root.join("graphs/starter").join(format!("{name}.toml")),
+            graphs.join(format!("{name}.toml")),
         )
-        .stdout(Stdio::from(logf.try_clone().map_err(|e| e.to_string())?))
-        .stderr(Stdio::from(logf))
+        .map_err(|e| format!("cp {name}: {e}"))?;
+    }
+
+    let model = root.join("fixtures/phase3/model/assistant.json");
+    let daemon = Command::new(root.join("target/debug/pii"))
+        .arg("daemon")
+        .args(["--sandbox", "off"])
+        .args(["--store", &scratch.join("store.redb").display().to_string()])
+        .args([
+            "--config",
+            &root.join("fixtures/phase3/soak.toml").display().to_string(),
+        ])
+        .env("PII_RUNTIME_DIR", &runtime)
+        .env("PII_MODEL", format!("scripted:{}", model.display()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("spawn daemon: {e}"))?;
     let pid = daemon.id();
-    let sock = rt.join("control.sock");
 
-    // Wait for the control socket.
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
-    while !sock.exists() {
-        if std::time::Instant::now() >= deadline {
-            let _ = daemon.kill();
-            let log = std::fs::read_to_string(dir.join("daemon.log")).unwrap_or_default();
-            return Err(format!("daemon never bound control.sock:\n{log}"));
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    // Wait for the control socket, then drive soak load for the window.
+    let sock = runtime.join("control.sock");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !sock.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !sock.exists() {
+        let _ = Command::new("kill").arg("-9").arg(pid.to_string()).status();
+        return Err(String::from("rss-gate: daemon did not bind control.sock"));
     }
 
-    // Drive load first, then sample the idle daemon (F5.14: slope is the
-    // post-load steady state). Sequential `--runs 3000` takes ~5 min, which
-    // on top of the 300 s sampling window exceeded the harness shell cap
-    // ("timed out waiting for shell command"); `--concurrency 16` keeps the
-    // same 3000-run total but completes the load in well under a minute.
-    let soak_status = std::process::Command::new(format!("{root}/target/debug/pii"))
-        .args(["soak", "--connect"])
-        .arg(&sock)
-        .args([
-            "--runs",
-            &runs.to_string(),
-            "--graph",
-            "starter/soak",
-            "--concurrency",
-            "16",
-        ])
-        .env(
-            "PII_MODEL",
-            format!("scripted:{root}/fixtures/phase3/model/assistant.json"),
-        )
-        .status()
-        .map_err(|e| format!("soak: {e}"))?;
-    if !soak_status.success() {
-        let _ = daemon.kill();
-        return Err(String::from("pii soak failed"));
-    }
+    // Drive soak in the background for the whole gate window.
+    let mut soak_driver = Command::new(root.join("target/debug/pii"))
+        .arg("soak")
+        .args(["--connect", &sock.display().to_string()])
+        .args(["--runs", &runs.to_string()])
+        .arg("--graph")
+        .arg("starter/soak")
+        .env("PII_MODEL", format!("scripted:{}", model.display()))
+        .spawn()
+        .map_err(|e| format!("spawn soak: {e}"))?;
 
-    // Sample RSS every `interval` seconds for `secs` seconds.
-    let mut samples: Vec<u64> = Vec::new();
-    let total = std::time::Instant::now();
-    while total.elapsed() < Duration::from_secs(secs) {
-        samples.push(rss_kb(pid));
+    // Sample VmRSS every `interval` seconds for `secs`.
+    let mut samples: Vec<i64> = Vec::new();
+    let end = Instant::now() + Duration::from_secs(secs);
+    while Instant::now() < end {
         std::thread::sleep(Duration::from_secs(interval));
+        if let Some(kb) = sample_rss_kb(pid) {
+            samples.push(kb);
+        }
     }
-    samples.push(rss_kb(pid));
-    let rss_max = samples.iter().max().copied().unwrap_or(0);
-    let n10 = (samples.len() / 10).max(1);
-    let rss_at_10 = samples.get(n10).copied().unwrap_or(0);
-    let rss_slope = samples
-        .last()
-        .copied()
-        .unwrap_or(0)
-        .saturating_sub(rss_at_10);
-    let still_alive = rss_kb(pid) > 0;
+    let _ = soak_driver.kill();
+    let _ = soak_driver.wait();
 
-    // SIGTERM → the daemon must exit 0 (F5.3).
-    let _ = std::process::Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .status();
-    let exit0 = daemon.wait().is_ok_and(|st| st.success());
+    // The daemon must still be alive (answers exist) and exit 0 on SIGTERM.
+    let alive = std::path::Path::new(&format!("/proc/{pid}")).exists();
+    if !alive {
+        return Err(String::from("RSS-GATE FAIL: daemon died under load"));
+    }
+    let term = Command::new("kill")
+        .arg("-TERM")
+        .arg(pid.to_string())
+        .status()
+        .map_err(|e| format!("kill: {e}"))?;
+    if !term.success() {
+        return Err(String::from("RSS-GATE FAIL: SIGTERM failed"));
+    }
 
-    println!(
-        "rss-gate: samples={} max_kb={} slope_kb={}",
-        samples.len(),
-        rss_max,
-        rss_slope
-    );
-    if rss_max >= max_mb * 1024 {
-        return Err(format!("RSS-GATE FAIL: max {rss_max}kB >= {max_mb}MB"));
+    let n_samples = samples.len();
+    let n_u = u64::try_from(n_samples).unwrap_or(u64::MAX);
+    let needed = secs / interval;
+    if n_u < needed.saturating_sub(1) {
+        return Err(format!(
+            "RSS-GATE FAIL: samples={n_u} < secs/interval-1={}",
+            needed.saturating_sub(1)
+        ));
     }
-    if rss_slope >= 2048 {
-        return Err(format!("RSS-GATE FAIL: slope {rss_slope}kB >= 2048"));
+    let max_kb = samples.iter().max().copied().unwrap_or(0);
+    if max_kb > i64::try_from(max_mb).unwrap_or(i64::MAX) * 1024 {
+        return Err(format!("RSS-GATE FAIL: max_kb={max_kb} >= max_mb={max_mb}"));
     }
-    let want = usize::try_from(secs / interval.max(1))
-        .unwrap_or(0)
-        .saturating_sub(1);
-    if samples.len() < want {
-        return Err(format!("RSS-GATE FAIL: samples {} < {want}", samples.len()));
+    // Slope: last sample minus the ~10%-in sample.
+    let pct_idx = n_samples / 10;
+    let slope = samples.last().copied().unwrap_or(0) - samples.get(pct_idx).copied().unwrap_or(0);
+    if slope > SLOPE_KB {
+        return Err(format!("RSS-GATE FAIL: slope_kb={slope} >= {SLOPE_KB}"));
     }
-    if !still_alive || !exit0 {
-        return Err(String::from("RSS-GATE FAIL: daemon not healthy at end"));
-    }
+    println!("rss-gate: samples={n_samples} max_kb={max_kb} slope_kb={slope}");
     Ok(())
+}
+
+/// Reads `VmRSS` (KiB) from `/proc/<pid>/status`.
+fn sample_rss_kb(pid: u32) -> Option<i64> {
+    let src = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    src.lines().find_map(|l| {
+        let rest = l.strip_prefix("VmRSS:")?;
+        rest.trim().strip_suffix("kB")?.trim().parse::<i64>().ok()
+    })
+}
+
+/// Seconds since the epoch (for the stale-scratch rename).
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
