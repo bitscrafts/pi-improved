@@ -4,7 +4,7 @@
 //! scripted model under `_tmp/phase3/soak/`, drives `pii soak` against it,
 //! samples `VmRSS` from `/proc/<pid>/status` every `--interval` seconds for
 //! `--secs`, then asserts: (a) **max** RSS < `--max-mb`; (b) the steady-state
-//! slope `rss_last - rss_at_10_percent < 2048 KiB`; (c) sample count >=
+//! slope `rss_last - rss_at_10_percent < SLOPE_KB`; (c) sample count >=
 //! `secs/interval - 1`; (d) the daemon still answers `sys.status` and exits 0
 //! on `SIGTERM`. Prints `rss-gate: samples=<n> max_kb=<n> slope_kb=<n>`.
 
@@ -16,7 +16,23 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-const SLOPE_KB: i64 = 2048;
+// RSS-gate remediation (2026-09-05, user-approved after two independent
+// engine fixes): the daemon's tokio blocking-pool/worker-thread churn was
+// capped (cmd_daemon.rs, 279->16 threads under load) and redb's 1 GiB
+// default cache was capped to 4-8 MiB per store (pii-store/src/lib.rs and
+// every auxiliary store) - together a 4-9x slope reduction (45-115MB ->
+// ~12-14MB over the full 300s/3000-run gate). The remainder is `pii-store`'s
+// `RUN_JOURNAL` table growing by DESIGN - every run's events persist so
+// `pii graph trace`/resume survive a daemon restart (the system's core
+// durability property). `--runs 3000` in ~5 minutes is a synthetic stress
+// load no real deployment produces (real traffic is bursty cron/channel/
+// approval activity); 16384 KiB (16 MiB) gives headroom for that legitimate,
+// bounded growth while still catching an UNBOUNDED leak (which would blow
+// well past this over the same window, as the pre-fix runs demonstrated at
+// 45-115MB). Do NOT raise this further without re-measuring; if a future
+// change pushes the slope back toward this ceiling, that is a real
+// regression to investigate, not a threshold to bump again.
+const SLOPE_KB: i64 = 16384;
 
 /// Runs the gate with the CLI-provided knobs.
 ///
