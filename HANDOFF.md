@@ -105,7 +105,60 @@ Full response: `_tmp/phase3/opus-heal-and-rss-response.md`. Brief:
 `_tmp/phase3/self-healing-concept.md`. Caveats doc that seeded Part A:
 `_tmp/phase3/rss-growth-caveats.md`.
 
-### Part A — RSS-growth root cause: LIKELY FOUND (~70% confidence, needs one runtime check)
+### Part A — RSS-growth: PARTIAL FIX LANDED, dominant cause identified but NOT yet fixed (2026-09-05, follow-up)
+**What was done**: opus's recommended fix (dispatch a single-node
+parallel chunk inline instead of spawning `std::thread::scope`) was
+applied and verified — `pii-graph/src/run.rs:363-389`, commit
+`1f3572a`. All 5 diamond tests pass, full quality-gate green,
+behaviour-identical to the existing serial path.
+
+**Measured effect**: real but small. The allocator-tuning discriminator
+(`MALLOC_ARENA_MAX=1 GLIBC_TUNABLES=...`) dropped slope from 45MB to
+15MB pre-fix (a 3x reduction, confirming SOME allocator-retention
+mechanism is real) — but re-measuring after the code fix landed showed
+high run-to-run variance (54MB, 10MB, 54MB across 3 separate gate runs)
+with NO clean, repeatable improvement from the code fix alone.
+
+**Dominant cause found via direct instrumentation, NOT yet fixed**:
+`grep Threads /proc/<daemon-pid>/status` shows the daemon idle at 1
+thread, climbing to **167+ threads within 15s of soak load starting**.
+This is `tokio::task::spawn_blocking` in `pii-server/src/runs.rs:46,125`
+— EVERY `run.start`/resume spawns a fresh OS thread via tokio's
+blocking-thread pool (default cap 512, `thread_keep_alive` 10s). 3000
+soak runs = up to 3000 blocking-thread pool churns. This is a BIGGER
+and more architecturally significant thread-churn source than the
+scheduler's parallel-node dispatch (the thing actually fixed above).
+
+**Why not fixed this session**: fixing this properly means restructuring
+how runs are dispatched — e.g. a bounded worker-thread pool that graphs
+execute on (rather than `spawn_blocking` once per run), or tuning
+`tokio::runtime::Builder::max_blocking_threads`/`thread_keep_alive`
+(`cmd_daemon.rs:107-109`, currently defaults, both settable). This is a
+real architectural decision (how should Pii dispatch runs under load?),
+not a 5-line localized fix — it deserves its own spec/discussion, not
+a rushed change under time pressure.
+
+**Options for next session, cheapest to most invasive**:
+1. ~~`thread_keep_alive(Duration::from_secs(1))`~~ — **tried and
+   reverted**, no clean improvement (slope still 36MB with continuous
+   soak load; makes sense in hindsight — under sustained load threads
+   never actually go idle long enough for a shorter keep-alive to
+   matter, it only helps bursty/intermittent traffic which the 3000-run
+   soak isn't).
+2. `max_blocking_threads(N)` cap — bounds worst-case thread count but
+   would make heavily concurrent soak/production load QUEUE rather
+   than spawn unboundedly; needs thought about whether that's
+   acceptable for the daemon's real workload (bursty channel/cron
+   traffic, not sustained 3000-run soak).
+3. Restructure run dispatch onto a fixed-size worker pool (bigger
+   change, matches `pii-worker`'s existing supervised-worker pattern
+   conceptually, but for in-process runs not external processes) —
+   likely the real fix, needs its own design discussion.
+Do NOT weaken `SLOPE_KB`/`--max-mb` regardless of which option is
+chosen — same guardrail as before. Measured slopes across this
+session's repeated trials ranged 10-54MB (high variance, small sample
+count) — get more samples before concluding any lever's effect size.
+
 Candidates 1-4 (bus ring, redb cache, sessions/runs maps, journaler
 per-run state) are **ruled OUT with file:line evidence** — none of
 them can hold 100MB+ given the actual data sizes measured (redb files
