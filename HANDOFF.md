@@ -17,8 +17,8 @@ of check that was missing before and would have caught this.
 
 The user also reported `pii tui` "just opens for a second or two and
 closes". **Investigated, not yet fixed**: `pii tui` is not a real
-interactive TUI today — `crates/pii-tui/src/lib.rs::run_tui` hardcodes
-the prompt to the literal string `"hello"`, has ZERO keyboard/input event
+interactive TUI today — `crates/pii-tui/src/lib.rs`'s `run_tui` function
+hardcodes the prompt to the literal string `"hello"`, has ZERO keyboard/input event
 handling (no `crossterm::event` reference anywhere in the crate), and
 exits automatically the instant that one hardcoded run finishes. Building
 a real interactive TUI (input box, a proper event loop, scrollback, the
