@@ -136,6 +136,29 @@ impl GraphNode for AgentNode {
                 },
                 Err(e) => return Err(e),
             };
+            // B6 (opus review): charge the run's token budget for the model
+            // call that just happened. A graph's declared `max_tokens`
+            // (spec §5.4) used to be parsed and then discarded — every run
+            // got an unlimited budget regardless, so this charge could
+            // never fire. `runs.rs` now constructs the run's `Ctx` with
+            // `Budget::with_tokens(spec.limits.max_tokens)`, so this is the
+            // first real enforcement point: exhaustion routes to the same
+            // `budget` port `max_turns` already uses, not a run failure.
+            let spent = resp.tokens_in.saturating_add(resp.tokens_out);
+            if ctx
+                .budget()
+                .charge(pii_core::BudgetKind::Tokens, spent)
+                .is_err()
+            {
+                return Ok(Outcome::Next {
+                    port: PortName::from("budget"),
+                    value: serde_json::json!({
+                        "error": "max_tokens exceeded",
+                        "turns": turn,
+                        "tokens_spent": spent,
+                    }),
+                });
+            }
             if resp.tool_calls.is_empty() {
                 return Ok(Outcome::Next {
                     port: PortName::from("ok"),

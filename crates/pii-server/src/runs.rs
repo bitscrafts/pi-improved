@@ -28,9 +28,14 @@ pub fn spawn_run(
         run_id: run_id.clone(),
         tx: engine.bus.subscribe_tx(),
     };
+    // B6 (opus review): a graph's declared `[limits] max_tokens` used to be
+    // parsed and then discarded — every run got `Budget::unlimited()`
+    // regardless. `Budget::with_tokens` charges the SAME `Ctx::budget()`
+    // the `agent` node already calls, so a graph that declares
+    // `max_tokens = N` now actually enforces N.
     let ctx = pii_core::Ctx::with_observer_and_cancel(
         root_caps(&engine.cfg.workspace),
-        pii_core::Budget::unlimited(),
+        pii_core::Budget::with_tokens(spec.limits.max_tokens),
         Arc::new(bridge),
         pii_core::TraceCtx {
             run: run_id.clone(),
@@ -92,9 +97,24 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
         run_id: run_id.clone(),
         tx: engine.bus.subscribe_tx(),
     };
+    // B6 (opus review): recover the graph's declared `max_tokens` the same
+    // way `pii_graph::run::resume` does internally (header → graph body →
+    // spec), so a resumed run enforces the same budget a fresh run would
+    // rather than silently reverting to unlimited. Best-effort: if the
+    // lookup fails here, `resume()` below will hit the same error and
+    // report it properly — this path only affects which budget we start
+    // with, not correctness of the resume itself.
+    let max_tokens = engine
+        .store
+        .get_run(&run_id)
+        .ok()
+        .flatten()
+        .and_then(|header| engine.store.get_graph(&header.graph).ok().flatten())
+        .and_then(|bytes| GraphSpec::from_json(&bytes).ok())
+        .map_or(u64::MAX, |spec| spec.limits.max_tokens);
     let ctx = pii_core::Ctx::with_observer_and_cancel(
         root_caps(&engine.cfg.workspace),
-        pii_core::Budget::unlimited(),
+        pii_core::Budget::with_tokens(max_tokens),
         Arc::new(bridge),
         pii_core::TraceCtx {
             run: run_id.clone(),
