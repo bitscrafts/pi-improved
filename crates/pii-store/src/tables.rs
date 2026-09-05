@@ -69,6 +69,10 @@ pub(crate) const TIMER_WHEEL: TableDefinition<'_, (u64, &str), &str> =
 /// Approvals `approval_id` -> encoded record (F5.10).
 pub(crate) const APPROVAL: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("approval");
 
+/// Heal-attempt ledger (S0.1).
+pub(crate) const HEAL_ATTEMPT: TableDefinition<'_, &str, &[u8]> =
+    TableDefinition::new("heal_attempt");
+
 /// Channel cursor + last started run: channel -> encoded `{cursor,run_id}`.
 pub(crate) const CHANNEL_CURSOR: TableDefinition<'_, &str, &[u8]> =
     TableDefinition::new("channel_cursor");

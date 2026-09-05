@@ -127,6 +127,8 @@ pub fn dispatch(
         Method::WorkerReload => crate::daemon::methods::worker_reload(engine, req),
         Method::ApproveList => crate::daemon::methods::approve_list(engine, req),
         Method::ApproveResolve => crate::daemon::methods::approve_resolve(engine, req),
+        Method::HealList => crate::daemon::methods::heal_list(engine, req),
+        Method::HealGet => crate::daemon::methods::heal_get(engine, req),
         Method::CronList => crate::daemon::methods::cron_list(engine, req),
         Method::ChannelList => crate::daemon::methods::channel_list(engine, req),
         Method::MemorySearch => crate::daemon::methods::memory_search(engine, req),

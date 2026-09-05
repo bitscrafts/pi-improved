@@ -192,6 +192,28 @@ fn resolve(args: &mut std::env::ArgsOs, allow: bool) -> ExitCode {
     print_result(Method::ApproveResolve, params)
 }
 
+/// `pii heal ls|show <signature_hash>` (S0.4).
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn cmd_heal(args: &mut std::env::ArgsOs) -> ExitCode {
+    match next_str(args).as_deref() {
+        Some("ls") => print_result(Method::HealList, serde_json::json!({})),
+        Some("show") => {
+            let Some(sig) = next_str(args) else {
+                eprintln!("usage: pii heal show <signature_hash>");
+                return ExitCode::from(2);
+            };
+            print_result(
+                Method::HealGet,
+                serde_json::json!({ "signature_hash": sig }),
+            )
+        }
+        _ => {
+            eprintln!("usage: pii heal {{ls|show <signature_hash>}}");
+            ExitCode::from(2)
+        }
+    }
+}
+
 /// `pii cron ls`.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn cmd_cron(args: &mut std::env::ArgsOs) -> ExitCode {

@@ -137,6 +137,40 @@ pub(crate) fn approve_resolve(engine: &Arc<Engine>, req: &Request) -> Response {
     }
 }
 
+/// `heal.list` (S0.4): every heal-attempt ledger entry.
+pub(crate) fn heal_list(engine: &Arc<Engine>, req: &Request) -> Response {
+    match engine.heals.list_attempts() {
+        Ok(list) => {
+            let v: Vec<serde_json::Value> = list
+                .into_iter()
+                .filter_map(|a| serde_json::to_value(&a).ok())
+                .collect();
+            value_response(req, Some(serde_json::json!(v)), |c, m| err(req, c, m))
+        }
+        Err(e) => err_code(|c, m| err(req, c, m), &e),
+    }
+}
+
+/// `heal.get { signature_hash }` (S0.4): one entry's full attempt history.
+pub(crate) fn heal_get(engine: &Arc<Engine>, req: &Request) -> Response {
+    let Some(sig) = req.params.get("signature_hash").and_then(|v| v.as_str()) else {
+        return err(
+            req,
+            ErrorCode::InvalidParams,
+            "heal.get needs 'signature_hash'",
+        );
+    };
+    match engine.heals.get_attempt(sig) {
+        Ok(Some(a)) => value_response(req, serde_json::to_value(&a).ok(), |c, m| err(req, c, m)),
+        Ok(None) => err(
+            req,
+            ErrorCode::NotFound,
+            "no heal attempt with that signature",
+        ),
+        Err(e) => err_code(|c, m| err(req, c, m), &e),
+    }
+}
+
 /// `cron.list`.
 pub(crate) fn cron_list(engine: &Arc<Engine>, req: &Request) -> Response {
     let Some(ctx) = engine.daemon_ctx() else {

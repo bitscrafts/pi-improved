@@ -1,0 +1,59 @@
+# S0.3 heal-watch: every 30 min run the quality gate; a reproducible failure
+# (fails twice) writes ONE heal_attempt ledger row and suspends on a `gate`
+# node for human acknowledgement. No patching, no FS_WRITE anywhere in this
+# graph (guardrail: heal_detect is read-only detection).
+name = "starter/heal-watch"
+entry = "tick"
+# PROC is the ONLY capability this graph needs or grants — heal_detect must
+# never receive FS_WRITE (guardrail).
+caps = ["proc"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "tick"
+kind = "timer"
+cron = "*/30 * * * *"
+
+[[node]]
+id = "check"
+kind = "heal_detect"
+gate = "quality-gate"
+caps = ["proc"]
+
+[[node]]
+id = "escalate"
+kind = "gate"
+policy = "heal-escalation"
+prompt = "quality-gate failed twice in a row (reproducible). Review the failure, fix it or acknowledge it, then approve/deny the escalation."
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "no-reproducible-failure"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "flake"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "detected"
+to = "escalate"
+kind = "data"

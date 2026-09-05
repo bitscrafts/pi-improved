@@ -11,6 +11,7 @@
 pub mod approval;
 pub mod channel;
 mod codec;
+pub mod heal;
 pub mod mem;
 pub mod timer;
 pub use mem::MemStore;

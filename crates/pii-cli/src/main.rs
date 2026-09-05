@@ -111,6 +111,9 @@ fn main() -> ExitCode {
     if cmd == "approve" {
         return cmd_ctl::cmd_approve(&mut args);
     }
+    if cmd == "heal" {
+        return cmd_ctl::cmd_heal(&mut args);
+    }
     if cmd == "cron" {
         return cmd_ctl::cmd_cron(&mut args);
     }

@@ -64,9 +64,15 @@ pub struct Engine {
     /// Shared approval table (F5.9/F5.10): the `gate` node's decision
     /// source, and `approve.*`'s backing store.
     pub approvals: Arc<pii_store::approval::ApprovalStore>,
+    /// Shared heal ledger (S0.1): the `heal_detect` node's backing store,
+    /// and `heal.*`'s backing store.
+    pub heals: Arc<pii_store::heal::HealStore>,
     /// Shared memory store (F6.7): the `memory` node's backing store, and
     /// `memory.*`'s backing store.
     pub memory: Arc<pii_store::MemStore>,
+    /// Shared supervisor pool (F3.7): filled by `Daemon::build` from
+    /// `[[worker]]` config; the `worker` node's factory holds the same Arc.
+    pub workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
     /// Node registry (built-ins + `agent`).
     pub reg: NodeRegistry,
     /// The model provider.
@@ -120,7 +126,12 @@ impl Engine {
         let approvals = Arc::new(pii_store::approval::ApprovalStore::open(&sibling(
             "approval.redb",
         ))?);
+        let heals = Arc::new(pii_store::heal::HealStore::open(&sibling("heal.redb"))?);
         let memory = Arc::new(pii_store::MemStore::open(&sibling("memory.redb"))?);
+        let workers = Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::<
+            String,
+            pii_worker::Supervisor,
+        >::new()));
         // B1 (opus review): `PII_MODEL=ollama:<model>` now actually
         // constructs a live provider instead of failing `provider_from_spec`
         // (whose only working arm was `scripted:`). The transport is a
@@ -163,14 +174,18 @@ impl Engine {
             provider.clone(),
             bus.subscribe_tx(),
             Arc::clone(&approvals),
+            Arc::clone(&heals),
             Arc::clone(&memory),
+            Arc::clone(&workers),
         );
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
             cfg,
             store,
             approvals,
+            heals,
             memory,
+            workers,
             reg,
             provider,
             tools,
@@ -452,7 +467,9 @@ pub fn registry(
     provider: Arc<dyn ModelProvider>,
     live: tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>,
     approvals: Arc<pii_store::approval::ApprovalStore>,
+    heals: Arc<pii_store::heal::HealStore>,
     memory: Arc<pii_store::MemStore>,
+    workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
@@ -464,8 +481,15 @@ pub fn registry(
         toolset: ToolSet::builtin(cfg.workspace.clone()),
     }));
     reg.register(Arc::new(nodes::gate::GateFactory { approvals }));
+    reg.register(Arc::new(nodes::heal::HealFactory {
+        heals,
+        runner: Arc::new(nodes::heal::CargoXtaskRunner {
+            workspace: cfg.workspace.clone(),
+        }),
+    }));
     reg.register(Arc::new(nodes::memory::MemoryFactory { store: memory }));
     reg.register(Arc::new(nodes::crash::DebugCrashFactory));
+    reg.register(Arc::new(nodes::worker::WorkerFactory { pool: workers }));
     reg
 }
 
@@ -487,6 +511,12 @@ pub fn registry(
 #[must_use]
 pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
+    reg.register(Arc::new(nodes::worker::WorkerFactory {
+        pool: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::<
+            String,
+            pii_worker::Supervisor,
+        >::new())),
+    }));
     reg.register(Arc::new(agent::AgentFactory {
         provider: Arc::new(pii_model::ScriptedProvider::empty()),
         workspace: workspace.to_path_buf(),
@@ -522,6 +552,25 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
             {
                 eprintln!(
                     "lint_registry: memory unavailable (mem store: {e}); 'memory' nodes will fail lint as unknown kind"
+                );
+            }
+        }
+    }
+    // S0.2: `heal_detect` is a server-owned kind like `gate`/`memory`; the
+    // lint registry registers it with a cargo-xtask runner so
+    // `graphs/starter/heal-watch.toml` lints (lint never executes nodes).
+    match pii_store::heal::HealStore::open(&runtime_dir.join("lint-heal.redb")) {
+        Ok(heals) => reg.register(Arc::new(nodes::heal::HealFactory {
+            heals: Arc::new(heals),
+            runner: Arc::new(nodes::heal::CargoXtaskRunner {
+                workspace: workspace.to_path_buf(),
+            }),
+        })),
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!(
+                    "lint_registry: heal_detect unavailable (heal store: {e}); 'heal_detect' nodes will fail lint as unknown kind"
                 );
             }
         }

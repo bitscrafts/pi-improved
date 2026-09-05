@@ -7,10 +7,12 @@
 
 mod bench;
 mod deps;
+mod doc_drift;
 mod lint_files;
 mod memory_eval;
 pub mod net_check;
 mod proto_gen;
+mod reachability;
 mod rss_gate;
 
 use std::process::ExitCode;
@@ -49,6 +51,16 @@ fn main() -> ExitCode {
     match cmd.as_deref() {
         Some("deps-check") => report(deps::run()),
         Some("net-check") => report(net_check::run()),
+        Some("reachability-check") => report(reachability::run(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap_or(std::path::Path::new(".")),
+        )),
+        Some("doc-drift-check") => report(doc_drift::run(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap_or(std::path::Path::new(".")),
+        )),
         Some("rss-gate") => match parse_rss_gate(&rest) {
             Ok((secs, interval, max_mb, runs)) => match rss_gate::run(secs, interval, max_mb, runs)
             {

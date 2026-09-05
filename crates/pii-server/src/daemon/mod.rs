@@ -58,7 +58,10 @@ impl Daemon {
             clock: Arc::clone(&clock),
         }));
 
-        let mut workers = BTreeMap::new();
+        // Populate the engine-owned worker pool (F3.7 worker node + M3's
+        // non-test caller for Supervisor::invoke). The node factory holds
+        // the same Arc, so workers configured here are reachable from graphs.
+        let workers = Arc::clone(&engine.workers);
         for w in &cfg.worker {
             let spec = pii_worker::WorkerSpec {
                 name: w.name.clone(),
@@ -75,7 +78,7 @@ impl Daemon {
             // Best-effort: a worker that fails to start is visible as
             // `Failed` on `worker.list`, not a fatal daemon-start error.
             let _ = sup.start(&spawn_ctx());
-            workers.insert(w.name.clone(), sup);
+            workers.lock().insert(w.name.clone(), sup);
         }
 
         let mut channels = BTreeMap::new();
@@ -117,7 +120,7 @@ impl Daemon {
 
         let ctx = Arc::new(DaemonContext {
             net,
-            workers: Mutex::new(workers),
+            workers,
             channels: Mutex::new(channels),
             channel_store,
             cron: Mutex::new(cron),

@@ -84,6 +84,12 @@ pub enum Method {
     /// Resolve an approval (allow/deny).
     #[serde(rename = "approve.resolve")]
     ApproveResolve,
+    /// List heal-attempt ledger entries (S0.4).
+    #[serde(rename = "heal.list")]
+    HealList,
+    /// Fetch one heal-attempt entry by signature hash (S0.4).
+    #[serde(rename = "heal.get")]
+    HealGet,
     /// List cron entries.
     #[serde(rename = "cron.list")]
     CronList,
@@ -133,6 +139,8 @@ impl std::fmt::Display for Method {
             Self::WorkerReload => "worker.reload",
             Self::ApproveList => "approve.list",
             Self::ApproveResolve => "approve.resolve",
+            Self::HealList => "heal.list",
+            Self::HealGet => "heal.get",
             Self::CronList => "cron.list",
             Self::ChannelList => "channel.list",
             Self::MemorySearch => "memory.search",
@@ -174,6 +182,8 @@ impl std::str::FromStr for Method {
             "worker.reload" => Self::WorkerReload,
             "approve.list" => Self::ApproveList,
             "approve.resolve" => Self::ApproveResolve,
+            "heal.list" => Self::HealList,
+            "heal.get" => Self::HealGet,
             "cron.list" => Self::CronList,
             "channel.list" => Self::ChannelList,
             "memory.search" => Self::MemorySearch,
