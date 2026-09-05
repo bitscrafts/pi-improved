@@ -81,6 +81,17 @@ pub struct Engine {
     pub tools: ToolSet,
     /// Event bus.
     pub bus: Arc<Bus>,
+    /// The Ollama host a live `ollama:` provider's `NetService` was scoped
+    /// to (F1/B1 follow-up, 2026-09-05) — `None` for `scripted:`. `runs.rs`
+    /// uses this to grant a run's `CapSet` exactly the `NET` capability
+    /// (and only that host) an `agent` node needs to actually reach the
+    /// model: `Engine::new` wired the transport's own egress grant
+    /// correctly (B1), but no RUN ever received `CapKind::NET` on its own
+    /// caps, so `dial()`'s `ctx.net()` gate denied every live-model call
+    /// before it reached the (correctly configured) transport. This field
+    /// closes that gap without widening any run's `NET` scope beyond the
+    /// single host the daemon was actually configured to call.
+    pub ollama_net_host: Option<String>,
     /// Server start time.
     pub started_at: Instant,
     sessions: parking_lot::Mutex<BTreeMap<String, Session>>,
@@ -143,6 +154,7 @@ impl Engine {
         // net-check` enforces. `scripted:` specs (the common case in
         // tests) never touch this — `resolve_with_transport` only builds
         // the transport lazily, inside the `ollama:` branch.
+        let mut ollama_net_host: Option<String> = None;
         let provider = if cfg.model.starts_with("ollama:") {
             let ollama_host = pii_core::env_var("OLLAMA_HOST")
                 .unwrap_or_else(|| String::from(pii_model::ollama::DEFAULT_OLLAMA_HOST));
@@ -153,6 +165,7 @@ impl Engine {
                 .next()
                 .unwrap_or("127.0.0.1")
                 .to_owned();
+            ollama_net_host = Some(host_only.clone());
             let mut grants = pii_net::grant::StaticGrants::default();
             grants.insert(
                 "*",
@@ -190,6 +203,7 @@ impl Engine {
             provider,
             tools,
             bus,
+            ollama_net_host,
             started_at: Instant::now(),
             sessions: parking_lot::Mutex::new(BTreeMap::new()),
             runs: parking_lot::Mutex::new(BTreeMap::new()),

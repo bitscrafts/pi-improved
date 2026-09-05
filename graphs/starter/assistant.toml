@@ -1,6 +1,6 @@
 name = "starter/assistant"
 entry = "agent"
-caps = ["fs_read", "fs_write", "proc"]
+caps = ["fs_read", "fs_write", "proc", "net"]
 
 [limits]
 max_steps = 1000
@@ -9,6 +9,12 @@ max_wall_ms = 600000
 [[node]]
 id = "agent"
 kind = "agent"
+# NET (2026-09-05 B1 follow-up): the node's own `caps` defaults to the
+# kind's `required_caps()` (fs_read/fs_write/proc) when unset, which never
+# includes net — so a graph declaring `net` at the top level alone still
+# can't reach it; the node itself must ALSO opt in explicitly. This is the
+# live-model form: a live `ollama:` provider needs this node to dial out.
+caps = ["fs_read", "fs_write", "proc", "net"]
 memory = { enabled = true, top_k = 6 }
 tools = ["fs_read"]
 max_turns = 4

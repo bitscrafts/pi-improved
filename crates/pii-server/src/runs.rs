@@ -48,7 +48,11 @@ pub fn spawn_run(
     // the `agent` node already calls, so a graph that declares
     // `max_tokens = N` now actually enforces N.
     let ctx = pii_core::Ctx::with_observer_and_cancel(
-        run_caps(&engine.cfg.workspace, scope_root.as_deref()),
+        run_caps(
+            &engine.cfg.workspace,
+            scope_root.as_deref(),
+            engine.ollama_net_host.as_deref(),
+        ),
         pii_core::Budget::with_tokens(spec.limits.max_tokens),
         Arc::new(bridge),
         pii_core::TraceCtx {
@@ -127,7 +131,11 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
         .and_then(|bytes| GraphSpec::from_json(&bytes).ok())
         .map_or(u64::MAX, |spec| spec.limits.max_tokens);
     let ctx = pii_core::Ctx::with_observer_and_cancel(
-        run_caps(&engine.cfg.workspace, None),
+        run_caps(
+            &engine.cfg.workspace,
+            None,
+            engine.ollama_net_host.as_deref(),
+        ),
         pii_core::Budget::with_tokens(max_tokens),
         Arc::new(bridge),
         pii_core::TraceCtx {
@@ -157,11 +165,24 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
 /// Root capabilities for a server-side run: fs read everything (or the
 /// workspace for scoped runs), fs write scoped to the workspace — or to
 /// `scope_root` alone when one is given (S1.2 heal confinement) — and the
-/// `bash` tool's `/bin/sh` argv0 granted (F1, opus review). Tools further
-/// attenuate per node via `node_capset`.
-fn run_caps(workspace: &std::path::Path, scope_root: Option<&std::path::Path>) -> pii_core::CapSet {
+/// `bash` tool's `/bin/sh` argv0 granted (F1, opus review). `net_host`
+/// (2026-09-05 follow-up to B1) grants exactly `CapKind::NET` scoped to
+/// that one host when the engine is running a live `ollama:` provider —
+/// without this, `dial()`'s `ctx.net()` gate denies every agent-node model
+/// call before it reaches the (correctly configured) `NetService`/
+/// `StaticGrants` chokepoint, since a run's OWN caps never carried `NET`
+/// even though the transport's egress grant was wired correctly by
+/// `Engine::new`. Tools further attenuate per node via `node_capset`.
+fn run_caps(
+    workspace: &std::path::Path,
+    scope_root: Option<&std::path::Path>,
+    net_host: Option<&str>,
+) -> pii_core::CapSet {
     let mut caps = pii_core::CapSet::empty();
     caps.kinds = pii_core::CapKind::FS_READ | pii_core::CapKind::FS_WRITE | pii_core::CapKind::PROC;
+    if net_host.is_some() {
+        caps.kinds |= pii_core::CapKind::NET;
+    }
     caps.fs_read = scope_root.map_or_else(
         || pii_core::PathScope::new(vec![std::path::PathBuf::from("/")]),
         // A scoped (heal) run reads its worktree plus the repo read-only.
@@ -171,6 +192,9 @@ fn run_caps(workspace: &std::path::Path, scope_root: Option<&std::path::Path>) -
         scope_root.map_or_else(|| workspace.to_path_buf(), std::path::Path::to_path_buf),
     ]);
     caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
+    if let Some(host) = net_host {
+        caps.net_hosts = pii_core::StringScope::new(vec![host.to_owned()]);
+    }
     caps
 }
 
@@ -227,7 +251,7 @@ mod tests {
             .prefix("heal-caps-")
             .tempdir_in("/tmp")
             .unwrap();
-        let ctx = ctx_for(run_caps(ws.path(), None));
+        let ctx = ctx_for(run_caps(ws.path(), None, None));
         // fs_write allows workspace paths…
         let ws_spec = ws.path().join("specs/x.md");
         assert!(ctx.fs().unwrap().write(&ws_spec, b"").is_ok());
@@ -247,7 +271,7 @@ mod tests {
             .unwrap();
         let wt = ws.path().join("_tmp/heal-worktrees/s1");
         std::fs::create_dir_all(&wt).unwrap();
-        let ctx = ctx_for(run_caps(ws.path(), Some(&wt)));
+        let ctx = ctx_for(run_caps(ws.path(), Some(&wt), None));
         // The worktree is writable…
         assert!(ctx.fs().unwrap().write(&wt.join("x.rs"), b"").is_ok());
         // …but the main repo's specs/ is NOT (the mechanical guardrail:
@@ -258,6 +282,20 @@ mod tests {
             .unwrap()
             .write(&ws.path().join("specs/08-x.md"), b"");
         assert!(matches!(spec_write, Err(pii_abi::PiiError::Denied(_))));
+    }
+
+    #[test]
+    fn run_caps_grants_net_only_when_host_given() {
+        let ws = Builder::new()
+            .prefix("heal-caps-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        // No host: NET must not be in the capability bitset at all.
+        let no_net = run_caps(ws.path(), None, None);
+        assert!(!no_net.kinds.contains(pii_core::CapKind::NET));
+        // A host: NET is granted, scoped to exactly that host.
+        let with_net = run_caps(ws.path(), None, Some("127.0.0.1"));
+        assert!(with_net.kinds.contains(pii_core::CapKind::NET));
     }
 
     #[test]
