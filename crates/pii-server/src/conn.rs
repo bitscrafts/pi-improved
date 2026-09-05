@@ -2,7 +2,9 @@
 //! 100 → close), method-before-hello = code 101 → close. One writer task so
 //! responses and notifications never interleave mid-line.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
@@ -16,6 +18,96 @@ use pii_proto::{
 
 use crate::Engine;
 use crate::dispatch;
+
+/// B5 (opus review): a connection with no traffic for this long is dropped
+/// so a client that vanishes without a clean close (crash, `kill -9`, a
+/// dropped `Client` whose abort hasn't been scheduled yet) does not pin
+/// this task + its `BufReader` + its writer task + its mpsc channel
+/// forever. Chosen well above any single RPC's expected round-trip so it
+/// never fires on a live, idle-but-connected client (e.g. `pii tui`
+/// between commands) under any existing test.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// One connection's live `event.subscribe` tasks (M1, opus review).
+///
+/// Cancelling a subscription (`event.unsubscribe`, or the connection's own
+/// teardown) sends on the stored `oneshot` sender, which the subscriber
+/// task races in its `select!` loop and exits on. This is what makes
+/// `event.unsubscribe` a real cancellation instead of an ack-only no-op,
+/// and what makes connection teardown release every subscriber task
+/// instead of leaving them running until the process exits.
+#[derive(Default)]
+pub struct SubscriptionRegistry {
+    inner: std::sync::Mutex<
+        HashMap<
+            String,
+            (
+                tokio::sync::oneshot::Sender<()>,
+                tokio::task::JoinHandle<()>,
+            ),
+        >,
+    >,
+}
+
+impl SubscriptionRegistry {
+    /// Number of live subscriptions on this connection (enforces
+    /// `dispatch::MAX_SUBSCRIPTIONS_PER_CONN`).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
+    /// True when no subscriptions are live.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Registers a new subscription's cancel handle and task.
+    pub fn insert(
+        &self,
+        sub_id: String,
+        cancel: tokio::sync::oneshot::Sender<()>,
+        handle: tokio::task::JoinHandle<()>,
+    ) {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(sub_id, (cancel, handle));
+    }
+
+    /// Cancels one subscription by id. Returns `true` if it existed.
+    pub fn cancel(&self, sub_id: &str) -> bool {
+        let entry = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(sub_id);
+        match entry {
+            Some((tx, _handle)) => {
+                let _ = tx.send(());
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Cancels every live subscription (connection teardown).
+    fn cancel_all(&self) {
+        let entries: Vec<_> = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain()
+            .collect();
+        for (_, (tx, _handle)) in entries {
+            let _ = tx.send(());
+        }
+    }
+}
 
 /// How the connection arrived (F2.6/F2.9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +139,23 @@ where
             }
         }
     });
+    let subs = SubscriptionRegistry::default();
     let mut lines = BufReader::new(r).lines();
     let mut helloed = false;
-    while let Ok(Some(line)) = lines.next_line().await {
-        match parse_frame(&line) {
+    loop {
+        // B5 (opus review): bound how long a connection with no traffic can
+        // pin this task. A live client always has *something* pending
+        // within IDLE_TIMEOUT (a request or, for `pii tui`-style holders,
+        // periodic protocol traffic); a vanished one (crash, `kill -9`,
+        // an abort that hasn't unwound yet) now gets reaped instead of
+        // parking the reader + writer task + mpsc channel forever.
+        let next = match tokio::time::timeout(IDLE_TIMEOUT, lines.next_line()).await {
+            Ok(Ok(Some(line))) => line,
+            Ok(Ok(None)) => break, // EOF — client closed cleanly.
+            Ok(Err(_)) => break,   // read error — treat like EOF.
+            Err(_) => break,       // idle timeout — reap the connection.
+        };
+        match parse_frame(&next) {
             Ok(Envelope::Request(req)) => {
                 if !helloed && req.method != Method::SysHello {
                     let _ = write_resp(
@@ -79,7 +184,7 @@ where
                         }
                     }
                 } else {
-                    let resp = dispatch::dispatch(&engine, &req, peer, &wtx);
+                    let resp = dispatch::dispatch(&engine, &req, peer, &wtx, &subs);
                     if write_resp(&wtx, &resp).is_err() {
                         break;
                     }
@@ -92,6 +197,10 @@ where
             }
         }
     }
+    // M1 (opus review): teardown must release every subscriber task this
+    // connection ever created, not just the ones the client explicitly
+    // unsubscribed — otherwise a crash/idle-timeout/EOF path still leaks.
+    subs.cancel_all();
 }
 
 fn write_resp(tx: &mpsc::UnboundedSender<String>, resp: &Response) -> Result<(), ()> {

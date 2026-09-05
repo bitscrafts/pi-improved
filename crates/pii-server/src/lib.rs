@@ -14,6 +14,7 @@ pub mod dispatch;
 pub mod loopback;
 pub mod nodes;
 pub mod runs;
+pub mod subscribe;
 pub mod tool;
 pub mod uds;
 
