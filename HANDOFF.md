@@ -1,6 +1,6 @@
 # Pii — Session Handoff
 
-**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate GREEN. rss-gate STILL FAILS (root cause found: `tokio::task::spawn_blocking` thread-per-run churn, not yet fixed — see below). Phase 3.6 self-healing foundation: Slice -1 (reachability-check + doc-drift-check xtask gates) and Slice 0 (heal_detect node + HealStore ledger + heal-watch cron graph + `pii heal ls/show` CLI) IMPLEMENTED, quality-gate GREEN, committed (`615ac35`).**
+**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate GREEN. rss-gate STILL FAILS (root cause: tokio blocking-pool growth under soak, ~247 blocking threads; fix deferred by user — see section below). Phase 3.6 self-healing: Slice -1 (reachability-check + doc-drift-check gates), Slice 0 (heal_detect node + HealStore ledger + heal-watch cron graph + `pii heal ls/show` CLI) COMPLETE, quality-gate GREEN. Slice 1 local-only (disposable-worktree repair with PathScope confinement) SPEC WRITTEN (`specs/08-...`), DeepSeek/pidag implementation IN FLIGHT.**
 
 ## Self-healing module — Slice -1 + Slice 0 DONE (2026-09-05)
 Spec: `specs/07-self-healing-slice-neg1-and-0.md` (authored this session,
