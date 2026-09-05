@@ -1,66 +1,119 @@
 # Pii — Session Handoff
 
-**Status: YELLOW (PAUSED) — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 ACCEPTED AT 12/13 EC; OPUS REVIEW DONE (FAIL, 6 blockers); PHASE 3.5 MVP HARDENING IN PROGRESS — B5 partially fixed (client-side only, committed `1a0ccf6`), B1/B2/B3/B6/M1 not started. PAUSED for the night — no live processes, clarify() call timed out with no user response, defaulted to safe pause per policy.**
+**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate (fmt/clippy -D warnings/test) GREEN, lint-files/deps-check/net-check GREEN. rss-gate (the leak EC) STILL FAILS — but the fd/connection leak (the original B5 finding) IS fixed (fd count flat at 19 under load, verified); RSS still grows (~45MB slope in 90s) via a DIFFERENT, not-yet-diagnosed mechanism. One EC open, root cause not yet found.**
 
-## PHASE 3.5 MVP HARDENING — IN PROGRESS (paused, resume here)
-Spec: `specs/06-phase3-mvp-hardening.md` (planner-authored, covers
-B1/B2/B3/B5/B6/M1 from the opus review, explicitly excludes B4/Discord/
-TLS). Launcher: `_tmp/phase3/launch-phase35-deepseek.sh`. Worker:
-`deepseek/deepseek-v4-flash` via pidag (`.pidag/config.toml` already
-points there, ollama-cloud removed).
+## rss-gate — STATUS CHANGED, NOT YET GREEN (2026-09-05)
+**Good news: the original leak (leaked UDS connection per run, B5) is
+confirmed FIXED.** Verified directly: `ls /proc/<daemon-pid>/fd | wc -l`
+stayed flat at 19 across a 90s/3000-run soak (was previously unbounded
+before B5's `Client::shutdown()`+`Drop` + server idle-timeout + M1's
+real `event.unsubscribe`).
 
-**Progress so far (one ~1hr DeepSeek/pidag run, then manually stopped
-+ verified + committed by the orchestrator):**
-- **B5 (connection leak) — PARTIALLY fixed, committed `1a0ccf6`**:
-  `pii-proto/src/client.rs::Client` gained `shutdown()` (aborts both
-  reader/writer task handles) + a `Drop` impl as a backstop. Callers
-  (`cmd_ctl.rs`, `cmd_oneshot.rs`, `cmd_soak.rs`) now call
-  `client.shutdown()` explicitly. Build/clippy/test/fmt all PASS.
-  **BUT the server side was never touched** — `conn.rs`/`cmd_daemon.rs`
-  still have no idle timeout, no connection cap. Verified with a fast
-  gate (`--secs 60 --interval 5 --runs 2000`): **still FAILS**, now on
-  **slope** (`slope_kb=30168 >= 2048`, was previously failing on max).
-  The client fix alone did not close the leak — confirms the opus
-  review's read that BOTH sides need a fix. **Next**: add the
-  server-side idle timeout/conn cap the spec already asks for (B5
-  section), then re-verify with the fast gate before the full 300s one.
-- **B1, B2, B3, B6, M1 — NOT STARTED.**
+**Bad news: RSS still grows** — but now via a DIFFERENT mechanism, since
+fd count is flat. Measured: 18MB → 61MB in 40s (90s/3000-run fast gate),
+slope 45MB (cap is 2MB). The connection-leak theory from the opus review
+(B5) does NOT explain this — something else retains memory per run,
+with a stable fd count. **Full 300s/3000-run gate**: `max_kb=115324`
+(115MB, worse than the original 60-70MB finding pre-B5-fix — likely
+because runs now complete faster/more of them fit in the window since
+the daemon isn't stalling on stuck connections).
 
-**Process note (repeat pattern, third time seeing this)**: pidag's
-baseline-then-implement-then-validate cycle re-runs the FULL 300s
-rss-gate as part of validation on every iteration when it's one of the
-spec's exit criteria — this alone eats 6+ min per cycle before/after
-any real work, same as it did on part4. Consider: (a) drop rss-gate
-from `06-phase3-mvp-hardening.md`'s exit criteria and verify it
-manually with the fast-gate params only at the very end, or (b) accept
-the slow cycle and budget for it (each DeepSeek+pidag run this pass
-took ~50-60 min real time before the orchestrator stopped it to check
-progress). The user has twice said "too much" / "more than an hour" —
-prefer (a) next time, or run shorter, more frequent stop/checkpoints.
+**Candidates NOT yet ruled out** (from the opus review's B5 secondary
+note + fresh reasoning this session):
+1. `pii-server/src/bus.rs:27` — the `Bus`'s `broadcast::channel(4096)`
+   ring retains up to 4096 `SeqEvent`s (with full `NodeFinished.value`
+   JSON) even with zero live receivers (tokio broadcast ring semantics).
+   3000 runs × several events/run could exceed 4096 many times over —
+   worth checking if events beyond capacity are actually being dropped
+   (they should be, ring is bounded) or if something else holds a
+   reference preventing recycling.
+2. `pii-store` (`crates/pii-store/src/lib.rs:41`, flagged by opus as a
+   MINOR: "redb opened with no cache bound") — redb's internal
+   read/write cache could be growing with journal writes; store file
+   itself is only 2.5MB though, so this seems unlikely to be 45-100MB
+   alone, but not ruled out.
+3. `Engine.sessions`/`Engine.runs` maps — `runs` map should be emptied
+   by `unregister_run` (already fixed, pre-dates this session); `sessions`
+   map is NOT touched by `run.start`/`pii soak` (which uses `run.start`,
+   not `session.prompt`), so should stay empty — but not directly
+   verified this session.
+4. Something inside `pii_graph::run_with_sink`/the journaler holding
+   per-run state longer than expected (blackboard, journal snapshot
+   buffers) — not investigated this session.
 
-**User was asked how to proceed (keep going with DeepSeek / pause /
-orchestrator does it directly / just finish B5) via `clarify()` —
-timed out with no response.** Defaulted to the safest option: paused,
-everything clean-committed, no processes left running. **Ask the user
-this again at the start of the next session before resuming.**
+**Method to continue diagnosing** (fast iteration, ~1 min/cycle):
+`cargo xtask rss-gate --secs 60 --interval 5 --max-mb 500 --runs 2000`
+(high cap so it completes and prints real numbers instead of failing
+fast) + manually sample `ls /proc/<pid>/fd | wc -l` and
+`grep VmRSS /proc/<pid>/status` at t=0/20/40/60s in parallel shell
+calls. fd count flat + RSS climbing = definitely NOT a connection leak,
+narrows to bus/store/session/journal memory retention. Consider adding
+a temporary `jemalloc`/`heaptrack` profile or an in-process periodic
+`eprintln!` of `Bus` receiver-count/buffered-len (`tokio::sync::broadcast`
+doesn't expose queue depth directly — may need `len()` on a fresh
+subscriber's receiver, or instrument `Bus::broadcast`/`BridgeObserver::event`
+with a counter of sends vs an estimate of live subscriber count).
 
-## ⚠️ OPEN ITEM — rss-gate EC (13th of part4): daemon RSS over budget under soak
-**User decision (2026-09-05): accept part4 at 12/13 now; fix later.** The
-gate `cargo xtask rss-gate --secs 300 --interval 10 --max-mb 50 --runs
-3000` fails: daemon RSS peaks ~70MB (> 50MB cap) at high run counts
-(~26KB retained per completed run in memory; baseline ~17-19MB; slope
-0 so NOT a leak — it plateaus after soak). Store files are tiny (1.9MB)
-so it is not disk/mmap growth. One per-run holder WAS found and fixed:
-`Engine::unregister_run()` now releases `RunHandle`s at terminal
-(commit `11fbe73`; the `runs` map was growing unboundedly) — but that
-was not the dominant holder (~71MB persisted at 2000 runs). **Remaining
-suspects for the next session**: session-state map retention per run,
-bus/event history per run, journal buffers, or per-run tokio task
-state. Verification loop is slow (each gate run = 300s + soak ≈ 6 min);
-use `--secs 60 --interval 5 --runs 2000` for fast iteration (~1 min)
-and only the full 300s form for the final EC pass. Do NOT weaken the
-gate thresholds (spec guardrail). This was the top finding to carry
-into the Opus review — the reviewer should see it.
+## PHASE 3.5 MVP HARDENING — 5 OF 6 BLOCKERS FULLY DONE, B5 PARTIALLY (fd leak fixed, RSS growth open)
+Spec: `specs/06-phase3-mvp-hardening.md`. All implemented DIRECTLY by
+the orchestrator (not DeepSeek/pidag — after ~1hr of DeepSeek/pidag churn
+on B5 alone with limited progress, user said "do it and proceed" and the
+orchestrator hand-implemented the rest for speed and precision). Commits:
+- `1a0ccf6` — B5 client-side (from earlier DeepSeek attempt, partial)
+- `3e2f7f4` — B5 server-side idle timeout (300s/5min) + M1 real
+  `event.unsubscribe` cancellation + 32-subscription cap; `subscribe.rs`
+  split out of `dispatch.rs` for the 450-line cap
+- `0dd00cf` — B2 `load_toml_with_registry()` (server's real registry now
+  used for graph execution, not just pii-graph's builtin 4-5 kinds) + B3
+  de-hardcoded lint scratch paths (`lint_registry()` now takes an
+  explicit `runtime_dir` param derived from the caller's store path,
+  not a literal `/projects/pi-improved/...` string)
+- `a73f3ea` — B6 `Budget::with_tokens(spec.limits.max_tokens)` wired
+  into `spawn_run`/`spawn_resume` (was `Budget::unlimited()` always);
+  `agent.rs` charges tokens per model call, routes exhaustion to the
+  existing `budget` port (same mechanism `max_turns` already used)
+- `28c2836` — B1 `pii_model::resolve_with_transport()` dispatches
+  `ollama:` through the (previously correct but uncalled)
+  `ollama::provider_from_env`; `Engine::new` builds a dedicated
+  `pii-net::NetService` scoped to a single grant for the configured
+  Ollama host when `PII_MODEL` starts with `ollama:`. New tests:
+  `provider_from_spec_dispatches_ollama` (pii-model unit),
+  `resolve_with_transport_dispatches_ollama` +
+  `_passes_through_scripted` (pii-model integration, FakeHttpServer)
+- `bf2e766` — fixed 7 `-D warnings`-only clippy lints introduced above
+  (duration_suboptimal_units, type_complexity, disallowed_types
+  std::sync::Mutex→parking_lot::Mutex, match_same_arms→let-else,
+  too_long_first_doc_paragraph×2, unnested_or_patterns)
+
+**Verified GREEN**: `cargo build --workspace --all-targets`,
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets --
+-D warnings` (the ACTUAL quality-gate.sh clippy invocation — stricter
+than plain `cargo clippy`), `cargo test --workspace` (all pass, 0
+FAILED across every crate), `cargo xtask lint-files` (0 hard errors,
+3 pre-existing warn-level files unrelated to this work), `cargo xtask
+deps-check`, `cargo xtask net-check` (pii-net remains the ONLY
+socket-opening crate — B1's NetService construction in pii-server
+does not violate this).
+
+**NOT green**: `cargo xtask rss-gate` — see above, root cause not
+found this session. This is the 13th/last EC of the original part4
+spec AND effectively re-surfaces as this spec's own EC too.
+
+## NEXT STEPS (for whoever picks this up)
+1. Diagnose the RSS growth with fd count ruled out — see "Method to
+   continue diagnosing" above. Fastest path is probably instrumenting
+   `Bus`/journal/session code with periodic size counters rather than
+   guessing further.
+2. Once found and fixed, re-run the FULL `cargo xtask rss-gate --secs
+   300 --interval 10 --max-mb 50 --runs 3000` (only at the very end —
+   iterate with the fast form first, per this session's hard-learned
+   lesson about 6-minute-per-cycle waits).
+3. Commit, update this HANDOFF, and Phase 3 + 3.5 will be genuinely
+   complete (13/13 + all opus blockers closed).
+4. After that: the MVP acceptance criteria from the opus review's
+   "Part 2 — Path to an MVP" section (10 machine-checkable criteria,
+   `_tmp/phase3-opus-review.md`) become the next real milestone —
+   B1-B6 were prerequisites for those, not the finish line themselves.
 
 ## PHASE 3 PART 4 — COMPLETE AS ACCEPTED (12/13 EC)
 `specs/05-phase3-assistant-gateway-part4.md` (W5 daemon lifecycle +
