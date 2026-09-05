@@ -1,6 +1,46 @@
 # Pii — Session Handoff
 
-**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate GREEN. rss-gate STILL FAILS (root cause: tokio blocking-pool growth under soak, ~247 blocking threads; fix deferred by user — see section below). Phase 3.6 self-healing: Slice -1 (reachability-check + doc-drift-check gates), Slice 0 (heal_detect node + HealStore ledger + heal-watch cron graph + `pii heal ls/show` CLI) COMPLETE, quality-gate GREEN. Slice 1 local-only (disposable-worktree repair with PathScope confinement) SPEC WRITTEN (`specs/08-...`), DeepSeek/pidag implementation IN FLIGHT.**
+**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate GREEN. rss-gate STILL FAILS (root cause: tokio blocking-pool growth under soak, ~247 blocking threads; fix deferred by user — see section below). Phase 3.6 self-healing: Slice -1 (reachability/doc-drift gates), Slice 0 (heal_detect + HealStore + heal-watch + heal CLI) AND Slice 1 (local-only worktree repair with PathScope confinement) COMPLETE — scripted e2e proven, quality-gate GREEN. Next: MVP review with user.**
+
+## Self-healing module — Slice 1 (local-only worktree repair) DONE (2026-09-05)
+Spec: `specs/08-self-healing-slice1-local-worktree.md`. Implemented by the
+orchestrator (the DeepSeek/pidag dispatch produced the three xtask
+modules then hit its 50-iteration budget; the load-bearing server work +
+graph + e2e were done directly, commit `691beae`). Scripted end-to-end
+PROVEN — full transcript at `_tmp/phase3/slice1-e2e-transcript.md`:
+heal-seed (deterministic break, reproduce-checked, 24h rate-limited) →
+run.start with scope_root → probe (tool bash runs the seeded test in the
+WORKTREE; compiler file:line) → fix (agent with fs/edit tools ONLY, no
+bash; ctx fs_write PathScope = the worktree) → retest green → summarize
+(git diff) → escalate (gate suspends; human `pii approve allow`) → run
+succeeded → heal-collect (revert-type repair verified pristine) →
+heal-prune (mv to trash). Main tree untouched throughout.
+
+**Three engine bugs found and fixed while driving the e2e** (these affect
+more than the heal feature — verify-fix and every starter route now
+behave as their specs always said):
+- `build_node_input` wrapped every inbound payload keyed by source node
+  id, so a single-source-fed route/transform read `$.payload.exit_code`
+  as null and route eq-rules NEVER matched (catch-all always taken).
+  Fix: spec-single-inbound nodes get the value directly; spec-multi-
+  inbound joins keep the source-keyed map (diamond any:cancel tests
+  still green — the contract is preserved).
+- `RouteNode` emitted only the routed-on value (the exit_code number),
+  discarding the test output the fix agent needs. Fix: full routed
+  payload travels on the chosen port (F6.2 feedback shape).
+- `start_run` (run.start RPC) documented input as "the graph's run
+  input" but never forwarded it (extra_input=None). Now forwards it —
+  parameterised graphs receive test_command/worktree/scope_root.
+Also: heal-seed sig is now deterministic blake3(HEAD,target) so the 24h
+rate limit is actually exercisable (was pid+nanos: dead code).
+
+**Known follow-up (recorded, not built)**: `spawn_resume` rebuilds caps
+from the workspace, not the persisted scope — a RESUME of a scoped run
+continues with workspace-scoped caps. Safe for heal-fix because nothing
+writes after its escalate gate (allow/deny → done transforms only), but
+the invariant "scoped runs resume scoped" needs the scope persisted in
+the run header before any future slice writes post-gate. Also open (opus
+recorded): `max_model_calls` budget dimension does not exist yet.
 
 ## Self-healing module — Slice -1 + Slice 0 DONE (2026-09-05)
 Spec: `specs/07-self-healing-slice-neg1-and-0.md` (authored this session,
