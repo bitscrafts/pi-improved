@@ -69,16 +69,28 @@ User directive (2026-09-04, part4-gated): "at the part 4 end, again
 lets use opus to do a deep analysis of the implementation, again with
 the data in the _docs/06-research, this time it should use sonnet-5
 and actively fix the faults! then ask opus a path to a mvp as our
-first delivery." Two deliverables:
-1. **Deep analysis** of the full implementation against
-   `_docs/06-research/` (the spec-of-record), with faults ACTIVELY
-   FIXED (not just reported — differs from the Phase 1/2 opus reviews).
-   Follow the established review pattern: `_tmp/phase2-opus-review.md`
-   is the template (BLOCKER/MAJOR/MINOR taxonomy, verdict line).
-   Carry the rss-gate open item in as a candidate finding.
-2. **MVP path**: ask opus to define the smallest first delivery
-   ("path to a mvp as our first delivery") — distinct from "Phase 3
-   complete", likely a subset/repackaging of what exists.
+first delivery." **User resolved the cost conflict (2026-09-05):
+"Opus analysis ONLY (one read-only review pass vs _docs/06-research),
+faults fixed afterwards via DeepSeek workers (cheap tier)."** Two
+deliverables:
+1. **Deep analysis**: ONE read-only opus pass against
+   `_docs/06-research/`, following the `_tmp/phase2-opus-review.md`
+   template (BLOCKER/MAJOR/MINOR/NIT + verdict). Report to
+   `_tmp/phase3-opus-review.md`. Brief is ready:
+   `_tmp/phase3/opus-review-brief.md`. Carry the rss-gate open item in
+   as a candidate finding (verify from code, don't trust the handoff).
+2. **Faults fixed afterward via DeepSeek workers** (NOT sonnet — per
+   the user's resolution above).
+3. **MVP path**: opus also defines the smallest first delivery
+   ("path to a mvp as our first delivery").
+
+**BLOCKED on the Anthropic session cap** — user confirmed 2026-09-05
+~01:50 UTC the Anthropic quota is still exhausted ("but its exausted
+right now!"). Last known reset: 03:10 UTC. Do NOT probe or spend until
+the user says the cap is open; then run the opus review fresh-session
+(never --resume) against the brief above. Do NOT schedule a cron for
+this without asking the user first (they have repeatedly rejected
+automatic token-spending crons).
 
 ## LESSONS LEARNED (do not un-learn)
 1. NEVER claude --resume for continuation (see cost rule 2).
