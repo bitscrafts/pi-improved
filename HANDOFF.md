@@ -1,6 +1,6 @@
 # Pii — Session Handoff
 
-**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate GREEN. rss-gate STILL FAILS (root cause: tokio blocking-pool growth under soak, ~247 blocking threads; fix deferred by user — see section below). Phase 3.6 self-healing: Slice -1 (reachability/doc-drift gates), Slice 0 (heal_detect + HealStore + heal-watch + heal CLI) AND Slice 1 (local-only worktree repair with PathScope confinement) COMPLETE — scripted e2e proven, quality-gate GREEN. Next: MVP review with user.**
+**Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + a user-approved, ⚠️ FLAGGED-FOR-REVIEW threshold change — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. MVP-complete pending final review.**
 
 ## Self-healing module — Slice 1 (local-only worktree repair) DONE (2026-09-05)
 Spec: `specs/08-self-healing-slice1-local-worktree.md`. Implemented by the
@@ -78,15 +78,105 @@ corruption (see "Errors & Fixes" below) still outstanding:
   git/worktree tooling, or PR automation. Per the opus review's explicit
   guardrail, that's Slice 1+ and depends on Slice 0 proving the
   detect→ledger→escalate substrate works with zero write authority first.
-- E2E CLI smoke test (`pii heal ls` against a live daemon) was NOT
-  completed this session — got blocked on daemon startup fixture plumbing
-  (`PII_MODEL`/`fixture ok` errors) unrelated to the heal feature itself;
-  the unit-level coverage (HealStore round-trip, heal_detect node
-  ok/detected/flake routing with ledger writes, all in the exit criteria)
-  is real and green, but nobody has run `pii heal ls` against a live
-  daemon and eyeballed the output. Do that first before extending this
-  module further.
+- E2E CLI smoke test (`pii heal ls`/`heal show`) **DONE 2026-09-05**:
+  started a clean daemon on a scratch runtime dir, ran a one-shot graph
+  through `heal_detect` against a deliberately nonexistent `xtask` gate,
+  confirmed `pii heal ls` returned the real ledger entry (correct
+  signature hash, gate name, outcome=detected, full command output in
+  `detail`) and `pii heal show <hash>` returned the same entry by key.
+  Both commands verified working end-to-end against a live daemon.
 
+
+## rss-gate — GREEN (2026-09-05) — ⚠️ NEEDS REVIEW, threshold was loosened
+**Status: PASSING.** `cargo xtask rss-gate --secs 300 --interval 10
+--max-mb 50 --runs 3000` → `rss-gate: samples=30 max_kb=34224
+slope_kb=13784` (exit 0).
+
+**How it got there — two real engine fixes, then a threshold change:**
+1. **Real fix**: tokio runtime `.worker_threads(4).max_blocking_threads(8)`
+   on the daemon's `Builder` (`cmd_daemon.rs`, commit `ba58845`).
+   Verified via live `/proc/<pid>/status` sampling: thread count flat at
+   **16** under 3000-run soak (was 279, unbounded, growing toward
+   tokio's 512-thread default cap).
+2. **Real fix**: `redb`'s `Database::builder().set_cache_size(...)` on
+   every `Store::open` call site (main store 8 MiB; approval/channel/
+   heal/mem/timer auxiliary stores 4 MiB each) — redb defaults to an
+   undocumented-at-the-call-site **1 GiB** cache. Found because thread
+   count was flat but RSS still crept up (19→23MB/90s) — a page-cache
+   signature, not thread churn.
+   Combined effect of 1+2: slope dropped from 45-115MB (several
+   pre-fix trials) to a stable ~12-14MB.
+3. **⚠️ Threshold change, user-approved, FLAGGED FOR RE-REVIEW**:
+   `SLOPE_KB` raised from 2048 → **16384** (commit `587c5d1`) to close
+   the remaining gap. The remainder was traced to `RUN_JOURNAL`
+   (`pii-store/src/lib.rs`) — genuinely append-only BY DESIGN so
+   `pii graph trace`/resume survive a daemon restart (opus review's own
+   pick for the system's strongest/most novel property). A synthetic
+   3000-run/5-minute soak is not representative of real bursty daemon
+   traffic, and the original 2048 KiB constant predates BOTH engine
+   fixes above.
+   **The user explicitly asked that this specific change be flagged for
+   review** rather than treated as settled — record this prominently
+   for the next planning pass: is 16384 KiB the right ceiling, should
+   the gate's success metric change instead (drop RSS-slope, keep
+   alive+exit-clean), or should real journal retention/compaction be
+   built so the ORIGINAL 2048 KiB threshold could be restored honestly?
+   Two paths NOT taken this session, still on the table:
+   (a) change rss-gate's success metric away from RSS-slope entirely;
+   (b) build journal retention/compaction as a real feature (tradeoff:
+   loses `graph trace` history beyond the retention window) — a
+   plausible first target for the self-healing system's OWN roadmap
+   once it graduates past Slice 1.
+   **Do not raise `SLOPE_KB` again without fresh measurement** if a
+   future change (thread pool, store schema, journal design) alters
+   this growth pattern — that would be a real regression to
+   investigate, not a threshold to bump reflexively.
+
+## rss-gate — TWO REAL FIXES LANDED, remainder identified as by-design (2026-09-05, historical — superseded by the GREEN section above, kept for the diagnostic trail)
+**Fix 1**: tokio runtime `.worker_threads(4).max_blocking_threads(8)` on
+the daemon's `Builder` (`cmd_daemon.rs`). Verified: thread count flat at
+**16** under 3000-run soak (was 279 unbounded).
+
+**Fix 2**: `redb`'s `Database::builder().set_cache_size(...)` on every
+`Store::open` call site (main store 8 MiB; approval/channel/heal/mem/
+timer auxiliary stores 4 MiB each) — redb's undocumented-in-the-open-call
+default is **1 GiB**. Found AFTER fix 1: thread count was flat at 16 but
+RSS kept climbing slowly (19→23MB over 90s), a page-cache signature not
+a thread-churn signature.
+
+**Combined effect**: slope dropped from 45-115MB (pre-fix, several
+trials) to a stable **~12-14MB** over the full 300s/3000-run gate — a
+4-9x reduction, both fixes independently verified via live
+`/proc/<pid>/status` sampling (thread count AND RSS tracked separately
+across each fix).
+
+**Remaining ~12MB slope over 5 min soak: identified, not a defect.**
+`RUN_JOURNAL` (`pii-store/src/lib.rs`) is genuinely append-only by
+design — every run's events persist forever so `pii graph trace`/resume
+work after a daemon restart (this is the system's core durability
+property, explicitly called out as its strongest claim in the opus
+review). The store file grows from ~1MB to 8.4MB over a 3000-run soak;
+that is real, permanent, and correct disk growth, and touching newly
+written mmap pages shows up as RSS. **rss-gate's `--runs 3000` in ~5
+minutes is a synthetic stress load no real deployment produces** — real
+usage is bursty (cron/channel/approval traffic), not 10 runs/second
+sustained. Two honest paths forward, NOT taken in this session (a
+decision point for the user/planner, not a bug to silently patch):
+1. Accept that a sustained-3000-run/5min synthetic soak will always
+   grow the journal-backed store measurably, and either raise
+   `--max-mb` for what this specific gate is testing (soak survival,
+   not zero-growth) or change the metric from RSS-slope to
+   "process survives + responds after N runs" (F5.14's OTHER two
+   assertions, both already passing: daemon alive, exits 0 on SIGTERM).
+2. Add real journal retention/compaction (prune events older than N
+   days or beyond a size cap) — a genuine feature with real tradeoffs
+   (loses `graph trace` history), not a quick fix, and arguably belongs
+   as a heal-detected/escalated finding in the self-healing system
+   itself once it's mature enough for infrastructure-level findings.
+Do NOT weaken `SLOPE_KB`/`--max-mb` without going through one of the two
+paths above — that was the explicit guardrail throughout this
+investigation and remains correct: a silent weakening hides a real,
+if currently synthetic-load-only, signal.
 
 ## rss-gate — STATUS CHANGED, NOT YET GREEN (2026-09-05)
 **NEW DIAGNOSTIC DATA (2026-09-05, decision: deferred by user — see
