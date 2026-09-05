@@ -1,6 +1,45 @@
 # Pii — Session Handoff
 
-**Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + a user-approved, ⚠️ FLAGGED-FOR-REVIEW threshold change — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. MVP-complete pending final review.**
+**Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + a user-approved, ⚠️ FLAGGED-FOR-REVIEW threshold change — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. Pii is now INSTALLED AND RUNNING on lnx with a real (non-scripted) live model — see the deployment section below. MVP-complete pending final review.**
+
+## Deployed on lnx with a live model (2026-09-05)
+`pii` is built (`cargo build --release -p pii-cli`) and installed at
+`/root/.local/bin/pii` — this path (and `/root/.pii/`) is on the
+`lnx-vg-podman` persistent LV (same mount as `/projects`), so it survives
+a plain file-level container recreate; it is **not** yet wired into the
+container's `entrypoint.sh` as an auto-starting service (see
+`/root/.pii/start-daemon.sh`'s header comment for what that would take).
+
+**Provider: `ollama:granite4.2:3b` — a genuinely LOCAL model, NOT
+DeepSeek.** The user asked for DeepSeek "while ollama-cloud is
+exhausted", but Pii's own `pii-net` HTTP transport explicitly refuses
+`https://` (TLS/rustls is the pre-existing, still-open Phase-3b/B4 gap —
+same one that blocks a `pii-heal` PR-opening tool). DeepSeek's hosted API
+is HTTPS-only, so a real `deepseek:` provider inside Pii cannot be built
+without that TLS work first — it is a genuine feature gap, not a config
+flag. `granite4.2:3b` was chosen instead because it is served by the
+SAME local Ollama already running on lnx (`http://127.0.0.1:11434`, no
+TLS needed) and, unlike `deepseek-v4-pro:cloud` (also listed in that same
+Ollama, confirmed empty-response = quota-exhausted, matching the user's
+report), it runs fully locally with no cloud quota dependency at all.
+
+**Real bug found and fixed getting here (commit after `02158c1`):** B1
+(opus review, phase-2) built a correct live-model transport but never
+actually granted a RUN the `NET` capability needed to reach it —
+`capability denied: net` on every agent-node model call, for EVERY
+graph, always — undetected until now because every prior green exit
+criterion touching an `agent` node used the `scripted:` provider, which
+never dials out. Fixed at three levels (capability intersection is
+`root_caps & graph_caps & node_caps`, all three needed it):
+`Engine::ollama_net_host` + `runs.rs::run_caps()`'s scoped `NET` grant +
+`graphs/starter/assistant.toml`'s own graph- and node-level `caps` lines.
+Verified end-to-end: `pii run start assistant` against the live daemon
+returned the exact literal text the prompt asked for.
+
+To (re)start the daemon manually: `/root/.pii/start-daemon.sh` (idempotent,
+checks for an already-running instance first). Runtime dir:
+`/root/.pii/runtime`; store: `/root/.pii/store.redb`; log:
+`/root/.pii/daemon.log`.
 
 ## Self-healing module — Slice 1 (local-only worktree repair) DONE (2026-09-05)
 Spec: `specs/08-self-healing-slice1-local-worktree.md`. Implemented by the
