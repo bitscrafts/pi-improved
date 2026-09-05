@@ -361,6 +361,30 @@ impl Engine<'_> {
                     spec.limits.max_parallel as usize
                 };
                 for chunk in par.chunks(limit.max(1)) {
+                    // Perf/RSS (opus review, 2026-09-05): a one-element chunk
+                    // has no parallelism to win, and `std::thread::scope` +
+                    // `s.spawn` still create and join a real OS thread for
+                    // it. Under high run-count soak load that showed up as
+                    // glibc allocator retention (per-thread arenas + a
+                    // cached stack per churned thread) masquerading as an
+                    // RSS leak in `xtask rss-gate` — flat fd count, no
+                    // growing collection, but climbing RSS. Dispatch inline
+                    // instead: behaviour-identical to the loop below (same
+                    // `apply`/`cancel_losers` order), zero threads spawned.
+                    if let [only] = chunk {
+                        if self.root.cancelled() {
+                            return Err(PiiError::Cancelled);
+                        }
+                        let out = dispatch(&env, only);
+                        if let Some(key) = apply(&env, st, fin, failure, &only.id, out) {
+                            suspended = Some(key);
+                        }
+                        cancel_losers(&env, st);
+                        if suspended.is_some() {
+                            break;
+                        }
+                        continue;
+                    }
                     let (tx, rx) = std::sync::mpsc::channel::<(NodeId, DispatchOutcome)>();
                     std::thread::scope(|s| {
                         for n in chunk {
