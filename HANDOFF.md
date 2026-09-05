@@ -1,6 +1,52 @@
 # Pii — Session Handoff
 
-**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate (fmt/clippy -D warnings/test) GREEN, lint-files/deps-check/net-check GREEN. rss-gate (the leak EC) STILL FAILS — but the fd/connection leak (the original B5 finding) IS fixed (fd count flat at 19 under load, verified); RSS still grows (~45MB slope in 90s) via a DIFFERENT, not-yet-diagnosed mechanism. One EC open, root cause not yet found.**
+**Status: YELLOW — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed, quality-gate GREEN. rss-gate STILL FAILS (root cause found: `tokio::task::spawn_blocking` thread-per-run churn, not yet fixed — see below). Phase 3.6 self-healing foundation: Slice -1 (reachability-check + doc-drift-check xtask gates) and Slice 0 (heal_detect node + HealStore ledger + heal-watch cron graph + `pii heal ls/show` CLI) IMPLEMENTED, quality-gate GREEN, committed (`615ac35`).**
+
+## Self-healing module — Slice -1 + Slice 0 DONE (2026-09-05)
+Spec: `specs/07-self-healing-slice-neg1-and-0.md` (authored this session,
+grounded in opus's architecture review at
+`_tmp/phase3/opus-heal-and-rss-response.md` §Part B — read that first,
+it explains WHY the build order is detect-only before any patching).
+
+Implemented via DeepSeek/pidag (`_tmp/phase3/launch-heal-slice01-deepseek.sh`,
+run log `_tmp/heal-slice01-deepseek-run1.log`) + a manual cleanup pass
+(commit `615ac35`) after the worker hit its 50-tool-iteration budget with
+real progress but several strict-clippy lints and a subtle NUL-byte file
+corruption (see "Errors & Fixes" below) still outstanding:
+- `xtask reachability-check` / `xtask doc-drift-check` — new deterministic,
+  no-model gates. Seed list already proves itself: the `ollama::
+  provider_from_env` entry passes today (B1 landed), demonstrating the
+  gate would have caught that historical miss before it was fixed.
+- `pii-store::heal` — new `HealStore` (`heal_attempt` table, blake3-hashed
+  signature key so repeat failures update one row instead of spamming).
+- `pii-server::nodes::heal` — new `heal_detect` node kind: runs `cargo
+  xtask <gate>`, reproduces a failure once before recording (never trusts
+  a single flaky run), routes `ok`/`detected`/`flake`. **Never granted
+  FS_WRITE** — read-only detection only, by design (guardrail from the
+  opus review: patching is a separate future slice with its own capset).
+- `graphs/starter/heal-watch.toml` — cron (`*/30 * * * *`) → `heal_detect`
+  (gate=quality-gate) → on `detected`, a `gate` node suspends for human
+  acknowledgement (**no auto-anything** — zero code path resumes this
+  automatically). `pii graph lint` clean.
+- `pii heal ls` / `pii heal show <hash>` CLI + `Method::HealList`/
+  `HealGet` wire methods, mirroring `approve ls`/`ApproveList` exactly.
+- Also landed (worker went beyond spec, a legitimate M3 fix while it was
+  in the neighborhood): `pii-server::nodes::worker` — a real `worker`
+  node kind giving `Supervisor::invoke` its first non-test caller (was
+  flagged test-only in the original opus Phase-3 review).
+- **NOT done, out of scope for this slice on purpose**: any patching,
+  git/worktree tooling, or PR automation. Per the opus review's explicit
+  guardrail, that's Slice 1+ and depends on Slice 0 proving the
+  detect→ledger→escalate substrate works with zero write authority first.
+- E2E CLI smoke test (`pii heal ls` against a live daemon) was NOT
+  completed this session — got blocked on daemon startup fixture plumbing
+  (`PII_MODEL`/`fixture ok` errors) unrelated to the heal feature itself;
+  the unit-level coverage (HealStore round-trip, heal_detect node
+  ok/detected/flake routing with ledger writes, all in the exit criteria)
+  is real and green, but nobody has run `pii heal ls` against a live
+  daemon and eyeballed the output. Do that first before extending this
+  module further.
+
 
 ## rss-gate — STATUS CHANGED, NOT YET GREEN (2026-09-05)
 **Good news: the original leak (leaked UDS connection per run, B5) is
