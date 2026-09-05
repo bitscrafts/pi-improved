@@ -1,75 +1,98 @@
 # Pii — Session Handoff
 
-**Status: YELLOW (FROZEN) — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 IN PROGRESS — 5/13 EC; USER DIRECTIVE 2026-09-04 22:54 UTC: "NO MORE CLAUDE CODE ON THIS! KEEP LESSONS LEARNED! NO MORE TOKENS TO TRY!" — part4 RESUME IS PAUSED INDEFINITELY pending user go-ahead. DO NOT spend Anthropic or ollama-cloud tokens on part4 without explicit user direction. Work is SAFE at checkpoint `db1de5f` + handoff `5ac882f`.**
+**Status: GREEN (part4 accepted at 12/13 EC by user decision 2026-09-05) — PHASE 1 COMPLETE; PHASE 2 COMPLETE (22/22 EC); PHASE 3 PARTS 1-3 COMPLETE (28/28 EC); PHASE 3 PART 4 COMPLETE-AS-ACCEPTED (12/13 EC, commits `34a1ade`+`11fbe73`) — ONE KNOWN OPEN EC: rss-gate (daemon RSS ~70MB > 50MB cap under soak). NEXT: OPUS DEEP ANALYSIS + MVP PATH (user-requested, part4-gated). Ollama weekly quota exhausted; Anthropic spend halted by user; DeepSeek direct is the approved worker tier.**
 
-## ⛔ STOP — USER ORDER: NO MORE TOKEN SPEND ON PART4 (2026-09-04 22:54 UTC)
-User directive, verbatim intent: no more Claude Code on part4, keep the
-lessons learned, no more tokens to try. All resume machinery has been
-removed: the 03:15 UTC fresh-session cron (job c50f625a0644) was deleted.
-Nothing is scheduled. No live claude/pidag/pi processes. The next agent
-must NOT launch claude -p, pidag, or any paid/cloud work on part4 without
-the user saying so. If part4 is later resumed, use FRESH `claude -p`
-sessions only (see the token-bleed rule below) or whatever the user
-directs at that time. The 8 remaining EC are documented below so a human
-or a future free/approved run can pick up exactly where it stopped.
+## ⚠️ OPEN ITEM — rss-gate EC (13th of part4): daemon RSS over budget under soak
+**User decision (2026-09-05): accept part4 at 12/13 now; fix later.** The
+gate `cargo xtask rss-gate --secs 300 --interval 10 --max-mb 50 --runs
+3000` fails: daemon RSS peaks ~70MB (> 50MB cap) at high run counts
+(~26KB retained per completed run in memory; baseline ~17-19MB; slope
+0 so NOT a leak — it plateaus after soak). Store files are tiny (1.9MB)
+so it is not disk/mmap growth. One per-run holder WAS found and fixed:
+`Engine::unregister_run()` now releases `RunHandle`s at terminal
+(commit `11fbe73`; the `runs` map was growing unboundedly) — but that
+was not the dominant holder (~71MB persisted at 2000 runs). **Remaining
+suspects for the next session**: session-state map retention per run,
+bus/event history per run, journal buffers, or per-run tokio task
+state. Verification loop is slow (each gate run = 300s + soak ≈ 6 min);
+use `--secs 60 --interval 5 --runs 2000` for fast iteration (~1 min)
+and only the full 300s form for the final EC pass. Do NOT weaken the
+gate thresholds (spec guardrail). This was the top finding to carry
+into the Opus review — the reviewer should see it.
 
-## LESSONS LEARNED (recorded for good — do not un-learn these)
-1. **NEVER `claude --resume` for continuation** — it re-reads the whole
-   accumulated conversation every turn (26-64M cache-read tokens per run)
-   and exhausts the 5h Anthropic window in ~20 min of real work. Five
-   resumed runs burned ~$35, ~90% on history replay. Fresh `claude -p`
-   sessions start near 0% utilization and pay only for real work.
-2. **Fresh session per run + compact brief + state in a file** is the
-   correct delegation pattern for long implementation tasks.
-3. Anthropic 5h session caps reset at fixed UTC times; ollama-cloud
-   session caps give no reset time; ollama weekly quota resets Mon 07:00
-   local (10:00 UTC); glm-5.3-flash:cloud may 404 in the live catalog.
-4. Specs are planner-only; never let a workhorse edit them.
-5. Checkpoint-commit clean-building work at every natural stop — the
-   part4 work was checkpointed (`db1de5f`) and nothing was lost.
+## PHASE 3 PART 4 — COMPLETE AS ACCEPTED (12/13 EC)
+`specs/05-phase3-assistant-gateway-part4.md` (W5 daemon lifecycle +
+timer wheel + cron + approvals, W6 pii-channels-DISCORD, W7 CLI/gates/
+fixtures/scripts). Implemented by **Claude Code + sonnet-5** (runs 1-6,
+~$35, stopped by user token directive) then **DeepSeek direct via pidag**
+(`deepseek/deepseek-v4-flash`, runs 1-3, cheap, finished the bulk).
+Commits: `34a1ade` (integration tests channels/approvals/scheduler +
+scripts crash/secret-scan/cron/discord-e2e + PII_TEST_CLOCK_MS) and
+`11fbe73` (rss-gate harness + run-handle release). quality-gate ALL
+PASS (fmt/clippy/test). 12/13 EC verified passing by direct run of each
+criterion: build, quality-gate, lint-files, discord-e2e.sh, channels
+test, approvals test, scheduler test, cron.sh, shutdown.sh, crash.sh,
+secret-scan.sh, graph-lint. The one failing EC is rss-gate (see above).
 
-## PHASE 3 PART 4 — FROZEN STATE (5/13 EC; work SAFE)
-All work from sonnet runs 1-6 is committed at checkpoint `db1de5f`
-("chore(phase3 part4): checkpoint daemon, channels, node kinds, CLI,
-fixtures mid-implementation (builds clean)") + handoff `5ac882f`. Tree
-builds clean; `./quality-gate.sh` ALL PASS (fmt/clippy/test).
-
-**EXIT CRITERIA 5/13 PASS** (validate: `/root/.pi/agent/skills/validate-exit-criteria/run.sh specs/05-phase3-assistant-gateway-part4.md /projects/pi-improved`):
-- PASS: build, quality-gate, lint-files, shutdown.sh, graph-lint.
-- FAIL (8, remaining when/if resumed): `scripts/phase3/{discord-e2e,cron,
-  crash,secret-scan}.sh` (crash.sh can use graphs/starter/crash.toml;
-  cron.sh soak_cron.toml), `cargo test -p pii-server --test {channels,
-  approvals,scheduler}` (test files not yet written or not passing —
-  check `crates/pii-server/tests/`), `cargo xtask rss-gate --secs 300
-  --interval 10 --max-mb 50 --runs 3000` (finishes compiling then fails/
-  hangs — fix the gate, do NOT weaken thresholds).
-
-**DELIVERED (committed `db1de5f`)**: `crates/pii-channels/` (discord.rs
-DiscordChannel + cli.rs CliChannel, tests pass), `pii-server/src/nodes/
-{gate,memory,crash}.rs` in registry, `pii-server/src/daemon/` full module
-(approvals/config/methods/mod/router/scheduler/status + attach_daemon_ctx),
-RunSuspended/RunResumed bus mapping, FakeHttpServer stateful routes,
-StatusResult extended, dispatch.rs delegating arms, CLI subcommands
-(cmd_ctl/cmd_soak/cmd_sys + main.rs wiring + cmd_daemon), daemon SIGTERM
-shutdown (shutdown.sh PASSES), fixtures (discord routes.json, model
-assistant.json/atoms.json, soak.toml, workers.toml, ollama chat.json),
-graphs/starter/{crash,slow,soak,soak_cron}.toml.
-
-**REMOTE CHANNEL CHANGED: Telegram → Discord (user directive, 2026-09-04).**
-Both `specs/05-phase3-assistant-gateway.md` and `-part4.md` are fully
-Discord-edited (planner work, commits `562eb93`+`5e212ed`):
+**REMOTE CHANNEL: Discord (NOT Telegram)** — user directive 2026-09-04.
+Specs fully Discord-edited (commits `562eb93`+`5e212ed`):
 `PII_DISCORD_TOKEN`/`PII_DISCORD_CHANNEL_ID`/`PII_DISCORD_API_BASE`,
-`DiscordChannel` in src/discord.rs, poll `GET /channels/{id}/messages?
-after={cursor}`, send `POST /channels/{id}/messages` `{"content":…}`,
-auth `Authorization: Bot <token>` header (never logged), script
-`discord-e2e.sh`, fixtures under `fixtures/phase3/discord/`. **Never
-revert to Telegram; specs are authoritative and Discord-only.**
+`DiscordChannel` in `crates/pii-channels/src/discord.rs`, poll
+`GET /channels/{id}/messages?after={cursor}`, send
+`POST /channels/{id}/messages` `{"content":…}`, auth `Authorization:
+Bot <token>` header (never logged). Never revert to Telegram.
 
-**Next after part4 13/13 + committed** — user-requested, queued:
-1. Opus deep analysis of the full implementation against
-   `_docs/06-research/`, with **sonnet-5 actively fixing found faults**
-   (not just reporting them — differs from the Phase 1/2 opus reviews).
-2. Ask Opus for a **path to an MVP** as the first delivery.
+## ⛔ COST RULES (2026-09-04/05 — binding until user changes them)
+1. **NO more Claude Code token spend** (user: "no more claude code on
+   this! keep lessons learned! no more tokens to try!") — applies to
+   opus review & MVP phases too unless the user explicitly says
+   otherwise. Anthropic 5h session caps; ~$35 was burned on resumed-
+   session history replay before the root cause was found.
+2. **NEVER `claude --resume` for continuation** — re-reads entire
+   conversation every turn (26-64M cache-read/run); kills the 5h window
+   in ~20 min. ALWAYS fresh `claude -p` + compact brief + state file.
+3. **ollama-cloud weekly quota exhausted** (2026-09-04) — do not launch
+   pidag/ollama work without user go-ahead. `glm-5.3-flash:cloud` may
+   404 in the live catalog; probe with `glm-5.2:cloud`.
+4. **DeepSeek direct** (`deepseek/deepseek-v4-flash`, .pidag config now
+   points there; ollama-cloud removed from free/paid) is the approved
+   worker tier. Shows $0 cost on pi usage lines (separate billing).
+5. The **user's queued Opus-review phase says "sonnet-5 actively fixes
+   faults"** — this CONFLICTS with rule 1 (no more Claude spend). The
+   next session MUST ask the user how to reconcile before spending:
+   options are (a) opus+sonnet review anyway (user re-authorizes), (b)
+   opus analysis only, fixes via DeepSeek, (c) full self-review by
+   orchestrator + DeepSeek workers, (d) defer review.
+
+## NEXT — OPUS DEEP ANALYSIS + MVP PATH (user-requested, queued)
+User directive (2026-09-04, part4-gated): "at the part 4 end, again
+lets use opus to do a deep analysis of the implementation, again with
+the data in the _docs/06-research, this time it should use sonnet-5
+and actively fix the faults! then ask opus a path to a mvp as our
+first delivery." Two deliverables:
+1. **Deep analysis** of the full implementation against
+   `_docs/06-research/` (the spec-of-record), with faults ACTIVELY
+   FIXED (not just reported — differs from the Phase 1/2 opus reviews).
+   Follow the established review pattern: `_tmp/phase2-opus-review.md`
+   is the template (BLOCKER/MAJOR/MINOR taxonomy, verdict line).
+   Carry the rss-gate open item in as a candidate finding.
+2. **MVP path**: ask opus to define the smallest first delivery
+   ("path to a mvp as our first delivery") — distinct from "Phase 3
+   complete", likely a subset/repackaging of what exists.
+
+## LESSONS LEARNED (do not un-learn)
+1. NEVER claude --resume for continuation (see cost rule 2).
+2. Fresh session per run + compact brief + state in a file.
+3. Anthropic 5h caps reset at fixed UTC times; ollama session caps give
+   no reset time; ollama weekly resets Mon 07:00 local (10:00 UTC).
+4. Specs are planner-only; never let a workhorse edit them.
+5. Checkpoint-commit clean-building work at every natural stop.
+6. DeepSeek direct via pidag is a viable cheap workhorse for large
+   specs; it hits the same 50-tool-call iteration budget per run as
+   ollama workers did — relaunching resumes from committed state.
+7. pidag validate/quality-gate nodes re-run slow ECs (300s rss-gate)
+   per iteration — for memory-tuning loops, iterate with short gate
+   params and only run the full gate for final verification.
 
 ## PHASE 3 PARTS 1-3 — COMPLETE (28/28 EC across 3 parts)
 - **Part 1** (11/11 EC, commit `9b181b2`): `pii-net` (authorize/dial/
