@@ -595,15 +595,19 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
     reg
 }
 
-/// The built-in session graph: one `agent` node wired `ok → done`.
+/// The built-in session graph: one `agent` node wired `ok → done`. Both
+/// `caps` lines below include `net` (2026-09-05) - node caps default to
+/// `required_caps()`, which excludes NET by design, so the graph-level
+/// line alone is not enough.
 const DEFAULT_TOML: &str = r#"
 name = "default"
 entry = "agent"
-caps = ["fs_read", "fs_write", "proc"]
+caps = ["fs_read", "fs_write", "proc", "net"]
 
 [[node]]
 id = "agent"
 kind = "agent"
+caps = ["fs_read", "fs_write", "proc", "net"]
 system = "You are pii, a coding agent. Answer concisely."
 
 [[edge]]

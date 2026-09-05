@@ -8,14 +8,28 @@ use pii_proto::ErrorCode;
 use pii_proto::RpcError;
 use std::os::unix::fs::PermissionsExt;
 
-/// Resolves the runtime dir (F2.8): `$PII_RUNTIME_DIR` →
-/// `$XDG_RUNTIME_DIR/pii/<instance>` → `/run/user/<uid>/pii/<instance>`.
+/// Resolves the runtime dir (F2.8, extended 2026-09-05).
+///
+/// Precedence: `$PII_RUNTIME_DIR`
+/// → `[core].runtime_dir` in the persistent config file (see
+/// [`crate::daemon::config::Config::default_path`]) → `$XDG_RUNTIME_DIR/pii/<instance>`
+/// → `/run/user/<uid>/pii/<instance>`. The config file lookup is a plain
+/// best-effort read (a malformed config here does not abort — `pii
+/// daemon`'s own startup path already surfaces config parse errors loudly;
+/// a lookup helper silently falling back to the next candidate is the
+/// right behavior for callers like `pii sys status` that just need SOME
+/// runtime dir to try).
 ///
 /// # Errors
 /// [`PiiError::NotFound`] when no candidate is usable.
 #[must_use]
 pub fn runtime_dir(instance: &str) -> Option<PathBuf> {
     if let Some(d) = pii_core::env_var("PII_RUNTIME_DIR") {
+        return Some(PathBuf::from(d));
+    }
+    if let Ok(cfg) = crate::daemon::config::Config::load_from_default_path()
+        && let Some(d) = cfg.core.runtime_dir
+    {
         return Some(PathBuf::from(d));
     }
     if let Some(x) = pii_core::env_var("XDG_RUNTIME_DIR") {

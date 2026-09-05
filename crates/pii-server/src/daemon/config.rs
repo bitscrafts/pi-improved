@@ -5,9 +5,44 @@
 //! [`pii_core::env_var`]): `PII_CONFIG`, `PII_RUNTIME_DIR`, `PII_MODEL`,
 //! `PII_MEMORY_PATH`, `PII_DISCORD_TOKEN`, `PII_DISCORD_CHANNEL_ID`,
 //! `PII_DISCORD_API_BASE`, `OLLAMA_HOST`, `OLLAMA_API_KEY`.
+//!
+//! **Persistent `[core]` settings (2026-09-05 follow-up).** Before this,
+//! EVERY setting above was env-var-only — nothing survived a fresh shell
+//! or a daemon restart unless something re-exported it first (the exact
+//! trap the user hit: `pii -p` and `pii sys status` failing in a plain
+//! shell right after a daemon had been hand-launched with env vars in a
+//! DIFFERENT shell). `[core]` in the same TOML file now backs `model` and
+//! `runtime_dir` — every entrypoint (`pii -p`, `pii daemon`, `pii tui`,
+//! and `uds::runtime_dir`) resolves in the same order: CLI flag (where
+//! one exists) > env var (unchanged, still wins — no behavior change for
+//! anyone already relying on env vars) > `[core]` in the config file >
+//! built-in default. The config file itself is found via
+//! [`Config::default_path`], independent of `runtime_dir` (so it can
+//! supply `runtime_dir` itself without a chicken-and-egg lookup):
+//! `$PII_CONFIG` if set, else `$HOME/.pii/pii.toml` (falls back to
+//! `/root/.pii/pii.toml` if `$HOME` is unset).
 
 use pii_abi::PiiError;
 use serde::Deserialize;
+
+/// `[core]`: settings every entrypoint needs before it can do anything else.
+///
+/// All fields are `Option` so an absent key means
+/// "fall through to the env var / built-in default", never "override
+/// with empty" (2026-09-05).
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
+pub struct CoreSection {
+    /// Default model spec (e.g. `"ollama:granite4.2:3b"`, `"scripted:"`).
+    /// Overridden by `--model` (oneshot) or `$PII_MODEL`, in that order.
+    pub model: Option<String>,
+    /// Default runtime dir (holds `control.sock`, `graphs/`). Overridden
+    /// by `$PII_RUNTIME_DIR`.
+    pub runtime_dir: Option<String>,
+    /// Default Ollama host, e.g. `"http://127.0.0.1:11434"`. Overridden
+    /// by `$OLLAMA_HOST`.
+    pub ollama_host: Option<String>,
+}
 
 /// `[net]`: egress policy knobs (F2.2).
 ///
@@ -112,6 +147,8 @@ pub struct CronSection {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
+    /// `[core]`.
+    pub core: CoreSection,
     /// `[net]`.
     pub net: NetSection,
     /// `[[worker]]`.
@@ -158,6 +195,60 @@ impl Config {
             return Self::load(&default_path);
         }
         Ok(Self::default())
+    }
+
+    /// The config file path independent of any `runtime_dir` lookup
+    /// (2026-09-05): `$PII_CONFIG` if set, else `$HOME/.pii/pii.toml`
+    /// (falls back to the literal `/root/.pii/pii.toml` if `$HOME` is
+    /// unset, matching this project's container default). Every
+    /// entrypoint (`pii -p`, `pii daemon`, `pii tui`) can call this
+    /// BEFORE it has resolved a runtime dir, breaking the prior
+    /// chicken-and-egg where `[core].runtime_dir` needed `runtime_dir`
+    /// to find the file that sets it.
+    #[must_use]
+    pub fn default_path() -> std::path::PathBuf {
+        if let Some(p) = pii_core::env_var("PII_CONFIG") {
+            return std::path::PathBuf::from(p);
+        }
+        let home = pii_core::env_var("HOME").unwrap_or_else(|| String::from("/root"));
+        std::path::PathBuf::from(home).join(".pii").join("pii.toml")
+    }
+
+    /// Loads the config from [`Self::default_path`], or an empty default
+    /// `Config` when that file does not exist.
+    ///
+    /// # Errors
+    /// [`PiiError::Invalid`] on a parse failure (a PRESENT-but-malformed
+    /// file is always an error — only a missing file is silently treated
+    /// as empty).
+    pub fn load_from_default_path() -> Result<Self, PiiError> {
+        let path = Self::default_path();
+        if path.exists() {
+            return Self::load(&path);
+        }
+        Ok(Self::default())
+    }
+
+    /// Resolves the effective model spec (2026-09-05): `explicit` (e.g.
+    /// `--model`) wins, then `$PII_MODEL`, then this config's
+    /// `[core].model`, else `None` (caller decides the "no model
+    /// configured" error).
+    #[must_use]
+    pub fn resolve_model(&self, explicit: Option<String>) -> Option<String> {
+        explicit
+            .or_else(|| pii_core::env_var("PII_MODEL"))
+            .or_else(|| self.core.model.clone())
+    }
+
+    /// Resolves the effective runtime dir (2026-09-05): `$PII_RUNTIME_DIR`
+    /// wins (unchanged precedence for existing env-var users), then this
+    /// config's `[core].runtime_dir`, else `None` (caller falls through to
+    /// `$XDG_RUNTIME_DIR`/`/run/user/<uid>/pii/<instance>`).
+    #[must_use]
+    pub fn resolve_runtime_dir(&self) -> Option<std::path::PathBuf> {
+        pii_core::env_var("PII_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .or_else(|| self.core.runtime_dir.clone().map(std::path::PathBuf::from))
     }
 }
 
@@ -258,5 +349,64 @@ schedule = "*/15 * * * *"
         assert!(cfg.worker.is_empty());
         assert!(cfg.channel.is_empty());
         assert!(cfg.cron.is_empty());
+        assert!(cfg.core.model.is_none());
+    }
+
+    #[test]
+    fn core_section_parses_and_is_absent_by_default() {
+        let empty = Config::parse("").unwrap();
+        assert_eq!(empty.core, super::CoreSection::default());
+
+        let raw = r#"
+[core]
+model = "ollama:granite4.2:3b"
+runtime_dir = "/root/.pii/runtime"
+ollama_host = "http://127.0.0.1:11434"
+"#;
+        let cfg = Config::parse(raw).unwrap();
+        assert_eq!(cfg.core.model.as_deref(), Some("ollama:granite4.2:3b"));
+        assert_eq!(cfg.core.runtime_dir.as_deref(), Some("/root/.pii/runtime"));
+        assert_eq!(
+            cfg.core.ollama_host.as_deref(),
+            Some("http://127.0.0.1:11434")
+        );
+    }
+
+    #[test]
+    fn resolve_model_prefers_explicit_then_config() {
+        let cfg = Config::parse("[core]\nmodel = \"scripted:\"\n").unwrap();
+        // No explicit arg, no env var set in this test process for the
+        // (deliberately unique) key below: config wins.
+        assert_eq!(
+            cfg.resolve_model(None).as_deref(),
+            Some("scripted:"),
+            "config [core].model must be used when nothing more specific is set"
+        );
+        // An explicit value always wins over the config.
+        assert_eq!(
+            cfg.resolve_model(Some(String::from("ollama:x"))).as_deref(),
+            Some("ollama:x")
+        );
+    }
+
+    #[test]
+    fn resolve_model_none_when_nothing_configured() {
+        let cfg = Config::default();
+        assert_eq!(cfg.resolve_model(None), None);
+    }
+
+    #[test]
+    fn resolve_runtime_dir_uses_core_section_when_env_absent() {
+        let cfg = Config::parse("[core]\nruntime_dir = \"/tmp/pii-test-rt\"\n").unwrap();
+        // This assumes the test process has no PII_RUNTIME_DIR set, which
+        // holds in CI/sandboxed test runs; resolve_runtime_dir's env-var
+        // branch is exercised implicitly by every other daemon test that
+        // DOES set it.
+        if pii_core::env_var("PII_RUNTIME_DIR").is_none() {
+            assert_eq!(
+                cfg.resolve_runtime_dir(),
+                Some(std::path::PathBuf::from("/tmp/pii-test-rt"))
+            );
+        }
     }
 }

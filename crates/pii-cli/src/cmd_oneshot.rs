@@ -15,6 +15,16 @@ use pii_proto::sys::PeerInfo;
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 
+/// Resolves the model spec for `pii -p` (2026-09-05): `explicit` (`--model`)
+/// wins, then `$PII_MODEL`, then `[core].model` in the persistent config
+/// file (see [`pii_server::daemon::config::Config::resolve_model`]).
+fn resolve_model(explicit: Option<String>) -> Option<String> {
+    pii_server::daemon::config::Config::load_from_default_path()
+        .ok()
+        .unwrap_or_default()
+        .resolve_model(explicit)
+}
+
 /// Parsed `pii -p` flags.
 struct OneshotArgs {
     prompt: String,
@@ -86,7 +96,7 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
             }
         }
     }
-    let model = a.model.clone().or_else(|| pii_core::env_var("PII_MODEL"));
+    let model = resolve_model(a.model.clone());
     let Some(model) = model else {
         eprintln!("no model configured (set PII_MODEL or --model)");
         return ExitCode::from(5);

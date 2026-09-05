@@ -72,7 +72,13 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
         let cfg = EngineConfig {
             workspace: workspace.clone(),
             store_path: store_dir.join("store.redb"),
-            model: pii_core::env_var("PII_MODEL").unwrap_or_else(|| String::from("scripted:")),
+            model: pii_core::env_var("PII_MODEL")
+                .or_else(|| {
+                    pii_server::daemon::config::Config::load_from_default_path()
+                        .ok()
+                        .and_then(|c| c.core.model)
+                })
+                .unwrap_or_else(|| String::from("scripted:")),
             sandbox: SandboxProfileName::Off,
             graph_dir: store_dir.join("graphs"),
         };

@@ -69,9 +69,16 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     let store_parent = store_path
         .parent()
         .map_or_else(|| PathBuf::from("."), PathBuf::from);
+    // 2026-09-05: default `config_path` to the SAME unified file `pii -p`/
+    // `pii tui` read (`Config::default_path()`, normally `~/.pii/pii.toml`)
+    // rather than `<runtime_dir>/pii.toml` — so a single-instance operator
+    // has exactly one config file for everything (core model/runtime_dir
+    // PLUS [net]/[[worker]]/[[channel]]/[memory]/[[cron]]), not two
+    // similarly-named files at different paths. `--config`/`$PII_CONFIG`
+    // still override outright for anyone running multiple instances.
     let config_path = config
         .or_else(|| pii_core::env_var("PII_CONFIG").map(PathBuf::from))
-        .unwrap_or_else(|| runtime_dir.join("pii.toml"));
+        .unwrap_or_else(Config::default_path);
 
     // Sandbox enforcement is verified BEFORE the model lookup: a requested
     // profile that cannot be positively enforced must exit 4 regardless of
@@ -87,12 +94,6 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         return ExitCode::from(4);
     }
 
-    let model = pii_core::env_var("PII_MODEL");
-    let Some(model) = model else {
-        eprintln!("no model configured (set PII_MODEL)");
-        return ExitCode::from(5);
-    };
-
     let cfg = if config_path.exists() {
         match Config::load(&config_path) {
             Ok(c) => c,
@@ -103,6 +104,17 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         }
     } else {
         Config::default()
+    };
+
+    // NET-cap wiring and the "no model configured" error both need the
+    // resolved model before the engine is built (2026-09-05: `[core].model`
+    // in the same config file is now a valid third source, after
+    // `$PII_MODEL` — see `Config::resolve_model`'s doc comment for the
+    // precedence order this restores parity with `pii -p`/`pii tui`).
+    let model = cfg.resolve_model(None);
+    let Some(model) = model else {
+        eprintln!("no model configured (set PII_MODEL, or [core].model in the config file)");
+        return ExitCode::from(5);
     };
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
