@@ -135,13 +135,18 @@ week for the first real agent-loop-against-local-model surprises.
 Later: M1 "the assistant" (~2w, TLS+Discord+obs), M2 "composition"
 (~2w, subgraph/map/pipelines), M3 "memory that means something" (~2w).
 
-**NEXT STEP (not yet started, awaiting user go-ahead):** fix the 6
-BLOCKERs via **DeepSeek workers** (per user's cost resolution — NOT
-sonnet). Likely needs a fresh spec/DAG per fix given each is a
-different crate; B1+B2+B6 are probably the highest-value first pass
-since B1/B2 block using the system AT ALL. Ask the user before
-spawning any DeepSeek/pidag work — do not assume "go" from the opus
-review alone authorizes implementation spend.
+**NEXT STEP — IN PROGRESS (2026-09-05):** fixing the 6 BLOCKERs via
+**DeepSeek workers** per user directive ("plan and fix with
+deepseek!") and the earlier cost resolution (DeepSeek, not sonnet).
+Spec written: `specs/06-phase3-mvp-hardening.md` (planner work, one
+spec covering B1/B2/B3/B5/B6/M1 in the opus-recommended M0 order — NOT
+B4/Discord/TLS, explicitly cut). Launcher:
+`_tmp/phase3/launch-phase35-deepseek.sh`. Config already points
+`.pidag/config.toml` at `deepseek/deepseek-v4-flash` (ollama-cloud
+removed from free/paid tiers, set during part4). **Pitfall hit and
+fixed**: pidag enforces strict `NN-slug.md` spec naming (two digits +
+hyphen + lowercase slug + `.md`, no dots) — `06-phase3.5-...` was
+rejected, renamed to `06-phase3-mvp-hardening.md`.
 
 ## LESSONS LEARNED (do not un-learn)
 1. NEVER claude --resume for continuation (see cost rule 2).
