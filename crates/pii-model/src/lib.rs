@@ -185,21 +185,53 @@ impl ModelProvider for ScriptedProvider {
 pub mod ollama;
 pub use ollama::OllamaProvider;
 
-/// Resolves a model spec: `scripted:<path>` (F3.4). The `ollama:` backend
-/// lands with the HTTP provider pass; asking for it here is `Invalid`.
+/// Resolves a model spec: `scripted:<path>` needs no transport. `ollama:`
+/// (B1, opus review) is now wired through [`ollama::provider_from_env`],
+/// which was correct and complete but had zero non-test call sites — every
+/// green exit criterion touching an `agent` node was satisfied by a
+/// hand-written fixture, never a live LLM turn. This entry point still
+/// cannot construct an `ollama:` provider itself (it has no
+/// `HttpTransport` — the real transport is `pii-net`'s `NetService`,
+/// constructed by the caller with its egress policy already wired), so a
+/// caller that wants `ollama:` must call [`ollama::provider_from_env`]
+/// directly with its own transport, or use [`resolve_with_transport`],
+/// which does both in one call for callers that don't care about the
+/// distinction.
 ///
 /// # Errors
-/// [`PiiError::Invalid`] for an unknown spec or fixture failure.
+/// [`PiiError::Invalid`] for an unknown spec, a fixture failure, or an
+/// `ollama:` spec (which needs a transport — see above).
 pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError> {
     let Some((kind, rest)) = spec.split_once(':') else {
         return Err(PiiError::Invalid(format!("unknown model spec '{spec}'")));
     };
     match kind {
         "scripted" => Ok(Arc::new(ScriptedProvider::from_fixture(Path::new(rest))?)),
+        "ollama" => Err(PiiError::Invalid(String::from(
+            "ollama: needs a transport — call ollama::provider_from_env or resolve_with_transport",
+        ))),
         other => Err(PiiError::Invalid(format!(
-            "unknown model spec kind '{other}' (scripted:<path> is supported)"
+            "unknown model spec kind '{other}' (scripted:<path> and ollama:<model> are supported)"
         ))),
     }
+}
+
+/// Resolves any supported model spec, constructing an `ollama:` provider
+/// through `transport` when the spec calls for one (B1, opus review). This
+/// is the entry point a real caller (the daemon, `pii -p`) should use
+/// instead of [`provider_from_spec`] alone, since it is the one place that
+/// can actually honour `ollama:`.
+///
+/// # Errors
+/// [`PiiError::Invalid`] for an unknown spec or a fixture/env failure.
+pub fn resolve_with_transport(
+    spec: &str,
+    transport: Arc<dyn pii_core::HttpTransport>,
+) -> Result<Arc<dyn ModelProvider>, PiiError> {
+    if spec.starts_with("ollama:") {
+        return ollama::provider_from_env(spec, transport);
+    }
+    provider_from_spec(spec)
 }
 
 #[cfg(test)]
@@ -236,5 +268,31 @@ mod tests {
     #[test]
     fn provider_spec_is_validated() {
         assert!(provider_from_spec("bogus:x").is_err());
+    }
+
+    /// B1 (opus review): `provider_from_spec("ollama:...")` must give a
+    /// clear, distinguishable error (not the old generic "unknown model
+    /// spec kind") — proving the dispatch actually recognizes `ollama:`
+    /// now, even though this entry point (by design, no transport) cannot
+    /// construct the provider itself. `resolve_with_transport` is the one
+    /// that does, and is exercised by `pii-server`'s own tests where a
+    /// transport is available.
+    #[test]
+    fn provider_from_spec_dispatches_ollama() {
+        let err = match provider_from_spec("ollama:qwen3") {
+            Ok(_) => panic!("ollama: must fail without a transport"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("ollama:") && err.contains("transport"),
+            "expected an ollama-specific 'needs a transport' error, got: {err}"
+        );
+        // A truly unknown kind still gets the generic message, proving the
+        // ollama arm is a distinct branch, not a fallthrough.
+        let unknown = match provider_from_spec("bogus:x") {
+            Ok(_) => panic!("bogus: must fail"),
+            Err(e) => e.to_string(),
+        };
+        assert!(unknown.contains("unknown model spec kind"));
     }
 }

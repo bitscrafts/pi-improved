@@ -121,7 +121,42 @@ impl Engine {
             "approval.redb",
         ))?);
         let memory = Arc::new(pii_store::MemStore::open(&sibling("memory.redb"))?);
-        let provider = pii_model::provider_from_spec(&cfg.model)?;
+        // B1 (opus review): `PII_MODEL=ollama:<model>` now actually
+        // constructs a live provider instead of failing `provider_from_spec`
+        // (whose only working arm was `scripted:`). The transport is a
+        // dedicated `pii-net::NetService`, scoped by a single grant for
+        // exactly the configured Ollama host (loopback by default) — this
+        // is the ONE place besides the daemon's own `[net]` config that
+        // opens a `NetService`, and it exists specifically so the model
+        // provider does not bypass the egress chokepoint `cargo xtask
+        // net-check` enforces. `scripted:` specs (the common case in
+        // tests) never touch this — `resolve_with_transport` only builds
+        // the transport lazily, inside the `ollama:` branch.
+        let provider = if cfg.model.starts_with("ollama:") {
+            let ollama_host = pii_core::env_var("OLLAMA_HOST")
+                .unwrap_or_else(|| String::from(pii_model::ollama::DEFAULT_OLLAMA_HOST));
+            let host_only = ollama_host
+                .trim_start_matches("http://")
+                .trim_start_matches("https://")
+                .split(':')
+                .next()
+                .unwrap_or("127.0.0.1")
+                .to_owned();
+            let mut grants = pii_net::grant::StaticGrants::default();
+            grants.insert(
+                "*",
+                &format!("http:{host_only}"),
+                pii_net::grant::NetGrant::open_local(),
+            );
+            let net = pii_net::NetService::new(pii_net::NetConfig {
+                resolver: Arc::new(pii_net::SystemResolver),
+                grants: Arc::new(grants),
+                clock: Arc::new(pii_net::SystemClock),
+            });
+            pii_model::resolve_with_transport(&cfg.model, Arc::new(net))?
+        } else {
+            pii_model::provider_from_spec(&cfg.model)?
+        };
         let bus = Bus::new();
         let reg = registry(
             &cfg,
