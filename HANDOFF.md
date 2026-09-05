@@ -64,33 +64,84 @@ Bot <token>` header (never logged). Never revert to Telegram.
    opus analysis only, fixes via DeepSeek, (c) full self-review by
    orchestrator + DeepSeek workers, (d) defer review.
 
-## NEXT — OPUS DEEP ANALYSIS + MVP PATH (user-requested, queued)
-User directive (2026-09-04, part4-gated): "at the part 4 end, again
-lets use opus to do a deep analysis of the implementation, again with
-the data in the _docs/06-research, this time it should use sonnet-5
-and actively fix the faults! then ask opus a path to a mvp as our
-first delivery." **User resolved the cost conflict (2026-09-05):
-"Opus analysis ONLY (one read-only review pass vs _docs/06-research),
-faults fixed afterwards via DeepSeek workers (cheap tier)."** Two
-deliverables:
-1. **Deep analysis**: ONE read-only opus pass against
-   `_docs/06-research/`, following the `_tmp/phase2-opus-review.md`
-   template (BLOCKER/MAJOR/MINOR/NIT + verdict). Report to
-   `_tmp/phase3-opus-review.md`. Brief is ready:
-   `_tmp/phase3/opus-review-brief.md`. Carry the rss-gate open item in
-   as a candidate finding (verify from code, don't trust the handoff).
-2. **Faults fixed afterward via DeepSeek workers** (NOT sonnet — per
-   the user's resolution above).
-3. **MVP path**: opus also defines the smallest first delivery
-   ("path to a mvp as our first delivery").
+## OPUS DEEP ANALYSIS — DONE (2026-09-05, read-only, $14.07, 90 turns)
+Full report: `_tmp/phase3-opus-review.md` (gitignored scratch, not
+committed — re-run to regenerate if lost; the review itself cost real
+money, don't discard the analysis by deleting the file).
 
-**BLOCKED on the Anthropic session cap** — user confirmed 2026-09-05
-~01:50 UTC the Anthropic quota is still exhausted ("but its exausted
-right now!"). Last known reset: 03:10 UTC. Do NOT probe or spend until
-the user says the cap is open; then run the opus review fresh-session
-(never --resume) against the brief above. Do NOT schedule a cron for
-this without asking the user first (they have repeatedly rejected
-automatic token-spending crons).
+**Verdict: FAIL — 6 BLOCKERs.** The substrate (scheduler, journal,
+resume, validator, store, client/server split, TUI) is genuinely
+strong — "PASS, best/better than specified" on several axes. What
+fails is **everything between that substrate and a real user**:
+- **B1** No live model provider reachable from ANY entry point —
+  `provider_from_spec` only matches `"scripted"`; the real
+  `ollama.rs::provider_from_env` has zero non-test callers, no
+  Anthropic provider exists. **Every green EC with an `agent` node
+  was satisfied by hand-written fixture answers — no LLM turn has
+  ever actually executed in this system.**
+- **B2** Node capabilities default to EMPTY for every non-builtin kind
+  (`agent`/`tool`/`gate`/`memory`) — the validator checks a different
+  registry than the runtime uses, so lint stays green while the real
+  capset is empty. Kills `verify-fix.toml`, `DEFAULT_TOML`,
+  `assistant.toml` at runtime. This is Phase-2's F1 BLOCKER back one
+  layer down.
+- **B3** Hardcoded `/projects/pi-improved` paths in production code
+  (`daemon/router.rs`, `pii-server/src/lib.rs`) — not deployable
+  outside this checkout; silently disables `gate`/`memory` nodes
+  elsewhere.
+- **B4** No TLS anywhere (`Scheme::Http` is the only variant; rustls
+  is a *forbidden* dep) while `discord.rs` ships an `https://` base
+  the client can't parse — Discord is unreachable by construction,
+  and a bot token would go out in plaintext on a naive fix.
+- **B5** rss-gate root cause found: **leaked UDS connection per run,
+  both sides** — `Client` has no `Drop`/`shutdown()`, reader task
+  parks forever; ~15-25KiB × 3000 runs matches the ~26KB/run, ~70MB
+  peak, zero slope exactly. **Confirms releasing `RunHandle`s (commit
+  `11fbe73`) fixed the wrong thing** — the leak was never run state.
+- **B6** Budget system completely inert — every run gets
+  `Budget::unlimited()`; `max_model_calls` in TOML is silently
+  discarded; HANDOFF's prior claim "budget wiring exists the day a
+  generative step is added" is **false**, per the review.
+
+Also: only 9/12 node kinds exist (no `subgraph`/`map`/`llm`/`net`/
+`nano` — `subgraph` is load-bearing, blocks all composition), no
+`pii-obs` crate at all, no gateway, workers unreachable outside tests,
+Discord channel untested/unreachable (test theatre — never constructs
+`DiscordChannel`). Full MAJOR/MINOR list and strengths in the report.
+
+**HONEST GAP LIST (review's own words) — things HANDOFF implied that
+aren't true:** Discord doesn't work (can't reach it + untested);
+agent nodes can't run (no model reachable); verify-fix is capability-
+denied at runtime; budget wiring doesn't exist; worker recovery is
+untested outside unit tests; there is no logging subsystem; the binary
+isn't deployable outside this checkout. **None of this is a design
+failure** — the substrate is real and the diamond test suite is
+genuine evidence of it. The gap is connecting it to a model and to a
+machine that isn't this one.
+
+## MVP PATH (opus recommendation — "M0: the coding agent")
+**Six fixes, not six weeks**, in this order: (1) B1 — wire `ollama:`
+through `Engine::new`, ship Ollama-only (sidesteps B4/TLS for now);
+(2) B2 — pass the real node registry into `load_toml`; (3) B6 — charge
+tokens, wire `max_model_calls` → `BudgetBreach` → exit 3; (4) B3 —
+de-hardcode `channel_ctx`/`lint_registry`; (5) B5 — `Client::shutdown()`
++ `Drop` + daemon idle timeout + conn cap (turns rss-gate green);
+(6) M1 — real `unsubscribe` + enforced cap. **Cut from M0**: Discord,
+workers, memory, gateway, obs, nano, pipelines, subgraph (keep cron/
+timers/approvals — they work, just not the headline). 10 machine-
+checkable acceptance criteria and a concrete demo script are in the
+full report (§"Part 2 — Path to an MVP"). Estimate: ~1 week fixes + ~1
+week for the first real agent-loop-against-local-model surprises.
+Later: M1 "the assistant" (~2w, TLS+Discord+obs), M2 "composition"
+(~2w, subgraph/map/pipelines), M3 "memory that means something" (~2w).
+
+**NEXT STEP (not yet started, awaiting user go-ahead):** fix the 6
+BLOCKERs via **DeepSeek workers** (per user's cost resolution — NOT
+sonnet). Likely needs a fresh spec/DAG per fix given each is a
+different crate; B1+B2+B6 are probably the highest-value first pass
+since B1/B2 block using the system AT ALL. Ask the user before
+spawning any DeepSeek/pidag work — do not assume "go" from the opus
+review alone authorizes implementation spend.
 
 ## LESSONS LEARNED (do not un-learn)
 1. NEVER claude --resume for continuation (see cost rule 2).
