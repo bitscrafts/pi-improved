@@ -39,7 +39,18 @@ impl Store {
     /// Returns [`PiiError::Internal`] if the database cannot be opened or its
     /// tables cannot be defined.
     pub fn open(path: &Path) -> Result<Self, PiiError> {
-        let db = Database::create(path)
+        // RSS-gate fix (2026-09-05): redb defaults to a 1 GiB cache — far
+        // beyond any budget a control-plane daemon should hold for a store
+        // that is typically a few MB. Under sustained soak this showed up
+        // as a slow, sublinear RSS climb (thread count flat, fd count flat,
+        // store file itself only a few MB) that no amount of connection- or
+        // thread-level fixing touched: it was redb's own page cache growing
+        // toward its default ceiling. 8 MiB is generous for this store's
+        // real working set and leaves ample headroom under the 50 MB
+        // rss-gate budget.
+        let db = Database::builder()
+            .set_cache_size(8 * 1024 * 1024)
+            .create(path)
             .map_err(|e| PiiError::Internal(format!("store: open {}: {e}", path.display())))?;
         // Define tables up front so reads on first use never race a write.
         {

@@ -49,7 +49,14 @@ impl HealStore {
     /// # Errors
     /// [`PiiError::Internal`] on a redb failure.
     pub fn open(path: &std::path::Path) -> Result<Self, PiiError> {
-        let db = Database::create(path)
+        // RSS-gate fix (2026-09-05): redb defaults to a 1 GiB cache; this
+        // store is small (approvals/channels/heal/memory/timers), so 4 MiB
+        // is ample and avoids each auxiliary store compounding the
+        // daemon's total cache footprint under soak (see pii-store/src/
+        // lib.rs's Store::open for the full rationale).
+        let db = Database::builder()
+            .set_cache_size(4 * 1024 * 1024)
+            .create(path)
             .map_err(|e| PiiError::Internal(format!("heal: open {}: {e}", path.display())))?;
         {
             let write = db

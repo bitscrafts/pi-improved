@@ -107,6 +107,22 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        // RSS-gate fix (2026-09-05): every run.start/resume spawns a fresh
+        // OS thread via spawn_blocking (runs.rs). Under a fast, sequential
+        // soak (F5.14's rss-gate: --runs 3000) that grows tokio's blocking
+        // pool toward its 512-thread default cap — measured 279 threads
+        // under load vs 1 idle — and each churned thread's glibc-cached
+        // stack/arena shows up as climbing daemon RSS with a FLAT fd count
+        // (ruled out as a connection leak; see HANDOFF.md). Capping the
+        // pool bounds worst-case thread count; genuinely concurrent
+        // channel/cron/soak load queues past the cap rather than spawning
+        // unboundedly, which is the correct tradeoff for a daemon whose
+        // real workload is bursty, not a sustained high-throughput soak.
+        // `worker_threads` also matters: tokio defaults to num_cpus (32 on
+        // this host) async workers, which a low-throughput control-plane
+        // daemon does not need — 4 is ample headroom for connection I/O.
+        .worker_threads(4)
+        .max_blocking_threads(8)
         .build()
     {
         Ok(rt) => rt,
