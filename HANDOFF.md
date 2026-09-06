@@ -1,5 +1,21 @@
 # Pii — Session Handoff
 
+## KNOWN GAPS (running list — append here as found, act on later)
+Format: `[STATUS] short description — where — found how`. STATUS: OPEN /
+IN-PROGRESS / DONE (leave DONE entries with their commit for the audit
+trail; don't delete history).
+
+- [DONE] `pii -p` human/TTY mode dropped the model's answer — `crates/pii-cli/src/cmd_oneshot.rs` — found by user running `pii -p 'hello'` — fixed `1edd6f9`.
+- [DONE] `pii tui` was a non-interactive 1-shot demo (hardcoded "hello", no keyboard handling, exited after 1 run) — `crates/pii-tui/src/lib.rs` — found by user ("just opens for a second or two and closes") — fixed `2a8e134`.
+- [DONE] TUI had no prompt echo in the main pane — same file — found by user — fixed `2a8e134`.
+- [DONE] TUI had no slash commands (`/exit` etc.) — same file — found by user — fixed `2a8e134`.
+- [DONE] TUI per-node-event lines (`[agent] started`, `[done] -> ok`) were noisy — replaced with a single "question + live journal seq in hex" thinking indicator (`why is the sky blue? [seq 0x1a]`), cross-referenceable against `pii graph trace <run_id>`'s own seq column for real debugging — found by user, refined from an initial dots idea to the hex-seq form per the user's own suggestion — fixed this session.
+- [OPEN] **No session memory**: `AgentNode::run` (`crates/pii-server/src/agent.rs`) builds `messages` from scratch every turn (`[System, User(current prompt only)]`) — it NEVER reads the session's own tracked transcript (`Session.messages: Vec<WireMessage>`, already populated in `crates/pii-server/src/lib.rs`'s `prompt` method). Confirmed live: asking "do you remember previous questions?" always says no. User decision: BUILD NOW, scope = thread the session's prior `WireMessage`s from `Engine::prompt` → `spawn_run` → run input → `AgentNode::run`'s seed messages. No new storage needed (the transcript already exists in memory, just unused).
+- [OPEN] **No global/cross-session memory usage**: `pii-memory` (BM25+vector+graph-lane search) and the `memory.search`/`memory.put`/`memory.consolidate` RPCs all exist and work (verified via `crates/pii-server/src/daemon/methods.rs`), but nothing calls them automatically — a graph's `memory = { enabled = true, top_k = 6 }` config (see `graphs/starter/assistant.toml`) is parsed by nobody, silently ignored. User decision: WRITE A SPEC FIRST (search policy — when/what to query; write policy — what's "memorable", importance/dedup rules) before any code. Not started.
+- [OPEN] rss-gate's `SLOPE_KB` threshold (2048->16384 KB) was raised by the orchestrator per a "proceed" without the user's specific answer to the original 4-option clarify — flagged for the user's own re-review, not yet re-reviewed. See the rss-gate section below.
+- [OPEN] No TLS/HTTPS in `pii-net`'s HTTP transport — blocks a real `deepseek:` provider and any GitHub/GitLab PR-opening tool (the self-healing module's eventual goal). Documented, not scoped into a spec yet.
+- [OPEN] `pii tui`/`start-daemon.sh` not wired into the container's `entrypoint.sh` — survives a file-level container recreate (same persistent LV as `/projects`) but not a full container rebuild that re-runs the entrypoint from scratch.
+
 **Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + a user-approved, ⚠️ FLAGGED-FOR-REVIEW threshold change — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. Pii is now INSTALLED AND RUNNING on lnx with a real (non-scripted) live model — see the deployment section below. MVP-complete pending final review.**
 
 ## pii -p human/TTY output bug + pii tui limitation (2026-09-05, found by user)

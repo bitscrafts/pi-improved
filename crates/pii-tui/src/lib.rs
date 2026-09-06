@@ -43,8 +43,9 @@ pub enum ConnStatus {
 ///
 /// A real protocol [`Event`], the user's own submitted prompt (so it's
 /// visible in the main pane instead of vanishing the instant Enter is
-/// pressed), or a local system message (e.g. an unknown slash command).
-/// Only the `Event` variant is server-derived; the other two are pure
+/// pressed), a local system message (e.g. an unknown slash command), or
+/// the live "thinking" indicator described on [`LogLine::Thinking`].
+/// Only the `Event` variant is server-derived; the rest are pure
 /// client-side UI feedback, not "domain state" in the F5.2 sense (no
 /// scheduler/graph/store/model data crosses into them). (2026-09-05)
 pub enum LogLine {
@@ -54,6 +55,24 @@ pub enum LogLine {
     Prompt(String),
     /// A local message not tied to any protocol event (e.g. command help).
     System(String),
+    /// The active run's live progress indicator (2026-09-05): renders as
+    /// the original prompt text with the run's latest journal sequence
+    /// number appended in hex (`"why is the sky blue? [seq 0x1a]"`) —
+    /// the SAME `seq` [`pii graph trace <run_id>`] would show per line,
+    /// so a stuck/runaway run is directly cross-referenceable against the
+    /// trace log, not just "still thinking". Replaces the previous
+    /// per-`[node] started`/`-> port` line-per-event noise — those
+    /// events still advance the shown seq but no longer each get their
+    /// own log line. This is the LAST line in the log while a run is
+    /// active; it is replaced in place (not appended) by
+    /// [`AppState::tick_thinking`], and converted back to a plain
+    /// [`LogLine::Prompt`] once the run reaches a terminal state.
+    Thinking {
+        /// The prompt this progress indicator belongs to.
+        prompt: String,
+        /// The latest event's journal sequence number for this run.
+        seq: u64,
+    },
 }
 
 /// The TUI's entire state (F5.2): only protocol-derived fields, plus the
@@ -84,21 +103,76 @@ impl Default for AppState {
 }
 
 impl AppState {
-    /// Records a received event, capping the delta buffer at 500.
-    pub fn push_event(&mut self, ev: Event) {
+    /// Records a received event (2026-09-05): node-lifecycle events
+    /// (`NodeStarted`/`NodeFinished`/`NodeDead`/`ToolCall`/`ToolResult`)
+    /// advance the trailing [`LogLine::Thinking`] indicator's shown `seq`
+    /// instead of each getting their own log line — see
+    /// [`Self::tick_thinking`]. Everything else (the final answer, any
+    /// failure, approval requests, worker/channel/memory events) is
+    /// still logged in full; nothing observable is silently dropped.
+    /// `seq` is the event's journal sequence number (the SAME number
+    /// `pii graph trace <run_id>` shows per line) — passed by the caller
+    /// from `EventPush::seq`, not derived here.
+    pub fn push_event(&mut self, seq: u64, ev: Event) {
+        if matches!(
+            ev,
+            Event::NodeStarted { .. }
+                | Event::NodeFinished { .. }
+                | Event::NodeDead { .. }
+                | Event::ToolCall { .. }
+                | Event::ToolResult { .. }
+        ) {
+            self.tick_thinking(seq);
+            return;
+        }
+        self.finish_thinking();
         self.push_line(LogLine::Event(ev));
     }
 
-    /// Records the user's own submitted prompt as an echo line
-    /// (2026-09-05) so it stays visible in the main pane.
+    /// Records the user's own submitted prompt (2026-09-05) as a live
+    /// [`LogLine::Thinking`] indicator — NOT a separate echo line: the
+    /// prompt text and the live seq share one line
+    /// (`"you> why is the sky blue? [seq 0x1a]"`), per the user's
+    /// explicit request (a real, cross-referenceable identifier — the
+    /// same `seq` a trace log line would show — rather than an arbitrary
+    /// dot count). [`Self::finish_thinking`] converts it back to a plain
+    /// [`LogLine::Prompt`] once the run completes, so the permanent log
+    /// record is just the question, not a stale seq number.
     pub fn push_prompt_echo(&mut self, text: String) {
-        self.push_line(LogLine::Prompt(text));
+        self.push_line(LogLine::Thinking {
+            prompt: text,
+            seq: 0,
+        });
     }
 
     /// Records a local system message (2026-09-05), e.g. an unrecognized
     /// slash command's help text.
     pub fn push_system(&mut self, text: String) {
         self.push_line(LogLine::System(text));
+    }
+
+    /// Advances the trailing `Thinking` line's shown seq to `seq`
+    /// (2026-09-05). A no-op if the last line isn't `Thinking` (e.g.
+    /// between runs).
+    fn tick_thinking(&mut self, seq: u64) {
+        if let Some(LogLine::Thinking { seq: shown, .. }) = self.deltas.back_mut() {
+            *shown = seq;
+        }
+    }
+
+    /// Converts the trailing `Thinking` line back into a plain `Prompt`
+    /// line (seq indicator removed) once a run reaches a terminal event
+    /// (2026-09-05), so the permanent log record is just the question —
+    /// not a stale seq number frozen from whenever the run finished.
+    fn finish_thinking(&mut self) {
+        if let Some(line @ LogLine::Thinking { .. }) = self.deltas.back_mut() {
+            let LogLine::Thinking { prompt, .. } =
+                std::mem::replace(line, LogLine::System(String::new()))
+            else {
+                unreachable!("matched Thinking above");
+            };
+            *line = LogLine::Prompt(prompt);
+        }
     }
 
     fn push_line(&mut self, line: LogLine) {
@@ -195,6 +269,15 @@ fn render_log_line<'a>(line: &LogLine) -> Line<'a> {
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
+        )),
+        // 2026-09-05: the live progress indicator — the question itself
+        // with the run's latest journal seq in hex, e.g.
+        // "why is the sky blue? [seq 0x1a]" — cross-referenceable
+        // against `pii graph trace <run_id>`'s own seq column. seq=0
+        // means no node-lifecycle event has arrived yet for this run.
+        LogLine::Thinking { prompt, seq } => Line::from(Span::styled(
+            format!("{prompt} [seq {seq:#x}]"),
+            Style::default().fg(Color::DarkGray),
         )),
         LogLine::Event(ev) => render_event_line(ev),
     }
@@ -511,7 +594,7 @@ where
                             &p.event,
                             Event::RunFinished { .. } | Event::RunCancelled { .. }
                         );
-                        state.push_event(p.event);
+                        state.push_event(p.seq, p.event);
                         if is_terminal {
                             run_active = false;
                         }
