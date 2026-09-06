@@ -104,10 +104,9 @@ impl GraphNode for AgentNode {
             .get("prompt")
             .and_then(|p| p.as_str())
             .map_or_else(|| input.payload.to_string(), str::to_owned);
-        let mut messages = vec![
-            ChatMessage::new(Role::System, &self.system),
-            ChatMessage::new(Role::User, &user_text),
-        ];
+        let mut messages = vec![ChatMessage::new(Role::System, &self.system)];
+        messages.extend(history_messages(&input.payload));
+        messages.push(ChatMessage::new(Role::User, &user_text));
         let mut files_changed: Vec<String> = Vec::new();
         for turn in 1..=self.max_turns {
             let req = ChatRequest {
@@ -193,6 +192,34 @@ impl GraphNode for AgentNode {
     }
 }
 
+/// Seeds prior-turn [`ChatMessage`]s from the run input's `history`
+/// (2026-09-05, session memory): an array of `{role, content}`,
+/// populated by [`crate::Engine::prompt`] from the session's own tracked
+/// transcript. Absent/malformed `history` (e.g. a direct `run.start`
+/// call, which doesn't go through a session) degrades to an empty
+/// iterator, not an error — a graph run with no session context simply
+/// has nothing to seed from. Extracted from `AgentNode::run` to keep it
+/// under the workspace's line-count lint.
+fn history_messages(payload: &serde_json::Value) -> Vec<ChatMessage> {
+    payload
+        .get("history")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            let role = m.get("role").and_then(serde_json::Value::as_str)?;
+            let content = m.get("content").and_then(serde_json::Value::as_str)?;
+            let role = match role {
+                "assistant" => Role::Assistant,
+                "system" => Role::System,
+                "tool" => Role::Tool,
+                _ => Role::User,
+            };
+            Some(ChatMessage::new(role, content))
+        })
+        .collect()
+}
+
 impl AgentNode {
     /// Emits a live, bus-only event (F12, opus review): never journalled.
     fn emit_live(&self, event: pii_proto::event::Event) {
@@ -266,3 +293,125 @@ impl AgentNode {
 // ChatResponse import keeps the scripted fixture contract visible here.
 #[allow(dead_code)]
 fn _resp_shape(_r: &ChatResponse) {}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use parking_lot::Mutex;
+
+    use pii_abi::NodeInput;
+    use pii_core::{Budget, CapSet, Ctx};
+    use pii_graph::node::GraphNode;
+    use pii_model::ChatRequest;
+
+    use super::{AgentNode, ModelProvider};
+
+    /// Records every [`ChatRequest`] it receives and always answers with
+    /// a fixed, tool-free reply — enough to inspect exactly what
+    /// `AgentNode::run` sent the model without needing a real transport
+    /// or the `scripted:` fixture format (which ignores the request
+    /// entirely and can't tell us whether history was seeded).
+    struct RecordingProvider {
+        seen: Mutex<Vec<ChatRequest>>,
+    }
+
+    impl ModelProvider for RecordingProvider {
+        fn name(&self) -> &'static str {
+            "recording"
+        }
+
+        fn chat(
+            &self,
+            _ctx: &Ctx,
+            req: &ChatRequest,
+        ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+            self.seen.lock().push(req.clone());
+            Ok(pii_model::ChatResponse {
+                text: String::from("ok"),
+                tool_calls: Vec::new(),
+                tokens_in: 1,
+                tokens_out: 1,
+            })
+        }
+    }
+
+    fn test_node(provider: std::sync::Arc<RecordingProvider>) -> AgentNode {
+        AgentNode {
+            system: String::from("You are pii."),
+            max_turns: 4,
+            model: None,
+            provider,
+            toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
+            workspace: std::path::PathBuf::from("."),
+            live: None,
+        }
+    }
+
+    fn test_ctx() -> Ctx {
+        Ctx::root(CapSet::empty(), Budget::unlimited())
+    }
+
+    /// 2026-09-05 (session memory): `history` in the run's input payload
+    /// must be seeded into the model's message list, in order, BEFORE
+    /// the current turn's user message — this is the exact fix for
+    /// "do you remember previous questions?" always saying no.
+    #[test]
+    fn history_from_input_seeds_prior_turns() {
+        let provider = std::sync::Arc::new(RecordingProvider {
+            seen: Mutex::new(Vec::new()),
+        });
+        let node = test_node(provider.clone());
+        let input = NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::json!({
+                "prompt": "what did I ask first?",
+                "history": [
+                    {"role": "user", "content": "what is 3 times 2?"},
+                    {"role": "assistant", "content": "6"},
+                ],
+            }),
+            nodes: serde_json::Value::Null,
+        };
+        node.run(&test_ctx(), &input).expect("run");
+
+        let sent = provider
+            .seen
+            .lock()
+            .first()
+            .expect("one call recorded")
+            .messages
+            .clone();
+        // [System, User(prior q), Assistant(prior a), User(current q)].
+        assert_eq!(sent.len(), 4, "unexpected message shape: {sent:?}");
+        assert_eq!(sent.get(1).expect("msg 1").content, "what is 3 times 2?");
+        assert_eq!(sent.get(2).expect("msg 2").content, "6");
+        assert_eq!(sent.get(3).expect("msg 3").content, "what did I ask first?");
+    }
+
+    /// 2026-09-05: absent `history` (e.g. a direct `run.start` call with
+    /// no session) must degrade to the old stateless shape, not error.
+    #[test]
+    fn missing_history_is_the_old_stateless_shape() {
+        let provider = std::sync::Arc::new(RecordingProvider {
+            seen: Mutex::new(Vec::new()),
+        });
+        let node = test_node(provider.clone());
+        let input = NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::json!({ "prompt": "hello" }),
+            nodes: serde_json::Value::Null,
+        };
+        node.run(&test_ctx(), &input).expect("run");
+
+        let sent = provider
+            .seen
+            .lock()
+            .first()
+            .expect("one call recorded")
+            .messages
+            .clone();
+        assert_eq!(sent.len(), 2, "unexpected message shape: {sent:?}");
+        assert_eq!(sent.get(1).expect("msg 1").content, "hello");
+    }
+}

@@ -13,10 +13,13 @@ pub mod daemon;
 pub mod dispatch;
 pub mod loopback;
 pub mod nodes;
+pub mod registry;
 pub mod runs;
 pub mod subscribe;
 pub mod tool;
 pub mod uds;
+
+pub use registry::{lint_registry, registry};
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -280,19 +283,26 @@ impl Engine {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let session = {
+        let (session, history) = {
             let mut map = self.sessions.lock();
             let s = map
                 .get_mut(session_id)
                 .ok_or_else(|| PiiError::NotFound(format!("session '{session_id}'")))?;
             s.status = SessionStatus::Running;
+            // 2026-09-05 (session memory): capture the transcript BEFORE
+            // pushing this turn's user message, so `history` below is
+            // exactly the prior turns — the current prompt is threaded
+            // separately (as `prompt`, unchanged) and the agent node
+            // appends it itself, so it must not also appear in history
+            // or it would be duplicated in the model's message list.
+            let history = s.messages.clone();
             s.messages.push(WireMessage {
                 role: "user".to_owned(),
                 content: prompt_text.clone(),
             });
             let session = s.clone();
             drop(map);
-            session
+            (session, history)
         };
         let graph_name = session.graph.unwrap_or_else(|| "default".into());
         let spec = self.load_spec(&graph_name)?;
@@ -305,6 +315,9 @@ impl Engine {
             .entry(session_id.to_owned())
             .or_default()
             .push(run_id.to_string());
+        // 2026-09-05 (session memory): merge the prior transcript into
+        // extra_input under `history` (see `merge_history` doc comment).
+        let extra_input = Some(merge_history(extra_input, &history));
         runs::spawn_run(
             Arc::clone(self),
             spec,
@@ -368,7 +381,7 @@ impl Engine {
             return pii_graph::load_toml_with_registry(&src, &self.reg);
         }
         if name == "default" {
-            return pii_graph::load_toml_with_registry(DEFAULT_TOML, &self.reg);
+            return pii_graph::load_toml_with_registry(registry::DEFAULT_TOML, &self.reg);
         }
         Err(PiiError::NotFound(format!("graph '{name}'")))
     }
@@ -451,7 +464,15 @@ impl Engine {
     /// snapshot, not just the user's prompts.
     pub fn record_assistant(&self, session_id: &str, terminal: &pii_abi::Terminal) {
         let text = match terminal {
-            pii_abi::Terminal::Success { output } => output.to_string(),
+            // 2026-09-05 (session memory): use the agent's actual answer
+            // text when present, not the raw `{"text":...,"turns":...}`
+            // JSON blob — history built from this must read like a real
+            // transcript, or every future turn re-seeds the model with
+            // its own tool-call bookkeeping instead of clean dialogue.
+            pii_abi::Terminal::Success { output } => output
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(|| output.to_string(), str::to_owned),
             pii_abi::Terminal::Failure { error } => error.clone(),
             pii_abi::Terminal::Suspended { .. } => String::from("(suspended)"),
         };
@@ -476,148 +497,27 @@ impl Engine {
     }
 }
 
-/// Builds the registry with the built-ins plus `agent`, `tool`, `gate` and
-/// `memory` (F2.2, F5.9, F6.7).
-#[must_use]
-pub fn registry(
-    cfg: &EngineConfig,
-    provider: Arc<dyn ModelProvider>,
-    live: tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>,
-    approvals: Arc<pii_store::approval::ApprovalStore>,
-    heals: Arc<pii_store::heal::HealStore>,
-    memory: Arc<pii_store::MemStore>,
-    workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
-) -> NodeRegistry {
-    let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(agent::AgentFactory {
-        provider,
-        workspace: cfg.workspace.clone(),
-        live: Some(live),
-    }));
-    reg.register(Arc::new(tool::ToolFactory {
-        toolset: ToolSet::builtin(cfg.workspace.clone()),
-    }));
-    reg.register(Arc::new(nodes::gate::GateFactory { approvals }));
-    reg.register(Arc::new(nodes::heal::HealFactory {
-        heals,
-        runner: Arc::new(nodes::heal::CargoXtaskRunner {
-            workspace: cfg.workspace.clone(),
-        }),
-    }));
-    reg.register(Arc::new(nodes::memory::MemoryFactory { store: memory }));
-    reg.register(Arc::new(nodes::crash::DebugCrashFactory));
-    reg.register(Arc::new(nodes::worker::WorkerFactory { pool: workers }));
-    reg
+/// Merges `history` (a session's prior transcript) into `extra_input`
+/// under the `history` key (2026-09-05, session memory) — the SAME merge
+/// mechanism `runs::spawn_run` already uses to thread verify-fix's
+/// `test_command`/`workspace` params, so `agent.rs` reads it from
+/// `input.payload.history` alongside the existing `prompt` field.
+fn merge_history(
+    extra_input: Option<serde_json::Value>,
+    history: &[WireMessage],
+) -> serde_json::Value {
+    let history_json = serde_json::json!(
+        history
+            .iter()
+            .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
+            .collect::<Vec<_>>()
+    );
+    match extra_input {
+        Some(serde_json::Value::Object(mut obj)) => {
+            obj.insert(String::from("history"), history_json);
+            serde_json::Value::Object(obj)
+        }
+        Some(other) => other,
+        None => serde_json::json!({ "history": history_json }),
+    }
 }
-
-/// A registry for static linting only.
-///
-/// Registers `agent`/`tool`/`gate`/`memory` so `pii graph lint` accepts
-/// starter graphs, with a provider that is never called and scratch stores
-/// that are never meaningfully written (lint never executes a node).
-///
-/// **B3 (opus review)**: the lint scratch DBs used to be hardcoded to
-/// `/projects/pi-improved/_tmp/phase3/lint-{approval,memory}.redb`, so on
-/// any other machine (or a different runtime dir) both opens failed and
-/// `gate`/`memory` were silently dropped from the registry — `pii graph
-/// lint` then reported a false `V0: unknown kind 'memory'` for graphs that
-/// are actually fine. They are now placed under `runtime_dir` (the same
-/// directory the caller's real store/config already lives in), which is
-/// always a real, writable path in this process, not a literal string that
-/// only exists in this checkout.
-#[must_use]
-pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
-    let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(nodes::worker::WorkerFactory {
-        pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<
-            String,
-            pii_worker::Supervisor,
-        >::new())),
-    }));
-    reg.register(Arc::new(agent::AgentFactory {
-        provider: Arc::new(pii_model::ScriptedProvider::empty()),
-        workspace: workspace.to_path_buf(),
-        live: None,
-    }));
-    reg.register(Arc::new(tool::ToolFactory {
-        toolset: ToolSet::builtin(workspace.to_path_buf()),
-    }));
-    // B2 (opus review): these opens are best-effort (lint must still work
-    // when the runtime dir isn't writable), but a failure here means
-    // `gate`/`memory` graphs will fail lint with `unknown kind` rather than
-    // silently validating against an empty capset — surfaced via the
-    // eprintln below instead of vanishing.
-    match pii_store::approval::ApprovalStore::open(&runtime_dir.join("lint-approval.redb")) {
-        Ok(approvals) => reg.register(Arc::new(nodes::gate::GateFactory {
-            approvals: Arc::new(approvals),
-        })),
-        Err(e) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!(
-                    "lint_registry: gate unavailable (approval store: {e}); 'gate' nodes will fail lint as unknown kind"
-                );
-            }
-        }
-    }
-    match pii_store::MemStore::open(&runtime_dir.join("lint-memory.redb")) {
-        Ok(memory) => reg.register(Arc::new(nodes::memory::MemoryFactory {
-            store: Arc::new(memory),
-        })),
-        Err(e) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!(
-                    "lint_registry: memory unavailable (mem store: {e}); 'memory' nodes will fail lint as unknown kind"
-                );
-            }
-        }
-    }
-    // S0.2: `heal_detect` is a server-owned kind like `gate`/`memory`; the
-    // lint registry registers it with a cargo-xtask runner so
-    // `graphs/starter/heal-watch.toml` lints (lint never executes nodes).
-    match pii_store::heal::HealStore::open(&runtime_dir.join("lint-heal.redb")) {
-        Ok(heals) => reg.register(Arc::new(nodes::heal::HealFactory {
-            heals: Arc::new(heals),
-            runner: Arc::new(nodes::heal::CargoXtaskRunner {
-                workspace: workspace.to_path_buf(),
-            }),
-        })),
-        Err(e) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!(
-                    "lint_registry: heal_detect unavailable (heal store: {e}); 'heal_detect' nodes will fail lint as unknown kind"
-                );
-            }
-        }
-    }
-    reg
-}
-
-/// The built-in session graph: one `agent` node wired `ok → done`. Both
-/// `caps` lines below include `net` (2026-09-05) - node caps default to
-/// `required_caps()`, which excludes NET by design, so the graph-level
-/// line alone is not enough.
-const DEFAULT_TOML: &str = r#"
-name = "default"
-entry = "agent"
-caps = ["fs_read", "fs_write", "proc", "net"]
-
-[[node]]
-id = "agent"
-kind = "agent"
-caps = ["fs_read", "fs_write", "proc", "net"]
-system = "You are pii, a coding agent. Answer concisely."
-
-[[edge]]
-from = "agent"
-port = "ok"
-to = "done"
-kind = "data"
-
-[[node]]
-id = "done"
-kind = "transform"
-expr = "$.payload"
-"#;
