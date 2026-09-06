@@ -133,8 +133,16 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         // `worker_threads` also matters: tokio defaults to num_cpus (32 on
         // this host) async workers, which a low-throughput control-plane
         // daemon does not need — 4 is ample headroom for connection I/O.
-        .worker_threads(4)
-        .max_blocking_threads(8)
+        .worker_threads(
+            pii_core::env_var("PII_DAEMON_WORKER_THREADS")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(4),
+        )
+        .max_blocking_threads(
+            pii_core::env_var("PII_DAEMON_MAX_BLOCKING")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8),
+        )
         .build()
     {
         Ok(rt) => rt,

@@ -15,12 +15,35 @@ trail; don't delete history).
 - [DONE] **Graph human-readable visualization**: implemented via `pidag sdd specs/10-graph-visualize.md --run` (worker: `deepseek/deepseek-v4-flash`, thinking off). New `pii graph show <file>` subcommand (`crates/pii-graph/src/render.rs` + `pii-cli` wiring) renders a validated graph as deterministic ASCII rows: `<id> [<kind-detail>]` + `(entry)`/`(loop_budget=N)`/`(join: ...)` annotations, fan-out as `|-- <port> --> <to>` lines, loop closures as a separate `^-- loops back to "<id>" (budget=N)` annotation (never forced through a lane, per the spec's git-log-graph research). Verified against `graphs/starter/verify-fix.toml` — output byte-matches the spec's worked example exactly. 7 new unit tests, full workspace build/clippy/test/quality-gate green, all starter graphs (except known-bad `crash.toml`) render exit 0. Committed `be32ca1`. Deployed to `/root/.local/bin/pii` and re-verified live.
 - [DONE] **pidag env-propagation gap (found while running this spec)**: background-launched shells do NOT source `~/.bashrc` (only interactive/login shells do), so `DEEPSEEK_API_KEY` (only exported there) was silently absent from every `pidag sdd --run` launched via a background terminal call — surfaced as "No API key found for provider deepseek" on every `implement-*` node, misleadingly looking like a pidag/pi bug. Root-caused via a `PI_BINARY` shim capturing the actual subprocess env (confirmed present in direct/foreground runs, absent in backgrounded ones). Fix: any pidag run script must `source /root/.bashrc` (or otherwise self-export required API keys) rather than relying on inherited shell env, to be launch-context-independent (foreground, background, cron).
 - [DONE] **Journal hardening (bounded write-behind + interrupted-turn closer)**: upgrade items 1+2 from the dsh comparison (full analysis: `_docs/06-research/005-dsh-vs-pii-harness-analysis.md`, condensed: agent-memory `pi-improved/research/dsh-vs-pii-harness-comparison`). IMPLEMENTED via pidag (worker partial: J1 store `append_events` batch + `write_txn_count` probe + `NodeInterrupted` variant) + orchestrator completion (J2 journaler write-behind with flush barriers at set_status/snapshot_now/terminal-finish; J3 resume `interrupted_nodes` detection appending `NodeInterrupted` markers before `Resumed`; cancel-path flush so a cancelled run stays discoverable for resume — this fixed a real resume-contract break the write-behind introduced). ALSO FIXED a pre-existing engine race the write-behind exposed: `loop_budget_exceeded_fails` was ~30% flaky on the CLEAN baseline (verified by stashing); a budgeted node's budget-th execution now terminates the run immediately (state.rs `it == b` check) instead of letting the loop body's gate/retry run once more — now 0/20 failures. RSS payoff (spec 11 J4): full 300s gate slope_kb 13784 -> 11548 (13.8MB -> 11.5MB; the ~1.8MB short-probe reading was a sampling-window artifact, the honest number is the full gate). Spec `specs/11-journal-hardening.md`. New tests: 6 journaler write-behind unit tests, resume.rs extended with NodeInterrupted assertions. See commit below.
-- [OPEN] rss-gate's `SLOPE_KB` threshold (2048->16384 KB) was raised by the orchestrator per a "proceed" without the user's specific answer to the original 4-option clarify — flagged for the user's own re-review, not yet re-reviewed. See the rss-gate section below. (Journal hardening spec 11 targets the root cause that made the raise necessary.)
+- [DONE] **Daemon thread caps re-verified removable (2026-09-06)**: the RSS-debug caps (`worker_threads(4)`/`max_blocking_threads(8)`, commit `ba58845`) were load-bearing for the OLD per-node-thread engine, but the inline single-node dispatch fix (`1f3572a`) removed the thread-churn driver. Measured: full 300s rss-gate with caps LIFTED (env overrides 32/512) → slope_kb=10620 (LOWER than capped 11548), threads flat at 33 under 3000-run soak (was 279 pre-fix), RSS flat ~7.8MB. Env overrides `PII_DAEMON_WORKER_THREADS`/`PII_DAEMON_MAX_BLOCKING` added (defaults unchanged 4/8) so caps can be raised/removed at runtime without a rebuild — user decision on final defaults pending (asked, timed out; reversible either way).
 - [IN-PROGRESS] **`pii web` read-only viewer (spec 12)**: user asked "ideas on a web interface like deepseek harness?" after the dsh analysis — clarify decision: VIEWER-FIRST (read-only run/graph/session browser), design base pidag-ui (pure-Rust embedded vanilla-JS SPA + axum, proven at lnx:4601). KEY ARCHITECTURE FINDING: pi's store.redb uses `redb::Database::create()` (single-connection — a second process cannot open the file while the daemon runs), so the viewer CANNOT read the store directly; it must PROXY the daemon's Unix-socket JSON-RPC over HTTP (client half already exists: `pii_proto::client::Client` + `pii_server::uds::client_connect`). Second finding: `session.list` is declared in the wire protocol (pii-proto method.rs) but has NO dispatch arm (falls through to MethodNotFound, dispatch.rs:141) — spec 12's only daemon change is implementing it. Spec written: `specs/12-web-viewer.md` (W1 server/CLI loopback-only, W2 session.list handler, W3 SPA views: run list, run journal trace w/ hex seqs, session transcript, approvals/heals/memory; polling not WS in v1; no axum in core crates — separate pii-web crate). DRAFT — implementation deferred until user greenlights (like 09/11).
 - [OPEN] No TLS/HTTPS in `pii-net`'s HTTP transport — blocks a real `deepseek:` provider and any GitHub/GitLab PR-opening tool (the self-healing module's eventual goal). Documented, not scoped into a spec yet. (Spec 12's loopback-only `pii web` deliberately does NOT depend on this.)
 - [OPEN] `pii tui`/`start-daemon.sh` not wired into the container's `entrypoint.sh` — survives a file-level container recreate (same persistent LV as `/projects`) but not a full container rebuild that re-runs the entrypoint from scratch.
 
-**Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + a user-approved, ⚠️ FLAGGED-FOR-REVIEW threshold change — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. Pii is now INSTALLED AND RUNNING on lnx with a real (non-scripted) live model — see the deployment section below. MVP-complete pending final review.**
+**Status: GREEN — Phase 1/2/3(1-4 accepted 12/13) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + journal hardening + thread-cap removal verified — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. Pii is now INSTALLED AND RUNNING on lnx with a real (non-scripted) live model — see the deployment section below. MVP-complete pending final review.**
+
+## SESSION STATE — 2026-09-06 (session end; restart here tomorrow)
+
+**Committed this session (HEAD → oldest):**
+- `d9c2739` feat(journal): bounded write-behind + interrupted-turn closer (spec 11) — store batching (1 redb txn per N events), journaler write-behind w/ flush barriers, cancel-path flush, `NodeInterrupted` on resume, engine budget-race fix
+- `9bb048e` docs(research): dsh vs pii comparative analysis (005)
+- `215188c` docs(research): pii graph-engine architecture + git-log-graph design (006)
+- `6133523` spec(web): read-only pii web viewer (12) — DRAFT
+- `b60a763` spec(journal): hardening (11)
+- earlier: spec 10 impl `be32ca1`, session memory `58438cd`, TUI hex-seq `834b10f`, etc.
+
+**UNCOMMITTED (the immediate restart point):**
+1. `crates/pii-cli/src/cmd_daemon.rs` — env overrides `PII_DAEMON_WORKER_THREADS`/`PII_DAEMON_MAX_BLOCKING` added (defaults unchanged 4/8). MEASURED: caps removable (full 300s rss-gate with caps lifted 32/512 → slope 10620, LOWER than capped 11548; threads flat 33 under soak; RSS flat 7.8MB). **User's decision pending: keep defaults 4/8, raise defaults (8/32), or remove entirely** — question was asked, timed out, then user said "remove" in the context of the SLOPE_KB gap item; the thread-cap defaults decision itself is still open.
+2. `HANDOFF.md` — rss-gate section updated: threshold item RESOLVED/CLOSED (no longer flagged), status line updated, thread-cap DONE entry added.
+
+**Open questions for tomorrow (user decision):**
+- Daemon thread-cap defaults: keep 4/8, raise, or remove? (env overrides already in the tree either way)
+- Spec 09 (global memory) — DRAFT, await greenlight for pidag impl
+- Spec 12 (web viewer) — DRAFT, await greenlight for pidag impl
+- `pii tui`/`start-daemon.sh` not wired into container `entrypoint.sh` (OPEN)
+- TLS gap in pii-net (OPEN, long-standing)
+
+**Daemon NOT running** (killed during thread-cap measurement; no soak/daemon processes left). To restart the live stack: `pii daemon --sandbox off --workspace /projects/pi-improved` (background), then `pii sys status` to verify.
 
 ## pii -p human/TTY output bug + pii tui limitation (2026-09-05, found by user)
 The user ran `pii -p 'hello'`/`'why the sky is blue?'`/`'3*2'` and got only
@@ -213,7 +236,7 @@ corruption (see "Errors & Fixes" below) still outstanding:
   Both commands verified working end-to-end against a live daemon.
 
 
-## rss-gate — GREEN (2026-09-06) — ⚠️ threshold still flagged for the user's re-review, but the root cause was now ALSO fixed by journal hardening
+## rss-gate — GREEN (2026-09-06) — root cause fixed by journal hardening + thread-cap removal verified
 **Status: PASSING.** `cargo xtask rss-gate --secs 300 --interval 10
 --max-mb 50 --runs 3000` → `rss-gate: samples=30 max_kb=29716
 slope_kb=11548` (exit 0) — post-journal-hardening (spec 11, commit
@@ -242,27 +265,22 @@ remains UNTOUCHED and the review stays with the user.
    signature, not thread churn.
    Combined effect of 1+2: slope dropped from 45-115MB (several
    pre-fix trials) to a stable ~12-14MB.
-3. **⚠️ Threshold change, user-approved, FLAGGED FOR RE-REVIEW**:
-   `SLOPE_KB` raised from 2048 → **16384** (commit `587c5d1`) to close
-   the remaining gap. The remainder was traced to `RUN_JOURNAL`
-   (`pii-store/src/lib.rs`) — genuinely append-only BY DESIGN so
-   `pii graph trace`/resume survive a daemon restart (opus review's own
-   pick for the system's strongest/most novel property). A synthetic
-   3000-run/5-minute soak is not representative of real bursty daemon
-   traffic, and the original 2048 KiB constant predates BOTH engine
-   fixes above.
-   **The user explicitly asked that this specific change be flagged for
-   review** rather than treated as settled — record this prominently
-   for the next planning pass: is 16384 KiB the right ceiling, should
-   the gate's success metric change instead (drop RSS-slope, keep
-   alive+exit-clean), or should real journal retention/compaction be
-   built so the ORIGINAL 2048 KiB threshold could be restored honestly?
-   Two paths NOT taken this session, still on the table:
-   (a) change rss-gate's success metric away from RSS-slope entirely;
+3. **Threshold change (historical)**: `SLOPE_KB` was raised from 2048 →
+   **16384** (commit `587c5d1`) to close the remaining gap at the time.
+   The remainder traced to `RUN_JOURNAL` (`pii-store/src/lib.rs`) —
+   genuinely append-only BY DESIGN so `pii graph trace`/resume survive a
+   daemon restart (opus review's own pick for the system's
+   strongest/most novel property). A synthetic 3000-run/5-minute soak is
+   not representative of real bursty daemon traffic.
+   **RESOLVED 2026-09-06**: journal hardening (spec 11, commit `d9c2739`)
+   fixed the per-event redb write-transaction growth driver (slope
+   13784 → 11548), and removing the thread caps improved it further
+   (10620). The threshold item is CLOSED — no longer flagged for review;
+   the slope now has real headroom under 16384.
+   Remaining options on the table for a FUTURE pass (not actioned, not
+   urgent): (a) change rss-gate's success metric away from RSS-slope;
    (b) build journal retention/compaction as a real feature (tradeoff:
-   loses `graph trace` history beyond the retention window) — a
-   plausible first target for the self-healing system's OWN roadmap
-   once it graduates past Slice 1.
+   loses `graph trace` history beyond the retention window).
    **Do not raise `SLOPE_KB` again without fresh measurement** if a
    future change (thread pool, store schema, journal design) alters
    this growth pattern — that would be a real regression to
