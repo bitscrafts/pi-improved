@@ -119,6 +119,15 @@ pub enum RunEvent {
         /// The node id.
         node: NodeId,
     },
+    /// Audit marker: on resume, a `NodeStarted` with no later terminal event
+    /// (`NodeFinished`/`NodeFailed`/`NodeCancelled`/`NodeDead`) was found — the
+    /// previous attempt left this node mid-flight. Purely journal/audit: it
+    /// carries NO state transition and `replay` treats it as a no-op (the node
+    /// still re-runs, exactly as if it were absent).
+    NodeInterrupted {
+        /// The node id that was left mid-flight.
+        node: NodeId,
+    },
     /// A node suspended the run.
     Suspended {
         /// The node id.

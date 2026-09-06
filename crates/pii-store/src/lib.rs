@@ -18,6 +18,7 @@ pub use mem::MemStore;
 mod tables;
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunStatus};
 use redb::{Database, ReadableDatabase, ReadableTable};
@@ -28,6 +29,11 @@ pub use codec::{from_bytes, hash, to_bytes};
 /// Persistence handle over one redb database file.
 pub struct Store {
     db: Database,
+    /// Test instrumentation: the number of redb write transactions committed
+    /// by the append path since the store was opened. **Not a public API
+    /// promise** — exposed so the batched-append tests can assert 1-vs-N
+    /// write transactions without strace. Monotonic.
+    write_txn_count: AtomicU64,
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
@@ -93,7 +99,30 @@ impl Store {
                 .commit()
                 .map_err(|e| PiiError::Internal(format!("store: commit tables: {e}")))?;
         }
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            write_txn_count: AtomicU64::new(0),
+        })
+    }
+
+    /// Number of redb write transactions opened by the append path (monotonic).
+    ///
+    /// **Test instrumentation only** — not a public API promise. Lets the
+    /// batched-append tests assert that N events land in one write transaction
+    /// (`1`, not `N`) without strace.
+    #[must_use]
+    pub fn write_txn_count(&self) -> u64 {
+        self.write_txn_count.load(Ordering::Relaxed)
+    }
+
+    /// Opens a (counted) write transaction. A transaction is opened and
+    /// committed inside one method body — never returned to a caller or held
+    /// across a node dispatch (single-writer rule).
+    fn begin_write_counted(&self) -> Result<redb::WriteTransaction, PiiError> {
+        self.write_txn_count.fetch_add(1, Ordering::Relaxed);
+        self.db
+            .begin_write()
+            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))
     }
 
     /// Allocates the next run id as `r{n:012}` (monotonic, in one write txn).
@@ -170,34 +199,55 @@ impl Store {
     /// Appends `event` at `header.seq` and advances `header` in ONE redb write
     /// transaction, committed before returning. Also repoints `run_by_status`.
     ///
-    /// Returns the seq the event was written at.
+    /// Returns the seq the event was written at. Thin wrapper over
+    /// [`Self::append_events`] — byte-identical observable behaviour to the
+    /// pre-batching single-event path (spec 11 J1).
     ///
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb failure.
     pub fn append_event(&self, header: &mut RunHeader, event: &RunEvent) -> Result<u64, PiiError> {
-        let seq = header.seq;
-        // The caller bumps status before/after via header mutation; here we
-        // store whatever status the header currently reports.
-        let bytes = to_bytes(event)?;
-        let write = self
-            .db
-            .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+        self.append_events(header, std::slice::from_ref(&event))
+    }
+
+    /// Appends `events` at consecutive seqs beginning at `header.seq`, then
+    /// advances `header`, in **ONE** redb write transaction (committed before
+    /// returning). Inserts every event, persists the advanced header once, and
+    /// repoints `run_by_status` once — this is the fix behind spec 11's
+    /// transaction-count target (N events in one txn, not N).
+    ///
+    /// The caller is expected to have already set the terminal status on
+    /// `header.status` before calling (as with the single-event path): the
+    /// persisted header carries whatever status the header reports, advanced to
+    /// `header.seq + events.len()`.
+    ///
+    /// Returns the seq of the first event written.
+    ///
+    /// # Errors
+    /// Returns [`PiiError::Internal`] on a redb or serialisation failure.
+    pub fn append_events(
+        &self,
+        header: &mut RunHeader,
+        events: &[&RunEvent],
+    ) -> Result<u64, PiiError> {
+        let start = header.seq;
+        let write = self.begin_write_counted()?;
         {
             let mut journal = write
                 .open_table(RUN_JOURNAL)
                 .map_err(|e| PiiError::Internal(format!("store: open journal: {e}")))?;
-            journal
-                .insert((header.run.as_str(), seq), bytes.as_slice())
-                .map_err(|e| PiiError::Internal(format!("store: insert event: {e}")))?;
+            for (i, ev) in events.iter().enumerate() {
+                let seq = start + i as u64;
+                let bytes = to_bytes(*ev)?;
+                journal
+                    .insert((header.run.as_str(), seq), bytes.as_slice())
+                    .map_err(|e| PiiError::Internal(format!("store: insert event: {e}")))?;
+            }
 
             let mut run_tbl = write
                 .open_table(RUN)
                 .map_err(|e| PiiError::Internal(format!("store: open run: {e}")))?;
-            // Persist the header with seq already advanced (the next slot to
-            // write), so a reloaded header matches `header.seq` post-append.
             let mut next_header = header.clone();
-            next_header.seq = seq + 1;
+            next_header.seq = start + events.len() as u64;
             let header_bytes = to_bytes(&next_header)?;
             run_tbl
                 .insert(header.run.as_str(), header_bytes.as_slice())
@@ -206,9 +256,6 @@ impl Store {
             let mut status_tbl = write
                 .open_table(RUN_BY_STATUS)
                 .map_err(|e| PiiError::Internal(format!("store: open status: {e}")))?;
-            // Repoint, don't append: drop the run from every status bucket,
-            // then list it under its current status. (Removing only the
-            // previous key would leave a stale Running row behind forever.)
             for st in [
                 RunStatus::Running,
                 RunStatus::Suspended,
@@ -225,9 +272,9 @@ impl Store {
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit event: {e}")))?;
-        header.seq += 1;
-        Ok(seq)
+            .map_err(|e| PiiError::Internal(format!("store: commit events: {e}")))?;
+        header.seq += events.len() as u64;
+        Ok(start)
     }
 
     /// Fetches a run header if present.

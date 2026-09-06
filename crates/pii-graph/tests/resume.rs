@@ -131,4 +131,36 @@ fn resume_never_reinvokes_completed_node() {
         a_finished, 1,
         "a must have exactly one NodeFinished in the journal"
     );
+    // Spec 11 J3: `b` was cancelled mid-wait (NodeStarted, no terminal event),
+    // so resume must have appended exactly one synthetic NodeInterrupted for
+    // it, ordered before the Resumed event.
+    let b_interrupted = journal
+        .iter()
+        .filter(|(_, ev)| matches!(ev, RunEvent::NodeInterrupted { node } if node.as_str() == "b"))
+        .count();
+    assert_eq!(
+        b_interrupted, 1,
+        "b must have exactly one NodeInterrupted in the journal (it was mid-flight when cancelled)"
+    );
+    let b_seq = journal
+        .iter()
+        .find_map(|(seq, ev)| {
+            matches!(ev, RunEvent::NodeInterrupted { node } if node.as_str() == "b").then_some(*seq)
+        })
+        .expect("b NodeInterrupted seq");
+    let resumed_seq = journal
+        .iter()
+        .find_map(|(seq, ev)| matches!(ev, RunEvent::Resumed { .. }).then_some(*seq))
+        .expect("Resumed seq");
+    assert!(
+        b_seq < resumed_seq,
+        "NodeInterrupted must precede Resumed (got {b_seq} >= {resumed_seq})"
+    );
+    // No NodeInterrupted for `a`: it completed, so it was not interrupted.
+    assert!(
+        !journal.iter().any(
+            |(_, ev)| matches!(ev, RunEvent::NodeInterrupted { node } if node.as_str() == "a")
+        ),
+        "a completed before the cancel and must NOT be marked interrupted"
+    );
 }

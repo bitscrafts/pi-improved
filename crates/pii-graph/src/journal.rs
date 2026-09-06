@@ -1,15 +1,30 @@
-//! Journal appending for a run (spec F4.10, pass-3 §4.8).
+//! Journal appending for a run (spec F4.10, pass-3 §4.8; hardened spec 11).
 //!
-//! Every event is appended through exactly one redb write transaction —
-//! opened and committed inside [`pii_store::Store::append_event`]; no
-//! transaction is ever held across a node dispatch. The journaler owns the
-//! run header (its `seq` is the single sequence counter) and snapshots the
-//! blackboard every [`SNAPSHOT_EVERY`] journal events and unconditionally on
-//! suspend.
+//! Every event is appended through [`pii_store::Store::append_events`] —
+//! events accumulate in a bounded pending buffer and are flushed in ONE redb
+//! write transaction per batch (spec 11 J2: the pre-hardening code opened one
+//! write transaction per event, which was the dominant RSS slope driver under
+//! bursty node chatter). No transaction is ever held across a node dispatch.
+//! The journaler owns the run header (its `seq` is the single sequence
+//! counter) and snapshots the blackboard every [`SNAPSHOT_EVERY`] flushed
+//! events and unconditionally on suspend.
 //!
-//! Resume (Phase 1) replays the whole journal and does **not** read
-//! snapshots; snapshots remain a crash-recovery optimisation for later
-//! phases and are still written on this cadence.
+//! Write-behind semantics (spec 11): `append` assigns the seq eagerly (the
+//! store writes events at exactly those seqs on flush, since both derive from
+//! the same `header.seq` counter), notifies the observer IMMEDIATELY — the
+//! observer stream is the LIVE view (TUI / subscribe bus) and must not lag —
+//! and buffers the event for the durable store journal. The durable view may
+//! lag by up to the batch threshold. Explicit flush barriers run at the
+//! points where durability matters: a status change ([`Journaler::set_status`]
+//! flushes first, so the persisted header carries the new status), a snapshot
+//! ([`Journaler::snapshot_now`], the suspend path), and the terminal
+//! `Finished` event (the `finish` path in `run.rs` calls [`Journaler::flush`]
+//! after appending it, so a completed run's journal is fully durable the
+//! moment `run`/`resume` returns). A crash mid-run loses only unflushed
+//! events — the journal still ends at a valid contiguous flushed prefix and
+//! the persisted header still reports `Running`, so boot recovery is
+//! unchanged. The `Cancelled` path deliberately does NOT flush (spec 11
+//! guardrail: durability does not matter for a run that never finishes).
 
 use std::sync::Arc;
 
@@ -21,26 +36,38 @@ use pii_store::Store;
 
 use crate::blackboard::Blackboard;
 
-/// A blackboard snapshot is taken every time a journal event lands on a seq
-/// that is a nonzero multiple of this (and unconditionally on suspend).
+/// A blackboard snapshot is taken every time a flushed journal event lands on
+/// a seq that is a nonzero multiple of this (and unconditionally on suspend).
 pub const SNAPSHOT_EVERY: u64 = 32;
+
+/// Default write-behind batch threshold: pending events are flushed to the
+/// store once this many have accumulated (spec 11 J2).
+pub const DEFAULT_BATCH: usize = 16;
 
 struct JournalState {
     header: RunHeader,
-    /// Seq of the most recently appended event (the snapshot anchor).
+    /// Seq of the most recently flushed event (the snapshot anchor).
     last_seq: u64,
+    /// Events buffered but not yet flushed to the store (write-behind).
+    pending: Vec<RunEvent>,
 }
 
-/// Appends run events to the store, advancing the header and driving the
-/// snapshot cadence. Shared `&`-only with worker threads.
+/// Appends run events to the store in bounded write-behind batches, advancing
+/// the header and driving the snapshot cadence. Shared `&`-only with worker
+/// threads.
 ///
-/// Interior mutability is a `parking_lot::Mutex` over the header state (never
-/// a redb transaction).
+/// Interior mutability is a `parking_lot::Mutex` over the header state.
+/// Lock discipline: the state lock is NEVER held across a redb store call —
+/// every store write happens in [`Journaler::flush`], which takes the lock
+/// itself only to drain the pending buffer, and no caller holds the lock
+/// while invoking it.
 pub struct Journaler<'a> {
     store: &'a Store,
     obs: Arc<dyn pii_core::Observer>,
     state: Mutex<JournalState>,
     bb: Arc<RwLock<Blackboard>>,
+    /// Flush the pending buffer once it reaches this many events.
+    batch: usize,
 }
 
 impl<'a> Journaler<'a> {
@@ -53,21 +80,19 @@ impl<'a> Journaler<'a> {
         graph_hash: String,
         bb: Arc<RwLock<Blackboard>>,
     ) -> Self {
-        Self {
+        Self::with_batch(
             store,
             obs,
-            state: Mutex::new(JournalState {
-                header: RunHeader {
-                    run,
-                    graph: graph_hash,
-                    status: RunStatus::Running,
-                    seq: 0,
-                    dur_ms: 0,
-                },
-                last_seq: 0,
-            }),
+            RunHeader {
+                run,
+                graph: graph_hash,
+                status: RunStatus::Running,
+                seq: 0,
+                dur_ms: 0,
+            },
             bb,
-        }
+            DEFAULT_BATCH,
+        )
     }
 
     /// A journaler that adopts a persisted header (resume continues the seq).
@@ -78,12 +103,32 @@ impl<'a> Journaler<'a> {
         header: RunHeader,
         bb: Arc<RwLock<Blackboard>>,
     ) -> Self {
+        Self::with_batch(store, obs, header, bb, DEFAULT_BATCH)
+    }
+
+    /// A journaler with an explicit write-behind batch threshold (tests use a
+    /// small batch to force flush-heavy behaviour; a huge batch to force
+    /// buffering). Spec 11: the batch size is a constructor parameter, not a
+    /// config knob.
+    #[must_use]
+    pub fn with_batch(
+        store: &'a Store,
+        obs: Arc<dyn pii_core::Observer>,
+        header: RunHeader,
+        bb: Arc<RwLock<Blackboard>>,
+        batch: usize,
+    ) -> Self {
         let last_seq = header.seq.saturating_sub(1);
         Self {
             store,
             obs,
-            state: Mutex::new(JournalState { header, last_seq }),
+            state: Mutex::new(JournalState {
+                header,
+                last_seq,
+                pending: Vec::new(),
+            }),
             bb,
+            batch: batch.max(1),
         }
     }
 
@@ -93,16 +138,23 @@ impl<'a> Journaler<'a> {
         self.store
     }
 
-    /// The next sequence number to be written.
+    /// The next sequence number to be written (accounts for buffered events).
     #[must_use]
     pub fn seq(&self) -> u64 {
-        self.state.lock().header.seq
+        let st = self.state.lock();
+        st.header.seq + st.pending.len() as u64
     }
 
     /// Sets the header status (call before appending the `Finished` event so
-    /// the run is listed under its final status).
+    /// the run is listed under its final status). Flushes any pending buffer
+    /// FIRST so the status transition is durable before the event that
+    /// carries it (spec 11 J2 flush barrier).
     pub fn set_status(&self, status: RunStatus) {
-        self.state.lock().header.status = status;
+        {
+            let mut st = self.state.lock();
+            st.header.status = status;
+        }
+        let _ = self.flush();
     }
 
     /// Records the total run duration on the header.
@@ -110,42 +162,92 @@ impl<'a> Journaler<'a> {
         self.state.lock().header.dur_ms = ms;
     }
 
-    /// Appends `event` in one write transaction, notifies the observer with
-    /// the assigned seq, and snapshots the blackboard when the event's seq is
-    /// a nonzero multiple of [`SNAPSHOT_EVERY`]. Returns the seq written.
+    /// Appends `event`: assigns the seq eagerly, notifies the observer
+    /// IMMEDIATELY (live view — TUI / subscribe bus), buffers the event for
+    /// the durable store journal, and flushes when the batch threshold is
+    /// reached or a snapshot boundary is crossed. Returns the seq written.
     ///
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb or serialisation failure.
     pub fn append(&self, event: &RunEvent) -> Result<u64, PiiError> {
         let seq = {
             let mut st = self.state.lock();
-            let s = st.header.seq;
-            self.store.append_event(&mut st.header, event)?;
-            st.last_seq = s;
-            s
+            let seq = st.header.seq + st.pending.len() as u64;
+            st.pending.push(event.clone());
+            seq
         };
+        // Observer fires on EVERY append (live view never lags).
         self.obs.event(&ObsEvent::Journal {
             seq,
             event: event.clone(),
         });
         if seq > 0 && seq.is_multiple_of(SNAPSHOT_EVERY) {
-            Self::snapshot_locked(&self.bb, self.store, &self.state.lock().header.run, seq)?;
+            // Snapshot boundary: flush (making the prefix durable through
+            // this seq), then snapshot the blackboard anchored at this seq.
+            self.flush()?;
+            self.snapshot_at(seq)?;
+        } else if self.pending_len() >= self.batch {
+            self.flush()?;
         }
         Ok(seq)
     }
 
-    /// Snapshots the blackboard at the most recently appended seq (used
-    /// unconditionally on suspend).
+    /// The number of events currently buffered (write-behind pending).
+    #[must_use]
+    pub fn pending_len(&self) -> usize {
+        self.state.lock().pending.len()
+    }
+
+    /// Flushes any pending events to the store in one write transaction.
+    /// Returns the seq of the LAST event flushed (`last_seq` when nothing was
+    /// pending). Used by `run.rs`'s `finish` path after appending the
+    /// `Finished` event so a completed run's journal is fully durable, by the
+    /// append path when the batch threshold / snapshot boundary hits, and by
+    /// [`Journaler::snapshot_now`] which anchors the snapshot at the returned
+    /// seq.
+    ///
+    /// The state lock is held across the store write: the journaler is the
+    /// single writer for its run, and holding the lock serialises concurrent
+    /// appends (they block in `append` until the flush commits) so header.seq
+    /// and the store journal cannot diverge. Callers must not hold the lock
+    /// when invoking `flush` — `append`/`set_status`/`finish` all drop it
+    /// first.
+    ///
+    /// # Errors
+    /// Returns [`PiiError::Internal`] on a redb or serialisation failure.
+    pub fn flush(&self) -> Result<u64, PiiError> {
+        let mut st = self.state.lock();
+        if st.pending.is_empty() {
+            return Ok(st.last_seq);
+        }
+        let events: Vec<RunEvent> = st.pending.drain(..).collect();
+        let refs: Vec<&RunEvent> = events.iter().collect();
+        // The drained clone is bounded by `batch` (write-behind threshold)
+        // or the pre-finish barrier — never the whole journal.
+        self.store.append_events(&mut st.header, &refs)?;
+        st.last_seq = st.header.seq.saturating_sub(1);
+        Ok(st.last_seq)
+    }
+
+    /// Snapshots the blackboard at the most recently flushed seq (used
+    /// unconditionally on suspend). Flushes any pending buffer FIRST so the
+    /// snapshot anchors a durable journal prefix (spec 11 J2).
     ///
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb or serialisation failure.
     pub fn snapshot_now(&self) -> Result<u64, PiiError> {
-        let (seq, run) = {
-            let st = self.state.lock();
-            (st.last_seq, st.header.run.clone())
-        };
+        let seq = self.flush()?;
+        let run = self.state.lock().header.run.clone();
         Self::snapshot_locked(&self.bb, self.store, &run, seq)?;
         Ok(seq)
+    }
+
+    /// Snapshots the blackboard at an explicit seq (used when an append
+    /// crossed a [`SNAPSHOT_EVERY`] boundary — the flush already made the
+    /// prefix durable through `seq`, so the snapshot anchors there).
+    fn snapshot_at(&self, seq: u64) -> Result<(), PiiError> {
+        let run = self.state.lock().header.run.clone();
+        Self::snapshot_locked(&self.bb, self.store, &run, seq)
     }
 
     fn snapshot_locked(

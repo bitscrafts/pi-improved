@@ -56,6 +56,39 @@ pub(crate) fn fresh_tokens(ctx: &Ctx, spec: &GraphSpec) -> CancelTokenSet {
         .collect()
 }
 
+/// Detects nodes left mid-flight by a crash/cancel (spec 11 J3): a node with
+/// a `NodeStarted` but no later terminal event (`NodeFinished`/`NodeFailed`/
+/// `NodeCancelled`/`NodeDead`) anywhere in the journal. Returns the nodes in
+/// the seq order of their LAST `NodeStarted` (deterministic). The caller
+/// appends a synthetic `NodeInterrupted` marker for each on resume.
+#[must_use]
+pub(crate) fn interrupted_nodes(journal: &[(u64, RunEvent)]) -> Vec<NodeId> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut terminal: BTreeSet<NodeId> = BTreeSet::new();
+    let mut last_start: BTreeMap<NodeId, u64> = BTreeMap::new();
+    for (seq, ev) in journal {
+        match ev {
+            RunEvent::NodeStarted { node, .. } => {
+                last_start.insert(node.clone(), *seq);
+            }
+            RunEvent::NodeFinished { node, .. }
+            | RunEvent::NodeFailed { node, .. }
+            | RunEvent::NodeCancelled { node }
+            | RunEvent::NodeDead { node } => {
+                terminal.insert(node.clone());
+            }
+            _ => {}
+        }
+    }
+    let mut dangling: Vec<(u64, NodeId)> = last_start
+        .into_iter()
+        .filter(|(id, _)| !terminal.contains(id))
+        .map(|(id, seq)| (seq, id))
+        .collect();
+    dangling.sort_by_key(|(seq, _)| *seq);
+    dangling.into_iter().map(|(_, id)| id).collect()
+}
+
 /// Replays a journal into the state (spec F4.11). Nodes that eventually
 /// finished have their failed attempts skipped; a `NodeStarted` without a
 /// terminal event is simply ignored — that node re-runs.

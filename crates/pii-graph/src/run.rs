@@ -26,8 +26,8 @@ use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
 use crate::node::{GraphNode, NodeRegistry};
 use crate::run_helpers::{
-    CancelTokenSet, build_nodes, fresh_tokens, replay, terminal_determination, terminal_status,
-    validate_for_exec,
+    CancelTokenSet, build_nodes, fresh_tokens, interrupted_nodes, replay, terminal_determination,
+    terminal_status, validate_for_exec,
 };
 use crate::sched::dispatch::{
     DispatchOutcome, Env, FinishedNode, apply, build_node_input, cancel_losers, dispatch,
@@ -159,6 +159,19 @@ pub fn resume(
     let mut failure: Option<String> = None;
     replay(&journal, &spec, &mut st, &bb, &mut fin, &mut failure);
 
+    // Spec 11 J3 — interrupted-turn closer: a node whose last relevant event
+    // is `NodeStarted` with no later terminal event (`NodeFinished`/
+    // `NodeFailed`/`NodeCancelled`/`NodeDead`) was left mid-flight by a crash
+    // or cancel. Append a synthetic `NodeInterrupted` marker for each (in the
+    // seq order of their last `NodeStarted`) so the journal records the
+    // previous attempt's fate instead of showing an unexplained duplicate
+    // `NodeStarted` after `Resumed`. Purely an audit marker: `replay` treats
+    // it as a no-op and the node still re-runs, exactly as before.
+    let interrupted = interrupted_nodes(&journal);
+    for node in &interrupted {
+        jr.append(&RunEvent::NodeInterrupted { node: node.clone() })?;
+    }
+
     let payload_bytes =
         serde_json::to_vec(&input).map_err(|e| PiiError::Internal(format!("input serde: {e}")))?;
     jr.append(&RunEvent::Resumed {
@@ -213,8 +226,13 @@ impl Engine<'_> {
         let mut step: u32 = 0;
         loop {
             if self.root.cancelled() {
-                // Run-level teardown (crash): leave the header Running.
-                return Err(PiiError::Cancelled);
+                // Run-level teardown (crash): leave the header Running and
+                // flush the write-behind buffer so the run stays discoverable
+                // and completed nodes stay durable (resume depends on both —
+                // without the flush a pre-threshold cancel would lose the
+                // whole journal and completed work would re-run, duplicating
+                // side effects).
+                return self.cancelled();
             }
             if step > spec.limits.max_steps {
                 return self.finish(
@@ -373,7 +391,7 @@ impl Engine<'_> {
                     // `apply`/`cancel_losers` order), zero threads spawned.
                     if let [only] = chunk {
                         if self.root.cancelled() {
-                            return Err(PiiError::Cancelled);
+                            return self.cancelled();
                         }
                         let out = dispatch(&env, only);
                         if let Some(key) = apply(&env, st, fin, failure, &only.id, out) {
@@ -402,10 +420,15 @@ impl Engine<'_> {
                                 suspended = Some(key);
                             }
                             cancel_losers(&env, st);
+                            // Terminal failure recorded (e.g. loop_budget):
+                            // stop draining this batch — nothing further may run.
+                            if failure.is_some() {
+                                break;
+                            }
                         }
                     });
                     if self.root.cancelled() {
-                        return Err(PiiError::Cancelled);
+                        return self.cancelled();
                     }
                     if suspended.is_some() {
                         break;
@@ -415,7 +438,7 @@ impl Engine<'_> {
             if suspended.is_none() {
                 for n in &ser {
                     if self.root.cancelled() {
-                        return Err(PiiError::Cancelled);
+                        return self.cancelled();
                     }
                     let out = dispatch(&env, n);
                     if let Some(key) = apply(&env, st, fin, failure, &n.id, out) {
@@ -423,7 +446,27 @@ impl Engine<'_> {
                         break;
                     }
                     cancel_losers(&env, st);
+                    // Terminal failure recorded (e.g. loop_budget): stop the
+                    // serial queue — nothing further may run.
+                    if failure.is_some() {
+                        break;
+                    }
                 }
+            }
+            // A node in this tick's batch may have hit a terminal failure
+            // (e.g. loop_budget exceeded — F4.5). Terminate NOW rather than
+            // dispatching another batch: the failure was recorded mid-batch,
+            // and continuing would let nodes that are ready because of this
+            // batch's completions run once more (observable as a budgeted
+            // cycle executing one extra iteration). Deterministic: exactly
+            // `budget` executions of the budgeted node, then terminal.
+            if let Some(err) = failure.as_deref() {
+                return self.finish(
+                    &Terminal::Failure {
+                        error: err.to_string(),
+                    },
+                    RunStatus::Failed,
+                );
             }
             step += 1;
 
@@ -438,6 +481,15 @@ impl Engine<'_> {
             name: String::from(name),
             value,
         });
+    }
+
+    /// Run-level teardown (crash/cancel): flush the write-behind journal so
+    /// the run stays discoverable and its completed nodes stay durable
+    /// (resume depends on both), leave the header `Running` for recovery,
+    /// then return `Cancelled`. Every cancel exit funnels through here.
+    fn cancelled(&self) -> Result<Terminal, PiiError> {
+        let _ = self.jr.flush();
+        Err(PiiError::Cancelled)
     }
 
     fn unsatisfiable(&self, st: &RunState) -> Option<&NodeSpec> {
@@ -461,6 +513,10 @@ impl Engine<'_> {
             terminal: terminal.clone(),
             output_hash,
         })?;
+        // Spec 11 J2 durability barrier: the terminal event must be durable
+        // before run()/resume() returns — every post-run journal reader
+        // (trace, tests, reattach, bus) depends on a complete journal.
+        self.jr.flush()?;
         Ok(terminal.clone())
     }
 }

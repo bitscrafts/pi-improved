@@ -224,6 +224,16 @@ pub fn apply_completion(
             return Err(format!("loop_budget exceeded for node '{n}'"));
         }
         st.iters.insert(n.clone(), it);
+        // The budget-th execution completed: the run is now terminal. The
+        // (budget+1)th execution is what `it > b` catches above, but nodes
+        // downstream of this one (e.g. the loop body's gate/retry) must not
+        // run again either — they only exist to drive the budgeted node back
+        // around the loop, and it cannot run again. Terminate by failing this
+        // node now (the caller records the failure and the run ends), so the
+        // tick loop never dispatches another batch after the budget is spent.
+        if it == b {
+            return Err(format!("loop_budget exceeded for node '{n}'"));
+        }
     }
     for (i, e) in spec.edges.iter().enumerate() {
         if &e.from != n {
