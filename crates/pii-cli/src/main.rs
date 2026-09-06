@@ -19,7 +19,7 @@ mod ndjson;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|run|resume|trace} ...";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]
@@ -27,8 +27,6 @@ pub fn version_line() -> String {
     format!("pii {}", env!("CARGO_PKG_VERSION"))
 }
 
-/// `pii graph lint <file.toml>` — validation errors/warnings to stderr, each
-/// beginning with its `V<n>` code (spec F5.2/F5.3: exit 3 on lint failure).
 fn cmd_graph_lint(path: &str) -> ExitCode {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
@@ -62,6 +60,39 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
             ExitCode::from(3)
         }
     }
+}
+
+/// `pii graph show <file.toml>` — validate then pipe the spec's human-readable
+/// ASCII topology rendering to stdout (spec 10). Runs the same loader and the
+/// same validator as [`cmd_graph_lint`] first, so a malformed graph is never
+/// rendered (it is reported verbatim with its `V<n>` code instead). Purely
+/// offline and deterministic: no daemon, no socket, no run state.
+fn cmd_graph_show(path: &str) -> ExitCode {
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: read {path}: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    // Same registry as lint/run so `show` accepts every graph those do,
+    // including `agent`/`tool`/`route`/`gate` starter graphs.
+    let reg = pii_server::lint_registry(std::path::Path::new("."), std::path::Path::new("."));
+    let spec = match pii_graph::load_toml_with_registry(&src, &reg) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Err(errors) = pii_graph::validate(&spec, &reg) {
+        for err in &errors {
+            eprintln!("{err}");
+        }
+        return ExitCode::from(3);
+    }
+    print!("{}", pii_graph::render::render_graph(&spec));
+    ExitCode::SUCCESS
 }
 
 fn main() -> ExitCode {
@@ -132,26 +163,30 @@ fn main() -> ExitCode {
 
 fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(sub) = args.next() else {
-        eprintln!("usage: pii graph {{lint|run|resume|trace}} ...");
+        eprintln!("usage: pii graph {{lint|show|run|resume|trace}} ...");
         return ExitCode::from(2);
     };
     let sub = sub.to_str().map_or_else(|| "?".to_owned(), str::to_owned);
-    // Consume the lint positional ONLY for lint — an unconditional args.next()
-    // here would eat `graph run`'s <file.toml>.
-    if sub == "lint" {
+    // Consume the positional ONLY for the two file-driven subcommands — an
+    // unconditional args.next() here would eat `graph run`'s <file.toml>.
+    if sub == "lint" || sub == "show" {
         let Some(file_arg) = args.next() else {
-            eprintln!("usage: pii graph lint <file.toml>");
+            eprintln!("usage: pii graph {sub} <file.toml>");
             return ExitCode::from(2);
         };
         let file = file_arg.into_string().unwrap_or_default();
-        return cmd_graph_lint(&file);
+        return if sub == "lint" {
+            cmd_graph_lint(&file)
+        } else {
+            cmd_graph_show(&file)
+        };
     }
     match sub.as_str() {
         "run" => cmd_run::cmd_run(args),
         "resume" => cmd_run::cmd_resume(args),
         "trace" => cmd_trace::cmd_trace(args),
         _ => {
-            eprintln!("usage: pii graph {{lint|run|resume|trace}} ...");
+            eprintln!("usage: pii graph {{lint|show|run|resume|trace}} ...");
             ExitCode::from(2)
         }
     }

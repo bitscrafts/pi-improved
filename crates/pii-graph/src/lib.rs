@@ -13,6 +13,7 @@ pub mod expr;
 pub mod journal;
 pub mod node;
 pub mod nodes;
+pub mod render;
 pub mod run;
 pub mod run_helpers;
 pub mod sched;
