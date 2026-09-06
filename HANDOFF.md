@@ -16,14 +16,27 @@ mvp-verify.sh check (6b) that drives `pii -p` through a real pty via
 of check that was missing before and would have caught this.
 
 The user also reported `pii tui` "just opens for a second or two and
-closes". **Investigated, not yet fixed**: `pii tui` is not a real
-interactive TUI today — `crates/pii-tui/src/lib.rs`'s `run_tui` function
-hardcodes the prompt to the literal string `"hello"`, has ZERO keyboard/input event
-handling (no `crossterm::event` reference anywhere in the crate), and
-exits automatically the instant that one hardcoded run finishes. Building
-a real interactive TUI (input box, a proper event loop, scrollback, the
-ability to send more than one prompt) is a real, scoped feature, not a
-quick fix — flagged here for a future spec rather than patched blind.
+closes". **Root cause confirmed, then FIXED (commit `2a8e134`)**: `pii
+tui` was not a real interactive TUI — `crates/pii-tui/src/lib.rs`'s
+`run_tui` function hardcoded the prompt to the literal string `"hello"`,
+had ZERO keyboard/input event handling, and exited automatically the
+instant that one hardcoded run finished. Rewritten as a real session:
+`session.create` once, then a loop that waits on either a keyboard event
+or a protocol event (`tokio::select!` + `crossterm::event::EventStream`),
+submits a new `session.prompt` on Enter, and only exits on
+Esc/Ctrl+C/Ctrl+D/`/exit`/`/quit`. Along the way the user found and had
+fixed two more real gaps: no echo of the submitted prompt in the main
+pane (added `LogLine::Prompt`), and no visual role distinction (added
+the "user in / model out / thinking-acting" color convention the user
+asked for — green `you>`, cyan+bold `pii>`, dim gray progress, red
+errors). All decorative Unicode/emoji removed project-wide from TUI and
+CLI output (plain ASCII only) — this also sidesteps missing-glyph
+rendering on terminals without a Nerd Font (a terminal-emulator font
+issue, not something an app can embed, per the user's separate
+question). Verified end-to-end via a real pty (Python `pty` + `pyte`
+terminal emulation): typed prompt, echoed, thinking/acting progress,
+final answer, `/help`, `/exit` — all correct, process stays open across
+multiple prompts until explicitly quit. 9 tests in pii-tui now (was 2).
 
 ## Persistent config file (2026-09-05 follow-up — fixes the "works in my shell only" trap)
 The user hit this directly right after the initial lnx deployment: a
