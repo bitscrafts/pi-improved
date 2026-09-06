@@ -45,6 +45,46 @@ already implemented), and render each such edge as a separate `^--
 loops back to "<id>" (budget=N)` annotation line after the loop body,
 not as a lane.
 
+### Why git never actually draws a cycle (and how that reframes "loops")
+
+The deeper reason git's lane algorithm has no cycle case isn't that
+cycles are hard to draw — it's that git never renders *structure*, it
+renders *history*. A commit that redoes yesterday's work ("repeat the
+day again") isn't a back-edge to yesterday's commit; it's a NEW commit,
+one row further down, at a later point in linear time. Time only moves
+forward, so a history of arbitrarily-repeated work still has zero
+cycles to draw.
+
+This maps onto pii's loops directly, and changes what "the right
+answer" is depending on what's being rendered:
+
+- **Rendering the graph's DEFINITION (this spec's `graph show`, no run
+  has happened yet)**: there is no "day 2" to show — `loop_budget=3`
+  says "up to 3 iterations may happen," not "3 iterations did happen."
+  A structural back-edge is unavoidable here, so the `^-- loops back
+  to` annotation (above) is correct AND NECESSARY for this case.
+- **Rendering a run's TRACE (a completed or in-flight run, using the
+  seq/event journal `pii graph trace` already reads)**: the cycle
+  disappears entirely, for the exact git reason. Each loop iteration is
+  a distinct set of node-execution events at strictly increasing `seq`
+  numbers — `fix`#1, `test`#1, `gate`#1, `retry`#1, `fix`#2, `test`#2,
+  ... A trace rendering lists EXECUTIONS (one row per event), not
+  DEFINITIONS (one row per node-id) — so it can reuse the exact same
+  linear, cycle-free git-log-style row format from `V2` below with zero
+  special-case loop handling, because what actually happened has no
+  cycles by construction, same as a git history that repeats work.
+
+**This elevates the "v2 live overlay" idea from a nice-to-have deferral
+to the RIGHT long-term answer for loops specifically**: this spec (v1)
+still ships the static, no-run-yet definition view with the annotation
+(there's genuinely no substitute for it before a run exists), but a
+follow-up spec should add `pii graph trace --show`-style rendering that
+lists real executions in seq order, unrolling every loop iteration as
+its own block of rows — exactly like `git log` unrolls repeated work as
+new commits instead of drawing a cycle. That follow-up is intentionally
+NOT part of this spec's scope (see Guardrails), but is now recorded
+here as the correct direction rather than a vague "maybe later."
+
 ## Requirements
 
 ### Functional
@@ -186,11 +226,15 @@ done [transform: $.payload]
   choice, not a shortcut: cramming cycles into lanes is the exact
   failure mode the research surfaced in git's own graph rendering on
   merge-heavy histories.
-- Do NOT add a live run-state overlay (which node is currently
-  active/done/pending) in this spec — v1 is static-structure-only, no
-  daemon/socket dependency. A live overlay is a natural v2 (reusing
-  `graph trace`'s existing seq/event stream) but is explicitly
-  out-of-scope here to keep this change small and self-contained.
+- Do NOT add a live run-state overlay or a trace-unrolling renderer in
+  this spec — v1 is static-structure-only, no daemon/socket dependency.
+  Per the "Why git never actually draws a cycle" section above, a
+  follow-up trace-mode renderer (unrolling loop iterations as
+  sequential rows, exactly like `git log` unrolls repeated work instead
+  of drawing a cycle) is the RIGHT eventual answer for viewing loops
+  post-run, not just a deferred nice-to-have — but it is still a
+  separate spec, kept out of this one to keep this change small and
+  self-contained.
 - Do NOT add a `--format=mermaid`/other output format in v1 — one
   format, done well, first. Revisit only if real usage shows the ASCII
   form is insufficient for a specific need (e.g. pasting into
