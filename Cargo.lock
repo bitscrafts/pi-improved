@@ -1210,6 +1210,7 @@ name = "pii-tui"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "futures-util",
  "pii-proto",
  "ratatui",
  "serde_json",
