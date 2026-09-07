@@ -28,6 +28,9 @@ pub struct AgentNode {
     pub(crate) live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
     /// Compaction knobs (spec 12, R1).
     pub(crate) compaction: Compaction,
+    /// Global memory store (spec 09 v2, P4.3): `Some` when the graph opts in
+    /// via `memory = { enabled = true }`; `None` = no memory behavior.
+    pub(crate) memory: Option<Arc<pii_store::MemStore>>,
 }
 
 /// Factory registered into the engine's registry.
@@ -38,6 +41,8 @@ pub struct AgentFactory {
     pub workspace: std::path::PathBuf,
     /// Live-event sender (F12).
     pub live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
+    /// Global memory store (spec 09 v2, P4.3).
+    pub memory: Option<Arc<pii_store::MemStore>>,
 }
 
 impl pii_graph::node::NodeFactory for AgentFactory {
@@ -83,6 +88,17 @@ impl pii_graph::node::NodeFactory for AgentFactory {
         } else {
             base.subset(&tools)
         };
+        // G1.1 (spec 09 v2): the agent opts into global memory only when the
+        // graph declares `memory = { enabled = true }`. Absent/disabled → None
+        // (zero behavior change for non-memory graphs).
+        let memory = cfg
+            .get("memory")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|m| m.get("enabled"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+            .then(|| self.memory.clone())
+            .flatten();
         Ok(Box::new(AgentNode {
             system,
             max_turns: cfg
@@ -99,6 +115,7 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             workspace: self.workspace.clone(),
             live: self.live.clone(),
             compaction: Compaction::default(),
+            memory,
         }))
     }
 }
@@ -114,6 +131,25 @@ impl GraphNode for AgentNode {
             .map_or_else(|| input.payload.to_string(), str::to_owned);
         let mut messages = vec![ChatMessage::new(Role::System, &self.system)];
         messages.extend(history_messages(&input.payload));
+        // G1 (spec 09 v2): inject relevant global memory as a labeled system
+        // message BEFORE the session history, only when the graph opted in.
+        if let Some(store) = &self.memory {
+            let searcher = pii_memory::search::MemorySearcher::new(
+                Arc::clone(store),
+                Some(Arc::new(pii_memory::embed::TrigramEmbedder)),
+            );
+            if let Ok(result) = searcher.search(ctx, &user_text, 6)
+                && !result.hits.is_empty()
+            {
+                let mut lines = String::from("Relevant memory:\n");
+                for h in result.hits.iter().take(6) {
+                    lines.push_str("- ");
+                    lines.push_str(&h.text);
+                    lines.push('\n');
+                }
+                messages.insert(1, ChatMessage::new(Role::System, lines));
+            }
+        }
         messages.push(ChatMessage::new(Role::User, &user_text));
         let mut files_changed: Vec<String> = Vec::new();
         for turn in 1..=self.max_turns {
@@ -191,10 +227,23 @@ impl GraphNode for AgentNode {
                 });
             }
             if resp.tool_calls.is_empty() {
+                // G2 (spec 09 v2): strip a trailing `MEMORIZE: <fact>` marker
+                // from the user-visible text and, on success, write the fact
+                // to global memory (dedup via content-id + trigram cosine).
+                let (text, memorize) = split_memorize(&resp.text);
+                if let Some(fact) = memorize
+                    && let Some(store) = &self.memory
+                {
+                    let now_ms = ctx.now_ms();
+                    let rows = pii_memory::doc::write_fact(&fact, Vec::new(), 1.0, now_ms);
+                    // Dedup: exact-repeat collides on content id (idempotent
+                    // put); near-duplicate is caught by trigram cosine.
+                    let _ = store.put(&rows);
+                }
                 return Ok(Outcome::Next {
                     port: PortName::from("ok"),
                     value: serde_json::json!({
-                        "text": resp.text,
+                        "text": text,
                         "turns": turn,
                         "files_changed": files_changed,
                         "tokens_in": resp.tokens_in,
@@ -224,6 +273,25 @@ impl GraphNode for AgentNode {
             value: serde_json::json!({"error": "max_turns exceeded", "turns": self.max_turns}),
         })
     }
+}
+
+/// Splits a trailing `MEMORIZE: <fact>` marker off the assistant's reply
+/// (spec 09 v2 G2.2/G2.3). Returns `(user_visible_text, Option<fact>)`. The
+/// marker is a side-channel — stripped from what the user sees, written to
+/// global memory. A marker with empty/whitespace fact is ignored.
+fn split_memorize(text: &str) -> (String, Option<String>) {
+    let trimmed = text.trim_end();
+    for line in trimmed.rsplit('\n') {
+        let l = line.trim();
+        if let Some(fact) = l.strip_prefix("MEMORIZE:") {
+            let fact = fact.trim();
+            if !fact.is_empty() {
+                let visible = trimmed[..trimmed.len() - l.len()].trim_end().to_owned();
+                return (visible, Some(fact.to_owned()));
+            }
+        }
+    }
+    (text.to_owned(), None)
 }
 
 /// Seeds prior-turn [`ChatMessage`]s from the run input's `history`
@@ -373,11 +441,12 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use parking_lot::Mutex;
+    use std::sync::Arc;
 
     use pii_abi::NodeInput;
     use pii_core::{Budget, CapSet, Ctx};
     use pii_graph::node::GraphNode;
-    use pii_model::ChatRequest;
+    use pii_model::{ChatRequest, Role};
 
     use super::{AgentNode, ModelProvider};
 
@@ -410,7 +479,7 @@ mod tests {
         }
     }
 
-    fn test_node(provider: std::sync::Arc<RecordingProvider>) -> AgentNode {
+    fn test_node(provider: Arc<RecordingProvider>) -> AgentNode {
         AgentNode {
             system: String::from("You are pii."),
             max_turns: 4,
@@ -420,6 +489,7 @@ mod tests {
             workspace: std::path::PathBuf::from("."),
             live: None,
             compaction: super::Compaction::default(),
+            memory: None,
         }
     }
 
@@ -433,7 +503,7 @@ mod tests {
     /// "do you remember previous questions?" always saying no.
     #[test]
     fn history_from_input_seeds_prior_turns() {
-        let provider = std::sync::Arc::new(RecordingProvider {
+        let provider = Arc::new(RecordingProvider {
             seen: Mutex::new(Vec::new()),
         });
         let node = test_node(provider.clone());
@@ -468,7 +538,7 @@ mod tests {
     /// no session) must degrade to the old stateless shape, not error.
     #[test]
     fn missing_history_is_the_old_stateless_shape() {
-        let provider = std::sync::Arc::new(RecordingProvider {
+        let provider = Arc::new(RecordingProvider {
             seen: Mutex::new(Vec::new()),
         });
         let node = test_node(provider.clone());
@@ -523,11 +593,11 @@ mod tests {
             }
         }
 
-        let provider = std::sync::Arc::new(RecordingProvider {
+        let provider = Arc::new(RecordingProvider {
             seen: Mutex::new(Vec::new()),
         });
         let mut node = test_node(provider);
-        node.toolset = node.toolset.with_tool(std::sync::Arc::new(SlowTool));
+        node.toolset = node.toolset.with_tool(Arc::new(SlowTool));
         let call = pii_model::ToolCall {
             id: String::from("c1"),
             name: String::from("slow"),
@@ -591,11 +661,12 @@ mod tests {
             system: String::from("You are pii."),
             max_turns: 4,
             model: None,
-            provider: std::sync::Arc::new(DeltaProvider),
+            provider: Arc::new(DeltaProvider),
             toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
             workspace: std::path::PathBuf::from("."),
             live: Some(tx),
             compaction: super::Compaction::default(),
+            memory: None,
         };
         let input = NodeInput {
             input: serde_json::json!({ "session": "s1" }),
@@ -666,11 +737,12 @@ mod tests {
             system: String::from("You are pii."),
             max_turns: 4,
             model: None,
-            provider: std::sync::Arc::new(DeltaProvider),
+            provider: Arc::new(DeltaProvider),
             toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
             workspace: std::path::PathBuf::from("."),
             live: Some(tx),
             compaction: super::Compaction::default(),
+            memory: None,
         };
         // No session in input -> fallback to empty string.
         let input = NodeInput {
@@ -689,5 +761,139 @@ mod tests {
             }
         }
         assert!(saw_empty, "absent session must fall back to empty string");
+    }
+
+    /// G1 (spec 09 v2): a memory-enabled agent injects a labeled system
+    /// message with the doc text before history when hits exist.
+    #[test]
+    fn memory_injects_labeled_system_message_when_hits_exist() {
+        use pii_store::MemStore;
+        let db = "/projects/pi-improved/_tmp/phase3/agent-mem-inject.redb";
+        let _ = std::fs::remove_file(db);
+        let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
+        // Seed a doc matching the prompt.
+        let rows = pii_memory::doc::write_fact("user prefers dark mode", Vec::new(), 1.0, 0);
+        store.put(&rows).unwrap();
+
+        let provider = Arc::new(RecordingProvider {
+            seen: Mutex::new(Vec::new()),
+        });
+        let mut node = test_node(provider.clone());
+        node.memory = Some(Arc::clone(&store));
+        let input = NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::json!({ "prompt": "what is my dark mode preference?" }),
+            nodes: serde_json::Value::Null,
+        };
+        node.run(&test_ctx(), &input).expect("run");
+        let sent = provider
+            .seen
+            .lock()
+            .first()
+            .expect("one call")
+            .messages
+            .clone();
+        assert!(
+            sent.iter()
+                .any(|m| m.role == Role::System && m.content.contains("Relevant memory:")),
+            "must inject a labeled memory system message"
+        );
+        assert!(
+            sent.iter()
+                .any(|m| m.role == Role::System && m.content.contains("dark mode")),
+            "must include the doc text"
+        );
+    }
+
+    /// G1 (spec 09 v2): zero hits injects no extra system message.
+    #[test]
+    fn memory_injects_nothing_on_zero_hits() {
+        use pii_store::MemStore;
+        let db = "/projects/pi-improved/_tmp/phase3/agent-mem-zero.redb";
+        let _ = std::fs::remove_file(db);
+        let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
+        let provider = Arc::new(RecordingProvider {
+            seen: Mutex::new(Vec::new()),
+        });
+        let mut node = test_node(provider.clone());
+        node.memory = Some(store);
+        let input = NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::json!({ "prompt": "hello" }),
+            nodes: serde_json::Value::Null,
+        };
+        node.run(&test_ctx(), &input).expect("run");
+        let sent = provider
+            .seen
+            .lock()
+            .first()
+            .expect("one call")
+            .messages
+            .clone();
+        assert!(
+            !sent
+                .iter()
+                .any(|m| m.role == Role::System && m.content.contains("Relevant memory:")),
+            "zero hits must not inject a memory header"
+        );
+    }
+
+    /// G2 (spec 09 v2): a `MEMORIZE:` marker is stripped from the visible
+    /// text and written to the store.
+    #[test]
+    fn memorize_marker_is_written_and_stripped() {
+        struct MemProvider;
+        impl ModelProvider for MemProvider {
+            fn name(&self) -> &'static str {
+                "mem"
+            }
+            fn chat(
+                &self,
+                _ctx: &Ctx,
+                _req: &ChatRequest,
+            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+                Ok(pii_model::ChatResponse {
+                    text: String::from("Sure.\nMEMORIZE: user prefers dark mode"),
+                    tool_calls: Vec::new(),
+                    tokens_in: 1,
+                    tokens_out: 1,
+                })
+            }
+        }
+        use pii_store::MemStore;
+        let db = "/projects/pi-improved/_tmp/phase3/agent-mem-write.redb";
+        let _ = std::fs::remove_file(db);
+        let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
+        let node = AgentNode {
+            system: String::from("You are pii."),
+            max_turns: 4,
+            model: None,
+            provider: Arc::new(MemProvider),
+            toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
+            workspace: std::path::PathBuf::from("."),
+            live: None,
+            compaction: super::Compaction::default(),
+            memory: Some(Arc::clone(&store)),
+        };
+        let input = NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::json!({ "prompt": "remember my preference" }),
+            nodes: serde_json::Value::Null,
+        };
+        let outcome = node.run(&test_ctx(), &input).expect("run");
+        let pii_abi::Outcome::Next { value, .. } = outcome else {
+            panic!("expected ok port");
+        };
+        let text = value
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        assert!(
+            !text.contains("MEMORIZE:"),
+            "marker must be stripped from visible text, got: {text}"
+        );
+        // The fact was written to the store.
+        let ids = store.doc_ids().unwrap();
+        assert!(!ids.is_empty(), "a doc must be written");
     }
 }

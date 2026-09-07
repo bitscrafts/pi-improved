@@ -18,6 +18,9 @@ use crate::vector::vector_search;
 pub struct MemoryHit {
     /// Doc id.
     pub doc: String,
+    /// Doc text (spec 09 v2 G1.4: the read path needs the text to inject,
+    /// not just the id).
+    pub text: String,
     /// Fused + decayed score.
     pub score: f32,
     /// Which lanes contributed.
@@ -101,7 +104,8 @@ impl MemorySearcher {
                 lns.push(String::from("graph"));
             }
             hits.push(MemoryHit {
-                doc,
+                doc: doc.clone(),
+                text: crate::doc::decode_text(self.store.doc(&doc).ok().flatten()),
                 score: decayed(score, kind, age_days),
                 lanes: lns,
             });

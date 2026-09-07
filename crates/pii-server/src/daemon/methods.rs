@@ -9,7 +9,7 @@ use std::sync::Arc;
 use pii_abi::RunId;
 use pii_core::Clock as _;
 use pii_memory::consolidate::{ConsolidateCfg, consolidate};
-use pii_memory::doc::{Doc, DocKind, Layer, encode};
+use pii_memory::doc::write_fact;
 use pii_memory::embed::TrigramEmbedder;
 use pii_memory::search::MemorySearcher;
 use pii_proto::sys::StatusResult;
@@ -232,27 +232,6 @@ pub(crate) fn memory_put(engine: &Arc<Engine>, req: &Request) -> Response {
     let Some(text) = req.params.get("text").and_then(|v| v.as_str()) else {
         return err(req, ErrorCode::InvalidParams, "memory.put needs 'text'");
     };
-    let layer = match req
-        .params
-        .get("layer")
-        .and_then(|v| v.as_str())
-        .unwrap_or("l1")
-    {
-        "l1" | "L1" => Layer::L1,
-        "l2" | "L2" => Layer::L2,
-        _ => Layer::L3,
-    };
-    let kind = match req
-        .params
-        .get("kind")
-        .and_then(|v| v.as_str())
-        .unwrap_or("atom")
-    {
-        "scene" => DocKind::Scene,
-        "persona" => DocKind::Persona,
-        "skill" => DocKind::Skill,
-        _ => DocKind::Atom,
-    };
     let concepts: Vec<String> = req
         .params
         .get("concepts")
@@ -272,22 +251,11 @@ pub(crate) fn memory_put(engine: &Arc<Engine>, req: &Request) -> Response {
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(1.0) as f32;
     let now_ms = pii_core::SystemClock.now_ms();
-    let doc = Doc::new(layer, kind, text, concepts.clone(), importance, now_ms);
-    let toks = pii_memory::tokenize(text);
-    let mut terms: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
-    for t in &toks {
-        *terms.entry(t.clone()).or_insert(0) += 1;
-    }
-    let rows = pii_store::mem::PutRows {
-        id: doc.id.clone(),
-        doc: encode(&doc),
-        terms: terms.into_iter().collect(),
-        vector: None,
-        edges: concepts.into_iter().map(|c| (c, 1u64)).collect(),
-        dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
-    };
+    // G2.5/G2.8 (spec 09 v2): use the shared `write_fact` helper so the
+    // vector lane gets real data (the old inline path wrote `vector: None`).
+    let rows = write_fact(text, concepts, importance, now_ms);
     match engine.memory.put(&rows) {
-        Ok(()) => value_response(req, Some(serde_json::json!({"id": doc.id})), |c, m| {
+        Ok(()) => value_response(req, Some(serde_json::json!({"id": rows.id})), |c, m| {
             err(req, c, m)
         }),
         Err(e) => err_code(|c, m| err(req, c, m), &e),

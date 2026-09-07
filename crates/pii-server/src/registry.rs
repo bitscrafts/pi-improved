@@ -32,6 +32,7 @@ pub fn registry(
         provider,
         workspace: cfg.workspace.clone(),
         live: Some(live),
+        memory: Some(Arc::clone(&memory)),
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(cfg.workspace.clone()),
@@ -77,6 +78,7 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
         provider: Arc::new(pii_model::ScriptedProvider::empty()),
         workspace: workspace.to_path_buf(),
         live: None,
+        memory: None,
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),

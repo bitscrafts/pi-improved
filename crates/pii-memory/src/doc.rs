@@ -166,6 +166,46 @@ pub fn encode(d: &Doc) -> Vec<u8> {
     out
 }
 
+/// Builds a `PutRows` for a fact (spec 09 v2 G2.7/G2.8): the shared write
+/// path for the agent's `MEMORIZE:` hook and the `memory.put` RPC. Computes
+/// the trigram vector so the vector lane has real data.
+#[must_use]
+pub fn write_fact(
+    text: &str,
+    concepts: Vec<String>,
+    importance: f32,
+    now_ms: u64,
+) -> pii_store::mem::PutRows {
+    use crate::embed::Embedder as _;
+    let doc = Doc::new(
+        Layer::L1,
+        DocKind::Atom,
+        text,
+        concepts.clone(),
+        importance,
+        now_ms,
+    );
+    let toks = crate::tokenize(text);
+    let mut terms: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
+    for t in &toks {
+        *terms.entry(t.clone()).or_insert(0) += 1;
+    }
+    // Trigram vector (offline, dims 256) quantised to i8 + scale.
+    let vec = crate::embed::TrigramEmbedder
+        .embed(&[String::from(text)])
+        .ok()
+        .and_then(|vs| vs.first().cloned())
+        .map(|v| crate::quant::quantise(&v));
+    pii_store::mem::PutRows {
+        id: doc.id.clone(),
+        doc: encode(&doc),
+        terms: terms.into_iter().collect(),
+        vector: vec,
+        edges: concepts.into_iter().map(|c| (c, 1u64)).collect(),
+        dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+    }
+}
+
 /// Decodes the text from an encoded payload.
 #[must_use]
 pub fn decode_text(bytes: Option<Vec<u8>>) -> String {

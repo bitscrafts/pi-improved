@@ -140,3 +140,41 @@ fn decay_orders_by_age_with_fixed_clock() {
     assert_eq!(id_of("x"), id_of("x"));
     let _ = std::time::Instant::now();
 }
+
+/// G1.4 (spec 09 v2): a search hit carries the doc TEXT, not just the id.
+#[test]
+fn memory_hit_carries_doc_text() {
+    let db = "/projects/pi-improved/_tmp/phase3/mem-hit-text.redb";
+    let _ = std::fs::remove_file(db);
+    let store = MemStore::open(std::path::Path::new(db)).unwrap();
+    put(
+        &store,
+        "user prefers dark mode for the terminal",
+        DocKind::Atom,
+        0,
+    );
+    let searcher = MemorySearcher::new(
+        std::sync::Arc::new(store),
+        Some(std::sync::Arc::new(TrigramEmbedder)),
+    );
+    let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+    let r = searcher.search(&ctx, "dark mode preference", 5).unwrap();
+    assert!(!r.hits.is_empty(), "must find the doc");
+    assert!(
+        r.hits[0].text.contains("dark mode"),
+        "hit must carry doc text, got: {:?}",
+        r.hits[0].text
+    );
+}
+
+/// G2.4 (spec 09 v2): `write_fact` stores a non-None vector (trigram lane).
+#[test]
+fn write_fact_stores_vector() {
+    let rows = pii_memory::doc::write_fact("user prefers dark mode", Vec::new(), 1.0, 0);
+    assert!(
+        rows.vector.is_some(),
+        "write_fact must populate the vector lane"
+    );
+    let (q, _scale) = rows.vector.unwrap();
+    assert_eq!(q.len(), 256, "trigram embedder dims 256");
+}
