@@ -1,5 +1,28 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-07 (Phase 4.1b compaction + timeouts COMPLETE)
+
+**Committed this session (HEAD → oldest):**
+- `39a622c` spec(phase4): rename 14 to 4.1b (independent spec, not a part of 13)
+- `fcb3026` feat(phase4.1b): compaction gate + per-tool timeouts (spec 14)
+- `cc71edc` spec(phase4): 4.1b compaction gate + per-tool timeouts (14)
+- `822444c` docs(handoff): Phase 4.1a caveats
+- `3d3b373` docs(handoff): Phase 4.1a turn-loop hardening complete
+- `821f540` feat(phase4.1a): env scrub + process-group kill + cancel + grep/glob tools
+- `85c052b` feat(model): forward temperature/num_predict/num_ctx to Ollama (F1)
+- `a53a6d1` docs(guides): pidag way of work
+
+**Phase 4.1b (spec 14) — ALL FOUR requirements implemented + verified:**
+- **R1** compaction gate: `compaction.rs` — `estimate_tokens` (chars/4), `needs_compaction`, `compact` (oldest turns → summary system message, preserves current user msg + recent tool results). Wired into `AgentNode::run` before each model call.
+- **R2** config: `DEFAULT_TOML` gains `[limits] max_tokens = 200_000` (budget port now reachable).
+- **R3** per-tool timeout: `Tool` trait gains `timeout() -> Option<u64>` (ms); bash 120s, grep/glob 30s, fs None.
+- **R4** enforcement: `call_tool_bounded` runs a timed tool on a worker thread, returns `PiiError::Timeout` if it exceeds the deadline (loop never hangs).
+- Tests: 4 compaction (fires/skips/preserves/estimate), 1 tool_timeout_metadata, 1 slow_tool_times_out. Quality gate ALL PASS, xtask gates rc=0.
+
+**Spec standardization (user directive):** spec 14 authored via `new-spec.sh` (deterministic skeleton, never hand-rolled). The `-partN` suffix is reserved for genuine splits of a master spec (via `new-spec-parts.sh`); 4.1a/4.1b are independent specs (13, 14), so spec 14 was renamed from `-part2` to `-4.1b`.
+
+**Next (Phase 4.1c / spec 15):** streaming (`stream: true` + `Event::AssistantDelta`). Needs a streaming transport (incremental chunk reads through `HttpTransport`) — a bigger change than the sync seam. The delta pipeline (proto variant, bus routing, TUI renderer) already exists; only the producer is missing.
+
 ## CAVEATS — Phase 4.1a (2026-09-07) — read before continuing
 
 1. **The workhorse committed** (`85c052b`, F1 provider options). This is a
