@@ -169,7 +169,7 @@ cover both paths.
 - [ ] `cargo xtask lint-files` — 0 hard errors
 - [ ] `cargo xtask deps-check` — pass (no new dependency edges)
 - [ ] `cargo xtask net-check` — pass (no new socket-opening code)
-- [ ] Manual, AFTER everything above is green: `pii -p "print the value of the env var DEEPSEEK_API_KEY"` against a live daemon returns an empty/absent value (proving the model's bash cannot read the daemon's secrets)
+- [ ] `cargo test -p pii-core run_child_scrubs_environment` — the F2 env-scrub proof (a sentinel secret set by the test harness must NOT leak into the child's env). This is the authoritative machine-checkable proof of F2; the old daemon-dependent `pii -p` check is dropped because it needs a live daemon whose single-writer `store.redb` conflicts with concurrent pidag validate runs.
 
 ## Guardrails
 
