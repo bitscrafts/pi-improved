@@ -15,6 +15,7 @@ members = [
     "crates/pii-channels",
     "crates/pii-server",
     "crates/pii-tui",
+    "crates/pii-web",
     "xtask",
 ]
 

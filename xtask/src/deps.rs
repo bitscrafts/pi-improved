@@ -146,6 +146,9 @@ pub(crate) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
     check_single_versions(metadata, &mut violations);
     check_redb_confined(metadata, &mut violations);
     check_confined(metadata, "rustls", &["pii-net"], &mut violations);
+    // P4.6 (spec 19 N2): axum is a pii-web-only dependency — the workspace
+    // root and pii-cli stay lean; the web viewer is a separate crate.
+    check_confined(metadata, "axum", &["pii-web"], &mut violations);
     if violations.is_empty() {
         Ok(())
     } else {

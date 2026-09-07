@@ -30,6 +30,8 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-net/src/resolve.rs",
     "crates/pii-server/src/uds.rs",
     "crates/pii-cli/src/cmd_daemon.rs",
+    // P4.6 (spec 19): pii-web binds a loopback TCP listener for the viewer.
+    "crates/pii-web/src/main.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

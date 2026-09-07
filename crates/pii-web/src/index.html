@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pii web</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background:#111; color:#ddd; font-family:ui-monospace,monospace; margin:0; }
+  header { background:#1a1a1a; padding:8px 16px; display:flex; gap:16px; align-items:center; border-bottom:1px solid #333; }
+  header a { color:#7ec8ff; text-decoration:none; }
+  header .daemon { margin-left:auto; font-size:12px; }
+  header .ok { color:#4caf50; }
+  header .down { color:#f44336; }
+  main { padding:16px; }
+  table { border-collapse:collapse; width:100%; }
+  th,td { text-align:left; padding:4px 8px; border-bottom:1px solid #222; }
+  th { color:#888; font-size:12px; }
+  .row { font-size:13px; }
+  .user { color:#4caf50; }
+  .model { color:#7ec8ff; }
+  .thinking { color:#888; }
+  .error { color:#f44336; }
+  .sys { color:#ffb74d; }
+  pre { background:#0a0a0a; padding:8px; overflow-x:auto; }
+  input { background:#222; color:#ddd; border:1px solid #444; padding:4px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="#/">pii web</a>
+  <a href="#/runs">runs</a>
+  <a href="#/sessions">sessions</a>
+  <a href="#/approvals">approvals</a>
+  <a href="#/heals">heals</a>
+  <a href="#/memory">memory</a>
+  <span class="daemon" id="daemon-ind">daemon: ...</span>
+</header>
+<main id="view"></main>
+<script>
+const $ = (s) => document.querySelector(s);
+const view = $('#view');
+const daemon = $('#daemon-ind');
+
+async function api(path) {
+  const r = await fetch('/api' + path);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function health() {
+  try {
+    const r = await fetch('/api/health');
+    daemon.className = 'daemon ' + (r.ok ? 'ok' : 'down');
+    daemon.textContent = 'daemon: ' + (r.ok ? 'ok' : 'down');
+  } catch (e) {
+    daemon.className = 'daemon down';
+    daemon.textContent = 'daemon: unreachable';
+  }
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function roleClass(role) {
+  return { user:'user', assistant:'model', tool:'thinking', system:'sys' }[role] || '';
+}
+
+async function renderHome() {
+  let status = {};
+  try { status = await api('/status'); } catch (e) {}
+  let runs = [];
+  try { runs = await api('/runs'); } catch (e) {}
+  view.innerHTML = `
+    <h3>daemon status</h3>
+    <pre>${esc(JSON.stringify(status, null, 2))}</pre>
+    <h3>runs</h3>
+    <table><tr><th>id</th><th>graph</th><th>status</th></tr>
+    ${(Array.isArray(runs) ? runs : []).map(r => `<tr class="row"><td><a href="#/run/${esc(r.run_id||r.id||'')}">${esc(r.run_id||r.id||'')}</a></td><td>${esc(r.graph||'')}</td><td>${esc(r.status||'')}</td></tr>`).join('')}
+    </table>`;
+}
+
+async function renderRun(id) {
+  let trace = {};
+  try { trace = await api('/runs/' + id + '/trace'); } catch (e) {}
+  view.innerHTML = `<h3>run ${esc(id)}</h3><pre>${esc(JSON.stringify(trace, null, 2))}</pre>`;
+}
+
+async function renderSessions() {
+  let sessions = [];
+  try { sessions = await api('/sessions'); } catch (e) {}
+  view.innerHTML = `
+    <h3>sessions</h3>
+    <table><tr><th>id</th><th>status</th></tr>
+    ${(Array.isArray(sessions) ? sessions : []).map(s => `<tr class="row"><td><a href="#/session/${esc(s.session_id)}">${esc(s.session_id)}</a></td><td>${esc(s.status||'')}</td></tr>`).join('')}
+    </table>`;
+}
+
+async function renderSession(id) {
+  let s = {};
+  try { s = await api('/sessions/' + id); } catch (e) {}
+  const msgs = s.messages || [];
+  view.innerHTML = `<h3>session ${esc(id)}</h3>` +
+    msgs.map(m => `<div class="${roleClass(m.role)}">${esc(m.role)}: ${esc(m.content)}</div>`).join('');
+}
+
+async function renderApprovals() {
+  let a = [];
+  try { a = await api('/approvals'); } catch (e) {}
+  view.innerHTML = `<h3>approvals</h3><pre>${esc(JSON.stringify(a, null, 2))}</pre>`;
+}
+
+async function renderHeals() {
+  let h = [];
+  try { h = await api('/heals'); } catch (e) {}
+  view.innerHTML = `<h3>heals</h3><pre>${esc(JSON.stringify(h, null, 2))}</pre>`;
+}
+
+async function renderMemory() {
+  view.innerHTML = `<h3>memory</h3><input id="mq" placeholder="search memory..."><button id="ms">search</button><pre id="mout"></pre>`;
+  $('#ms').onclick = async () => {
+    try {
+      const r = await api('/memory?q=' + encodeURIComponent($('#mq').value));
+      $('#mout').textContent = JSON.stringify(r, null, 2);
+    } catch (e) { $('#mout').textContent = 'error: ' + e.message; }
+  };
+}
+
+async function route() {
+  const h = location.hash;
+  if (h.startsWith('#/run/')) await renderRun(h.slice(6));
+  else if (h.startsWith('#/session/')) await renderSession(h.slice(10));
+  else if (h.startsWith('#/sessions')) await renderSessions();
+  else if (h.startsWith('#/approvals')) await renderApprovals();
+  else if (h.startsWith('#/heals')) await renderHeals();
+  else if (h.startsWith('#/memory')) await renderMemory();
+  else await renderHome();
+}
+
+window.addEventListener('hashchange', route);
+route();
+setInterval(health, 2000);
+health();
+</script>
+</body>
+</html>
