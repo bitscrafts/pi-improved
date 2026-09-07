@@ -93,3 +93,16 @@ pub struct SessionStateResult {
     /// Active run, if any.
     pub run_id: Option<String>,
 }
+
+/// One entry in `session.list` (spec 16 part2 R3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SessionListEntry {
+    /// Session id.
+    pub session_id: String,
+    /// Session cwd.
+    pub cwd: String,
+    /// Session status.
+    pub status: SessionStatus,
+    /// Active run, if any.
+    pub run_id: Option<String>,
+}

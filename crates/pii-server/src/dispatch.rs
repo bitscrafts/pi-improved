@@ -87,6 +87,10 @@ pub fn dispatch(
                 |state| value_response(req, serde_json::to_value(state).ok(), err),
             )
         }
+        Method::SessionList => {
+            let list = engine.session_list();
+            value_response(req, serde_json::to_value(list).ok(), err)
+        }
         Method::RunCancel => {
             if let Some(rid) = req.params.get("run_id").and_then(|v| v.as_str()) {
                 engine.cancel(rid);

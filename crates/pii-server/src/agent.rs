@@ -197,6 +197,8 @@ impl GraphNode for AgentNode {
                         "text": resp.text,
                         "turns": turn,
                         "files_changed": files_changed,
+                        "tokens_in": resp.tokens_in,
+                        "tokens_out": resp.tokens_out,
                     }),
                 });
             }

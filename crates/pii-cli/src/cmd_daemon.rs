@@ -200,6 +200,11 @@ async fn run_daemon(
             return ExitCode::from(2);
         }
     };
+    // P4.2 (spec 16): a daemon restart must not be amnesia — re-seed sessions
+    // that survived, and mark crash-interrupted runs Failed instead of leaving
+    // permanent zombies in `run.list --status running`.
+    engine.seed_sessions_from_store();
+    engine.reconcile_boot();
 
     // PII_TEST_CLOCK_MS (test-only): when set, the daemon uses a FixedClock
     // starting at that epoch so scripts can drive timers deterministically.

@@ -16,6 +16,7 @@ pub mod loopback;
 pub mod nodes;
 pub mod registry;
 pub mod runs;
+pub mod session_durability;
 pub mod subscribe;
 pub mod tool;
 pub mod uds;
@@ -98,7 +99,7 @@ pub struct Engine {
     pub ollama_net_host: Option<String>,
     /// Server start time.
     pub started_at: Instant,
-    sessions: parking_lot::Mutex<BTreeMap<String, Session>>,
+    pub(crate) sessions: parking_lot::Mutex<BTreeMap<String, Session>>,
     runs: parking_lot::Mutex<BTreeMap<String, RunHandle>>,
     /// Session → runs it has spawned (for session-scoped `event.subscribe`).
     session_runs: parking_lot::Mutex<BTreeMap<String, Vec<String>>>,
@@ -108,7 +109,7 @@ pub struct Engine {
 }
 
 /// A conversation session.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Session {
     /// Session id.
     pub id: String,
@@ -239,7 +240,12 @@ impl Engine {
 
     /// Creates a session (F2.7 `session.create`).
     pub fn create_session(&self, cwd: String, tools: Vec<String>, graph: Option<String>) -> String {
-        let id = format!("s{}", self.sessions.lock().len() + 1);
+        // R1 (spec 16 part2): mint from the durable counter so ids never
+        // collide after a removal/restart; persist the session so a daemon
+        // restart re-seeds it (R2 of the Phase-4 plan — "daemon restart is
+        // amnesia").
+        let n = self.store.next_session_id().unwrap_or(1);
+        let id = format!("s{n}");
         let allow = if tools.is_empty() {
             vec![
                 String::from("fs_read"),
@@ -263,6 +269,7 @@ impl Engine {
                 run_id: None,
             },
         );
+        self.persist_session(&id);
         id
     }
 
@@ -316,6 +323,9 @@ impl Engine {
             .entry(session_id.to_owned())
             .or_default()
             .push(run_id.to_string());
+        // P4.2 (spec 16): persist the run_id/status transition so the session
+        // reflects the running run after a restart too.
+        self.persist_session(session_id);
         // 2026-09-05 (session memory): merge the prior transcript into
         // extra_input under `history` (see `merge_history` doc comment).
         let extra_input = Some(merge_history(extra_input, &history));
@@ -426,83 +436,8 @@ impl Engine {
         drop(map);
         self.runs.lock().remove(run_id);
     }
-
-    /// Session snapshot (F1.5 `session.state`).
-    #[must_use]
-    pub fn session_state(
-        &self,
-        session_id: &str,
-    ) -> Option<pii_proto::session::SessionStateResult> {
-        let map = self.sessions.lock();
-        let s = map.get(session_id)?;
-        let result = pii_proto::session::SessionStateResult {
-            session_id: s.id.clone(),
-            cwd: s.cwd.clone(),
-            status: s.status,
-            messages: s.messages.clone(),
-            tokens_in: 0,
-            tokens_out: 0,
-            run_id: s.run_id.clone(),
-        };
-        drop(map);
-        Some(result)
-    }
-
-    /// Session status transition after a run terminal.
-    pub fn session_finished(&self, run_id: &str) {
-        let mut map = self.sessions.lock();
-        if let Some(s) = map
-            .values_mut()
-            .find(|s| s.run_id.as_deref() == Some(run_id))
-        {
-            s.status = SessionStatus::Idle;
-            s.run_id = None;
-        }
-    }
-
-    /// Records the assistant reply from a run terminal into the session
-    /// transcript (F20, opus review): `session.state` must be a full
-    /// snapshot, not just the user's prompts.
-    pub fn record_assistant(&self, session_id: &str, terminal: &pii_abi::Terminal) {
-        let text = match terminal {
-            // 2026-09-05 (session memory): use the agent's actual answer
-            // text when present, not the raw `{"text":...,"turns":...}`
-            // JSON blob — history built from this must read like a real
-            // transcript, or every future turn re-seeds the model with
-            // its own tool-call bookkeeping instead of clean dialogue.
-            pii_abi::Terminal::Success { output } => output
-                .get("text")
-                .and_then(serde_json::Value::as_str)
-                .map_or_else(|| output.to_string(), str::to_owned),
-            pii_abi::Terminal::Failure { error } => error.clone(),
-            pii_abi::Terminal::Suspended { .. } => String::from("(suspended)"),
-        };
-        let mut map = self.sessions.lock();
-        if let Some(s) = map.get_mut(session_id) {
-            s.messages.push(WireMessage {
-                role: "assistant".to_owned(),
-                content: text,
-            });
-        }
-    }
-
-    /// The run ids spawned by a session, oldest first (for session-scoped
-    /// `event.subscribe`). Empty when the session is unknown or has no runs.
-    #[must_use]
-    pub fn session_run_ids(&self, session_id: &str) -> Vec<String> {
-        self.session_runs
-            .lock()
-            .get(session_id)
-            .cloned()
-            .unwrap_or_default()
-    }
 }
 
-/// Merges `history` (a session's prior transcript) into `extra_input`
-/// under the `history` key (2026-09-05, session memory) — the SAME merge
-/// mechanism `runs::spawn_run` already uses to thread verify-fix's
-/// `test_command`/`workspace` params, so `agent.rs` reads it from
-/// `input.payload.history` alongside the existing `prompt` field.
 fn merge_history(
     extra_input: Option<serde_json::Value>,
     history: &[WireMessage],
