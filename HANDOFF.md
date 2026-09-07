@@ -1,5 +1,31 @@
 # Pii — Session Handoff
 
+## CAVEATS — Phase 4.1a (2026-09-07) — read before continuing
+
+1. **The workhorse committed** (`85c052b`, F1 provider options). This is a
+   HARD-RULE violation (workhorse never commits). Content was verified correct
+   and kept, but the rule was broken. Root cause: pidag's worker is allowed to
+   checkpoint-commit clean-building work mid-run, and it did so without the
+   planner's review. **Action**: re-verify the worker's commit policy in pidag;
+   the orchestrator should review+commit, not the worker.
+2. **Spec premise error**: F3 assumed `libc` was already a workspace dependency.
+   It was NOT, and `pii-core` is `#![forbid(unsafe_code)]`. Fixed by using `nix`
+   (safe `killpg` wrapper) instead. **Lesson**: verify every "already a dep"
+   premise in a spec before writing it (the spec-author skill's #1 rule — I
+   violated it here).
+3. **Worker stalled mid-refactor**: the worker implemented F1+F2 then hit its
+   iteration budget during the `ctx.rs`→`childproc.rs` structural split. The
+   orchestrator completed F3+F4. **Lesson**: a structural refactor (moving code
+   between files) is a poor fit for a single worker pass — it should be its own
+   spec or done by the orchestrator.
+4. **The split was NOT the cause**: Phase 4 was split into 4.1a/4.1b per the
+   opus plan's own recommendation (P4.1 "Size: L, split into 4.1a/4.1b"). The
+   issues above are worker-discipline, spec-premise, and worker-budget problems
+   — none caused by the split itself.
+5. **`nix` added to pii-core**: a new dependency. `deps-check` passed, but any
+   future `deps-check` change must keep `nix` confined to `pii-core` (it's the
+   only crate that needs `killpg`).
+
 ## KNOWN GAPS (running list — append here as found, act on later)
 Format: `[STATUS] short description — where — found how`. STATUS: OPEN /
 IN-PROGRESS / DONE (leave DONE entries with their commit for the audit
