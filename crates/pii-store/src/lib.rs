@@ -13,6 +13,7 @@ pub mod channel;
 mod codec;
 pub mod heal;
 pub mod mem;
+pub mod session;
 pub mod timer;
 pub use mem::MemStore;
 mod tables;
@@ -22,7 +23,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunStatus};
 use redb::{Database, ReadableDatabase, ReadableTable};
-use tables::{GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_BY_STATUS, RUN_JOURNAL, RUN_SNAPSHOT};
+use tables::{
+    GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_BY_STATUS, RUN_JOURNAL, RUN_SNAPSHOT, SESSION,
+    SESSION_TOKENS,
+};
 
 pub use codec::{from_bytes, hash, to_bytes};
 
@@ -95,6 +99,12 @@ impl Store {
             write
                 .open_table(RESUME_INDEX)
                 .map_err(|e| PiiError::Internal(format!("store: open resume_index: {e}")))?;
+            write
+                .open_table(SESSION)
+                .map_err(|e| PiiError::Internal(format!("store: open session: {e}")))?;
+            write
+                .open_table(SESSION_TOKENS)
+                .map_err(|e| PiiError::Internal(format!("store: open session_tokens: {e}")))?;
             write
                 .commit()
                 .map_err(|e| PiiError::Internal(format!("store: commit tables: {e}")))?;

@@ -76,3 +76,11 @@ pub(crate) const HEAL_ATTEMPT: TableDefinition<'_, &str, &[u8]> =
 /// Channel cursor + last started run: channel -> encoded `{cursor,run_id}`.
 pub(crate) const CHANNEL_CURSOR: TableDefinition<'_, &str, &[u8]> =
     TableDefinition::new("channel_cursor");
+
+/// Session blobs: session id -> encoded session state (part 1 substrate).
+pub(crate) const SESSION: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("session");
+
+/// Cumulative `(input, output)` token counts per session — a separate table
+/// so token updates never deserialise the whole session blob.
+pub(crate) const SESSION_TOKENS: TableDefinition<'_, &str, (u64, u64)> =
+    TableDefinition::new("session_tokens");
