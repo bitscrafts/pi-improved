@@ -43,6 +43,19 @@ trail; don't delete history).
 - `pii tui`/`start-daemon.sh` not wired into container `entrypoint.sh` (OPEN)
 - TLS gap in pii-net (OPEN, long-standing)
 
+**PHASE 4 PLAN (opus review, 2026-09-07) — see `_docs/06-research/007-pii-phase4-plan.md`:**
+Opus verdict: "production-grade substrate carrying an MVP-grade product." The dominant pathology is features that are shaped but not wired (silent no-ops): `memory={enabled}` parsed by nobody, `Event::AssistantDelta` never emitted (stream:false), `memory.put` writes vector:None (vector lane empty), `OllamaEmbedder` dims()==0 (unreachable), `max_micro_usd` never charged, `session.list` no dispatch arm, `run.list` returns [] without filter, `session.state` token counts faked. Recommended Phase 4 (ordered, spec-sized):
+- **P4.1** turn-loop hardening (streaming, compaction, cancellation, tool timeouts, process-group+env-scrubbing, grep/glob tools) — do FIRST
+- **P4.2** session durability + run-lifecycle truth (persist sessions, session.list, real token counts, boot reconciliation, retention/prune)
+- **P4.3** global memory v2 — REWRITE spec 09 first (3 defects: RRF dedup threshold 0.85 can never fire [max ~0.049], vector lane empty, search returns ids only)
+- **P4.4** TLS in pii-net (outbound only, rustls+webpki-roots, no listener TLS) — 4th, needs P4.1 env-scrubbing first
+- **P4.5** make it a service (systemd/entrypoint, --foreground, log rotation, healthcheck exit codes)
+- **P4.6** pii web viewer (spec 12) — after P4.2, prefer SSE over polling
+- **P4.7** self-improvement: heal Slice 2 (durable patch artifacts, ledger evolution, scope_root persistence, max_model_calls) — NOT PR-opening (that's Slice 3, post-TLS). Highest-leverage: extend reachability-check/doc-drift-check to catch silent-no-op class.
+- **Do NOT build**: WASM plugin layer, cross-process leases, nano-model Tier-0 routing (yet), TLS on listener, multi-user.
+- **Cut/fix**: OllamaEmbedder (fix or delete), MicroUsd (charge or delete), DiscordChannel (feature-gate until TLS), bash deny-list (stop describing as control).
+- **7 open questions for user** (thread-cap defaults, panic=abort, primary product coding-agent-vs-assistant, fs_read scope, secret storage, retention, external session-id refs) — in the doc §6.
+
 **Daemon NOT running** (killed during thread-cap measurement; no soak/daemon processes left). To restart the live stack: `pii daemon --sandbox off --workspace /projects/pi-improved` (background), then `pii sys status` to verify.
 
 ## pii -p human/TTY output bug + pii tui limitation (2026-09-05, found by user)
