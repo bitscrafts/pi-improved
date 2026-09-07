@@ -52,6 +52,10 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
                     }
                 }
             }
+            // P4.5 (spec 18 R1): explicit no-op — the daemon is already
+            // foreground. The flag documents the supervisor contract and
+            // future-proofs a daemonize path; it does not change behavior.
+            "--foreground" => {}
             other => {
                 eprintln!("error: unknown flag '{other}'");
                 return ExitCode::from(2);
