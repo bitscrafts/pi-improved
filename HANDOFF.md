@@ -1,5 +1,36 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-07 (Phase 4.3 memory v2 + 4.4 TLS COMPLETE)
+
+**Committed this session (HEAD → oldest):**
+- `0cdfe05` feat(phase4.4): outbound TLS in pii-net (spec 17)
+- `28a86cf` spec(phase4): 4.4 outbound TLS in pii-net (17)
+- `7b7954e` feat(phase4.3): global memory v2 - hit text, vector lane, MEMORIZE write (spec 09)
+- `9fefd2d` spec(phase4): rewrite 09 global memory v2 - fix RRF dedup, vector lane, hit text (4.3)
+- (earlier 4.2/4.1c/4.1b/4.1a commits)
+
+**Phase 4.3 (spec 09, global memory v2) — all 3 defects fixed + wired:**
+- **G1.4** `MemoryHit` now carries doc text (read path can inject "Relevant memory:\n- <text>")
+- **G2.4/G2.8** `write_fact` helper computes the trigram vector (vector lane now real, dims 256)
+- **G2.5** `memory_put` uses `write_fact` (no more `vector: None`)
+- **G1** read-path injection: agent injects a labeled system message when the graph opts in via `memory = {enabled=true}`
+- **G2** MEMORIZE-marker write: strips the marker from visible text, writes the fact (dedup via content-id + trigram cosine)
+- Tests: 2 pii-memory (hit text, write_fact vector), 3 pii-server (inject, zero-hits, memorize write). Quality gate ALL PASS, xtask rc=0.
+- **Note:** workhorse vacuous-passed again (stalled, no tree changes); orchestrator implemented directly.
+
+**Phase 4.4 (spec 17, outbound TLS) — implemented + verified:**
+- **R1** `Scheme::Https` + `parse_url` accepts https (default port 443)
+- **R2** `dial_tls` wraps the stream in rustls (webpki-roots, SNI, server-cert verification ON, no client certs)
+- **R3** `Conn.stream` is a `Stream::Plain|Tls` enum; read/write/byte-budget/deadline unchanged
+- **R4** `request`/`request_streaming` dispatch on scheme; authorize→pin→grant→dial chokepoint unchanged
+- **R5** deps-check invariant: rustls confined to pii-net
+- Tests: parse_url_https x2, request_https_dispatch (acceptance), deps_check_rejects_rustls. Quality gate ALL PASS, xtask rc=0.
+- **Note:** workhorse implemented R1-R5 code but hit its 50-iteration budget before writing the R4 acceptance test; orchestrator added it.
+
+**This unblocks:** the `deepseek:` provider (HTTPS-only), `DiscordChannel` (default base `https://api.discord.com`), and any GitHub/GitLab tool.
+
+**Next (per opus plan):** P4.5 (make it a service), P4.6 (web viewer, spec 12), P4.7 (self-improvement heal Slice 2).
+
 ## SESSION STATE — 2026-09-07 (Phase 4.2 session durability COMPLETE)
 
 **Committed this session (HEAD → oldest):**
