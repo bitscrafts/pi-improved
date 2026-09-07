@@ -33,6 +33,14 @@ pub trait Tool: Send + Sync {
     /// [`PiiError::Denied`] on capability/scope denial, [`PiiError::Invalid`]
     /// for bad arguments.
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError>;
+
+    /// Wall-clock bound the agent loop enforces on one [`Tool::call`]
+    /// (spec 12, R3), in milliseconds. `None` means the operation is fast
+    /// and local enough that no bound applies. Defaults to `None`; tools
+    /// that spawn processes or walk unbounded trees override it.
+    fn timeout(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// A named set of tools.
@@ -85,6 +93,14 @@ impl ToolSet {
         }
     }
 
+    /// Adds (or replaces) a single tool by name. Used by tests to inject a
+    /// slow/fake tool; not part of the normal allowlist construction.
+    #[must_use]
+    pub fn with_tool(mut self, tool: Arc<dyn Tool>) -> Self {
+        self.tools.insert(tool.name(), tool);
+        self
+    }
+
     /// Looks a tool up by name.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
@@ -95,5 +111,53 @@ impl ToolSet {
     #[must_use]
     pub fn specs(&self) -> Vec<pii_model::ToolSpec> {
         self.tools.values().map(|t| t.spec()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::{BashTool, FsReadTool, GlobTool, GrepTool, Tool, ToolSet};
+
+    /// Spec 12, R3: every tool declares its own bound via `Tool::timeout`
+    /// — bash 120s (builds/tests are legitimately long), grep/glob 30s
+    /// (unbounded tree walks), fs reads unbounded (fast local ops).
+    #[test]
+    fn tool_timeout_metadata() {
+        let ws = std::path::PathBuf::from(".");
+        assert_eq!(
+            BashTool {
+                workspace: ws.clone()
+            }
+            .timeout(),
+            Some(120_000)
+        );
+        assert_eq!(
+            GrepTool {
+                workspace: ws.clone()
+            }
+            .timeout(),
+            Some(30_000)
+        );
+        assert_eq!(
+            GlobTool {
+                workspace: ws.clone()
+            }
+            .timeout(),
+            Some(30_000)
+        );
+        assert_eq!(
+            FsReadTool {
+                workspace: ws.clone()
+            }
+            .timeout(),
+            None
+        );
+        // The set's dynamic lookup agrees with the static declarations.
+        let set = ToolSet::builtin(ws);
+        assert_eq!(set.get("bash").map(|t| t.timeout()), Some(Some(120_000)));
+        assert_eq!(set.get("grep").map(|t| t.timeout()), Some(Some(30_000)));
+        assert_eq!(set.get("fs_read").map(|t| t.timeout()), Some(None));
     }
 }

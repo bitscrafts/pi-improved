@@ -136,6 +136,11 @@ impl Tool for GrepTool {
         }
     }
 
+    fn timeout(&self) -> Option<u64> {
+        // Spec 12, R3: grep walks unbounded trees, so it is bounded.
+        Some(30_000)
+    }
+
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
         let pattern = require(args, "pattern")?;
         let cwd = resolve_cwd(&self.workspace, args.get("cwd").and_then(Value::as_str))?;
@@ -201,6 +206,11 @@ impl Tool for GlobTool {
             schema: json!({"type":"object","required":["pattern"],"properties":{
                 "pattern":{"type":"string"},"cwd":{"type":"string"}}}),
         }
+    }
+
+    fn timeout(&self) -> Option<u64> {
+        // Spec 12, R3: glob walks unbounded trees, so it is bounded.
+        Some(30_000)
     }
 
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {

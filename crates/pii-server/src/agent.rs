@@ -5,6 +5,7 @@
 //! and the compaction gate land with the TUI pass (they need nothing here).
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use pii_abi::{NodeInput, Outcome, PiiError, PortName};
 use pii_core::Ctx;
@@ -12,17 +13,21 @@ use pii_model::{ChatMessage, ChatRequest, ChatResponse, ModelProvider, Role};
 
 use pii_graph::node::GraphNode;
 
+use crate::compaction::{self, Compaction};
+
 /// Agent node config (F2.10).
 pub struct AgentNode {
-    system: String,
-    max_turns: u32,
-    model: Option<String>,
-    provider: Arc<dyn ModelProvider>,
-    toolset: pii_tools::ToolSet,
-    workspace: std::path::PathBuf,
+    pub(crate) system: String,
+    pub(crate) max_turns: u32,
+    pub(crate) model: Option<String>,
+    pub(crate) provider: Arc<dyn ModelProvider>,
+    pub(crate) toolset: pii_tools::ToolSet,
+    pub(crate) workspace: std::path::PathBuf,
     /// Live-event sender (F12, opus review): emits `ToolCall`/`ToolResult`/
     /// `AssistantDelta` to the bus without touching the journal.
-    live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
+    pub(crate) live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
+    /// Compaction knobs (spec 12, R1).
+    pub(crate) compaction: Compaction,
 }
 
 /// Factory registered into the engine's registry.
@@ -93,11 +98,14 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             toolset,
             workspace: self.workspace.clone(),
             live: self.live.clone(),
+            compaction: Compaction::default(),
         }))
     }
 }
 
 impl GraphNode for AgentNode {
+    #[allow(clippy::too_many_lines)] // reason: the turn loop is one cohesive
+    // state machine; splitting it would scatter the compaction/timeout logic
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         let user_text = input
             .payload
@@ -109,6 +117,12 @@ impl GraphNode for AgentNode {
         messages.push(ChatMessage::new(Role::User, &user_text));
         let mut files_changed: Vec<String> = Vec::new();
         for turn in 1..=self.max_turns {
+            // Spec 12, R1: before each model call, compact if the estimated
+            // token count crosses the threshold. Short conversations are
+            // untouched (byte-identical messages).
+            if compaction::needs_compaction(&messages, &self.compaction) {
+                messages = compaction::compact(&messages, &self.compaction);
+            }
             let req = ChatRequest {
                 model: self
                     .model
@@ -231,7 +245,10 @@ impl AgentNode {
 
     /// Executes each tool call, appends the tool-result messages, records
     /// any files the agent actually changed (F2.10 `files_changed`), and
-    /// emits live ToolCall/ToolResult events (F12).
+    /// emits live ToolCall/ToolResult events (F12). Each `Tool::call` is
+    /// bounded by the tool's declared `timeout()` (spec 12, R4): the call
+    /// runs on a worker thread and is abandoned past the bound, surfacing
+    /// `PiiError::Timeout`.
     fn run_tool_calls(
         &self,
         ctx: &Ctx,
@@ -248,13 +265,10 @@ impl AgentNode {
                 tool: call.name.clone(),
                 args: call.arguments.clone(),
             });
-            let result = self.toolset.get(&call.name).map_or_else(
-                || Err(format!("unknown tool '{}'", call.name)),
-                |tool| tool.call(ctx, &call.arguments).map_err(|e| e.to_string()),
-            );
+            let result = self.call_tool_bounded(ctx, call);
             let (ok, content) = match result {
                 Ok(v) => (true, v.to_string()),
-                Err(e) => (false, e),
+                Err(e) => (false, e.to_string()),
             };
             self.emit_live(pii_proto::event::Event::ToolResult {
                 run_id: run_id.to_owned(),
@@ -287,6 +301,46 @@ impl AgentNode {
                 tool_calls: Vec::new(),
             });
             let _ = ok;
+        }
+    }
+
+    /// Runs one tool call bounded by its declared `timeout()` (spec 12,
+    /// R4). `None` (fast local ops) runs inline. Otherwise the call runs
+    /// on a worker thread; if it has not finished by the deadline it is
+    /// abandoned and `PiiError::Timeout` is returned immediately (the
+    /// loop never hangs on a stuck tool).
+    fn call_tool_bounded(
+        &self,
+        ctx: &Ctx,
+        call: &pii_model::ToolCall,
+    ) -> Result<serde_json::Value, PiiError> {
+        let Some(tool) = self.toolset.get(&call.name) else {
+            return Err(PiiError::NotFound(format!("tool '{}'", call.name)));
+        };
+        let Some(timeout_ms) = tool.timeout() else {
+            return tool.call(ctx, &call.arguments);
+        };
+        let tool = Arc::clone(tool);
+        let args = call.arguments.clone();
+        let handle = std::thread::spawn(move || {
+            tool.call(
+                &Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited()),
+                &args,
+            )
+        });
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        loop {
+            if handle.is_finished() {
+                return handle.join().unwrap_or_else(|_| {
+                    Err(PiiError::Internal(String::from("tool worker panicked")))
+                });
+            }
+            if Instant::now() >= deadline {
+                return Err(PiiError::Timeout {
+                    after_ms: timeout_ms,
+                });
+            }
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 }
@@ -346,6 +400,7 @@ mod tests {
             toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
             workspace: std::path::PathBuf::from("."),
             live: None,
+            compaction: super::Compaction::default(),
         }
     }
 
@@ -414,5 +469,59 @@ mod tests {
             .clone();
         assert_eq!(sent.len(), 2, "unexpected message shape: {sent:?}");
         assert_eq!(sent.get(1).expect("msg 1").content, "hello");
+    }
+
+    /// R4 (spec 14): a tool whose `call()` exceeds its declared `timeout()`
+    /// must return `PiiError::Timeout` promptly, not hang the loop.
+    #[test]
+    fn slow_tool_times_out() {
+        use pii_tools::Tool;
+        use std::time::Duration;
+
+        // A fake tool that sleeps 5s but declares a 100ms timeout.
+        struct SlowTool;
+        impl Tool for SlowTool {
+            fn name(&self) -> &'static str {
+                "slow"
+            }
+            fn spec(&self) -> pii_model::ToolSpec {
+                pii_model::ToolSpec {
+                    name: String::from("slow"),
+                    description: String::from("slow"),
+                    schema: serde_json::json!({}),
+                }
+            }
+            fn timeout(&self) -> Option<u64> {
+                Some(100)
+            }
+            fn call(
+                &self,
+                _ctx: &Ctx,
+                _args: &serde_json::Value,
+            ) -> Result<serde_json::Value, pii_abi::PiiError> {
+                std::thread::sleep(Duration::from_secs(5));
+                Ok(serde_json::json!({}))
+            }
+        }
+
+        let provider = std::sync::Arc::new(RecordingProvider {
+            seen: Mutex::new(Vec::new()),
+        });
+        let mut node = test_node(provider);
+        node.toolset = node.toolset.with_tool(std::sync::Arc::new(SlowTool));
+        let call = pii_model::ToolCall {
+            id: String::from("c1"),
+            name: String::from("slow"),
+            arguments: serde_json::json!({}),
+        };
+        let started = std::time::Instant::now();
+        let err = node
+            .call_tool_bounded(&test_ctx(), &call)
+            .expect_err("slow tool must time out");
+        assert!(
+            matches!(err, pii_abi::PiiError::Timeout { .. }),
+            "got {err:?}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(2), "must not hang");
     }
 }

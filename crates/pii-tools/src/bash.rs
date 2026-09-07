@@ -44,6 +44,12 @@ impl Tool for BashTool {
         }
     }
 
+    fn timeout(&self) -> Option<u64> {
+        // Spec 12, R3: bash is the one tool that can legitimately run long
+        // (builds, test suites), so it gets the loosest declared bound.
+        Some(120_000)
+    }
+
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
         let command = require_str(args, "command")?;
         for d in DENY_LIST {

@@ -8,6 +8,7 @@
 
 pub mod agent;
 pub mod bus;
+pub mod compaction;
 pub mod conn;
 pub mod daemon;
 pub mod dispatch;

@@ -143,6 +143,12 @@ name = "default"
 entry = "agent"
 caps = ["fs_read", "fs_write", "proc", "net"]
 
+# Spec 12, R2: the built-in session graph declares a token budget so the
+# agent node's per-turn charge (B6) has a real limit to enforce instead of
+# `u64::MAX`.
+[limits]
+max_tokens = 200_000
+
 [[node]]
 id = "agent"
 kind = "agent"
@@ -160,3 +166,21 @@ id = "done"
 kind = "transform"
 expr = "$.payload"
 "#;
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    /// Spec 12, R2: the built-in session graph carries a `[limits]`
+    /// `max_tokens` so the agent node's budget charge has a real ceiling.
+    #[test]
+    fn default_toml_has_limits() {
+        let doc: toml::Table = toml::from_str(super::DEFAULT_TOML).expect("parse DEFAULT_TOML");
+        let max_tokens = doc
+            .get("limits")
+            .and_then(|l| l.get("max_tokens"))
+            .and_then(toml::Value::as_integer)
+            .expect("[limits] max_tokens present");
+        assert!(max_tokens > 0, "max_tokens must be a positive bound");
+    }
+}
