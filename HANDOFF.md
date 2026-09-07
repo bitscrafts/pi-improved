@@ -1,5 +1,30 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-07 (Phase 4.5 service + 4.6 web viewer COMPLETE)
+
+**Committed this session (HEAD → oldest):**
+- `3b1882f` feat(phase4.6): pii web read-only viewer - UDS JSON-RPC proxy + embedded SPA (spec 19)
+- `58e9d85` feat(phase4.5): pii daemon --foreground flag + service wiring (spec 18)
+- `98e9d05` spec(phase4): 4.5 service + 4.6 web viewer (18, 19)
+- (earlier 4.4/4.3/4.2/4.1 commits)
+
+**Phase 4.5 (spec 18, service) — implemented + verified:**
+- `pii daemon --foreground` flag (explicit no-op — the daemon is already foreground; documents the supervisor contract)
+- `start-daemon.sh` gains size-triggered log rotation (10 MiB default, preserves old log)
+- Container `entrypoint.sh` wired to autostart `start-daemon.sh` (survives a full rebuild)
+- `pii sys status` exit codes (0 reachable / 2 unreachable) documented as the healthcheck contract
+- Quality gate ALL PASS.
+
+**Phase 4.6 (spec 19, web viewer) — implemented + verified:**
+- New `crates/pii-web` crate (axum server) — `pii web [--port 4602] [--host 127.0.0.1] [--instance default]`
+- Proxies the daemon's UDS JSON-RPC over loopback HTTP (status, runs, run trace, sessions, session state, approvals, heals, memory)
+- Embedded vanilla-JS SPA (self-contained, no external assets, dark theme, hash-routed)
+- `session.list` (landed in 4.2) powers the session view
+- deps-check invariant: axum confined to pii-web; net-check allowlists pii-web's loopback listener
+- Tests: SPA self-contained, loopback default. Quality gate + all xtask gates ALL PASS.
+
+**Phase 4 status: 4.1a/4.1b/4.1c/4.2/4.3/4.4/4.5/4.6 ALL DONE.** Remaining: P4.7 (self-improvement heal Slice 2).
+
 ## SESSION STATE — 2026-09-07 (Phase 4.3 memory v2 + 4.4 TLS COMPLETE)
 
 **Committed this session (HEAD → oldest):**
