@@ -22,6 +22,32 @@ trail; don't delete history).
 
 **Status: GREEN — Phase 1/2/3(1-4 accepted, 13/13 EC — the formerly-failing rss-gate EC now passes) COMPLETE. Phase 3.5 MVP hardening: ALL 6 opus-review blockers (B1,B2,B3,B5,B6,M1) IMPLEMENTED + committed. rss-gate NOW GREEN (two real engine fixes + journal hardening + thread-cap removal verified — see section below). Phase 3.6 self-healing: Slice -1, Slice 0 (`pii heal ls/show` SMOKE-TESTED against a live daemon, both verified working), and Slice 1 (local-only worktree repair, scripted e2e proven) ALL COMPLETE. Quality-gate green throughout. Pii is now INSTALLED AND RUNNING on lnx with a real (non-scripted) live model — see the deployment section below. MVP-complete pending final review.**
 
+## SESSION STATE — 2026-09-07 (Phase 4.1a turn-loop hardening COMPLETE)
+
+**Committed this session (HEAD → oldest):**
+- `821f540` feat(phase4.1a): env scrub + process-group kill + cancel + grep/glob tools (spec 13 F2-F4) — orchestrator-completed
+- `85c052b` feat(model): forward temperature/num_predict/num_ctx to Ollama (spec 13 F1) — worker-committed (hard-rule violation: workhorse committed; content verified correct, kept)
+- `a53a6d1` docs(guides): pidag way of work — SDD pipeline, model ladder, hard rules, operational traps
+- `64dfe84` spec(phase4): replace daemon-dependent F2 EC with deterministic unit test
+- `a70dd79` spec(phase4): turn-loop hardening 4.1a — provider options, env scrub, process-group, grep/glob tools
+
+**Phase 4.1a (spec 13) — ALL FOUR requirements implemented + verified:**
+- **F1** provider options: `ChatRequest` gains `num_ctx`; `ollama.rs` forwards `temperature`/`num_predict`/`num_ctx` (default 8192), `stream` stays false. Tests: `ollama_request_forwards_provider_options`, `ollama_request_defaults_num_ctx`.
+- **F2** env scrubbing: `childproc.rs` `scrubbed_env()` allowlist (PATH/HOME/LANG/LC_ALL/TERM/PWD/TMPDIR + `PII_*`), applied at BOTH Command sites (`run_child` + `ChildProc::spawn`). Test: `run_child_scrubs_environment`.
+- **F3** process-group + cancel: `process_group(0)` at both sites; timeout/cancel kills the WHOLE group via `nix::killpg` (safe, no `unsafe` — `pii-core` is `#![forbid(unsafe_code)]`); `run_child` observes the ctx cancel token; `ProcOutput` gains `cancelled`. Tests: `run_child_kills_process_group_on_timeout`, `run_child_returns_cancelled_when_ctx_cancelled`.
+- **F4** grep/glob tools: new `pii-tools/src/search.rs` — `GrepTool` (substring search, `path:line:content`) + `GlobTool` (glob listing, hand-rolled `*`/`**` matcher, no new crate), both workspace-scoped + 64 KiB capped, registered in `ToolSet::builtin`. Tests: 5 new (glob matcher, grep finds, grep denies, glob lists, glob denies).
+
+**Spec premise correction:** F3 assumed `libc` was already a workspace dep — it was NOT, and `pii-core` forbids `unsafe`. Used `nix` (safe `killpg` wrapper) instead. Added `nix = "0.29"` to `pii-core`.
+
+**pidag run outcome:** the worker (glm-5.3-flash:cloud) implemented F1 (committed) + F2 (uncommitted) then stalled on the structural `ctx.rs`→`childproc.rs` split (hit iteration budget). The orchestrator completed F3 + F4 and verified all 11 exit criteria green (build, pii-model/core/tools tests, workspace 49 suites, clippy -D warnings, fmt, lint-files, deps-check, net-check). Quality gate ALL PASS.
+
+**Operational fixes this session:**
+- Cleared expired **anthropic OAuth** from `~/.pi/agent/auth.json` (backed up) — it was blocking EVERY pi call (pi tried to refresh it first, even with `--provider deepseek`). pi now works with ollama-cloud.
+- pidag workhorse set to `ollama-cloud/glm-5.3-flash:cloud` (free+paid) in `.pidag/config.toml`; added `glm-5.3-flash:cloud` + `glm-5.3:cloud` to pi's catalog (`~/.pi/agent/models.json`), removed `glm-5.2:cloud` + `kimi-k2.7-code:cloud`. Verified live PONG.
+- Launcher `_tmp/run-p4.1a-pidag.sh` sources `~/.bashrc` + `~/.hermes/.env` so API keys reach the pidag→pi subprocess (background-shell env trap).
+
+**Next (Phase 4.1b):** streaming (`stream: true` + `Event::AssistantDelta`), compaction gate, per-tool timeouts. Streaming needs a streaming transport (bigger than the sync `HttpTransport` seam) — author spec 14.
+
 ## SESSION STATE — 2026-09-06 (session end; restart here tomorrow)
 
 **Committed this session (HEAD → oldest):**
