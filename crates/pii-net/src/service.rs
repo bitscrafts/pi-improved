@@ -7,15 +7,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
+use rustls::StreamOwned;
 
 use pii_abi::{HttpRequest, HttpResponse, PiiError};
 use pii_core::{Ctx, HttpTransport};
 
 use crate::authorize::{Pinned, Target};
 use crate::clock::Clock;
-use crate::dial::dial;
+use crate::dial::{dial, dial_tls};
 use crate::grant::{Grants, NetGrant};
-use crate::http_codec::{parse_response, parse_url};
+use crate::http_codec::{Scheme, parse_response, parse_url};
 
 /// Service configuration. No `Default`: every field is load-bearing.
 #[derive(Clone)]
@@ -28,9 +29,70 @@ pub struct NetConfig {
     pub clock: Arc<dyn Clock>,
 }
 
+/// The byte-carrying stream behind [`Conn`]: a plain TCP stream (http) or a
+/// rustls TLS stream (https, spec 17 R3).
+///
+/// An enum, not a trait object: two variants, no vtable, deadline logic
+/// stays in `Conn`.
+pub enum Stream {
+    /// Plaintext HTTP transport.
+    Plain(TcpStream),
+    /// TLS-wrapped transport (spec 17).
+    #[allow(clippy::large_enum_variant)] // reason: the TLS variant carries the
+    // rustls session state by design; boxing it would put it on the heap for
+    // every https conn with no layout benefit
+    Tls(Box<StreamOwned<rustls::ClientConnection, TcpStream>>),
+}
+
+impl std::io::Read for Stream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(s) => s.read(buf),
+            Self::Tls(s) => s.read(buf),
+        }
+    }
+}
+
+impl std::io::Write for Stream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(s) => s.write(buf),
+            Self::Tls(s) => s.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Plain(s) => s.flush(),
+            Self::Tls(s) => s.flush(),
+        }
+    }
+}
+
+impl Stream {
+    /// Arms the shared deadline on whichever transport is live (§4.3.4).
+    ///
+    /// # Errors
+    /// [`PiiError::Invalid`] when the OS refuses the timeout.
+    fn set_timeouts(&mut self, d: Duration) -> Result<(), PiiError> {
+        let map = |e| PiiError::Invalid(format!("net: timeout: {e}"));
+        match self {
+            Self::Plain(s) => {
+                s.set_read_timeout(Some(d)).map_err(map)?;
+                s.set_write_timeout(Some(d)).map_err(map)
+            }
+            // The TLS stream forwards timeouts to the wrapped TCP stream;
+            // rustls reads honour them during handshake and data phases.
+            Self::Tls(s) => {
+                s.sock.set_read_timeout(Some(d)).map_err(map)?;
+                s.sock.set_write_timeout(Some(d)).map_err(map)
+            }
+        }
+    }
+}
+
 /// A live connection charging its grant (F2.7).
 pub struct Conn {
-    stream: TcpStream,
+    stream: Stream,
     key: (String, String),
     inner: Arc<Inner>,
     deadline_ms: u64,
@@ -87,12 +149,7 @@ impl Conn {
         self.deadline_ms = pinned.deadline_ms;
         let remaining = pinned.deadline_ms.saturating_sub(clock.now_ms());
         let d = Duration::from_millis(remaining.max(1));
-        self.stream
-            .set_read_timeout(Some(d))
-            .map_err(|e| PiiError::Invalid(format!("net: read timeout: {e}")))?;
-        self.stream
-            .set_write_timeout(Some(d))
-            .map_err(|e| PiiError::Invalid(format!("net: write timeout: {e}")))
+        self.stream.set_timeouts(d)
     }
 
     /// Sends raw bytes, charging `max_bytes_out`.
@@ -188,6 +245,7 @@ impl NetService {
         target: &Target,
         key: &str,
         timeout_ms: u64,
+        scheme: Scheme,
     ) -> Result<Conn, PiiError> {
         let principal = ctx.principal_str();
         // The principal's own grant first; a "*" wildcard grant is the
@@ -228,6 +286,13 @@ impl NetService {
         }
         match dial(ctx, &pinned, &target.host, self.0.clock.as_ref()) {
             Ok(stream) => {
+                // Spec 17 R3/R4: TLS wraps the dialed stream AFTER dial, inside
+                // pii-net — the authorize→pin→grant→dial chokepoint is unchanged.
+                let stream = if scheme == Scheme::Https {
+                    Stream::Tls(Box::new(dial_tls(stream, &target.host)?))
+                } else {
+                    Stream::Plain(stream)
+                };
                 let mut conn = Conn {
                     stream,
                     key: k,
@@ -271,12 +336,12 @@ impl NetService {
 
 impl HttpTransport for NetService {
     fn request(&self, ctx: &Ctx, req: &HttpRequest) -> Result<HttpResponse, PiiError> {
-        let (_scheme, target, path) = parse_url(&req.url)?;
+        let (scheme, target, path) = parse_url(&req.url)?;
         let host_header = format!("{}:{}", target.host, target.port);
         let key = format!("http:{}", target.host);
         // connect() resolves exactly once and authorizes against the SAME
         // pinned set — never re-resolve here (§4.3.2).
-        let mut conn = self.connect(ctx, &target, &key, req.timeout_ms)?;
+        let mut conn = self.connect(ctx, &target, &key, req.timeout_ms, scheme)?;
         let pinned = Pinned {
             addrs: Vec::new(),
             deadline_ms: self.0.clock.now_ms().saturating_add(req.timeout_ms),
@@ -299,10 +364,10 @@ impl HttpTransport for NetService {
         req: &HttpRequest,
         on_chunk: &mut dyn FnMut(&[u8]),
     ) -> Result<HttpResponse, PiiError> {
-        let (_scheme, target, path) = parse_url(&req.url)?;
+        let (scheme, target, path) = parse_url(&req.url)?;
         let host_header = format!("{}:{}", target.host, target.port);
         let key = format!("http:{}", target.host);
-        let mut conn = self.connect(ctx, &target, &key, req.timeout_ms)?;
+        let mut conn = self.connect(ctx, &target, &key, req.timeout_ms, scheme)?;
         let pinned = Pinned {
             addrs: Vec::new(),
             deadline_ms: self.0.clock.now_ms().saturating_add(req.timeout_ms),

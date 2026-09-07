@@ -49,12 +49,21 @@ fn http_rejects_oversized_and_malformed() {
     assert!(parse_response(hdr.as_bytes()).is_err());
 }
 
+// Spec 17 (TLS 3b) replaced the Phase-3 refusal: `https://` now parses and
+// dials through the rustls-wrapped stream. This test keeps the same slot in
+// the suite (count may only go up — N3) but asserts the REPLACEMENT
+// behavior: https parses with default port 443, and non-http(s) schemes are
+// still refused with a scheme-naming error.
 #[test]
 fn https_is_an_explicit_refusal() {
-    let err = parse_url("https://api.telegram.org/botX/getMe").unwrap_err();
+    let (s, t, p) = parse_url("https://api.telegram.org/botX/getMe").unwrap();
+    assert_eq!(s, pii_net::Scheme::Https, "https now parses (spec 17)");
+    assert_eq!(t.host, "api.telegram.org");
+    assert_eq!(t.port, 443);
+    assert_eq!(p, "/botX/getMe");
+    let err = parse_url("ftp://api.telegram.org/x").unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("tls"), "names tls: {msg}");
-    assert!(msg.contains("Phase 3b"), "names Phase 3b: {msg}");
+    assert!(msg.contains("scheme"), "names the scheme: {msg}");
 }
 
 #[test]

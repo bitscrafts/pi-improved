@@ -37,6 +37,58 @@ const REDB_ALLOWED: &[&str] = &["pii-store"];
 /// Invariant 5: no package outside `pii-store` may depend on `redb`.
 /// Node deps are `{"pkg": id}` entries resolved against the package list,
 /// matching the shape `check_transitive_deps` already consumes.
+///
+/// Spec 17 (R5) extends the same machinery to rustls: TLS is a `pii-net`
+/// implementation detail behind the single-connect chokepoint — no other
+/// crate may depend on it (G8/G9).
+fn check_confined(metadata: &Value, dep: &str, allowed: &[&str], violations: &mut Vec<String>) {
+    let nodes = metadata
+        .get("resolve")
+        .and_then(|r| r.get("nodes"))
+        .and_then(Value::as_array);
+    let Some(nodes) = nodes else {
+        violations.push(String::from(
+            "metadata has no resolve.nodes (run with --format-version 1)",
+        ));
+        return;
+    };
+    let packages = metadata
+        .get("packages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let name_of_id = |id: &str| -> String {
+        packages
+            .iter()
+            .find_map(|p| {
+                (p.get("id").and_then(Value::as_str) == Some(id))
+                    .then(|| p.get("name").and_then(Value::as_str).unwrap_or_default())
+            })
+            .unwrap_or_default()
+            .to_string()
+    };
+    for node in nodes {
+        let node_id = node.get("id").and_then(Value::as_str).unwrap_or_default();
+        let name = name_of_id(node_id);
+        if allowed.contains(&name.as_str()) {
+            continue;
+        }
+        for d in node
+            .get("deps")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let dep_id = d.get("pkg").and_then(Value::as_str).unwrap_or_default();
+            if name_of_id(dep_id) == dep {
+                violations.push(format!(
+                    "deps-check: '{name}' depends on {dep} outside {allowed:?}"
+                ));
+            }
+        }
+    }
+}
+
 fn check_redb_confined(metadata: &Value, violations: &mut Vec<String>) {
     let Some(nodes) = metadata
         .get("resolve")
@@ -93,6 +145,7 @@ pub(crate) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
     check_tui_no_graph(metadata, &mut violations);
     check_single_versions(metadata, &mut violations);
     check_redb_confined(metadata, &mut violations);
+    check_confined(metadata, "rustls", &["pii-net"], &mut violations);
     if violations.is_empty() {
         Ok(())
     } else {
@@ -335,12 +388,13 @@ pub(crate) mod tests {
     ///
     /// Appends a package (and its node) to the fixture; used by invariant-5.
     pub(crate) fn push_package(m: Value, pkg_v: Value, deps_v: Value) -> Value {
+        let id = pkg_v["id"].as_str().unwrap_or("x").to_owned();
         let mut m = m;
         m["packages"].as_array_mut().expect("packages").push(pkg_v);
         m["resolve"]["nodes"]
             .as_array_mut()
             .expect("nodes")
-            .push(node("mem", deps_v));
+            .push(node(&id, deps_v));
         m
     }
 

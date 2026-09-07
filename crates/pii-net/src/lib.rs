@@ -19,6 +19,7 @@ pub mod testing;
 pub use authorize::{AddrClass, NetDenied, Pinned, Target};
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use grant::{GrantStore, Grants, HostPattern, HostScope, NetGrant, StaticGrants};
+pub use http_codec::Scheme;
 pub use listen::{HttpHandler, ListenSpec, ListenerId, ListenerInfo, Protocol};
 pub use resolve::{Resolver, StaticResolver, SystemResolver};
 pub use service::{Conn, GrantInfo, NetConfig, NetService};

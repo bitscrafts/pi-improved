@@ -192,7 +192,13 @@ fn connect_resolves_once_and_pins() {
     // The dial itself will fail (no listener), but the resolver must be
     // called exactly once; the dial error names the pinned host.
     let err = svc
-        .connect(&net_ctx(), &target("pinned.example", 8080), "k", 2_000)
+        .connect(
+            &net_ctx(),
+            &target("pinned.example", 8080),
+            "k",
+            2_000,
+            pii_net::Scheme::Http,
+        )
         .err()
         .expect("dial must fail without a listener");
     assert!(matches!(err, PiiError::Unavailable(_)), "got {err:?}");
@@ -222,6 +228,7 @@ fn conn_lease_is_shared_across_clones() {
         &target("fake.local", fake.addr.port()),
         "k",
         2_000,
+        pii_net::Scheme::Http,
     );
     assert!(first.is_ok(), "first lease: {:?}", first.err());
     let err = svc2
@@ -230,6 +237,7 @@ fn conn_lease_is_shared_across_clones() {
             &target("fake.local", fake.addr.port()),
             "k",
             2_000,
+            pii_net::Scheme::Http,
         )
         .err()
         .expect("second lease must be denied");
@@ -364,4 +372,44 @@ fn request_streaming_default_falls_back() {
     assert_eq!(resp.body, b"full");
     assert_eq!(chunks.len(), 1, "default must deliver one chunk");
     assert_eq!(chunks[0], b"full");
+}
+
+/// R4 (spec 17): an `https://` request dispatches through the TLS path — a
+/// plaintext fake server must fail with a TLS handshake error, NOT succeed
+/// as if it were plain http. This proves the scheme dispatch actually wraps
+/// the stream (the acceptance test for the TLS wiring).
+#[test]
+fn request_https_dispatch_takes_tls_path() {
+    let fake = pii_net::testing::FakeHttpServer::start(
+        r#"{"routes":[{"method":"GET","path_prefix":"/","status":200,"body":{"ok":true}}]}"#,
+    )
+    .unwrap();
+    let mut grants = StaticGrants::default();
+    grants.insert("*", "default", grant(true, &[String::from("*:*")]));
+    grants.insert("*", "http:fake.local", grant(true, &[String::from("*:*")]));
+    let svc = NetService::new(NetConfig {
+        resolver: {
+            let mut r = pii_net::StaticResolver::new();
+            r.insert("fake.local", fake.addr.port(), vec![fake.addr]);
+            Arc::new(r)
+        },
+        grants: Arc::new(grants),
+        clock: Arc::new(pii_net::FixedClock::new()),
+    });
+    let req = HttpRequest {
+        method: pii_abi::HttpMethod::Get,
+        url: format!("https://fake.local:{}/", fake.addr.port()),
+        headers: Vec::new(),
+        body: Vec::new(),
+        timeout_ms: 2_000,
+    };
+    let ctx = net_ctx();
+    // The fake server speaks plaintext HTTP; a TLS handshake against it
+    // must fail (the https path was taken, not the plain path).
+    let err = svc.request(&ctx, &req).unwrap_err();
+    assert!(
+        matches!(err, PiiError::Unavailable(_)) || matches!(err, PiiError::Invalid(_)),
+        "https against plaintext must fail with a TLS error, got {err:?}"
+    );
+    fake.stop();
 }

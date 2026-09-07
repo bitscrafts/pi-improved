@@ -269,6 +269,37 @@ mod top_level_tests {
         }
     }
 }
+/// R5 (spec 17, top-level so `-- --exact` matches the bare path): rustls is
+/// confined to `pii-net` — any other crate depending on it violates the
+/// invariant (TLS is a pii-net implementation detail, G8/G9).
+#[test]
+fn deps_check_rejects_rustls() {
+    #![allow(clippy::panic)] // reason: test asserts a violation exists
+    let m = deps::tests::clean_metadata();
+    // The fixture needs a package named `rustls` for the id->name map, as
+    // real metadata always carries the dependency's own package entry.
+    let with_rustls = deps::tests::push_package(
+        m,
+        serde_json::json!({"id":"rustls","name":"rustls","version":"0.23.0",
+               "dependencies":[]}),
+        serde_json::json!([]),
+    );
+    let m2 = deps::tests::push_package(
+        with_rustls,
+        serde_json::json!({"id":"tlsx","name":"pii-tlsx","version":"1.0.0",
+               "dependencies":[{"name":"rustls","kind":null}]}),
+        serde_json::json!([{"pkg":"rustls"}]),
+    );
+    let errs = match deps::check_all(&m2) {
+        Ok(v) => panic!("pii-tlsx -> rustls must be rejected, got ok: {v:?}"),
+        Err(e) => e,
+    };
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("pii-tlsx") && e.contains("rustls")),
+        "rustls confinement violation: {errs:?}"
+    );
+}
 /// F4.16/exit-criterion test (top-level so `-- --exact` matches the bare path).
 #[cfg(test)]
 #[test]

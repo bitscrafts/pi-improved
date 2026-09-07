@@ -8,48 +8,50 @@ use crate::authorize::Target;
 /// URL scheme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scheme {
-    /// Plaintext HTTP — the only scheme in Phase 3.
+    /// Plaintext HTTP.
     Http,
+    /// HTTP over TLS (spec 17): default port 443.
+    Https,
 }
 
 const MAX_HEADER_BLOCK: usize = 64 * 1024;
 const MAX_HEADERS: usize = 100;
 const MAX_BODY: usize = 8 * 1024 * 1024;
 
-/// Parses an absolute `http://` URL into `(scheme, target, path-and-query)`.
+/// Parses an absolute `http://` or `https://` URL into
+/// `(scheme, target, path-and-query)` (spec 17 R1: https default port 443).
 ///
 /// # Errors
-/// [`PiiError::Invalid`] for a malformed URL; `https` is refused explicitly
-/// until Phase 3b (message names `tls` and `Phase 3b`).
+/// [`PiiError::Invalid`] for a malformed URL.
 pub fn parse_url(url: &str) -> Result<(Scheme, Target, String), PiiError> {
     let invalid = |m: &str| PiiError::Invalid(format!("http: {m}: '{url}'"));
     let Some((scheme, rest)) = url.split_once("://") else {
         return Err(invalid("missing scheme"));
     };
-    match scheme {
-        "http" => {}
-        "https" => {
-            return Err(PiiError::Invalid(
-                "https requires the tls feature (Phase 3b)".into(),
-            ));
-        }
+    let scheme = match scheme {
+        "http" => Scheme::Http,
+        "https" => Scheme::Https,
         other => return Err(invalid(&format!("unknown scheme '{other}'"))),
-    }
+    };
     let (authority, path) = rest.find('/').map_or_else(
         || (rest, String::from("/")),
         |i| (&rest[..i], rest[i..].to_owned()),
     );
+    let default_port = match scheme {
+        Scheme::Http => 80,
+        Scheme::Https => 443,
+    };
     let (host, port) = match authority.rsplit_once(':') {
         Some((h, p)) => {
             let port = p.parse::<u16>().map_err(|_| invalid("port must be u16"))?;
             (h.to_owned(), port)
         }
-        None => (authority.to_owned(), 80),
+        None => (authority.to_owned(), default_port),
     };
     if host.is_empty() {
         return Err(invalid("empty host"));
     }
-    Ok((Scheme::Http, Target { host, port }, path))
+    Ok((scheme, Target { host, port }, path))
 }
 
 /// Serialises an [`HttpRequest`] to wire bytes (F2.8). Caller headers may
@@ -281,6 +283,23 @@ mod tests {
 
     use super::{parse_response, parse_url};
 
+    /// R1 (spec 17): `https://` parses to `Scheme::Https` with host + path.
+    #[test]
+    fn parse_url_https() {
+        let (s, t, p) = parse_url("https://api.example.com/x").unwrap();
+        assert_eq!(s, super::Scheme::Https);
+        assert_eq!(t.host, "api.example.com");
+        assert_eq!(t.port, 443);
+        assert_eq!(p, "/x");
+    }
+
+    /// R1 (spec 17): `https://` defaults to port 443, not http's 80.
+    #[test]
+    fn parse_url_https_default_port() {
+        assert_eq!(parse_url("https://h").unwrap().1.port, 443);
+        assert_eq!(parse_url("http://h").unwrap().1.port, 80);
+    }
+
     #[test]
     fn url_forms() {
         let (s, t, p) = parse_url("http://h:8080/a/b?q=1").unwrap();
@@ -289,9 +308,14 @@ mod tests {
         assert_eq!(t.port, 8080);
         assert_eq!(p, "/a/b?q=1");
         assert_eq!(parse_url("http://h").unwrap().1.port, 80);
-        let e = parse_url("https://api.telegram.org/x").unwrap_err();
-        assert!(e.to_string().contains("tls"), "{e}");
-        assert!(e.to_string().contains("Phase 3b"));
+        // R1 (spec 17): https now parses (TLS landed in 3b/17); the old
+        // "https requires the tls feature" refusal is obsolete.
+        let (s, t, p) = parse_url("https://api.example.com/x").unwrap();
+        assert_eq!(s, super::Scheme::Https);
+        assert_eq!(t.host, "api.example.com");
+        assert_eq!(t.port, 443);
+        assert_eq!(p, "/x");
+        assert_eq!(parse_url("https://h").unwrap().1.port, 443);
         assert!(parse_url("ftp://h/").is_err());
         assert!(parse_url("http://").is_err());
     }
