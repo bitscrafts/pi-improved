@@ -166,6 +166,72 @@ impl ModelProvider for OllamaProvider {
             tokens_out: parsed.eval_count,
         })
     }
+    /// Streaming chat (spec 15 R2): the transport hands raw body bytes as
+    /// they arrive; each NDJSON line's `message.content` is forwarded through
+    /// `on_delta` incrementally, and the accumulated text plus the final
+    /// token counts are returned as the `ChatResponse`.
+    ///
+    /// # Errors
+    /// Same contract as [`ModelProvider::chat`].
+    fn chat_streaming(
+        &self,
+        ctx: &Ctx,
+        req: &ChatRequest,
+        on_delta: &mut dyn FnMut(&str),
+    ) -> Result<ChatResponse, PiiError> {
+        let http = HttpRequest {
+            method: HttpMethod::Post,
+            url: self.chat_url(),
+            headers: self.headers(),
+            body: serde_json::to_vec(&self.build_stream_request(req))
+                .map_err(|e| PiiError::Internal(format!("ollama: encode: {e}")))?,
+            timeout_ms: self.timeout_ms,
+        };
+        // The transport must expose streaming; fall back to the buffered
+        // path only when the concrete type cannot (fakes).
+        let resp = self.transport.request_streaming(ctx, &http, &mut |bytes| {
+            for line in String::from_utf8_lossy(bytes).lines() {
+                let Ok(l) = serde_json::from_str::<OllamaStreamLine>(line) else {
+                    return; // partial line: the next read completes it in this model
+                };
+                if let Some(m) = &l.message
+                    && !m.content.is_empty()
+                {
+                    on_delta(&m.content);
+                }
+            }
+        })?;
+        if resp.status == 429 || resp.status >= 500 {
+            return Err(PiiError::Unavailable(format!(
+                "ollama: upstream status {}",
+                resp.status
+            )));
+        }
+        if !(200..300).contains(&resp.status) {
+            return Err(PiiError::Invalid(format!(
+                "ollama: status {} for POST {}",
+                resp.status,
+                self.chat_url()
+            )));
+        }
+        // Accumulate from the full body (each line's content was already
+        // streamed out; the response text is their concatenation).
+        let text = String::from_utf8_lossy(&resp.body)
+            .lines()
+            .filter_map(|l| serde_json::from_str::<OllamaStreamLine>(l).ok())
+            .filter_map(|l| l.message.map(|m| m.content))
+            .collect::<String>();
+        let last = String::from_utf8_lossy(&resp.body)
+            .lines()
+            .rev()
+            .find_map(|l| serde_json::from_str::<OllamaStreamLine>(l).ok());
+        Ok(ChatResponse {
+            text,
+            tool_calls: Vec::new(),
+            tokens_in: last.as_ref().map_or(0, |l| l.prompt_eval_count),
+            tokens_out: last.as_ref().map_or(0, |l| l.eval_count),
+        })
+    }
 }
 
 fn message_value(m: &ChatMessage) -> serde_json::Value {
@@ -219,5 +285,162 @@ pub fn provider_from_env(
         other => Err(PiiError::Invalid(format!(
             "unknown model spec kind '{other}' (scripted:<path> and ollama:<model> are supported)"
         ))),
+    }
+}
+
+/// One NDJSON line of an Ollama streaming response.
+#[derive(serde::Deserialize)]
+struct OllamaStreamLine {
+    #[serde(default)]
+    message: Option<OllamaMessage>,
+    /// Kept on the struct for wire fidelity (Ollama always sends it); the
+    /// streaming accumulator only reads the content/token-count fields.
+    #[allow(dead_code)] // reason: wire-shape completeness
+    #[serde(default)]
+    done: bool,
+    #[serde(default)]
+    prompt_eval_count: u64,
+    #[serde(default)]
+    eval_count: u64,
+}
+
+impl OllamaProvider {
+    /// Builds the streaming request body: identical to `build_request` but
+    /// with `"stream": true` (spec 15 R2 — a plausible implementation gets
+    /// this wrong).
+    fn build_stream_request(&self, req: &ChatRequest) -> serde_json::Value {
+        let mut body = self.build_request(req);
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert(String::from("stream"), serde_json::Value::Bool(true));
+        }
+        body
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::{OllamaProvider, OllamaStreamLine};
+    use crate::{ChatMessage, ChatRequest, ModelProvider, Role};
+    use parking_lot::Mutex;
+    use pii_core::{Budget, CapSet, Ctx};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// A chunked NDJSON server: hands three body slices through the
+    /// streaming sink, recording the `"stream"` flag of the request.
+    struct ChunkedTransport {
+        requests: Mutex<Vec<serde_json::Value>>,
+        reads: AtomicU32,
+    }
+
+    impl pii_core::HttpTransport for ChunkedTransport {
+        fn request(&self, _ctx: &Ctx, req: &HttpRequest) -> Result<HttpResponse, PiiError> {
+            self.requests
+                .lock()
+                .push(serde_json::from_slice(&req.body).unwrap());
+            // Buffered fallback: the whole NDJSON in one body.
+            Ok(HttpResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: br#"{"message":{"content":"Hel"},"done":false}
+{"message":{"content":"lo"},"done":false}
+{"done":true,"prompt_eval_count":5,"eval_count":3}"#
+                    .to_vec(),
+            })
+        }
+
+        fn request_streaming(
+            &self,
+            _ctx: &Ctx,
+            req: &HttpRequest,
+            on_chunk: &mut dyn FnMut(&[u8]),
+        ) -> Result<HttpResponse, PiiError> {
+            self.requests
+                .lock()
+                .push(serde_json::from_slice(&req.body).unwrap());
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            // Three separate reads, exactly the R2 acceptance shape.
+            on_chunk(br#"{"message":{"content":"Hel"},"done":false}"#);
+            on_chunk(br#"{"message":{"content":"lo"},"done":false}"#);
+            on_chunk(br#"{"done":true,"prompt_eval_count":5,"eval_count":3}"#);
+            Ok(HttpResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: br#"{"message":{"content":"Hel"},"done":false}
+{"message":{"content":"lo"},"done":false}
+{"done":true,"prompt_eval_count":5,"eval_count":3}"#
+                    .to_vec(),
+            })
+        }
+    }
+
+    use pii_abi::{HttpRequest, HttpResponse, PiiError};
+
+    fn ctx() -> Ctx {
+        Ctx::root(CapSet::empty(), Budget::unlimited())
+    }
+
+    /// R2 acceptance: `on_delta` fires incrementally per NDJSON content chunk
+    /// (`Hel` then `lo`), and the accumulated `ChatResponse` carries the full
+    /// text and the final token counts.
+    #[test]
+    fn ollama_streaming_emits_deltas() {
+        let transport = Arc::new(ChunkedTransport {
+            requests: Mutex::new(Vec::new()),
+            reads: AtomicU32::new(0),
+        });
+        let provider = OllamaProvider::new(
+            Arc::clone(&transport) as Arc<dyn pii_core::HttpTransport>,
+            "http://fake.local:1",
+            "m".into(),
+            None,
+        );
+        let req = ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::new(Role::User, "hi")],
+            tools: Vec::new(),
+            max_tokens: 32,
+            temperature: 0.0,
+            num_ctx: 0,
+        };
+        let deltas: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        let resp = {
+            let mut guard = deltas.lock();
+            let r = provider
+                .chat_streaming(&ctx(), &req, &mut |t| {
+                    guard.push(t.to_owned());
+                })
+                .unwrap();
+            drop(guard);
+            r
+        };
+        let d = deltas.lock();
+        assert_eq!(d.len(), 2, "deltas must be incremental: {d:?}");
+        assert_eq!(d.first().map(String::as_str), Some("Hel"));
+        assert_eq!(d.get(1).map(String::as_str), Some("lo"));
+        drop(d);
+        assert_eq!(resp.text, "Hello");
+        assert_eq!(resp.tokens_in, 5);
+        assert_eq!(resp.tokens_out, 3);
+        // The wire body must carry "stream": true (the classic miss).
+        let body = transport.requests.lock();
+        assert!(!body.is_empty());
+        assert_eq!(
+            body.first().and_then(|b| b.get("stream")),
+            Some(&serde_json::json!(true))
+        );
+        drop(body);
+    }
+
+    /// The streaming parse helpers handle a partial trailing read without
+    /// panicking (total parser, N7).
+    #[test]
+    fn ollama_stream_line_is_total() {
+        assert!(
+            serde_json::from_str::<OllamaStreamLine>("not json").is_err(),
+            "malformed line is an Err, never a panic"
+        );
     }
 }

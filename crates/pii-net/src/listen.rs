@@ -48,6 +48,19 @@ pub struct ListenerInfo {
 pub trait HttpHandler: Send + Sync {
     /// Handles one request.
     fn handle(&self, req: &pii_abi::HttpRequest) -> pii_abi::HttpResponse;
+
+    /// Streaming variant (spec 4.1c): serves the same response but writes
+    /// the body in the order given by `chunks` (raw bytes, not the
+    /// `HttpResponse.body`), with a flush between each so a client reading
+    /// incrementally sees the chunks separately. The default renders the
+    /// single-body response unchanged.
+    fn handle_stream(
+        &self,
+        req: &pii_abi::HttpRequest,
+        _write: &mut dyn FnMut(&[u8]),
+    ) -> pii_abi::HttpResponse {
+        self.handle(req)
+    }
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -235,6 +248,15 @@ fn serve_conn(stream: TcpStream, handler: Arc<dyn HttpHandler>) {
         }
     }
     let req = parse_request(&head, buf.get(header_end..).unwrap_or(&[]));
+    // Streaming handlers (spec 4.1c) write chunks through `stream_write`
+    // before the final rendered head; buffered handlers answer unchanged.
+    let mut stream_write = |bytes: &[u8]| {
+        // Best-effort: the trait's sink cannot report failure; a write error
+        // leaves the chunk undelivered and the final rendered head still goes
+        // out below (the connection is torn down right after either way).
+        let _ = std::io::Write::write_all(&mut &stream, bytes);
+        let _ = std::io::Write::flush(&mut &stream);
+    };
     let resp = req.map_or_else(
         |_| pii_abi::HttpResponse {
             status: 400,
@@ -244,12 +266,14 @@ fn serve_conn(stream: TcpStream, handler: Arc<dyn HttpHandler>) {
         |r| {
             // The handler must never take the process down (F2.10).
             let h = Arc::clone(&handler);
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || h.handle(&r)))
-                .unwrap_or_else(|_| pii_abi::HttpResponse {
-                    status: 500,
-                    headers: Vec::new(),
-                    body: Vec::new(),
-                })
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                h.handle_stream(&r, &mut stream_write)
+            }))
+            .unwrap_or_else(|_| pii_abi::HttpResponse {
+                status: 500,
+                headers: Vec::new(),
+                body: Vec::new(),
+            })
         },
     );
     let _ = std::io::Write::write_all(&mut &stream, &http_codec::render_response(&resp));

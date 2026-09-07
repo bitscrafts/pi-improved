@@ -39,6 +39,12 @@ struct Route {
     /// of messages, then empty batches" for a polling fixture).
     #[serde(default)]
     max_uses: Option<u32>,
+    /// Optional streaming (spec 4.1c): when present, each string is written
+    /// to the socket and flushed in order (before the final rendered
+    /// response, which carries the `chunks` concatenated as its body) so a
+    /// client reading incrementally sees separate socket reads.
+    #[serde(default)]
+    chunks: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -60,12 +66,29 @@ impl Router {
 
 impl HttpHandler for Router {
     fn handle(&self, req: &HttpRequest) -> HttpResponse {
+        self.route(req, &mut |_| {})
+    }
+
+    fn handle_stream(&self, req: &HttpRequest, write: &mut dyn FnMut(&[u8])) -> HttpResponse {
+        self.route(req, write)
+    }
+}
+
+impl Router {
+    /// One route resolution, used by both the buffered and the streaming
+    /// handler: the streaming sink receives the raw head/chunk bytes when
+    /// the matched route declares `chunks`.
+    fn route(&self, req: &HttpRequest, stream: &mut dyn FnMut(&[u8])) -> HttpResponse {
         self.recorded.lock().push(RecordedRequest {
             method: req.method.to_string(),
             path: req.url.clone(),
             body: req.body.clone(),
         });
         let m = req.method.to_string();
+        // The route writes streaming chunks straight through the sink the
+        // server hands in (flush between each — the client sees the chunks
+        // as separate reads).
+        let mut sink = |bytes: &[u8]| stream(bytes);
         for (i, r) in self.routes.iter().enumerate() {
             if !(r.method.eq_ignore_ascii_case(&m) && req.url.starts_with(&r.path_prefix)) {
                 continue;
@@ -82,13 +105,32 @@ impl HttpHandler for Router {
             if r.delay_ms > 0 {
                 std::thread::sleep(Duration::from_millis(r.delay_ms));
             }
+            let body = serde_json::to_vec(&r.body).unwrap_or_default();
+            // Streaming route (spec 4.1c): write the head, then each chunk
+            // flushed in order — the client sees separate socket reads. The
+            // returned body is the concatenation, so the final rendered
+            // response stays byte-consistent.
+            if let Some(chunks) = &r.chunks {
+                let mut stream_body: Vec<u8> = Vec::new();
+                sink(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+                for c in chunks {
+                    let bytes = c.as_bytes();
+                    sink(bytes);
+                    stream_body.extend_from_slice(bytes);
+                }
+                return HttpResponse {
+                    status: r.status,
+                    headers: Vec::new(),
+                    body: stream_body,
+                };
+            }
             return HttpResponse {
                 status: r.status,
                 headers: vec![(
                     String::from("Content-Type"),
                     String::from("application/json"),
                 )],
-                body: serde_json::to_vec(&r.body).unwrap_or_default(),
+                body,
             };
         }
         HttpResponse {

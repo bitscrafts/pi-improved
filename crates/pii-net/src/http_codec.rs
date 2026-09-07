@@ -112,12 +112,20 @@ fn read_line<'a>(buf: &'a [u8], pos: &mut usize) -> Result<&'a str, PiiError> {
     Err(PiiError::Invalid("http: truncated header block".into()))
 }
 
-/// Parses a full HTTP response (F2.8): status line, headers (≤100, block
-/// ≤64 KiB), then a `Content-Length` or chunked body (≤8 MiB).
+/// Parses status line + headers, returning them with the offset of the
+/// first body byte (F2.8). Shared by the buffered and the streaming
+/// client paths so both accept exactly the same head grammar.
 ///
 /// # Errors
-/// [`PiiError::Invalid`] for every malformed or oversized input.
-pub fn parse_response(raw: &[u8]) -> Result<HttpResponse, PiiError> {
+/// [`PiiError::Invalid`] for a malformed or oversized head.
+/// Parsed response head: status, header pairs, body start offset.
+pub type ResponseHead = (u16, Vec<(String, String)>, usize);
+
+/// Parses the status line + headers; returns the body start offset.
+///
+/// # Errors
+/// [`PiiError::Invalid`] when the head is malformed.
+pub fn parse_response_head(raw: &[u8]) -> Result<ResponseHead, PiiError> {
     let mut pos = 0usize;
     let status_line = read_line(raw, &mut pos)?;
     if !status_line.starts_with("HTTP/1.") {
@@ -144,6 +152,16 @@ pub fn parse_response(raw: &[u8]) -> Result<HttpResponse, PiiError> {
     if pos > MAX_HEADER_BLOCK {
         return Err(PiiError::Invalid("http: header block too large".into()));
     }
+    Ok((status, headers, pos))
+}
+
+/// Parses a full HTTP response (F2.8): status line, headers (≤100, block
+/// ≤64 KiB), then a `Content-Length` or chunked body (≤8 MiB).
+///
+/// # Errors
+/// [`PiiError::Invalid`] for every malformed or oversized input.
+pub fn parse_response(raw: &[u8]) -> Result<HttpResponse, PiiError> {
+    let (status, headers, mut pos) = parse_response_head(raw)?;
     let chunked = headers.iter().any(|(k, v)| {
         k.eq_ignore_ascii_case("transfer-encoding") && v.eq_ignore_ascii_case("chunked")
     });

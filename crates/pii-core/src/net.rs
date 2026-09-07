@@ -19,6 +19,24 @@ pub trait HttpTransport: Send + Sync {
     /// fails transiently; [`PiiError::Invalid`] for a malformed URL or
     /// response.
     fn request(&self, ctx: &Ctx, req: &HttpRequest) -> Result<HttpResponse, PiiError>;
+
+    /// Performs one HTTP request, forwarding every body chunk as it arrives.
+    /// Streaming is additive and opt-in (spec 4.1c): the default delegates to
+    /// [`HttpTransport::request`] and delivers the full body as one chunk, so
+    /// existing transports keep working unchanged.
+    ///
+    /// # Errors
+    /// Same contract as [`HttpTransport::request`].
+    fn request_streaming(
+        &self,
+        ctx: &Ctx,
+        req: &HttpRequest,
+        on_chunk: &mut dyn FnMut(&[u8]),
+    ) -> Result<HttpResponse, PiiError> {
+        let resp = self.request(ctx, req)?;
+        on_chunk(&resp.body);
+        Ok(resp)
+    }
 }
 
 #[cfg(test)]

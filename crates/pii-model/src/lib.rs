@@ -120,6 +120,26 @@ pub trait ModelProvider: Send + Sync {
     /// # Errors
     /// Provider-specific; retryable errors surface as [`PiiError::Timeout`].
     fn chat(&self, ctx: &Ctx, req: &ChatRequest) -> Result<ChatResponse, PiiError>;
+
+    /// Streaming variant (spec 15 R2): same request shape (with
+    /// `"stream": true` set by streaming-capable providers), delivering
+    /// text deltas through `on_delta` as they arrive, and returning the
+    /// accumulated `ChatResponse`. Default: run `chat` once and hand the
+    /// full text to `on_delta` as a single delta — non-streaming
+    /// implementations keep working unchanged (R4's contract).
+    ///
+    /// # Errors
+    /// Provider-specific; retryable errors surface as [`PiiError::Timeout`].
+    fn chat_streaming(
+        &self,
+        ctx: &Ctx,
+        req: &ChatRequest,
+        on_delta: &mut dyn FnMut(&str),
+    ) -> Result<ChatResponse, PiiError> {
+        let resp = self.chat(ctx, req)?;
+        on_delta(&resp.text);
+        Ok(resp)
+    }
 }
 
 /// Deterministic fixture provider (F3.2): turn *n* on call *n*.
@@ -243,7 +263,8 @@ pub fn resolve_with_transport(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::{ChatRequest, ModelProvider, Role, ScriptedProvider, provider_from_spec};
+    use super::{ChatRequest, Role, ScriptedProvider, provider_from_spec};
+    use crate::ModelProvider as _;
     use pii_core::{Budget, CapSet, Ctx};
 
     #[test]
@@ -315,7 +336,7 @@ mod contract {
 
     use std::sync::Arc;
 
-    use super::{ChatMessage, ChatRequest, OllamaProvider, Role};
+    use super::{ChatMessage, ChatRequest, OllamaProvider, Role, ScriptedProvider};
     use crate::ModelProvider as _;
     use pii_abi::PiiError;
     use pii_core::{Budget, CapSet, Ctx};
@@ -399,5 +420,43 @@ mod contract {
             .unwrap();
         let body = last_body(PATH_DEFAULTS);
         assert_eq!(body["options"]["num_ctx"], serde_json::json!(8192));
+    }
+    /// R4 (spec 15): the scripted provider's streaming path hands the full
+    /// turn text to `on_delta` exactly once, and the buffered `chat` contract
+    /// is unchanged (G7).
+    #[test]
+    fn scripted_provider_streams_full_text() {
+        let dir = tempfile::Builder::new()
+            .prefix("scripted-stream-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let fixture = dir.path().join("turns.json");
+        std::fs::write(
+            &fixture,
+            r#"{"turns":[{"text":"full turn text","tool_calls":[],"tokens_in":2,"tokens_out":3},{"text":"full turn text","tool_calls":[],"tokens_in":2,"tokens_out":3}]}"#,
+        )
+        .unwrap();
+        let provider = ScriptedProvider::from_fixture(&fixture).unwrap();
+        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+        let req = ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::new(Role::User, "hi")],
+            tools: Vec::new(),
+            max_tokens: 64,
+            temperature: 0.0,
+            num_ctx: 0,
+        };
+        let deltas: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+        let resp = provider
+            .chat_streaming(&ctx, &req, &mut |t| {
+                deltas.borrow_mut().push(t.to_owned());
+            })
+            .unwrap();
+        assert_eq!(resp.text, "full turn text");
+        assert_eq!(deltas.borrow().len(), 1, "one delta, full text");
+        assert_eq!(deltas.borrow()[0], "full turn text");
+        // Buffered chat contract unchanged (G7).
+        let resp2 = provider.chat(&ctx, &req).unwrap();
+        assert_eq!(resp2.text, "full turn text");
     }
 }

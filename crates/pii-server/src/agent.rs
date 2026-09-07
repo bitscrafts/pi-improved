@@ -137,7 +137,24 @@ impl GraphNode for AgentNode {
             // A retryable provider error is retried once (F2.10), then the
             // node fails on `err`. A non-retryable error propagates as a node
             // failure (run failure), not a routable `err`.
-            let resp = match self.provider.chat(ctx, &req) {
+            // R3 (spec 15): stream assistant text deltas to the live bus as
+            // the provider hands them over; the accumulated response drives
+            // the loop exactly as the buffered path did (G7: chat unchanged).
+            let run_id = ctx.trace().run.to_string();
+            let session_for_delta = input
+                .input
+                .get("session")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let mut on_delta = |text: &str| {
+                self.emit_live(pii_proto::event::Event::AssistantDelta {
+                    run_id: run_id.clone(),
+                    session_id: session_for_delta.clone(),
+                    text: text.to_owned(),
+                });
+            };
+            let resp = match self.provider.chat_streaming(ctx, &req, &mut on_delta) {
                 Ok(r) => r,
                 Err(e) if e.is_retryable() => match self.provider.chat(ctx, &req) {
                     Ok(r) => r,
@@ -523,5 +540,152 @@ mod tests {
             "got {err:?}"
         );
         assert!(started.elapsed() < Duration::from_secs(2), "must not hang");
+    }
+
+    /// R3 (spec 15): the agent emits `Event::AssistantDelta` per chunk via
+    /// the live bus, with the correct `run_id`/`session_id`.
+    #[test]
+    fn agent_emits_assistant_delta() {
+        use pii_proto::event::Event;
+        use pii_proto::run::SeqEvent;
+
+        // A provider whose chat_streaming emits two deltas.
+        struct DeltaProvider;
+        impl ModelProvider for DeltaProvider {
+            fn name(&self) -> &'static str {
+                "delta"
+            }
+            fn chat(
+                &self,
+                _ctx: &Ctx,
+                _req: &ChatRequest,
+            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+                Ok(pii_model::ChatResponse {
+                    text: String::from("Hello"),
+                    tool_calls: Vec::new(),
+                    tokens_in: 1,
+                    tokens_out: 1,
+                })
+            }
+            fn chat_streaming(
+                &self,
+                _ctx: &Ctx,
+                _req: &ChatRequest,
+                on_delta: &mut dyn FnMut(&str),
+            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+                on_delta("Hel");
+                on_delta("lo");
+                Ok(pii_model::ChatResponse {
+                    text: String::from("Hello"),
+                    tool_calls: Vec::new(),
+                    tokens_in: 1,
+                    tokens_out: 1,
+                })
+            }
+        }
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<SeqEvent>(16);
+        let node = AgentNode {
+            system: String::from("You are pii."),
+            max_turns: 4,
+            model: None,
+            provider: std::sync::Arc::new(DeltaProvider),
+            toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
+            workspace: std::path::PathBuf::from("."),
+            live: Some(tx),
+            compaction: super::Compaction::default(),
+        };
+        let input = NodeInput {
+            input: serde_json::json!({ "session": "s1" }),
+            payload: serde_json::json!({ "prompt": "hi" }),
+            nodes: serde_json::Value::Null,
+        };
+        node.run(&test_ctx(), &input).expect("run");
+
+        // Drain the bus: expect two AssistantDelta events with the chunks.
+        let mut deltas: Vec<String> = Vec::new();
+        while let Ok(SeqEvent { event, .. }) = rx.try_recv() {
+            if let Event::AssistantDelta {
+                text, session_id, ..
+            } = event
+            {
+                assert_eq!(session_id, "s1", "session_id must come from input");
+                deltas.push(text);
+            }
+        }
+        assert!(
+            deltas.contains(&String::from("Hel")) && deltas.contains(&String::from("lo")),
+            "expected both deltas, got {deltas:?}"
+        );
+    }
+
+    /// R3 (spec 15): the emitted `AssistantDelta` carries the session from the
+    /// run input; absent session falls back to empty string.
+    #[test]
+    fn agent_streaming_uses_session_from_input() {
+        use pii_proto::event::Event;
+        use pii_proto::run::SeqEvent;
+
+        struct DeltaProvider;
+        impl ModelProvider for DeltaProvider {
+            fn name(&self) -> &'static str {
+                "delta"
+            }
+            fn chat(
+                &self,
+                _ctx: &Ctx,
+                _req: &ChatRequest,
+            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+                Ok(pii_model::ChatResponse {
+                    text: String::from("x"),
+                    tool_calls: Vec::new(),
+                    tokens_in: 1,
+                    tokens_out: 1,
+                })
+            }
+            fn chat_streaming(
+                &self,
+                _ctx: &Ctx,
+                _req: &ChatRequest,
+                on_delta: &mut dyn FnMut(&str),
+            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+                on_delta("x");
+                Ok(pii_model::ChatResponse {
+                    text: String::from("x"),
+                    tool_calls: Vec::new(),
+                    tokens_in: 1,
+                    tokens_out: 1,
+                })
+            }
+        }
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<SeqEvent>(16);
+        let node = AgentNode {
+            system: String::from("You are pii."),
+            max_turns: 4,
+            model: None,
+            provider: std::sync::Arc::new(DeltaProvider),
+            toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
+            workspace: std::path::PathBuf::from("."),
+            live: Some(tx),
+            compaction: super::Compaction::default(),
+        };
+        // No session in input -> fallback to empty string.
+        let input = NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::json!({ "prompt": "hi" }),
+            nodes: serde_json::Value::Null,
+        };
+        node.run(&test_ctx(), &input).expect("run");
+
+        let mut saw_empty = false;
+        while let Ok(SeqEvent { event, .. }) = rx.try_recv() {
+            if let Event::AssistantDelta { session_id, .. } = event
+                && session_id.is_empty()
+            {
+                saw_empty = true;
+            }
+        }
+        assert!(saw_empty, "absent session must fall back to empty string");
     }
 }

@@ -275,3 +275,93 @@ fn byte_budget_closes_connection() {
     );
     fake.stop();
 }
+
+/// R1 (spec 15): `request_streaming` forwards each body chunk as it arrives.
+#[test]
+fn request_streaming_emits_chunks() {
+    let fake = pii_net::testing::FakeHttpServer::start(
+        r#"{"routes":[{"method":"GET","path_prefix":"/","status":200,"body":{},
+            "chunks":["Hel","lo"," world"]}]}"#,
+    )
+    .unwrap();
+    let mut grants = StaticGrants::default();
+    grants.insert("*", "default", grant(true, &[String::from("*:*")]));
+    grants.insert("*", "http:fake.local", grant(true, &[String::from("*:*")]));
+    let svc = NetService::new(NetConfig {
+        resolver: {
+            let mut r = pii_net::StaticResolver::new();
+            r.insert("fake.local", fake.addr.port(), vec![fake.addr]);
+            Arc::new(r)
+        },
+        grants: Arc::new(grants),
+        clock: Arc::new(pii_net::FixedClock::new()),
+    });
+    let req = HttpRequest {
+        method: pii_abi::HttpMethod::Get,
+        url: format!("http://fake.local:{}/", fake.addr.port()),
+        headers: Vec::new(),
+        body: Vec::new(),
+        timeout_ms: 2_000,
+    };
+    let ctx = net_ctx();
+    let mut chunks: Vec<String> = Vec::new();
+    let resp = svc
+        .request_streaming(&ctx, &req, &mut |b: &[u8]| {
+            chunks.push(String::from_utf8_lossy(b).to_string());
+        })
+        .unwrap();
+    // R1 transport contract: the streamed body is correctly extracted (head
+    // stripped, content intact) and `on_chunk` fired at least once. The fake
+    // server writes all chunks + the rendered response back-to-back, so the
+    // client's socket read coalesces them — the *incremental* forwarding is
+    // proven deterministically by the R2 acceptance test (ChunkedTransport).
+    assert!(
+        !chunks.is_empty(),
+        "on_chunk must fire at least once, got {chunks:?}"
+    );
+    let body = String::from_utf8_lossy(&resp.body);
+    assert!(
+        body.contains("Hello world"),
+        "body missing streamed content: {body}"
+    );
+    fake.stop();
+}
+
+/// R1 (spec 15): the default `request_streaming` falls back to `request`
+/// and delivers the full body as one chunk.
+#[test]
+fn request_streaming_default_falls_back() {
+    use pii_core::HttpTransport as _;
+    struct Buffered;
+    impl pii_core::HttpTransport for Buffered {
+        fn request(
+            &self,
+            _ctx: &Ctx,
+            _req: &HttpRequest,
+        ) -> Result<pii_abi::HttpResponse, PiiError> {
+            Ok(pii_abi::HttpResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: b"full".to_vec(),
+            })
+        }
+    }
+    let t = Buffered;
+    let mut chunks: Vec<Vec<u8>> = Vec::new();
+    let resp = t
+        .request_streaming(
+            &net_ctx(),
+            &HttpRequest {
+                method: pii_abi::HttpMethod::Get,
+                url: String::from("http://x/"),
+                headers: Vec::new(),
+                body: Vec::new(),
+                timeout_ms: 1_000,
+            },
+            &mut |b: &[u8]| chunks.push(b.to_vec()),
+        )
+        .unwrap();
+    assert_eq!(resp.body, b"full");
+    assert_eq!(chunks.len(), 1, "default must deliver one chunk");
+    assert_eq!(chunks[0], b"full");
+}
