@@ -22,6 +22,7 @@ fn req() -> ChatRequest {
         tools: Vec::new(),
         max_tokens: 100,
         temperature: 0.0,
+        num_ctx: 0,
     }
 }
 

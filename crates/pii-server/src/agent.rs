@@ -118,6 +118,7 @@ impl GraphNode for AgentNode {
                 tools: self.toolset.specs(),
                 max_tokens: 4096,
                 temperature: 0.0,
+                num_ctx: 0,
             };
             // A retryable provider error is retried once (F2.10), then the
             // node fails on `err`. A non-retryable error propagates as a node

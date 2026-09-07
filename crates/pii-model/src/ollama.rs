@@ -11,6 +11,10 @@ use crate::{ChatMessage, ChatRequest, ChatResponse, ModelProvider, ToolCall, Too
 /// Default Ollama endpoint when `OLLAMA_HOST` is unset.
 pub const DEFAULT_OLLAMA_HOST: &str = "http://127.0.0.1:11434";
 
+/// Default context window (`num_ctx`) when a `ChatRequest` does not set one.
+/// The compaction gate (4.1b) uses this as its budget reference.
+pub const DEFAULT_NUM_CTX: u32 = 8192;
+
 /// One chat completion against a local Ollama (`POST {host}/api/chat`).
 pub struct OllamaProvider {
     transport: Arc<dyn HttpTransport>,
@@ -78,10 +82,20 @@ impl OllamaProvider {
     }
 
     fn build_request(&self, req: &ChatRequest) -> serde_json::Value {
+        let num_ctx = if req.num_ctx == 0 {
+            DEFAULT_NUM_CTX
+        } else {
+            req.num_ctx
+        };
         serde_json::json!({
             "model": self.model,
             "messages": req.messages.iter().map(message_value).collect::<Vec<_>>(),
             "tools": req.tools.iter().map(tool_value).collect::<Vec<_>>(),
+            "options": {
+                "temperature": req.temperature,
+                "num_predict": req.max_tokens,
+                "num_ctx": num_ctx,
+            },
             "stream": false,
         })
     }

@@ -90,6 +90,9 @@ pub struct ChatRequest {
     pub max_tokens: u32,
     /// Sampling temperature.
     pub temperature: f32,
+    /// Context window (`num_ctx`); `0` means "provider default"
+    /// ([`crate::ollama::DEFAULT_NUM_CTX`] for Ollama).
+    pub num_ctx: u32,
 }
 
 /// A completed chat turn.
@@ -257,6 +260,7 @@ mod tests {
             tools: Vec::new(),
             max_tokens: 100,
             temperature: 0.0,
+            num_ctx: 0,
         };
         let ctx = pii_core::Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited());
         assert_eq!(p.chat(&ctx, &req).unwrap().text, "one");
@@ -297,4 +301,83 @@ mod tests {
         };
         assert!(unknown.contains("unknown model spec kind"));
     }
+}
+
+// F2 (4.1a TDD contract): the request body must forward sampling options and
+// the context window, and must keep non-streaming. `build_request` is private,
+// so the contract is verified through a scripted transport that records the
+// last body to `_tmp` (tests must not race on shared state otherwise).
+struct RecordingTransport;
+impl pii_core::HttpTransport for RecordingTransport {
+    fn request(
+        &self,
+        _ctx: &Ctx,
+        req: &pii_abi::HttpRequest,
+    ) -> Result<pii_abi::HttpResponse, PiiError> {
+        let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+        std::fs::write(
+            "/projects/pi-improved/_tmp/ollama-last-request.json",
+            serde_json::to_vec(&body).unwrap(),
+        )
+        .unwrap();
+        Ok(pii_abi::HttpResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: serde_json::to_vec(&serde_json::json!({
+                "message": {"role": "assistant", "content": "ok"}
+            }))
+            .unwrap(),
+        })
+    }
+}
+
+fn provider_for_contract() -> super::OllamaProvider {
+    super::OllamaProvider::new(
+        std::sync::Arc::new(RecordingTransport),
+        "http://fake.local:1",
+        "m".into(),
+        None,
+    )
+}
+
+fn last_body() -> serde_json::Value {
+    serde_json::from_str(
+        &std::fs::read_to_string("/projects/pi-improved/_tmp/ollama-last-request.json").unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn ollama_request_forwards_provider_options() {
+    let ctx = pii_core::Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited());
+    let req = ChatRequest {
+        model: "m".into(),
+        messages: vec![super::ChatMessage::new(Role::User, "hi")],
+        tools: Vec::new(),
+        max_tokens: 2048,
+        temperature: 0.7,
+        num_ctx: 16_384,
+    };
+    let _ = provider_for_contract().chat(&ctx, &req).unwrap();
+    let body = last_body();
+    assert_eq!(body["stream"], serde_json::json!(false));
+    assert_eq!(body["options"]["temperature"], serde_json::json!(0.7));
+    assert_eq!(body["options"]["num_predict"], serde_json::json!(2048));
+    assert_eq!(body["options"]["num_ctx"], serde_json::json!(16_384));
+}
+
+#[test]
+fn ollama_request_defaults_num_ctx() {
+    let ctx = pii_core::Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited());
+    let req = ChatRequest {
+        model: "m".into(),
+        messages: vec![super::ChatMessage::new(Role::User, "hi")],
+        tools: Vec::new(),
+        max_tokens: 100,
+        temperature: 0.0,
+        num_ctx: 0,
+    };
+    let _ = provider_for_contract().chat(&ctx, &req).unwrap();
+    let body = last_body();
+    assert_eq!(body["options"]["num_ctx"], serde_json::json!(8192));
 }
