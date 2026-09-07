@@ -1,5 +1,30 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-07 (Phase 4.1c streaming COMPLETE)
+
+**Committed this session (HEAD → oldest):**
+- `148a7dc` feat(phase4.1c): streaming assistant deltas (spec 15)
+- `2abc891` spec(phase4): 4.1c streaming assistant deltas (15)
+- `39a622c` spec(phase4): rename 14 to 4.1b
+- `fcb3026` feat(phase4.1b): compaction gate + per-tool timeouts (spec 14)
+- `cc71edc` spec(phase4): 4.1b compaction gate + per-tool timeouts (14)
+- `822444c` docs(handoff): Phase 4.1a caveats
+- `3d3b373` docs(handoff): Phase 4.1a turn-loop hardening complete
+- `821f540` feat(phase4.1a): env scrub + process-group kill + cancel + grep/glob tools
+- `85c052b` feat(model): forward temperature/num_predict/num_ctx to Ollama (F1)
+- `a53a6d1` docs(guides): pidag way of work
+
+**Phase 4.1c (spec 15) — ALL FOUR requirements implemented + verified:**
+- **R1** streaming transport: `HttpTransport` gains `request_streaming` (default falls back to `request` + one chunk); `NetService` implements it via `Conn::read` loop (no new socket path, byte accounting intact).
+- **R2** streaming provider: `ModelProvider` gains `chat_streaming` (default falls back to `chat` + one delta); `OllamaProvider` implements NDJSON incremental parse with `stream: true`.
+- **R3** agent emits deltas: `AgentNode::run` calls `chat_streaming`, emits `Event::AssistantDelta { run_id, session_id, text }` per chunk via `emit_live`. `session_id` from `input.input["session"]` (fallback empty).
+- **R4** non-streaming unchanged: `chat`/`request` byte-identical; `scripted:` provider streams full text as one delta.
+- Tests: 2 R1 (transport chunks + default fallback), 2 R2 (ollama deltas + stream:true), 2 R3 (agent delta + session), 1 R4 (scripted). Quality gate ALL PASS, xtask gates rc=0.
+
+**Note:** the R1 `request_streaming_emits_chunks` test asserts the transport contract (body extracted, on_chunk fired) rather than exact chunk count — the fake server coalesces chunks+response into one socket read. The *incremental* forwarding is proven deterministically by the R2 acceptance test (`ollama_streaming_emits_deltas` via `ChunkedTransport`).
+
+**Next (Phase 4.2):** session durability + run-lifecycle truth (persist sessions, `session.list`, real token counts, boot reconciliation, retention). This is the next opus-recommended item after 4.1.
+
 ## SESSION STATE — 2026-09-07 (Phase 4.1b compaction + timeouts COMPLETE)
 
 **Committed this session (HEAD → oldest):**
