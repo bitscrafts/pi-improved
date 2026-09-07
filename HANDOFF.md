@@ -1,5 +1,33 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-07 (Phase 4.2 session durability COMPLETE)
+
+**Committed this session (HEAD → oldest):**
+- `f1c5f50` feat(phase4.2): session durability + run-lifecycle truth (spec 16 part2)
+- `c934a91` feat(phase4.2): store session durability foundation (spec 16 part1)
+- `6c7f163` spec(phase4): 4.2 session durability + run-lifecycle truth, split (16)
+- (earlier 4.1c/4.1b/4.1a commits)
+
+**Phase 4.2 (spec 16) — split into 2 parts, both implemented + verified:**
+
+*Part 1 (store foundation, committed `c934a91`, WORKHORSE via pidag):*
+- `SESSION` redb table + `put_session`/`get_session`/`del_session`/`all_sessions`
+- `next_session_id()` — monotonic counter in `META` (no more id collisions)
+- `set_session_tokens`/`get_session_tokens` — durable token store
+- 6 store unit tests. Quality gate ALL PASS.
+
+*Part 2 (server wiring, committed `f1c5f50`, ORCHESTRATOR — workhorse vacuous-passed):*
+- **R1** session persistence: `create_session` mints from counter + persists; boot re-seeds from store
+- **R2** real tokens: `session.state` reads store tokens; agent surfaces per-turn token usage; `record_assistant` accumulates
+- **R3** `session.list` dispatch arm implemented (returns all sessions ordered by id)
+- **R4** boot reconciliation: `reconcile_boot()` marks crash-interrupted Running runs `Failed` at daemon start
+- Session methods extracted to `pii-server/src/session_durability.rs` (450-line cap)
+- 5 integration tests (persist-across-restart, real-tokens, list x2, reconcile). Quality gate ALL PASS, xtask gates rc=0.
+
+**Honest note:** part 2's workhorse run was a VACUOUS PASS (implement-iter1 stalled, iter2/3/4 "passed" because the part-2 acceptance tests didn't exist yet so the test-filter ECs matched nothing). The orchestrator implemented part 2 directly. This is the exact vacuous-pass trap from spec-author; the fix is to add the acceptance tests as part of the spec authoring (or verify non-vacuity with `[1-9]` test-count filters), not trust the workhorse's validate.
+
+**The opus R2 "daemon restart is amnesia" is now fixed:** sessions survive restarts, `session.list` works, `session.state` reports real token counts, and crashed runs surface as `Failed` instead of permanent `Running` zombies.
+
 ## SESSION STATE — 2026-09-07 (Phase 4.1c streaming COMPLETE)
 
 **Committed this session (HEAD → oldest):**
