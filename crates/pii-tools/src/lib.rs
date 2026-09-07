@@ -8,6 +8,7 @@
 pub mod bash;
 pub mod fs;
 pub mod sandbox;
+pub mod search;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -18,6 +19,7 @@ use serde_json::Value;
 
 use crate::bash::BashTool;
 use crate::fs::{EditTool, FsReadTool, FsWriteTool, MultiEditTool};
+use crate::search::{GlobTool, GrepTool};
 
 /// A callable tool.
 pub trait Tool: Send + Sync {
@@ -55,6 +57,12 @@ impl ToolSet {
                 workspace: workspace.clone(),
             }),
             Arc::new(MultiEditTool {
+                workspace: workspace.clone(),
+            }),
+            Arc::new(GrepTool {
+                workspace: workspace.clone(),
+            }),
+            Arc::new(GlobTool {
                 workspace: workspace.clone(),
             }),
             Arc::new(BashTool { workspace }) as Arc<dyn Tool>,
