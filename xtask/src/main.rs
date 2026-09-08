@@ -66,6 +66,12 @@ fn run_ci(rest: &[String]) -> ExitCode {
     let lint_ok = report(lint_files::run());
     let proto_ok = report(proto_gen::check());
     let bench_ok = report(bench::run_cli(rest).map_err(|e| vec![e]));
+    // E4 (spec 22): the two self-improvement gates the Phase-4 plan called
+    // "the strongest machinery in this repo" must be enforced by CI, not
+    // opt-in. They catch the silent-no-op class (declared config key with no
+    // reader, event with no producer, RPC with no dispatch arm).
+    let reach_ok = report(reachability::run(&workspace_root()));
+    let drift_ok = report(doc_drift::run(&workspace_root()));
     let fmt_ok = run_cmd("cargo", &["fmt", "--all", "--check"]);
     let clippy_ok = run_cmd(
         "cargo",
@@ -84,6 +90,8 @@ fn run_ci(rest: &[String]) -> ExitCode {
         && lint_ok == ExitCode::SUCCESS
         && proto_ok == ExitCode::SUCCESS
         && bench_ok == ExitCode::SUCCESS
+        && reach_ok == ExitCode::SUCCESS
+        && drift_ok == ExitCode::SUCCESS
         && fmt_ok == ExitCode::SUCCESS
         && clippy_ok == ExitCode::SUCCESS
         && test_ok == ExitCode::SUCCESS
