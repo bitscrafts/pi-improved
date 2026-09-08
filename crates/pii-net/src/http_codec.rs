@@ -16,7 +16,7 @@ pub enum Scheme {
 
 const MAX_HEADER_BLOCK: usize = 64 * 1024;
 const MAX_HEADERS: usize = 100;
-const MAX_BODY: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_BODY: usize = 8 * 1024 * 1024;
 
 /// Parses an absolute `http://` or `https://` URL into
 /// `(scheme, target, path-and-query)` (spec 17 R1: https default port 443).

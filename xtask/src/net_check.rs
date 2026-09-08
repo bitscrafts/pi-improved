@@ -28,6 +28,10 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-net/src/dial.rs",
     "crates/pii-net/src/listen.rs",
     "crates/pii-net/src/resolve.rs",
+    // P4.7 (spec 22): service.rs is inside pii-net (the sanctioned socket
+    // crate); its production path uses TcpStream via dial.rs/Conn, and the
+    // only raw loopback-bind in a test is the streaming dechunk fake.
+    "crates/pii-net/src/service.rs",
     "crates/pii-server/src/uds.rs",
     "crates/pii-cli/src/cmd_daemon.rs",
     // P4.6 (spec 19): pii-web binds a loopback TCP listener for the viewer.

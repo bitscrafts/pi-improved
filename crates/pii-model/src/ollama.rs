@@ -187,20 +187,33 @@ impl ModelProvider for OllamaProvider {
                 .map_err(|e| PiiError::Internal(format!("ollama: encode: {e}")))?,
             timeout_ms: self.timeout_ms,
         };
-        // The transport must expose streaming; fall back to the buffered
-        // path only when the concrete type cannot (fakes).
+        // Cross-chunk line buffer (R3): a TCP read can split a NDJSON line
+        // mid-JSON; the residual is carried to the next chunk. Tool calls
+        // are accumulated across lines (R1) — the streaming path must return
+        // them exactly like the buffered `chat`.
+        let mut line_buf = String::new();
+        let mut streamed_tool_calls: Vec<ToolCall> = Vec::new();
+        // Token counts of the final streamed line (the `done` line).
+        let mut streamed_tokens = (0u64, 0u64);
         let resp = self.transport.request_streaming(ctx, &http, &mut |bytes| {
-            for line in String::from_utf8_lossy(bytes).lines() {
-                let Ok(l) = serde_json::from_str::<OllamaStreamLine>(line) else {
-                    return; // partial line: the next read completes it in this model
-                };
-                if let Some(m) = &l.message
-                    && !m.content.is_empty()
-                {
-                    on_delta(&m.content);
-                }
-            }
+            line_buf.push_str(&String::from_utf8_lossy(bytes));
+            drain_lines(
+                &mut line_buf,
+                on_delta,
+                &mut streamed_tool_calls,
+                &mut streamed_tokens,
+            );
         })?;
+        // Flush the residual (the last value usually has no trailing
+        // newline): it must be parsed too.
+        if !line_buf.trim().is_empty() {
+            drain_lines(
+                &mut line_buf,
+                on_delta,
+                &mut streamed_tool_calls,
+                &mut streamed_tokens,
+            );
+        }
         if resp.status == 429 || resp.status >= 500 {
             return Err(PiiError::Unavailable(format!(
                 "ollama: upstream status {}",
@@ -215,23 +228,76 @@ impl ModelProvider for OllamaProvider {
             )));
         }
         // Accumulate from the full body (each line's content was already
-        // streamed out; the response text is their concatenation).
-        let text = String::from_utf8_lossy(&resp.body)
+        // streamed out; the response text is their concatenation). Tool
+        // calls are taken from the streamed accumulation (R1) — the body is
+        // the same NDJSON.
+        let body = String::from_utf8_lossy(&resp.body);
+        let lines: Vec<OllamaStreamLine> = body
             .lines()
             .filter_map(|l| serde_json::from_str::<OllamaStreamLine>(l).ok())
-            .filter_map(|l| l.message.map(|m| m.content))
+            .collect();
+        let text = lines
+            .iter()
+            .filter_map(|l| l.message.as_ref().map(|m| m.content.clone()))
             .collect::<String>();
-        let last = String::from_utf8_lossy(&resp.body)
-            .lines()
-            .rev()
-            .find_map(|l| serde_json::from_str::<OllamaStreamLine>(l).ok());
+        let last = lines.last();
+        let body_tool_calls: Vec<ToolCall> = lines
+            .iter()
+            .filter_map(|l| l.message.as_ref())
+            .flat_map(|m| {
+                m.tool_calls.iter().map(|c| ToolCall {
+                    id: format!("call-{}", c.function.name),
+                    name: c.function.name.clone(),
+                    arguments: c.function.arguments.clone(),
+                })
+            })
+            .collect();
+        let tool_calls = if streamed_tool_calls.is_empty() {
+            body_tool_calls
+        } else {
+            streamed_tool_calls
+        };
         Ok(ChatResponse {
             text,
-            tool_calls: Vec::new(),
-            tokens_in: last.as_ref().map_or(0, |l| l.prompt_eval_count),
-            tokens_out: last.as_ref().map_or(0, |l| l.eval_count),
+            tool_calls,
+            tokens_in: last.map_or(streamed_tokens.0, |l| l.prompt_eval_count),
+            tokens_out: last.as_ref().map_or(streamed_tokens.1, |l| l.eval_count),
         })
     }
+}
+
+/// Parses every complete JSON value currently in `buf`, keeping the residual
+/// (a TCP read may split a value mid-JSON, R3). Handles both newline-separated
+/// NDJSON and values delivered back-to-back with no separator. Deltas and tool
+/// calls are independent: a tool-call line typically carries empty content.
+fn drain_lines(
+    buf: &mut String,
+    on_delta: &mut dyn FnMut(&str),
+    streamed_tool_calls: &mut Vec<ToolCall>,
+    streamed_tokens: &mut (u64, u64),
+) {
+    let mut de = serde_json::Deserializer::from_str(buf).into_iter::<OllamaStreamLine>();
+    while let Some(Ok(l)) = de.next() {
+        if l.eval_count > 0 || l.prompt_eval_count > 0 {
+            *streamed_tokens = (l.prompt_eval_count, l.eval_count);
+        }
+        if let Some(m) = &l.message {
+            if !m.content.is_empty() {
+                on_delta(&m.content);
+            }
+            for c in &m.tool_calls {
+                streamed_tool_calls.push(ToolCall {
+                    id: format!("call-{}", c.function.name),
+                    name: c.function.name.clone(),
+                    arguments: c.function.arguments.clone(),
+                });
+            }
+        }
+    }
+    // Consume everything successfully parsed; the residual (an incomplete
+    // trailing value) stays buffered for the next chunk.
+    let consumed = de.byte_offset();
+    buf.drain(..consumed);
 }
 
 fn message_value(m: &ChatMessage) -> serde_json::Value {
@@ -241,7 +307,35 @@ fn message_value(m: &ChatMessage) -> serde_json::Value {
         crate::Role::Assistant => "assistant",
         crate::Role::Tool => "tool",
     };
-    serde_json::json!({ "role": role, "content": m.content })
+    let mut obj = serde_json::json!({ "role": role, "content": m.content });
+    if let Some(map) = obj.as_object_mut() {
+        // R4 (A7): multi-step tool use needs tool_calls (assistant) and
+        // tool_call_id (tool result) on the wire — dropping them makes the
+        // model re-request the same tool.
+        if !m.tool_calls.is_empty() {
+            map.insert(
+                String::from("tool_calls"),
+                serde_json::json!(
+                    m.tool_calls
+                        .iter()
+                        .map(|c| serde_json::json!({
+                            "function": {
+                                "name": c.name,
+                                "arguments": c.arguments,
+                            },
+                        }))
+                        .collect::<Vec<_>>()
+                ),
+            );
+        }
+        if let Some(id) = &m.tool_call_id {
+            map.insert(
+                String::from("tool_call_id"),
+                serde_json::Value::String(id.clone()),
+            );
+        }
+    }
+    obj
 }
 
 fn tool_value(t: &ToolSpec) -> serde_json::Value {
@@ -319,7 +413,13 @@ impl OllamaProvider {
 
 #[cfg(test)]
 mod streaming_tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::significant_drop_tightening
+    )]
 
     use super::{OllamaProvider, OllamaStreamLine};
     use crate::{ChatMessage, ChatRequest, ModelProvider, Role};
@@ -408,12 +508,15 @@ mod streaming_tests {
         let deltas: Mutex<Vec<String>> = Mutex::new(Vec::new());
         let resp = {
             let mut guard = deltas.lock();
+            let mut n = 0u32;
             let r = provider
                 .chat_streaming(&ctx(), &req, &mut |t| {
                     guard.push(t.to_owned());
+                    n += 1;
                 })
                 .unwrap();
             drop(guard);
+            let _ = n;
             r
         };
         let d = deltas.lock();
@@ -424,6 +527,11 @@ mod streaming_tests {
         assert_eq!(resp.text, "Hello");
         assert_eq!(resp.tokens_in, 5);
         assert_eq!(resp.tokens_out, 3);
+        assert_eq!(
+            transport.reads.load(Ordering::SeqCst),
+            1,
+            "streaming path used"
+        );
         // The wire body must carry "stream": true (the classic miss).
         let body = transport.requests.lock();
         assert!(!body.is_empty());
@@ -442,5 +550,154 @@ mod streaming_tests {
             serde_json::from_str::<OllamaStreamLine>("not json").is_err(),
             "malformed line is an Err, never a panic"
         );
+    }
+
+    /// R1 (spec 22): a streaming response line carrying
+    /// `message.tool_calls` must surface them in `ChatResponse.tool_calls`.
+    #[test]
+    fn ollama_streaming_accumulates_tool_calls() {
+        struct ToolTransport(Mutex<Vec<serde_json::Value>>);
+        impl pii_core::HttpTransport for ToolTransport {
+            fn request(&self, _ctx: &Ctx, _req: &HttpRequest) -> Result<HttpResponse, PiiError> {
+                unreachable!("streaming path should be used");
+            }
+            fn request_streaming(
+                &self,
+                _ctx: &Ctx,
+                req: &HttpRequest,
+                on_chunk: &mut dyn FnMut(&[u8]),
+            ) -> Result<HttpResponse, PiiError> {
+                self.0
+                    .lock()
+                    .push(serde_json::from_slice(&req.body).unwrap());
+                on_chunk(
+                    br#"{"model":"m","message":{"content":"let me check"},"done":false}
+{"model":"m","message":{"content":"","tool_calls":[{"function":{"name":"grep","arguments":{"pattern":"TODO"}}}]},"done":false}
+{"done":true,"prompt_eval_count":7,"eval_count":4}"#,
+                );
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: Vec::new(),
+                })
+            }
+        }
+        let transport = Arc::new(ToolTransport(Mutex::new(Vec::new())));
+        let provider = OllamaProvider::new(
+            Arc::clone(&transport) as Arc<dyn pii_core::HttpTransport>,
+            "http://fake.local:1",
+            "m".into(),
+            None,
+        );
+        let req = ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::new(Role::User, "hi")],
+            tools: Vec::new(),
+            max_tokens: 32,
+            temperature: 0.0,
+            num_ctx: 0,
+        };
+        let resp = provider.chat_streaming(&ctx(), &req, &mut |_| {}).unwrap();
+        assert_eq!(resp.tool_calls.len(), 1, "tool_calls must accumulate");
+        assert_eq!(resp.tool_calls[0].name, "grep");
+        assert_eq!(
+            resp.tool_calls[0].arguments,
+            serde_json::json!({"pattern": "TODO"})
+        );
+        assert_eq!(resp.tokens_in, 7);
+        assert_eq!(resp.tokens_out, 4);
+        // "stream": true on the wire, as for any streaming request.
+        let body = transport.0.lock();
+        assert_eq!(
+            body.first().and_then(|b| b.get("stream")),
+            Some(&serde_json::json!(true))
+        );
+    }
+
+    /// R1 edge: a tool-call line SPLIT mid-JSON across two chunk reads must
+    /// still be parsed once the line completes (cross-chunk buffer, R3).
+    #[test]
+    fn ollama_streaming_survives_split_tool_call_line() {
+        struct SplitTransport;
+        impl pii_core::HttpTransport for SplitTransport {
+            fn request(&self, _ctx: &Ctx, _req: &HttpRequest) -> Result<HttpResponse, PiiError> {
+                unreachable!()
+            }
+            fn request_streaming(
+                &self,
+                _ctx: &Ctx,
+                _req: &HttpRequest,
+                on_chunk: &mut dyn FnMut(&[u8]),
+            ) -> Result<HttpResponse, PiiError> {
+                // One NDJSON tool-call line split mid-JSON.
+                let full = br#"{"message":{"tool_calls":[{"function":{"name":"bash","arguments":{"cmd":"ls"}}}]},"done":false}"#;
+                let (a, b) = full.split_at(full.len() / 2);
+                on_chunk(a);
+                on_chunk(b);
+                on_chunk(b"\n{\"done\":true,\"prompt_eval_count\":1,\"eval_count\":1}");
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: Vec::new(),
+                })
+            }
+        }
+        let provider = OllamaProvider::new(
+            Arc::new(SplitTransport) as Arc<dyn pii_core::HttpTransport>,
+            "http://fake.local:1",
+            "m".into(),
+            None,
+        );
+        let req = ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::new(Role::User, "hi")],
+            tools: Vec::new(),
+            max_tokens: 32,
+            temperature: 0.0,
+            num_ctx: 0,
+        };
+        let resp = provider.chat_streaming(&ctx(), &req, &mut |_| {}).unwrap();
+        assert_eq!(resp.tool_calls.len(), 1);
+        assert_eq!(resp.tool_calls[0].name, "bash");
+    }
+}
+
+/// R4 (spec 22): `message_value` must serialize `tool_calls` on assistant
+/// messages and `tool_call_id` on tool messages.
+#[cfg(test)]
+mod message_value_tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use crate::ollama::message_value;
+    use crate::{ChatMessage, Role, ToolCall};
+
+    #[test]
+    fn message_value_includes_tool_calls() {
+        let mut msg = ChatMessage::new(Role::Assistant, "");
+        msg.tool_calls.push(ToolCall {
+            id: "call-grep".into(),
+            name: "grep".into(),
+            arguments: serde_json::json!({"pattern": "TODO"}),
+        });
+        let v = message_value(&msg);
+        assert_eq!(v["role"], "assistant");
+        let calls = v["tool_calls"].as_array().expect("tool_calls serialized");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["function"]["name"], "grep");
+        // A tool result message carries tool_call_id.
+        let mut tool_msg = ChatMessage::new(Role::Tool, "result");
+        tool_msg.tool_call_id = Some(String::from("call-grep"));
+        let tv = message_value(&tool_msg);
+        assert_eq!(tv["role"], "tool");
+        assert_eq!(tv["tool_call_id"], "call-grep");
+        // A plain user message carries neither field.
+        let uv = message_value(&ChatMessage::new(Role::User, "hi"));
+        assert!(uv.get("tool_calls").is_none());
+        assert!(uv.get("tool_call_id").is_none());
     }
 }

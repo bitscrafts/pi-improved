@@ -358,6 +358,9 @@ impl HttpTransport for NetService {
     /// `on_chunk` as it arrives. The returned [`HttpResponse`] is assembled
     /// from the same bytes, so non-streaming consumers see no difference.
     /// Reuses `Conn::read` — no new socket path, byte accounting intact.
+    #[allow(clippy::too_many_lines)] // reason: dechunk framing + deadline
+    // accounting is one cohesive wire loop; splitting it would hide the
+    // byte-budget invariants this function exists to enforce
     fn request_streaming(
         &self,
         ctx: &Ctx,
@@ -393,22 +396,61 @@ impl HttpTransport for NetService {
             }
         };
         let (status, headers, _body_start) = crate::http_codec::parse_response_head(&head)?;
+        // R3 (spec 22 A3): when the response is chunked, `on_chunk` must
+        // receive DECHUNKED body bytes — not the hex size lines. Reuses
+        // `read_chunked`'s incremental state machine; the returned
+        // HttpResponse.body is identical to the buffered `request` path.
+        let chunked = headers.iter().any(|(k, v)| {
+            k.eq_ignore_ascii_case("transfer-encoding") && v.eq_ignore_ascii_case("chunked")
+        });
         // Stream everything after the head (plus what arrived early).
-        let mut total: Vec<u8> = head.get(head_end..).unwrap_or(&[]).to_vec();
-        on_chunk(&total);
+        let mut pending: Vec<u8> = head.get(head_end..).unwrap_or(&[]).to_vec();
+        let mut total: Vec<u8> = Vec::new();
+        let mut consumed: usize = 0; // bytes of `pending` consumed by chunk framing
+        if chunked {
+            // Incremental dechunk: parse as many complete chunks as the
+            // bytes seen so far allow, forwarding decoded bytes only.
+            dechunk_step(&pending, &mut consumed, &mut |d| {
+                total.extend_from_slice(d);
+                on_chunk(d);
+            })?;
+            pending.drain(..consumed);
+            consumed = 0;
+        } else {
+            total.extend_from_slice(&pending);
+            on_chunk(&pending);
+            pending.clear();
+        }
         loop {
             match conn.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
                     let sl = buf.get(..n).unwrap_or(&buf);
-                    total.extend_from_slice(sl);
-                    if total.len() > crate::limits::MAX_HTTP_BODY {
+                    pending.extend_from_slice(sl);
+                    if pending.len() > crate::limits::MAX_HTTP_BODY {
                         return Err(PiiError::Invalid("http: body too large".into()));
                     }
-                    on_chunk(sl);
+                    if chunked {
+                        dechunk_step(&pending, &mut consumed, &mut |d| {
+                            total.extend_from_slice(d);
+                            on_chunk(d);
+                        })?;
+                        pending.drain(..consumed);
+                        consumed = 0;
+                    } else {
+                        total.extend_from_slice(sl);
+                        on_chunk(sl);
+                    }
                 }
                 Err(e) => return Err(e),
             }
+        }
+        if chunked {
+            // The final 0-size chunk may still be unprocessed.
+            dechunk_step(&pending, &mut consumed, &mut |d| {
+                total.extend_from_slice(d);
+                on_chunk(d);
+            })?;
         }
         Ok(HttpResponse {
             status,
@@ -416,6 +458,67 @@ impl HttpTransport for NetService {
             body: total,
         })
     }
+}
+
+/// Incremental chunked-encoding decoder: consumes as many COMPLETE chunks
+/// as `raw[..*pos]` contains, forwarding decoded body bytes through `out`.
+/// State is fully derived from `raw` + `*pos`, so it can be called again
+/// after more bytes arrive (resumable across socket reads).
+fn dechunk_step(raw: &[u8], pos: &mut usize, out: &mut dyn FnMut(&[u8])) -> Result<(), PiiError> {
+    loop {
+        // Need a full size line first.
+        let Some(rel) = find_crlf(raw.get(*pos..).unwrap_or(&[])) else {
+            return Ok(());
+        };
+        let size_line = std::str::from_utf8(raw.get(*pos..*pos + rel).unwrap_or(&[]))
+            .map_err(|_| PiiError::Invalid("http: bad chunk size".into()))?;
+        let size_str = size_line.split(';').next().unwrap_or("0");
+        let size = usize::try_from(
+            u64::from_str_radix(size_str.trim(), 16)
+                .map_err(|_| PiiError::Invalid("http: bad chunk size".into()))?,
+        )
+        .map_err(|_| PiiError::Invalid("http: body too large".into()))?;
+        let data_start = *pos + rel + 2;
+        if size == 0 {
+            // Terminating chunk: consume it and any trailing CRLF/trailers.
+            *pos = data_start;
+            while let Some(r) = find_crlf(raw.get(*pos..).unwrap_or(&[])) {
+                let Some(trailer) = raw.get(*pos..*pos + r) else {
+                    break;
+                };
+                *pos += r + 2;
+                if trailer.is_empty() {
+                    break;
+                }
+            }
+            return Ok(());
+        }
+        if total_len(*pos, size)? > raw.len() {
+            return Ok(()); // incomplete chunk: wait for more bytes
+        }
+        let chunk = raw
+            .get(data_start..data_start + size)
+            .ok_or_else(|| PiiError::Invalid("http: truncated chunk".into()))?;
+        out(chunk);
+        *pos = data_start + size;
+        // Consume the CRLF after the chunk data.
+        if raw.get(*pos) == Some(&b'\r') {
+            *pos += 2;
+        }
+    }
+}
+
+/// Hard size gate shared with the chunked reader (`MAX_BODY` + framing).
+fn total_len(pos: usize, size: usize) -> Result<usize, PiiError> {
+    pos.checked_add(size)
+        .and_then(|end| end.checked_add(2))
+        .filter(|end| *end <= crate::limits::MAX_BODY + 4)
+        .ok_or_else(|| PiiError::Invalid("http: body too large".into()))
+}
+
+/// Finds the offset of the first CRLF in `s`.
+fn find_crlf(s: &[u8]) -> Option<usize> {
+    s.windows(2).position(|w| w == b"\r\n")
 }
 
 /// Reads until EOF or the armed timeout, up to 8 MiB (HTTP client side).
@@ -433,5 +536,140 @@ fn read_to_deadline(conn: &mut Conn) -> Result<Vec<u8>, PiiError> {
             }
             Err(e) => return Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::significant_drop_tightening,
+        clippy::disallowed_methods // reason: the loopback fake server binds
+        // TcpListener inside pii-net's own test module (sanctioned file).
+    )]
+
+    use std::sync::Arc;
+
+    use super::NetService;
+    use crate::NetConfig;
+    use pii_abi::{HttpMethod, HttpRequest};
+    use pii_core::HttpTransport as _;
+    use pii_core::{Budget, CapSet, Ctx};
+
+    fn ctx() -> Ctx {
+        let mut caps = CapSet::empty();
+        caps.kinds = pii_core::CapKind::NET;
+        Ctx::root(caps, Budget::unlimited())
+    }
+
+    #[allow(dead_code)] // reason: reserved for non-loopback variants
+    fn _unused() {}
+
+    /// A loopback server that emits a chunk-framed NDJSON body, split at a
+    /// MID-LINE boundary (R3 acceptance shape).
+    struct ChunkedServer {
+        payload: &'static [u8],
+    }
+
+    impl ChunkedServer {
+        fn serve(&self) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
+            use std::fmt::Write as _;
+            use std::io::{Read, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let payload = self.payload;
+            let handle = std::thread::spawn(move || {
+                let (mut s, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 8192];
+                // Read until we've seen the request headers + body (the
+                // client POST has a small body). Do NOT wait for EOF: the
+                // client keeps the write side open while it reads the
+                // response head, so an EOF-waiting read would deadlock and
+                // the client would time out.
+                let mut got = 0usize;
+                while got < 4096 {
+                    match s.read(&mut buf[got..]) {
+                        Ok(n) if n > 0 => {
+                            got += n;
+                            if buf[..got].windows(4).any(|w| w == b"\r\n\r\n") {
+                                break;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+                // Two chunks; the split falls mid-NDJSON-line.
+                let (a, b) = payload.split_at(payload.len() / 2);
+                let mut resp =
+                    String::from("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+                let _ = write!(resp, "{:x}\r\n", a.len());
+                resp.push_str(std::str::from_utf8(a).unwrap());
+                resp.push_str("\r\n");
+                let _ = write!(resp, "{:x}\r\n", b.len());
+                resp.push_str(std::str::from_utf8(b).unwrap());
+                resp.push_str("\r\n0\r\n\r\n");
+                let _ = s.write_all(resp.as_bytes());
+                // Deterministic FIN: the client's read loop ends on EOF.
+                let _ = s.shutdown(std::net::Shutdown::Both);
+            });
+            (addr, handle)
+        }
+    }
+
+    /// R3 (spec 22): the streaming path dechunks — `on_chunk` receives the
+    /// dechunked NDJSON lines (never hex size lines), split mid-line reads
+    /// are reassembled, and the returned body is byte-identical to the
+    /// buffered path.
+    #[test]
+    fn request_streaming_dechunks() {
+        let payload: &'static [u8] = br#"{"message":{"content":"Hel"},"done":false}
+{"message":{"content":"lo"},"done":false}
+{"done":true,"prompt_eval_count":5,"eval_count":3}
+"#;
+        // Server binds FIRST: the resolver pins the ephemeral addr.
+        let (addr, handle) = ChunkedServer { payload }.serve();
+        let mut resolver = crate::resolve::StaticResolver::new();
+        resolver.insert("127.0.0.1", addr.port(), vec![addr]);
+        let mut grants = crate::grant::StaticGrants::default();
+        grants.insert("*", "http:127.0.0.1", crate::grant::NetGrant::open_local());
+        let svc = NetService::new(NetConfig {
+            resolver: Arc::new(resolver),
+            grants: Arc::new(grants),
+            clock: Arc::new(crate::clock::SystemClock),
+        });
+        let lines: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
+        let r = HttpRequest {
+            method: HttpMethod::Post,
+            url: format!("http://{addr}/api"),
+            headers: Vec::new(),
+            body: b"{}".to_vec(),
+            timeout_ms: 5_000,
+        };
+        let resp = svc
+            .request_streaming(&ctx(), &r, &mut |bytes| {
+                let s = String::from_utf8_lossy(bytes);
+                for l in s.lines() {
+                    lines.lock().push(l.to_owned());
+                }
+            })
+            .expect("streaming request must succeed");
+        handle.join().unwrap();
+        // R3: `on_chunk` is BYTE-level — it receives dechunked bytes that may
+        // still split a JSON line across two reads (the downstream consumer,
+        // ollama's `drain_lines`, reassembles with a residual buffer). So the
+        // contract here is: no hex-size lines leak through, and the
+        // CONCATENATED dechunked body is byte-identical to the buffered parse.
+        for l in lines.lock().iter() {
+            assert!(
+                !l.trim().chars().all(|c| c.is_ascii_hexdigit()),
+                "on_chunk leaked a hex size line: {l:?}"
+            );
+        }
+        // The dechunked body is exactly the payload (no hex framing).
+        assert_eq!(resp.body, payload.to_vec());
+        assert!(resp.body.starts_with(b"{\"message\""));
     }
 }

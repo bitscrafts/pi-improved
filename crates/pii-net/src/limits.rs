@@ -2,6 +2,8 @@
 
 /// Response body cap for the HTTP client (F2.8: 8 MiB).
 pub const MAX_HTTP_BODY: usize = 8 * 1024 * 1024;
+/// Body cap shared with the codec's chunked decoder.
+pub const MAX_BODY: usize = crate::http_codec::MAX_BODY;
 /// Server-side request body cap (F2.10: 1 MiB).
 pub const MAX_SERVER_BODY: usize = 1024 * 1024;
 /// Concurrent connections per listener (excess get 503, F2.10).

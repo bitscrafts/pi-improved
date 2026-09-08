@@ -409,12 +409,11 @@ impl AgentNode {
         };
         let tool = Arc::clone(tool);
         let args = call.arguments.clone();
-        let handle = std::thread::spawn(move || {
-            tool.call(
-                &Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited()),
-                &args,
-            )
-        });
+        // R2 (spec 22 A2): the CALLER ctx — with its real capability set and
+        // scope_root confinement — must reach the timed tool. Substituting
+        // `Ctx::root(CapSet::empty())` denied every timed tool (bash/grep).
+        let ctx_clone = ctx.clone();
+        let handle = std::thread::spawn(move || tool.call(&ctx_clone, &args));
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             if handle.is_finished() {
@@ -558,6 +557,69 @@ mod tests {
             .clone();
         assert_eq!(sent.len(), 2, "unexpected message shape: {sent:?}");
         assert_eq!(sent.get(1).expect("msg 1").content, "hello");
+    }
+
+    /// R2 (spec 22): a timed tool must receive the CALLER ctx (with its
+    /// real capability set), not a root-with-empty-capset substitute.
+    #[test]
+    fn bounded_tool_uses_caller_ctx() {
+        use pii_abi::{CapKind, PiiError};
+        use pii_core::CapSet;
+        use pii_tools::Tool;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct CtxAssertTool {
+            seen_fs_read: Arc<AtomicBool>,
+        }
+        impl Tool for CtxAssertTool {
+            fn name(&self) -> &'static str {
+                "ctxcheck"
+            }
+            fn spec(&self) -> pii_model::ToolSpec {
+                pii_model::ToolSpec {
+                    name: String::from("ctxcheck"),
+                    description: String::from("checks ctx"),
+                    schema: serde_json::json!({}),
+                }
+            }
+            fn timeout(&self) -> Option<u64> {
+                Some(2_000)
+            }
+            fn call(
+                &self,
+                ctx: &Ctx,
+                _args: &serde_json::Value,
+            ) -> Result<serde_json::Value, PiiError> {
+                // The declared FS_READ capability must be present on the ctx
+                // we receive.
+                let ok = ctx.caps().kinds.contains(CapKind::FS_READ);
+                self.seen_fs_read.store(ok, Ordering::SeqCst);
+                Ok(serde_json::json!({}))
+            }
+        }
+
+        let seen = Arc::new(AtomicBool::new(false));
+        let provider = Arc::new(RecordingProvider {
+            seen: Mutex::new(Vec::new()),
+        });
+        let mut node = test_node(provider);
+        let mut caps = CapSet::empty();
+        caps.kinds = CapKind::FS_READ;
+        let ctx_with_caps = Ctx::root(caps, Budget::unlimited());
+        node.toolset = node.toolset.with_tool(Arc::new(CtxAssertTool {
+            seen_fs_read: Arc::clone(&seen),
+        }));
+        let call = pii_model::ToolCall {
+            id: String::from("c1"),
+            name: String::from("ctxcheck"),
+            arguments: serde_json::json!({}),
+        };
+        node.call_tool_bounded(&ctx_with_caps, &call)
+            .expect("tool must run");
+        assert!(
+            seen.load(Ordering::SeqCst),
+            "timed tool must receive the CALLER ctx (with FS_READ), not an empty root"
+        );
     }
 
     /// R4 (spec 14): a tool whose `call()` exceeds its declared `timeout()`

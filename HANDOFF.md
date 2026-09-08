@@ -1,6 +1,6 @@
 # Pii — Session Handoff
 
-## CRITICAL — opus full-codebase review (2026-09-08, `_docs/06-research/010`) — VERDICT: NEEDS WORK
+## CRITICAL — opus full-codebase review (2026-09-08, `_docs/06-research/010-pii-full-review-pass1.md`) — VERDICT: NEEDS WORK
 
 The agent tool loop is **broken** — every autonomous run reports `Success` while
 doing nothing. Three code-verified defects (do these as the next slice, gated on
