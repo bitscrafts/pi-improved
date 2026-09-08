@@ -26,13 +26,28 @@ use rmcp::{ErrorData, ServerHandler, serve_server};
 /// The MCP server: maps pii's `ToolSet` to MCP tools.
 struct PiiMcpServer {
     tools: ToolSet,
+    workspace: std::path::PathBuf,
 }
 
 impl PiiMcpServer {
     fn new(workspace: std::path::PathBuf) -> Self {
         Self {
-            tools: ToolSet::builtin(workspace),
+            tools: ToolSet::builtin(workspace.clone()),
+            workspace,
         }
+    }
+
+    /// A root ctx granting the capabilities the builtin tools need, scoped to
+    /// the workspace (fs read/write + proc for bash). This is the MCP server's
+    /// own grant — it exercises pii's tools as a trusted local client would.
+    fn tool_ctx(&self) -> Ctx {
+        let mut caps = pii_core::CapSet::empty();
+        caps.kinds =
+            pii_core::CapKind::FS_READ | pii_core::CapKind::FS_WRITE | pii_core::CapKind::PROC;
+        caps.fs_read = pii_core::PathScope::new(vec![self.workspace.clone()]);
+        caps.fs_write = pii_core::PathScope::new(vec![self.workspace.clone()]);
+        caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
+        Ctx::root(caps, pii_core::Budget::unlimited())
     }
 }
 
@@ -67,7 +82,7 @@ impl ServerHandler for PiiMcpServer {
         let args = request
             .arguments
             .map_or_else(|| serde_json::json!({}), serde_json::Value::Object);
-        let ctx = Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited());
+        let ctx = self.tool_ctx();
         let result = self.tools.get(&name).map_or_else(
             || Err(format!("unknown tool '{name}'")),
             |tool| tool.call(&ctx, &args).map_err(|e| e.to_string()),
