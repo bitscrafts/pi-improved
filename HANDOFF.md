@@ -1,5 +1,45 @@
 # Pii — Session Handoff
 
+## CAVEATS — P4.7 (2026-09-08) — read before continuing
+
+1. **`pii-mcp` client runtime self-test hangs.** `pii mcp client <command>`
+   compiles and is wired (spawns an external MCP server, lists + calls tools),
+   but running it against a SELF-spawned `pii-mcp` server hangs — an rmcp
+   child-process handshake edge (the spawned server parks forever on
+   `pending().await`). The SERVER side (the daily-exercise win) is fully
+   working; the client is compile-correct but not runtime-smoke-tested end to
+   end. Root-causing it needs a test client transport or a bounded server
+   lifetime; deferred, not urgent.
+2. **rmcp 3.2 tool dispatch is a `ToolRouter`, not the `list_tools`/`call_tool`
+   trait overrides.** Those overrides are DEAD CODE — Hermes connected but
+   reported "no tools" until the server registered routes via
+   `ToolRoute::new_dyn` + `#[tool_handler(router=...)]`. Memory saved:
+   `/root/.local/bin/pii-mcp` built from this crate.
+3. **`RunningService` must be kept alive.** `serve_server` returns a
+   `RunningService`; dropping it cancels the server. Use `let _keep_alive =
+   ...` + `pending().await`, NOT `std::mem::forget` (workspace denies
+   `mem_forget`).
+4. **The MCP server exposes pii's TOOLS, not the control plane.** MCP models
+   tools/resources/prompts — it has no session/delta/approval/graph-run.
+   `session.*`/`run.*`/`approve.*` stay on UDS JSON-RPC (roadmap pass2 §563).
+   Do not tunnel pii's real API through `tools/call`.
+5. **P4.7 is NOT complete.** The `pii-evolve` crate (the boss loop itself:
+   state.md, context management, model routing), the dev/prod gated promotion,
+   the research loop, and GitHub issues/PRs remain unimplemented. What is done:
+   spec 20 prereq fixes (resume scope-root, per-cycle approval gate, heal-watch
+   real gate) + spec 21 pii-mcp server (working) + client (wired).
+6. **`pii-evolve` / new subsystems must be feature-gated crates, default OFF**
+   (pluggable convention, `_docs/02-guides/feature-gating.md`). The boss writes
+   code, spends tokens, posts GitHub issues — opt-in, never default.
+7. **Dev/prod split is `/root/.pii-dev/` as a RUNTIME DIR, worktrees under the
+   workspace** — `validate_scope_root` rejects `scope_root` outside the
+   workspace. A worktree at `/root/.pii-dev/` cannot be a heal scope_root.
+8. **Workhorse (pidag/glm-5.3-flash) consistently vacuous-passes or stalls on
+   cross-crate/security work** — spec-20 ECs passed against zero test
+   definitions twice. The orchestrator implemented these directly. Verify test
+   non-vacuity (`cargo test <name>` must count ≥1) before trusting a pidag
+   validate.
+
 ## SESSION STATE — 2026-09-08 (P4.7 evolve: prereq fixes + pii-mcp server+client)
 
 **Committed this session (HEAD → oldest):**
