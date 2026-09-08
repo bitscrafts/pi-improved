@@ -69,10 +69,28 @@ This is the top priority to fix.
   1-2) so the human-approval contract actually holds.
 - **Slice G/H**: research + GitHub unchanged; `pr` capability after a repo remote.
 
-## Verdict
+## VERDICT + user decision
 
-APPROVE WITH CHANGES. The design's core (self-aware boss on its own substrate,
+**APPROVE WITH CHANGES.** The design's core (self-aware boss on its own substrate,
 human-gated promotion, worktrees, model tiers) is right. The blocking risk is
 the resume+approval-gate bug, which would have silently voided the user's
-"human approves promotions" decision. Fix items 1-3 before building Slice F
-(and ideally before Slice B's escalation graph).
+"human approves promotions" decision.
+
+**USER OVERRIDE (2026-09-08): the boss IS a dedicated pii crate.** The user
+directed twice — "a pii sub module!" then "crate!" — that P4.7 be a first-class
+`pii-boss` crate (cohesive subsystem owning context-management + model-routing
++ the boss loop), in the same shape as `pii-web`/`pii-memory`/`pii-net`. This
+OVERRIDES opus action item 6 ("drop the pii-boss crate — no second consumer").
+The user's judgment stands: the boss is a large, cohesive, ongoing subsystem
+that earns its own crate boundary. The `pii-boss` crate:
+- owns the boss loop, state.md management, context compaction, model routing;
+- builds on `pii-graph` (boss loop as graphs) + `pii-core`/`pii-server`
+  (journal, gates, approvals, budget, memory) — same substrate rule;
+- the opus prerequisite bugs (resume scope-root, approval-gate stale reuse,
+  heal-watch phantom gate) still land in `pii-server`/`graphs`, but the BOSS
+  logic lives in `pii-boss/`.
+
+(Note: opus item 6 also said "drop the pii-boss crate" partly because a crate
+boundary should be earned by a second consumer. The user has now asserted the
+boss itself is that consumer class — the crate is the subsystem boundary, not
+a speculative extraction.)
