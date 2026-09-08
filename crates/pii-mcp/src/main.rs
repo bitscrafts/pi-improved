@@ -96,37 +96,102 @@ impl PiiMcpServer {
 #[tool_handler(router = Self::tool_router())]
 impl ServerHandler for PiiMcpServer {}
 
-/// `pii mcp` — start the MCP server over stdio.
+/// `pii mcp` — start the MCP server over stdio, or run the client.
 fn main() {
-    let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let server = PiiMcpServer::new(workspace);
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("error: {e}");
+    let mut args = std::env::args_os();
+    let _argv0 = args.next();
+    let sub = args.next().and_then(|a| a.into_string().ok());
+    if sub.as_deref() == Some("client") {
+        // `pii mcp client <command> [args...]` — spawn an external MCP
+        // server, list its tools, and call the first one (a smoke test).
+        let cmd: Vec<String> = args.map(|a| a.into_string().unwrap_or_default()).collect();
+        if cmd.is_empty() {
+            eprintln!("usage: pii mcp client <command> [args...]");
             std::process::exit(2);
         }
-    };
-    rt.block_on(async move {
-        let (r, w) = stdio();
-        let running = serve_server(server, (r, w)).await;
-        // Hold the RunningService alive for the process lifetime — dropping
-        // it cancels the server. It stays in scope until `pending().await`
-        // (which never returns), so the stdio MCP server runs until the
-        // process is killed.
-        let _keep_alive = match running {
-            Ok(running) => running,
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
             Err(e) => {
                 eprintln!("error: {e}");
                 std::process::exit(2);
             }
         };
-        // Park forever: the server runs on the runtime's background tasks.
-        std::future::pending::<()>().await;
-    });
+        rt.block_on(async move {
+            if let Err(e) = run_client(&cmd).await {
+                eprintln!("error: {e}");
+                std::process::exit(2);
+            }
+        });
+    } else {
+        // Default: the MCP server over stdio.
+        let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let server = PiiMcpServer::new(workspace);
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(2);
+            }
+        };
+        rt.block_on(async move {
+            let (r, w) = stdio();
+            let running = serve_server(server, (r, w)).await;
+            // Hold the RunningService alive for the process lifetime —
+            // dropping it cancels the server.
+            let _keep_alive = match running {
+                Ok(running) => running,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(2);
+                }
+            };
+            // Park forever: the server runs on the runtime's background tasks.
+            std::future::pending::<()>().await;
+        });
+    }
+}
+
+/// Spawns an external MCP server, lists its tools, and calls the first one.
+async fn run_client(cmd: &[String]) -> Result<(), String> {
+    use rmcp::model::{CallToolRequestParams, PaginatedRequestParams};
+    use rmcp::service::serve_client;
+    use rmcp::transport::child_process::TokioChildProcess;
+
+    let (prog, rest) = cmd
+        .split_first()
+        .ok_or_else(|| String::from("client needs a command"))?;
+    let mut command = tokio::process::Command::new(prog);
+    command.args(rest);
+    let child = TokioChildProcess::new(command).map_err(|e| e.to_string())?;
+    let running = serve_client((), child).await.map_err(|e| e.to_string())?;
+    let peer = running.peer();
+    let tools = peer
+        .list_tools(Some(PaginatedRequestParams::default()))
+        .await
+        .map_err(|e| e.to_string())?;
+    println!(
+        "tools: {:?}",
+        tools
+            .tools
+            .iter()
+            .map(|t| t.name.as_ref())
+            .collect::<Vec<_>>()
+    );
+    if let Some(tool) = tools.tools.first() {
+        let name = tool.name.to_string();
+        let call_out = peer
+            .call_tool_once(CallToolRequestParams::new(name.clone()))
+            .await
+            .map_err(|e| e.to_string())?;
+        println!("call {name}: {call_out:?}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
