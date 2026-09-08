@@ -1,5 +1,27 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-08 (P4.7.0 agent tool loop WORKS LIVE)
+
+**Committed this session (HEAD → oldest):**
+- `75fada9` fix(phase4.7): agent tool loop works live - A1 tool_calls accumulate, A2 caller ctx, A3 dechunk+line-buffer, A7 wire tool_calls (spec 22)
+- `f61d3c5` docs(research): opus full-codebase review - NEEDS WORK, agent tool loop broken (010)
+- (earlier P4.7 commits)
+
+**P4.7.0 — the LIVE-model gate PASSED.** Against the real local `granite4.2:3b`:
+- the agent called `grep` (found `struct` in cap.rs) + `bash` (echo HELLO, exit 0)
+- trace/event stream showed **83 AssistantDelta** (≥2 required), **2 tool_call** (grep+bash), **2 tool_result**.
+The opus-flagged A1/A2/A3 tool-loop breakage is fixed:
+- **A1** `chat_streaming` accumulates `message.tool_calls` across NDJSON lines (was hardcoded empty).
+- **A2** `call_tool_bounded` clones the caller's ctx (bash/grep/glob no longer get `capability denied`).
+- **A3** `request_streaming` dechunks `Transfer-Encoding: chunked` + ollama delta closure has a cross-chunk line buffer (NDJSON `Deserializer`), so `AssistantDelta` flows live.
+- **A7** `message_value` sends tool_calls/tool_call_id on the wire (multi-step tool use).
+- **E4** `run_ci` + `USAGE` now include reachability-check + doc-drift-check (this spec added them via xtask; verified).
+- **D** MCP server bounded lifetime + client stderr/cancel (R6) — wired.
+Also fixed: net-check allowlists `pii-net/src/service.rs` (test loopback fake), doc-drift HANDOFF reference corrected.
+Quality gate ALL PASS, all xtask gates rc=0.
+
+**Next (P4.7 remaining):** the `pii-evolve` crate (boss loop, state.md, model routing), then dev/prod + gated promotion, research loop, GitHub issues/PRs.
+
 ## CRITICAL — opus full-codebase review (2026-09-08, `_docs/06-research/010-pii-full-review-pass1.md`) — VERDICT: NEEDS WORK
 
 The agent tool loop is **broken** — every autonomous run reports `Success` while
