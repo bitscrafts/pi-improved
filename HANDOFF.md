@@ -1,5 +1,34 @@
 # Pii — Session Handoff
 
+## CRITICAL — opus full-codebase review (2026-09-08, `_docs/06-research/010`) — VERDICT: NEEDS WORK
+
+The agent tool loop is **broken** — every autonomous run reports `Success` while
+doing nothing. Three code-verified defects (do these as the next slice, gated on
+a LIVE-MODEL exit criterion, BEFORE any `pii-evolve` code):
+
+1. **A1** `ollama.rs:230` — `chat_streaming` hardcodes `tool_calls: Vec::new()`,
+   so the agent never executes a tool (returns on `ok` turn 1).
+2. **A2** `agent.rs:412-417` — `call_tool_bounded` substitutes
+   `Ctx::root(CapSet::empty())` for the caller ctx → `bash`/`grep`/`glob`
+   (which declare `timeout()`) always get `capability denied`.
+3. **A3** `service.rs:395-418` — `request_streaming` doesn't dechunk
+   `Transfer-Encoding: chunked` (proven vs real Ollama) → `on_delta` returns on
+   the hex-size line → `AssistantDelta` never emitted. No cross-chunk line
+   buffer either.
+
+Also verified: TLS lease leak on `dial_tls` error, compaction never fires (1
+User msg/run), `message_value` drops tool_calls/tool_call_id, O(n²) session
+writes, non-atomic token RMW, MicroUsd/ToolCalls never charged, `max_model_calls`
+absent, approval-gate `cycle` is STATIC (loop re-entry still auto-allows),
+`run_ci` still omits reachability/doc-drift, no anti-reward-hacking guard, MCP
+client hang is the server parking forever (fix: `running.waiting().await` +
+`stderr(Stdio::null())` + `cancel()`).
+
+Next = **P4.7.0 agent-loop-actually-works**: A1+A2+A3+run_ci+(MCP bounded
+lifetime), with a live-model gate (agent calls grep then bash; `pii graph trace`
+shows ToolCall/ToolResult + ≥2 AssistantDelta). Fakes vacuous-pass all three —
+the gate MUST be live.
+
 ## CAVEATS — P4.7 (2026-09-08) — read before continuing
 
 1. **`pii-mcp` client runtime self-test hangs.** `pii mcp client <command>`
