@@ -53,7 +53,7 @@ So P4.7 is NOT the narrow opus "Slice 2" (durable patch artifacts + ledger evolu
 
 ## 3. The architecture: a self-aware "boss" loop
 
-The boss is a **cron-driven pii graph** (dogfooding — it runs on the substrate it heals) plus a **new `pii-boss` crate** for the context-management and model-routing logic that graphs can't express.
+The boss is a **cron-driven pii graph** (dogfooding — it runs on the substrate it heals) plus a **new `pii-evolve` crate** for the context-management and model-routing logic that graphs can't express.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -143,7 +143,7 @@ A periodic (e.g. daily) research step:
 
 - **Slice A (deterministic, no AI)**: extend `reachability-check`/`doc-drift-check` to the silent-no-op class (a declared config key with no reader; an event variant with no producer; an RPC method with no dispatch arm). This is the highest-leverage self-improvement work and gives the boss something real to detect.
 - **Slice B (the boss loop skeleton)**: a cron graph that runs the gates, records failures to the heal ledger, reproduces once, and suspends on a `gate` node for human acknowledgement. No patching, no write authority. Proves the dogfooding claim.
-- **Slice C (context management)**: the `pii-boss` crate — `state.md` writer, compaction-chain logic, external-memory-as-source-of-truth wiring.
+- **Slice C (context management)**: the `pii-evolve` crate — `state.md` writer, compaction-chain logic, external-memory-as-source-of-truth wiring.
 - **Slice D (model routing)**: a `route` node that dispatches each step to the right model tier.
 - **Slice E (localize + patch + validate)**: in a disposable worktree, against a deliberately broken unit test. Write capability scoped to the worktree.
 - **Slice F (parallel dev/prod + gated promotion)**: the dev/prod split, the promotion gate.

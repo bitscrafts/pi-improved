@@ -45,7 +45,7 @@ This is the top priority to fix.
    flagged).
 6. **Drop Slice D as written** — a `route` node already exists and routes
    control flow, not models; model routing belongs in the agent/config layer,
-   not a new node kind. **Drop the `pii-boss` crate from Slice C** — no new
+   not a new node kind. **Drop the `pii-evolve` crate from Slice C** — no new
    crate until a second consumer exists (the prior review's rule).
 7. **Move dev to `/root/.pii-dev/` as a RUNTIME DIR ONLY; worktrees stay under
    the workspace** — because `validate_scope_root` (`runs.rs:205-227`) rejects
@@ -62,7 +62,7 @@ This is the top priority to fix.
 - **Slice B (boss loop skeleton) STAYS** — the cron-graph detect-and-escalate
   proof, but on an FIXED `heal-watch.toml` (item 3).
 - **Slice C**: keep state.md / external-memory / compaction, but NO new
-  `pii-boss` crate — implement in the existing graph/agent substrate.
+  `pii-evolve` crate — implement in the existing graph/agent substrate.
 - **Slice D**: model routing via agent config / the existing `route` node; NOT a
   new node kind.
 - **Slice E/F**: patch/validate + promotion, AFTER the approval-gate fix (items
@@ -78,19 +78,19 @@ the resume+approval-gate bug, which would have silently voided the user's
 
 **USER OVERRIDE (2026-09-08): the boss IS a dedicated pii crate.** The user
 directed twice — "a pii sub module!" then "crate!" — that P4.7 be a first-class
-`pii-boss` crate (cohesive subsystem owning context-management + model-routing
+`pii-evolve` crate (cohesive subsystem owning context-management + model-routing
 + the boss loop), in the same shape as `pii-web`/`pii-memory`/`pii-net`. This
-OVERRIDES opus action item 6 ("drop the pii-boss crate — no second consumer").
+OVERRIDES opus action item 6 ("drop the pii-evolve crate — no second consumer").
 The user's judgment stands: the boss is a large, cohesive, ongoing subsystem
-that earns its own crate boundary. The `pii-boss` crate:
+that earns its own crate boundary. The `pii-evolve` crate:
 - owns the boss loop, state.md management, context compaction, model routing;
 - builds on `pii-graph` (boss loop as graphs) + `pii-core`/`pii-server`
   (journal, gates, approvals, budget, memory) — same substrate rule;
 - the opus prerequisite bugs (resume scope-root, approval-gate stale reuse,
   heal-watch phantom gate) still land in `pii-server`/`graphs`, but the BOSS
-  logic lives in `pii-boss/`.
+  logic lives in `pii-evolve/`.
 
-(Note: opus item 6 also said "drop the pii-boss crate" partly because a crate
+(Note: opus item 6 also said "drop the pii-evolve crate" partly because a crate
 boundary should be earned by a second consumer. The user has now asserted the
 boss itself is that consumer class — the crate is the subsystem boundary, not
 a speculative extraction.)
