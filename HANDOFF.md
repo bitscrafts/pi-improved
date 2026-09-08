@@ -1,8 +1,10 @@
 # Pii — Session Handoff
 
-## SESSION STATE — 2026-09-08 (P4.7 evolve: prereq fixes + pii-mcp crate)
+## SESSION STATE — 2026-09-08 (P4.7 evolve: prereq fixes + pii-mcp WORKING)
 
 **Committed this session (HEAD → oldest):**
+- `84d3db9` fix(phase4.7): pii-mcp server - ToolRouter dispatch + keep RunningService alive; Hermes sees 7 tools
+- `78f8dbb` fix(phase4.7): pii-mcp server grants workspace-scoped caps so tools actually run
 - `0007c87` feat(phase4.7): pii-mcp crate - MCP server exposing pii tools over stdio (spec 21)
 - `44a3481` spec(phase4): pii-mcp crate - MCP server+client, feature-gated (21)
 - `eaf001b` docs(guides): pii-mcp bridge - Hermes integration via MCP server+client, feature-gated
@@ -22,8 +24,10 @@
 - R2: `gate` node gains an optional `cycle` salt folded into `approval_id` — a fresh cycle forces a fresh human decision; cycle 0 preserves the historical id (§8.8 replay). 2 tests.
 - R3: `heal-watch.toml` gate `quality-gate` → `reachability-check` (the old value wasn't an xtask subcommand → phantom permanent failure).
 
-**Spec 21 (pii-mcp crate) — DONE, committed `0007c87`:**
-- New `crates/pii-mcp` (feature-gated, quarantines `rmcp` 3.2). MCP server over stdio exposing pii's 7 builtin tools (fs_read/fs_write/edit/multi_edit/grep/glob/bash) as MCP tools. Hermes can `hermes mcp add pii` → `mcp_pii_*` tools → exercise pii's engine daily.
+**Spec 21 (pii-mcp crate) — WORKING, committed `84d3db9`:**
+- New `crates/pii-mcp` (feature-gated, quarantines `rmcp` 3.2). MCP server over stdio exposing pii's 7 builtin tools (fs_read/fs_write/edit/multi_edit/grep/glob/bash) as MCP tools.
+- **Hermes integration PROVEN**: `hermes mcp add pii` → all 7 tools enabled → `mcp_pii_*` tools available in new Hermes sessions. The daily-exercise loop works.
+- Key fixes: rmcp 3.2 routes tools through a `ToolRouter` (not the `list_tools`/`call_tool` trait overrides — those are dead code); the `RunningService` must be kept alive (dropping it cancels the server).
 - deps-check invariant: rmcp confined to pii-mcp. 2 tests. Quality gate + all xtask gates ALL PASS.
 - **Note**: MCP = integration surface (tools), NOT the control plane (session/run/approve stay on UDS JSON-RPC) — roadmap pass2 §563.
 
