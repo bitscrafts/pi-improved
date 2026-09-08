@@ -149,6 +149,10 @@ pub(crate) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
     // P4.6 (spec 19 N2): axum is a pii-web-only dependency — the workspace
     // root and pii-cli stay lean; the web viewer is a separate crate.
     check_confined(metadata, "axum", &["pii-web"], &mut violations);
+    // P4.7 (spec 21 N1): rmcp is a pii-mcp-only dependency — it quarantines
+    // rmcp's reqwest 0.13 requirement so core crates don't drag in a
+    // conflicting HTTP stack.
+    check_confined(metadata, "rmcp", &["pii-mcp"], &mut violations);
     if violations.is_empty() {
         Ok(())
     } else {
