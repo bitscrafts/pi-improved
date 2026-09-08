@@ -15,13 +15,18 @@ use std::future::Future;
 
 use pii_core::Ctx;
 use pii_tools::ToolSet;
-use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
-    TextContent, Tool,
-};
-use rmcp::service::{RequestContext, RoleServer};
+use rmcp::handler::server::tool::ToolCallContext;
+use rmcp::model::{CallToolResponse, CallToolResult, ContentBlock, TextContent, Tool};
 use rmcp::transport::stdio;
-use rmcp::{ErrorData, ServerHandler, serve_server};
+use rmcp::{ErrorData, ServerHandler, serve_server, tool_handler};
+
+/// The dynamic tool-dispatch function type: given a tool-call context, return
+/// a boxed future resolving to the MCP tool response.
+type DispatchFn = for<'a> fn(
+    ToolCallContext<'a, PiiMcpServer>,
+) -> std::pin::Pin<
+    Box<dyn Future<Output = Result<CallToolResponse, ErrorData>> + Send + 'a>,
+>;
 
 /// The MCP server: maps pii's `ToolSet` to MCP tools.
 struct PiiMcpServer {
@@ -37,67 +42,59 @@ impl PiiMcpServer {
         }
     }
 
-    /// A root ctx granting the capabilities the builtin tools need, scoped to
-    /// the workspace (fs read/write + proc for bash). This is the MCP server's
-    /// own grant — it exercises pii's tools as a trusted local client would.
-    fn tool_ctx(&self) -> Ctx {
-        let mut caps = pii_core::CapSet::empty();
-        caps.kinds =
-            pii_core::CapKind::FS_READ | pii_core::CapKind::FS_WRITE | pii_core::CapKind::PROC;
-        caps.fs_read = pii_core::PathScope::new(vec![self.workspace.clone()]);
-        caps.fs_write = pii_core::PathScope::new(vec![self.workspace.clone()]);
-        caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
-        Ctx::root(caps, pii_core::Budget::unlimited())
-    }
-}
-
-impl ServerHandler for PiiMcpServer {
-    fn list_tools(
-        &self,
-        _request: Option<rmcp::model::PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
-        let tools = self
-            .tools
-            .specs()
-            .into_iter()
-            .map(|s| {
-                let schema: serde_json::Map<String, serde_json::Value> =
-                    s.schema.as_object().cloned().unwrap_or_default();
-                Tool::new(s.name, s.description, schema)
-            })
-            .collect();
-        std::future::ready(Ok(ListToolsResult {
-            tools,
-            ..Default::default()
-        }))
-    }
-
-    fn call_tool(
-        &self,
-        request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + Send + '_ {
-        let name = request.name.to_string();
-        let args = request
-            .arguments
-            .map_or_else(|| serde_json::json!({}), serde_json::Value::Object);
-        let ctx = self.tool_ctx();
-        let result = self.tools.get(&name).map_or_else(
-            || Err(format!("unknown tool '{name}'")),
-            |tool| tool.call(&ctx, &args).map_err(|e| e.to_string()),
-        );
-        let out = match result {
-            Ok(v) => {
-                CallToolResult::success(vec![ContentBlock::Text(TextContent::new(v.to_string()))])
-            }
-            Err(e) => CallToolResult::success(vec![ContentBlock::Text(TextContent::new(format!(
-                "error: {e}"
-            )))]),
+    /// Builds the `ToolRouter` rmcp 3.2 uses to dispatch `tools/list` and
+    /// `tools/call`. One route per pii builtin tool.
+    fn tool_router() -> rmcp::handler::server::router::tool::ToolRouter<Self> {
+        let mut router = rmcp::handler::server::router::tool::ToolRouter::new();
+        // A dynamic dispatcher: any pii tool name -> its Tool::call.
+        let dispatch: DispatchFn = |ctx: ToolCallContext<'_, Self>| {
+            let name = ctx.name.to_string();
+            let args = ctx
+                .arguments
+                .map_or_else(|| serde_json::json!({}), serde_json::Value::Object);
+            // Clone the owned state out of the borrow so the returned future
+            // is 'static (new_dyn requires it).
+            let tools = ctx.service.tools.clone();
+            let workspace = ctx.service.workspace.clone();
+            let result = tools.get(&name).map_or_else(
+                || Err(format!("unknown tool '{name}'")),
+                |tool| {
+                    let mut caps = pii_core::CapSet::empty();
+                    caps.kinds = pii_core::CapKind::FS_READ
+                        | pii_core::CapKind::FS_WRITE
+                        | pii_core::CapKind::PROC;
+                    caps.fs_read = pii_core::PathScope::new(vec![workspace.clone()]);
+                    caps.fs_write = pii_core::PathScope::new(vec![workspace.clone()]);
+                    caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
+                    let ctx = Ctx::root(caps, pii_core::Budget::unlimited());
+                    tool.call(&ctx, &args).map_err(|e| e.to_string())
+                },
+            );
+            let out = match result {
+                Ok(v) => CallToolResult::success(vec![ContentBlock::Text(TextContent::new(
+                    v.to_string(),
+                ))]),
+                Err(e) => CallToolResult::success(vec![ContentBlock::Text(TextContent::new(
+                    format!("error: {e}"),
+                ))]),
+            };
+            Box::pin(std::future::ready(Ok(CallToolResponse::from(out))))
         };
-        std::future::ready(Ok(CallToolResponse::from(out)))
+        // Register one route per builtin tool so `tools/list` reports them.
+        for spec in ToolSet::builtin(std::path::PathBuf::from(".")).specs() {
+            let schema: serde_json::Map<String, serde_json::Value> =
+                spec.schema.as_object().cloned().unwrap_or_default();
+            let tool = Tool::new(spec.name.clone(), spec.description.clone(), schema);
+            router = router.with_route(rmcp::handler::server::router::tool::ToolRoute::new_dyn(
+                tool, dispatch,
+            ));
+        }
+        router
     }
 }
+
+#[tool_handler(router = Self::tool_router())]
+impl ServerHandler for PiiMcpServer {}
 
 /// `pii mcp` — start the MCP server over stdio.
 fn main() {
@@ -115,7 +112,20 @@ fn main() {
     };
     rt.block_on(async move {
         let (r, w) = stdio();
-        let _ = serve_server(server, (r, w)).await;
+        let running = serve_server(server, (r, w)).await;
+        // Hold the RunningService alive for the process lifetime — dropping
+        // it cancels the server. It stays in scope until `pending().await`
+        // (which never returns), so the stdio MCP server runs until the
+        // process is killed.
+        let _keep_alive = match running {
+            Ok(running) => running,
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(2);
+            }
+        };
+        // Park forever: the server runs on the runtime's background tasks.
+        std::future::pending::<()>().await;
     });
 }
 
