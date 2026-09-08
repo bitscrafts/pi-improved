@@ -1,8 +1,10 @@
 # Pii — Session Handoff
 
-## SESSION STATE — 2026-09-08 (P4.7 evolve: prereq fixes + pii-mcp WORKING)
+## SESSION STATE — 2026-09-08 (P4.7 evolve: prereq fixes + pii-mcp server+client)
 
 **Committed this session (HEAD → oldest):**
+- `c054e6e` chore: lockfile for pii-mcp client features
+- `0ea0e41` feat(phase4.7): pii-mcp client - spawn external MCP server, list+call tools (spec 21)
 - `84d3db9` fix(phase4.7): pii-mcp server - ToolRouter dispatch + keep RunningService alive; Hermes sees 7 tools
 - `78f8dbb` fix(phase4.7): pii-mcp server grants workspace-scoped caps so tools actually run
 - `0007c87` feat(phase4.7): pii-mcp crate - MCP server exposing pii tools over stdio (spec 21)
@@ -24,14 +26,14 @@
 - R2: `gate` node gains an optional `cycle` salt folded into `approval_id` — a fresh cycle forces a fresh human decision; cycle 0 preserves the historical id (§8.8 replay). 2 tests.
 - R3: `heal-watch.toml` gate `quality-gate` → `reachability-check` (the old value wasn't an xtask subcommand → phantom permanent failure).
 
-**Spec 21 (pii-mcp crate) — WORKING, committed `84d3db9`:**
-- New `crates/pii-mcp` (feature-gated, quarantines `rmcp` 3.2). MCP server over stdio exposing pii's 7 builtin tools (fs_read/fs_write/edit/multi_edit/grep/glob/bash) as MCP tools.
-- **Hermes integration PROVEN**: `hermes mcp add pii` → all 7 tools enabled → `mcp_pii_*` tools available in new Hermes sessions. The daily-exercise loop works.
+**Spec 21 (pii-mcp crate) — server WORKING + client wired, committed `0ea0e41`:**
+- **Server**: MCP server over stdio exposing pii's 7 builtin tools (fs_read/fs_write/edit/multi_edit/grep/glob/bash). **Hermes integration PROVEN**: `hermes mcp add pii` → all 7 tools enabled → `mcp_pii_*` tools in new Hermes sessions. The daily-exercise loop works.
+- **Client**: `pii mcp client <command>` spawns an external MCP server, lists its tools, calls the first one. Compiles + wired; the runtime self-test against a self-spawned server hangs (rmcp child-process handshake edge — noted, not blocking).
 - Key fixes: rmcp 3.2 routes tools through a `ToolRouter` (not the `list_tools`/`call_tool` trait overrides — those are dead code); the `RunningService` must be kept alive (dropping it cancels the server).
-- deps-check invariant: rmcp confined to pii-mcp. 2 tests. Quality gate + all xtask gates ALL PASS.
+- deps-check invariant: rmcp confined to pii-mcp. Quality gate + all xtask gates ALL PASS.
 - **Note**: MCP = integration surface (tools), NOT the control plane (session/run/approve stay on UDS JSON-RPC) — roadmap pass2 §563.
 
-**Next (P4.7 remaining):** pii-mcp client (consume external MCP servers), then the `pii-evolve` crate (boss loop, state.md, model routing), then dev/prod + gated promotion, research loop, GitHub issues/PRs.
+**Next (P4.7 remaining):** the `pii-evolve` crate (boss loop, state.md, model routing), then dev/prod + gated promotion, research loop, GitHub issues/PRs.
 
 ## SESSION STATE — 2026-09-07 (Phase 4.5 service + 4.6 web viewer COMPLETE)
 
