@@ -46,9 +46,21 @@ impl NodeFactory for GateFactory {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| PiiError::Invalid(String::from("gate requires 'prompt' (string)")))?
             .to_owned();
+        // R2 (spec 20): an optional `cycle` salt. When set, it is folded into
+        // the approval id so a NEW decision cycle gets a FRESH id (no cached
+        // decision → the gate suspends and asks a human again). Absent (the
+        // default) = byte-identical current behavior: `blake3(run,node)`, so
+        // the §8.8 suspend→approve→resume replay still re-reads its own
+        // decision. The boss/promotion graph sets a fresh `cycle` per
+        // promotion attempt so every promotion is a fresh human decision.
+        let cycle = cfg
+            .get("cycle")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
         Ok(Box::new(GateNode {
             policy,
             prompt,
+            cycle,
             approvals: Arc::clone(&self.approvals),
         }))
     }
@@ -57,12 +69,13 @@ impl NodeFactory for GateFactory {
 struct GateNode {
     policy: String,
     prompt: String,
+    cycle: u64,
     approvals: Arc<ApprovalStore>,
 }
 
 impl GraphNode for GateNode {
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        let id = approval_id(ctx);
+        let id = approval_id(ctx, self.cycle);
         if let Some(a) = self.approvals.get_approval(&id)?
             && let Some(allow) = a.decision
         {
@@ -82,16 +95,16 @@ impl GraphNode for GateNode {
     }
 }
 
-/// The deterministic approval id: `blake3(run_id, node_id)[..16]` hex
-/// (16 bytes, 32 hex chars — same convention as `pii_memory::doc::id_of`).
+/// Deterministic approval id: `blake3(run_id, node_id, cycle)[..16]` hex.
+/// `cycle` 0 = no salt (historical id); a fresh cycle forces a new decision.
 #[must_use]
-pub fn approval_id(ctx: &Ctx) -> String {
+pub fn approval_id(ctx: &Ctx, cycle: u64) -> String {
     use std::fmt::Write as _;
     let (run, node) = match ctx.principal() {
         Principal::GraphNode { run, node } => (run.to_string(), node.to_string()),
         _ => (ctx.trace().run.to_string(), String::new()),
     };
-    let digest = blake3::hash(format!("{run}:{node}").as_bytes());
+    let digest = blake3::hash(format!("{run}:{node}:{cycle}").as_bytes());
     digest
         .as_bytes()
         .iter()
@@ -100,4 +113,59 @@ pub fn approval_id(ctx: &Ctx) -> String {
             let _ = write!(out, "{b:02x}");
             out
         })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use pii_core::{Budget, CapSet, Ctx, TraceCtx};
+
+    use super::approval_id;
+
+    fn ctx(run: &str) -> Ctx {
+        Ctx::with_observer(
+            CapSet::empty(),
+            Budget::unlimited(),
+            std::sync::Arc::new(pii_core::NullObserver),
+            TraceCtx {
+                run: pii_abi::RunId::from(run),
+                span: 0,
+            },
+        )
+    }
+
+    /// R2 (spec 20): a different `cycle` salt yields a DIFFERENT approval id,
+    /// so a new decision cycle cannot reuse a stale cached decision.
+    #[test]
+    fn approval_id_changes_with_cycle() {
+        let c = ctx("r1");
+        let id0 = approval_id(&c, 0);
+        let id1 = approval_id(&c, 1);
+        assert_ne!(id0, id1, "cycle must change the approval id");
+        // Same cycle is stable (deterministic replay within one attempt).
+        assert_eq!(approval_id(&c, 1), approval_id(&c, 1));
+    }
+
+    /// R2 (spec 20): cycle 0 preserves the historical `blake3(run,node)` id
+    /// (no salt) so existing approvals and §8.8 replay are unchanged.
+    #[test]
+    fn approval_id_cycle_zero_is_historical() {
+        let c = ctx("r1");
+        let id = approval_id(&c, 0);
+        // This test ctx has no graph-node principal, so approval_id falls back
+        // to trace().run with an empty node: blake3("r1::0")[..16] hex.
+        let digest = blake3::hash(b"r1::0");
+        let expected =
+            digest
+                .as_bytes()
+                .iter()
+                .take(16)
+                .fold(String::with_capacity(32), |mut out, b| {
+                    use std::fmt::Write as _;
+                    let _ = write!(out, "{b:02x}");
+                    out
+                });
+        assert_eq!(id, expected, "cycle 0 must match the historical id");
+    }
 }

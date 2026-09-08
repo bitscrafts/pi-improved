@@ -20,7 +20,11 @@ cron = "*/30 * * * *"
 [[node]]
 id = "check"
 kind = "heal_detect"
-gate = "quality-gate"
+# R3 (spec 20): `quality-gate` is NOT an xtask subcommand → `cargo xtask
+# quality-gate` prints USAGE and exits 2, so this heal_detect node recorded a
+# phantom permanent failure every 30 min. Use a real xtask subcommand:
+# reachability-check is the deterministic self-improvement gate.
+gate = "reachability-check"
 caps = ["proc"]
 
 [[node]]

@@ -130,10 +130,16 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
         .and_then(|header| engine.store.get_graph(&header.graph).ok().flatten())
         .and_then(|bytes| GraphSpec::from_json(&bytes).ok())
         .map_or(u64::MAX, |spec| spec.limits.max_tokens);
+    // R1 (spec 20, boss prerequisite): a run that STARTED with a confined
+    // `scope_root` must RESUME with the SAME confinement — otherwise a scoped
+    // heal/promotion run resumes workspace-wide fs_write, voiding the "human
+    // approves promotions" contract. Recover it from the run's journal input
+    // (the same source `pii_graph::run::resume` replays from), not a header.
+    let scope_root = stored_run_scope_root(&engine.store, &run_id).ok().flatten();
     let ctx = pii_core::Ctx::with_observer_and_cancel(
         run_caps(
             &engine.cfg.workspace,
-            None,
+            scope_root.as_deref(),
             engine.ollama_net_host.as_deref(),
         ),
         pii_core::Budget::with_tokens(max_tokens),
@@ -160,6 +166,32 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
         engine.unregister_run(&run_id.to_string());
     });
     Ok(())
+}
+
+/// Recovers a run's declared `scope_root` from its journal (spec 20 R1).
+/// The run input (including `scope_root`) is content-addressed in the
+/// `RunEvent::Started { input_hash }`; this reads it back so a RESUME can
+/// restore the SAME write confinement the run started with. `Ok(None)` when
+/// the run never had a `scope_root` (or the journal is unreadable — a bare
+/// resume degrades to workspace-scoped, the pre-fix behavior, never wider).
+fn stored_run_scope_root(
+    store: &pii_store::Store,
+    run_id: &RunId,
+) -> Result<Option<std::path::PathBuf>, PiiError> {
+    let journal = store.read_journal(run_id)?;
+    Ok(journal.iter().find_map(|(_, ev)| match ev {
+        pii_abi::RunEvent::Started { input_hash, .. } => store
+            .get_graph(input_hash)
+            .ok()
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|v| {
+                v.get("scope_root")
+                    .and_then(serde_json::Value::as_str)
+                    .map(std::path::PathBuf::from)
+            }),
+        _ => None,
+    }))
 }
 
 /// Root capabilities for a server-side run: fs read everything (or the
@@ -311,5 +343,84 @@ mod tests {
         let inside = ws.path().join("_tmp/heal-worktrees/ok");
         std::fs::create_dir_all(&inside).unwrap();
         assert!(validate_scope_root(ws.path(), &inside).is_ok());
+    }
+
+    /// R1 (spec 20): `stored_run_scope_root` recovers the `scope_root` a run
+    /// STARTED with from its journal, so a RESUME restores the same write
+    /// confinement (a scoped run must resume scoped).
+    #[test]
+    fn stored_run_scope_root_recovers_from_journal() {
+        use pii_abi::{RunEvent, RunHeader, RunId, RunStatus};
+        use pii_store::Store;
+        let dir = Builder::new()
+            .prefix("heal-scope-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let store = Store::open(&dir.path().join("store.redb")).unwrap();
+        let run = RunId::from("r-scoped");
+        // Put the run input (with scope_root) as a content-addressed graph.
+        let input = serde_json::json!({ "prompt": "fix", "scope_root": "/projects/pi-improved/_tmp/heal-wt-1" });
+        let input_hash = store
+            .put_graph(&serde_json::to_vec(&input).unwrap())
+            .unwrap();
+        let mut header = RunHeader {
+            run: run.clone(),
+            graph: String::from("default"),
+            status: RunStatus::Running,
+            seq: 0,
+            dur_ms: 0,
+        };
+        store
+            .append_event(
+                &mut header,
+                &RunEvent::Started {
+                    graph: String::from("default"),
+                    input_hash,
+                },
+            )
+            .unwrap();
+        let recovered = super::stored_run_scope_root(&store, &run).unwrap();
+        assert_eq!(
+            recovered,
+            Some(std::path::PathBuf::from(
+                "/projects/pi-improved/_tmp/heal-wt-1"
+            )),
+            "resume must recover the original scope_root"
+        );
+    }
+
+    /// R1 (spec 20): a run that never had a `scope_root` recovers `None` (a
+    /// bare resume stays workspace-scoped, never wider).
+    #[test]
+    fn stored_run_scope_root_none_when_unscoped() {
+        use pii_abi::{RunEvent, RunHeader, RunId, RunStatus};
+        use pii_store::Store;
+        let dir = Builder::new()
+            .prefix("heal-scope-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let store = Store::open(&dir.path().join("store.redb")).unwrap();
+        let run = RunId::from("r-plain");
+        let input = serde_json::json!({ "prompt": "hi" });
+        let input_hash = store
+            .put_graph(&serde_json::to_vec(&input).unwrap())
+            .unwrap();
+        let mut header = RunHeader {
+            run: run.clone(),
+            graph: String::from("default"),
+            status: RunStatus::Running,
+            seq: 0,
+            dur_ms: 0,
+        };
+        store
+            .append_event(
+                &mut header,
+                &RunEvent::Started {
+                    graph: String::from("default"),
+                    input_hash,
+                },
+            )
+            .unwrap();
+        assert_eq!(super::stored_run_scope_root(&store, &run).unwrap(), None);
     }
 }
