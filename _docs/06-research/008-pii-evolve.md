@@ -127,10 +127,28 @@ The promotion rule: **work is passed to the new version until it's production-re
 ### 3.4 The research loop (the "keep improving, researching the internet" part)
 
 A periodic (e.g. daily) research step:
+
 1. Search the web for new tech in the agent/self-healing/model-routing space.
 2. Store findings in `pii-memory` (research + insights, per the agent-memory convention).
 3. Try promising tech in the DEV build (never prod).
 4. If it works and passes gates, promote it (gated).
+
+### 3.5 Pluggable (installer can include it or not)
+
+User requirement (2026-09-08, "make it pluggable! allowing the installer to
+include it or not"): `pii-evolve` is an **optional Cargo feature** of the
+workspace, NOT a hard dependency of any existing crate. Off (the default) =
+nothing of `pii-evolve` is compiled or linked; the binaries are byte-identical
+to today. On = `pii-evolve` is built and its subcommands/capabilities are
+wired.
+
+Mechanism: `cargo build --features pii-evolve` (or a workspace `evolve` feature
+the installer toggles). In the default build the feature is disabled, so a
+user/installer that doesn't want self-improvement gets none of it — no code, no
+tokens, no background loop. This also means the risk surface (the boss can
+write code, spend tokens, post GitHub issues) is opt-in: the operator only
+enables it deliberately.
+
 
 ## 4. What's genuinely novel here
 

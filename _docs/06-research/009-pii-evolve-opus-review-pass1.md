@@ -76,18 +76,24 @@ human-gated promotion, worktrees, model tiers) is right. The blocking risk is
 the resume+approval-gate bug, which would have silently voided the user's
 "human approves promotions" decision.
 
-**USER OVERRIDE (2026-09-08): the boss IS a dedicated pii crate.** The user
-directed twice — "a pii sub module!" then "crate!" — that P4.7 be a first-class
-`pii-evolve` crate (cohesive subsystem owning context-management + model-routing
-+ the boss loop), in the same shape as `pii-web`/`pii-memory`/`pii-net`. This
-OVERRIDES opus action item 6 ("drop the pii-evolve crate — no second consumer").
+**USER OVERRIDE (2026-09-08): the boss IS a dedicated `pii-evolve` crate, pluggable.** The user
+directed — "a pii sub module!" then "crate!", then "pii-evolve", then "make it
+pluggable! allowing the installer to include it or not" — that P4.7 be a
+first-class **`pii-evolve`** crate (cohesive subsystem owning
+context-management + model-routing + the boss loop), same shape as
+`pii-web`/`pii-memory`/`pii-net`, AND **feature-gated optional** (default off;
+the installer toggles a Cargo feature to build with or without it). This
+OVERRIDES opus action item 6 ("drop the pii-boss crate — no second consumer").
 The user's judgment stands: the boss is a large, cohesive, ongoing subsystem
-that earns its own crate boundary. The `pii-evolve` crate:
+that earns its own crate boundary, and it must be opt-in so an installer that
+doesn't want self-improvement builds none of it. The `pii-evolve` crate:
 - owns the boss loop, state.md management, context compaction, model routing;
 - builds on `pii-graph` (boss loop as graphs) + `pii-core`/`pii-server`
   (journal, gates, approvals, budget, memory) — same substrate rule;
+- is a **workspace feature-gated crate** — off by default, nothing compiles or
+  links; on via `--features pii-evolve`;
 - the opus prerequisite bugs (resume scope-root, approval-gate stale reuse,
-  heal-watch phantom gate) still land in `pii-server`/`graphs`, but the BOSS
+  heal-watch phantom gate) still land in `pii-server`/`graphs`, but the EVOLVE
   logic lives in `pii-evolve/`.
 
 (Note: opus item 6 also said "drop the pii-evolve crate" partly because a crate
