@@ -162,15 +162,29 @@ A periodic (e.g. daily) research step:
 - **Provenance.** Every boss-authored commit carries a machine-identifiable trailer + branch prefix so a human can revert a class of changes at once.
 - **Worktree lifecycle.** Creation, cleanup (mv to trash, never rm -rf), and a disk ceiling.
 
-## 7. Open questions for the user
+## 7. Resolved decisions (2026-09-07, user)
 
-1. **Scope of the boss's autonomy**: should it auto-promote dev→prod after passing all gates + a soak, or always require a human `pii approve`? (The user said "pass all the work to the new version until its production ready" — suggests auto-promotion after validation, but the opus review says deploy stays human. Need a decision.)
-2. **Which model for the "boss" orchestrator itself** (the one that decides what to do next)? The research says a fast model for routing/classification; the user said "using specific models" — is the boss a fast router (gemini-3.6-flash) or a strong planner (glm-5.2/kimi-k3)?
-3. **How aggressive should the research loop be** — daily web searches, or only when the boss is idle?
-4. **First target**: the opus review says use a deliberately-broken unit test (not the RSS bug). Confirm.
-5. **Dev/prod split location**: a separate runtime dir (`/root/.pii-dev/`) + separate store, or a separate container/VM?
+1. **Promotion is human-approved.** The boss builds/validates the new version, but a human `pii approve` is REQUIRED to promote dev→prod. No auto-promotion, ever. (Per the opus review: deploy stays human.)
+2. **The boss orchestrator model = `glm-5.3:cloud`[ollama-cloud]** — Ollama has the full GLM-5.3, a strong candidate for the boss's decide-what-to-do-next role. It routes each step to the specific tier (scout/patch/review/research) but the boss itself is GLM-5.3.
+3. **First target = a deliberately-broken unit test** (not the RSS bug) — per the opus review: sub-minute reproduction, file:line from the compiler, unambiguous green/red oracle.
+4. **Dev/prod split: `/root/.pii-dev/` using git worktrees.** The boss works in disposable worktrees (`git worktree add`), never the live tree or prod.
+5. **Research is daily.** Plus: the research is relevant to the WHOLE system, and the user feeds links to agent-memory analysis often — so a permanent research project stays open.
+
+## 8. GitHub integration (research + discussion + PRs)
+
+`gh` is authenticated as **`bitscrafts`** (scopes: gist, read:org, repo, workflow). The `pi-improved` repo has no remote yet. The research/self-improvement work can:
+- **Post and discuss issues** on the repo — even with other pii instances.
+- **Propose PRs** — the boss can open PRs (after TLS landed in P4.4, and with a `pr` tool/capability scoped to `api.github.com` through pii-net's chokepoint).
+- **Attach research** as issues/PRs or a `_docs/research/` tree.
+
+Needs: a repo remote (create `bitscrafts/pi-improved` on GitHub), and the `pr` capability (now unblocked by P4.4 TLS).
+
+## 9. Open questions (deferred)
+
+- The `pr` tool implementation (blocked on the boss loop + a repo remote existing; P4.4 TLS unblocked it).
+- Whether "other pii instances" means a multi-daemon setup (the cross-process lease the plan deferred).
 
 ---
 
 ### One-paragraph honest summary
-P4.7 is the capstone: a self-aware "boss" that runs on Pii's own substrate, manages its own context (state.md + external memory + compaction chains), routes each step to a specific model tier, checks logs periodically, detects/localizes/patches/validates problems in disposable worktrees, maintains a parallel dev/prod split with gated promotion, and keeps improving by researching the web and feeding learnings back. The research is grounded (Anthropic harnesses, Zylos compaction, model-routing 2026, Addy Osmani self-improving agents, the existing opus heal review). The build order starts with the deterministic silent-no-op gates (highest leverage), then the boss loop skeleton, then context management, model routing, patch/validate, dev/prod, and the research loop.
+P4.7 is the capstone: a self-aware "boss" that runs on Pii's own substrate, manages its own context (state.md + external memory + compaction chains), routes each step to a specific model tier (boss = glm-5.3, scout/patch/review/research = their tiers), checks logs periodically, detects/localizes/patches/validates problems in disposable worktrees, maintains a parallel dev/prod split (**/root/.pii-dev/ via git worktrees**) with **human-approved promotion**, keeps improving by researching the web daily (whole-system scope, links fed to agent-memory), and can post issues/propose PRs on GitHub as `bitscrafts`. The research is grounded (Anthropic harnesses, Zylos compaction, model-routing 2026, Addy Osmani, opus heal review). Build order starts with the deterministic silent-no-op gates, then the boss loop skeleton, context management, model routing, patch/validate, dev/prod, and the research loop.
