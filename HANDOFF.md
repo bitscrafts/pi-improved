@@ -1,5 +1,34 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-08 (P4.7 evolve: prereq fixes + pii-mcp crate)
+
+**Committed this session (HEAD → oldest):**
+- `0007c87` feat(phase4.7): pii-mcp crate - MCP server exposing pii tools over stdio (spec 21)
+- `44a3481` spec(phase4): pii-mcp crate - MCP server+client, feature-gated (21)
+- `eaf001b` docs(guides): pii-mcp bridge - Hermes integration via MCP server+client, feature-gated
+- `ba0408d` fix(phase4): boss prereq - resume restores scope-root, per-cycle approval gate, heal-watch real gate (spec 20)
+- `5564472` spec(phase4): boss prerequisite - resume scope-root + per-attempt approval gate + heal-watch fix (20)
+- `3891c72` docs(guides): feature-gating subsystems - compilable-down monolith
+- `020bfe3` docs(research): pii-evolve - pluggable feature-gated crate
+- (earlier P4.1-4.6 commits)
+
+**P4.7 "evolve" — the self-improving boss (user-directed as a dedicated crate):**
+- **Design**: `_docs/06-research/008-pii-evolve.md` (the boss loop: check logs → detect → localize → patch → validate → deploy → learn → research → context mgmt). Opus review `009-pii-evolve-opus-review-pass1.md` = APPROVE WITH CHANGES.
+- **User decisions**: (1) human approves every promotion, (2) boss model = `glm-5.3:cloud[ollama-cloud]`, (3) first target = deliberately-broken unit test, (4) dev/prod = `/root/.pii-dev/` via git worktrees, (5) daily whole-system research, (6) GitHub issues/PRs as `bitscrafts`.
+- **Pluggable**: `pii-evolve` is a feature-gated crate, default OFF (installer toggles). Convention recorded in `_docs/02-guides/feature-gating.md`.
+
+**Spec 20 (prerequisite fixes) — DONE, committed `ba0408d`:**
+- R1: `spawn_resume` restores `scope_root` from the journal (a scoped run resumes scoped — was workspace-wide). `stored_run_scope_root` helper + 2 tests.
+- R2: `gate` node gains an optional `cycle` salt folded into `approval_id` — a fresh cycle forces a fresh human decision; cycle 0 preserves the historical id (§8.8 replay). 2 tests.
+- R3: `heal-watch.toml` gate `quality-gate` → `reachability-check` (the old value wasn't an xtask subcommand → phantom permanent failure).
+
+**Spec 21 (pii-mcp crate) — DONE, committed `0007c87`:**
+- New `crates/pii-mcp` (feature-gated, quarantines `rmcp` 3.2). MCP server over stdio exposing pii's 7 builtin tools (fs_read/fs_write/edit/multi_edit/grep/glob/bash) as MCP tools. Hermes can `hermes mcp add pii` → `mcp_pii_*` tools → exercise pii's engine daily.
+- deps-check invariant: rmcp confined to pii-mcp. 2 tests. Quality gate + all xtask gates ALL PASS.
+- **Note**: MCP = integration surface (tools), NOT the control plane (session/run/approve stay on UDS JSON-RPC) — roadmap pass2 §563.
+
+**Next (P4.7 remaining):** pii-mcp client (consume external MCP servers), then the `pii-evolve` crate (boss loop, state.md, model routing), then dev/prod + gated promotion, research loop, GitHub issues/PRs.
+
 ## SESSION STATE — 2026-09-07 (Phase 4.5 service + 4.6 web viewer COMPLETE)
 
 **Committed this session (HEAD → oldest):**
