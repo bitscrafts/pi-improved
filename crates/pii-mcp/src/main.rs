@@ -141,18 +141,18 @@ fn main() {
         };
         rt.block_on(async move {
             let (r, w) = stdio();
-            let running = serve_server(server, (r, w)).await;
-            // Hold the RunningService alive for the process lifetime —
-            // dropping it cancels the server.
-            let _keep_alive = match running {
+            // R6 (spec 22): a BOUNDED MCP server lifetime — `waiting()` resolves
+            // when the stdio transport closes (e.g. a client sending EOF), so the
+            // server exits cleanly instead of parking forever on `pending()`. This
+            // is the fix for the "MCP client hang = server parks forever" caveat.
+            let running = match serve_server(server, (r, w)).await {
                 Ok(running) => running,
                 Err(e) => {
                     eprintln!("error: {e}");
                     std::process::exit(2);
                 }
             };
-            // Park forever: the server runs on the runtime's background tasks.
-            std::future::pending::<()>().await;
+            let _ = running.waiting().await;
         });
     }
 }
@@ -168,6 +168,9 @@ async fn run_client(cmd: &[String]) -> Result<(), String> {
         .ok_or_else(|| String::from("client needs a command"))?;
     let mut command = tokio::process::Command::new(prog);
     command.args(rest);
+    // R6 (spec 22): silence the spawned server's stderr so a child that
+    // writes diagnostics cannot wedge the stdio pipe the client reads from.
+    command.stderr(std::process::Stdio::null());
     let child = TokioChildProcess::new(command).map_err(|e| e.to_string())?;
     let running = serve_client((), child).await.map_err(|e| e.to_string())?;
     let peer = running.peer();
@@ -191,6 +194,14 @@ async fn run_client(cmd: &[String]) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         println!("call {name}: {call_out:?}");
     }
+    // R6 (spec 22): cancel the running service so the client half of the
+    // self-test is a CLEAN exit code (not a hang on a parked child). `peer`'s
+    // borrow of `running` ends at its last use above (NLL); `cancel` consumes
+    // the service and terminates the spawned child.
+    running
+        .cancel()
+        .await
+        .map_err(|e| format!("cancel client: {e}"))?;
     Ok(())
 }
 

@@ -20,7 +20,7 @@ mod rss_gate;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|memory-eval|rss-gate|heal-seed|heal-collect <sig>|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|reachability-check|doc-drift-check|memory-eval|rss-gate|heal-seed|heal-collect <sig>|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -276,10 +276,49 @@ mod top_level_tests {
             }
         }
     }
+
+    /// R5 (spec 22, E4): the `run_ci` gate set must enforce the two
+    /// self-improvement gates — reachability-check and doc-drift-check — not
+    /// leave them as opt-in subcommands. Static source assertion (xtask is a
+    /// dev-tooling binary, no integration harness). THIS is the guard against
+    /// the silent-no-op class regressing.
+    #[test]
+    fn run_ci_includes_self_improvement() {
+        #![allow(clippy::panic)] // reason: test asserts the gate body
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/main.rs"),
+        )
+        .expect("read own source for run_ci assertion");
+        // Isolate the body of `run_ci` (from its signature to the next `\n\nfn`).
+        let start = src.find("fn run_ci(").expect("run_ci must exist");
+        let body = &src[start..];
+        let end = body.find("\nfn ").unwrap_or(body.len());
+        let body = &body[..end];
+        // E4: both self-improvement gates must be invoked by `run_ci`.
+        assert!(
+            body.contains("reachability::run"),
+            "run_ci must call reachability::run (E4)"
+        );
+        assert!(
+            body.contains("doc_drift::run"),
+            "run_ci must call doc_drift::run (E4)"
+        );
+        // USAGE must advertise them so they are not an undiscoverable opt-in.
+        let usage = src
+            .find("const USAGE: &str = ")
+            .expect("USAGE const must exist");
+        let usage_end = src[usage..].find(';').expect("USAGE ends with ;");
+        let usage = &src[usage..usage + usage_end];
+        assert!(
+            usage.contains("reachability-check"),
+            "USAGE must list reachability-check"
+        );
+        assert!(
+            usage.contains("doc-drift-check"),
+            "USAGE must list doc-drift-check"
+        );
+    }
 }
-/// R5 (spec 17, top-level so `-- --exact` matches the bare path): rustls is
-/// confined to `pii-net` — any other crate depending on it violates the
-/// invariant (TLS is a pii-net implementation detail, G8/G9).
 #[test]
 fn deps_check_rejects_rustls() {
     #![allow(clippy::panic)] // reason: test asserts a violation exists
