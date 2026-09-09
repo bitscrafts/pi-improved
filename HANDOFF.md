@@ -1,5 +1,29 @@
 # Pii — Session Handoff
 
+## BLOCKER — 2026-09-09: opus review pending Claude OAuth re-login
+
+**The architecture-conformance review (against `_docs/06-research/001-003`) could
+not run: the Claude Code OAuth session EXPIRED mid-morning** (`claude auth
+status` → "Login: Expired"; credentials.json has empty access/refresh tokens;
+`customApiKeyResponses` explicitly rejects `${ANTHROPIC_API_KEY}`, so this
+install is OAuth-only and there is no key fallback). Re-auth needs an interactive
+browser login the agent cannot perform.
+
+Everything is staged; the moment you authenticate it runs in one command:
+```bash
+claude auth login
+/projects/pi-improved/_tmp/run-opus-review.sh   # self-probes auth, then fires opus review
+```
+- Review brief (grounds opus in the architecture docs): `_tmp/brief-24-opus-review.md`
+- Launcher: `_tmp/run-opus-review.sh` (probes `claude -p` first; BLOCKED if not authed)
+- Output log if it runs: `_tmp/claude-24-opus-review.log`
+
+The brief asks opus for (A) conformance verdict vs 001-003 architecture + silent-no-op
+scan, (B) a numbered next-phase spec list (`24-...`) — this delivers the "prepare the
+next phase" ask. Note: earlier in this same session the sonnet delegation (pii-evolve,
+spec 23) ran fine and OAuth handled ~1.7MB of traffic; the expiry happened ~3h later
+(a genuine token/session expiry, not a quota reset — next weekly reset is Mon 07:00 local).
+
 ## SESSION STATE — 2026-09-09 (spec22 closed + pii-evolve crate DONE + ds4-bench)
 
 **Committed this session (HEAD → oldest):**
