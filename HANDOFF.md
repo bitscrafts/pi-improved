@@ -1,30 +1,59 @@
 # Pii — Session Handoff
 
-## BLOCKER — 2026-09-09: opus review pending Claude OAuth re-login
+## SESSION STATE — 2026-09-09: opus architecture-conformance review DONE (verdict NEEDS WORK)
 
-**The architecture-conformance review (against `_docs/06-research/001-003`) could
-not run: the Claude Code OAuth session EXPIRED mid-morning** (`claude auth
-status` → "Login: Expired"; credentials.json has empty access/refresh tokens;
-`customApiKeyResponses` explicitly rejects `${ANTHROPIC_API_KEY}`, so this
-install is OAuth-only and there is no key fallback). Re-auth needs an interactive
-browser login the agent cannot perform.
+**The architecture-conformance review ran (after you re-authed OAuth).** Opus
+judged the codebase against `_docs/06-research/001-003` (the initial architecture).
+Full doc: `_docs/06-research/011-pii-architecture-conformance-review-pass1.md`
+(committed). 54 turns, $4.18, 44KB output. Verdict:
 
-Everything is staged; the moment you authenticate it runs in one command:
-```bash
-claude auth login
-/projects/pi-improved/_tmp/run-opus-review.sh   # self-probes auth, then fires opus review
-```
-- Review brief (grounds opus in the architecture docs): `_tmp/brief-24-opus-review.md`
-- Launcher: `_tmp/run-opus-review.sh` (probes `claude -p` first; BLOCKED if not authed)
-- Output log if it runs: `_tmp/claude-24-opus-review.log`
+> **NEEDS WORK** — substrate still conforms, spec 22 genuinely fixed the tool
+> loop, but `pii-evolve` is the first module whose doc comments assert
+> properties the code does not have, and every promotion prerequisite from
+> 009/010 is still open. Substrate = production-grade, product = beta-grade,
+> self-improvement layer = demo-grade documenting itself as production-grade.
 
-The brief asks opus for (A) conformance verdict vs 001-003 architecture + silent-no-op
-scan, (B) a numbered next-phase spec list (`24-...`) — this delivers the "prepare the
-next phase" ask. Note: earlier in this same session the sonnet delegation (pii-evolve,
-spec 23) ran fine and OAuth handled ~1.7MB of traffic; the expiry happened ~3h later
-(a genuine token/session expiry, not a quota reset — next weekly reset is Mon 07:00 local).
+**Headline findings (all cited `path:line` in the doc):**
+- **A14 (most on-the-nose)**: `pii-evolve` documents itself "feature-gated" but
+  there is NO `evolve` Cargo feature — it's an unconditional workspace member.
+  The user's pluggability requirement is unimplemented, inside the crate built
+  to build the detector.
+- **A15**: the boss does NOT run on the substrate it heals — depends on
+  `pii-core` alone; `PendingHuman` writes a markdown flag + exit 1, creates no
+  approval, nothing resumes it. Budget is `unlimited()`.
+- **A16**: `routing.rs` + `context.rs` are dead (only test callers); `driver.rs`
+  imports neither.
+- **A17**: all 8 promotion prerequisites still open (gate auto-allow on re-entry,
+  scope_root not re-validated on resume, TLS lease leak, compaction can't fire,
+  no HealStore evolution, no retention/prune, no anti-reward-hacking, O(n²) session).
+- Plus: 5 RPC methods with no dispatch arm, 3 events with no producer, `run.list`
+  empty without filter, `Ctx::check()` never called, 3/4 budget dims never charged,
+  4 redb files not 1, `SiteId` absent, `pii-web` breaks the client/server invariant
+  (takes pii-server dep), OllamaEmbedder still dead.
 
-## SESSION STATE — 2026-09-09 (spec22 closed + pii-evolve crate DONE + ds4-bench)
+**Next phase (opus-proposed, register as specs 24+):**
+- **24** `xtask silent-noop-check` — the declared-but-unwired gate (catches
+  A2/A3/A4/A13 automatically). DO FIRST: deterministic, free, highest-leverage.
+- **25** pii-evolve honesty — real `evolve` feature, no dead modules.
+- **26** promotion prereqs — runtime approval cycle + heal-ledger evolution.
+- **27** boss loop as a real pii graph (replaces driver's hand-rolled loop).
+- **28** model routing wired into the agent layer.
+- **29** cancellation + the brake (charge budget dims, max_tool_calls).
+- Optional **30** residual 010 defects (one pass).
+
+**Cut list:** delete OllamaEmbedder; move uds::{client_connect,runtime_dir} to
+pii-proto[client]; charge or delete MicroUsd; delete-or-read `[memory] cache_bytes`/
+`embedder`; implement-or-remove 5 RPC methods; fix lib.rs:4 "feature-gated" claim;
+rename CapSet scope types.
+
+**Running the review (for the audit trail):** `_tmp/run-opus-review.sh` +
+`_tmp/brief-24-opus-review.md`; live log `_tmp/claude-24-opus-review.log`.
+OAuth re-auth was required mid-morning (login done in a separate Claude window,
+shared `~/.claude.json` — valid again, probe OK).
+
+---
+
+## PREVIOUS SESSION STATE — 2026-09-09 (spec22 closed + pii-evolve crate DONE + ds4-bench)
 
 **Committed this session (HEAD → oldest):**
 - `a24a7af` feat(phase4.7): pii-evolve crate - state.md, context compaction, model routing, boss skeleton (spec 23)
