@@ -1519,8 +1519,12 @@ dependencies = [
 name = "pii-evolve"
 version = "0.1.0"
 dependencies = [
+ "parking_lot",
  "pii-core",
+ "pii-proto",
+ "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

@@ -5,13 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Self-improving boss: state.md management + deterministic-gate outer-loop skeleton (P4.7, spec 23/25, standalone opt-in)"
+description = "Self-improving boss: state.md management + UDS launcher for the boss-watch graph (P4.7, spec 23/25/27, standalone opt-in)"
 
 [dependencies]
 pii-core = { path = "../pii-core" }
+pii-proto = { path = "../pii-proto", features = ["client"] }
+tokio = { workspace = true, features = ["rt", "net", "io-util"] }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+parking_lot = { workspace = true }
 
 [lints]
 workspace = true

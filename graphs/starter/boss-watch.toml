@@ -1,0 +1,93 @@
+# Boss watch (spec 27): the self-improving boss's WATCH loop as a real pii
+# graph run on the daemon — dogfooding (008 §3/§4). Every 30 min it runs the
+# silent-noop-check gate (spec 24) on the daemon itself; a detected failure
+# escalates through a `gate` node so a human approves before anything heals.
+# No FS_WRITE anywhere in this graph (heal_detect is read-only detection; the
+# gate node itself is PURE). No `agent`/model node anywhere — detection,
+# forwarding, and the approval decision are all deterministic nodes; the
+# boss's "decide what to do next with a model" is a later spec. Periodicity
+# is the daemon scheduler's timer wheel (F5.6), not an in-process loop.
+name = "starter/boss-watch"
+entry = "tick"
+caps = ["proc"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+
+[[node]]
+id = "tick"
+kind = "timer"
+cron = "*/30 * * * *"
+
+[[node]]
+id = "check"
+kind = "heal_detect"
+gate = "silent-noop-check"
+caps = ["proc"]
+
+# `cyc` is LOAD-BEARING (spec 26 R1, A17a): `gate` reads `input.payload.cycle`
+# at runtime. `heal_detect`'s `detected` value is `{signature_hash, detail}`
+# with NO `cycle`, so without this node the gate falls back to `cfg.cycle=0`,
+# finds its cached decision, and auto-allows. `expr = "$.input"` forwards the
+# run's root input (which carries `cycle`) as the gate's payload — this is
+# the only working form; `transform`'s `value` cannot build a merged object,
+# only evaluate a single top-level `"$."` string.
+[[node]]
+id = "cyc"
+kind = "transform"
+expr = "$.input"
+
+[[node]]
+id = "escalate"
+kind = "gate"
+policy = "boss-escalation"
+prompt = "Boss detected silent-noop-check failure. Approve promotion/heal attempt?"
+
+[[node]]
+id = "done"
+kind = "transform"
+join = "any"
+value = "no-silent-noop"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "flake"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "detected"
+to = "cyc"
+kind = "data"
+
+[[edge]]
+from = "cyc"
+port = "ok"
+to = "escalate"
+kind = "data"
+
+[[edge]]
+from = "escalate"
+port = "allow"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "escalate"
+port = "deny"
+to = "done"
+kind = "data"

@@ -1,10 +1,10 @@
-//! `pii-evolve` binary: runs one boss cycle against a state directory.
+//! `pii-evolve` binary: launches one boss-watch cycle on the daemon.
 //!
-//! Usage: `pii-evolve <state-dir> [--policy FILE]`
+//! Usage: `pii-evolve <state-dir> [--socket PATH]`
 //!
-//! `--policy FILE` is a plain-text file whose (trimmed) contents name the
-//! workspace root the deterministic gates run from; when omitted, the
-//! process's current directory is used.
+//! `--socket PATH` overrides the daemon's UDS control socket; when omitted,
+//! `$PII_RUNTIME_DIR/control.sock` is used, falling back to
+//! `~/.pii/runtime/control.sock`.
 
 #![forbid(unsafe_code)]
 // reason: the CLI binary reports outcomes on stderr.
@@ -13,9 +13,17 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use pii_evolve::driver::{self, CycleOutcome, GatePolicy};
+use pii_evolve::driver::{self, BossLaunch};
 
-const USAGE: &str = "usage: pii-evolve <state-dir> [--policy FILE]";
+const USAGE: &str = "usage: pii-evolve <state-dir> [--socket PATH]";
+
+fn default_socket() -> PathBuf {
+    if let Some(dir) = std::env::var_os("PII_RUNTIME_DIR") {
+        return PathBuf::from(dir).join("control.sock");
+    }
+    let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from);
+    home.join(".pii/runtime/control.sock")
+}
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -24,43 +32,27 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let mut workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut socket = default_socket();
     while let Some(arg) = args.next() {
-        if arg != "--policy" {
+        if arg != "--socket" {
             eprintln!("unknown argument: {arg}\n{USAGE}");
             return ExitCode::FAILURE;
         }
-        let Some(file) = args.next() else {
-            eprintln!("--policy requires a FILE argument\n{USAGE}");
+        let Some(path) = args.next() else {
+            eprintln!("--socket requires a PATH argument\n{USAGE}");
             return ExitCode::FAILURE;
         };
-        match std::fs::read_to_string(&file) {
-            Ok(text) => {
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    workspace_root = PathBuf::from(trimmed);
-                }
-            }
-            Err(e) => {
-                eprintln!("failed to read policy file {file}: {e}");
-                return ExitCode::FAILURE;
-            }
-        }
+        socket = PathBuf::from(path);
     }
 
-    let policy = GatePolicy::default_gates(workspace_root);
-    // A default budget: plenty (10 gate calls, 100s) so normal cycles run, but
-    // never unbounded — the boss must be budget-bound (008 §6).
-    let budget = pii_core::Budget::new(10_000, 10, 0, 100_000);
-    match driver::run_cycle(&PathBuf::from(state_dir), &policy, budget) {
-        Ok(CycleOutcome::Ok) => ExitCode::SUCCESS,
-        Ok(CycleOutcome::PendingHuman(gate)) => {
-            eprintln!("pii-evolve: gate '{gate}' failed; suspended for human review");
-            ExitCode::FAILURE
-        }
-        Ok(CycleOutcome::BudgetExhausted) => {
-            eprintln!("pii-evolve: budget exhausted; not spending further");
-            ExitCode::FAILURE
+    let cfg = BossLaunch::new(socket, PathBuf::from(state_dir));
+    match driver::run_cycle(&cfg) {
+        Ok(launched) => {
+            eprintln!(
+                "pii-evolve: launched {} (cycle {})",
+                launched.run_id, launched.cycle
+            );
+            ExitCode::SUCCESS
         }
         Err(e) => {
             eprintln!("pii-evolve: {e}");
