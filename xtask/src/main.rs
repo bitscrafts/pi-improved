@@ -17,10 +17,11 @@ pub mod net_check;
 mod proto_gen;
 mod reachability;
 mod rss_gate;
+mod silent_noop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|reachability-check|doc-drift-check|memory-eval|rss-gate|heal-seed|heal-collect <sig>|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|silent-noop-check|reachability-check|doc-drift-check|memory-eval|rss-gate|heal-seed|heal-collect <sig>|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -72,6 +73,7 @@ fn run_ci(rest: &[String]) -> ExitCode {
     // reader, event with no producer, RPC with no dispatch arm).
     let reach_ok = report(reachability::run(&workspace_root()));
     let drift_ok = report(doc_drift::run(&workspace_root()));
+    let silent_noop_ok = report(silent_noop::run(&workspace_root(), false));
     let fmt_ok = run_cmd("cargo", &["fmt", "--all", "--check"]);
     let clippy_ok = run_cmd(
         "cargo",
@@ -92,6 +94,7 @@ fn run_ci(rest: &[String]) -> ExitCode {
         && bench_ok == ExitCode::SUCCESS
         && reach_ok == ExitCode::SUCCESS
         && drift_ok == ExitCode::SUCCESS
+        && silent_noop_ok == ExitCode::SUCCESS
         && fmt_ok == ExitCode::SUCCESS
         && clippy_ok == ExitCode::SUCCESS
         && test_ok == ExitCode::SUCCESS
@@ -102,6 +105,7 @@ fn run_ci(rest: &[String]) -> ExitCode {
     }
 }
 
+#[allow(clippy::too_many_lines)] // reason: one argv dispatch arm per xtask subcommand
 fn main() -> ExitCode {
     let cmd = std::env::args().nth(1);
     let rest: Vec<String> = std::env::args().skip(2).collect();
@@ -110,6 +114,10 @@ fn main() -> ExitCode {
         Some("net-check") => report(net_check::run()),
         Some("reachability-check") => report(reachability::run(&workspace_root())),
         Some("doc-drift-check") => report(doc_drift::run(&workspace_root())),
+        Some("silent-noop-check") => {
+            let want_list = std::env::args().any(|a| a == "--list");
+            report(silent_noop::run(&workspace_root(), want_list))
+        }
         Some("rss-gate") => match parse_rss_gate(&rest) {
             Ok((secs, interval, max_mb, runs)) => match rss_gate::run(secs, interval, max_mb, runs)
             {
@@ -303,6 +311,12 @@ mod top_level_tests {
             body.contains("doc_drift::run"),
             "run_ci must call doc_drift::run (E4)"
         );
+        // Spec 24 R2: the silent-noop gate (the declared-but-unwired detector)
+        // is the third self-improvement gate CI must enforce.
+        assert!(
+            body.contains("silent_noop::run"),
+            "run_ci must call silent_noop::run (spec 24 R2)"
+        );
         // USAGE must advertise them so they are not an undiscoverable opt-in.
         let usage = src
             .find("const USAGE: &str = ")
@@ -316,6 +330,10 @@ mod top_level_tests {
         assert!(
             usage.contains("doc-drift-check"),
             "USAGE must list doc-drift-check"
+        );
+        assert!(
+            usage.contains("silent-noop-check"),
+            "USAGE must list silent-noop-check (spec 24 R2)"
         );
     }
 }
