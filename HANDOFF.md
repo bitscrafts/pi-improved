@@ -1,6 +1,54 @@
 # Pii — Session Handoff
 
-## SESSION STATE — 2026-09-08 (P4.7.0 agent tool loop WORKS LIVE)
+## SESSION STATE — 2026-09-09 (spec22 closed + pii-evolve crate DONE + ds4-bench)
+
+**Committed this session (HEAD → oldest):**
+- `a24a7af` feat(phase4.7): pii-evolve crate - state.md, context compaction, model routing, boss skeleton (spec 23)
+- `453b4fe` fix(phase4.7): close spec22 - R5 run_ci self-improvement gate test + R6 bounded MCP server lifetime
+- (earlier: 6170395 etc. — END before this session)
+
+**Spec 22 is now FULLY CLOSED (was 2 gaps after review):**
+- **R5 test ADDED** — `run_ci_includes_self_improvement` (xtask top_level_tests)
+  asserts `run_ci` calls `reachability::run` + `doc_drift::run`; USAGE updated to
+  list `reachability-check` + `doc-drift-check` (E4's "strongest machinery" gates).
+- **R6 IMPLEMENTED** — `pii-mcp` server uses `running.waiting().await` (bounded
+  lifetime: exits on stdin EOF) instead of `pending().await` dead-park; client
+  sets `stderr(Stdio::null())` + cancels the running service. New integration
+  test `mcp_server_exits_on_eof` (real handshake then EOF → exit 0, verified live).
+  This closes the P4.7 "MCP client hang = server parks forever" caveat.
+- All spec-22 exit criteria pass non-vacuously (R1-R6 each count ≥1). Quality
+  gate ALL PASS, 293 workspace tests.
+
+**pii-evolve crate (spec 23, P4.7 capstone) — DONE + committed `a24a7af`:**
+- Dedicated, opt-in crate `crates/pii-evolve/` — NOT a dep of pii-cli/pii-server,
+  so the default build links none of it (proven: no evolve symbols in target/release/pii).
+- `state.rs` StateDoc (goal/phase/step/properties/updated_at, load/save/touch/
+  summarize) — the boss's durable "where am I" source of truth.
+- `context.rs` CompactionPolicy (0.72 threshold, Zylos) + decision→outcome summary.
+- `routing.rs` Tier table {localize,patch,review,research,orchestrator} +
+  explicit RoutePolicy + auditable RouteLog (model diversity review != patch).
+- `driver.rs` run_cycle skeleton: runs reachability-check + doc-drift-check via
+  capability-confined `Ctx::proc()`, records failure & `PendingHuman` (suspends
+  for human, never self-approves), always persists state.
+- `pii-evolve <state-dir>` binary smoke-tested live: ran gates, wrote state.md
+  `phase: ok` `cycle_count: 1`.
+- 10 tests covering the TDD contract, all pass. Implemented via delegated agent
+  (fresh sonnet session, self-contained brief at `_tmp/brief-23-pii-evolve.md`).
+- Spec authoring + review stayed with the planner (this session).
+
+**ds4-bench of REAL local granite4.2:3b (`/projects/ds4-bench/`):**
+- Fixed the crate to build: `reqwest` switched native-tls → rustls-tls (no
+  openssl in container). `target/release/ds4-bench`.
+- vs `http://127.0.0.1:11434/v1` (Ollama): **B1 tool-calling PASS** (full+minimal
+  payload → `tool_calls`), **B2 speed 12.38 tok/s**, **B3 2-step autonomy PASS**,
+  **B4 3-step autonomy FAIL** (0 tools, `finish_reason=length` — granite4.2:3b
+  does single tool calls well but struggles with sustained sequential autonomy).
+- Full detail in `_tmp/caveats-review-2026-09-09.md`.
+
+**Next (P4.7 remaining):** the boss LOOP as a pii GRAPH wired to pii-evolve
+(e.g. a cron graph driving `run_cycle` + the localize/patch/validate worktree
+slice), then dev/prod gated promotion, research loop, GitHub issues/PRs. The
+crate foundation (state/context/routing + skeleton) is now in place and verified.
 
 **Committed this session (HEAD → oldest):**
 - `75fada9` fix(phase4.7): agent tool loop works live - A1 tool_calls accumulate, A2 caller ctx, A3 dechunk+line-buffer, A7 wire tool_calls (spec 22)
