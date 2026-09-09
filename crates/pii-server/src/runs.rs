@@ -136,6 +136,18 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
     // approves promotions" contract. Recover it from the run's journal input
     // (the same source `pii_graph::run::resume` replays from), not a header.
     let scope_root = stored_run_scope_root(&engine.store, &run_id).ok().flatten();
+    // R4 (spec 26): re-validate the recovered root. `spawn_run` validates on
+    // start; `spawn_resume` must too, or a root that has since drifted outside
+    // the workspace (or a path that no longer resolves) would resume a run with
+    // confinement it was never granted. A stale/invalid root is a loud resume
+    // failure, never a silently-widened scope.
+    if let Some(root) = scope_root.as_deref() {
+        validate_scope_root(&engine.cfg.workspace, root).map_err(|e| {
+            PiiError::Invalid(format!(
+                "resume {run_id}: refused (invalid scope_root): {e}"
+            ))
+        })?;
+    }
     let ctx = pii_core::Ctx::with_observer_and_cancel(
         run_caps(
             &engine.cfg.workspace,

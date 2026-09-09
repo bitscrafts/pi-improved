@@ -152,7 +152,7 @@ impl GraphNode for HealDetectNode {
             &self.gate,
             HealAttemptRun {
                 run_id,
-                outcome: String::from("detected"),
+                outcome: pii_store::heal::HealState::Detected,
                 ts_ms: ctx.now_ms(),
                 detail: detail.clone(),
             },
