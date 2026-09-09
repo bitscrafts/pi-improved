@@ -3,7 +3,9 @@
 ## SESSION STATE — 2026-09-09: opus architecture-conformance review DONE (verdict NEEDS WORK)
 
 **The architecture-conformance review ran (after you re-authed OAuth).** Opus
-judged the codebase against `_docs/06-research/001-003` (the initial architecture).
+judged the codebase against `_docs/06-research/001-pii-architecture-plan.md`,
+`002-pii-architecture-plan-pass2.md`, `003-pii-architecture-plan-pass3.md` (the
+initial architecture, all present on disk).
 Full doc: `_docs/06-research/011-pii-architecture-conformance-review-pass1.md`
 (committed). 54 turns, $4.18, 44KB output. Verdict:
 

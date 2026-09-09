@@ -49,10 +49,17 @@ fn main() -> ExitCode {
     }
 
     let policy = GatePolicy::default_gates(workspace_root);
-    match driver::run_cycle(&PathBuf::from(state_dir), &policy) {
+    // A default budget: plenty (10 gate calls, 100s) so normal cycles run, but
+    // never unbounded — the boss must be budget-bound (008 §6).
+    let budget = pii_core::Budget::new(10_000, 10, 0, 100_000);
+    match driver::run_cycle(&PathBuf::from(state_dir), &policy, budget) {
         Ok(CycleOutcome::Ok) => ExitCode::SUCCESS,
         Ok(CycleOutcome::PendingHuman(gate)) => {
             eprintln!("pii-evolve: gate '{gate}' failed; suspended for human review");
+            ExitCode::FAILURE
+        }
+        Ok(CycleOutcome::BudgetExhausted) => {
+            eprintln!("pii-evolve: budget exhausted; not spending further");
             ExitCode::FAILURE
         }
         Err(e) => {

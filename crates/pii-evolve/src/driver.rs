@@ -74,22 +74,31 @@ pub enum CycleOutcome {
     /// A gate was red; the boss suspended for human acknowledgement rather
     /// than self-approving. Carries the failing gate's name.
     PendingHuman(String),
+    /// The cycle's budget for gate calls was consumed before/while running;
+    /// the cycle stopped rather than spending unboundedly.
+    BudgetExhausted,
 }
 
 /// Runs one boss cycle rooted at `state_dir`.
 ///
 /// Loads `state.md`, runs every gate in `policy` in order, and on the
-/// first red gate records `needs_attention` and suspends. `state.md` is
-/// always saved and the cycle counter always bumps, whether the cycle
-/// went green or red.
+/// first red gate records `needs_attention` and suspends. Each gate call
+/// is charged against `budget` (kind `ToolCalls`); if the budget is
+/// exhausted the cycle returns [`CycleOutcome::BudgetExhausted`] instead of
+/// spending further. `state.md` is always saved and the cycle counter always
+/// bumps, whether the cycle went green, red, or stopped on budget.
 ///
 /// # Errors
 /// Returns [`PiiError`] on `state.md` I/O failure or a gate process
 /// failure that is not itself a gate-red result (the gate binary could not
 /// be spawned at all).
-pub fn run_cycle(state_dir: &Path, policy: &GatePolicy) -> Result<CycleOutcome, PiiError> {
+pub fn run_cycle(
+    state_dir: &Path,
+    policy: &GatePolicy,
+    budget: Budget,
+) -> Result<CycleOutcome, PiiError> {
     let mut state = StateDoc::load(state_dir)?;
-    let ctx = gate_ctx(policy);
+    let ctx = gate_ctx(policy, budget);
 
     let cycle_count: u64 = state
         .properties
@@ -101,6 +110,19 @@ pub fn run_cycle(state_dir: &Path, policy: &GatePolicy) -> Result<CycleOutcome, 
         .insert(String::from("cycle_count"), (cycle_count + 1).to_string());
 
     for gate in &policy.gates {
+        // Charge one gate call against the budget; a zero/exhausted budget
+        // stops the cycle cleanly before it spends unboundedly.
+        if ctx
+            .budget()
+            .charge(pii_core::BudgetKind::ToolCalls, 1)
+            .is_err()
+        {
+            state.phase = String::from("budget_exhausted");
+            state.last_step.clone_from(&gate.name);
+            state.touch(&ctx);
+            state.save(state_dir)?;
+            return Ok(CycleOutcome::BudgetExhausted);
+        }
         let output = ctx
             .proc()?
             .run(&gate.argv, &policy.workspace_root, GATE_TIMEOUT)?;
@@ -129,8 +151,9 @@ pub fn run_cycle(state_dir: &Path, policy: &GatePolicy) -> Result<CycleOutcome, 
 }
 
 /// Builds the confined `Ctx` gate subprocesses run under: `PROC` scoped to
-/// exactly the argv0 binaries `policy`'s gates need, nothing wider.
-fn gate_ctx(policy: &GatePolicy) -> Ctx {
+/// exactly the argv0 binaries `policy`'s gates need, nothing wider, and the
+/// given `budget` (so a cycle is bounded, not `unlimited`).
+fn gate_ctx(policy: &GatePolicy, budget: Budget) -> Ctx {
     let argv0s: Vec<String> = policy
         .gates
         .iter()
@@ -141,5 +164,5 @@ fn gate_ctx(policy: &GatePolicy) -> Ctx {
         proc_argv0: StringScope::new(argv0s),
         ..CapSet::default()
     };
-    Ctx::root(caps, Budget::unlimited())
+    Ctx::root(caps, budget)
 }
