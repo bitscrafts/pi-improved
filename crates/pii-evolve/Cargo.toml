@@ -1,0 +1,17 @@
+[package]
+name = "pii-evolve"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Self-improving boss: state.md management, context compaction, and model routing (P4.7, spec 23, opt-in)"
+
+[dependencies]
+pii-core = { path = "../pii-core" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

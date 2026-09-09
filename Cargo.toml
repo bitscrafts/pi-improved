@@ -17,6 +17,7 @@ members = [
     "crates/pii-tui",
     "crates/pii-web",
     "crates/pii-mcp",
+    "crates/pii-evolve",
     "xtask",
 ]
 
