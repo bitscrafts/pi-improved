@@ -1,0 +1,529 @@
+% Pii — Technical Manual (Developers)
+% Template: kaobook
+% Compilacao remota via Podman (latex-compiler-shared)
+% SSOT-based: architecture + technical analysis live here; operational facts live in the User Manual.
+
+\documentclass[
+	fontsize=10pt,
+	twoside=false,
+	secnumdepth=2,
+	open=any,
+]{kaobook}
+
+\usepackage[english]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\color{blue!70!black},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!60!black},
+    numbers=none,
+    breaklines=true,
+    frame=none,
+    backgroundcolor=\color{blue!5!white},
+    showstringspaces=false,
+    tabsize=4,
+    language=bash
+}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\newtcolorbox{archbox}[1][]{
+    enhanced, breakable,
+    colback=blue!5!white, colframe=blue!60!black,
+    fonttitle=\bfseries, fontupper=\small, coltitle=white,
+    title={#1}, left=5pt, right=5pt, top=5pt, bottom=5pt
+}
+\newtcolorbox{decbox}[1][]{
+    enhanced, breakable,
+    colback=green!5!white, colframe=green!60!black,
+    fonttitle=\bfseries, fontupper=\small, coltitle=white,
+    title={#1}, left=5pt, right=5pt, top=5pt, bottom=5pt
+}
+
+\let\refeq\relax
+\usepackage{kaotheorems}
+\usepackage{kaorefs}
+\usepackage{kaobiblio}
+\usepackage{xr}
+\externaldocument{user-manual}
+
+\graphicspath{{images/}{./}}
+\makeindex[columns=3, title=Index, intoc]
+
+\renewcommand*{\chapterformat}{\thechapter\enskip}
+\renewcommand*{\chaptermarkformat}{\thechapter\enskip}
+
+\begin{document}
+
+\titlehead{Pii — Technical Manual}
+\title[Pii Technical Manual]{%
+    Pii\\[0.5em]
+    \Large Developer's Manual: Architecture \& Technical Analysis
+}
+\author[Pii]{Pii Project}
+\date{Version 0.1.0}
+\publishers{pi-improved}
+
+\frontmatter
+
+\makeatletter
+\uppertitleback{\@titlehead}
+\lowertitleback{
+	\textbf{About this manual} \\\\
+	This is the \emph{Technical Manual} for Pii, the single static Rust
+	binary that unifies a terminal coding agent, a personal assistant
+	daemon, a reactive automation engine, and a self-improving cognitive
+	layer.
+
+	\medskip
+
+	\textbf{Audience} \\\\
+	Developers who need the architecture decisions and the technical
+	analysis.
+
+	\medskip
+
+	\textbf{SSOT} \\\\
+	This manual is \emph{SSOT-based}: it holds the architecture and the
+	technical analysis. Operational facts (install, configure, run, debug)
+	live in the companion \emph{User Manual}. Where a fact has a canonical
+	home elsewhere (the \texttt{\_docs/} research tree), this manual links
+	to it instead of duplicating it.
+
+	\medskip
+
+	\textbf{Compilation} \\\\
+	Compiled remotely via Podman (latex-compiler-shared) on \today.
+}
+\makeatother
+
+\maketitle
+
+\chapter*{Preface}
+
+Pii is a single static Rust binary. This manual explains \emph{how it
+works}: the architecture decisions, the graph engine, the capability and
+safety model, the event-sourced journal, the persistence layer, and the
+technical analysis that shaped them.
+
+The companion \emph{User Manual} covers installation, configuration,
+operation, and debugging for system administrators. The two manuals
+complement each other: this one answers \emph{how it works}, the other
+answers \emph{how to operate}. Cross-references are marked inline.
+
+\begingroup
+\setlength{\textheight}{230\vscale}
+\etocstandarddisplaystyle
+\etocstandardlines
+\tableofcontents
+\endgroup
+
+\mainmatter
+\setchapterstyle{kao}
+
+%----------------------------------------------------------------------------------------
+\chapter{Architecture Overview}
+\label{chap:arch}
+
+Pii is a single-process, event-sourced monolith: one redb store,
+single-writer; journal + bus + approval gate + budget are coherent
+in-process. That monolith is its strength. The full vision and the four
+pillars are in the SSOT at
+\texttt{\_docs/01-overview/001-pii-vision.md}.
+
+\section{The four pillars}
+
+\begin{enumerate}
+    \item \textbf{Coding agent core} (from \texttt{pi\_agent\_rust}) —
+        sub-100ms cold start, structured concurrency, capability-gated
+        \texttt{Ctx}, JSONL sessions, bash mediation.
+    \item \textbf{Assistant/gateway} (from \texttt{zeroclaw}) — channels,
+        LLM providers, tools, SOP engine, WASM plugin host, hardware HAL.
+    \item \textbf{Cognitive memory + model tiering} (from
+        \texttt{yantrikclaw}) — entities/relationships, tier-aware tool
+        selection for model sizes 0.5B$\rightarrow$100B+.
+    \item \textbf{Self-improvement loop} (from \texttt{hermes-agent}) —
+        skill extraction, procedural templates, trajectory logging.
+\end{enumerate}
+
+\section{The workspace}
+
+The workspace is a Rust workspace of crates. The kernel ABI is
+\texttt{pii-abi} (traits + types only, no transport deps), enforced by
+\texttt{xtask deps-check} and a hard file-size gate. The crates:
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+\textbf{Crate} & \textbf{Role} \\
+\midrule
+\endhead
+\texttt{pii-abi} & kernel ABI: traits + types, no transport deps \\
+\texttt{pii-core} & capability context, budget, child-process \\
+\texttt{pii-store} & redb persistence (single-writer MVCC ACID) \\
+\texttt{pii-graph} & the graph automation engine \\
+\texttt{pii-cli} & the \texttt{pii} binary (CLI entry point) \\
+\texttt{pii-proto} & UDS JSON-RPC protocol + client \\
+\texttt{pii-model} & model providers \\
+\texttt{pii-net} & the socket chokepoint / egress policy \\
+\texttt{pii-memory} & global memory store + embedder \\
+\texttt{pii-worker} & supervised sub-process pool \\
+\texttt{pii-tools} & the toolset (fs, edit, bash, glob, grep, http, memory) \\
+\texttt{pii-channels} & outbound messaging (Discord, \ldots) \\
+\texttt{pii-server} & the daemon: Engine, registry, runs, sessions \\
+\texttt{pii-tui} & the terminal UI \\
+\texttt{pii-web} & the read-only web viewer \\
+\texttt{pii-mcp} & MCP server + client \\
+\texttt{pii-evolve} & the self-improving boss (feature-gated) \\
+\texttt{xtask} & build/CI helpers \\
+\bottomrule
+\end{longtable}
+
+\section{Feature gating}
+
+Pii is intentionally a monolith, but the installer may want a smaller or
+more hardened binary. Cargo \textbf{features} are the lever for
+\emph{what's in the build} — NOT for \emph{what's a microservice}. A
+feature trims the compile; it does not create a process/IPC boundary. The
+convention: gate surfaces with risk or optional deps; never gate the
+engine substrate. See \texttt{\_docs/02-guides/feature-gating.md}.
+
+\begin{decbox}[Design decision]
+Two subsystems are a security win as opt-in features: \texttt{channels},
+\texttt{tls}, and \texttt{github} all do network egress and may carry a
+token. A feature that \emph{excludes the code} is stronger than a runtime
+config that \emph{disables} it — the dialing code isn't compiled in, so it
+cannot be reached.
+\end{decbox}
+
+%----------------------------------------------------------------------------------------
+\chapter{The Graph Engine}
+\label{chap:graph}
+
+Pii ships a deterministic, statically-validated \textbf{graph automation
+engine} (\texttt{crates/pii-graph}) that is the control plane under every
+agent behavior. A graph is a dataflow/control-flow program expressed in
+TOML whose execution is \textbf{event-sourced}: every step appends to an
+append-only run journal, and a run can be resumed by replaying that
+journal.
+
+A graph is NOT a script. It is a typed assembly of \textbf{nodes} (pure
+functions, LLM agents, tools, approval gates, timers), connected by
+\textbf{edges} that carry data or ordering, with explicit \textbf{join
+policies} for fan-in, \textbf{route} nodes for if/then/else,
+\textbf{loop budgets} for bounded cycles, \textbf{capability declarations}
+at three layers, and \textbf{effects declarations} that decide parallel vs
+serial execution.
+
+The full engine design is in the SSOT at
+\texttt{\_docs/06-research/006-pii-graph-engine.md}. The operational
+commands (\texttt{pii graph lint|show|run|resume|trace}) are in the User
+Manual, Chapter~\ref{chap:run}.
+
+\section{The specification model}
+
+\begin{lstlisting}
+GraphSpec { name, entry: NodeId, caps, limits, nodes: [NodeSpec], edges: [Edge] }
+NodeSpec  { id, kind, join: JoinPolicy, loop_budget: Option<u32>,
+            retry: RetryPolicy, caps, cfg: serde_json::Value }
+Edge      { from, port: PortName, to, kind: EdgeKind }
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{Edges}: \texttt{EdgeKind::Data} (value-carrying
+        dependency: readiness + payload) vs \texttt{EdgeKind::Order}
+        (ordering-only: readiness, no payload).
+    \item \textbf{JoinPolicy}: \texttt{All} (default — every inbound edge
+        must fire) vs \texttt{Any \{ cancel\_losers \}} (any one inbound
+        edge fires the node; optionally cancels sibling branches once one
+        wins).
+    \item \textbf{Limits}: \texttt{max\_steps}, \texttt{max\_wall\_ms},
+        \texttt{max\_tokens}, \texttt{max\_parallel} — per-run budgets
+        enforced in the tick loop; exhaustion is terminal and
+        non-retryable.
+    \item \textbf{RetryPolicy}: per-node \texttt{max} retries on
+        retryable failures.
+    \item \textbf{Expression language}: deliberately tiny —
+        \texttt{\$.path.into.context} object-member access only; no
+        arrays, no functions. Used by \texttt{transform.expr},
+        \texttt{route.on}, and tool args.
+\end{itemize}
+
+\section{Node kinds}
+
+\begin{longtable}{@{}llll@{}}
+\toprule
+\textbf{Kind} & \textbf{Layer} & \textbf{Role} & \textbf{Output ports} \\
+\midrule
+\endhead
+\texttt{transform} & pure built-in & JSON reshape via \texttt{expr} & ok / err \\
+\texttt{route} & pure built-in & branch on \texttt{on}-expr via \texttt{rules[]} & one per rule \\
+\texttt{emit} & built-in & write a value to a file (fs\_write cap) & ok / err \\
+\texttt{wait} & pure built-in & sleep/fire-or-timeout & fired / timeout \\
+\texttt{timer} & pure built-in & delay \texttt{in\_ms} or 5-field \texttt{cron} & ok \\
+\texttt{agent} & server & LLM agent: system prompt, tools allowlist, \texttt{max\_turns}, \texttt{loop\_budget}, compaction & ok / err / budget \\
+\texttt{tool} & server & human-authored command (e.g.\ \texttt{bash}) & ok / err \\
+\texttt{gate} & server & suspend the run for human approval & ok \\
+\texttt{heal\_detect} & server & self-healing ledger trigger & ok \\
+\texttt{memory} & server & standalone \texttt{consolidate} maintenance op & ok \\
+\texttt{worker} & server & supervised sub-process pool & ok \\
+\texttt{crash} & debug & deliberate failure for tests & --- \\
+\bottomrule
+\end{longtable}
+
+\section{If/Then/Else — the \texttt{route} node}
+
+Branching is not a separate ``cond'' node: \texttt{route} maps a
+\texttt{\$.} expression to output ports via an ordered rule list, and
+edges wire each port to a different downstream node. The last rule
+without an \texttt{eq} is the else.
+
+\begin{lstlisting}
+[[node]]
+id = "gate"
+kind = "route"
+on = "$.payload.exit_code"
+rules = [
+  { eq = 0, port = "pass" },
+  { port = "fail" },          # fallthrough / else
+]
+\end{lstlisting}
+
+\section{Loops — bounded cycles via \texttt{loop\_budget}}
+
+Cycles are legal when a member node declares \texttt{loop\_budget = N}.
+\texttt{is\_in\_cycle} (tarjan SCC) detects cycles; \texttt{reset\_loop}
+re-runs the loop body genuinely instead of reading stale state. Exceeding
+the budget is a terminal failure.
+
+\begin{lstlisting}
+fix [agent] (entry) (loop_budget=3)
+ |-- ok --> test
+test [tool: bash]
+ |-- ok --> gate
+gate [route: $.payload.exit_code]
+ |-- pass --> done
+ |-- fail --> retry
+retry [transform: $.payload]
+ ^-- loops back to "fix" (budget=3)
+done [transform: $.payload]
+\end{lstlisting}
+
+\section{Capabilities and Effects (safety model)}
+
+\textbf{Capabilities} (\texttt{crates/pii-core/src/cap.rs}): bit flags —
+FS\_READ, FS\_WRITE, PROC, NET, \ldots Effective node permissions are a
+\textbf{three-layer intersection}: \texttt{run caps $\cap$ graph caps
+$\cap$ node caps}. A denial at any layer fails the node with
+\texttt{capability denied}. This is a real bug class: in 2026-09-05 the
+live \texttt{ollama:} provider failed because NET was missing at the run
+layer AND at the graph/node layers — all three had to be fixed for a real
+LLM call to work. (Operational symptom: see the User Manual,
+Chapter~\ref{chap:debug}.)
+
+\textbf{Effects} (\texttt{crates/pii-abi/src/effects.rs}): each node kind
+declares static effect classes (PURE, READS\_FS, WRITES\_FS, NET,
+SPAWNS\_PROC, MUTATES\_EXTERNAL, LONG\_RUNNING). The scheduler partitions
+each batch: \texttt{PURE | READS\_FS} run in parallel (bounded by
+\texttt{max\_parallel}), \texttt{WRITES\_FS | MUTATES\_EXTERNAL} run
+sequentially. Effects fail closed — a node that does not declare its
+effects is treated as fully serialising.
+
+\section{Execution: tick loop, batch drain, event-sourced journal}
+
+\begin{enumerate}
+    \item \textbf{Tick loop}: propagate dead branches to a fixpoint
+        (journaling each new \texttt{NodeDead}); fail LOUDLY on an
+        unsatisfiable join; drain ALL ready nodes into one batch; check
+        loop budgets; dispatch.
+    \item \textbf{Partition}: parallel-safe nodes run in bounded thread
+        chunks; serialising nodes run in order. Results apply as they
+        arrive; \texttt{cancel\_losers} runs after each result.
+    \item \textbf{Journal}: EVERY event appends to the run's append-only
+        journal in redb — \texttt{Started}, \texttt{TickStarted},
+        \texttt{NodeStarted} (journaled BEFORE the node runs, so an
+        interrupted node is visible as ``may have executed''),
+        \texttt{NodeFinished}, \texttt{NodeFailed}, \texttt{NodeCancelled},
+        \texttt{NodeDead}, \texttt{Suspended}, \texttt{Resumed},
+        \texttt{Finished}. A header (status + next-seq) is persisted with
+        each append; the blackboard snapshots every 32 events and
+        unconditionally on suspend.
+    \item \textbf{Terminal dispositions}: Running $\rightarrow$ Succeeded
+        | Failed | Suspended (human approval) $\rightarrow$ Resumed.
+    \item \textbf{Resume}: reads the journal, recovers the input from the
+        content-addressed store, replays every event to rebuild state,
+        re-propagates dead, appends \texttt{Resumed}, and continues. A
+        node with a terminal event is never re-invoked; a
+        \texttt{NodeStarted} with no terminal event re-runs.
+\end{enumerate}
+
+The \textbf{seq} counter is the single source of run ordering — the same
+number the TUI shows as the live \texttt{[seq 0x\ldots]} indicator and
+that \texttt{pii graph trace} prints per event. (Operational: see the User
+Manual, Chapter~\ref{chap:debug}.)
+
+%----------------------------------------------------------------------------------------
+\chapter{Persistence}
+\label{chap:store}
+
+Pii uses \textbf{redb} (single-writer MVCC ACID, pure Rust, no C dep for
+static musl). Consequence: the daemon owns the DB; a UDS control channel
+is the access path. The store is a single-file redb database.
+
+The daemon is the single writer. The control socket is local-only Unix
+(mode 0600), and peer-credential authorization rejects a peer whose uid
+differs from the daemon's. (Operational: see the User Manual,
+Chapter~\ref{chap:ops}.)
+
+\section{The append-only journal}
+
+The run journal is an append-only log of typed \texttt{RunEvent}s — the
+single source of truth for the whole run. The LLM message history is
+derived by pure projection, never stored separately; replay is
+re-derivation. This is the same pattern DeepSeek Harness (dsh) uses, and
+it is the emergent standard for agent state management — two independent
+implementations (dsh, pidag/pi) validate it. See
+\texttt{\_docs/06-research/005-dsh-vs-pii-harness-analysis.md}.
+
+%----------------------------------------------------------------------------------------
+\chapter{The Control Plane}
+\label{chap:control}
+
+\texttt{pii-server} (\texttt{Engine}) owns the registry (built-ins +
+agent/tool/gate/heal/memory/worker), spawns runs (\texttt{run.start},
+\texttt{run.resume}, \texttt{run.cancel}), tracks sessions, and streams
+events (\texttt{event.subscribe} — replay-since + live, bounded queue,
+\texttt{Lagged} on overflow).
+
+The daemon socket is local-only Unix (0600). The full method surface:
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+\textbf{Method} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{sys.hello} & handshake \\
+\texttt{sys.status} & server status \\
+\texttt{sys.version} & server version \\
+\texttt{sys.shutdown} & shut the daemon down \\
+\texttt{sys.reload} & reload config (channels/workers), never restarts \\
+\texttt{session.create} & create a session \\
+\texttt{session.prompt} & prompt a session \\
+\texttt{session.interrupt} & interrupt the session's active run \\
+\texttt{session.state} & session snapshot \\
+\texttt{session.list} & list sessions \\
+\texttt{session.close} & close a session \\
+\texttt{run.start} & start a graph run \\
+\texttt{run.get} & run header \\
+\texttt{run.list} & list runs \\
+\texttt{run.cancel} & cancel a run \\
+\texttt{graph.apply} & store/replace a graph \\
+\texttt{graph.get} & fetch a graph \\
+\texttt{graph.list} & list graphs \\
+\texttt{graph.lint} & lint a graph source \\
+\texttt{event.subscribe} & subscribe to events \\
+\texttt{event.unsubscribe} & unsubscribe \\
+\texttt{worker.list} & list workers and their state \\
+\texttt{worker.reload} & reload a worker (drain $\rightarrow$ respawn) \\
+\texttt{approve.list} & list pending approvals \\
+\texttt{approve.resolve} & resolve an approval (allow/deny) \\
+\texttt{heal.list} & list heal-attempt ledger entries \\
+\texttt{heal.get} & fetch a heal entry \\
+\texttt{cron.list} & list cron entries \\
+\texttt{channel.list} & list configured channels \\
+\texttt{memory.search} & memory search \\
+\texttt{memory.put} & memory put \\
+\texttt{memory.consolidate} & memory consolidate \\
+\bottomrule
+\end{longtable}
+
+The thin CLI subcommands that call these methods are in the User Manual,
+Chapter~\ref{chap:run}.
+
+%----------------------------------------------------------------------------------------
+\chapter{The Self-Improving Boss}
+\label{chap:evolve}
+
+The self-improving boss (\texttt{pii-evolve}) is a feature-gated crate
+that runs the boss loop as a real pii graph on the daemon — dogfooding
+(008 \S3/\S4). Every 30 minutes it runs the silent-noop-check gate on the
+daemon itself; a detected failure escalates through a \texttt{gate} node
+so a human approves before anything heals. No FS\_WRITE anywhere in the
+watch graph; no agent/model node — detection, forwarding, and the
+approval decision are all deterministic nodes.
+
+The deep design is in the SSOT at
+\texttt{\_docs/06-research/008-pii-evolve.md}. The opus review and the
+remaining-work plan are at \texttt{009-} and \texttt{012-}.
+
+\section{The heal-fix loop}
+
+The heal-fix graph is a complete localize$\rightarrow$patch$\rightarrow$
+validate$\rightarrow$escalate loop: \texttt{probe} (bash, runs the test
+command in a worktree) $\rightarrow$ \texttt{route\_probe} on exit code
+$\rightarrow$ \texttt{fix} (agent with fs tools, no bash)
+$\rightarrow$ \texttt{retest} $\rightarrow$ \texttt{route\_retest}
+$\rightarrow$ \texttt{summarize} (git diff) $\rightarrow$ \texttt{escalate}
+(gate) $\rightarrow$ \texttt{done}, with a \texttt{retry} back-edge and
+\texttt{loop\_budget = 2}.
+
+\section{Protected paths}
+
+The boss cannot patch its own oracle. \texttt{PathScope} gains a
+deny-wins builder; \texttt{run\_caps} adds a protected-path deny list for
+scoped runs; \texttt{heal-collect} refuses test-deletion/protected-path
+patches. This is the ordering guardrail that prevents a model from
+deleting the test that proves it worked.
+
+%----------------------------------------------------------------------------------------
+\chapter{Technical Analysis}
+\label{chap:analysis}
+
+\section{Convergent architecture (dsh comparison)}
+
+DeepSeek Harness (dsh) validates pi-improved's core architecture
+decisions — event-sourced journal, derived state, capability attenuation,
+append-only durability — done in TypeScript-with-plugins; pi-improved is
+the same pattern in a static Rust binary with a real graph engine on top.
+The transferable upgrades are the engineering details dsh has refined
+further (write-behind batching, reader-side interrupted-turn repair,
+per-tool timeouts, single-writer leases) — not its plugin metaphysics.
+See \texttt{\_docs/06-research/005-dsh-vs-pii-harness-analysis.md}.
+
+\section{Context management (Slice C)}
+
+Context management is the one P4.7 slice that is unbuilt. The reference
+design to steal is \texttt{dsh-context} (a DeepSeek Harness plugin):
+context insight should be a \textbf{projection over the existing journal},
+reading the harness's own token accounting, with a delta-mode diagnostic
+that directly targets the \texttt{compaction.rs:69} no-op. See
+\texttt{\_docs/06-research/013-dsh-context-slice-c-reference.md}.
+
+\section{The graph engine vs. git log}
+
+The lane-allocation algorithm from \texttt{git log --graph} was ported to
+render pii graphs as ASCII. The one thing that does not port: loops. Git's
+DAG has no cycles; pii graphs genuinely cycle (\texttt{loop\_budget}).
+Design decision: lay out nodes in topological order and render each loop
+closure as a separate annotation line, never as a lane. See
+\texttt{\_docs/06-research/006-pii-graph-engine.md}.
+
+\section{Where to go for more}
+
+\begin{itemize}
+    \item \textbf{Operation}: the companion User Manual.
+    \item \textbf{Research SSOT}: \texttt{\_docs/06-research/} (numbered
+        research write-ups).
+    \item \textbf{Guides}: \texttt{\_docs/02-guides/}.
+    \item \textbf{Vision}: \texttt{\_docs/01-overview/001-pii-vision.md}.
+\end{itemize}
+
+\backmatter
+\setchapterstyle{plain}
+
+\printindex
+
+\end{document}

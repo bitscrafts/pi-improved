@@ -1,0 +1,622 @@
+% Pii — User Manual (System Administrator)
+% Template: kaobook
+% Compilacao remota via Podman (latex-compiler-shared)
+% SSOT-based: operational facts live here; architecture lives in the Technical Manual.
+
+\documentclass[
+	fontsize=10pt,
+	twoside=false,
+	secnumdepth=2,
+	open=any,
+]{kaobook}
+
+\usepackage[english]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\color{blue!70!black},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!60!black},
+    numbers=none,
+    breaklines=true,
+    frame=none,
+    backgroundcolor=\color{blue!5!white},
+    showstringspaces=false,
+    tabsize=4,
+    language=bash
+}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\newtcolorbox{cmdbox}[1][]{
+    enhanced, breakable,
+    colback=blue!5!white, colframe=blue!60!black,
+    fonttitle=\bfseries, fontupper=\small, coltitle=white,
+    title={#1}, left=5pt, right=5pt, top=5pt, bottom=5pt
+}
+\newtcolorbox{warnbox}[1][]{
+    enhanced, breakable,
+    colback=red!5!white, colframe=red!70!black,
+    fonttitle=\bfseries, fontupper=\small, coltitle=white,
+    title={#1}, left=5pt, right=5pt, top=5pt, bottom=5pt
+}
+\newtcolorbox{tipbox}[1][]{
+    enhanced, breakable,
+    colback=green!5!white, colframe=green!60!black,
+    fonttitle=\bfseries, fontupper=\small, coltitle=white,
+    title={#1}, left=5pt, right=5pt, top=5pt, bottom=5pt
+}
+
+\let\refeq\relax
+\usepackage{kaotheorems}
+\usepackage{kaorefs}
+\usepackage{kaobiblio}
+\usepackage{xr}
+\externaldocument{technical-manual}
+
+\graphicspath{{images/}{./}}
+\makeindex[columns=3, title=Index, intoc]
+
+\renewcommand*{\chapterformat}{\thechapter\enskip}
+\renewcommand*{\chaptermarkformat}{\thechapter\enskip}
+
+\begin{document}
+
+\titlehead{Pii — User Manual}
+\title[Pii User Manual]{%
+    Pii\\[0.5em]
+    \Large System Administrator's Manual
+}
+\author[Pii]{Pii Project}
+\date{Version 0.1.0}
+\publishers{pi-improved}
+
+\frontmatter
+
+\makeatletter
+\uppertitleback{\@titlehead}
+\lowertitleback{
+	\textbf{About this manual} \\\\
+	This is the \emph{User Manual} for Pii, the single static Rust binary
+	that unifies a terminal coding agent, a personal assistant daemon, a
+	reactive automation engine, and a self-improving cognitive layer.
+
+	\medskip
+
+	\textbf{Audience} \\\\
+	System administrators who install, manage, and debug Pii.
+
+	\medskip
+
+	\textbf{SSOT} \\\\
+	This manual is \emph{SSOT-based}: it holds the operational facts
+	(install, configure, run, debug). Architectural decisions and technical
+	analysis live in the companion \emph{Technical Manual} and in the
+	project's \texttt{\_docs/} research tree. Where a fact has a canonical
+	home elsewhere, this manual links to it instead of duplicating it.
+
+	\medskip
+
+	\textbf{Compilation} \\\\
+	Compiled remotely via Podman (latex-compiler-shared) on \today.
+}
+\makeatother
+
+\maketitle
+
+\chapter*{Preface}
+
+Pii is a single static Rust binary. It is a terminal-native AI coding
+agent, a personal assistant daemon, a reactive IoT/automation engine, and
+a self-improving cognitive layer, all in one process. This manual tells a
+system administrator everything needed to install it, configure it, run
+it, and debug it.
+
+The companion \emph{Technical Manual} covers the architecture and the
+technical analysis for developers. The two manuals complement each other:
+this one answers \emph{how to operate}, the other answers \emph{how it
+works}. Cross-references are marked inline.
+
+\begingroup
+\setlength{\textheight}{230\vscale}
+\etocstandarddisplaystyle
+\etocstandardlines
+\tableofcontents
+\endgroup
+
+\mainmatter
+\setchapterstyle{kao}
+
+%----------------------------------------------------------------------------------------
+\chapter{Overview}
+\label{chap:overview}
+
+Pii (``Pi Improved'') is a single static Rust binary that unifies four
+capabilities:
+
+\begin{enumerate}
+    \item \textbf{Coding agent core} — a terminal-native AI coding agent
+        with sub-100ms cold start, structured concurrency, capability-gated
+        context, JSONL sessions, and bash mediation.
+    \item \textbf{Assistant/gateway} — a personal assistant daemon with
+        channels, LLM providers, tools, and an SOP engine.
+    \item \textbf{Cognitive memory + model tiering} — entities and
+        relationships, tier-aware tool selection.
+    \item \textbf{Self-improvement loop} — skill extraction, procedural
+        templates, trajectory logging.
+\end{enumerate}
+
+The full vision and the four pillars are documented in the SSOT at
+\texttt{\_docs/01-overview/001-pii-vision.md}. The architecture is in the
+companion Technical Manual, Chapter~\ref{chap:arch}.
+
+\section{The binary}
+
+The primary binary is \texttt{pii} (from the \texttt{pii-cli} crate). It
+is a single static binary; there is no runtime install surface. Version
+\texttt{0.1.0}.
+
+\section{The daemon}
+
+Pii runs as a daemon (\texttt{pii daemon}) that owns the store and the
+control socket. The daemon is the single writer to the redb store; all
+control flows over a local-only Unix socket (mode 0600). See
+Chapter~\ref{chap:run} for how to run it.
+
+%----------------------------------------------------------------------------------------
+\chapter{Installation}
+\label{chap:install}
+
+\section{Prerequisites}
+
+\begin{itemize}
+    \item A Linux host (the daemon uses Unix sockets and peer-credential
+        authorization).
+    \item Rust toolchain to build from source (the project is a Cargo
+        workspace). See \texttt{rust-toolchain.toml} for the pinned
+        toolchain.
+    \item A model provider. Pii is model-agnostic; the default provider
+        chain is documented in the project \texttt{AGENTS.md}. At minimum
+        you need one configured model (see Chapter~\ref{chap:config}).
+\end{itemize}
+
+\section{Build from source}
+
+\begin{cmdbox}[Build]
+\begin{lstlisting}
+cd /projects/pi-improved
+cargo build --release
+# the binary lands at target/release/pii
+\end{lstlisting}
+\end{cmdbox}
+
+The workspace builds a monolith minus feature-gated subsystems. To include
+an optional subsystem (e.g.\ the TUI or the self-improving boss), build
+with its feature:
+
+\begin{cmdbox}[Build with features]
+\begin{lstlisting}
+cargo build --release --features tui,evolve
+\end{lstlisting}
+\end{cmdbox}
+
+The feature-gating convention is documented in the SSOT at
+\texttt{\_docs/02-guides/feature-gating.md}. The default build is headless
+(\texttt{pii -p} and \texttt{pii daemon} work without the TUI).
+
+\section{Install the binary}
+
+Copy the built binary to a location on \texttt{PATH}:
+
+\begin{cmdbox}[Install]
+\begin{lstlisting}
+cp target/release/pii /usr/local/bin/pii
+pii --version   # prints "pii 0.1.0"
+\end{lstlisting}
+\end{cmdbox}
+
+\section{Optional companion binaries}
+
+\begin{itemize}
+    \item \texttt{pii-web} — a read-only web viewer (see
+        Chapter~\ref{chap:web}).
+    \item \texttt{pii-mcp} — an MCP server + client (see
+        Chapter~\ref{chap:mcp}).
+\end{itemize}
+
+%----------------------------------------------------------------------------------------
+\chapter{Configuration}
+\label{chap:config}
+
+\section{The config file}
+
+Pii reads a single TOML config file. The path is resolved in this order:
+
+\begin{enumerate}
+    \item \texttt{\$PII\_CONFIG} (if set)
+    \item \texttt{\$HOME/.pii/pii.toml} (falls back to
+        \texttt{/root/.pii/pii.toml} if \texttt{\$HOME} is unset)
+\end{enumerate}
+
+The config uses \texttt{deny\_unknown\_fields} throughout: a typo'd key is
+a load error, never a silently-ignored no-op.
+
+\section{The \texttt{[core]} section}
+
+Persistent settings that every entrypoint needs before it can do anything
+else:
+
+\begin{lstlisting}
+[core]
+model = "ollama:granite4.2:3b"   # default model spec
+runtime_dir = "/root/.pii"       # holds control.sock, graphs/
+ollama_host = "http://127.0.0.1:11434"
+\end{lstlisting}
+
+Every entrypoint (\texttt{pii -p}, \texttt{pii daemon}, \texttt{pii tui},
+and the runtime-dir lookup) resolves settings in the same order:
+\textbf{CLI flag > environment variable > \texttt{[core]} in the config
+file > built-in default}. Environment variables still win over the config
+file, so nothing that already relies on env vars changes behavior.
+
+\section{The \texttt{[net]} section}
+
+Egress policy knobs:
+
+\begin{lstlisting}
+[net]
+grants = ["api.example.com:443"]   # host:port patterns every principal may reach
+allow_private = false              # allow loopback/private/link-local classes
+\end{lstlisting}
+
+\section{Environment variables}
+
+The complete environment surface for this phase:
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+\textbf{Variable} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{PII\_CONFIG} & path to the config file \\
+\texttt{PII\_RUNTIME\_DIR} & runtime dir (control.sock, graphs/) \\
+\texttt{PII\_MODEL} & default model spec \\
+\texttt{PII\_MEMORY\_PATH} & memory store path \\
+\texttt{PII\_DISCORD\_TOKEN} & Discord token (channels) \\
+\texttt{PII\_DISCORD\_CHANNEL\_ID} & Discord channel \\
+\texttt{PII\_DISCORD\_API\_BASE} & Discord API base \\
+\texttt{OLLAMA\_HOST} & Ollama host \\
+\texttt{OLLAMA\_API\_KEY} & Ollama API key \\
+\texttt{PII\_DAEMON\_WORKER\_THREADS} & daemon worker thread count \\
+\texttt{PII\_DAEMON\_MAX\_BLOCKING} & max blocking threads \\
+\bottomrule
+\end{longtable}
+
+\section{Runtime directory resolution}
+
+The runtime directory (which holds \texttt{control.sock} and
+\texttt{graphs/}) is resolved in this order:
+
+\begin{enumerate}
+    \item \texttt{\$PII\_RUNTIME\_DIR}
+    \item \texttt{[core].runtime\_dir} in the config file
+    \item \texttt{\$XDG\_RUNTIME\_DIR/pii/<instance>}
+    \item \texttt{/run/user/<uid>/pii/<instance>}
+\end{enumerate}
+
+%----------------------------------------------------------------------------------------
+\chapter{Running Pii}
+\label{chap:run}
+
+\section{One-shot prompt (\texttt{pii -p})}
+
+The simplest use: run a single prompt and exit.
+
+\begin{cmdbox}[One-shot]
+\begin{lstlisting}
+pii -p "explain this codebase"
+pii -p "fix the bug in src/main.rs" --model ollama:granite4.2:3b
+pii -p "summarize" --json          # machine-readable output
+\end{lstlisting}
+\end{cmdbox}
+
+Flags:
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+\textbf{Flag} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{--json} & emit JSON output \\
+\texttt{--model M} & override the model spec \\
+\texttt{--graph G} & run a graph instead of the default agent \\
+\texttt{--workspace D} & set the workspace directory \\
+\texttt{--sandbox off|workspace} & sandbox profile \\
+\texttt{--connect auto|loopback|<socket>} & connect mode \\
+\texttt{--input J} & JSON input for a graph run \\
+\bottomrule
+\end{longtable}
+
+\section{The daemon (\texttt{pii daemon})}
+
+The daemon owns the store and the control socket. Run it in the
+foreground (or under a process supervisor):
+
+\begin{cmdbox}[Daemon]
+\begin{lstlisting}
+pii daemon
+pii daemon --foreground
+pii daemon --config /etc/pii/pii.toml
+pii daemon --workspace /srv/pii --store /srv/pii/store.redb
+pii daemon --sandbox workspace
+\end{lstlisting}
+\end{cmdbox}
+
+Flags:
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+\textbf{Flag} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{--config P} & config file path \\
+\texttt{--sandbox off|workspace} & sandbox profile \\
+\texttt{--workspace D} & workspace directory \\
+\texttt{--store S} & store (redb) path \\
+\texttt{--foreground} & stay in the foreground \\
+\bottomrule
+\end{longtable}
+
+\section{The TUI (\texttt{pii tui})}
+
+A live terminal UI that streams run events:
+
+\begin{cmdbox}[TUI]
+\begin{lstlisting}
+pii tui
+pii tui --connect auto
+pii tui --connect loopback
+pii tui --connect /run/user/1000/pii/default/control.sock
+pii tui --workspace /srv/pii
+\end{lstlisting}
+\end{cmdbox}
+
+\section{Graphs}
+
+Pii's automation engine runs \emph{graphs} — typed assemblies of nodes
+and edges. The graph engine is documented in the Technical Manual,
+Chapter~\ref{chap:graph}, and in the SSOT at
+\texttt{\_docs/06-research/006-pii-graph-engine.md}.
+
+\begin{cmdbox}[Graph commands]
+\begin{lstlisting}
+pii graph lint graphs/starter/assistant.toml
+pii graph show graphs/starter/assistant.toml
+pii graph run graphs/starter/assistant.toml --db /srv/pii/store.redb
+pii graph resume <run_id> --db /srv/pii/store.redb
+pii graph trace <run_id> --db /srv/pii/store.redb
+\end{lstlisting}
+\end{cmdbox}
+
+\section{Control commands}
+
+Thin protocol-calling subcommands that connect to the daemon's control
+socket, call one method, print the JSON result, and exit:
+
+\begin{cmdbox}[Control]
+\begin{lstlisting}
+pii sys status
+pii sys reload
+pii run ls
+pii run ls --status running
+pii run start starter/assistant --input '{"k":"v"}'
+pii net ls
+pii worker ls
+pii worker reload <name>
+pii memory search "query" --k 5
+pii memory put "text" --layer L1 --kind Atom
+pii memory consolidate
+pii approve ls
+pii approve allow <id> --note "looks good"
+pii approve deny <id>
+pii heal ls
+pii heal show <signature_hash>
+pii cron ls
+\end{lstlisting}
+\end{cmdbox}
+
+\section{Soak (stress) testing}
+
+\begin{cmdbox}[Soak]
+\begin{lstlisting}
+pii soak --connect /run/user/1000/pii/default/control.sock --runs 3000 --graph starter/soak
+pii soak --connect <socket> --runs N --graph G --concurrency C
+\end{lstlisting}
+\end{cmdbox}
+
+%----------------------------------------------------------------------------------------
+\chapter{The Web Viewer}
+\label{chap:web}
+
+\texttt{pii-web} is a read-only web viewer that proxies the daemon's UDS
+JSON-RPC over loopback HTTP so a browser can watch runs, sessions,
+approvals, heals, and memory. It is \emph{viewer-only}: no write RPC is
+proxied.
+
+\begin{cmdbox}[Web viewer]
+\begin{lstlisting}
+pii-web --port 4602 --host 127.0.0.1 --instance default
+# open http://127.0.0.1:4602
+\end{lstlisting}
+\end{cmdbox}
+
+The daemon must be running for the viewer to proxy to it.
+
+%----------------------------------------------------------------------------------------
+\chapter{The MCP Bridge}
+\label{chap:mcp}
+
+\texttt{pii-mcp} is an MCP (Model Context Protocol) server + client. The
+server exposes pii's native tools (fs, edit, bash, glob, grep, http,
+memory) as an MCP server over stdio, so an MCP client (e.g.\ Hermes) can
+call them and exercise pii's engine. The client lets pii reach out and
+consume external MCP tool servers.
+
+The design is documented in the SSOT at
+\texttt{\_docs/02-guides/pii-mcp-bridge.md}.
+
+\begin{warnbox}[Important]
+MCP is the \emph{integration surface}, not the control plane. Full control
+(start a run, watch a trace, resolve an approval) stays on pii's own UDS
+JSON-RPC. The MCP server exposes pii's \emph{tools}, not the full control
+API.
+\end{warnbox}
+
+%----------------------------------------------------------------------------------------
+\chapter{Debugging}
+\label{chap:debug}
+
+\section{Check the daemon is up}
+
+\begin{cmdbox}[Status]
+\begin{lstlisting}
+pii sys status
+pii --version
+\end{lstlisting}
+\end{cmdbox}
+
+If \texttt{pii sys status} fails in a plain shell, the most common cause
+is that the daemon was hand-launched with environment variables in a
+\emph{different} shell. The \texttt{[core]} section in the config file
+backs \texttt{model} and \texttt{runtime\_dir} so settings survive a fresh
+shell or a daemon restart. See Chapter~\ref{chap:config}.
+
+\section{No model configured}
+
+\begin{cmdbox}[Error]
+\begin{lstlisting}
+error: no model configured (set PII_MODEL or --model)
+\end{lstlisting}
+\end{cmdbox}
+
+Set \texttt{PII\_MODEL}, pass \texttt{--model}, or set
+\texttt{[core].model} in the config file.
+
+\section{No usable runtime dir}
+
+\begin{cmdbox}[Error]
+\begin{lstlisting}
+error: no usable runtime dir (set PII_RUNTIME_DIR)
+\end{lstlisting}
+\end{cmdbox}
+
+Set \texttt{PII\_RUNTIME\_DIR} or \texttt{[core].runtime\_dir}. See
+Chapter~\ref{chap:config} for the resolution order.
+
+\section{Capability denied}
+
+A node fails with \texttt{capability denied} when a capability is missing
+at any of the three layers (run, graph, node). This is a real bug class:
+a live \texttt{ollama:} provider failed because \texttt{NET} was missing
+at the run layer AND at the graph/node layers. See the Technical Manual,
+Chapter~\ref{chap:graph}, for the capability model.
+
+\section{Graph lint errors}
+
+\begin{cmdbox}[Lint]
+\begin{lstlisting}
+pii graph lint graphs/starter/assistant.toml
+# prints "OK" or a list of rule-coded errors
+\end{lstlisting}
+\end{cmdbox}
+
+Static lint rejects unknown node kinds, dangling edges, unsatisfiable
+joins, and cyclic specs without a \texttt{loop\_budget}. Every error
+message carries its rule code.
+
+\section{Tracing a run}
+
+\begin{cmdbox}[Trace]
+\begin{lstlisting}
+pii graph trace <run_id> --db /srv/pii/store.redb
+pii graph trace <run_id> --db /srv/pii/store.redb --terminal
+pii graph trace <run_id> --db /srv/pii/store.redb --node-status <node>
+pii graph trace <run_id> --db /srv/pii/store.redb --count-finished <node>
+pii graph trace <run_id> --db /srv/pii/store.redb --max-batch-width
+pii graph trace <run_id> --db /srv/pii/store.redb --output
+pii graph trace <run_id> --db /srv/pii/store.redb --overlapped <a>,<b>
+\end{lstlisting}
+\end{cmdbox}
+
+The \texttt{seq} counter is the single source of run ordering — the same
+number the TUI shows as the live \texttt{[seq 0x\ldots]} indicator. A live
+session can be cross-referenced against a persisted trace by seq.
+
+\section{Approvals}
+
+When a graph suspends for human approval (e.g.\ a heal-fix gate), resolve
+it with \texttt{pii approve}:
+
+\begin{cmdbox}[Approve]
+\begin{lstlisting}
+pii approve ls
+pii approve allow <id> --note "approved"
+pii approve deny <id>
+\end{lstlisting}
+\end{cmdbox}
+
+\section{Heal ledger}
+
+The self-healing ledger records attempts. Inspect it with
+\texttt{pii heal}:
+
+\begin{cmdbox}[Heal]
+\begin{lstlisting}
+pii heal ls
+pii heal show <signature_hash>
+\end{lstlisting}
+\end{cmdbox}
+
+\section{Logs}
+
+The daemon writes to stderr. Run it in the foreground and capture stderr,
+or run it under a process supervisor that captures logs. There is no
+separate log file by default.
+
+%----------------------------------------------------------------------------------------
+\chapter{Operational Notes}
+\label{chap:ops}
+
+\section{Single-writer store}
+
+The daemon owns the redb store (single-writer MVCC ACID). Only one daemon
+should write to a given store at a time. The control socket is local-only
+Unix (mode 0600), and peer-credential authorization rejects a peer whose
+uid differs from the daemon's.
+
+\section{Feature-gated subsystems}
+
+The default build is a monolith minus gated subsystems. Network/token
+subsystems (channels, TLS, github) are opt-in features — a feature that
+\emph{excludes the code} is stronger than a runtime config that
+\emph{disables} it. See \texttt{\_docs/02-guides/feature-gating.md}.
+
+\section{Where to go for more}
+
+\begin{itemize}
+    \item \textbf{Architecture}: the companion Technical Manual.
+    \item \textbf{Research SSOT}: \texttt{\_docs/06-research/} (numbered
+        research write-ups).
+    \item \textbf{Guides}: \texttt{\_docs/02-guides/}.
+    \item \textbf{Vision}: \texttt{\_docs/01-overview/001-pii-vision.md}.
+\end{itemize}
+
+\backmatter
+\setchapterstyle{plain}
+
+\printindex
+
+\end{document}
