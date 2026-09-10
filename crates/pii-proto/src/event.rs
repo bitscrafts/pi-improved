@@ -193,6 +193,13 @@ pub enum Event {
         /// The resolved model spec.
         model: String,
     },
+    /// A `spawn` node launched a child run (spec 32 R1).
+    RunSpawned {
+        /// The parent run id.
+        run_id: String,
+        /// The child run id.
+        child_run: String,
+    },
     /// A subscriber fell behind and events were dropped (never silent).
     Lagged {
         /// Subscription id.

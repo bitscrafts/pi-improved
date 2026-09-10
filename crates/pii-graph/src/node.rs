@@ -1,6 +1,6 @@
 //! The harness ABI and node registry (spec F4.4).
 
-use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName, ResumeKey};
+use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName, ResumeKey, RunEvent};
 use pii_core::CapKind;
 use pii_core::Ctx;
 use std::collections::BTreeMap;
@@ -21,6 +21,16 @@ pub trait GraphNode: Send + Sync {
     /// wait condition that has not yet been satisfied).
     fn on_resume(&self, _ctx: &Ctx, _input: &NodeInput, _key: &ResumeKey) -> Option<Outcome> {
         None
+    }
+
+    /// Extra journal events to append alongside this node's own
+    /// `NodeFinished`, given the value it just produced on `Outcome::Next`
+    /// (spec 32 R1: the `spawn` node's parent→child `RunSpawned` link).
+    /// Appended through the SAME [`crate::journal::Journaler`] that owns
+    /// this run's seq counter — never written by the node itself, which
+    /// would race the journaler's write-behind buffer. Default: none.
+    fn link_events(&self, _value: &serde_json::Value) -> Vec<RunEvent> {
+        Vec::new()
     }
 }
 

@@ -119,6 +119,7 @@ async fn route_decision_is_journaled() {
         Arc::clone(&engine.memory),
         Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
         engine.cfg.route_policy.clone(),
+        Arc::new(parking_lot::Mutex::new(None)),
     );
     // Subscribe to the engine's REAL bus before running (F21 pattern).
     let mut live = engine.bus.subscribe();

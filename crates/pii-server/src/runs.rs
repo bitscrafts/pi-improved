@@ -249,7 +249,10 @@ fn run_caps(
     net_host: Option<&str>,
 ) -> pii_core::CapSet {
     let mut caps = pii_core::CapSet::empty();
-    caps.kinds = pii_core::CapKind::FS_READ | pii_core::CapKind::FS_WRITE | pii_core::CapKind::PROC;
+    caps.kinds = pii_core::CapKind::FS_READ
+        | pii_core::CapKind::FS_WRITE
+        | pii_core::CapKind::PROC
+        | pii_core::CapKind::SPAWN;
     if net_host.is_some() {
         caps.kinds |= pii_core::CapKind::NET;
     }

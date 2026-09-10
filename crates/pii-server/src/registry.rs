@@ -29,6 +29,7 @@ pub fn registry(
     memory: Arc<pii_store::MemStore>,
     workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
     route_policy: BTreeMap<String, String>,
+    spawn_engine: nodes::spawn::SpawnEngineHandle,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
@@ -51,6 +52,9 @@ pub fn registry(
     reg.register(Arc::new(nodes::memory::MemoryFactory { store: memory }));
     reg.register(Arc::new(nodes::crash::DebugCrashFactory));
     reg.register(Arc::new(nodes::worker::WorkerFactory { pool: workers }));
+    reg.register(Arc::new(nodes::spawn::SpawnFactory {
+        engine: spawn_engine,
+    }));
     reg
 }
 

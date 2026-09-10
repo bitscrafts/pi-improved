@@ -136,6 +136,10 @@ pub fn map_event(run_id: &RunId, ev: &RunEvent) -> Option<Event> {
             run_id: run_id.to_string(),
             terminal: map_terminal(terminal),
         },
+        RunEvent::RunSpawned { child_run } => Event::RunSpawned {
+            run_id: run_id.to_string(),
+            child_run: child_run.to_string(),
+        },
     })
 }
 

@@ -9,6 +9,7 @@ pub mod bash;
 pub mod fs;
 pub mod sandbox;
 pub mod search;
+pub mod worktree;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use serde_json::Value;
 use crate::bash::BashTool;
 use crate::fs::{EditTool, FsReadTool, FsWriteTool, MultiEditTool};
 use crate::search::{GlobTool, GrepTool};
+use crate::worktree::WorktreeTool;
 
 /// A callable tool.
 pub trait Tool: Send + Sync {
@@ -52,6 +54,7 @@ pub struct ToolSet {
 impl ToolSet {
     /// The five built-ins (F6.1 allowlist), bound to `workspace`.
     #[must_use]
+    #[allow(clippy::needless_pass_by_value)] // reason: callers pass owned PathBufs
     pub fn builtin(workspace: std::path::PathBuf) -> Self {
         let mut tools: BTreeMap<&'static str, Arc<dyn Tool>> = BTreeMap::new();
         for t in [
@@ -73,7 +76,10 @@ impl ToolSet {
             Arc::new(GlobTool {
                 workspace: workspace.clone(),
             }),
-            Arc::new(BashTool { workspace }) as Arc<dyn Tool>,
+            Arc::new(BashTool {
+                workspace: workspace.clone(),
+            }) as Arc<dyn Tool>,
+            Arc::new(WorktreeTool { workspace }),
         ] {
             tools.insert(t.name(), t);
         }

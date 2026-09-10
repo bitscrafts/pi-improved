@@ -151,4 +151,11 @@ pub enum RunEvent {
         /// Hash of the terminal output.
         output_hash: String,
     },
+    /// A `spawn` node launched a child run (spec 32 R1): the parent→child
+    /// link `pii graph trace` shows alongside the spawning node's own
+    /// `NodeFinished`.
+    RunSpawned {
+        /// The child run's id.
+        child_run: RunId,
+    },
 }

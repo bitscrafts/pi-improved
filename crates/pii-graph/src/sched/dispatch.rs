@@ -209,7 +209,7 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         }
         return match outcome {
             Outcome::Fail { error } => journal_failure(env, &ns.id, &error, 1, false),
-            other => journal_next_or_suspend(env, &ns.id, other, at_ms, 0),
+            other => journal_next_or_suspend(env, node.as_ref(), &ns.id, other, at_ms, 0),
         };
     }
 
@@ -231,7 +231,7 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         let dur_ms = ctx.elapsed_ms().saturating_sub(at_ms);
         match result {
             Ok(outcome @ (Outcome::Next { .. } | Outcome::Suspend { .. })) => {
-                return journal_next_or_suspend(env, &ns.id, outcome, at_ms, dur_ms);
+                return journal_next_or_suspend(env, node.as_ref(), &ns.id, outcome, at_ms, dur_ms);
             }
             Ok(Outcome::Fail { error }) => {
                 return journal_failure(env, &ns.id, &error, attempt, false);
@@ -271,6 +271,7 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
 /// and the spec-30 `on_resume` path.
 fn journal_next_or_suspend(
     env: &Env<'_>,
+    node: &dyn crate::node::GraphNode,
     id: &NodeId,
     outcome: Outcome,
     at_ms: u32,
@@ -290,6 +291,17 @@ fn journal_next_or_suspend(
                 return DispatchOutcome::Failed {
                     error: e.to_string(),
                 };
+            }
+            // Spec 32 R1: extra journal events a node wants alongside its own
+            // NodeFinished (e.g. `spawn`'s parent→child `RunSpawned` link),
+            // appended through the SAME journaler so they share its seq
+            // counter rather than racing a second writer.
+            for extra in node.link_events(&value) {
+                if let Err(e) = env.jr.append(&extra) {
+                    return DispatchOutcome::Failed {
+                        error: e.to_string(),
+                    };
+                }
             }
             DispatchOutcome::Next { port, value }
         }

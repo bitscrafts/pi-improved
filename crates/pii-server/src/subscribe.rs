@@ -184,7 +184,8 @@ fn event_matches_run(ev: &Event, run_id: &str) -> bool {
         | Event::RunSuspended { run_id: r, .. }
         | Event::RunResumed { run_id: r, .. }
         | Event::ApprovalRequested { run_id: r, .. }
-        | Event::RouteDecision { run_id: r, .. } => r == run_id,
+        | Event::RouteDecision { run_id: r, .. }
+        | Event::RunSpawned { run_id: r, .. } => r == run_id,
         // ApprovalResolved/Worker*/ChannelMessage/MemoryDegraded/Lagged are
         // process-scoped bus events, not per-run; forward them always.
         Event::ApprovalResolved { .. }
@@ -221,6 +222,7 @@ fn event_matches_kinds(ev: &Event, kinds: &[String]) -> bool {
         Event::ChannelMessage { .. } => "channel_message",
         Event::MemoryDegraded { .. } => "memory_degraded",
         Event::RouteDecision { .. } => "route_decision",
+        Event::RunSpawned { .. } => "run_spawned",
         Event::Lagged { .. } => "lagged",
     };
     kinds.iter().any(|k| k == kind)

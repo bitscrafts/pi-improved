@@ -103,6 +103,12 @@ pub struct Engine {
     pub started_at: Instant,
     pub(crate) sessions: parking_lot::Mutex<BTreeMap<String, Session>>,
     runs: parking_lot::Mutex<BTreeMap<String, RunHandle>>,
+    /// Shared handle the `spawn` node uses to launch child runs (spec 32 R1).
+    /// `None` until the daemon (or a test) calls [`Engine::attach_spawn_engine`]
+    /// after construction — the registry is built inside `Engine::new`, so the
+    /// factory cannot hold the `Arc<Engine>` directly (chicken-and-egg). Same
+    /// pattern as the `worker` node's shared pool.
+    spawn_handle: nodes::spawn::SpawnEngineHandle,
     /// Session → runs it has spawned (for session-scoped `event.subscribe`).
     session_runs: parking_lot::Mutex<BTreeMap<String, Vec<String>>>,
     /// Set once by `pii daemon` (F5.1): `None` for a bare `Engine` (oneshot,
@@ -189,6 +195,7 @@ impl Engine {
             pii_model::provider_from_spec(&cfg.model)?
         };
         let bus = Bus::new();
+        let spawn_engine: nodes::spawn::SpawnEngineHandle = Arc::new(parking_lot::Mutex::new(None));
         let reg = registry(
             &cfg,
             provider.clone(),
@@ -198,6 +205,7 @@ impl Engine {
             Arc::clone(&memory),
             Arc::clone(&workers),
             cfg.route_policy.clone(),
+            Arc::clone(&spawn_engine),
         );
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
@@ -215,9 +223,18 @@ impl Engine {
             started_at: Instant::now(),
             sessions: parking_lot::Mutex::new(BTreeMap::new()),
             runs: parking_lot::Mutex::new(BTreeMap::new()),
+            spawn_handle: Arc::clone(&spawn_engine),
             session_runs: parking_lot::Mutex::new(BTreeMap::new()),
             daemon_ctx: parking_lot::Mutex::new(None),
         }))
+    }
+
+    /// Attaches the shared engine handle the `spawn` node uses to launch
+    /// child runs (spec 32 R1). Called once by the daemon (or a test) after
+    /// `Engine::new` — the registry is built inside `new`, so the factory
+    /// cannot hold the `Arc<Engine>` directly.
+    pub fn attach_spawn_engine(&self, engine: Arc<Self>) {
+        *self.spawn_handle.lock() = Some(engine);
     }
 
     /// Attaches the daemon's runtime context (F5.1), set once at daemon

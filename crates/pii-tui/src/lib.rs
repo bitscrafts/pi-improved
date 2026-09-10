@@ -311,6 +311,7 @@ fn render_event_line<'a>(ev: &Event) -> Line<'a> {
     match ev {
         Event::RunStarted { graph, .. } => progress(format!("run started: {graph}")),
         Event::RouteDecision { step, model, .. } => progress(format!("  route: {step} -> {model}")),
+        Event::RunSpawned { child_run, .. } => progress(format!("  spawned: {child_run}")),
         Event::NodeStarted { node, .. } => progress(format!("[{node}] started")),
         Event::NodeFinished { node, port, .. } => progress(format!("  [{node}] -> {port}")),
         Event::NodeFailed { node, error: e, .. } => error(format!("[{node}] failed: {e}")),

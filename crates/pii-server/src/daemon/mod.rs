@@ -130,6 +130,10 @@ impl Daemon {
             config_path,
         });
         engine.attach_daemon_ctx(Arc::clone(&ctx));
+        // Spec 32 R1: give the `spawn` node the engine handle it needs to
+        // launch child runs (the registry was built inside `Engine::new`,
+        // before the Arc existed).
+        engine.attach_spawn_engine(Arc::clone(&engine));
 
         let scheduler = scheduler::Scheduler::new(Arc::clone(&engine), wheel, clock);
         Ok(Arc::new(Self {

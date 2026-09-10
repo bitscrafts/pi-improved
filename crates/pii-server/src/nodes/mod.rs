@@ -8,4 +8,5 @@ pub mod crash;
 pub mod gate;
 pub mod heal;
 pub mod memory;
+pub mod spawn;
 pub mod worker;
