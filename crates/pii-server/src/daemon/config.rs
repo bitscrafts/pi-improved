@@ -421,6 +421,27 @@ ollama_host = "http://127.0.0.1:11434"
         assert_eq!(cfg.resolve_model(None), None);
     }
 
+    /// Spec 35: `[core] model = "llamacpp:<path>"` is a first-class config
+    /// entry — it parses and resolves like any other model spec, so a daemon
+    /// can be pointed at an in-process GGUF via the config file alone.
+    #[test]
+    fn core_section_parses_llamacpp_model() {
+        let raw = r#"
+[core]
+model = "llamacpp:/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf"
+"#;
+        let cfg = Config::parse(raw).unwrap();
+        assert_eq!(
+            cfg.core.model.as_deref(),
+            Some("llamacpp:/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf")
+        );
+        // resolve_model returns it verbatim (no special-casing).
+        assert_eq!(
+            cfg.resolve_model(None).as_deref(),
+            Some("llamacpp:/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf")
+        );
+    }
+
     #[test]
     fn resolve_runtime_dir_uses_core_section_when_env_absent() {
         let cfg = Config::parse("[core]\nruntime_dir = \"/tmp/pii-test-rt\"\n").unwrap();

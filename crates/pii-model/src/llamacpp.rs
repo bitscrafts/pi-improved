@@ -180,6 +180,10 @@ pub mod granite {
     use super::{ChatMessage, Role};
 
     /// Renders a transcript to the Granite 4.x wire format.
+    ///
+    /// Ends with the `<|start_of_role|>assistant<|end_of_role|>` header so the
+    /// model generates the assistant turn (the template's generation trigger),
+    /// not a continuation of the wire-format echo.
     #[must_use]
     pub fn build_prompt(messages: &[ChatMessage]) -> String {
         let mut out = String::new();
@@ -190,6 +194,8 @@ pub mod granite {
             out.push_str(&m.content);
             out.push_str("<|end_of_text|>");
         }
+        // Generation trigger: the assistant role header with no content yet.
+        out.push_str("<|start_of_role|>assistant<|end_of_role|>");
         out
     }
 
@@ -257,7 +263,8 @@ mod tests {
         assert_eq!(
             p,
             "<|start_of_role|>system<|end_of_role|>You are helpful.<|end_of_text|>\
-             <|start_of_role|>user<|end_of_role|>Hello<|end_of_text|>"
+             <|start_of_role|>user<|end_of_role|>Hello<|end_of_text|>\
+             <|start_of_role|>assistant<|end_of_role|>"
         );
     }
 
@@ -272,5 +279,40 @@ mod tests {
         assert!(!p.contains(" thinking"), "no thinking scaffolding: {p}");
         assert!(!p.contains("enable_thinking"), "no enable_thinking: {p}");
         assert!(p.contains("hello there"));
+    }
+
+    /// Real-model acceptance (N4: `#[ignore]` — not run in CI). Loads the
+    /// actual granite GGUF and runs one chat through the in-process provider,
+    /// proving the `llamacpp:` config entry works end-to-end. Run manually:
+    /// `cargo test -p pii-model -- --ignored real_granite_chat`.
+    #[test]
+    #[ignore = "loads a 2.2GB model; manual acceptance only"]
+    fn real_granite_chat() {
+        use super::LlamaCppProvider;
+        use crate::{ChatRequest, ModelProvider};
+        use pii_core::{Budget, CapSet, Ctx};
+
+        let path = std::path::Path::new("/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf");
+        assert!(path.exists(), "granite GGUF must be present");
+        let provider = LlamaCppProvider::load(path, 4096, 16).unwrap();
+        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+        let req = ChatRequest {
+            model: "granite".into(),
+            messages: vec![ChatMessage::new(
+                Role::User,
+                "Reply with exactly: GRANITE_OK",
+            )],
+            tools: Vec::new(),
+            max_tokens: 100,
+            temperature: 0.0,
+            num_ctx: 4096,
+        };
+        let resp = provider.chat(&ctx, &req).unwrap();
+        assert!(
+            resp.text.contains("GRANITE_OK"),
+            "expected GRANITE_OK in output, got: {:?}",
+            resp.text
+        );
+        assert!(resp.tokens_out > 0, "must generate tokens");
     }
 }
