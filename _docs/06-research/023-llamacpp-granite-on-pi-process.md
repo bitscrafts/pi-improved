@@ -173,3 +173,6 @@ itself (the workhorse).
 5. **`cmake` + `clang`** required for the in-process build; force clang via
    `.cargo/config.toml`.
 6. The router must be running (port 8082) for the external path.
+7. **Raise the tool-iteration cap for local models** — they're slow + verbose and
+   need more iterations than the default 50 to finish a spec. Use
+   `--max-tool-iterations 120` (or higher) for local-model spec runs.

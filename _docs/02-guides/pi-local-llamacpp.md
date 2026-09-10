@@ -39,10 +39,12 @@ pi --provider llamacpp --model granite-4.2-3b -p "Reply with exactly: GRANITE_OK
 pi --provider llamacpp --model laguna-xs-2.1  -p "Reply with exactly: LAGUNA_OK"
 
 # Agentic (tool-using) run — implement a spec
+# NOTE: local models are slow + verbose; raise the tool-iteration cap well above
+# the default 50 (they need more iterations to finish). Use 120+.
 pi --provider llamacpp --model granite-4.2-3b \
    -p "$(cat _tmp/brief-36-granite-tool-calls.md)" \
    --tools read,write,edit,bash,grep,find,ls \
-   --max-tool-iterations 60
+   --max-tool-iterations 120
 ```
 
 ## Model ids
