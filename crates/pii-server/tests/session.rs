@@ -15,6 +15,7 @@ fn engine_in(dir: &Path, fixture: &str) -> Arc<Engine> {
         store_path: dir.join("store.redb"),
         model: format!("scripted:{fixture}"),
         sandbox: SandboxProfileName::Off,
+        route_policy: std::collections::BTreeMap::new(),
         graph_dir: dir.join("graphs"),
     })
     .unwrap()

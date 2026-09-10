@@ -18,6 +18,8 @@ use crate::{EngineConfig, agent, nodes, tool};
 /// Builds the registry with the built-ins plus `agent`, `tool`, `gate` and
 /// `memory` (F2.2, F5.9, F6.7).
 #[must_use]
+#[allow(clippy::too_many_arguments)] // reason: the factory set mirrors the
+// Engine owned resources; a config struct would just be re-destructured.
 pub fn registry(
     cfg: &EngineConfig,
     provider: Arc<dyn ModelProvider>,
@@ -26,6 +28,7 @@ pub fn registry(
     heals: Arc<pii_store::heal::HealStore>,
     memory: Arc<pii_store::MemStore>,
     workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
+    route_policy: BTreeMap<String, String>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
@@ -33,6 +36,7 @@ pub fn registry(
         workspace: cfg.workspace.clone(),
         live: Some(live),
         memory: Some(Arc::clone(&memory)),
+        route_policy,
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(cfg.workspace.clone()),
@@ -79,6 +83,7 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
         workspace: workspace.to_path_buf(),
         live: None,
         memory: None,
+        route_policy: BTreeMap::new(),
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),

@@ -17,6 +17,9 @@ use crate::compaction::{self, Compaction};
 
 /// Agent node config (F2.10).
 pub struct AgentNode {
+    /// The routing step this node was resolved through (`None` = unrouted;
+    /// spec 28 R3).
+    pub(crate) route_step: Option<String>,
     pub(crate) system: String,
     pub(crate) max_turns: u32,
     pub(crate) model: Option<String>,
@@ -37,12 +40,59 @@ pub struct AgentNode {
 pub struct AgentFactory {
     /// Provider all agent nodes share.
     pub provider: Arc<dyn ModelProvider>,
+    /// `[evolve.routing]` step -> model policy (spec 28 R1). Empty = no
+    /// routing behavior; agent nodes without `route_step` are unchanged.
+    pub route_policy: std::collections::BTreeMap<String, String>,
     /// Workspace bound to bash mediation.
     pub workspace: std::path::PathBuf,
     /// Live-event sender (F12).
     pub live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
     /// Global memory store (spec 09 v2, P4.3).
     pub memory: Option<Arc<pii_store::MemStore>>,
+}
+
+/// Resolves an agent node's model (spec 28 R2/R4).
+///
+/// `route_step` present → look the step up in `[evolve.routing]`; a missing
+/// step is LOUD (`Err(NotFound)`, never a silent default).
+///
+/// # Errors
+/// [`PiiError::NotFound`] when a routed step has no policy entry.
+/// No `route_step` → the existing `model` key (or provider default),
+/// unchanged.
+/// Test seam: same logic as [`resolve_model`], public so the spec-28 TDD
+/// contract's integration tests exercise the exact resolution path.
+#[allow(clippy::double_must_use, unused_qualifications)]
+// reason:
+// the Result error IS the load-bearing R4 surface; the fully-qualified map
+// type keeps the test seam self-documenting.
+#[must_use]
+pub fn resolve_model_for_test(
+    cfg: &serde_json::Value,
+    policy: &std::collections::BTreeMap<String, String>,
+) -> Result<Option<String>, PiiError> {
+    resolve_model(cfg, policy)
+}
+
+fn resolve_model(
+    cfg: &serde_json::Value,
+    policy: &std::collections::BTreeMap<String, String>,
+) -> Result<Option<String>, PiiError> {
+    let Some(step) = cfg.get("route_step").and_then(serde_json::Value::as_str) else {
+        return Ok(cfg
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned));
+    };
+    policy.get(step).map_or_else(
+        // R4: an unassigned step must fail loudly, not default.
+        || {
+            Err(PiiError::NotFound(format!(
+                "route_step '{step}' has no entry in [evolve.routing] — refusing to silently default"
+            )))
+        },
+        |model| Ok(Some(model.clone())),
+    )
 }
 
 impl pii_graph::node::NodeFactory for AgentFactory {
@@ -99,17 +149,19 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             .unwrap_or(false)
             .then(|| self.memory.clone())
             .flatten();
+        let route_step = cfg
+            .get("route_step")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
         Ok(Box::new(AgentNode {
+            route_step,
             system,
             max_turns: cfg
                 .get("max_turns")
                 .and_then(serde_json::Value::as_u64)
                 .and_then(|v| u32::try_from(v).ok())
                 .unwrap_or(24),
-            model: cfg
-                .get("model")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
+            model: resolve_model(cfg, &self.route_policy)?,
             provider: self.provider.clone(),
             toolset,
             workspace: self.workspace.clone(),
@@ -124,6 +176,17 @@ impl GraphNode for AgentNode {
     #[allow(clippy::too_many_lines)] // reason: the turn loop is one cohesive
     // state machine; splitting it would scatter the compaction/timeout logic
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
+        // R3 (spec 28): journal + broadcast the routing decision so
+        // `pii graph trace` shows which model each step used. The resolved
+        // model is `self.model` (routed or explicit); unrouted nodes emit
+        // nothing.
+        if let Some(step) = &self.route_step {
+            self.emit_live(pii_proto::event::Event::RouteDecision {
+                run_id: ctx.trace().run.to_string(),
+                step: step.clone(),
+                model: self.model.clone().unwrap_or_default(),
+            });
+        }
         let user_text = input
             .payload
             .get("prompt")
@@ -481,6 +544,7 @@ mod tests {
     fn test_node(provider: Arc<RecordingProvider>) -> AgentNode {
         AgentNode {
             system: String::from("You are pii."),
+            route_step: None,
             max_turns: 4,
             model: None,
             provider,
@@ -721,6 +785,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::broadcast::channel::<SeqEvent>(16);
         let node = AgentNode {
             system: String::from("You are pii."),
+            route_step: None,
             max_turns: 4,
             model: None,
             provider: Arc::new(DeltaProvider),
@@ -797,6 +862,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::broadcast::channel::<SeqEvent>(16);
         let node = AgentNode {
             system: String::from("You are pii."),
+            route_step: None,
             max_turns: 4,
             model: None,
             provider: Arc::new(DeltaProvider),
@@ -928,6 +994,7 @@ mod tests {
         let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
         let node = AgentNode {
             system: String::from("You are pii."),
+            route_step: None,
             max_turns: 4,
             model: None,
             provider: Arc::new(MemProvider),

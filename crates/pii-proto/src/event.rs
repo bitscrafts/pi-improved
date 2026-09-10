@@ -183,6 +183,16 @@ pub enum Event {
         /// Why the lane was skipped.
         reason: String,
     },
+    /// A model-routing decision: which step resolved to which model
+    /// (spec 28 R3 — the journal is the audit trail).
+    RouteDecision {
+        /// Run id.
+        run_id: String,
+        /// The logical step name (e.g. `patch`).
+        step: String,
+        /// The resolved model spec.
+        model: String,
+    },
     /// A subscriber fell behind and events were dropped (never silent).
     Lagged {
         /// Subscription id.

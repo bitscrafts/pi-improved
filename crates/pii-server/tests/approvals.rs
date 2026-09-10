@@ -17,6 +17,7 @@ fn engine_in(dir: &Path, fixture: &Path) -> Arc<Engine> {
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fixture.display()),
         sandbox: SandboxProfileName::Off,
+        route_policy: std::collections::BTreeMap::new(),
         graph_dir: dir.join("graphs"),
     })
     .unwrap()
@@ -86,6 +87,7 @@ fn survive_daemon_restart() {
         store_path,
         model: format!("scripted:{}", fixture.display()),
         sandbox: SandboxProfileName::Off,
+        route_policy: std::collections::BTreeMap::new(),
         graph_dir: dir.join("graphs"),
     })
     .unwrap();

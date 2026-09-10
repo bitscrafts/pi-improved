@@ -23,6 +23,8 @@
 //! `/root/.pii/pii.toml` if `$HOME` is unset).
 
 use pii_abi::PiiError;
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 /// `[core]`: settings every entrypoint needs before it can do anything else.
@@ -102,6 +104,41 @@ const fn default_poll_ms() -> u64 {
     500
 }
 
+/// The known routing steps (spec 28 R1): the evolve pipeline's fixed roles.
+pub(crate) const KNOWN_STEPS: &[&str] =
+    &["localize", "patch", "review", "research", "orchestrator"];
+
+/// `[evolve]` (spec 28 R1): holds the `[evolve.routing]` step -> model
+/// policy. Empty by default — no routing behavior unless configured.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct EvolveSection {
+    /// Per-step model routing policy (step name -> model spec). Unknown
+    /// step names are an error (`deny_unknown_fields` semantics via the
+    /// validating deserializer below).
+    #[serde(default, deserialize_with = "deny_unknown_routing")]
+    pub routing: BTreeMap<String, String>,
+}
+
+/// Rejects a `[evolve.routing]` table whose keys are not known step names
+/// (R1: `deny_unknown_fields` applies — a typo'd step must not become a
+/// silent no-route).
+fn deny_unknown_routing<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let map: BTreeMap<String, String> = BTreeMap::deserialize(deserializer)?;
+    for k in map.keys() {
+        if !KNOWN_STEPS.contains(&k.as_str()) {
+            return Err(serde::de::Error::custom(format!(
+                "unknown routing step '{k}' (known: {})",
+                KNOWN_STEPS.join(", ")
+            )));
+        }
+    }
+    Ok(map)
+}
+
 /// `[memory]` (F5.2).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -159,6 +196,9 @@ pub struct Config {
     pub memory: MemorySection,
     /// `[[cron]]`.
     pub cron: Vec<CronSection>,
+    /// `[evolve]` (spec 28).
+    #[serde(default)]
+    pub evolve: EvolveSection,
 }
 
 impl Config {

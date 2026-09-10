@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use pii_abi::{PiiError, RunId};
-use pii_graph::node::NodeRegistry;
+pub use pii_graph::node::NodeRegistry;
 use pii_graph::spec::GraphSpec;
 use pii_model::ModelProvider;
 use pii_proto::session::{ContentBlock, SessionStatus, WireMessage};
@@ -52,6 +52,8 @@ pub struct EngineConfig {
     pub sandbox: SandboxProfileName,
     /// Directory graph files are loaded from.
     pub graph_dir: PathBuf,
+    /// `[evolve.routing]` step -> model policy (spec 28). Empty = no routing.
+    pub route_policy: BTreeMap<String, String>,
 }
 
 /// An executing or completed run.
@@ -195,6 +197,7 @@ impl Engine {
             Arc::clone(&heals),
             Arc::clone(&memory),
             Arc::clone(&workers),
+            cfg.route_policy.clone(),
         );
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {

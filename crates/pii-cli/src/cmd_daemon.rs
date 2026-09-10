@@ -196,6 +196,7 @@ async fn run_daemon(
         model,
         sandbox,
         graph_dir: runtime_dir.join("graphs"),
+        route_policy: cfg.evolve.routing.clone(),
     };
     let engine = match Engine::new(engine_cfg) {
         Ok(e) => e,

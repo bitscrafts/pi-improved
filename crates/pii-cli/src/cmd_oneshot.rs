@@ -171,6 +171,7 @@ async fn run_over_loopback(
         model: model.to_owned(),
         sandbox: a.sandbox,
         graph_dir: store_dir.join("graphs"),
+        route_policy: std::collections::BTreeMap::new(),
     };
     let engine = Engine::new(cfg).map_err(|e| e.to_string())?;
     let stream = pii_server::loopback::spawn_loopback(engine);

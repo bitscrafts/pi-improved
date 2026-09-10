@@ -81,6 +81,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
                 .unwrap_or_else(|| String::from("scripted:")),
             sandbox: SandboxProfileName::Off,
             graph_dir: store_dir.join("graphs"),
+            route_policy: std::collections::BTreeMap::new(),
         };
         let engine = match Engine::new(cfg) {
             Ok(e) => e,

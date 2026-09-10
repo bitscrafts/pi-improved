@@ -119,6 +119,7 @@ mod tests {
             model: format!("scripted:{}", write_empty_fixture(&scratch("fixture.json"))),
             sandbox: pii_tools::sandbox::SandboxProfileName::Off,
             graph_dir: dir.to_path_buf(),
+            route_policy: std::collections::BTreeMap::new(),
         })
         .unwrap()
     }
