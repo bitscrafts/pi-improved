@@ -47,6 +47,17 @@ impl PathScope {
         }
     }
 
+    /// Builder: attaches deny prefixes on top of the existing allow set
+    /// (spec 31 R1). `permits` already treats `deny` as winning over `allow`
+    /// — this is the only public way to populate it without hand-building
+    /// the struct, so a deny list is a capability, not a policy bolted on
+    /// after the fact.
+    #[must_use]
+    pub fn with_deny(mut self, deny: Vec<PathBuf>) -> Self {
+        self.deny = deny;
+        self
+    }
+
     /// True if `canonical` is inside an allow prefix and not inside a deny.
     #[must_use]
     pub fn permits(&self, canonical: &Path) -> bool {
@@ -85,6 +96,22 @@ impl PathScope {
         Self { allow, deny }
     }
 }
+
+/// Default protected-path deny list for a heal run's `fs_write` scope.
+///
+/// Relative to the run's `scope_root` (spec 31 R1). A heal worktree is a full
+/// checkout, so without this a patch could delete the very assertions that
+/// prove it worked. Shared by `run_caps` (the enforcement site) and `xtask
+/// heal-collect` (the pre-write refusal check) so both stay in sync.
+pub const PROTECTED_RELATIVE_PATHS: &[&str] = &[
+    "specs",
+    "xtask",
+    "quality-gate.sh",
+    "graphs",
+    "clippy.toml",
+    "rust-toolchain.toml",
+    ".github",
+];
 
 /// A prefix allowlist over strings (used for net hosts / proc argv0 in Phase 1).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -208,6 +235,32 @@ mod tests {
         assert!(s.permits(Path::new("/a/b/c")));
         assert!(!s.permits(Path::new("/a")));
         assert!(!s.permits(Path::new("/x")));
+    }
+
+    /// R1 (spec 31): `with_deny` builds a deny prefix that wins even though
+    /// an allow prefix covers the same path — the acceptance property a
+    /// path-list-only check (filtering candidates before calling `permits`)
+    /// would not exercise, since here the deny is enforced INSIDE `permits`.
+    #[test]
+    fn protected_deny_wins_even_when_allow_covers_it() {
+        use super::PathScope;
+        let s = PathScope::new(vec![Path::new("/wt").to_path_buf()])
+            .with_deny(vec![Path::new("/wt/specs").to_path_buf()]);
+        assert!(!s.permits(Path::new("/wt/specs/foo.md")));
+        assert!(s.permits(Path::new("/wt/crates/x.rs")));
+    }
+
+    /// R4 (spec 31): the shared protected-path list is non-empty and every
+    /// entry is a bare relative fragment (no leading `/`), so joining it onto
+    /// a `scope_root` in `run_caps` produces a path INSIDE the worktree, not
+    /// an absolute escape.
+    #[test]
+    fn protected_relative_paths_are_relative() {
+        use super::PROTECTED_RELATIVE_PATHS;
+        assert!(!PROTECTED_RELATIVE_PATHS.is_empty());
+        for p in PROTECTED_RELATIVE_PATHS {
+            assert!(!p.starts_with('/'), "{p} must be relative");
+        }
     }
 
     #[test]

@@ -23,7 +23,7 @@ mod principal;
 
 pub use budget::{Budget, BudgetKind, BudgetShare};
 pub use cancel::CancelToken;
-pub use cap::{CapSet, PathScope, StringScope};
+pub use cap::{CapSet, PROTECTED_RELATIVE_PATHS, PathScope, StringScope};
 pub use childproc::{ChildProc, ProcOutput};
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use config::env_var;

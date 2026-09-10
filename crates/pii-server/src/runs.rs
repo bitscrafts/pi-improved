@@ -261,6 +261,19 @@ fn run_caps(
     caps.fs_write = pii_core::PathScope::new(vec![
         scope_root.map_or_else(|| workspace.to_path_buf(), std::path::Path::to_path_buf),
     ]);
+    if let Some(root) = scope_root {
+        // R1 (spec 31): a scoped (heal) run's worktree is a full checkout, so
+        // without a deny list `specs/`, `xtask/`, `quality-gate.sh` and every
+        // `#[test]` sit inside the allow prefix above — the cheapest "fix" for
+        // any model would be deleting the assertion. `PROTECTED_RELATIVE_PATHS`
+        // is shared with `xtask heal-collect`'s pre-write refusal check.
+        caps.fs_write = caps.fs_write.with_deny(
+            pii_core::PROTECTED_RELATIVE_PATHS
+                .iter()
+                .map(|p| root.join(p))
+                .collect(),
+        );
+    }
     caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
     if let Some(host) = net_host {
         caps.net_hosts = pii_core::StringScope::new(vec![host.to_owned()]);
@@ -352,6 +365,41 @@ mod tests {
             .unwrap()
             .write(&ws.path().join("specs/08-x.md"), b"");
         assert!(matches!(spec_write, Err(pii_abi::PiiError::Denied(_))));
+    }
+
+    /// T1 (spec 31, acceptance): a heal run's `fs_write` denies a protected
+    /// path EVEN THOUGH it is inside the `scope_root` allow prefix — a
+    /// plausible-but-wrong implementation that only filters candidate paths
+    /// before calling `permits` (instead of putting the entries in
+    /// `PathScope`'s own deny list) would let this through.
+    #[test]
+    fn fs_write_denies_protected_path_in_scope() {
+        let ws = Builder::new()
+            .prefix("heal-caps-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let wt = ws.path().join("_tmp/heal-worktrees/s-protected");
+        std::fs::create_dir_all(wt.join("specs")).unwrap();
+        let ctx = ctx_for(run_caps(ws.path(), Some(&wt), None));
+        let target = wt.join("specs/foo.md");
+        let err = ctx.fs().unwrap().write(&target, b"x").unwrap_err();
+        assert!(matches!(err, pii_abi::PiiError::Denied(_)), "got {err:?}");
+        assert!(!target.exists(), "protected write must not touch disk");
+    }
+
+    /// T3 (spec 31): the protected-path deny list must not block ordinary
+    /// source writes inside the same worktree.
+    #[test]
+    fn fs_write_still_allows_source() {
+        let ws = Builder::new()
+            .prefix("heal-caps-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let wt = ws.path().join("_tmp/heal-worktrees/s-source");
+        std::fs::create_dir_all(wt.join("crates/pii-core/src")).unwrap();
+        let ctx = ctx_for(run_caps(ws.path(), Some(&wt), None));
+        let target = wt.join("crates/pii-core/src/x.rs");
+        assert!(ctx.fs().unwrap().write(&target, b"fn x() {}").is_ok());
     }
 
     #[test]

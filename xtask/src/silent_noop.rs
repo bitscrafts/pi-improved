@@ -143,6 +143,7 @@ pub(crate) fn run(root: &Path, list: bool) -> Result<(), Vec<String>> {
     let event_lines = scan_events(root, &mut violations);
     let config_lines = scan_config(root, &mut violations);
     let graph_lines = scan_graph_keys(root, &mut violations);
+    let protected_lines = scan_protected_paths(root, &mut violations);
     let reason_lines = require_written_reasons(&mut violations);
 
     if list {
@@ -151,6 +152,7 @@ pub(crate) fn run(root: &Path, list: bool) -> Result<(), Vec<String>> {
             event_lines,
             config_lines,
             graph_lines,
+            protected_lines,
             reason_lines,
         ) {
             println!("{line}");
@@ -170,11 +172,12 @@ fn report_lines(
     events: Vec<String>,
     config: Vec<String>,
     graph: Vec<String>,
+    protected: Vec<String>,
     reasons: Vec<String>,
 ) -> Vec<String> {
     let mut out = Vec::new();
     out.push(format!("silent-noop-check --list ({} findings)", {
-        methods.len() + events.len() + config.len() + graph.len()
+        methods.len() + events.len() + config.len() + graph.len() + protected.len()
     }));
     for s in methods {
         out.push(format!("  METHOD {s}"));
@@ -187,6 +190,9 @@ fn report_lines(
     }
     for s in graph {
         out.push(format!("  GRAPH-KEY {s}"));
+    }
+    for s in protected {
+        out.push(format!("  PROTECTED-PATH {s}"));
     }
     for s in reasons {
         out.push(format!("  ALLOW-REASON {s}"));
@@ -367,6 +373,53 @@ fn scan_graph_keys(root: &Path, violations: &mut Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+/// Scan 5 (R4, spec 31): `pii_core::PROTECTED_RELATIVE_PATHS` is declared as
+/// the deny list a heal run's `fs_write` scope must enforce — but a declared
+/// list is not the same as an ENFORCED one. Checks that the identifier is
+/// actually referenced at both chokepoints the spec names: `run_caps`'s
+/// `fs_write` deny wiring, and `xtask heal-collect`'s pre-write refusal
+/// check. A protected-path list with no enforcement site is a silent no-op
+/// exactly like an unwired method or an unread config key.
+fn scan_protected_paths(root: &Path, violations: &mut Vec<String>) -> Vec<String> {
+    let decl = root.join("crates/pii-core/src/cap.rs");
+    let Ok(decl_src) = std::fs::read_to_string(&decl) else {
+        violations.push(format!("SILENT-NOOP FAIL: cannot read {}", decl.display()));
+        return Vec::new();
+    };
+    if !decl_src.contains("PROTECTED_RELATIVE_PATHS") {
+        // Nothing declared yet — no protected-path surface to enforce.
+        return Vec::new();
+    }
+    let sites: &[(&str, &str)] = &[
+        (
+            "crates/pii-server/src/runs.rs",
+            "run_caps fs_write deny wiring",
+        ),
+        (
+            "xtask/src/heal_collect.rs",
+            "heal-collect pre-write refusal check",
+        ),
+    ];
+    let mut out = Vec::new();
+    for (rel, desc) in sites {
+        let id = format!("protected-path-site:{rel}");
+        let wired = std::fs::read_to_string(root.join(rel)).is_ok_and(|s| protected_path_wired(&s));
+        if wired {
+            continue;
+        }
+        out.push(format!("{id} [UNWIRED]"));
+        violations.push(format!(
+            "SILENT-NOOP FAIL: PROTECTED_RELATIVE_PATHS is declared but not enforced at {rel} ({desc})"
+        ));
+    }
+    out
+}
+
+/// `true` if `src` actually references the shared protected-path list.
+fn protected_path_wired(src: &str) -> bool {
+    src.contains("PROTECTED_RELATIVE_PATHS")
 }
 
 fn graph_declares_key(root: &Path, key: &str) -> bool {
@@ -601,7 +654,7 @@ mod tests {
         }
     }
 
-    /// The four scans run without error over the real tree.
+    /// The five scans run without error over the real tree.
     #[test]
     fn scans_run_over_real_tree() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -610,6 +663,7 @@ mod tests {
         let _ = scan_events(root, &mut v);
         let _ = scan_config(root, &mut v);
         let _ = scan_graph_keys(root, &mut v);
+        let _ = scan_protected_paths(root, &mut v);
         let _ = require_written_reasons(&mut v);
         // The gate must find the 5 unwired methods as real violations (they are
         // allowlisted, so they show as [allowlisted] not UNWIRED, but the scan
@@ -620,5 +674,28 @@ mod tests {
                 "scan must not fail on missing files: {line}"
             );
         }
+    }
+
+    /// R4 (spec 31) acceptance: the identifier-presence check is non-vacuous
+    /// — a file that never mentions `PROTECTED_RELATIVE_PATHS` fails it, one
+    /// that does passes.
+    #[test]
+    fn protected_path_wiring_detected_by_identifier_use() {
+        assert!(protected_path_wired(
+            "caps.fs_write.with_deny(pii_core::PROTECTED_RELATIVE_PATHS.iter()...)"
+        ));
+        assert!(!protected_path_wired("no reference to any deny list here"));
+    }
+
+    /// R4 (spec 31): over the REAL tree, the declared list is enforced at
+    /// both named chokepoints (this implementation wires both), so the scan
+    /// must report zero violations.
+    #[test]
+    fn real_protected_paths_are_wired() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let mut v = Vec::new();
+        let out = scan_protected_paths(root, &mut v);
+        assert!(out.is_empty(), "unexpected findings: {out:?}");
+        assert!(v.is_empty(), "unexpected violations: {v:?}");
     }
 }

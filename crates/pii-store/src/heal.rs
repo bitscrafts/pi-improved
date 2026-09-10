@@ -250,6 +250,11 @@ impl HealStore {
         });
         existing.last_seen_ms = run.ts_ms;
         existing.attempt_count = existing.attempt_count.saturating_add(1);
+        // R3 (spec 31): the top-level state tracks the MOST RECENT run's
+        // outcome — e.g. a heal-collect refusal recorded with
+        // `HealState::Escalated` moves the whole attempt to Escalated, not
+        // just the individual run row.
+        existing.state = run.outcome;
         existing.attempts.push(run);
         while existing.attempts.len() > ATTEMPT_RING_CAP {
             existing.attempts.remove(0);
@@ -339,6 +344,39 @@ mod tests {
         // The oldest attempts were evicted from the ring.
         assert_eq!(a.attempts.first().map(|x| x.run_id.as_str()), Some("r5"));
         assert_eq!(a.attempts.last().map(|x| x.run_id.as_str()), Some("r24"));
+    }
+
+    /// R3 (spec 31): recording a run with `HealState::Escalated` (e.g. a
+    /// `heal-collect` refusal) moves the ATTEMPT's top-level state to
+    /// Escalated, with the refusal reason readable back from the run's
+    /// `detail` — not just recorded on the individual run row.
+    #[test]
+    fn heal_escalated_run_moves_top_level_state() {
+        let dir = Builder::new()
+            .prefix("heal-escalate-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
+        let detail = String::from(
+            "heal-collect: refused — specs/31-protected-paths.md touches a protected path",
+        );
+        let run = HealAttemptRun {
+            run_id: String::from("r1"),
+            outcome: HealState::Escalated,
+            ts_ms: 100,
+            detail: detail.clone(),
+        };
+        let a = store
+            .record_run("sig-escalated", "heal-collect", run)
+            .unwrap();
+        assert_eq!(a.state, HealState::Escalated);
+        assert_eq!(
+            a.attempts.last().map(|r| r.detail.as_str()),
+            Some(detail.as_str())
+        );
+        // Round-trips through storage, not just the in-memory return value.
+        let reloaded = store.get_attempt("sig-escalated").unwrap().unwrap();
+        assert_eq!(reloaded.state, HealState::Escalated);
     }
 
     /// R5 (spec 26): a legacy row written with `outcome: "detected"` (String)
