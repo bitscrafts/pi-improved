@@ -103,6 +103,7 @@ pub fn run_with_validate(
     let mut st = RunState::from_spec(spec);
     let mut fin = Vec::new();
     let mut failure = None;
+    let no_resume_keys: BTreeMap<NodeId, ResumeKey> = BTreeMap::new();
     let engine = Engine {
         spec,
         reg,
@@ -112,11 +113,19 @@ pub fn run_with_validate(
         jr: &jr,
         built: &built,
         tokens: &tokens,
+        resume_keys: &no_resume_keys,
     };
     engine.tick_loop(&mut st, &mut fin, &mut failure)
 }
 
 /// Resumes a run by replaying its journal, then continuing the tick loop.
+///
+/// `resume_key` is the specific key the caller knows just fired (e.g. the
+/// daemon scheduler's due timer wheel entry); `None` for a bare/manual
+/// resume (CLI, approval resolve) that has no single known key. Either way,
+/// the node(s) the journal shows as still-suspended are dispatched through
+/// [`crate::node::GraphNode::on_resume`] (spec 30 D1) rather than a fresh
+/// `run()` — a fired timer resumes to `Next` instead of re-suspending.
 ///
 /// # Errors
 /// Returns [`PiiError::NotFound`] for an unknown run or graph body,
@@ -126,6 +135,7 @@ pub fn resume(
     reg: &NodeRegistry,
     ctx: &Ctx,
     run_id: &RunId,
+    resume_key: Option<&ResumeKey>,
 ) -> Result<Terminal, PiiError> {
     let header = store
         .get_run(run_id)?
@@ -157,7 +167,16 @@ pub fn resume(
     let mut st = RunState::from_spec(&spec);
     let mut fin: Vec<FinishedNode> = Vec::new();
     let mut failure: Option<String> = None;
-    replay(&journal, &spec, &mut st, &bb, &mut fin, &mut failure);
+    let mut suspended: BTreeMap<NodeId, ResumeKey> = BTreeMap::new();
+    replay(
+        &journal,
+        &spec,
+        &mut st,
+        &bb,
+        &mut fin,
+        &mut failure,
+        &mut suspended,
+    );
 
     // Spec 11 J3 — interrupted-turn closer: a node whose last relevant event
     // is `NodeStarted` with no later terminal event (`NodeFinished`/
@@ -174,8 +193,16 @@ pub fn resume(
 
     let payload_bytes =
         serde_json::to_vec(&input).map_err(|e| PiiError::Internal(format!("input serde: {e}")))?;
+    // The Resumed event's key is the caller-supplied key when known (e.g.
+    // the scheduler's due timer), else whichever key the journal shows as
+    // still-suspended (at most one — a suspend halts the whole tick loop),
+    // else empty (a bare resume of a run that was not actually suspended).
+    let fired_key = resume_key
+        .cloned()
+        .or_else(|| suspended.values().next().cloned())
+        .unwrap_or_else(|| ResumeKey(String::new()));
     jr.append(&RunEvent::Resumed {
-        key: ResumeKey(String::new()),
+        key: fired_key,
         payload_hash: pii_store::hash(&payload_bytes),
     })?;
 
@@ -196,6 +223,7 @@ pub fn resume(
         jr: &jr,
         built: &built,
         tokens: &tokens,
+        resume_keys: &suspended,
     };
     engine.tick_loop(&mut st, &mut fin, &mut failure)
 }
@@ -209,6 +237,11 @@ struct Engine<'a> {
     jr: &'a Journaler<'a>,
     built: &'a BTreeMap<NodeId, Box<dyn GraphNode>>,
     tokens: &'a CancelTokenSet,
+    /// Nodes the journal shows as still-suspended, keyed to their latest
+    /// resume key (spec 30 D1): empty for a fresh `run()`, populated by
+    /// `resume()`'s journal replay. Threaded into [`Env`] so `dispatch`
+    /// routes these nodes through `on_resume` instead of `run`.
+    resume_keys: &'a BTreeMap<NodeId, ResumeKey>,
 }
 
 impl Engine<'_> {
@@ -360,6 +393,7 @@ impl Engine<'_> {
                 jr: self.jr,
                 run: self.run_id,
                 bb: self.bb,
+                resume_keys: self.resume_keys,
             };
 
             // Partition by parallel safety (F4.8): Pure | ReadsFs parallel,

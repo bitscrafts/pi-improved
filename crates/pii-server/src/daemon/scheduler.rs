@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use pii_abi::RunId;
+use pii_abi::{ResumeKey, RunId};
 use pii_core::Clock;
 use pii_store::timer::TimerWheel;
 use tokio::sync::Notify;
@@ -87,7 +87,8 @@ impl Scheduler {
         let due = self.wheel.take_due(now_ms).unwrap_or_default();
         for d in due {
             let run_id = RunId::from(d.run.as_str());
-            let _ = crate::runs::spawn_resume(Arc::clone(&self.engine), run_id);
+            let key = ResumeKey(d.key.clone());
+            let _ = crate::runs::spawn_resume(Arc::clone(&self.engine), run_id, Some(key));
         }
     }
 }

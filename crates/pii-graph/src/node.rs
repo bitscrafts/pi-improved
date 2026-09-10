@@ -1,6 +1,6 @@
 //! The harness ABI and node registry (spec F4.4).
 
-use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
+use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName, ResumeKey};
 use pii_core::CapKind;
 use pii_core::Ctx;
 use std::collections::BTreeMap;
@@ -13,6 +13,15 @@ pub trait GraphNode: Send + Sync {
     /// # Errors
     /// Returns [`PiiError`] on failure or cancellation.
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError>;
+
+    /// Resumes a node that suspended under `key`, instead of re-running it
+    /// from scratch (spec 30 D1). `Some(outcome)` completes the resume with
+    /// that outcome (typically `Next`); `None` falls back to re-dispatching
+    /// [`GraphNode::run`] (the pre-spec-30 behavior, still correct for a
+    /// wait condition that has not yet been satisfied).
+    fn on_resume(&self, _ctx: &Ctx, _input: &NodeInput, _key: &ResumeKey) -> Option<Outcome> {
+        None
+    }
 }
 
 /// Builds node instances for one `kind`.

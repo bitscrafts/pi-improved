@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use pii_abi::{PiiError, RunId};
+use pii_abi::{PiiError, ResumeKey, RunId};
 use pii_graph::spec::GraphSpec;
 
 use crate::Engine;
@@ -111,9 +111,17 @@ pub fn spawn_run(
 /// shape so a resume looks identical to a fresh run to every subscriber on
 /// the bus.
 ///
+/// `resume_key` is the specific key the caller knows just fired (e.g. the
+/// scheduler's due timer wheel entry — spec 30 D1); `None` for a bare
+/// resume (approval resolve, manual RPC) that has no single known key.
+///
 /// # Errors
 /// None currently; kept `Result` for symmetry with [`spawn_run`].
-pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> {
+pub fn spawn_resume(
+    engine: Arc<Engine>,
+    run_id: RunId,
+    resume_key: Option<ResumeKey>,
+) -> Result<(), PiiError> {
     let cancel = pii_core::CancelToken::new();
     engine.register_run(&run_id, cancel.clone());
     let bridge = BridgeObserver {
@@ -175,7 +183,13 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
         cancel,
     );
     tokio::task::spawn_blocking(move || {
-        let terminal = match pii_graph::run::resume(&engine.store, &engine.reg, &ctx, &run_id) {
+        let terminal = match pii_graph::run::resume(
+            &engine.store,
+            &engine.reg,
+            &ctx,
+            &run_id,
+            resume_key.as_ref(),
+        ) {
             Ok(t) => Some(t),
             Err(e) => {
                 #[allow(clippy::print_stderr)]

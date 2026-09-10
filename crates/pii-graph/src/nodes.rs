@@ -1,7 +1,7 @@
 //! Built-in node kinds (spec F4.5).
 
 use crate::expr::{eval, eval_or_literal};
-use pii_abi::{NodeInput, Outcome, PiiError, PortName};
+use pii_abi::{NodeInput, Outcome, PiiError, PortName, ResumeKey};
 use pii_core::Ctx;
 
 /// Build the evaluation context object for a node:
@@ -305,7 +305,22 @@ impl super::GraphNode for TimerNode {
         };
         Ok(Outcome::Suspend {
             reason: pii_abi::SuspendReason::Timer { in_ms },
-            key: pii_abi::ResumeKey(key),
+            key: ResumeKey(key),
+        })
+    }
+
+    /// Resumes to `fired` once the key's `fire_at_ms` (its trailing
+    /// `:`-separated field, per the format above) has passed; otherwise
+    /// `None` re-suspends via a fresh [`Self::run`] dispatch (F5.6/spec 30
+    /// R1).
+    fn on_resume(&self, ctx: &Ctx, input: &NodeInput, key: &ResumeKey) -> Option<Outcome> {
+        let fire_at_ms: u64 = key.0.rsplit(':').next()?.parse().ok()?;
+        if ctx.now_ms() < fire_at_ms {
+            return None;
+        }
+        Some(Outcome::Next {
+            port: PortName::from("fired"),
+            value: input.payload.clone(),
         })
     }
 }

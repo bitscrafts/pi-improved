@@ -144,7 +144,7 @@ pub(crate) fn cmd_resume(args: &mut std::env::ArgsOs) -> ExitCode {
         run_id.clone(),
         &pii_graph::GraphLimits::default(),
     );
-    let result = pii_graph::run::resume(&store, &reg, &ctx, &run_id);
+    let result = pii_graph::run::resume(&store, &reg, &ctx, &run_id, None);
     report(result)
 }
 

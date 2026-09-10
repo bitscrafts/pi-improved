@@ -289,7 +289,7 @@ async fn boss_watch_timer_suspends_for_real() {
         "one real Timer suspend: {before:?}"
     );
 
-    pii_server::runs::spawn_resume(Arc::clone(&engine), run_id.clone()).unwrap();
+    pii_server::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
     let after = wait_for_journal_len(&engine, &run_id, before.len() + 1).await;
 
     let timer_suspends_after = after
@@ -597,5 +597,97 @@ async fn boss_watch_second_cycle_suspends_with_fresh_id() {
     assert!(
         engine.approvals.get_approval(&id2).unwrap().is_none(),
         "run2's approval must never have been requested or decided"
+    );
+}
+
+/// Spec 30 T2: a boss-watch-SHAPED graph (`timer` → `heal_detect` → `gate`,
+/// the same node kinds and wiring as the real `graphs/starter/boss-watch.toml`
+/// but with a short `in_ms` timer instead of the cron `*/30 * * * *` — a
+/// cron's next fire is up to 30 min away, untestable in a unit window),
+/// resumed once after the timer fires, reaches the `check` node. This proves
+/// the `timer`→`heal_detect` handoff that the shipped boss graph depends on.
+#[tokio::test]
+async fn boss_watch_reaches_detect_after_resume() {
+    let dir = scratch(&format!("reachesdetect-{}", std::process::id()));
+    // Write a boss-watch-shaped graph with a 1ms timer into a SCRATCH graph
+    // dir (the real `graphs/` uses cron "*/30 * * * *" — next fire up to 30
+    // min away, untestable in a unit window).
+    std::fs::create_dir_all(dir.join("graphs/starter")).unwrap();
+    std::fs::write(
+        dir.join("graphs/starter/boss-watch.toml"),
+        r#"
+name = "starter/boss-watch"
+entry = "tick"
+caps = ["proc"]
+
+[[node]]
+id = "tick"
+kind = "timer"
+in_ms = 1
+
+[[node]]
+id = "check"
+kind = "heal_detect"
+gate = "silent-noop-check"
+caps = ["proc"]
+
+[[node]]
+id = "done"
+kind = "transform"
+join = "any"
+value = "no-silent-noop"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "flake"
+to = "done"
+kind = "data"
+"#,
+    )
+    .unwrap();
+    // Engine whose graph_dir is the SCRATCH dir (not the real graphs/).
+    let engine = Engine::new(EngineConfig {
+        workspace: dir.clone(),
+        store_path: dir.join("store.redb"),
+        model: format!("scripted:{}", fixture_path().display()),
+        sandbox: SandboxProfileName::Off,
+        route_policy: std::collections::BTreeMap::new(),
+        graph_dir: dir.join("graphs"),
+    })
+    .unwrap();
+    let run_id = engine
+        .start_run("starter/boss-watch", &serde_json::json!({"cycle": 0}))
+        .unwrap();
+    wait_for_status(&engine, &run_id, |s| s == RunStatus::Suspended).await;
+
+    // Wait past the 1ms fire time, then resume.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    pii_server::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
+
+    // The resume is async — wait for the journal to grow past the initial
+    // suspend (the timer fires and forwards to heal_detect).
+    let before = engine.store.read_journal(&run_id).unwrap().len();
+    let journal = wait_for_journal_len(&engine, &run_id, before + 1).await;
+    let check_started = journal
+        .iter()
+        .filter(
+            |(_, ev)| matches!(ev, RunEvent::NodeStarted { node, .. } if node.as_str() == "check"),
+        )
+        .count();
+    assert!(
+        check_started >= 1,
+        "boss-watch must reach the check node after resume: {journal:?}"
     );
 }

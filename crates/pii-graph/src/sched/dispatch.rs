@@ -43,6 +43,10 @@ pub struct Env<'a> {
     pub run: &'a RunId,
     /// The blackboard behind a [`RwLock`].
     pub bb: &'a Arc<RwLock<Blackboard>>,
+    /// Nodes the journal shows as still-suspended, keyed to their latest
+    /// resume key (spec 30 D1). Empty for a fresh run; populated by
+    /// `run::resume`'s journal replay.
+    pub resume_keys: &'a BTreeMap<NodeId, ResumeKey>,
 }
 
 /// A node's dispatch outcome, sent from a worker to the applying loop.
@@ -187,6 +191,28 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         token.clone(),
     );
 
+    // Spec 30 D1: a node the journal shows as still-suspended gets one
+    // `on_resume` check before falling back to a fresh `run()`. A timer
+    // whose wheel entry has fired completes here (`Next{"fired"}`) instead
+    // of re-suspending with a brand-new key.
+    if let Some(key) = env.resume_keys.get(&ns.id)
+        && let Some(outcome) = node.on_resume(&ctx, input, key)
+    {
+        let at_ms = ctx.elapsed_ms();
+        if let Err(e) = env.jr.append(&RunEvent::NodeStarted {
+            node: ns.id.clone(),
+            at_ms,
+        }) {
+            return DispatchOutcome::Failed {
+                error: e.to_string(),
+            };
+        }
+        return match outcome {
+            Outcome::Fail { error } => journal_failure(env, &ns.id, &error, 1, false),
+            other => journal_next_or_suspend(env, &ns.id, other, at_ms, 0),
+        };
+    }
+
     let max_retries = ns.retry.max;
     let mut attempt: u32 = 1;
     loop {
@@ -204,40 +230,8 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         let result = node.run(&ctx, input);
         let dur_ms = ctx.elapsed_ms().saturating_sub(at_ms);
         match result {
-            Ok(Outcome::Next { port, value }) => {
-                let value_hash = hash_json(&value);
-                if let Err(e) = env.jr.append(&RunEvent::NodeFinished {
-                    node: ns.id.clone(),
-                    port: port.clone(),
-                    value: value.clone(),
-                    value_hash,
-                    at_ms,
-                    dur_ms,
-                }) {
-                    return DispatchOutcome::Failed {
-                        error: e.to_string(),
-                    };
-                }
-                return DispatchOutcome::Next { port, value };
-            }
-            Ok(Outcome::Suspend { reason, key }) => {
-                if let Err(e) = env.jr.append(&RunEvent::Suspended {
-                    node: ns.id.clone(),
-                    reason,
-                    key: key.clone(),
-                }) {
-                    return DispatchOutcome::Failed {
-                        error: e.to_string(),
-                    };
-                }
-                if let Err(e) = env.jr.store().put_resume_key(&key, env.run) {
-                    return DispatchOutcome::Failed {
-                        error: e.to_string(),
-                    };
-                }
-                // Snapshot unconditionally at the Suspended seq.
-                let _ = env.jr.snapshot_now();
-                return DispatchOutcome::Suspended { key };
+            Ok(outcome @ (Outcome::Next { .. } | Outcome::Suspend { .. })) => {
+                return journal_next_or_suspend(env, &ns.id, outcome, at_ms, dur_ms);
             }
             Ok(Outcome::Fail { error }) => {
                 return journal_failure(env, &ns.id, &error, attempt, false);
@@ -270,6 +264,55 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
                 return outcome;
             }
         }
+    }
+}
+
+/// Journals a `Next` or `Suspend` outcome, shared by the normal `run()` path
+/// and the spec-30 `on_resume` path.
+fn journal_next_or_suspend(
+    env: &Env<'_>,
+    id: &NodeId,
+    outcome: Outcome,
+    at_ms: u32,
+    dur_ms: u32,
+) -> DispatchOutcome {
+    match outcome {
+        Outcome::Next { port, value } => {
+            let value_hash = hash_json(&value);
+            if let Err(e) = env.jr.append(&RunEvent::NodeFinished {
+                node: id.clone(),
+                port: port.clone(),
+                value: value.clone(),
+                value_hash,
+                at_ms,
+                dur_ms,
+            }) {
+                return DispatchOutcome::Failed {
+                    error: e.to_string(),
+                };
+            }
+            DispatchOutcome::Next { port, value }
+        }
+        Outcome::Suspend { reason, key } => {
+            if let Err(e) = env.jr.append(&RunEvent::Suspended {
+                node: id.clone(),
+                reason,
+                key: key.clone(),
+            }) {
+                return DispatchOutcome::Failed {
+                    error: e.to_string(),
+                };
+            }
+            if let Err(e) = env.jr.store().put_resume_key(&key, env.run) {
+                return DispatchOutcome::Failed {
+                    error: e.to_string(),
+                };
+            }
+            // Snapshot unconditionally at the Suspended seq.
+            let _ = env.jr.snapshot_now();
+            DispatchOutcome::Suspended { key }
+        }
+        Outcome::Fail { error } => journal_failure(env, id, &error, 1, false),
     }
 }
 

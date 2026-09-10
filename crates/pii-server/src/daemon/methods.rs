@@ -305,7 +305,7 @@ pub(crate) fn run_resume(engine: &Arc<Engine>, req: &Request) -> Response {
     let Some(run_id) = req.params.get("run_id").and_then(|v| v.as_str()) else {
         return err(req, ErrorCode::InvalidParams, "run.resume needs 'run_id'");
     };
-    match crate::runs::spawn_resume(Arc::clone(engine), RunId::from(run_id)) {
+    match crate::runs::spawn_resume(Arc::clone(engine), RunId::from(run_id), None) {
         Ok(()) => value_response(req, Some(serde_json::json!({"resumed": true})), |c, m| {
             err(req, c, m)
         }),

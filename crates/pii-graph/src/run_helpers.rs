@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use pii_abi::{NodeId, PiiError, RunEvent, RunStatus, Terminal};
+use pii_abi::{NodeId, PiiError, ResumeKey, RunEvent, RunStatus, Terminal};
 use pii_core::Ctx;
 
 use crate::blackboard::Blackboard;
@@ -92,6 +92,12 @@ pub(crate) fn interrupted_nodes(journal: &[(u64, RunEvent)]) -> Vec<NodeId> {
 /// Replays a journal into the state (spec F4.11). Nodes that eventually
 /// finished have their failed attempts skipped; a `NodeStarted` without a
 /// terminal event is simply ignored — that node re-runs.
+///
+/// `suspended` collects, per node, the key of its LATEST `Suspended` event
+/// among those with no later terminal event (spec 30 D1): the tick loop
+/// dispatches these nodes through [`crate::node::GraphNode::on_resume`]
+/// instead of a fresh `run()`, so a fired timer resumes to `Next` rather
+/// than re-suspending with a new key.
 pub(crate) fn replay(
     journal: &[(u64, RunEvent)],
     spec: &GraphSpec,
@@ -99,6 +105,7 @@ pub(crate) fn replay(
     bb: &Arc<RwLock<Blackboard>>,
     fin: &mut Vec<FinishedNode>,
     failure: &mut Option<String>,
+    suspended: &mut BTreeMap<NodeId, ResumeKey>,
 ) {
     let finished: BTreeSet<NodeId> = journal
         .iter()
@@ -119,14 +126,17 @@ pub(crate) fn replay(
                     port: port.clone(),
                     value: value.clone(),
                 });
+                suspended.remove(node);
             }
             RunEvent::NodeDead { node } => {
                 st.dead.insert(node.clone());
                 crate::sched::state::apply_failed_or_cancelled(spec, st, node);
+                suspended.remove(node);
             }
             RunEvent::NodeCancelled { node } => {
                 st.cancelled.insert(node.clone());
                 crate::sched::state::apply_failed_or_cancelled(spec, st, node);
+                suspended.remove(node);
             }
             RunEvent::NodeFailed {
                 node,
@@ -137,7 +147,11 @@ pub(crate) fn replay(
                 // A resolved node's failed attempts are history, not state.
                 st.failed.insert(node.clone());
                 crate::sched::state::apply_failed_or_cancelled(spec, st, node);
+                suspended.remove(node);
                 *failure = Some(error.clone());
+            }
+            RunEvent::Suspended { node, key, .. } => {
+                suspended.insert(node.clone(), key.clone());
             }
             _ => {}
         }

@@ -102,7 +102,7 @@ fn resume_never_reinvokes_completed_node() {
 
     // Resume: replay the journal, continue the loop. `a` must NOT re-run.
     let (ctx2, _) = root_ctx(run_id.clone());
-    let terminal = run::resume(&store, &reg, &ctx2, &run_id).expect("resume");
+    let terminal = run::resume(&store, &reg, &ctx2, &run_id, None).expect("resume");
     assert!(
         matches!(terminal, Terminal::Success { .. }),
         "resume must finish Success, got {terminal:?}"
@@ -162,5 +162,154 @@ fn resume_never_reinvokes_completed_node() {
             |(_, ev)| matches!(ev, RunEvent::NodeInterrupted { node } if node.as_str() == "a")
         ),
         "a completed before the cancel and must NOT be marked interrupted"
+    );
+}
+
+/// Spec 30 T1 (acceptance): a suspended `timer` node whose wheel entry has
+/// fired resumes to `Outcome::Next { port: "fired" }` instead of
+/// re-suspending. The journal must contain exactly one `NodeFinished` for the
+/// timer node with port `fired` — NOT a second `Suspended`.
+#[test]
+fn timer_resumes_to_fired_port() {
+    let spec = load_toml(
+        r#"
+name = "timer-fire"
+entry = "tick"
+caps = []
+
+[[node]]
+id = "tick"
+kind = "timer"
+in_ms = 1
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "done"
+kind = "data"
+"#,
+    )
+    .expect("load timer-fire graph");
+
+    let dir = tempfile::Builder::new()
+        .prefix("timer-fire-")
+        .tempdir_in(TMP_ROOT)
+        .expect("tempdir under _tmp");
+    let store = Arc::new(Store::open(&dir.path().join("db.redb")).expect("store open"));
+    let run_id = store.next_run_id().expect("run id");
+    let reg = NodeRegistry::builtin();
+
+    let (ctx, _) = root_ctx(run_id.clone());
+    let terminal =
+        run::run(&store, &spec, &reg, &ctx, &run_id, serde_json::json!({})).expect("run");
+    // The timer suspends immediately (in_ms=1 is in the future at dispatch).
+    assert!(
+        matches!(terminal, Terminal::Suspended { .. }),
+        "first dispatch must suspend, got {terminal:?}"
+    );
+
+    // Wait past the fire time, then resume with the fired key.
+    std::thread::sleep(Duration::from_millis(20));
+    let (ctx2, _) = root_ctx(run_id.clone());
+    let terminal2 = run::resume(&store, &reg, &ctx2, &run_id, None).expect("resume");
+    assert!(
+        matches!(terminal2, Terminal::Success { .. }),
+        "resume must finish Success, got {terminal2:?}"
+    );
+
+    // The journal has exactly one NodeFinished for tick with port "fired".
+    let journal = store.read_journal(&run_id).expect("journal");
+    let tick_finished = journal
+        .iter()
+        .filter(|(_, ev)| {
+            matches!(ev, RunEvent::NodeFinished { node, port, .. } if node.as_str() == "tick" && port.as_str() == "fired")
+        })
+        .count();
+    assert_eq!(
+        tick_finished, 1,
+        "tick must have exactly one NodeFinished{{port:fired}}: {journal:?}"
+    );
+    // And NO second Suspended for tick.
+    let tick_suspended = journal
+        .iter()
+        .filter(|(_, ev)| matches!(ev, RunEvent::Suspended { node, .. } if node.as_str() == "tick"))
+        .count();
+    assert_eq!(
+        tick_suspended, 1,
+        "tick must suspend exactly once (the first dispatch), not re-suspend: {journal:?}"
+    );
+}
+
+/// Spec 30 T3: replaying a run whose timer already FINISHED does NOT
+/// re-dispatch the timer (once-per-fire). Run to completion, then resume
+/// again — the timer's dispatch count must stay 2 (first dispatch + the
+/// fire dispatch), not 3.
+#[test]
+fn timer_does_not_refire_on_replay() {
+    let spec = load_toml(
+        r#"
+name = "timer-once"
+entry = "tick"
+caps = []
+
+[[node]]
+id = "tick"
+kind = "timer"
+in_ms = 1
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "done"
+kind = "data"
+"#,
+    )
+    .expect("load timer-once graph");
+
+    let dir = tempfile::Builder::new()
+        .prefix("timer-once-")
+        .tempdir_in(TMP_ROOT)
+        .expect("tempdir under _tmp");
+    let store = Arc::new(Store::open(&dir.path().join("db.redb")).expect("store open"));
+    let run_id = store.next_run_id().expect("run id");
+    let reg = NodeRegistry::builtin();
+
+    // Run, wait past the fire time, resume to completion.
+    let (ctx, _) = root_ctx(run_id.clone());
+    let _ = run::run(&store, &spec, &reg, &ctx, &run_id, serde_json::json!({})).expect("run");
+    std::thread::sleep(Duration::from_millis(20));
+    let (ctx2, _) = root_ctx(run_id.clone());
+    let terminal = run::resume(&store, &reg, &ctx2, &run_id, None).expect("resume");
+    assert!(
+        matches!(terminal, Terminal::Success { .. }),
+        "resume must finish Success, got {terminal:?}"
+    );
+
+    // Resume AGAIN after completion — the timer must NOT re-dispatch.
+    let (ctx3, _) = root_ctx(run_id.clone());
+    let _ = run::resume(&store, &reg, &ctx3, &run_id, None).expect("resume again");
+
+    // Count NodeStarted for tick — must be exactly 2 (first dispatch + the
+    // fire dispatch), NOT 3 (no refire on replay of a completed timer).
+    let journal = store.read_journal(&run_id).expect("journal");
+    let tick_started = journal
+        .iter()
+        .filter(
+            |(_, ev)| matches!(ev, RunEvent::NodeStarted { node, .. } if node.as_str() == "tick"),
+        )
+        .count();
+    assert_eq!(
+        tick_started, 2,
+        "tick must be dispatched exactly twice (first + fire), no refire on replay: {journal:?}"
     );
 }
