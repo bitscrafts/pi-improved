@@ -166,6 +166,13 @@ control socket. The daemon is the single writer to the redb store; all
 control flows over a local-only Unix socket (mode 0600). See
 Chapter~\ref{chap:run} for how to run it.
 
+\section{The workspace}
+
+The project is a Rust workspace of crates. The kernel ABI is
+\texttt{pii-abi} (traits + types only, no transport deps), enforced by
+\texttt{xtask deps-check} and a hard file-size gate. The crates are
+described in the Technical Manual, Chapter~\ref{chap:arch}.
+
 %----------------------------------------------------------------------------------------
 \chapter{Installation}
 \label{chap:install}
@@ -225,6 +232,8 @@ pii --version   # prints "pii 0.1.0"
         Chapter~\ref{chap:web}).
     \item \texttt{pii-mcp} — an MCP server + client (see
         Chapter~\ref{chap:mcp}).
+    \item \texttt{pii-evolve} — the self-improving boss launcher (see
+        Chapter~\ref{chap:evolve}).
 \end{itemize}
 
 %----------------------------------------------------------------------------------------
@@ -272,6 +281,68 @@ grants = ["api.example.com:443"]   # host:port patterns every principal may reac
 allow_private = false              # allow loopback/private/link-local classes
 \end{lstlisting}
 
+\section{The \texttt{[[worker]]} section}
+
+Supervised sub-process workers:
+
+\begin{lstlisting}
+[[worker]]
+name = "w1"                 # worker name (grant/rpc key)
+program = "/bin/pii"        # program to spawn
+args = ["worker-exec"]      # argv after the program
+env = [["K","V"]]           # extra child environment
+max_in_flight = 16          # concurrent in-flight cap (0 = default)
+\end{lstlisting}
+
+\section{The \texttt{[[channel]]} section}
+
+Inbound/outbound channels:
+
+\begin{lstlisting}
+[[channel]]
+name = "discord1"
+kind = "discord"            # discord | cli
+graph = "starter/assistant" # graph to run per inbound message
+poll_interval_ms = 500      # poll interval (default 500)
+# cli kind only:
+inbox = "/tmp/in.jsonl"     # inbox file path
+outbox = "/tmp/out.jsonl"   # outbox file path
+\end{lstlisting}
+
+\section{The \texttt{[memory]} section}
+
+\begin{lstlisting}
+[memory]
+path = "mem.redb"           # memory store path (empty = <runtime_dir>/memory.redb)
+embedder = "trigram"        # embedder name (only "trigram" ships this phase)
+cache_bytes = 0             # cache budget in bytes (reserved)
+\end{lstlisting}
+
+\section{The \texttt{[[cron]]} section}
+
+Scheduled graph runs:
+
+\begin{lstlisting}
+[[cron]]
+name = "consolidate"        # cron entry name
+graph = "starter/consolidate" # graph to run (entry must be a timer node)
+schedule = "*/15 * * * *"   # display-only mirror for cron.list
+input = {}                  # extra run input merged under "input"
+\end{lstlisting}
+
+\section{The \texttt{[evolve]} section}
+
+Model routing for the self-improving boss (spec 28):
+
+\begin{lstlisting}
+[evolve]
+routing = { patch = "ollama:granite4.2:3b", localize = "ollama:granite4.2:3b" }
+\end{lstlisting}
+
+The known routing steps are \texttt{localize}, \texttt{patch},
+\texttt{review}, \texttt{research}, \texttt{orchestrator}. An unknown step
+name is a load error (\texttt{deny\_unknown\_fields} semantics).
+
 \section{Environment variables}
 
 The complete environment surface for this phase:
@@ -292,6 +363,7 @@ The complete environment surface for this phase:
 \texttt{OLLAMA\_API\_KEY} & Ollama API key \\
 \texttt{PII\_DAEMON\_WORKER\_THREADS} & daemon worker thread count \\
 \texttt{PII\_DAEMON\_MAX\_BLOCKING} & max blocking threads \\
+\texttt{PII\_TEST\_CLOCK\_MS} & test-only: fixed clock \\
 \bottomrule
 \end{longtable}
 
@@ -384,6 +456,16 @@ pii tui --workspace /srv/pii
 \end{lstlisting}
 \end{cmdbox}
 
+The TUI is a pure protocol client: it holds no domain state, only what the
+daemon pushes. It shows a header (connection status + session id), a body
+(the event log, styled by role: user input in green, model output in
+cyan, progress in dim gray, errors in red), and a footer (the input box).
+Slash commands: \texttt{/exit}, \texttt{/quit}, \texttt{/help},
+\texttt{/clear}. While a run is active, the last line shows the live
+progress indicator \texttt{"<prompt> [seq 0x\ldots]"} — the same
+\texttt{seq} number \texttt{pii graph trace} prints, so a stuck run is
+directly cross-referenceable.
+
 \section{Graphs}
 
 Pii's automation engine runs \emph{graphs} — typed assemblies of nodes
@@ -468,12 +550,43 @@ consume external MCP tool servers.
 The design is documented in the SSOT at
 \texttt{\_docs/02-guides/pii-mcp-bridge.md}.
 
+\begin{cmdbox}[MCP]
+\begin{lstlisting}
+pii-mcp                    # MCP server over stdio
+pii-mcp client <command> [args...]   # spawn an external MCP server, list tools, call the first
+\end{lstlisting}
+\end{cmdbox}
+
 \begin{warnbox}[Important]
 MCP is the \emph{integration surface}, not the control plane. Full control
 (start a run, watch a trace, resolve an approval) stays on pii's own UDS
 JSON-RPC. The MCP server exposes pii's \emph{tools}, not the full control
 API.
 \end{warnbox}
+
+%----------------------------------------------------------------------------------------
+\chapter{The Self-Improving Boss}
+\label{chap:evolve}
+
+The self-improving boss (\texttt{pii-evolve}) is a feature-gated crate
+that runs the boss loop as a real pii graph on the daemon. The launcher
+binary is \texttt{pii-evolve}:
+
+\begin{cmdbox}[Boss launcher]
+\begin{lstlisting}
+pii-evolve <state-dir> [--socket PATH]
+# --socket overrides the daemon's UDS control socket
+# default: $PII_RUNTIME_DIR/control.sock, else ~/.pii/runtime/control.sock
+\end{lstlisting}
+\end{cmdbox}
+
+Each cycle loads \texttt{state.md}, bumps \texttt{cycle\_count}, sends
+\texttt{run.start} for the \texttt{starter/boss-watch} graph, records the
+launched run id + \texttt{phase = "watching"} back into \texttt{state.md},
+and returns. The daemon owns detection, gating, and the approval ledger.
+
+The deep design is in the SSOT at
+\texttt{\_docs/06-research/008-pii-evolve.md}.
 
 %----------------------------------------------------------------------------------------
 \chapter{Debugging}

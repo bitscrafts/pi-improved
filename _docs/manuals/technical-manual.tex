@@ -200,6 +200,83 @@ cannot be reached.
 \end{decbox}
 
 %----------------------------------------------------------------------------------------
+\chapter{The Capability Context}
+\label{chap:ctx}
+
+The enforcing capability context is \texttt{pii-core::Ctx}. It combines
+four concerns:
+
+\begin{itemize}
+    \item \textbf{Caps} — \texttt{CapSet} with monotonic attenuation via
+        intersection.
+    \item \textbf{Budget} — carveable, never-duplicated accounting.
+    \item \textbf{Cancel} — an ancestor-propagating \texttt{CancelToken}.
+    \item \textbf{Ctx} — the enforcing context that combines all four.
+\end{itemize}
+
+\section{Capability bits}
+
+The coarse capability bits live in \texttt{pii-abi} (so the capability
+surface is part of the stable ABI — a WASM/worker node or plugin can
+reference \texttt{CapKind} without depending on \texttt{pii-core}):
+
+\begin{longtable}{@{}lll@{}}
+\toprule
+\textbf{Bit} & \textbf{Value} & \textbf{Meaning} \\
+\midrule
+\endhead
+\texttt{FS\_READ} & 1 & read files within an allow path scope \\
+\texttt{FS\_WRITE} & 2 & write files within an allow path scope \\
+\texttt{NET} & 4 & reach the network \\
+\texttt{PROC} & 8 & spawn/talk to processes \\
+\texttt{HW} & 16 & touch hardware \\
+\texttt{SECRETS} & 32 & access secrets \\
+\texttt{MEMORY\_WRITE} & 64 & write into the agent's memory \\
+\texttt{SPAWN} & 128 & spawn subprocesses \\
+\bottomrule
+\end{longtable}
+
+Values must remain stable forever.
+
+\section{The \texttt{Ctx} accessors}
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+\textbf{Method} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{root(caps, budget)} & build a root context \\
+\texttt{fs()} & filesystem capability (scoped) \\
+\texttt{net()} & network capability (scoped) \\
+\texttt{proc()} & process capability (scoped) \\
+\texttt{child(principal, narrow, share)} & monotonically-attenuating child \\
+\texttt{child\_with\_token(...)} & child with a cancel token \\
+\texttt{cancelled()} & is the run cancelled? \\
+\texttt{elapsed\_ms()} & elapsed since start \\
+\texttt{now\_ms()} & current clock time \\
+\texttt{deadline\_ms()} & the deadline, if any \\
+\texttt{check()} & cancellation + deadline seam \\
+\texttt{observer()} & the observer \\
+\texttt{caps()} & the capability set \\
+\texttt{budget()} & the budget \\
+\texttt{principal\_str()} & the principal \\
+\texttt{principal()} & the principal \\
+\texttt{trace()} & the trace context \\
+\texttt{cancel\_token()} & the cancel token \\
+\bottomrule
+\end{longtable}
+
+\section{The budget}
+
+The budget is carveable and never-duplicated, across four dimensions:
+\texttt{Tokens}, \texttt{ToolCalls}, \texttt{MicroUsd}, \texttt{WallMs}.
+A \texttt{BudgetShare} is \texttt{All}, \texttt{Fraction(pct)},
+\texttt{Absolute\{...\}}, or \texttt{Shared} (same-process nodes share the
+parent's budget without carving). \texttt{charge()} returns
+\texttt{BudgetExhausted} when the amount exceeds what remains, leaving the
+counter at 0.
+
+%----------------------------------------------------------------------------------------
 \chapter{The Graph Engine}
 \label{chap:graph}
 
@@ -237,13 +314,20 @@ Edge      { from, port: PortName, to, kind: EdgeKind }
         dependency: readiness + payload) vs \texttt{EdgeKind::Order}
         (ordering-only: readiness, no payload).
     \item \textbf{JoinPolicy}: \texttt{All} (default — every inbound edge
-        must fire) vs \texttt{Any \{ cancel\_losers \}} (any one inbound
-        edge fires the node; optionally cancels sibling branches once one
-        wins).
-    \item \textbf{Limits}: \texttt{max\_steps}, \texttt{max\_wall\_ms},
-        \texttt{max\_tokens}, \texttt{max\_parallel} — per-run budgets
-        enforced in the tick loop; exhaustion is terminal and
-        non-retryable.
+        must fire), \texttt{Any \{ cancel\_losers \}} (any one inbound edge
+        fires; optionally cancels sibling branches), \texttt{Quorum \{ k,
+        cancel\_losers \}} (at least \texttt{k} fire), and
+        \texttt{AllSettled} (wait for every inbound edge to settle, fired
+        or dead). The compact string grammar: \texttt{"all"},
+        \texttt{"any"}, \texttt{"any:cancel"}, \texttt{"quorum:K"},
+        \texttt{"quorum:K:cancel"}, \texttt{"allsettled"}.
+    \item \textbf{Limits}: \texttt{max\_steps} (default 1000),
+        \texttt{max\_wall\_ms} (default 600000),
+        \texttt{max\_tokens} (default unbounded),
+        \texttt{max\_micro\_usd} (default unbounded),
+        \texttt{max\_tool\_calls} (default unbounded),
+        \texttt{max\_parallel} (default 0 = available parallelism).
+        Exhaustion is terminal and non-retryable.
     \item \textbf{RetryPolicy}: per-node \texttt{max} retries on
         retryable failures.
     \item \textbf{Expression language}: deliberately tiny —
@@ -270,6 +354,7 @@ Edge      { from, port: PortName, to, kind: EdgeKind }
 \texttt{heal\_detect} & server & self-healing ledger trigger & ok \\
 \texttt{memory} & server & standalone \texttt{consolidate} maintenance op & ok \\
 \texttt{worker} & server & supervised sub-process pool & ok \\
+\texttt{spawn} & server & launch a child run (spec 32) & ok / escalate \\
 \texttt{crash} & debug & deliberate failure for tests & --- \\
 \bottomrule
 \end{longtable}
@@ -347,9 +432,10 @@ effects is treated as fully serialising.
         \texttt{NodeStarted} (journaled BEFORE the node runs, so an
         interrupted node is visible as ``may have executed''),
         \texttt{NodeFinished}, \texttt{NodeFailed}, \texttt{NodeCancelled},
-        \texttt{NodeDead}, \texttt{Suspended}, \texttt{Resumed},
-        \texttt{Finished}. A header (status + next-seq) is persisted with
-        each append; the blackboard snapshots every 32 events and
+        \texttt{NodeDead}, \texttt{NodeInterrupted} (audit marker on
+        resume), \texttt{Suspended}, \texttt{Resumed}, \texttt{Finished},
+        \texttt{RunSpawned}. A header (status + next-seq) is persisted
+        with each append; the blackboard snapshots every 32 events and
         unconditionally on suspend.
     \item \textbf{Terminal dispositions}: Running $\rightarrow$ Succeeded
         | Failed | Suspended (human approval) $\rightarrow$ Resumed.
@@ -378,6 +464,13 @@ The daemon is the single writer. The control socket is local-only Unix
 differs from the daemon's. (Operational: see the User Manual,
 Chapter~\ref{chap:ops}.)
 
+\section{The single-writer rule}
+
+A \texttt{redb::WriteTransaction} is opened and committed inside one
+method body. It is never stored in a struct, never returned, and never
+held across a node dispatch. This invariant is what makes the journal's
+``one write txn per event'' property hold.
+
 \section{The append-only journal}
 
 The run journal is an append-only log of typed \texttt{RunEvent}s — the
@@ -393,10 +486,10 @@ implementations (dsh, pidag/pi) validate it. See
 \label{chap:control}
 
 \texttt{pii-server} (\texttt{Engine}) owns the registry (built-ins +
-agent/tool/gate/heal/memory/worker), spawns runs (\texttt{run.start},
-\texttt{run.resume}, \texttt{run.cancel}), tracks sessions, and streams
-events (\texttt{event.subscribe} — replay-since + live, bounded queue,
-\texttt{Lagged} on overflow).
+agent/tool/gate/heal/memory/worker/spawn), spawns runs
+(\texttt{run.start}, \texttt{run.resume}, \texttt{run.cancel}), tracks
+sessions, and streams events (\texttt{event.subscribe} — replay-since +
+live, bounded queue, \texttt{Lagged} on overflow).
 
 The daemon socket is local-only Unix (0600). The full method surface:
 
@@ -443,6 +536,182 @@ The daemon socket is local-only Unix (0600). The full method surface:
 The thin CLI subcommands that call these methods are in the User Manual,
 Chapter~\ref{chap:run}.
 
+\section{The wire protocol}
+
+The wire contract is \texttt{pii-proto}: newline-delimited JSON (JSON-RPC
+2.0 shape), protocol version \texttt{pii.v2}. Frames are
+\texttt{Request}, \texttt{Response}, or \texttt{Notification}. Error
+codes: JSON-RPC reserved (\texttt{-32700} ParseError, \texttt{-32600}
+InvalidRequest, \texttt{-32601} MethodNotFound, \texttt{-32602}
+InvalidParams, \texttt{-32603} Internal) plus Pii's application range
+(\texttt{100} ProtocolMismatch, \texttt{101} Unauthorized, \texttt{102}
+NotFound, \texttt{103} Denied, \texttt{104} BudgetBreach, \texttt{105}
+Cancelled, \texttt{106} Busy).
+
+\section{The push vocabulary}
+
+The server$\rightarrow$client push vocabulary (\texttt{pii-proto::event})
+is a closed, \texttt{kind}-tagged enum: \texttt{RunStarted},
+\texttt{NodeStarted}, \texttt{NodeFinished}, \texttt{NodeFailed},
+\texttt{NodeDead}, \texttt{AssistantDelta}, \texttt{ToolCall},
+\texttt{ToolResult}, \texttt{RunFinished}, \texttt{RunCancelled},
+\texttt{RunSuspended}, \texttt{RunResumed}, \texttt{ApprovalRequested},
+\texttt{ApprovalResolved}, \texttt{WorkerDied}, \texttt{WorkerRestarted},
+\texttt{ChannelMessage}, \texttt{MemoryDegraded}, \texttt{RouteDecision},
+\texttt{RunSpawned}, \texttt{Lagged}. A subscriber that falls behind gets
+a \texttt{Lagged} event (never silent).
+
+%----------------------------------------------------------------------------------------
+\chapter{The Model Layer}
+\label{chap:model}
+
+\texttt{pii-model} is the model provider seam. \texttt{ModelProvider} is
+\textbf{sync} on purpose: \texttt{GraphNode::run} is sync and runs execute
+on a blocking thread. Providers never read configuration themselves except
+from the explicit spec string handed to \texttt{provider\_from\_env} by
+the CLI.
+
+\section{Chat types}
+
+\begin{itemize}
+    \item \texttt{Role}: System, User, Assistant, Tool.
+    \item \texttt{ToolCall}: id, name, JSON arguments.
+    \item \texttt{ChatMessage}: role, content, optional tool\_call\_id,
+        tool\_calls.
+\end{itemize}
+
+\section{Providers}
+
+The shipped provider is \texttt{OllamaProvider} (via \texttt{ollama.rs}).
+The provider spec string (e.g.\ \texttt{"ollama:granite4.2:3b"}) selects
+the provider and model. \texttt{provider\_from\_env} builds a provider
+from the environment.
+
+\section{Model routing (spec 28)}
+
+The \texttt{agent} node can declare \texttt{route\_step}; resolution goes
+through \texttt{resolve\_model}, which looks the step up in
+\texttt{[evolve.routing]}. A \texttt{route\_step} with no entry is a
+\textbf{loud} \texttt{NotFound} — never a silent default. The known steps
+are \texttt{localize}, \texttt{patch}, \texttt{review}, \texttt{research},
+\texttt{orchestrator}. Each routing decision is broadcast as a
+\texttt{RouteDecision} event on the live bus (the journal is the audit
+trail).
+
+%----------------------------------------------------------------------------------------
+\chapter{The Toolset}
+\label{chap:tools}
+
+\texttt{pii-tools} is the toolset. The \texttt{Tool} trait has
+\texttt{name()}, \texttt{spec()} (model-facing), and \texttt{call()}
+(execution) — the type split makes leakage unrepresentable. The built-in
+set:
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+\textbf{Tool} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{fs\_read} & read a file within the allow scope \\
+\texttt{fs\_write} & write a file within the allow scope \\
+\texttt{edit} & edit a file \\
+\texttt{multi\_edit} & multiple edits in one call \\
+\texttt{grep} & search file contents \\
+\texttt{glob} & find files by name \\
+\texttt{bash} & run a command (via \texttt{/bin/sh}, output capped at 64 KiB) \\
+\texttt{worktree} & provision a disposable git worktree (spec 32) \\
+\bottomrule
+\end{longtable}
+
+The \texttt{bash} tool caps output at \texttt{MAX\_OUTPUT = 64 KiB} and
+runs only inside the workspace. All process execution goes through
+\texttt{Ctx::proc()}.
+
+%----------------------------------------------------------------------------------------
+\chapter{Memory}
+\label{chap:memory}
+
+\texttt{pii-memory} is the global memory store: BM25 + i8 vectors + graph
+lane fused by RRF. Zero model calls, zero socket code; redb is reached
+only through \texttt{pii\_store::MemStore}.
+
+\section{Layers and kinds}
+
+\begin{itemize}
+    \item \textbf{Layers}: L1 (atoms — one fact with evidence), L2 (scenes
+        — distilled summaries of related atoms), L3 (skills and persona).
+    \item \textbf{Kinds}: Atom, Scene, Persona, Skill.
+\end{itemize}
+
+A \texttt{Doc} has a blake3-content id (idempotent put: the same text put
+twice IS the same doc), layer, kind, text, concept tags, importance,
+created/last-used times, optional evidence \texttt{(run\_id, seq)}, and an
+archived flag.
+
+\section{Search}
+
+\texttt{MemorySearcher::search} fuses BM25, the i8 vector lane, and the
+graph lane by RRF. The embedder is \texttt{TrigramEmbedder} (offline,
+dims 256, quantised to i8 + scale) by default; \texttt{NullEmbedder} and
+\texttt{OllamaEmbedder} also exist. A degraded vector lane surfaces a
+\texttt{MemoryDegraded} event (never silent).
+
+%----------------------------------------------------------------------------------------
+\chapter{Workers}
+\label{chap:worker}
+
+\texttt{pii-worker} is supervision and hot reload. The worker wire
+vocabulary lives here, decoupled from \texttt{pii-proto}.
+
+\section{Worker spec}
+
+A \texttt{WorkerSpec} has: name, program, args, env, max\_in\_flight
+(default 16), ready\_timeout\_ms (default 2000), restart\_backoff\_ms
+(default 50), restart\_window\_ms (default 60000), and
+max\_restarts\_in\_window (default 5).
+
+\section{Lifecycle}
+
+\texttt{WorkerState}: Starting (waiting for \texttt{hello}), Ready
+(serving invokes), Draining (for a hot reload; new invokes queued),
+Restarting (after death), Failed (crash-loop cap hit; invokes refused).
+
+\section{Hot reload}
+
+\texttt{worker.reload} drains the worker, swaps the child (the program
+replaced on disk = hot reload), and drains queued requests after the swap.
+The \texttt{ReloadReport} carries old/new pid, drained count, and
+in-flight at start.
+
+%----------------------------------------------------------------------------------------
+\chapter{Channels}
+\label{chap:channels}
+
+\texttt{pii-channels} is inbound polling + outbound reply, no sockets.
+Every channel goes through \texttt{Arc<dyn HttpTransport>} (from
+\texttt{pii-core}), which keeps the crate testable with a fake and keeps
+\texttt{cargo xtask net-check} clean.
+
+\section{The \texttt{Channel} trait}
+
+\begin{itemize}
+    \item \texttt{name()} — the configured channel name.
+    \item \texttt{kind()} — \texttt{"discord"}, \texttt{"cli"}, \ldots
+    \item \texttt{poll(ctx, cursor)} — fetch messages newer than a cursor.
+    \item \texttt{send(ctx, to, text)} — send a reply.
+\end{itemize}
+
+\section{Discord}
+
+\texttt{DiscordChannel} is built from the environment
+(\texttt{PII\_DISCORD\_TOKEN}, \texttt{PII\_DISCORD\_CHANNEL\_ID},
+\texttt{PII\_DISCORD\_API\_BASE}).
+
+\section{CLI channel}
+
+\texttt{CliChannel} is newline-delimited JSON on two files (inbox/outbox),
+no I/O beyond them. Used by tests and \texttt{pii -p} style scripting.
+
 %----------------------------------------------------------------------------------------
 \chapter{The Self-Improving Boss}
 \label{chap:evolve}
@@ -458,6 +727,24 @@ approval decision are all deterministic nodes.
 The deep design is in the SSOT at
 \texttt{\_docs/06-research/008-pii-evolve.md}. The opus review and the
 remaining-work plan are at \texttt{009-} and \texttt{012-}.
+
+\section{The launcher}
+
+The boss's outer loop is a thin UDS launcher (\texttt{driver.rs}): it
+loads \texttt{state.md}, bumps \texttt{cycle\_count}, sends
+\texttt{run.start} for \texttt{starter/boss-watch} over the daemon's
+control socket, records the launched run id + \texttt{phase =
+"watching"} back into \texttt{state.md}, and returns. It spawns no
+subprocess and shells out to nothing — the daemon owns detection, gating,
+and the approval ledger.
+
+\section{The state doc}
+
+\texttt{state.md} is the boss's durable ``where am I'' source of truth:
+goal, phase, last\_step, next\_step, a small properties map, and
+updated\_at. Written at every milestone; never inferred from transcript
+history. Durable facts (lessons, resolutions, model-routing learnings)
+belong in external memory, not here.
 
 \section{The heal-fix loop}
 
