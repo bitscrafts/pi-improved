@@ -1,6 +1,78 @@
 # Pii — Session Handoff
 
-## SESSION STATE — 2026-09-09: opus architecture-conformance review DONE (verdict NEEDS WORK)
+## SESSION STATE — 2026-09-10: specs 28+29 CLOSE the opus review's fix list (pidag rebuilt+verified live)
+
+**Opus's ordered fix list (24-29) from the 2026-09-09 architecture-conformance
+review is now fully closed.** This session did specs 28 and 29, dispatched via
+a freshly rebuilt `pidag` binary — a live test of the pidag fixes (specs
+100/101/102) landed in the same session on the sibling `pidag` repo.
+
+**pidag was stale before dispatch — rebuilt + reinstalled first:**
+The installed `/root/.local/bin/pidag` lacked the `validate` subcommand
+(spec 101), so specs 100/101/102 (iteration-budget escalation, non-vacuous
+validate, worker-commit ban) were NOT live despite being committed in the
+`pidag` repo. Ran `cargo build --release -p pidag` and copied the binary to
+both `/root/.local/bin/pidag` and `/projects/.local/bin/pidag` (pidag's own
+hard rule 4: install locations). Verified live: `--max-tool-iterations 400`
+appeared in the actual worker invocation (escalated from 200 on retry, was a
+hardcoded 50 before spec 100), and the `--append-system-prompt` carried the
+"Git discipline" commit ban (spec 102).
+
+**Spec 28 (model routing wired into agent layer) — committed `26f7126`:**
+- pidag workhorse ran ~35 min (3 concurrent pi processes), touched 18 files
+  across pii-proto/pii-server/pii-cli/pii-tui — legitimate cross-crate plumbing
+  for a new `EngineConfig.route_policy: BTreeMap<String, String>` field, not
+  scope creep (every `Engine::new` call site needed updating).
+- R1 `[evolve.routing]` config section, deny-unknown-fields validated against
+  `KNOWN_STEPS`. R2 `route_step` on `AgentNode` resolves via the policy map,
+  falls back to `model` unchanged when absent (zero behavior change for
+  non-routed graphs). R4 an unassigned `route_step` fails LOUD (`NotFound`),
+  never silently defaults — this was the acceptance test.
+- **Caught during review: R3 was vacuously tested.** The worker's test asserted
+  `!journal.is_empty()` (trivially true for any run) instead of actually
+  checking a `RouteDecision` event was present, AND the implementation used
+  `emit_live` (bus-only, "never journalled" per its own doc comment on
+  `AgentNode::emit_live`) while the spec said "journal". Fixed both: amended
+  spec R3 to say "broadcast on the bus" (matching how `ToolCall`/`ToolResult`/
+  `AssistantDelta` already work, F12 design), and rewrote the test to subscribe
+  to the real bus and assert the `RouteDecision{step,model}` payload.
+- 310 workspace tests (was 304, +6), clippy clean, quality gate ALL PASS.
+
+**Spec 29 (cancellation + the brake) — committed `fc11d31`:**
+- pidag workhorse ran ~19 min then got rate-limited by ollama-cloud mid-loop
+  ("session usage limit... ref: ..."; probed directly, confirmed real, not a
+  transient blip) — DAG reported `failed nodes` but the implementation and a
+  266-line test file (`cancellation_brake.rs`) were already complete and
+  correct in the tree; the worker just never reached its own quality-gate node.
+- `ctx.check()` now wired at both loop seams (top of each turn, before each
+  tool call) — a cancelled run stops BEFORE the next model/tool call, proven
+  by asserting the provider's call count stays 0.
+- All 4 budget dimensions now actually charge: Tokens (already worked),
+  ToolCalls (+1 per tool call), MicroUsd (from the provider's cost metadata),
+  WallMs (per-turn elapsed time) — all route to the same `budget` port
+  `max_turns` already used. `runs.rs` threads all 4 `[limits]` fields into
+  `Budget::new` on both the spawn AND resume paths (resume previously
+  defaulted 3 of 4 dims to `u64::MAX`, silently losing the run's real budget).
+- Had to fix 9 clippy errors the worker never got a chance to catch (unused
+  imports, a disallowed `std::sync::Mutex`, doc-backtick lints, a redundant
+  clone) — all cosmetic, zero logic changes needed.
+- 316 workspace tests (+6 from 310), clippy clean, quality gate ALL PASS,
+  silent-noop-check clean, fmt clean.
+
+**Net for this session:** 2 specs closed via pidag (with real cross-crate
+work, not stubs), the sibling pidag repo's own fixes proven live in the same
+run, and the vacuous-test trap caught once more (spec 28 R3) before commit —
+exactly the failure mode specs 100/101 were built to prevent, now demonstrated
+working end-to-end on a downstream project.
+
+**Opus review fix list (24-29) — ALL DONE:**
+24 (silent-noop-check), 25 (pii-evolve honesty), 26 (promotion prereqs),
+27 (boss loop as real pii graph), 28 (model routing), 29 (cancellation+brake).
+Optional 30 (residual 010 defects) was never authorized — still open if wanted.
+
+---
+
+
 
 **The architecture-conformance review ran (after you re-authed OAuth).** Opus
 judged the codebase against `_docs/06-research/001-pii-architecture-plan.md`,
