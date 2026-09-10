@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// One seed record (S1.1).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(clippy::redundant_pub_crate)] // bin crate: reachable form
-pub(crate) struct SeedRecord {
+pub struct SeedRecord {
     /// `blake3(ts, git HEAD)` first 12 hex.
     pub sig: String,
     /// Absolute worktree path.
@@ -34,10 +33,9 @@ const MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GiB
 /// # Errors
 /// A refusal message (rate limit / disk ceiling / break not reproduced).
 #[allow(clippy::too_many_lines)] // reason: one sequential seed orchestration
-#[allow(clippy::redundant_pub_crate)] // bin crate: reachable form
 #[allow(clippy::disallowed_methods)] // reason: heal-seed is dev tooling that
 // drives git worktree + cargo (same as main::run_cmd and rss_gate).
-pub(crate) fn run() -> Result<(), String> {
+pub fn run() -> Result<(), String> {
     // 1. Signature: blake3(git HEAD, broken target) — DETERMINISTIC per
     //    (HEAD, target), so re-seeding the same break at the same HEAD
     //    hits the 24 h rate-limit refusal (a pid/nanos-based sig could

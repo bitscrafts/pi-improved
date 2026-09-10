@@ -6,14 +6,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use pii_abi::PiiError;
-use pii_core::{Budget, CapKind, CapSet, Ctx, StringScope};
+use pii_core::{Budget, CapKind, CapSet, Ctx, HostScope};
 use pii_net::testing::FakeHttpServer;
 use pii_store::channel::ChannelStore;
 
 fn ctx() -> Ctx {
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::NET | CapKind::FS_READ;
-    caps.net_hosts = StringScope::new(vec![String::from("http://127.0.0.1")]);
+    caps.net_hosts = HostScope::new(vec![String::from("http://127.0.0.1")]);
     Ctx::root(caps, Budget::unlimited())
 }
 

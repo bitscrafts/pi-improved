@@ -80,7 +80,7 @@ pub(crate) fn worker_reload(engine: &Arc<Engine>, req: &Request) -> Response {
     };
     let mut caps = pii_core::CapSet::empty();
     caps.kinds = pii_core::CapKind::PROC | pii_core::CapKind::SPAWN;
-    caps.proc_argv0 = pii_core::StringScope::new(vec![String::new()]);
+    caps.proc_argv0 = pii_core::ArgvScope::new(vec![String::new()]);
     let rctx = pii_core::Ctx::root(caps, pii_core::Budget::unlimited());
     match sup.reload(&rctx) {
         Ok(r) => value_response(

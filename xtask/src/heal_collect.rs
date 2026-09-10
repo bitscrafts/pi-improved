@@ -8,29 +8,53 @@
 //! assertion that proves the fix worked. The refusal is recorded in the
 //! heal-collect ledger as `HealState::Escalated` (R3).
 
+use std::path::Path;
+
 use crate::heal_seed::SeedRecord;
+use pii_store::heal::{ApprovalDecision, HealStore};
 
 const SEEDS: &str = "/projects/pi-improved/_tmp/heal-seeds.json";
 const REVIEWS: &str = "/projects/pi-improved/_tmp/heal-reviews";
 const HEAL_DB: &str = "/projects/pi-improved/_tmp/heal-collect.redb";
 
-/// Runs `heal-collect <sig>`.
+/// Runs `heal-collect <sig>` against the default (live) ledger/reviews/heal-db
+/// paths.
 ///
 /// # Errors
 /// Unknown signature, empty patch, or write failure.
-#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub fn run(sig: &str) -> Result<(), String> {
+    run_at(
+        sig,
+        Path::new(SEEDS),
+        Path::new(REVIEWS),
+        Path::new(HEAL_DB),
+    )
+}
+
+/// [`run`], parameterized over the seed ledger / reviews dir / heal-attempt
+/// db paths (spec 34: lets promotion tests drive the exact same collection
+/// logic against scratch paths under `_tmp/`, never the live ledger).
+///
+/// # Errors
+/// Unknown signature, empty patch, or write failure.
 #[allow(clippy::disallowed_methods)] // reason: heal-collect is dev tooling
 // that shells git diff (same as main::run_cmd / rss_gate).
-pub(crate) fn run(sig: &str) -> Result<(), String> {
-    let ledger: Vec<SeedRecord> =
-        serde_json::from_str(&std::fs::read_to_string(SEEDS).map_err(|e| format!("ledger: {e}"))?)
-            .map_err(|e| format!("ledger parse: {e}"))?;
+pub fn run_at(
+    sig: &str,
+    seeds_path: &Path,
+    reviews_dir: &Path,
+    heal_db_path: &Path,
+) -> Result<(), String> {
+    let ledger: Vec<SeedRecord> = serde_json::from_str(
+        &std::fs::read_to_string(seeds_path).map_err(|e| format!("ledger: {e}"))?,
+    )
+    .map_err(|e| format!("ledger parse: {e}"))?;
     let seed = ledger
         .iter()
         .find(|s| s.sig == sig)
         .ok_or_else(|| format!("heal-collect: no seed with sig '{sig}'"))?;
     let wt = &seed.worktree;
-    let dir = std::path::Path::new(REVIEWS);
+    let dir = reviews_dir;
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let patch_path = dir.join(format!("{sig}.patch"));
 
@@ -46,7 +70,7 @@ pub(crate) fn run(sig: &str) -> Result<(), String> {
         // successful outcome (Slice 1's seeded target is a practice defect).
         // Verify the restoration honestly before declaring success: the
         // seeded file must contain the recorded original line again.
-        let full = std::path::Path::new(wt).join(&seed.broken_file);
+        let full = Path::new(wt).join(&seed.broken_file);
         let restored = std::fs::read_to_string(&full).ok().is_some_and(|src| {
             usize::try_from(seed.broken_line.saturating_sub(1))
                 .is_ok_and(|idx| src.lines().nth(idx) == Some(&seed.original_line))
@@ -69,7 +93,7 @@ pub(crate) fn run(sig: &str) -> Result<(), String> {
         ));
     }
     if let Some(reason) = refusal_reason(&patch) {
-        record_escalation(&seed.sig, &reason);
+        record_escalation(&seed.sig, &reason, heal_db_path);
         eprintln!("heal-collect: REFUSED — {reason}");
         return Err(format!("heal-collect: refused — {reason}"));
     }
@@ -82,6 +106,94 @@ pub(crate) fn run(sig: &str) -> Result<(), String> {
         "heal-collect: seed sig={} worktree={} break={}:{}",
         seed.sig, seed.worktree, seed.broken_file, seed.broken_line
     );
+    Ok(())
+}
+
+/// Promotion collect-on-allow (spec 34 R4): records `decision` in the heal
+/// ledger REGARDLESS of `allow`/`deny` — the ledger must show a denied
+/// promotion just as durably as an approved one — then, ONLY when
+/// `decision.allow`, collects the patch via [`run_at`].
+///
+/// T3 (spec 34's acceptance test) is exactly the ordering this function
+/// exists to enforce: a plausible-but-wrong implementation collects the
+/// patch BEFORE the gate resolves. Here the ledger write happens first and
+/// unconditionally, then a `deny` returns before `run_at` — and therefore
+/// before `reviews_dir`/the worktree diff — is ever touched, so a denied
+/// promotion can never leave a `.patch` artifact behind.
+///
+/// # Errors
+/// The decision is `deny` (no patch written, by design — see above), or
+/// [`run_at`]'s own errors (unknown signature, empty diff, refused diff) on
+/// `allow`.
+pub fn collect_with_decision(
+    sig: &str,
+    seeds_path: &Path,
+    reviews_dir: &Path,
+    heal_db_path: &Path,
+    decision: &ApprovalDecision,
+) -> Result<(), String> {
+    record_decision_in_ledger(heal_db_path, sig, decision)?;
+    if !decision.allow {
+        return Err(format!(
+            "heal-collect: promotion denied (approval {}) — no patch written for sig '{sig}'",
+            decision.approval_id
+        ));
+    }
+    run_at(sig, seeds_path, reviews_dir, heal_db_path)
+}
+
+/// [`collect_with_decision`], reading the decision from a real
+/// [`pii_store::approval::ApprovalStore`] at `approval_db_path` — the CLI
+/// entry point (`cargo xtask promote-collect`) so the recorded decision is
+/// always the one the `gate` node's human approver actually made, bound to
+/// `approval_id`, never re-typed by hand.
+///
+/// # Errors
+/// The approval id is unknown or not yet decided, the store cannot be
+/// opened, or [`collect_with_decision`]'s own errors.
+pub fn collect_from_approval(
+    sig: &str,
+    approval_id: &str,
+    approval_db_path: &Path,
+    by: Option<&str>,
+) -> Result<(), String> {
+    let approvals = pii_store::approval::ApprovalStore::open(approval_db_path)
+        .map_err(|e| format!("heal-collect: open approval db: {e}"))?;
+    let approval = approvals
+        .get_approval(approval_id)
+        .map_err(|e| format!("heal-collect: read approval: {e}"))?
+        .ok_or_else(|| format!("heal-collect: unknown approval '{approval_id}'"))?;
+    let Some(allow) = approval.decision else {
+        return Err(format!(
+            "heal-collect: approval '{approval_id}' has not been decided yet"
+        ));
+    };
+    let decision = ApprovalDecision {
+        allow,
+        approval_id: approval_id.to_owned(),
+        by: by.unwrap_or("unknown").to_owned(),
+        ts_ms: approval.decided_at_ms,
+    };
+    collect_with_decision(
+        sig,
+        Path::new(SEEDS),
+        Path::new(REVIEWS),
+        Path::new(HEAL_DB),
+        &decision,
+    )
+}
+
+/// Records `decision` in the heal ledger at `heal_db_path` (R4).
+fn record_decision_in_ledger(
+    heal_db_path: &Path,
+    sig: &str,
+    decision: &ApprovalDecision,
+) -> Result<(), String> {
+    let store =
+        HealStore::open(heal_db_path).map_err(|e| format!("heal-collect: open heal db: {e}"))?;
+    store
+        .record_decision(sig, "promotion", decision.clone())
+        .map_err(|e| format!("heal-collect: record decision: {e}"))?;
     Ok(())
 }
 
@@ -164,8 +276,8 @@ fn refusal_reason(diff: &str) -> Option<String> {
 #[allow(clippy::disallowed_methods)] // reason: heal-collect is dev tooling;
 // SystemTime is the honest epoch-ms source (same precedent as heal-seed/
 // heal-prune — no Ctx exists in this standalone xtask binary).
-fn record_escalation(sig: &str, reason: &str) {
-    let Ok(store) = pii_store::heal::HealStore::open(std::path::Path::new(HEAL_DB)) else {
+fn record_escalation(sig: &str, reason: &str, heal_db_path: &Path) {
+    let Ok(store) = HealStore::open(heal_db_path) else {
         return;
     };
     let ts_ms = u64::try_from(

@@ -234,7 +234,7 @@ fn build_channel(
 fn spawn_ctx() -> pii_core::Ctx {
     let mut caps = pii_core::CapSet::empty();
     caps.kinds = pii_core::CapKind::PROC | pii_core::CapKind::SPAWN;
-    caps.proc_argv0 = pii_core::StringScope::new(vec![String::new()]);
+    caps.proc_argv0 = pii_core::ArgvScope::new(vec![String::new()]);
     pii_core::Ctx::root(caps, pii_core::Budget::unlimited())
 }
 

@@ -309,6 +309,51 @@ impl HealStore {
     }
 }
 
+impl HealStore {
+    /// Records the human decision on a promotion/heal-collect gate (R4, spec
+    /// 34), bound to the `approval_id` the `gate` node minted. Creates the
+    /// attempt row if `sig` has none yet — a `deny` can be the FIRST record
+    /// for a signature that never went through [`Self::record_run`] (the
+    /// promotion path records the decision independent of any prior
+    /// detection/repair run). Always sets `decision`, whether `allow` or
+    /// `deny` — the ledger must show a denied promotion just as durably as
+    /// an approved one.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb or encode/decode failure.
+    pub fn record_decision(
+        &self,
+        sig: &str,
+        gate: &str,
+        decision: ApprovalDecision,
+    ) -> Result<HealAttempt, PiiError> {
+        let mut attempt = self.get_attempt(sig)?.unwrap_or_else(|| HealAttempt {
+            signature_hash: sig.to_owned(),
+            gate: gate.to_owned(),
+            state: HealState::Detected,
+            first_seen_ms: decision.ts_ms,
+            last_seen_ms: decision.ts_ms,
+            attempts: Vec::new(),
+            attempt_count: 0,
+            patch_hash: None,
+            worktree: None,
+            branch: None,
+            base_commit: None,
+            gate_before: None,
+            gate_after: None,
+            decision: None,
+            model: None,
+            tokens_in: 0,
+            tokens_out: 0,
+            micro_usd: 0,
+        });
+        attempt.last_seen_ms = decision.ts_ms;
+        attempt.decision = Some(decision);
+        self.put_attempt(&attempt)?;
+        Ok(attempt)
+    }
+}
+
 /// Max attempts kept in the ring (older runs evicted; `attempt_count` keeps
 /// the true total). Spec 26 R3 — a human approving a promotion sees the
 /// recent attempts plus an honest total.
@@ -320,7 +365,7 @@ mod tests {
 
     use tempfile::Builder;
 
-    use super::{ATTEMPT_RING_CAP, HealAttemptRun, HealState, HealStore};
+    use super::{ATTEMPT_RING_CAP, ApprovalDecision, HealAttemptRun, HealState, HealStore};
 
     #[test]
     fn put_get_list_roundtrip() {
@@ -490,5 +535,57 @@ mod tests {
         let reloaded = store.get_attempt("sig-repair").unwrap().unwrap();
         assert_eq!(reloaded.gate_before, Some(String::from("fail")));
         assert_eq!(reloaded.tokens_in, 10);
+    }
+
+    /// R4 (spec 34): `record_decision` creates a fresh attempt row for a
+    /// signature that never went through `record_run` — a promotion decision
+    /// (allow or deny) is recorded on its own, not only as a follow-up to a
+    /// prior detection/repair run.
+    #[test]
+    fn record_decision_creates_row_for_unknown_signature() {
+        let dir = Builder::new()
+            .prefix("heal-decision-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
+        assert!(store.get_attempt("promo-sig").unwrap().is_none());
+
+        let decision = ApprovalDecision {
+            allow: true,
+            approval_id: String::from("approval-abc"),
+            by: String::from("op1"),
+            ts_ms: 555,
+        };
+        let a = store
+            .record_decision("promo-sig", "promotion", decision.clone())
+            .unwrap();
+        assert_eq!(a.decision, Some(decision));
+        let reloaded = store.get_attempt("promo-sig").unwrap().unwrap();
+        assert!(reloaded.decision.unwrap().allow);
+    }
+
+    /// R4 (spec 34): a DENY decision is recorded just as durably as an
+    /// allow — `decision.allow == false` round-trips through storage. This
+    /// is the ledger half of T3 (spec 34's acceptance test): a denied
+    /// promotion must be visible in the ledger even though it produces no
+    /// patch artifact.
+    #[test]
+    fn record_decision_deny_round_trips() {
+        let dir = Builder::new()
+            .prefix("heal-decision-deny-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
+        let decision = ApprovalDecision {
+            allow: false,
+            approval_id: String::from("approval-deny"),
+            by: String::from("op2"),
+            ts_ms: 42,
+        };
+        store
+            .record_decision("deny-sig", "promotion", decision)
+            .unwrap();
+        let reloaded = store.get_attempt("deny-sig").unwrap().unwrap();
+        assert!(!reloaded.decision.unwrap().allow);
     }
 }

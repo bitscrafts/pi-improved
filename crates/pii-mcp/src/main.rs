@@ -65,7 +65,7 @@ impl PiiMcpServer {
                         | pii_core::CapKind::PROC;
                     caps.fs_read = pii_core::PathScope::new(vec![workspace.clone()]);
                     caps.fs_write = pii_core::PathScope::new(vec![workspace.clone()]);
-                    caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
+                    caps.proc_argv0 = pii_core::ArgvScope::new(vec![String::from("/bin/sh")]);
                     let ctx = Ctx::root(caps, pii_core::Budget::unlimited());
                     tool.call(&ctx, &args).map_err(|e| e.to_string())
                 },

@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 description.workspace = true
 
+[lib]
+name = "xtask"
+path = "src/lib.rs"
+
 [dependencies]
 serde_json = { workspace = true }
 schemars = { workspace = true }

@@ -4,16 +4,20 @@
 // reason: the gate runner reports violations on stderr; the output
 // abstractions replacing direct prints arrive in Phase 1.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
+#![allow(clippy::too_long_first_doc_paragraph)]
+// reason: dev-tooling doc comments carry the full spec-34 context in one
+// paragraph; splitting them would hide the load-bearing detail.
 
 mod bench;
 mod deps;
 mod doc_drift;
-mod heal_collect;
+pub mod heal_collect;
 mod heal_prune;
-mod heal_seed;
+pub mod heal_seed;
 mod lint_files;
 mod memory_eval;
 pub mod net_check;
+pub mod promote_build;
 mod proto_gen;
 mod reachability;
 mod rss_gate;
@@ -21,7 +25,7 @@ mod silent_noop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|silent-noop-check|reachability-check|doc-drift-check|memory-eval|rss-gate|heal-seed|heal-collect <sig>|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|silent-noop-check|reachability-check|doc-drift-check|memory-eval|rss-gate|heal-seed|heal-collect <sig>|promote-build [--worktree P]|promote-collect <sig> <approval_id> [--approval-db P] [--by NAME]|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -165,6 +169,36 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("promote-build") => {
+            let worktree = parse_worktree_flag(&rest);
+            match promote_build::run(worktree) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Some("promote-collect") => match parse_promote_collect(&rest) {
+            Ok((sig, approval_id, approval_db, by)) => {
+                match heal_collect::collect_from_approval(
+                    &sig,
+                    &approval_id,
+                    &approval_db,
+                    by.as_deref(),
+                ) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        ExitCode::FAILURE
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        },
         Some("heal-prune") => {
             let all = rest.iter().any(|a| a == "--all");
             match heal_prune::run(all) {
@@ -224,6 +258,54 @@ fn parse_mem_eval(rest: &[String]) -> Result<(String, String, usize), String> {
         return Err(String::from("memory-eval needs --corpus and --queries"));
     }
     Ok((corpus, queries, top_k))
+}
+
+/// Parses `promote-build [--worktree <path>]` (spec 34 R2).
+fn parse_worktree_flag(rest: &[String]) -> Option<std::path::PathBuf> {
+    let mut i = 0usize;
+    while i < rest.len() {
+        if rest.get(i).map(String::as_str) == Some("--worktree") {
+            return rest.get(i + 1).map(std::path::PathBuf::from);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Parses `promote-collect <sig> <approval_id> [--approval-db <path>] [--by <name>]`
+/// (spec 34 R4).
+#[allow(clippy::type_complexity)] // reason: one small positional+flag parse; a
+// named struct would not shrink this call site.
+fn parse_promote_collect(
+    rest: &[String],
+) -> Result<(String, String, std::path::PathBuf, Option<String>), String> {
+    let sig = rest
+        .first()
+        .cloned()
+        .ok_or("promote-collect needs a <sig>")?;
+    let approval_id = rest
+        .get(1)
+        .cloned()
+        .ok_or("promote-collect needs an <approval_id>")?;
+    let mut approval_db: Option<std::path::PathBuf> = None;
+    let mut by: Option<String> = None;
+    let mut i = 2usize;
+    while i < rest.len() {
+        match rest.get(i).map(String::as_str) {
+            Some("--approval-db") => {
+                i += 1;
+                approval_db = rest.get(i).map(std::path::PathBuf::from);
+            }
+            Some("--by") => {
+                i += 1;
+                by = rest.get(i).cloned();
+            }
+            other => return Err(format!("unknown promote-collect arg '{other:?}'")),
+        }
+        i += 1;
+    }
+    let approval_db = approval_db.ok_or("promote-collect needs --approval-db <path>")?;
+    Ok((sig, approval_id, approval_db, by))
 }
 
 /// spec's exit criterion.

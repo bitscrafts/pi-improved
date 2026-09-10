@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use pii_core::{Budget, CapKind, CapSet, Ctx, StringScope};
+use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx};
 use pii_worker::{Supervisor, WorkerEvent, WorkerSpec, WorkerState};
 
 /// A full-cap context: SPAWN + PROC, and `proc_argv0` permitting the worker
@@ -14,7 +14,7 @@ use pii_worker::{Supervisor, WorkerEvent, WorkerSpec, WorkerState};
 fn full_ctx() -> Ctx {
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
-    caps.proc_argv0 = StringScope::new(vec![
+    caps.proc_argv0 = ArgvScope::new(vec![
         String::from("/projects/pi-improved/target/debug/pii"),
         String::from("/usr/bin/kill"),
         String::from("/bin/sh"),

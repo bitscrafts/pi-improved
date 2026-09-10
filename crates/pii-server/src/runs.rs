@@ -290,9 +290,9 @@ fn run_caps(
                 .collect(),
         );
     }
-    caps.proc_argv0 = pii_core::StringScope::new(vec![String::from("/bin/sh")]);
+    caps.proc_argv0 = pii_core::ArgvScope::new(vec![String::from("/bin/sh")]);
     if let Some(host) = net_host {
-        caps.net_hosts = pii_core::StringScope::new(vec![host.to_owned()]);
+        caps.net_hosts = pii_core::HostScope::new(vec![host.to_owned()]);
     }
     caps
 }

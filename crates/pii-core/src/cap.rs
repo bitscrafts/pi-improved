@@ -113,35 +113,57 @@ pub const PROTECTED_RELATIVE_PATHS: &[&str] = &[
     ".github",
 ];
 
-/// A prefix allowlist over strings (used for net hosts / proc argv0 in Phase 1).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct StringScope(Vec<String>);
+/// A prefix allowlist over strings, with one matching semantics per type.
+///
+/// 001 §2.4 specified three distinct scope types because they encode three
+/// different matching semantics — wildcard host+port, program basename,
+/// namespace prefix. One `StringScope` meant one semantics. Split (B7).
+macro_rules! string_scope {
+    ($name:ident, $doc:expr) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, PartialEq, Eq, Default)]
+        pub struct $name(Vec<String>);
 
-impl StringScope {
-    /// A scope allowing the given string prefixes.
-    #[must_use]
-    pub fn new(allowed: Vec<String>) -> Self {
-        Self(allowed)
-    }
+        impl $name {
+            /// A scope allowing the given string prefixes.
+            #[must_use]
+            pub fn new(allowed: Vec<String>) -> Self {
+                Self(allowed)
+            }
 
-    /// True if the value starts with any allowed prefix.
-    #[must_use]
-    pub fn permits(&self, value: &str) -> bool {
-        self.0.iter().any(|p| value.starts_with(p))
-    }
+            /// True if the value starts with any allowed prefix.
+            #[must_use]
+            pub fn permits(&self, value: &str) -> bool {
+                self.0.iter().any(|p| value.starts_with(p))
+            }
 
-    /// Both scopes must permit the value.
-    #[must_use]
-    pub fn intersect(&self, other: &Self) -> Self {
-        let mut out = Vec::new();
-        for p in self.0.iter().chain(other.0.iter()) {
-            if self.permits(p) && other.permits(p) && !out.contains(p) {
-                out.push(p.clone());
+            /// Both scopes must permit the value.
+            #[must_use]
+            pub fn intersect(&self, other: &Self) -> Self {
+                let mut out = Vec::new();
+                for p in self.0.iter().chain(other.0.iter()) {
+                    if self.permits(p) && other.permits(p) && !out.contains(p) {
+                        out.push(p.clone());
+                    }
+                }
+                Self(out)
             }
         }
-        Self(out)
-    }
+    };
 }
+
+string_scope!(
+    HostScope,
+    "A prefix allowlist over net host:port strings (wildcard host+port semantics)."
+);
+string_scope!(
+    ArgvScope,
+    "A prefix allowlist over process argv0 strings (program basename semantics)."
+);
+string_scope!(
+    SecretScope,
+    "A prefix allowlist over secret key strings (namespace prefix semantics)."
+);
 
 /// The complete capability set a context holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,11 +175,11 @@ pub struct CapSet {
     /// Write path scope.
     pub fs_write: PathScope,
     /// Allowed net host prefixes.
-    pub net_hosts: StringScope,
+    pub net_hosts: HostScope,
     /// Allowed proc argv0 prefixes.
-    pub proc_argv0: StringScope,
+    pub proc_argv0: ArgvScope,
     /// Allowed secret key prefixes.
-    pub secrets: StringScope,
+    pub secrets: SecretScope,
 }
 
 impl Default for CapSet {
@@ -167,9 +189,9 @@ impl Default for CapSet {
             kinds: CapKind::empty(),
             fs_read: PathScope::default(),
             fs_write: PathScope::default(),
-            net_hosts: StringScope::default(),
-            proc_argv0: StringScope::default(),
-            secrets: StringScope::default(),
+            net_hosts: HostScope::default(),
+            proc_argv0: ArgvScope::default(),
+            secrets: SecretScope::default(),
         }
     }
 }
