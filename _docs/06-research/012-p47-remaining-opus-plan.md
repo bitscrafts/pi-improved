@@ -175,7 +175,7 @@ There is no HTTP client in this workspace at all: no `reqwest`/`ureq`/`hyper` cl
 
 **D8 — Where the boss's own model comes from.** 008 §7.2 says the orchestrator is `glm-5.3:cloud[ollama-cloud]`. `orchestrator` is already a valid routing step (`config.rs:107-109`) but nothing consumes it: boss-watch has no agent node. Decide whether the boss ever gets a model node at the top level, or stays fully deterministic with models only inside `heal-fix`. **Recommendation: stay deterministic** — a model deciding "what to do next" over a two-branch graph buys nothing and burns tokens.
 
-**D9 — Slice C.** Not in the brief's list, but unbuilt and user-requested. `compaction.rs:69` still can't fire, and `state.md` is written outside the run. If context management matters for this phase, it is a spec; if not, say so in 008 §9 rather than leaving the claim standing.
+**D9 — Slice C.** Not in the brief's list, but unbuilt and user-requested. `compaction.rs:69` still can't fire, and `state.md` is written outside the run. If context management matters for this phase, it is a spec; if not, say so in 008 §9 rather than leaving the claim standing. **Reference design when we build it**: `013-dsh-context-slice-c-reference.md` (dsh-context plugin — context insight as a projection over the existing journal, read the harness's own token accounting, delta-mode diagnostic for the compaction no-op).
 
 ---
 

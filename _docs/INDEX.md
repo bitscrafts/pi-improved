@@ -47,6 +47,9 @@ messaging gateway with one performant, local-first, modular system.
   - `008-pii-evolve.md` — P4.7 deep design: a self-aware "evolve" loop (new `pii-evolve` crate, per user override) that manages its own context (state.md + external memory + compaction), routes each step to a specific model tier, checks logs, patches in disposable worktrees, maintains a parallel dev/prod split with gated promotion, and keeps improving via web research
   - `009-pii-evolve-opus-review-pass1.md` — opus adversarial review (APPROVE WITH CHANGES): blocking resume+approval-gate bug, heal-watch phantom failure, anti-reward-hacking refusal; user override = dedicated `pii-evolve` crate
   - `010-pii-full-review-pass1.md` — FULL-codebase opus review (VERDICT: NEEDS WORK): P4.1c/4.1b broke the agent tool loop (chat_streaming drops tool_calls; call_tool_bounded substitutes empty CapSet; request_streaming doesn't dechunk) — every autonomous run reports success while doing nothing. Plus TLS lease leak, compaction-never-fires, O(n²) session writes, budget dimensions never charged.
+  - `011-pii-architecture-conformance-review-pass1.md` — opus architecture-conformance review (VERDICT: NEEDS WORK): A14-A17 findings, ordered fix list specs 24-29, cut list
+  - `012-p47-remaining-opus-plan.md` — opus P4.7-remaining plan: timer-resume blocker, heal-fix is 70% built, specs 30-36
+  - `013-dsh-context-slice-c-reference.md` — dsh-context plugin as the reference design for Slice C (context management): context insight = projection over the existing journal, read the harness's own token accounting, delta-mode diagnostic for the compaction no-op
 - [99-archive/](99-archive/) — deprecated / historical
 
 ## Status

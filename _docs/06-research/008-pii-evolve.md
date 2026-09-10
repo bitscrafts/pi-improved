@@ -94,6 +94,13 @@ The boss is a **cron-driven pii graph** (dogfooding — it runs on the substrate
 
 ### 3.1 Context management (the "manage its own context" part)
 
+> **Reference design for the future Slice C spec**: `013-dsh-context-slice-c-reference.md`
+> records dsh-context (a DeepSeek Harness plugin) as the design to steal —
+> context insight = a projection over the existing journal, reading the
+> harness's own token accounting, with a delta-mode diagnostic that directly
+> targets the `compaction.rs:69` no-op. Slice C is deferred behind specs 30-36
+> + B; do not implement from that doc yet.
+
 The boss must not die of context rot. Three mechanisms, per the research:
 
 1. **Durable `state.md`** — at each milestone, the boss writes its active goal, current phase, decisions, and next step to a structured `state.md` (in the worktree or a boss state dir). This is the source of truth for "where am I", NOT inferred from history.
