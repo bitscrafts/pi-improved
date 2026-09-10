@@ -65,7 +65,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // Resolve the runtime dir and store path BEFORE applying the sandbox so
     // the store/runtime dirs can be granted read-write (F17, opus review):
     // a sandboxed daemon must be able to open its own database.
-    let Some(runtime_dir) = pii_server::uds::runtime_dir("default") else {
+    let Some(runtime_dir) = pii_uds::runtime_dir("default") else {
         eprintln!("error: no usable runtime dir (set PII_RUNTIME_DIR)");
         return ExitCode::from(2);
     };

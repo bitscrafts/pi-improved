@@ -1495,6 +1495,7 @@ dependencies = [
  "pii-store",
  "pii-tools",
  "pii-tui",
+ "pii-uds",
  "pii-worker",
  "serde_json",
  "tokio",
@@ -1686,13 +1687,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "pii-uds"
+version = "0.1.0"
+dependencies = [
+ "pii-abi",
+ "pii-core",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "pii-web"
 version = "0.1.0"
 dependencies = [
  "axum",
  "pii-abi",
  "pii-proto",
- "pii-server",
+ "pii-uds",
  "serde",
  "serde_json",
  "tempfile",

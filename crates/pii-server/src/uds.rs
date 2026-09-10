@@ -1,58 +1,15 @@
-//! UDS transport (F2.8): socket dir resolution, stale-socket handling, and
-//! the single `authorize_peer` decision point.
-
-use std::path::PathBuf;
+//! UDS transport (F2.8): socket dir handling, the single `authorize_peer`
+//! decision point, and the testkit bind/connect.
+//!
+//! Client-facing helpers (`runtime_dir`, `client_connect`) live in `pii-uds`
+//! (B2, 011 A.11) so client crates (`pii-tui`, `pii-web`) do not pull the
+//! daemon tree into their dependency graph.
 
 use pii_abi::PiiError;
 use pii_proto::ErrorCode;
 use pii_proto::RpcError;
 use std::os::unix::fs::PermissionsExt;
-
-/// Resolves the runtime dir (F2.8, extended 2026-09-05).
-///
-/// Precedence: `$PII_RUNTIME_DIR`
-/// → `[core].runtime_dir` in the persistent config file (see
-/// [`crate::daemon::config::Config::default_path`]) → `$XDG_RUNTIME_DIR/pii/<instance>`
-/// → `/run/user/<uid>/pii/<instance>`. The config file lookup is a plain
-/// best-effort read (a malformed config here does not abort — `pii
-/// daemon`'s own startup path already surfaces config parse errors loudly;
-/// a lookup helper silently falling back to the next candidate is the
-/// right behavior for callers like `pii sys status` that just need SOME
-/// runtime dir to try).
-///
-/// # Errors
-/// [`PiiError::NotFound`] when no candidate is usable.
-#[must_use]
-pub fn runtime_dir(instance: &str) -> Option<PathBuf> {
-    if let Some(d) = pii_core::env_var("PII_RUNTIME_DIR") {
-        return Some(PathBuf::from(d));
-    }
-    if let Ok(cfg) = crate::daemon::config::Config::load_from_default_path()
-        && let Some(d) = cfg.core.runtime_dir
-    {
-        return Some(PathBuf::from(d));
-    }
-    if let Some(x) = pii_core::env_var("XDG_RUNTIME_DIR") {
-        return Some(PathBuf::from(x).join("pii").join(instance));
-    }
-    let uid = rustix_uid();
-    Some(PathBuf::from(format!("/run/user/{uid}/pii/{instance}")))
-}
-
-fn rustix_uid() -> u32 {
-    // rustix is intentionally not a dependency of this build; `nobody`-style
-    // uid discovery goes through the libc-free path: `id -u` is overkill, so
-    // fall back to 0 when `/proc/self/status` cannot be read.
-    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
-        for line in status.lines() {
-            if let Some(rest) = line.strip_prefix("Uid:") {
-                let first = rest.split_whitespace().next().unwrap_or("0");
-                return first.parse().unwrap_or(0);
-            }
-        }
-    }
-    0
-}
+use std::path::PathBuf;
 
 /// The single peercred decision point (F2.8), unit-testable.
 ///
@@ -97,17 +54,6 @@ pub fn prepare_socket(dir: &std::path::Path) -> Result<PathBuf, PiiError> {
         }
     }
     Ok(sock)
-}
-
-/// Client-side UDS connect: the ONE `UnixStream::connect` site outside the
-/// daemon bind (spec F2.13 allowlist keeps uds.rs as the single transport file).
-///
-/// # Errors
-/// [`PiiError::Internal`] on connect failure.
-pub async fn client_connect(sock: &std::path::Path) -> Result<tokio::net::UnixStream, PiiError> {
-    tokio::net::UnixStream::connect(sock)
-        .await
-        .map_err(|e| PiiError::Internal(format!("connect {}: {e}", sock.display())))
 }
 
 /// Testkit (net-check allowlist lives in this file): binds a 0600 UDS socket

@@ -48,7 +48,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
     // A live daemon socket wins; otherwise use the in-process loopback.
     let socket = match connect.as_deref() {
         Some("loopback") => None,
-        Some("auto") | None => pii_server::uds::runtime_dir("default")
+        Some("auto") | None => pii_uds::runtime_dir("default")
             .map(|d| d.join("control.sock"))
             .filter(|s| s.exists()),
         Some(path) => Some(PathBuf::from(path)),
@@ -57,7 +57,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
     let result = if let Some(sock) = socket {
         // Socket opening is centralized in pii-server::uds (net-check
         // allowlist); the TUI only consumes the already-open stream.
-        let stream = match pii_server::uds::client_connect(&sock).await {
+        let stream = match pii_uds::client_connect(&sock).await {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("error: {e}");

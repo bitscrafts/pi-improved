@@ -22,10 +22,10 @@ async fn call_async(
     method: Method,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let runtime_dir = pii_server::uds::runtime_dir("default")
+    let runtime_dir = pii_uds::runtime_dir("default")
         .ok_or_else(|| String::from("no usable runtime dir (set PII_RUNTIME_DIR)"))?;
     let sock = runtime_dir.join("control.sock");
-    let stream = pii_server::uds::client_connect(&sock)
+    let stream = pii_uds::client_connect(&sock)
         .await
         .map_err(|e| e.to_string())?;
     let (r, w) = tokio::io::split(stream);

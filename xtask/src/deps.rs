@@ -23,8 +23,12 @@ const PROTO_FORBIDDEN: &[&str] = &["pii-core", "pii-abi", "pii-store", "pii-grap
 /// Direct non-optional deps of `pii-proto` must be exactly these.
 const PROTO_ALLOWED_DIRECT: &[&str] = &["serde", "serde_json", "schemars", "thiserror"];
 
-/// Invariant 3: `pii-tui` must not have `pii-graph` in its dependency tree.
-const TUI_FORBIDDEN: &[&str] = &["pii-graph"];
+/// Invariant 3: client crates must not have `pii-graph` in their dependency
+/// tree. B2 (011 A.11): generalised from `pii-tui` alone to cover every
+/// client (`pii-tui`, `pii-web`) — the machine-checkable proof that the
+/// client/server split (002 §12.2) is real, not a proof about one crate.
+const CLIENT_CRATES: &[&str] = &["pii-tui", "pii-web"];
+const CLIENT_FORBIDDEN: &[&str] = &["pii-graph"];
 
 /// Invariant 4: exactly one version each of these in the resolved graph.
 const SINGLE_VERSION: &[&str] = &["redb", "reqwest", "wasmtime", "serde"];
@@ -142,7 +146,7 @@ pub(crate) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
     let mut violations = Vec::new();
     check_abi_purity(metadata, &mut violations);
     check_proto_purity(metadata, &mut violations);
-    check_tui_no_graph(metadata, &mut violations);
+    check_clients_no_graph(metadata, &mut violations);
     check_single_versions(metadata, &mut violations);
     check_redb_confined(metadata, &mut violations);
     check_confined(metadata, "rustls", &["pii-net"], &mut violations);
@@ -194,13 +198,15 @@ fn check_proto_purity(metadata: &Value, violations: &mut Vec<String>) {
     check_transitive_deps(metadata, pkg_id, PROTO_FORBIDDEN, "pii-proto", violations);
 }
 
-/// Invariant 3: `pii-tui` must not reach `pii-graph` transitively.
-fn check_tui_no_graph(metadata: &Value, violations: &mut Vec<String>) {
-    let Some(pkg_id) = find_package_id(metadata, "pii-tui") else {
-        violations.push(String::from("package 'pii-tui' not found in metadata"));
-        return;
-    };
-    check_transitive_deps(metadata, pkg_id, TUI_FORBIDDEN, "pii-tui", violations);
+/// Invariant 3: every client crate must not reach `pii-graph` transitively.
+fn check_clients_no_graph(metadata: &Value, violations: &mut Vec<String>) {
+    for client in CLIENT_CRATES {
+        let Some(pkg_id) = find_package_id(metadata, client) else {
+            violations.push(format!("package '{client}' not found in metadata"));
+            continue;
+        };
+        check_transitive_deps(metadata, pkg_id, CLIENT_FORBIDDEN, client, violations);
+    }
 }
 
 /// Invariant 4: exactly one version of each of the four crates.
@@ -430,6 +436,13 @@ pub(crate) mod tests {
                 ])
             ),
             pkg(
+                "web",
+                "pii-web",
+                json!([
+                    {"name":"pii-proto","kind":null},{"name":"axum","kind":null}
+                ])
+            ),
+            pkg(
                 "serde",
                 "serde",
                 json!([{"name":"serde_derive","kind":null}])
@@ -438,17 +451,20 @@ pub(crate) mod tests {
             pkg("thiserror", "thiserror", json!([])),
             pkg("schemars", "schemars", json!([])),
             pkg("ratatui", "ratatui", json!([])),
+            pkg("axum", "axum", json!([])),
             pkg("redb", "redb", json!([])),
         ]);
         let nodes = json!([
             node("abi", json!([dep("serde"), dep("schemars")])),
             node("proto", json!([dep("serde"), dep("serde_json")])),
             node("tui", json!([dep("proto"), dep("ratatui")])),
+            node("web", json!([dep("proto"), dep("axum")])),
             node("serde", json!([])),
             node("serde_json", json!([])),
             node("thiserror", json!([])),
             node("schemars", json!([])),
             node("ratatui", json!([])),
+            node("axum", json!([])),
             node("redb", json!([])),
         ]);
         metadata(packages, nodes)

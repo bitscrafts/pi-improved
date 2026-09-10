@@ -121,7 +121,7 @@ async fn soak_run(sock: PathBuf, runs: u32, graph: String, concurrency: u32) -> 
 }
 
 async fn one_run(sock: &Path, graph: &str) -> bool {
-    let Ok(stream) = pii_server::uds::client_connect(sock).await else {
+    let Ok(stream) = pii_uds::client_connect(sock).await else {
         return false;
     };
     let (r, w) = tokio::io::split(stream);

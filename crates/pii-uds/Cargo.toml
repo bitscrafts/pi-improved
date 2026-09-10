@@ -1,0 +1,17 @@
+[package]
+name = "pii-uds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Client-side UDS transport helpers: runtime-dir resolution and socket connect (B2)"
+
+[dependencies]
+pii-abi = { path = "../pii-abi" }
+pii-core = { path = "../pii-core" }
+toml = { workspace = true }
+tokio = { workspace = true, features = ["net", "io-util", "rt"] }
+
+[lints]
+workspace = true

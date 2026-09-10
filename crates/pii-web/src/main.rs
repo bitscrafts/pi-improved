@@ -48,7 +48,7 @@ async fn call_daemon(
     method: Method,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let stream = pii_server::uds::client_connect(sock)
+    let stream = pii_uds::client_connect(sock)
         .await
         .map_err(|e| e.to_string())?;
     let (r, w) = tokio::io::split(stream);
@@ -202,7 +202,7 @@ pub(crate) fn cmd_web(args: &mut std::env::ArgsOs) -> ExitCode {
         }
     }
     // Resolve the daemon socket; refuse to start if unreachable.
-    let Some(runtime_dir) = pii_server::uds::runtime_dir(&instance) else {
+    let Some(runtime_dir) = pii_uds::runtime_dir(&instance) else {
         eprintln!("error: no usable runtime dir (set PII_RUNTIME_DIR)");
         return ExitCode::from(2);
     };

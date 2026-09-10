@@ -33,6 +33,9 @@ pub const ALLOWLIST: &[&str] = &[
     // only raw loopback-bind in a test is the streaming dechunk fake.
     "crates/pii-net/src/service.rs",
     "crates/pii-server/src/uds.rs",
+    // B2 (011 A.11): client-side connect moved to pii-uds so clients do not
+    // pull the daemon tree; the sanctioned client connect site lives here.
+    "crates/pii-uds/src/lib.rs",
     "crates/pii-cli/src/cmd_daemon.rs",
     // P4.6 (spec 19): pii-web binds a loopback TCP listener for the viewer.
     "crates/pii-web/src/main.rs",

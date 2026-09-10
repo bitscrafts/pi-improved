@@ -137,7 +137,7 @@ async fn run_oneshot(a: OneshotArgs, model: String) -> ExitCode {
     // F5.6: a live daemon socket wins; the daemon is never auto-started.
     let socket = match a.connect.as_deref() {
         Some("loopback") => None,
-        Some("auto") | None => pii_server::uds::runtime_dir("default")
+        Some("auto") | None => pii_uds::runtime_dir("default")
             .map(|d| d.join("control.sock"))
             .filter(|s| s.exists()),
         Some(path) => Some(PathBuf::from(path)),
@@ -187,7 +187,7 @@ async fn run_over_uds(
 ) -> Result<ExitCode, String> {
     // Socket opening is centralized in pii-server::uds (net-check allowlist);
     // the CLI only consumes the already-open stream.
-    let stream = pii_server::uds::client_connect(sock)
+    let stream = pii_uds::client_connect(sock)
         .await
         .map_err(|e| e.to_string())?;
     let (r, w) = tokio::io::split(stream);
