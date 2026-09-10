@@ -50,6 +50,15 @@ messaging gateway with one performant, local-first, modular system.
   - `011-pii-architecture-conformance-review-pass1.md` — opus architecture-conformance review (VERDICT: NEEDS WORK): A14-A17 findings, ordered fix list specs 24-29, cut list
   - `012-p47-remaining-opus-plan.md` — opus P4.7-remaining plan: timer-resume blocker, heal-fix is 70% built, specs 30-36
   - `013-dsh-context-slice-c-reference.md` — dsh-context plugin as the reference design for Slice C (context management): context insight = projection over the existing journal, read the harness's own token accounting, delta-mode diagnostic for the compaction no-op
+  - `014-local-model-spec-implementation.md` — (pending, scheduled cron) how to test granite/laguna local models as the pidag workhorse
+  - `015-llm-in-process-llama-cpp.md` — in-process LLM via llama-cpp-2: embed Granite 4.2 inside Pii (feasibility, sync-trait bridge, tradeoffs)
+  - `016-ml-applications.md` — classical ML on Pii (regression/classification/clustering): top-3 apps (run-cost prediction, failure-mode classification, run clustering) with data sources + crates
+  - `017-tiny-models-real-usage.md` — tiny chat models (Needle/SmolLM2/Qwen-0.5-1.5B/Granite-3b): where they beat the B1 embedder (routing, tool-arg repair, summarization, extraction)
+  - `018-manuals-self-contained.md` — plan to make the two PDF manuals self-contained (no _docs refs), SSOT between the 2 files, document design patterns
+  - `019-generic-provider-endpoints.md` — generic OpenAI + Anthropic endpoint support for pii-model (base_url override, route through pii-net, steal from pi_agent_rust)
+  - `020-git-graph-web-ui.md` — port vscode-git-graph to Pii's web viewer: journal-as-git-graph, configurable columns + detail level, WASM vs server-render
+  - `021-mqtt-broker.md` — MQTT for Pii: broker vs bridge, topic mapping, security (pii-net chokepoint), Android coordination
+  - `022-android-events-app.md` — Android background app receiving/emitting Pii events: transport (MQTT/REST), background-service pattern, notification mapping, auth
 - [99-archive/](99-archive/) — deprecated / historical
 
 ## Status
