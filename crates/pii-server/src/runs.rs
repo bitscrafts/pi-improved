@@ -42,18 +42,23 @@ pub fn spawn_run(
     scope_root.as_deref().map_or(Ok(()), |root| {
         validate_scope_root(&engine.cfg.workspace, root)
     })?;
-    // B6 (opus review): a graph's declared `[limits] max_tokens` used to be
-    // parsed and then discarded — every run got `Budget::unlimited()`
-    // regardless. `Budget::with_tokens` charges the SAME `Ctx::budget()`
-    // the `agent` node already calls, so a graph that declares
-    // `max_tokens = N` now actually enforces N.
+    // B6 (opus review): a graph's declared `[limits]` used to be parsed and
+    // then discarded — every run got `Budget::unlimited()` regardless.
+    // `Budget::new` charges the SAME `Ctx::budget()` the `agent` node
+    // already calls, so `max_tokens`, `max_tool_calls`, `max_micro_usd`
+    // and `max_wall_ms` are now all actually enforced.
     let ctx = pii_core::Ctx::with_observer_and_cancel(
         run_caps(
             &engine.cfg.workspace,
             scope_root.as_deref(),
             engine.ollama_net_host.as_deref(),
         ),
-        pii_core::Budget::with_tokens(spec.limits.max_tokens),
+        pii_core::Budget::new(
+            spec.limits.max_tokens,
+            spec.limits.max_tool_calls,
+            spec.limits.max_micro_usd,
+            spec.limits.max_wall_ms,
+        ),
         Arc::new(bridge),
         pii_core::TraceCtx {
             run: run_id.clone(),
@@ -122,14 +127,21 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
     // lookup fails here, `resume()` below will hit the same error and
     // report it properly — this path only affects which budget we start
     // with, not correctness of the resume itself.
-    let max_tokens = engine
+    let (max_tokens, max_tool_calls, max_micro_usd, max_wall_ms) = engine
         .store
         .get_run(&run_id)
         .ok()
         .flatten()
         .and_then(|header| engine.store.get_graph(&header.graph).ok().flatten())
         .and_then(|bytes| GraphSpec::from_json(&bytes).ok())
-        .map_or(u64::MAX, |spec| spec.limits.max_tokens);
+        .map_or((u64::MAX, u64::MAX, u64::MAX, u64::MAX), |spec| {
+            (
+                spec.limits.max_tokens,
+                spec.limits.max_tool_calls,
+                spec.limits.max_micro_usd,
+                spec.limits.max_wall_ms,
+            )
+        });
     // R1 (spec 20, boss prerequisite): a run that STARTED with a confined
     // `scope_root` must RESUME with the SAME confinement — otherwise a scoped
     // heal/promotion run resumes workspace-wide fs_write, voiding the "human
@@ -154,7 +166,7 @@ pub fn spawn_resume(engine: Arc<Engine>, run_id: RunId) -> Result<(), PiiError> 
             scope_root.as_deref(),
             engine.ollama_net_host.as_deref(),
         ),
-        pii_core::Budget::with_tokens(max_tokens),
+        pii_core::Budget::new(max_tokens, max_tool_calls, max_micro_usd, max_wall_ms),
         Arc::new(bridge),
         pii_core::TraceCtx {
             run: run_id.clone(),

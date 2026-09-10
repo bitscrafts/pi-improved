@@ -216,6 +216,11 @@ impl GraphNode for AgentNode {
         messages.push(ChatMessage::new(Role::User, &user_text));
         let mut files_changed: Vec<String> = Vec::new();
         for turn in 1..=self.max_turns {
+            // R1 (spec budget/cancel): a cancelled ctx must stop the loop
+            // BEFORE the model call — `check()` is the single seam both
+            // cancellation and the absolute deadline flow through.
+            ctx.check()?;
+            let turn_start = Instant::now();
             // Spec 12, R1: before each model call, compact if the estimated
             // token count crosses the threshold. Short conversations are
             // untouched (byte-identical messages).
@@ -271,7 +276,7 @@ impl GraphNode for AgentNode {
             // (spec §5.4) used to be parsed and then discarded — every run
             // got an unlimited budget regardless, so this charge could
             // never fire. `runs.rs` now constructs the run's `Ctx` with
-            // `Budget::with_tokens(spec.limits.max_tokens)`, so this is the
+            // the graph's `[limits]` budget, so this is the
             // first real enforcement point: exhaustion routes to the same
             // `budget` port `max_turns` already uses, not a run failure.
             let spent = resp.tokens_in.saturating_add(resp.tokens_out);
@@ -286,6 +291,41 @@ impl GraphNode for AgentNode {
                         "error": "max_tokens exceeded",
                         "turns": turn,
                         "tokens_spent": spent,
+                    }),
+                });
+            }
+            // R5: charge the micro-dollar cost the provider reported (0 =
+            // unknown — a zero charge never exhausts anything). Exhaustion
+            // routes to the same `budget` port as tokens/max_turns.
+            if ctx
+                .budget()
+                .charge(pii_core::BudgetKind::MicroUsd, resp.micro_usd)
+                .is_err()
+            {
+                return Ok(Outcome::Next {
+                    port: PortName::from("budget"),
+                    value: serde_json::json!({
+                        "error": "max_micro_usd exceeded",
+                        "turns": turn,
+                        "micro_usd": resp.micro_usd,
+                    }),
+                });
+            }
+            // R4: charge the wall-clock time this turn (model call included)
+            // against the run's wall-ms budget; exhaustion routes to
+            // `budget` like every other dimension.
+            let turn_ms = u64::try_from(turn_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+            if ctx
+                .budget()
+                .charge(pii_core::BudgetKind::WallMs, turn_ms)
+                .is_err()
+            {
+                return Ok(Outcome::Next {
+                    port: PortName::from("budget"),
+                    value: serde_json::json!({
+                        "error": "max_wall_ms exceeded",
+                        "turns": turn,
+                        "wall_ms": ctx.elapsed_ms(),
                     }),
                 });
             }
@@ -322,14 +362,23 @@ impl GraphNode for AgentNode {
             });
             let run_id = ctx.trace().run.to_string();
             let node = ctx.trace().span.to_string();
-            self.run_tool_calls(
+            if self.run_tool_calls(
                 ctx,
                 &run_id,
                 &node,
                 &resp.tool_calls,
                 &mut files_changed,
                 &mut messages,
-            );
+            )? {
+                // R3 (spec 29): ToolCalls exhausted inside the tool loop.
+                return Ok(Outcome::Next {
+                    port: PortName::from("budget"),
+                    value: serde_json::json!({
+                        "error": "max_tool_calls exceeded",
+                        "turns": turn,
+                    }),
+                });
+            }
         }
         Ok(Outcome::Next {
             port: PortName::from("budget"),
@@ -407,8 +456,26 @@ impl AgentNode {
         calls: &[pii_model::ToolCall],
         files_changed: &mut Vec<String>,
         messages: &mut Vec<ChatMessage>,
-    ) {
+    ) -> Result<bool, PiiError> {
         for call in calls {
+            // R2: a cancelled ctx stops the tool loop before the next tool
+            // call; the cancellation surfaces as `PiiError::Cancelled`, which
+            // the dispatcher maps to `Aborted`/`Cancelled` (never a failure).
+            ctx.check()?;
+            // R3/R6: charge one tool call against the run's budget. Exhaustion
+            // bubbles as `BudgetExhausted`, which `run()` maps to the
+            // routable `budget` port — the tool call that would have
+            // exceeded `max_tool_calls` never runs.
+            if ctx
+                .budget()
+                .charge(pii_core::BudgetKind::ToolCalls, 1)
+                .is_err()
+            {
+                // R3 (spec 29): exhaustion routes to the `budget` port (the
+                // tool call that would have exceeded `max_tool_calls` never
+                // runs) — never a run failure. The caller maps the flag.
+                return Ok(true);
+            }
             self.emit_live(pii_proto::event::Event::ToolCall {
                 run_id: run_id.to_owned(),
                 node: node.to_owned(),
@@ -452,6 +519,7 @@ impl AgentNode {
             });
             let _ = ok;
         }
+        Ok(false)
     }
 
     /// Runs one tool call bounded by its declared `timeout()` (spec 12,
@@ -537,6 +605,7 @@ mod tests {
                 tool_calls: Vec::new(),
                 tokens_in: 1,
                 tokens_out: 1,
+                micro_usd: 0,
             })
         }
     }
@@ -763,6 +832,7 @@ mod tests {
                     tool_calls: Vec::new(),
                     tokens_in: 1,
                     tokens_out: 1,
+                    micro_usd: 0,
                 })
             }
             fn chat_streaming(
@@ -778,6 +848,7 @@ mod tests {
                     tool_calls: Vec::new(),
                     tokens_in: 1,
                     tokens_out: 1,
+                    micro_usd: 0,
                 })
             }
         }
@@ -841,6 +912,7 @@ mod tests {
                     tool_calls: Vec::new(),
                     tokens_in: 1,
                     tokens_out: 1,
+                    micro_usd: 0,
                 })
             }
             fn chat_streaming(
@@ -855,6 +927,7 @@ mod tests {
                     tool_calls: Vec::new(),
                     tokens_in: 1,
                     tokens_out: 1,
+                    micro_usd: 0,
                 })
             }
         }
@@ -985,6 +1058,7 @@ mod tests {
                     tool_calls: Vec::new(),
                     tokens_in: 1,
                     tokens_out: 1,
+                    micro_usd: 0,
                 })
             }
         }

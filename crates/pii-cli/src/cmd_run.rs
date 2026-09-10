@@ -199,7 +199,7 @@ fn root_ctx(allow_write: &[PathBuf], run: RunId, limits: &pii_graph::GraphLimits
         caps,
         Budget::new(
             limits.max_tokens,
-            u64::MAX,
+            limits.max_tool_calls,
             limits.max_micro_usd,
             limits.max_wall_ms,
         ),

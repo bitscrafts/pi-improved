@@ -262,6 +262,19 @@ impl Engine<'_> {
                     RunStatus::Failed,
                 );
             }
+            if self
+                .root
+                .budget()
+                .remaining(pii_core::BudgetKind::ToolCalls)
+                == 0
+            {
+                return self.finish(
+                    &Terminal::Failure {
+                        error: "budget exhausted: ToolCalls".into(),
+                    },
+                    RunStatus::Failed,
+                );
+            }
             if self.root.budget().remaining(pii_core::BudgetKind::MicroUsd) == 0 {
                 return self.finish(
                     &Terminal::Failure {

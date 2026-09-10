@@ -164,6 +164,7 @@ impl ModelProvider for OllamaProvider {
                 .collect(),
             tokens_in: parsed.prompt_eval_count,
             tokens_out: parsed.eval_count,
+            micro_usd: 0,
         })
     }
     /// Streaming chat (spec 15 R2): the transport hands raw body bytes as
@@ -262,6 +263,7 @@ impl ModelProvider for OllamaProvider {
             tool_calls,
             tokens_in: last.map_or(streamed_tokens.0, |l| l.prompt_eval_count),
             tokens_out: last.as_ref().map_or(streamed_tokens.1, |l| l.eval_count),
+            micro_usd: 0,
         })
     }
 }

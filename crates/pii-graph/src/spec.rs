@@ -103,6 +103,10 @@ pub struct GraphLimits {
     pub max_tokens: u64,
     /// Maximum micro-dollar budget (default `u64::MAX` = unbounded).
     pub max_micro_usd: u64,
+    /// Maximum tool calls across the whole run (default `u64::MAX` =
+    /// unbounded). Charged by the `agent` node per tool call; exhaustion
+    /// routes the agent to its `budget` port.
+    pub max_tool_calls: u64,
     /// Maximum concurrent parallel-safe nodes per tick (default 0 = use
     /// `available_parallelism()`). Bounds the OS-thread fan-out of a wide
     /// `PURE`/`READS_FS` batch (pass-1 §3.5: concurrency is bounded per run).
@@ -116,6 +120,7 @@ impl Default for GraphLimits {
             max_wall_ms: 600_000,
             max_tokens: u64::MAX,
             max_micro_usd: u64::MAX,
+            max_tool_calls: u64::MAX,
             max_parallel: 0,
         }
     }

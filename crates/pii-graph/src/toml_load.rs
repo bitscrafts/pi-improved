@@ -102,6 +102,13 @@ pub fn load_toml_with_registry(
             limits.max_micro_usd = u64::try_from(n)
                 .map_err(|_| PiiError::Invalid("max_micro_usd out of range".into()))?;
         }
+        if let Some(v) = t.get("max_tool_calls") {
+            let n: i64 = v
+                .as_integer()
+                .ok_or_else(|| PiiError::Invalid("max_tool_calls must be an integer".into()))?;
+            limits.max_tool_calls = u64::try_from(n)
+                .map_err(|_| PiiError::Invalid("max_tool_calls out of range".into()))?;
+        }
         if let Some(v) = t.get("max_parallel") {
             let n: i64 = v
                 .as_integer()

@@ -109,6 +109,9 @@ pub struct ChatResponse {
     /// Output token count as reported.
     #[serde(default)]
     pub tokens_out: u64,
+    /// Cost reported by the provider, in micro-USD (0 = unknown/not charged).
+    #[serde(default)]
+    pub micro_usd: u64,
 }
 
 /// A chat completion backend.
