@@ -172,6 +172,191 @@ pub fn signature(gate: &str, detail: &str) -> String {
     pii_store::hash(bytes.as_bytes())
 }
 
+/// `heal_record` node kind (spec 33 R4): writes the repair evidence
+/// (`gate_before`/`gate_after`/`patch_hash`/`model`/`tokens_in`/
+/// `tokens_out`) to the heal ledger.
+///
+/// Placed on the SUCCESS path only (`route_retest.ok`) — a still-broken
+/// retest never reaches a node here (the run fails structurally at
+/// `loop_budget`, see [`record_loop_budget_escalation`]), so this node
+/// only ever records `HealState::Fixed`.
+///
+/// Reads `$.input.signature` (required — the signature the run was spawned
+/// for) and `$.input.gate` (optional, defaults to `"heal-fix"`), plus the
+/// `fix_node`'s `model`/`tokens_in`/`tokens_out` and the `diff_node`'s
+/// `stdout` (the patch text) from the blackboard.
+pub struct HealRecordFactory {
+    /// The shared heal-attempt ledger.
+    pub heals: Arc<HealStore>,
+}
+
+impl NodeFactory for HealRecordFactory {
+    fn kind(&self) -> &'static str {
+        "heal_record"
+    }
+
+    fn effects(&self) -> pii_abi::Effects {
+        pii_abi::Effects::MUTATES_EXTERNAL
+    }
+
+    fn required_caps(&self) -> CapKind {
+        CapKind::empty()
+    }
+
+    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(vec![PortName::from("ok")])
+    }
+
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        let gate_before = cfg
+            .get("gate_before")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'gate_before'")))?
+            .to_owned();
+        let gate_after = cfg
+            .get("gate_after")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'gate_after'")))?
+            .to_owned();
+        let fix_node = cfg
+            .get("fix_node")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'fix_node'")))?
+            .to_owned();
+        let diff_node = cfg
+            .get("diff_node")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'diff_node'")))?
+            .to_owned();
+        Ok(Box::new(HealRecordNode {
+            heals: Arc::clone(&self.heals),
+            gate_before,
+            gate_after,
+            fix_node,
+            diff_node,
+        }))
+    }
+}
+
+struct HealRecordNode {
+    heals: Arc<HealStore>,
+    gate_before: String,
+    gate_after: String,
+    fix_node: String,
+    diff_node: String,
+}
+
+impl GraphNode for HealRecordNode {
+    fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
+        let sig = input
+            .input
+            .get("signature")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires input.signature")))?
+            .to_owned();
+        let gate = input
+            .input
+            .get("gate")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("heal-fix")
+            .to_owned();
+        let fix = input.nodes.get(&self.fix_node);
+        let model = fix
+            .and_then(|f| f.get("model"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        let tokens_in = fix
+            .and_then(|f| f.get("tokens_in"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        let tokens_out = fix
+            .and_then(|f| f.get("tokens_out"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        let diff = input
+            .nodes
+            .get(&self.diff_node)
+            .and_then(|d| d.get("stdout"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let patch_hash = pii_store::hash(diff.as_bytes());
+        let run_id = ctx.trace().run.to_string();
+        let attempt = self.heals.record_repair(
+            &sig,
+            &gate,
+            HealAttemptRun {
+                run_id,
+                outcome: pii_store::heal::HealState::Fixed,
+                ts_ms: ctx.now_ms(),
+                detail: truncate(diff),
+            },
+            Some(self.gate_before.clone()),
+            Some(self.gate_after.clone()),
+            Some(patch_hash),
+            model,
+            tokens_in,
+            tokens_out,
+        )?;
+        Ok(Outcome::Next {
+            port: PortName::from("ok"),
+            value: serde_json::json!({ "signature_hash": attempt.signature_hash }),
+        })
+    }
+}
+
+/// Records the loop-budget-exceeded escalation (spec 33 R3/R4/G5/G6).
+///
+/// A still-broken retest after `loop_budget` fails the run STRUCTURALLY,
+/// at the engine's dispatch check (`pii_graph::run::run`'s batch-readiness
+/// loop) — no node in the graph ever runs after that point, so no
+/// `heal_record` node can fire. This is the one ledger write that must
+/// happen outside the graph, from the run's terminal instead.
+///
+/// Only fires for `starter/heal-fix` runs whose failure names
+/// `loop_budget exceeded` and whose input carries a `signature` — anything
+/// else is left untouched (never a silent write for an unrelated graph).
+pub fn record_loop_budget_escalation(
+    heals: &HealStore,
+    graph_name: &str,
+    input: &serde_json::Value,
+    terminal: Option<&pii_abi::Terminal>,
+    run_id: &str,
+    now_ms: u64,
+) {
+    if graph_name != "starter/heal-fix" {
+        return;
+    }
+    let Some(pii_abi::Terminal::Failure { error }) = terminal else {
+        return;
+    };
+    if !error.contains("loop_budget exceeded") {
+        return;
+    }
+    let Some(sig) = input.get("signature").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let gate = input
+        .get("gate")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("heal-fix");
+    let _ = heals.record_repair(
+        sig,
+        gate,
+        HealAttemptRun {
+            run_id: run_id.to_owned(),
+            outcome: pii_store::heal::HealState::Escalated,
+            ts_ms: now_ms,
+            detail: truncate(error),
+        },
+        None,
+        None,
+        None,
+        None,
+        0,
+        0,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

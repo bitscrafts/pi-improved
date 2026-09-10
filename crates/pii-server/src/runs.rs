@@ -79,6 +79,11 @@ pub fn spawn_run(
                     .map(|m| m.insert(k.clone(), v.clone()));
             }
         }
+        // R4 (spec 33): captured before `input` moves into `run()` below —
+        // a heal-fix run whose loop_budget is exhausted fails STRUCTURALLY
+        // inside the engine's dispatch loop (no node runs to record it), so
+        // this is the one ledger write that must happen post-run.
+        let heal_input = input.clone();
         // The Phase-1 `run` journals every event (bridge → bus) and writes
         // the terminal to the journal; nothing else writes redb.
         let terminal =
@@ -94,6 +99,14 @@ pub fn spawn_run(
                     None
                 }
             };
+        crate::nodes::heal::record_loop_budget_escalation(
+            &engine.heals,
+            &spec.name,
+            &heal_input,
+            terminal.as_ref(),
+            run_id.as_str(),
+            ctx.now_ms(),
+        );
         // F20 (opus review): record the assistant reply in the session so
         // session.state is a full snapshot, not just the user's prompts.
         if let Some(t) = terminal {

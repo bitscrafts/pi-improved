@@ -50,6 +50,11 @@ loop_budget = 2
 max_turns = 6
 tools = ["fs_read", "fs_write", "edit", "multi_edit"]
 memory = { enabled = false, top_k = 0 }
+# R1 (spec 33): the patch model is routed via [evolve.routing], never a
+# hardcoded default — resolve_model is loud (NotFound) on an unassigned
+# step, so a daemon without `patch` configured refuses to run this graph
+# rather than silently falling back to whatever model happens to be default.
+route_step = "patch"
 system = "You are repairing one deliberately seeded source break in a disposable git worktree. The failing test output is in your input; the compiler's file:line localizes the break. Make the minimal change in the worktree that makes the test pass again (typically restoring one flipped constant). You have fs_read/fs_write/edit/multi_edit only — never attempt shell commands; you cannot run them. Do not touch any file outside the worktree."
 
 # --- validate: re-run the exact same test ---
@@ -80,6 +85,17 @@ id = "summarize"
 kind = "tool"
 tool = "bash"
 args = { command = "git diff", cwd = "$.input.worktree" }
+
+# R4 (spec 33): the ledger row for a validated repair — gate_before/
+# gate_after/patch_hash/model/tokens — written BEFORE the human gate so the
+# evidence exists regardless of the approve/deny decision that follows.
+[[node]]
+id = "record_fixed"
+kind = "heal_record"
+gate_before = "fail"
+gate_after = "pass"
+fix_node = "fix"
+diff_node = "summarize"
 
 # Human gate: the ONLY way past this point. allow/deny both close the run;
 # nothing here pushes, merges, or replaces the running daemon.
@@ -145,6 +161,12 @@ kind = "data"
 
 [[edge]]
 from = "summarize"
+port = "ok"
+to = "record_fixed"
+kind = "data"
+
+[[edge]]
+from = "record_fixed"
 port = "ok"
 to = "escalate"
 kind = "data"

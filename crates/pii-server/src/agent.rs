@@ -351,6 +351,10 @@ impl GraphNode for AgentNode {
                         "files_changed": files_changed,
                         "tokens_in": resp.tokens_in,
                         "tokens_out": resp.tokens_out,
+                        // R4 (spec 33): the resolved model, so a downstream
+                        // ledger-recording node can attribute the repair
+                        // without re-deriving routing state.
+                        "model": self.model,
                     }),
                 });
             }

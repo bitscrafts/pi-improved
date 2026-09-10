@@ -264,6 +264,51 @@ impl HealStore {
     }
 }
 
+impl HealStore {
+    /// Records a repair attempt's run AND the evidence fields that go with it
+    /// (spec 33 R4): `gate_before`/`gate_after`/`patch_hash`/`model`/
+    /// `tokens_in`/`tokens_out`. [`Self::record_run`] alone never populated
+    /// these — this is the first producer. Reuses `record_run` for the run
+    /// append + `attempt_count`/`state` bookkeeping, then patches the extra
+    /// fields (a present `Some` overwrites; `None` leaves the prior value;
+    /// token counts accumulate across attempts).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb or encode/decode failure.
+    #[allow(clippy::too_many_arguments)] // reason: one evidence row, no
+    // natural sub-grouping that wouldn't just be re-destructured downstream.
+    pub fn record_repair(
+        &self,
+        sig: &str,
+        gate: &str,
+        run: HealAttemptRun,
+        gate_before: Option<String>,
+        gate_after: Option<String>,
+        patch_hash: Option<String>,
+        model: Option<String>,
+        tokens_in: u64,
+        tokens_out: u64,
+    ) -> Result<HealAttempt, PiiError> {
+        let mut attempt = self.record_run(sig, gate, run)?;
+        if gate_before.is_some() {
+            attempt.gate_before = gate_before;
+        }
+        if gate_after.is_some() {
+            attempt.gate_after = gate_after;
+        }
+        if patch_hash.is_some() {
+            attempt.patch_hash = patch_hash;
+        }
+        if model.is_some() {
+            attempt.model = model;
+        }
+        attempt.tokens_in = attempt.tokens_in.saturating_add(tokens_in);
+        attempt.tokens_out = attempt.tokens_out.saturating_add(tokens_out);
+        self.put_attempt(&attempt)?;
+        Ok(attempt)
+    }
+}
+
 /// Max attempts kept in the ring (older runs evicted; `attempt_count` keeps
 /// the true total). Spec 26 R3 — a human approving a promotion sees the
 /// recent attempts plus an honest total.
@@ -404,5 +449,46 @@ mod tests {
         );
         assert_eq!(row.patch_hash, None);
         assert_eq!(row.decision, None);
+    }
+
+    /// Spec 33 R4: `record_repair` sets the evidence fields `record_run`
+    /// alone never touches, and accumulates token counts across attempts.
+    #[test]
+    fn record_repair_sets_evidence_fields() {
+        let dir = Builder::new()
+            .prefix("heal-repair-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
+        let run = HealAttemptRun {
+            run_id: String::from("r1"),
+            outcome: HealState::Fixed,
+            ts_ms: 100,
+            detail: String::from("diff"),
+        };
+        let a = store
+            .record_repair(
+                "sig-repair",
+                "heal-fix",
+                run,
+                Some(String::from("fail")),
+                Some(String::from("pass")),
+                Some(String::from("patchhash")),
+                Some(String::from("modelX")),
+                10,
+                20,
+            )
+            .unwrap();
+        assert_eq!(a.state, HealState::Fixed);
+        assert_eq!(a.gate_before, Some(String::from("fail")));
+        assert_eq!(a.gate_after, Some(String::from("pass")));
+        assert_eq!(a.patch_hash, Some(String::from("patchhash")));
+        assert_eq!(a.model, Some(String::from("modelX")));
+        assert_eq!(a.tokens_in, 10);
+        assert_eq!(a.tokens_out, 20);
+        // Round-trips through storage.
+        let reloaded = store.get_attempt("sig-repair").unwrap().unwrap();
+        assert_eq!(reloaded.gate_before, Some(String::from("fail")));
+        assert_eq!(reloaded.tokens_in, 10);
     }
 }

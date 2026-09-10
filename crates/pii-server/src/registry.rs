@@ -44,11 +44,12 @@ pub fn registry(
     }));
     reg.register(Arc::new(nodes::gate::GateFactory { approvals }));
     reg.register(Arc::new(nodes::heal::HealFactory {
-        heals,
+        heals: Arc::clone(&heals),
         runner: Arc::new(nodes::heal::CargoXtaskRunner {
             workspace: cfg.workspace.clone(),
         }),
     }));
+    reg.register(Arc::new(nodes::heal::HealRecordFactory { heals }));
     reg.register(Arc::new(nodes::memory::MemoryFactory { store: memory }));
     reg.register(Arc::new(nodes::crash::DebugCrashFactory));
     reg.register(Arc::new(nodes::worker::WorkerFactory { pool: workers }));
@@ -127,12 +128,16 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
     // lint registry registers it with a cargo-xtask runner so
     // `graphs/starter/heal-watch.toml` lints (lint never executes nodes).
     match pii_store::heal::HealStore::open(&runtime_dir.join("lint-heal.redb")) {
-        Ok(heals) => reg.register(Arc::new(nodes::heal::HealFactory {
-            heals: Arc::new(heals),
-            runner: Arc::new(nodes::heal::CargoXtaskRunner {
-                workspace: workspace.to_path_buf(),
-            }),
-        })),
+        Ok(heals) => {
+            let heals = Arc::new(heals);
+            reg.register(Arc::new(nodes::heal::HealFactory {
+                heals: Arc::clone(&heals),
+                runner: Arc::new(nodes::heal::CargoXtaskRunner {
+                    workspace: workspace.to_path_buf(),
+                }),
+            }));
+            reg.register(Arc::new(nodes::heal::HealRecordFactory { heals }));
+        }
         Err(e) => {
             #[allow(clippy::print_stderr)]
             {
