@@ -211,6 +211,9 @@ impl ModelProvider for ScriptedProvider {
 pub mod ollama;
 pub use ollama::OllamaProvider;
 
+pub mod llamacpp;
+pub use llamacpp::LlamaCppProvider;
+
 /// Resolves a model spec: `scripted:<path>` needs no transport.
 ///
 /// `ollama:` (B1, opus review) is now wired through
@@ -234,6 +237,7 @@ pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError
     };
     match kind {
         "scripted" => Ok(Arc::new(ScriptedProvider::from_fixture(Path::new(rest))?)),
+        "llamacpp" => llamacpp::provider_from_env(spec),
         "ollama" => Err(PiiError::Invalid(String::from(
             "ollama: needs a transport — call ollama::provider_from_env or resolve_with_transport",
         ))),
@@ -325,6 +329,34 @@ mod tests {
             Err(e) => e.to_string(),
         };
         assert!(unknown.contains("unknown model spec kind"));
+    }
+
+    /// T3 (spec 35): `provider_from_spec("llamacpp:...")` dispatches to the
+    /// llamacpp arm — a missing model file yields a clear `llamacpp:`-specific
+    /// error, NOT the generic "unknown model spec kind".
+    #[test]
+    fn provider_spec_dispatches_llamacpp() {
+        let err = match provider_from_spec("llamacpp:/nonexistent/does-not-exist.gguf") {
+            Ok(_) => panic!("llamacpp: must fail on a missing model file"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("llamacpp:") && err.contains("not found"),
+            "expected a llamacpp-specific 'model file not found' error, got: {err}"
+        );
+    }
+
+    /// T4 (spec 35): an empty `llamacpp:` path is rejected with a clear error.
+    #[test]
+    fn llamacpp_requires_path() {
+        let err = match provider_from_spec("llamacpp:") {
+            Ok(_) => panic!("llamacpp: must fail on an empty path"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("llamacpp:") && err.contains("model path"),
+            "expected a 'needs a model path' error, got: {err}"
+        );
     }
 }
 

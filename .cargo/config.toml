@@ -1,2 +1,10 @@
+# Force clang for the vendored llama.cpp C++ build (spec 35).
+# llama.cpp's CMake emits Clang-only warning flags (-Wunreachable-code-break)
+# that GCC rejects; the default `cc` is GCC. clang is a superset compiler and
+# handles all Pii's C deps.
+[env]
+CC = "clang"
+CXX = "clang++"
+
 [alias]
-xtask = "run --package xtask --"
+xtask = "run -p xtask --"

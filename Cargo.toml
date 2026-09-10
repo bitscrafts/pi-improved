@@ -47,6 +47,7 @@ tokio = { version = "1.53", default-features = false }
 landlock = "0.4"
 ratatui = "=0.30.2"
 crossterm = "0.29"
+llama-cpp-2 = { version = "0.1.156", default-features = false, features = ["common"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
