@@ -1,17 +1,7 @@
-//! Embedders (F4.6): deterministic offline trigram default, an Ollama HTTP
-//! embedder through `Arc<dyn HttpTransport>` (no socket code), and a Null
+//! Embedders (F4.6): deterministic offline trigram default and a Null
 //! embedder for the degraded path.
 
-use std::sync::Arc;
-
 use pii_abi::PiiError;
-
-/// f32 wire contract cast (clippy-permitted at the single call site).
-#[allow(clippy::cast_possible_truncation)] // reason: f32 wire contract
-fn f32_t(v: f64) -> f32 {
-    v as f32
-}
-use pii_core::HttpTransport;
 
 /// An embedding backend (F4.6).
 pub trait Embedder: Send + Sync {
@@ -96,71 +86,5 @@ impl Embedder for NullEmbedder {
     }
     fn embed(&self, _texts: &[String]) -> Result<Vec<Vec<f32>>, PiiError> {
         Err(PiiError::Unavailable(String::from("null embedder")))
-    }
-}
-
-/// The real backend: `POST {host}/api/embeddings` via the transport (F4.6).
-pub struct OllamaEmbedder {
-    host: String,
-    model: String,
-    transport: Arc<dyn HttpTransport>,
-}
-
-impl OllamaEmbedder {
-    /// Builds from host/model/transport.
-    #[must_use]
-    pub fn new(
-        host: impl Into<String>,
-        model: impl Into<String>,
-        transport: Arc<dyn HttpTransport>,
-    ) -> Self {
-        Self {
-            host: host.into(),
-            model: model.into(),
-            transport,
-        }
-    }
-}
-
-impl Embedder for OllamaEmbedder {
-    fn dims(&self) -> usize {
-        0 // unknown until the first response
-    }
-
-    fn name(&self) -> &'static str {
-        "ollama"
-    }
-
-    fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, PiiError> {
-        let mut out = Vec::with_capacity(texts.len());
-        for t in texts {
-            let body = serde_json::json!({"model": self.model, "prompt": t});
-            let req = pii_abi::HttpRequest {
-                method: pii_abi::HttpMethod::Post,
-                url: format!("{}/api/embeddings", self.host),
-                headers: vec![(
-                    String::from("Content-Type"),
-                    String::from("application/json"),
-                )],
-                body: serde_json::to_vec(&body).unwrap_or_default(),
-                timeout_ms: 30_000,
-            };
-            let ctx = pii_core::Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited());
-            let resp = self.transport.request(&ctx, &req)?;
-            if !resp.is_success() {
-                return Err(PiiError::Unavailable(format!(
-                    "ollama embeddings: {}",
-                    resp.status
-                )));
-            }
-            let v: serde_json::Value = serde_json::from_slice(&resp.body)
-                .map_err(|e| PiiError::Invalid(format!("ollama embeddings: {e}")))?;
-            let emb = v
-                .get("embedding")
-                .and_then(|e| e.as_array())
-                .ok_or_else(|| PiiError::Invalid(String::from("ollama: no embedding")))?;
-            out.push(emb.iter().filter_map(|x| x.as_f64().map(f32_t)).collect());
-        }
-        Ok(out)
     }
 }

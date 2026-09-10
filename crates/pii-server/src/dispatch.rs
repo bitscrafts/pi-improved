@@ -13,8 +13,8 @@ use tokio::sync::mpsc;
 use pii_abi::PiiError;
 use pii_proto::method::Method;
 use pii_proto::run::{
-    GraphLintParams, GraphLintResult, RunListParams, RunStartParams, RunStartResult, SeqEvent,
-    TraceResult, WireRunHeader, WireRunStatus,
+    GraphApplyParams, GraphLintParams, GraphLintResult, RunListParams, RunStartParams,
+    RunStartResult, SeqEvent, TraceResult, WireRunHeader, WireRunStatus,
 };
 use pii_proto::session::{
     SessionCreateParams, SessionCreateResult, SessionPromptParams, SessionPromptResult,
@@ -140,12 +140,72 @@ pub fn dispatch(
         Method::MemoryConsolidate => crate::daemon::methods::memory_consolidate(engine, req),
         Method::SysReload => crate::daemon::methods::sys_reload(engine, req),
         Method::RunResume => crate::daemon::methods::run_resume(engine, req),
-        // The remaining methods return clean refusals in this pass; they are
-        // owned by later parts of the phase (documented in the handoff).
-        m => err(
-            ErrorCode::MethodNotFound,
-            &format!("method '{m}' is not served by this build"),
-        ),
+        Method::SessionInterrupt => {
+            let sid = req
+                .params
+                .get("session_id")
+                .and_then(serde_json::Value::as_str);
+            sid.map_or_else(
+                || {
+                    err(
+                        ErrorCode::InvalidParams,
+                        "session.interrupt needs session_id",
+                    )
+                },
+                |sid| match engine.interrupt_session(sid) {
+                    Ok(()) => value_response(req, Some(serde_json::json!({"ok": true})), err),
+                    Err(e) => err_code(err, &e),
+                },
+            )
+        }
+        Method::SessionClose => {
+            let sid = req
+                .params
+                .get("session_id")
+                .and_then(serde_json::Value::as_str);
+            sid.map_or_else(
+                || err(ErrorCode::InvalidParams, "session.close needs session_id"),
+                |sid| match engine.close_session(sid) {
+                    Ok(()) => value_response(req, Some(serde_json::json!({"ok": true})), err),
+                    Err(e) => err_code(err, &e),
+                },
+            )
+        }
+        Method::GraphApply => {
+            let p: Option<GraphApplyParams> = serde_json::from_value(req.params.clone()).ok();
+            match p {
+                Some(p) => match engine.apply_graph(&p.toml) {
+                    Ok(hash) => value_response(
+                        req,
+                        Some(serde_json::json!({"name": p.name, "hash": hash})),
+                        err,
+                    ),
+                    Err(e) => err_code(err, &e),
+                },
+                None => err(ErrorCode::InvalidParams, "bad graph.apply params"),
+            }
+        }
+        Method::GraphGet => {
+            let hash = req.params.get("hash").and_then(serde_json::Value::as_str);
+            hash.map_or_else(
+                || err(ErrorCode::InvalidParams, "graph.get needs hash"),
+                |hash| match engine.get_graph(hash) {
+                    Ok(Some(body)) => value_response(
+                        req,
+                        Some(
+                            serde_json::json!({"hash": hash, "body": String::from_utf8_lossy(&body)}),
+                        ),
+                        err,
+                    ),
+                    Ok(None) => err(ErrorCode::NotFound, "graph not found"),
+                    Err(e) => err_code(err, &e),
+                },
+            )
+        }
+        Method::GraphList => match engine.list_graphs() {
+            Ok(keys) => value_response(req, Some(serde_json::json!({"graphs": keys})), err),
+            Err(e) => err_code(err, &e),
+        },
     }
 }
 

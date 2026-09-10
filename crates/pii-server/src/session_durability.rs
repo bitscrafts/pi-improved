@@ -1,6 +1,7 @@
 //! Session durability (P4.2, spec 16): persistence, real token counts,
 //! `session.list`, boot seeding and run reconciliation.
 
+use pii_abi::PiiError;
 use pii_proto::session::SessionStatus;
 
 use crate::Engine;
@@ -181,5 +182,72 @@ impl Engine {
                 },
             );
         }
+    }
+
+    /// `session.interrupt` (B5): cancels the session's active run, if any.
+    /// Idempotent — a session with no active run is a no-op success.
+    ///
+    /// # Errors
+    /// Never errors (a missing session is a no-op success).
+    pub fn interrupt_session(&self, session_id: &str) -> Result<(), PiiError> {
+        let run_id = self
+            .sessions
+            .lock()
+            .get(session_id)
+            .and_then(|s| s.run_id.clone());
+        if let Some(run_id) = run_id {
+            self.cancel(&run_id);
+        }
+        Ok(())
+    }
+
+    /// `session.close` (B5): marks the session `Closed` and cancels its
+    /// active run, if any. Idempotent.
+    ///
+    /// # Errors
+    /// [`PiiError::NotFound`] when the session does not exist.
+    pub fn close_session(&self, session_id: &str) -> Result<(), PiiError> {
+        let run_id = self
+            .sessions
+            .lock()
+            .get(session_id)
+            .and_then(|s| s.run_id.clone());
+        if let Some(run_id) = run_id {
+            self.cancel(&run_id);
+        }
+        let mut map = self.sessions.lock();
+        let s = map
+            .get_mut(session_id)
+            .ok_or_else(|| PiiError::NotFound(format!("session '{session_id}'")))?;
+        s.status = SessionStatus::Closed;
+        s.run_id = None;
+        drop(map);
+        self.persist_session(session_id);
+        Ok(())
+    }
+
+    /// `graph.apply` (B5): stores a graph body under its content hash and
+    /// returns the hash key.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn apply_graph(&self, toml: &str) -> Result<String, PiiError> {
+        self.store.put_graph(toml.as_bytes())
+    }
+
+    /// `graph.get` (B5): fetches a stored graph body by hash.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn get_graph(&self, hash: &str) -> Result<Option<Vec<u8>>, PiiError> {
+        self.store.get_graph(hash)
+    }
+
+    /// `graph.list` (B5): lists every stored graph body key.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn list_graphs(&self) -> Result<Vec<String>, PiiError> {
+        self.store.all_graphs()
     }
 }

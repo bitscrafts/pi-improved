@@ -140,25 +140,11 @@ where
 }
 
 /// `[memory]` (F5.2).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct MemorySection {
     /// Memory store path (empty = `<runtime_dir>/memory.redb`).
     pub path: String,
-    /// Embedder name (reserved; only `trigram` ships this phase).
-    pub embedder: String,
-    /// Cache budget in bytes (reserved).
-    pub cache_bytes: u64,
-}
-
-impl Default for MemorySection {
-    fn default() -> Self {
-        Self {
-            path: String::new(),
-            embedder: String::from("trigram"),
-            cache_bytes: 0,
-        }
-    }
 }
 
 /// `[[cron]]` (F5.2/F5.8).

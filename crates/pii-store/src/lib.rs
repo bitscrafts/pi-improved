@@ -206,6 +206,30 @@ impl Store {
         Ok(got.map(|v| v.value().to_vec()))
     }
 
+    /// Lists every stored graph body key (the content hashes), in key order.
+    ///
+    /// # Errors
+    /// Returns [`PiiError::Internal`] on a redb failure.
+    pub fn all_graphs(&self) -> Result<Vec<String>, PiiError> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+        let table = read
+            .open_table(GRAPH_BODY)
+            .map_err(|e| PiiError::Internal(format!("store: open graph_body: {e}")))?;
+        let mut out = Vec::new();
+        let iter = table
+            .iter()
+            .map_err(|e| PiiError::Internal(format!("store: iter graph_body: {e}")))?;
+        for item in iter {
+            let (key, _) =
+                item.map_err(|e| PiiError::Internal(format!("store: read graph_body: {e}")))?;
+            out.push(key.value().to_owned());
+        }
+        Ok(out)
+    }
+
     /// Appends `event` at `header.seq` and advances `header` in ONE redb write
     /// transaction, committed before returning. Also repoints `run_by_status`.
     ///

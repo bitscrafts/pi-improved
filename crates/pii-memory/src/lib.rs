@@ -16,6 +16,6 @@ pub mod vector;
 
 pub use decay::{LAMBDA_ATOM, LAMBDA_PERSONA, LAMBDA_SCENE, LAMBDA_SKILL};
 pub use doc::{Doc, DocKind, Layer};
-pub use embed::{Embedder, NullEmbedder, OllamaEmbedder, TrigramEmbedder};
+pub use embed::{Embedder, NullEmbedder, TrigramEmbedder};
 pub use search::{MemoryHit, MemorySearchResult, MemorySearcher};
 pub use tokenize::tokenize;
