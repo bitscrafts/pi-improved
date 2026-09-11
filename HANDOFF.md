@@ -1,6 +1,44 @@
 # Pii — Session Handoff
 
-## SESSION STATE — 2026-09-11 (latest): caveats N1–N6 implemented — memory is now a first-class MCP tool AND an agent-loop tool
+## SESSION STATE — 2026-09-11 (latest): spec 37 DONE — A1 failover classification landed
+
+**Plan track A has its first spec implemented and committed (`4624d58`).**
+
+- **Authored by**: opus (planner-only artifact) → `58e4dfb`, then implemented
+  by sonnet → `4624d58`.
+- **Artifact**: `crates/pii-abi/src/failover.rs` (448 lines, ≤450 gate) +
+  a `mod failover;` re-export in `lib.rs`.
+- **Contents**: `FailoverReason` (11 variants, `AuthPermanent` deliberately
+  dropped — Pii has no credential refresh, so it would be a rule for a state
+  that cannot occur), `Recovery` (3: `RetrySame`/`NextProvider`/`Compress` —
+  `RotateCredential`/`Abort` dropped as unreachable), `Origin`
+  (`Provider`/`Upstream`), and `classify(status, message, origin)` — total,
+  pure, never panicking, 26 first-match-wins rules, ASCII-case-insensitive
+  `contains`, **no regex and no new dependency**.
+- **The load-bearing semantics** (verified by reading the code, not just the
+  tests): `ContextOverflow` / `PayloadTooLarge` → `Compress`, **never**
+  `NextProvider` (request property — failing over would reproduce the identical
+  failure and burn the chain); an aggregator 429 (`Origin::Upstream`) →
+  `UpstreamRateLimit` → `NextProvider` (key healthy, a different *model* is the
+  fix); provider 429 → `RateLimit` → `RetrySame`.
+- **Verification (run by the orchestrator, not taken on trust)**: 25/25 TDD
+  tests (T1–T25); clippy `--all-targets -D warnings` exit 0; fmt clean;
+  `cargo test --workspace --lib --bins --tests` exit 0 / 0 failed;
+  `--workspace --doc` exit 0; `silent-noop-check` exit 0.
+- **Guardrails held**: only the two allowed files touched, no new dep,
+  no `unwrap`/`expect`/`panic!`/indexing anywhere (tests included), nothing
+  under `specs/` edited, no commit by the worker.
+
+**Next on track A: A2** — wire the providers (`ollama`, `llamacpp`, http) to
+attach **status + origin** so `classify` is fed real primitives; today the
+status is buried in message text (`"ollama: upstream status 429"`) and origin
+is not recorded at all, which is exactly why A1 takes primitives instead of a
+`&PiiError`. After A2: **A3** (model node reports failure as payload →
+branchable), which the plan calls the real work. See
+`_docs/06-research/025-model-routing-and-failover-plan.md` §5 for the full
+A1–A5 / B1–B4 breakdown. Planner briefs are staged in `_tmp/`.
+
+## SESSION STATE — 2026-09-11: caveats N1–N6 implemented — memory is now a first-class MCP tool AND an agent-loop tool
 
 **All six of N1–N6 done. Working tree LEFT DIRTY on purpose (no commit) — see
 `_tmp/cron-report-caveats-20260911.md` for the full report.**
