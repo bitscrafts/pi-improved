@@ -1,5 +1,64 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-11 (latest): model routing + failover PLAN — ready to implement
+
+**PLAN ONLY. No implementation. Next action is spec authoring (planner-only).**
+
+**The plan**: `_docs/06-research/025-model-routing-and-failover-plan.md` (368
+lines). Two co-equal tracks — A: provider failover (resilience), B: smart model
+routing (cost). Triggered by the user's "follow how Hermes switches providers
+when exhausted, in pii" + the ByteByteGo routing article (already in
+agent-memory: `research/model-routing-costs`).
+
+**The correction that shaped it (user: "in pii as everything is a graph!")**:
+this must NOT be a Rust `ProviderChain` struct. Pii's engine already has the
+primitives (`crates/pii-graph`): the **`route` node IS the router** (`eq` is a
+`serde_json::Value`, so it branches on a **string** reason); `NodeSpec.retry` is
+same-provider retry; `loop_budget` bounds the ladder; the **journal is the
+observability**; three-layer caps give per-hop authority.
+
+**The one genuine gap (verified)**: `route` can only branch on what is in the
+**payload**, but a provider error today returns `Err` → `propagate_dead` to
+fixpoint → downstream **dead** → run fails. So:
+- **A1** = `FailoverReason` + `classify()` in `pii-abi` (a graph cannot branch on
+  a reason Pii never produces — the linchpin).
+- **A3 = the real work**: the model node must return a **successful `Outcome`
+  carrying `{status, reason, provider}`** instead of `Err`.
+
+**Proof the pattern already works** — `pii graph show graphs/starter/verify-fix.toml`:
+```
+fix [agent] (entry) (loop_budget=3) |-- ok --> test
+test [tool: bash] |-- ok --> gate
+gate [route: $.payload.exit_code] |-- pass --> done   |-- fail --> retry
+retry [transform: $.payload] ^-- loops back to "fix" (budget=3)
+```
+The escalation ladder exists **because the `tool` node reports `exit_code` as
+payload** rather than failing the node. The model node needs the same for `reason`.
+(Note: that node is *named* `gate` but its **kind is `route`**; the server `gate`
+kind is the separate human-approval gate.)
+
+**Specs**: A1–A5 + B1–B4 in §5 of the plan, with dependencies. **Ship A1 first**
+(small, pure, everything depends on it). `specs/` is planner-only → opus authors.
+A self-contained planner brief is staged at `_tmp/brief-planner-spec-a1.md`.
+
+**HAZARD — order of operations in the morning.** Cron `6b8d190d8a9f` fires
+**07:05Z** and deliberately leaves a **DIRTY working tree** (the caveats run must
+not commit — the dirty tree IS its verification surface). So:
+1. **First**: verify + commit the caveats run's work (see the section below).
+2. **Then**: start the routing plan (A1 spec authoring).
+Do not begin spec work on top of an unverified dirty tree.
+
+**Evidence commands** (all verified 2026-09-11):
+```bash
+cd /projects/pi-improved
+./target/debug/pii graph show graphs/starter/verify-fix.toml   # the ladder pattern
+grep -n "propagate_dead" crates/pii-graph/src/run.rs           # dead to a fixpoint
+grep -rn "pub rules\|serde_json::Value" crates/pii-graph/src/nodes.rs
+```
+
+**Also uncommitted-then-committed this session**: doc 025 + `_docs/INDEX.md` +
+`_docs/TOC.md`.
+
 ## SESSION STATE — 2026-09-11: spec 36 COMPLETE — granite runs in-process and emits real tool calls
 
 **Spec 36 (in-process llama-cpp tool calls) is DONE and verifiably working.**
