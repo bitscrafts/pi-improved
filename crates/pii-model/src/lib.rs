@@ -214,6 +214,8 @@ pub use ollama::OllamaProvider;
 pub mod llamacpp;
 pub use llamacpp::LlamaCppProvider;
 
+pub mod llamacpp_tools;
+
 /// Resolves a model spec: `scripted:<path>` needs no transport.
 ///
 /// `ollama:` (B1, opus review) is now wired through
