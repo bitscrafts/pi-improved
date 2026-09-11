@@ -61,6 +61,7 @@ messaging gateway with one performant, local-first, modular system.
   - `021-mqtt-broker.md` — MQTT for Pii: broker vs bridge, topic mapping, security (pii-net chokepoint), Android coordination
   - `022-android-events-app.md` — Android background app receiving/emitting Pii events: transport (MQTT/REST), background-service pattern, notification mapping, auth
   - `023-llamacpp-granite-on-pi-process.md` — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
+  - `024-pii-memory-mcp-status-and-next.md` — verified status of Pii's memory + MCP: both work end-to-end (3 real memory RPCs, 15 tests; Hermes↔pii-mcp connected + tools responding), 8 honest capability caveats (memory is not a first-class MCP tool, not in the agent loop, vector lane is trigram-lexical, no e2e coverage), and the ordered next steps N1-N6
 - [99-archive/](99-archive/) — deprecated / historical
 
 ## Status

@@ -43,6 +43,44 @@ cargo run -p pii-model --example ds4_inprocess --release
 - In-process granite has no HTTP surface (by design: `pii-web` is
   VIEWER-ONLY, no write RPC) — the ds4 test is an example/bin, not an endpoint.
 
+## SESSION STATE — 2026-09-11 (cont.): Pii memory + MCP verified; caveats recorded; next steps N1-N6
+
+**Both work end-to-end. The gap is exposure, not function.**
+
+**Verified live:**
+- MCP: `hermes mcp list` → `pii → /root/.local/bin/pii-mcp`, `✓ enabled`.
+  Exercised `glob`, `fs_read`, `bash`, `grep` through Hermes' MCP client — all
+  returned real results (`edit`/`fs_write`/`multi_edit` available, untested).
+- Memory: full round-trip through `mcp__pii__bash` → pii CLI → daemon UDS:
+  `memory.put` → id `6cbbe7bc…`; `memory.search` → same doc, lanes
+  `["bm25","vector"]`, `degraded:false`; `memory.consolidate` → clean, doc
+  persisted. Daemon socket `/root/.pii/runtime/control.sock`, store
+  `/root/.pii/store.redb`. `pii-memory` = 15 passing tests.
+
+**Caveats (capability boundaries, not bugs):**
+- C1 memory is NOT a first-class MCP tool (pii-mcp exposes only
+  fs/edit/bash/grep/glob) — reached only via MCP bash → CLI.
+- C2 memory is NOT in Pii's agent loop — the model has no memory tool; the
+  agent only calls `write_fact` internally.
+- C3 vector lane is `TrigramEmbedder` (offline, deterministic, 256-dim) —
+  lexical, not semantic; no neural embedder (B1 deleted the dead one).
+- C4 `memory.search` returns ids+scores, not the recalled text.
+- C5 graph lane dormant/unproven end-to-end.
+- C6 MCP gotchas: `glob` needs `cwd` + relative pattern; `grep`'s `path` is a
+  FILENAME FILTER (not a dir — `path="."` yields empty); `bash` cwd `/projects`.
+- C7 `pii-mcp` is feature-gated **default-off** (`rmcp` quarantined).
+- C8 no automated e2e memory/MCP round-trip test — evidence above is manual.
+
+**Next (ordered; N1+N5 first — independent and small):**
+- N1 add native `memory_search`/`memory_put` MCP tools (RPCs already exist).
+- N2 add memory tools to the agent loop (store → cognitive layer).
+- N3 return recalled text inline. N4 prove-or-drop the graph lane.
+- N5 e2e memory + MCP tests (daemon-socket round-trip + MCP client call).
+- N6 revisit semantic recall via a small GGUF embedder over the in-process
+  `llama-cpp-2` path (spec 35 proved the route); keep trigram as fallback.
+
+Full analysis: `_docs/06-research/024-pii-memory-mcp-status-and-next.md`.
+
 ## SESSION STATE — 2026-09-10: specs 28+29 CLOSE the opus review's fix list (pidag rebuilt+verified live)
 
 **Opus's ordered fix list (24-29) from the 2026-09-09 architecture-conformance
