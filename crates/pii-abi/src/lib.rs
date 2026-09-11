@@ -8,6 +8,7 @@
 mod cap;
 mod effects;
 mod error;
+mod failover;
 mod http;
 mod ids;
 mod journal;
@@ -16,6 +17,9 @@ mod node;
 pub use cap::CapKind;
 pub use effects::Effects;
 pub use error::PiiError;
+#[rustfmt::skip]
+pub use failover::{classify, FailoverReason, Origin, Recovery};
+pub use failover::ALL;
 pub use http::{HttpMethod, HttpRequest, HttpResponse};
 pub use ids::{NodeId, PortName, RunId};
 pub use journal::{RunEvent, RunHeader, RunStatus, Terminal};
