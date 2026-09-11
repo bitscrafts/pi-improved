@@ -1,5 +1,48 @@
 # Pii — Session Handoff
 
+## SESSION STATE — 2026-09-11: spec 36 COMPLETE — granite runs in-process and emits real tool calls
+
+**Spec 36 (in-process llama-cpp tool calls) is DONE and verifiably working.**
+Pii can now run IBM Granite 4.2 3B *inside its own process* (no external
+server, no `NET` capability) and get back structured `tool_calls`.
+
+**What landed (commits):**
+- `a37ac8a` + `5c9cc74` — spec 36 part 1: `crates/pii-model/src/llamacpp_tools.rs`
+  (`build_schema_from_tools`, `parse_tool_calls` + 4 unit tests).
+- `bb131bb` — spec 36 part 2: grammar+parse wired into `LlamaCppProvider::run`.
+- `5db394f` — **BUG FIX**: removed a redundant `sampler.accept(token)` after
+  `sampler.sample()`. `sample()` already accepts internally; the double-accept
+  silently corrupted the grammar parse stack → next decode step hit
+  `GGML_ASSERT(!stacks.empty())` → SIGABRT. This was the crash blocker.
+- `e4b9f39` — `examples/ds4_inprocess.rs`: standalone in-process B1/B2 bench.
+- `c67b874` — real-granite integration battery (8 tests) + `oneOf` grammar
+  that binds each tool name to its OWN argument schema.
+
+**Key fixes / findings:**
+- `build_schema_from_tools` must emit a JSON **Schema of the response**
+  (`{"oneOf":[{"properties":{"name":{"const":<tool>},"arguments":<tool.schema>}}]}`),
+  NOT an OpenAI tool-list wrapper, and NOT a bare `arguments:{"type":"object"}`
+  (the latter let the model invent arg keys — it emitted
+  `{"location":"Paris"}` where the tool required `city`).
+- All 8 real-model tests pass; B1 tool-calling PASS (correct tool + correct
+  args), B2 speed ~14 tok/s.
+
+**How to run the real-model tests (they load a 2.2GB GGUF, so `#[ignore]`d):**
+```bash
+cargo test -p pii-model --test real_granite -- --ignored --test-threads=1 --nocapture
+cargo run -p pii-model --example ds4_inprocess --release
+```
+
+**Gate:** workspace clippy `--all-targets -D warnings` clean, fmt clean,
+0 failing tests, silent-noop green.
+
+**Deferred / not done:**
+- B3/B4 multi-round autonomy are NOT covered in-process — they need a real
+  tool-execution loop, which is `pii-server::agent.rs`'s job, not the
+  `pii-model` provider seam.
+- In-process granite has no HTTP surface (by design: `pii-web` is
+  VIEWER-ONLY, no write RPC) — the ds4 test is an example/bin, not an endpoint.
+
 ## SESSION STATE — 2026-09-10: specs 28+29 CLOSE the opus review's fix list (pidag rebuilt+verified live)
 
 **Opus's ordered fix list (24-29) from the 2026-09-09 architecture-conformance
