@@ -48,6 +48,31 @@ not commit — the dirty tree IS its verification surface). So:
 2. **Then**: start the routing plan (A1 spec authoring).
 Do not begin spec work on top of an unverified dirty tree.
 
+**ALSO BLOCKED — the 5am daily status brief will NOT self-heal.** Job
+`4646e5b01856` (`daily-status-brief`, `0 5 * * *`) fired 2026-09-11T05:00:48 and
+**errored** with a Hermes drift-guard skip:
+
+```
+RuntimeError: [drift_skip] Skipped to prevent unintended spend: global inference
+config drifted since this job was created (provider 'gemini' -> 'copilot';
+model 'gemini-3.6-flash' -> 'gpt-5.4'), and this job is unpinned.
+The job stays skipped until the config is pinned or restored. See #44585.
+```
+
+Nothing was billed, but **the job stays skipped until it is pinned** — the alert
+is sent once. Current global config is provider `copilot`, model `gpt-5.4`.
+Fix (pick one; keeps Anthropic out of Hermes routing either way):
+
+```bash
+# run it on the current global config
+hermes cron edit 4646e5b01856 --provider copilot --model gpt-5.4
+# or pin a cheap/house default instead, e.g.
+hermes cron edit 4646e5b01856 --provider deepseek --model deepseek-v4.1-flash
+```
+
+Deliberately **not** changed overnight: which model the daily brief runs on is a
+provider/cost choice, not an infrastructure fix.
+
 **Evidence commands** (all verified 2026-09-11):
 ```bash
 cd /projects/pi-improved
