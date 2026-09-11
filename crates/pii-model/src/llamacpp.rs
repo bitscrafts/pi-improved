@@ -116,12 +116,12 @@ impl LlamaCppProvider {
             let schema = build_schema_from_tools(&req.tools);
             let grammar = llama_cpp_2::json_schema_to_grammar(&schema)
                 .map_err(|e| PiiError::Internal(format!("llamacpp: schema_to_grammar: {e}")))?;
-            LlamaSampler::chain_simple([LlamaSampler::grammar(
-                &self.model,
-                &grammar,
-                "function_schema",
-            )
-            .map_err(|e| PiiError::Internal(format!("llamacpp: grammar: {e}")))?])
+            let grammar_sampler = LlamaSampler::grammar(&self.model, &grammar, "root")
+                .map_err(|e| PiiError::Internal(format!("llamacpp: grammar: {e}")))?;
+            // The grammar sampler only constrains logits; a chain still needs
+            // a final selection sampler or llama.cpp's candidate-selection
+            // assertion aborts the process (GGML_ASSERT cur_p.selected>=0).
+            LlamaSampler::chain_simple([grammar_sampler, LlamaSampler::greedy()])
         };
         let mut sampler = sampler;
         let mut text = String::new();
@@ -130,8 +130,15 @@ impl LlamaCppProvider {
             .map_err(|_| PiiError::Internal("llamacpp: prompt too long".into()))?;
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         loop {
+            // `LlamaSampler::sample` already accepts the token into every
+            // sampler in the chain (it's llama.cpp's combined "sample and
+            // accept" entry point). A second explicit `accept()` here would
+            // replay the same bytes into the grammar sampler, which has
+            // already advanced past them — the grammar's parse stacks would
+            // be driven empty, and the *next* decode step's logit-masking
+            // pass aborts the process via a C++ `GGML_ASSERT`. Do not call
+            // `sampler.accept()` again after `sample()`.
             let token = sampler.sample(&ctx, batch.n_tokens() - 1);
-            sampler.accept(token);
             if self.model.is_eog_token(token) {
                 break;
             }
@@ -348,5 +355,54 @@ mod tests {
             resp.text
         );
         assert!(resp.tokens_out > 0, "must generate tokens");
+    }
+
+    /// Real-model tool-call acceptance (N4: `#[ignore]` — not run in CI).
+    /// Loads granite, gives it one tool, and checks the grammar-constrained
+    /// path actually emits a structured `tool_calls` entry — the point of
+    /// spec 36 (part1 helpers + part2 wiring). Run manually:
+    /// `cargo test -p pii-model -- --ignored real_granite_tool_call`.
+    #[test]
+    #[ignore = "loads a 2.2GB model; manual acceptance only"]
+    fn real_granite_tool_call() {
+        use super::LlamaCppProvider;
+        use crate::{ChatRequest, ModelProvider, ToolSpec};
+        use pii_core::{Budget, CapSet, Ctx};
+
+        let path = std::path::Path::new("/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf");
+        assert!(path.exists(), "granite GGUF must be present");
+        let provider = LlamaCppProvider::load(path, 4096, 16).unwrap();
+        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+        let tools = vec![ToolSpec {
+            name: "get_weather".to_string(),
+            description: "Get the current weather for a city".to_string(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": { "city": { "type": "string" } },
+                "required": ["city"]
+            }),
+        }];
+        let req = ChatRequest {
+            model: "granite".into(),
+            messages: vec![ChatMessage::new(
+                Role::User,
+                "What is the weather in Paris? Use the get_weather tool.",
+            )],
+            tools,
+            max_tokens: 200,
+            temperature: 0.0,
+            num_ctx: 4096,
+        };
+        let resp = provider.chat(&ctx, &req).unwrap();
+        assert!(
+            !resp.tool_calls.is_empty(),
+            "expected a tool call, got text: {:?}, tool_calls: {:?}",
+            resp.text,
+            resp.tool_calls
+        );
+        assert_eq!(
+            resp.tool_calls.first().expect("checked above").name,
+            "get_weather"
+        );
     }
 }

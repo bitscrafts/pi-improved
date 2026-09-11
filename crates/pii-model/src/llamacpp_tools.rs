@@ -5,35 +5,39 @@
 
 use crate::{ToolCall, ToolSpec};
 
-/// Builds a JSON schema object from a list of tool specifications.
+/// Builds a JSON Schema for the model's function-call RESPONSE.
 ///
-/// Each tool contributes its `name`, `description`, and `parameters` (the tool's
-/// `schema` field) into a JSON object. The returned string is the JSON
-/// serialization of the complete object.
+/// `json_schema_to_grammar` (llama.cpp) compiles a JSON Schema into a GBNF
+/// grammar, so the schema must describe the shape the model should emit —
+/// NOT the `OpenAI` tool-list wire format. We expect the model to emit a single
+/// object `{"name": <one of the tool names>, "arguments": {...}}`:
 ///
-/// # Arguments
-/// * `tools` - Slice of `ToolSpec` to include in the schema.
-///
-/// # Returns
-/// A JSON string representing the tool definitions object.
+/// ```json
+/// {
+///   "type": "object",
+///   "properties": {
+///     "name":      { "enum": ["tool_a", "tool_b", ...] },
+///     "arguments": { "type": "object" }
+///   },
+///   "required": ["name", "arguments"],
+///   "additionalProperties": false
+/// }
+/// ```
+#[must_use]
 pub fn build_schema_from_tools(tools: &[ToolSpec]) -> String {
-    let mut schema = serde_json::Map::new();
-
-    for tool in tools {
-        let mut tool_obj = serde_json::Map::new();
-        tool_obj.insert("type".to_string(), serde_json::json!("function"));
-        tool_obj.insert(
-            "function".to_string(),
-            serde_json::json!({
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.schema
-            }),
-        );
-
-        schema.insert(tool.name.clone(), serde_json::Value::Object(tool_obj));
-    }
-
+    let names: Vec<serde_json::Value> = tools
+        .iter()
+        .map(|t| serde_json::Value::String(t.name.clone()))
+        .collect();
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "name": { "enum": names },
+            "arguments": { "type": "object" }
+        },
+        "required": ["name", "arguments"],
+        "additionalProperties": false
+    });
     serde_json::to_string(&schema).unwrap_or_default()
 }
 
@@ -125,9 +129,15 @@ mod tests {
             serde_json::from_str(&result).expect("schema string must parse to JSON");
 
         assert!(parsed.is_object());
-        assert!(
-            parsed.get("fs_read").is_some(),
-            "schema should contain 'fs_read'"
+        let names = parsed
+            .get("properties")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.get("enum"))
+            .expect("schema must have properties.name.enum");
+        assert_eq!(
+            names,
+            &serde_json::json!(["fs_read"]),
+            "schema should list 'fs_read' as an allowed name: {parsed}"
         );
     }
 
