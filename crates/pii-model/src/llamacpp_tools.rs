@@ -9,35 +9,49 @@ use crate::{ToolCall, ToolSpec};
 ///
 /// `json_schema_to_grammar` (llama.cpp) compiles a JSON Schema into a GBNF
 /// grammar, so the schema must describe the shape the model should emit —
-/// NOT the `OpenAI` tool-list wire format. We expect the model to emit a single
-/// object `{"name": <one of the tool names>, "arguments": {...}}`:
+/// NOT the `OpenAI` tool-list wire format. We expect the model to emit a
+/// single object `{"name": <one of the tool names>, "arguments": {...}}`,
+/// and — critically — the `arguments` for a given `name` must be constrained
+/// to THAT tool's own parameter schema. A bare `"arguments": {"type":"object"}`
+/// lets the model invent key names (verified: it emitted
+/// `{"location":"Paris","method":"get_weather"}` where the tool required
+/// `city`), producing useless calls.
+///
+/// The fix is a `oneOf` over the tools, each binding a `const` name to that
+/// tool's real parameters schema:
 ///
 /// ```json
 /// {
-///   "type": "object",
-///   "properties": {
-///     "name":      { "enum": ["tool_a", "tool_b", ...] },
-///     "arguments": { "type": "object" }
-///   },
-///   "required": ["name", "arguments"],
-///   "additionalProperties": false
+///   "oneOf": [
+///     {
+///       "type": "object",
+///       "properties": {
+///         "name": { "const": "get_weather" },
+///         "arguments": { <get_weather's schema> }
+///       },
+///       "required": ["name", "arguments"],
+///       "additionalProperties": false
+///     }
+///   ]
 /// }
 /// ```
 #[must_use]
 pub fn build_schema_from_tools(tools: &[ToolSpec]) -> String {
-    let names: Vec<serde_json::Value> = tools
+    let variants: Vec<serde_json::Value> = tools
         .iter()
-        .map(|t| serde_json::Value::String(t.name.clone()))
+        .map(|t| {
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "const": t.name },
+                    "arguments": t.schema
+                },
+                "required": ["name", "arguments"],
+                "additionalProperties": false
+            })
+        })
         .collect();
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "name": { "enum": names },
-            "arguments": { "type": "object" }
-        },
-        "required": ["name", "arguments"],
-        "additionalProperties": false
-    });
+    let schema = serde_json::json!({ "oneOf": variants });
     serde_json::to_string(&schema).unwrap_or_default()
 }
 
@@ -118,26 +132,36 @@ mod tests {
 
     #[test]
     fn schema_includes_tool_names() {
-        let tools = vec![ToolSpec {
-            name: "fs_read".to_string(),
-            description: "r".to_string(),
-            schema: serde_json::json!({ "type": "object" }),
-        }];
+        let tools = vec![
+            ToolSpec {
+                name: "fs_read".to_string(),
+                description: "read".to_string(),
+                schema: serde_json::json!({ "type": "object" }),
+            },
+            ToolSpec {
+                name: "fs_write".to_string(),
+                description: "write".to_string(),
+                schema: serde_json::json!({ "type": "object" }),
+            },
+        ];
 
         let result = build_schema_from_tools(&tools);
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("schema string must parse to JSON");
 
-        assert!(parsed.is_object());
-        let names = parsed
-            .get("properties")
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.get("enum"))
-            .expect("schema must have properties.name.enum");
+        let variants = parsed
+            .get("oneOf")
+            .and_then(|v| v.as_array())
+            .expect("schema must have a oneOf array");
+        assert_eq!(variants.len(), 2, "one variant per tool");
+        let names: Vec<&str> = variants
+            .iter()
+            .filter_map(|v| v.get("properties")?.get("name")?.get("const")?.as_str())
+            .collect();
         assert_eq!(
             names,
-            &serde_json::json!(["fs_read"]),
-            "schema should list 'fs_read' as an allowed name: {parsed}"
+            vec!["fs_read", "fs_write"],
+            "each variant must bind a const tool name: {parsed}"
         );
     }
 
