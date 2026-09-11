@@ -109,6 +109,7 @@ pub fn parse_tool_calls(output: &str) -> Vec<ToolCall> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
 
     #[test]
@@ -120,7 +121,8 @@ mod tests {
         }];
 
         let result = build_schema_from_tools(&tools);
-        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("schema string must parse to JSON");
 
         assert!(parsed.is_object());
         assert!(
@@ -135,8 +137,15 @@ mod tests {
         let result = parse_tool_calls(input);
 
         assert_eq!(result.len(), 1, "should parse one tool call");
-        assert_eq!(result[0].name, "fs_read");
-        assert!(result[0].arguments.get("path").is_some());
+        assert_eq!(result.first().expect("one tool call").name, "fs_read");
+        assert!(
+            result
+                .first()
+                .expect("one tool call")
+                .arguments
+                .get("path")
+                .is_some()
+        );
     }
 
     #[test]
@@ -145,7 +154,7 @@ mod tests {
         let result = parse_tool_calls(input);
 
         assert_eq!(result.len(), 1, "should parse one tool call");
-        assert_eq!(result[0].name, "fs_read");
+        assert_eq!(result.first().expect("one tool call").name, "fs_read");
     }
 
     #[test]
