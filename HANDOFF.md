@@ -62,6 +62,29 @@ authoring) is next on the queue per the prior session's ordering note — this
 caveats work was the "verify + commit first" item it was waiting on. A human
 should review and commit this diff before spec authoring starts.
 
+**GATE GOTCHA (verified 2026-09-11, pre-existing, NOT a defect in this work).**
+`cargo test --workspace` exits **1** on a doctest compile error that the
+smaller invocations do NOT show:
+
+| invocation | result |
+|---|---|
+| `cargo test --workspace` | **exit 1** — `error[E0463]: can't find crate for schemars / serde_json` in `Doc-tests pii_abi` |
+| `cargo test --workspace --doc` | exit 0 |
+| `cargo test --workspace --lib --bins --tests` | exit 0, **0 failed** |
+| `cargo test -p pii-abi --doc` | exit 0 |
+
+Evidence it is not our change: the errors point at
+`crates/pii-abi/src/ids.rs:5` and `crates/pii-abi/src/journal.rs:48` — neither
+file is touched by this work — and the `schemars`/`serde_json` rlibs named in
+the failing rustdoc command line **do exist** in `target/debug/deps/` and are
+fresh. Each half of the run passes on its own; only the combined invocation
+fails, i.e. a build-ordering / feature-unification artifact under one
+`cargo test --workspace` (10+ distinct `libschemars-*.rlib` builds present).
+**Practical guidance: treat `--workspace --doc` + `--workspace --lib --bins
+--tests` as the authoritative split, or a `cargo clean -p pii-abi` before the
+combined run.** Chasing it as its own task is reasonable; do not let it block
+feature work.
+
 ## SESSION STATE — 2026-09-11: model routing + failover PLAN — ready to implement
 
 **PLAN ONLY. No implementation. Next action is spec authoring (planner-only).**
