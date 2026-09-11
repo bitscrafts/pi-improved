@@ -26,6 +26,7 @@ use parking_lot::Mutex;
 use pii_abi::PiiError;
 use pii_core::Ctx;
 
+use crate::llamacpp_tools::{build_schema_from_tools, parse_tool_calls};
 use crate::{ChatMessage, ChatRequest, ChatResponse, ModelProvider, Role};
 
 /// Default context window when `PII_LLAMACPP_NUM_CTX` is unset.
@@ -70,6 +71,7 @@ impl LlamaCppProvider {
 
     /// Runs one completion over the transcript, returning the accumulated text
     /// and token counts. `on_delta` receives each decoded piece (streaming).
+    #[allow(clippy::too_many_lines)]
     fn run(
         &self,
         req: &ChatRequest,
@@ -105,9 +107,23 @@ impl LlamaCppProvider {
         ctx.decode(&mut batch)
             .map_err(|e| PiiError::Internal(format!("llamacpp: decode: {e}")))?;
 
-        // Sample loop: greedy (deterministic) — matches the probe's
-        // non-thinking, content>0 requirement without a reasoning trace.
-        let mut sampler = LlamaSampler::chain_simple([LlamaSampler::greedy()]);
+        // Sample loop. When tools are requested, constrain generation to a
+        // tool-call JSON via llama.cpp's grammar (R1). Otherwise stay greedy
+        // (deterministic, non-thinking) for plain text.
+        let sampler = if req.tools.is_empty() {
+            LlamaSampler::chain_simple([LlamaSampler::greedy()])
+        } else {
+            let schema = build_schema_from_tools(&req.tools);
+            let grammar = llama_cpp_2::json_schema_to_grammar(&schema)
+                .map_err(|e| PiiError::Internal(format!("llamacpp: schema_to_grammar: {e}")))?;
+            LlamaSampler::chain_simple([LlamaSampler::grammar(
+                &self.model,
+                &grammar,
+                "function_schema",
+            )
+            .map_err(|e| PiiError::Internal(format!("llamacpp: grammar: {e}")))?])
+        };
+        let mut sampler = sampler;
         let mut text = String::new();
         let mut tokens_out: u64 = 0;
         let mut pos = i32::try_from(tokens.len())
@@ -138,9 +154,14 @@ impl LlamaCppProvider {
                 .map_err(|e| PiiError::Internal(format!("llamacpp: decode: {e}")))?;
         }
 
+        let tool_calls = if req.tools.is_empty() {
+            Vec::new()
+        } else {
+            parse_tool_calls(&text)
+        };
         Ok(ChatResponse {
             text,
-            tool_calls: Vec::new(),
+            tool_calls,
             tokens_in: tokens.len() as u64,
             tokens_out,
             micro_usd: 0,
@@ -279,6 +300,19 @@ mod tests {
         assert!(!p.contains(" thinking"), "no thinking scaffolding: {p}");
         assert!(!p.contains("enable_thinking"), "no enable_thinking: {p}");
         assert!(p.contains("hello there"));
+    }
+
+    /// R3: a request with no tools must not build a grammar; the pure prompt
+    /// builder still renders a wire-format transcript.
+    #[test]
+    fn empty_tools_keeps_text_path() {
+        let msgs = vec![
+            ChatMessage::new(Role::System, "sys"),
+            ChatMessage::new(Role::User, "hi"),
+        ];
+        let p = build_prompt(&msgs);
+        assert!(p.contains("<|start_of_role|>assistant<|end_of_role|>"));
+        assert!(!p.contains("tool"), "no tool scaffolding in text path: {p}");
     }
 
     /// Real-model acceptance (N4: `#[ignore]` — not run in CI). Loads the
