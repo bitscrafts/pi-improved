@@ -81,6 +81,18 @@ cargo run -p pii-model --example ds4_inprocess --release
 
 Full analysis: `_docs/06-research/024-pii-memory-mcp-status-and-next.md`.
 
+**SCHEDULED (for morning verification):** Anthropic reported
+`You've hit your session limit · resets 7am (UTC)` at 2026-09-11T04:36Z. One-shot
+cron `6b8d190d8a9f` fires **2026-09-11T07:05:00Z** (reset +5m, `deliver=local`,
+workdir `/projects/pi-improved`). It probes the window first
+(`claude -p "…PONG"`, 1 turn) and only then runs Claude (sonnet) on
+`_tmp/brief-caveats-n1-n6-anthropic.md` (N1→N5→N2→N3→N4; N6 research-only).
+**It must NOT commit** — the dirty tree IS the verification surface.
+Artifacts to check in the morning:
+- `_tmp/cron-report-caveats-<YYYYMMDD>.md` (the run's honest report)
+- `_tmp/run-caveats-anthropic.log` (raw stream-json log)
+- `git status --porcelain` / `git diff --stat` (the work itself)
+
 ## SESSION STATE — 2026-09-10: specs 28+29 CLOSE the opus review's fix list (pidag rebuilt+verified live)
 
 **Opus's ordered fix list (24-29) from the 2026-09-09 architecture-conformance
