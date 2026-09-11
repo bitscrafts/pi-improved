@@ -167,6 +167,72 @@ fn memory_hit_carries_doc_text() {
     );
 }
 
+/// Spec 024 N4 (closes C5): the graph lane positively recalls a doc via a
+/// shared concept edge, when NEITHER bm25 (the query term is absent from the
+/// doc's own text) NOR the vector lane (deliberately degraded here) could
+/// have found it. This is the end-to-end proof that `graph_search` is not
+/// dormant — see the "when it fires" note on `graph_lane`.
+#[test]
+fn graph_lane_recalls_doc_via_shared_concept() {
+    let db = "/projects/pi-improved/_tmp/phase3/graph-lane.redb";
+    let _ = std::fs::remove_file(db);
+    let store = MemStore::open(std::path::Path::new(db)).unwrap();
+
+    // The doc text shares NO words with the query below; only the concept
+    // edge (tagged out-of-band, as `write_fact` does with its `concepts`
+    // argument) ties the two together.
+    let text = "zulu yankee whiskey tango foxtrot";
+    let concept = "projectxconcept";
+    let doc = Doc::new(
+        Layer::L1,
+        DocKind::Atom,
+        text,
+        vec![concept.to_owned()],
+        1.0,
+        0,
+    );
+    let toks = tokenize(text);
+    let mut terms = std::collections::BTreeMap::new();
+    for t in &toks {
+        *terms.entry(t.clone()).or_insert(0) += 1;
+    }
+    let id = doc.id.clone();
+    let rows = pii_store::mem::PutRows {
+        id: id.clone(),
+        doc: encode(&doc),
+        terms: terms.into_iter().collect(),
+        vector: None,
+        edges: vec![(concept.to_owned(), 5)],
+        dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+    };
+    store.put(&rows).unwrap();
+
+    // NullEmbedder: the vector lane is degraded, so a hit can ONLY come
+    // from bm25 or graph — isolating the graph lane's contribution.
+    let searcher = MemorySearcher::new(
+        std::sync::Arc::new(store),
+        Some(std::sync::Arc::new(NullEmbedder)),
+    );
+    let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+    let r = searcher.search(&ctx, concept, 5).unwrap();
+
+    assert!(
+        !r.hits.is_empty(),
+        "graph lane must recall the doc via its concept edge"
+    );
+    assert_eq!(r.hits[0].doc, id);
+    assert!(
+        r.hits[0].lanes.contains(&String::from("graph")),
+        "hit lanes must include graph, got {:?}",
+        r.hits[0].lanes
+    );
+    assert!(
+        !r.hits[0].lanes.contains(&String::from("bm25")),
+        "bm25 must NOT have matched (the concept term is absent from the doc text): {:?}",
+        r.hits[0].lanes
+    );
+}
+
 /// G2.4 (spec 09 v2): `write_fact` stores a non-None vector (trigram lane).
 #[test]
 fn write_fact_stores_vector() {

@@ -196,6 +196,22 @@ pub(crate) fn channel_list(engine: &Arc<Engine>, req: &Request) -> Response {
     })
 }
 
+/// Caps a recalled hit's inline text so a huge doc cannot blow up the
+/// response payload (spec 024 N3, closes C4: a caller needs no second
+/// round-trip to see what was recalled).
+const MAX_HIT_TEXT: usize = 2000;
+const HIT_TEXT_TRUNCATION_MARKER: &str = "...[truncated]";
+
+fn truncated_hit_text(text: &str) -> String {
+    if text.len() <= MAX_HIT_TEXT {
+        return text.to_owned();
+    }
+    let mut head = text.to_owned();
+    head.truncate(MAX_HIT_TEXT);
+    head.push_str(HIT_TEXT_TRUNCATION_MARKER);
+    head
+}
+
 /// `memory.search { q, k? }`.
 pub(crate) fn memory_search(engine: &Arc<Engine>, req: &Request) -> Response {
     let Some(q) = req.params.get("q").and_then(|v| v.as_str()) else {
@@ -215,7 +231,14 @@ pub(crate) fn memory_search(engine: &Arc<Engine>, req: &Request) -> Response {
             let hits: Vec<serde_json::Value> = r
                 .hits
                 .iter()
-                .map(|h| serde_json::json!({"doc": h.doc, "score": h.score, "lanes": h.lanes}))
+                .map(|h| {
+                    serde_json::json!({
+                        "doc": h.doc,
+                        "text": truncated_hit_text(&h.text),
+                        "score": h.score,
+                        "lanes": h.lanes,
+                    })
+                })
                 .collect();
             value_response(
                 req,

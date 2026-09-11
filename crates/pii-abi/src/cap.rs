@@ -27,6 +27,8 @@ bitflags! {
         const MEMORY_WRITE = 64;
         /// Spawn subprocesses.
         const SPAWN = 128;
+        /// Read from the agent's memory.
+        const MEMORY_READ = 256;
     }
 }
 
@@ -45,6 +47,7 @@ impl CapKind {
             "secrets" => Ok(Self::SECRETS),
             "memory_write" => Ok(Self::MEMORY_WRITE),
             "spawn" => Ok(Self::SPAWN),
+            "memory_read" => Ok(Self::MEMORY_READ),
             other => Err(PiiError::Invalid(format!(
                 "unknown capability kind '{other}'"
             ))),

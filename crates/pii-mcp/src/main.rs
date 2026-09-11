@@ -62,7 +62,9 @@ impl PiiMcpServer {
                     let mut caps = pii_core::CapSet::empty();
                     caps.kinds = pii_core::CapKind::FS_READ
                         | pii_core::CapKind::FS_WRITE
-                        | pii_core::CapKind::PROC;
+                        | pii_core::CapKind::PROC
+                        | pii_core::CapKind::MEMORY_READ
+                        | pii_core::CapKind::MEMORY_WRITE;
                     caps.fs_read = pii_core::PathScope::new(vec![workspace.clone()]);
                     caps.fs_write = pii_core::PathScope::new(vec![workspace.clone()]);
                     caps.proc_argv0 = pii_core::ArgvScope::new(vec![String::from("/bin/sh")]);
@@ -209,12 +211,15 @@ async fn run_client(cmd: &[String]) -> Result<(), String> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
     use super::PiiMcpServer;
 
     /// R2 (spec 21): the MCP server exposes pii's builtin tools.
     #[test]
     fn server_lists_builtin_tools() {
-        let server = PiiMcpServer::new(std::path::PathBuf::from("."));
+        let server = PiiMcpServer::new(PathBuf::from("."));
         let names: Vec<String> = server.tools.specs().into_iter().map(|s| s.name).collect();
         for want in [
             "fs_read",
@@ -224,6 +229,8 @@ mod tests {
             "grep",
             "glob",
             "bash",
+            "memory_search",
+            "memory_put",
         ] {
             assert!(
                 names.iter().any(|n| n == want),
@@ -254,5 +261,90 @@ mod tests {
             .call(&ctx, &serde_json::json!({ "path": "a.txt" }))
             .unwrap();
         assert!(out.to_string().contains("hello mcp"), "got {out}");
+    }
+
+    /// Spec 024 N1/N5: `memory_put` then `memory_search`, called exactly as
+    /// the MCP dispatcher calls them (same `Tool::call`, same capability
+    /// grant the router hands out), against a REAL daemon on a REAL UDS
+    /// socket. This is the live evidence the 2026-09-11 caveats doc (C1/C8)
+    /// could only produce manually, promoted to CI.
+    // `call_daemon` (pii-tools) blocks its calling thread on
+    // `std::thread::spawn(...).join()`; a single-worker runtime would starve
+    // the background accept loop below of a thread to run on and deadlock.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn memory_tools_round_trip_through_a_real_daemon() {
+        use pii_core::{Budget, CapKind, CapSet, Ctx};
+        use pii_server::conn::{PeerIdentity, serve_connection};
+        use pii_server::uds::test_bind_socket;
+        use pii_server::{Engine, EngineConfig};
+        use pii_tools::Tool as _;
+        use pii_tools::memory::{MemoryPutTool, MemorySearchTool};
+
+        let dir = tempfile::Builder::new()
+            .prefix("pii-mcp-memory-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let sock = dir.path().join("control.sock");
+        let fixtures_hello = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("workspace root")
+            .join("fixtures/phase2/hello.json");
+        let engine = Engine::new(EngineConfig {
+            workspace: dir.path().to_path_buf(),
+            store_path: dir.path().join("store.redb"),
+            model: format!("scripted:{}", fixtures_hello.display()),
+            sandbox: pii_tools::sandbox::SandboxProfileName::Off,
+            route_policy: std::collections::BTreeMap::new(),
+            graph_dir: dir.path().join("graphs"),
+        })
+        .expect("engine");
+        let listener = test_bind_socket(&sock).expect("bind");
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(serve_connection(
+                    Arc::clone(&engine),
+                    stream,
+                    PeerIdentity::InProcess,
+                ));
+            }
+        });
+
+        // The same CapSet `tool_router`'s dispatch closure grants an MCP
+        // caller (`FS_READ|FS_WRITE|PROC|MEMORY_READ|MEMORY_WRITE`); memory
+        // only needs the memory bits.
+        let mut caps = CapSet::empty();
+        caps.kinds = CapKind::MEMORY_READ | CapKind::MEMORY_WRITE;
+        let ctx = Ctx::root(caps, Budget::unlimited());
+
+        let put_out = MemoryPutTool {
+            sock_override: Some(sock.clone()),
+        }
+        .call(&ctx, &serde_json::json!({"text": "mcp memory e2e fact"}))
+        .expect("memory_put");
+        let id = put_out
+            .get("id")
+            .and_then(|v| v.as_str())
+            .expect("put must return an id")
+            .to_owned();
+        assert!(!id.is_empty());
+
+        let search_out = MemorySearchTool {
+            sock_override: Some(sock),
+        }
+        .call(&ctx, &serde_json::json!({"query": "mcp memory e2e fact"}))
+        .expect("memory_search");
+        let hits = search_out
+            .get("hits")
+            .and_then(|v| v.as_array())
+            .expect("hits array");
+        assert!(
+            hits.iter()
+                .any(|h| h.get("doc").and_then(|d| d.as_str()) == Some(id.as_str())),
+            "put doc {id} not found in search hits: {hits:?}"
+        );
     }
 }

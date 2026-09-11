@@ -759,6 +759,44 @@ mod tests {
         );
     }
 
+    /// Spec 024 N2 (closes C2): `ChatRequest.tools` is built straight from
+    /// `toolset.specs()` (see the `req` construction in `run()` above), so
+    /// once `memory_search`/`memory_put` are in `ToolSet::builtin` the model
+    /// can decide to recall/record mid-turn with zero extra wiring here.
+    #[test]
+    fn agent_toolset_advertises_memory_tools() {
+        let toolset = pii_tools::ToolSet::builtin(std::path::PathBuf::from("."));
+        let names: Vec<String> = toolset.specs().into_iter().map(|s| s.name).collect();
+        assert!(
+            names.contains(&String::from("memory_search")),
+            "model tool list must include memory_search: {names:?}"
+        );
+        assert!(
+            names.contains(&String::from("memory_put")),
+            "model tool list must include memory_put: {names:?}"
+        );
+    }
+
+    /// Spec 024 N2: inside the turn loop's bounded-call path, a memory tool
+    /// is denied without its capability — bounded and gated exactly like
+    /// every other tool (see `bounded_tool_uses_caller_ctx`).
+    #[test]
+    fn memory_tool_denied_in_turn_loop_without_capability() {
+        let provider = Arc::new(RecordingProvider {
+            seen: Mutex::new(Vec::new()),
+        });
+        let node = test_node(provider);
+        let call = pii_model::ToolCall {
+            id: String::from("c1"),
+            name: String::from("memory_put"),
+            arguments: serde_json::json!({"text": "x"}),
+        };
+        let err = node
+            .call_tool_bounded(&test_ctx(), &call)
+            .expect_err("memory_put must be denied without MEMORY_WRITE");
+        assert!(matches!(err, pii_abi::PiiError::Denied(_)), "{err:?}");
+    }
+
     /// R4 (spec 14): a tool whose `call()` exceeds its declared `timeout()`
     /// must return `PiiError::Timeout` promptly, not hang the loop.
     #[test]

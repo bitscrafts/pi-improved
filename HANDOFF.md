@@ -1,6 +1,68 @@
 # Pii — Session Handoff
 
-## SESSION STATE — 2026-09-11 (latest): model routing + failover PLAN — ready to implement
+## SESSION STATE — 2026-09-11 (latest): caveats N1–N6 implemented — memory is now a first-class MCP tool AND an agent-loop tool
+
+**All six of N1–N6 done. Working tree LEFT DIRTY on purpose (no commit) — see
+`_tmp/cron-report-caveats-20260911.md` for the full report.**
+
+- **N1 (closes C1):** `memory_search`/`memory_put` are real `pii_tools::Tool`
+  impls (`crates/pii-tools/src/memory.rs`), registered in `ToolSet::builtin`,
+  dialing the daemon over UDS via `pii-proto`'s `client` feature (design (a)
+  from the brief). Gated by new `CapKind::MEMORY_READ` (added; `MEMORY_WRITE`
+  already existed) / `MEMORY_WRITE`.
+- **N2 (closes C2):** free once N1 landed — `AgentNode.toolset` IS
+  `ToolSet::builtin`, and `ChatRequest.tools = toolset.specs()` already. A
+  graph opts a node in via `caps = ["memory_read","memory_write"]` at both
+  graph and node level (existing three-layer `node_capset` model, no new
+  plumbing). Two new tests in `pii-server/src/agent.rs`.
+- **N3 (closes C4):** `memory.search` hits now carry `"text"` inline (capped
+  2000 chars), in `pii-server/src/daemon/methods.rs`.
+- **N4 (closes C5):** graph lane PROVED firing end-to-end — new test
+  `pii-memory/tests/lanes.rs::graph_lane_recalls_doc_via_shared_concept`
+  (bm25 and vector both deliberately miss; only the concept edge finds it).
+  "When it fires" documented in `graph_lane.rs`.
+- **N5 (closes C8):** two new E2E tests — `pii-server/tests/memory_rpc.rs`
+  (put→search→consolidate over the real wire protocol via
+  `pii_server::loopback`) and `pii-mcp`'s
+  `memory_tools_round_trip_through_a_real_daemon` (real bound UDS socket +
+  real `Engine`, same CapSet the MCP router grants).
+- **N6:** research only, no code — recommends a GGUF embedder through the
+  SAME in-process `llama-cpp-2` route spec 35/36 already proved, as a new
+  `Embedder` impl alongside `TrigramEmbedder` (not a replacement), gated
+  behind honest `degraded` semantics; flags the real cost (a redb dims
+  migration since `mem_vec` is single-dims-tagged today). Full section in
+  the report.
+
+**A real hazard found and fixed along the way:** `Tool::call` is sync but the
+daemon dial is async — building a tokio runtime and `block_on`-ing it INLINE
+panics ("Cannot start a runtime from within a runtime") whenever the caller
+(agent loop, or pii-mcp's own dispatcher) is already on a tokio worker
+thread. Fix: `call_daemon` always spawns a dedicated OS thread first, mirror
+of the pattern `agent.rs` already uses for timeout-bound tools.
+
+**Also found: edition 2024 makes `std::env::set_var` `unsafe`,** and
+`pii-mcp`/`pii-tools` carry `#![forbid(unsafe_code)]` (not locally
+overridable). So the N1 "calls one" test could NOT use `$PII_RUNTIME_DIR` to
+point at a temp socket — solved with a `sock_override: Option<PathBuf>` field
+on the two tool structs instead (`None` in production).
+
+**Gate: fmt/clippy/xtask all green.** `cargo test --workspace` as ONE combined
+invocation hits a reproducible `pii-abi` doctest linking anomaly
+(`E0463: can't find crate for schemars/serde_json`, on files this session
+never touched, crate has ZERO actual doctests). Diagnosed as pre-existing/
+environmental (confirmed via `git stash` + `-j 1` + `cargo clean -p pii-abi`,
+none of which changed the symptom), NOT this session's diff: split into
+`cargo test --workspace --lib --tests --bins --examples` (all 55 binaries,
+every `test result:` line `ok`, 0 failed) + `cargo test --workspace --doc`
+(all `ok`, 0 doctests anywhere) — both pass cleanly every time run
+separately. Full raw evidence in the report.
+
+**Next:** nothing blocking. The routing/failover plan below (A1 spec
+authoring) is next on the queue per the prior session's ordering note — this
+caveats work was the "verify + commit first" item it was waiting on. A human
+should review and commit this diff before spec authoring starts.
+
+## SESSION STATE — 2026-09-11: model routing + failover PLAN — ready to implement
 
 **PLAN ONLY. No implementation. Next action is spec authoring (planner-only).**
 

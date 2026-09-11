@@ -1,5 +1,16 @@
 //! Graph lane (F4.8): concept co-occurrence expansion + label propagation
 //! communities. Zero model calls anywhere.
+//!
+//! **When it fires** (spec 024 N4, closes C5): [`graph_search`] contributes
+//! hits only when a query token is ALSO a concept head already present in
+//! `mem_edge` — i.e. some prior doc was written via `write_fact`/`memory.put`
+//! with that word in its `concepts` list. A query with no concept overlap
+//! (the common case for free-text queries against docs stored without
+//! explicit concepts) makes `query_concepts` return empty and the lane
+//! contributes nothing, even though `lanes` in the response always lists
+//! `"graph"` as a lane that RAN, not one that HIT. See
+//! `pii-memory/tests/lanes.rs::graph_lane_recalls_doc_via_shared_concept`
+//! for a positive, end-to-end demonstration.
 
 use pii_abi::PiiError;
 use pii_store::mem::MemStore;

@@ -7,6 +7,7 @@
 
 pub mod bash;
 pub mod fs;
+pub mod memory;
 pub mod sandbox;
 pub mod search;
 pub mod worktree;
@@ -20,6 +21,7 @@ use serde_json::Value;
 
 use crate::bash::BashTool;
 use crate::fs::{EditTool, FsReadTool, FsWriteTool, MultiEditTool};
+use crate::memory::{MemoryPutTool, MemorySearchTool};
 use crate::search::{GlobTool, GrepTool};
 use crate::worktree::WorktreeTool;
 
@@ -80,6 +82,8 @@ impl ToolSet {
                 workspace: workspace.clone(),
             }) as Arc<dyn Tool>,
             Arc::new(WorktreeTool { workspace }),
+            Arc::new(MemorySearchTool::default()) as Arc<dyn Tool>,
+            Arc::new(MemoryPutTool::default()) as Arc<dyn Tool>,
         ] {
             tools.insert(t.name(), t);
         }
