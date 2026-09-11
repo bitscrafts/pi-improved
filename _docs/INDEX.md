@@ -62,6 +62,7 @@ messaging gateway with one performant, local-first, modular system.
   - `022-android-events-app.md` — Android background app receiving/emitting Pii events: transport (MQTT/REST), background-service pattern, notification mapping, auth
   - `023-llamacpp-granite-on-pi-process.md` — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
   - `024-pii-memory-mcp-status-and-next.md` — verified status of Pii's memory + MCP: both work end-to-end (3 real memory RPCs, 15 tests; Hermes↔pii-mcp connected + tools responding), 8 honest capability caveats (memory is not a first-class MCP tool, not in the agent loop, vector lane is trigram-lexical, no e2e coverage), and the ordered next steps N1-N6
+  - `025-model-routing-and-failover-plan.md` — PLAN: port Hermes's typed-failure failover (FailoverReason taxonomy, per-reason recovery policy, ordered provider chain) into Pii, plus cost routing (cascading + safety rules + peak-aware provider preference). Gap analysis vs `PiiError`'s 2-way split, 7-spec breakdown for the planner, risks
 - [99-archive/](99-archive/) — deprecated / historical
 
 ## Status
