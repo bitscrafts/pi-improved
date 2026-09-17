@@ -70,12 +70,23 @@ reorganization, chosen over a full 3-crate split per the documented
 recorded in agent-memory for a future opus feasibility pass, not
 discarded), F-14 (dead-field cleanup), all six F-12 warn-band files, and
 D4/D7 (sync-blocking seam) are done and independently gate-verified.
-Remaining structural items are genuinely NEXT-PHASE scope: F-11
-(357-site string-typed `PiiError`, a Phase 5.1 planner decision already
-tracked separately), F-18/F-19/F-20 (test coverage gaps: `pii-proto`
-round-trips, `pii-store::MemStore` contract, `pii-tools`, `pii-web`
-handlers), F16's bounded accept pool (`pii-net/src/listen.rs:190`), F-22
-(`real_granite.rs` self-skip unverified).
+Remaining structural items: F-11 (357-site string-typed `PiiError`, a
+Phase 5.1 planner decision already tracked separately) is genuinely
+next-phase scope. F16 and F-22 were closed tonight: F16 (bounded
+accept pool, `pii-net/src/listen.rs`) DONE, committed `9d9a330` — the
+implementer reused the pre-existing, previously-unused `MAX_SERVER_CONNS
+= 64` limit constant instead of adding a duplicate. F-22
+(`real_granite.rs` self-skip) verified CLOSED with no code change —
+`cargo test -p pii-model --test real_granite` empirically confirmed 8/8
+tests correctly `#[ignore]`d, 0.00s runtime, the model file exists at
+`_tmp/` for manual runs but the default path never touches it. F-18/19
+partial: `pii-store::MemStore` contract tests DONE, committed `ca1856a`
+(spec-53; surfaced a real bug candidate in `MemStore::put`'s
+`sum_dl`/stale-postings handling on idempotent re-put — reported, not
+patched, per the spec's own guardrail against touching production code
+in a test-only spec). Still open: `pii-proto` round-trips (F-18), the
+rest of F-19 (`pii-tools`, `pii-web`), and F-20 (9 crates with zero
+`tests/` dirs at all).
 
 | Spec | Item | Status | Evidence |
 |---|---|---|---|
