@@ -153,6 +153,49 @@ decision recorded so the folder doesn't keep growing unstructured.
 
 ---
 
+## 5. New idea (2026-09-17, mid-session): Chromecast-protocol as a standalone daemon / pii companion module
+
+User's own framing (verbatim): **"'Chromecast-protocol' could be a
+great standalone daemon project as well a pii companion module!
+Chromecast-protocol could be the link to all google home devices at
+home!"**
+
+Concrete origin: researching how to use the user's existing Google Home
+speaker as Hermes/pii voice OUTPUT (alarms, announcements, message
+readout) surfaced that Google Home speakers are plain Chromecast-
+protocol devices — the exact mechanism `chromecast-tv-mirror` (a
+separate, still-research-only project in this workspace) already uses
+for the TV. `pychromecast` (Python, HA-maintained, 2.7k stars) discovers
+and casts to ANY Cast device on the local network, not just one
+pre-configured TV.
+
+**Why this is a real architecture fit, not just a feature request**:
+this is a clean, concrete instance of the modularity idea in section 3
+above — "graphs as universal infra, worker-isolation as config knob."
+A Chromecast-protocol module is:
+- Naturally standalone (its own local-network discovery/session-
+  management concerns, unrelated to pii's coding/memory/graph domains).
+- A genuine "house-wide" capability multiplier if it becomes a `pii`
+  node kind (or `pii-worker`-isolated companion process) rather than
+  a one-off script tied to a single hardcoded TV — the existing
+  `mcp__chromecast__*` MCP tools ARE hardcoded to "the configured
+  Chromecast" today; a real module would need device-targeting
+  (by name/room) to reach "any Google Home in the house," not just one.
+- A candidate for the SAME in-process-vs-worker-isolated treatment
+  discussed in section 3, using `pii-worker`'s existing UDS protocol —
+  or, per the user's own framing, potentially simpler as a fully
+  independent standalone daemon that pii/Hermes both talk to, rather
+  than living inside either.
+
+**Ask for opus**: is this genuinely a good candidate MODULE to build
+(house-wide Cast-protocol control: TTS announcements, media casting,
+device discovery, potentially the voice-INPUT bridge too if IFTTT/
+Wyoming gets built later) — worth scoping as an actual next project
+(new dir, e.g. `/projects/chromecast-hub` or a `pii-cast` crate), or is
+it premature relative to the harness/modularity work in sections 1-3
+above? If worth building, standalone daemon vs. `pii` companion crate
+vs. `pii-worker`-isolated node — which shape, and why?
+
 ## Ground truth sources (for opus to verify independently, not trust blindly)
 
 - `graphs/starter/verify-fix.toml`, `heal-fix.toml`, `failover.toml` —
