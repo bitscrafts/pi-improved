@@ -98,6 +98,10 @@ pub(crate) struct Inner {
     pub queue: Mutex<Vec<Queued>>,
     pub state: Mutex<WorkerShared>,
     pub events: Mutex<Vec<WorkerEvent>>,
+    /// The `take()`n child awaiting its blocking `kill()` teardown, parked
+    /// by `control::death` so the state lock is never held across the kill.
+    /// Taken by `death` right after releasing the state lock.
+    pub stale_child: Mutex<Option<ChildProc>>,
 }
 
 impl WorkerShared {
@@ -140,6 +144,7 @@ impl Supervisor {
                 queue: Mutex::new(Vec::new()),
                 state: Mutex::new(WorkerShared::new()),
                 events: Mutex::new(Vec::new()),
+                stale_child: Mutex::new(None),
             }),
         }
     }

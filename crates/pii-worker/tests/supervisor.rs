@@ -282,3 +282,64 @@ fn reload_swaps_program_and_tag() {
     assert_ne!(report.new_pid, old_pid);
     assert_eq!(sup.info().tag, "b", "new program's tag must show");
 }
+
+/// A slow-dying child (`PII_TEST_KILL_DELAY_MS` seam in `ChildProc::kill`)
+/// must not block a concurrent state read: `death()` releases the state
+/// lock before the blocking kill, so `info()` (a direct `state.lock()`
+/// read, uncomplicated by `invoke()`'s Restarting-state queue path, which
+/// has its own unrelated 30s minimum wait) returns immediately without
+/// waiting for the kill+wait teardown.
+#[test]
+fn worker_kill_does_not_block_concurrent_invoke() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let ctx = full_ctx();
+    let sup = Supervisor::new(worker_spec("w", "a"));
+    sup.start(&ctx).unwrap();
+
+    // Kill+wait will block ~500ms (test seam, read per call).
+    pii_core::set_test_kill_delay_ms(500);
+
+    // Trigger death from one thread: kill9 makes the reader see EOF and
+    // call death(), whose slow kill runs off the state lock.
+    let done = Arc::new(AtomicBool::new(false));
+    let killer_done = Arc::clone(&done);
+    let killer_sup = sup.clone();
+    let killer = std::thread::spawn(move || {
+        let pid = killer_sup.info().pid;
+        kill9(pid);
+        // Wait for death() to have been entered and finished its slow kill.
+        std::thread::sleep(Duration::from_millis(700));
+        killer_done.store(true, Ordering::SeqCst);
+    });
+
+    // Give the killer a head start so death() is inside its slow kill.
+    std::thread::sleep(Duration::from_millis(150));
+
+    // `info()` acquires `state.lock()` directly -- if death()'s kill were
+    // still holding that lock (the D7 bug), this call would block for the
+    // remainder of the ~500ms delay. `invoke()` is deliberately NOT used
+    // here: once state is Restarting it takes a queued path with its own
+    // unrelated `timeout_ms.max(30_000)` minimum wait, which would make
+    // this assertion about queueing semantics, not about the lock.
+    let t0 = std::time::Instant::now();
+    let info = sup.info();
+    let elapsed = t0.elapsed();
+    // With the lock held across the kill, this would block ~500ms.
+    assert!(
+        elapsed < Duration::from_millis(400),
+        "info() blocked {elapsed:?} on the kill — state lock held across kill"
+    );
+    // The worker is mid-teardown at this point (Restarting, or Failed if
+    // the crash-loop cap tripped) -- either way, definitely not Ready.
+    assert_ne!(
+        info.state,
+        WorkerState::Ready,
+        "expected the worker to be mid-teardown, got {info:?}"
+    );
+
+    killer.join().unwrap();
+    assert!(done.load(Ordering::SeqCst), "killer finished");
+    pii_core::set_test_kill_delay_ms(0);
+}

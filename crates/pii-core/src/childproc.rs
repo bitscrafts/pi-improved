@@ -9,6 +9,18 @@ use pii_abi::{CapKind, PiiError};
 
 use crate::Ctx;
 
+/// Test seam (supervisor TDD): an artificial post-SIGKILL delay in
+/// [`ChildProc::kill`], simulating a slow-dying child. Test-only; defaults
+/// to 0 (no delay) in production. Process-global so integration tests in
+/// other crates can set it without env-var races.
+static TEST_KILL_DELAY_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Test-only: sets the artificial `kill()` delay in milliseconds (0 =
+/// off). Never called by production code.
+pub fn set_test_kill_delay_ms(ms: u64) {
+    TEST_KILL_DELAY_MS.store(ms, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Process gate (F3.8): `run`/`spawn_child` are the sanctioned
 /// child-process sites.
 #[derive(Debug)]
@@ -113,7 +125,11 @@ impl ChildProc {
     /// # Errors
     /// [`PiiError::Internal`] when the kill fails.
     pub fn kill(&mut self) -> Result<(), PiiError> {
+        let delay = TEST_KILL_DELAY_MS.load(std::sync::atomic::Ordering::SeqCst);
         let _ = self.inner.kill();
+        if delay > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(delay));
+        }
         let _ = self.inner.wait();
         Ok(())
     }

@@ -113,20 +113,55 @@ impl Supervisor {
         }
     }
 
-    #[allow(clippy::significant_drop_tightening)] // reason: `sh` (the state
-    // MutexGuard) must stay held across the whole death handler.
     pub(crate) fn death(&self, code: Option<i32>) {
-        let mut sh = self.inner.state.lock();
-        if sh.state == WorkerState::Draining {
-            sh.child = None; // a reload in progress owns the respawn
-            return;
-        }
-        let pid = sh.pid;
-        if let Some(mut c) = sh.child.take() {
+        // Destructure a snapshot, then release the state lock before any
+        // blocking child teardown: `kill()` waits for the process to die,
+        // and `invoke()` must observe a post-death state (Restarting) and
+        // queue or fail WITHOUT waiting for that teardown.
+        let (pid, in_flight, ids, capped) = {
+            let mut sh = self.inner.state.lock();
+            if sh.state == WorkerState::Draining {
+                sh.child = None; // a reload in progress owns the respawn
+                return;
+            }
+            let pid = sh.pid;
+            // Move the child out into the stale slot: the kill (blocking)
+            // runs after the lock is released, off the state mutex.
+            if let Some(c) = sh.child.take() {
+                *self.inner.stale_child.lock() = Some(c);
+            }
+            sh.writer = None;
+            // Crash-loop cap (F3.5): a crash loop must not become a spawn
+            // storm. Decided here, under the lock, so the state a concurrent
+            // `invoke()` sees is final.
+            let now = Instant::now();
+            let window = self.inner.spec.restart_window_ms;
+            sh.restart_times
+                .retain(|t| now.duration_since(*t) < Duration::from_millis(window));
+            sh.restart_times.push(now);
+            let capped = sh.restart_times.len()
+                > usize::try_from(self.inner.spec.max_restarts_in_window).unwrap_or(5);
+            // Set the FINAL state under the lock, so a concurrent `invoke()`
+            // never observes a transient Restarting that then flips to
+            // Failed after invoke() already decided to queue.
+            sh.state = if capped {
+                WorkerState::Failed
+            } else {
+                WorkerState::Restarting
+            };
+            let (in_flight, ids) = {
+                let slots = self.inner.slots.lock();
+                (slots.len(), slots.keys().copied().collect::<Vec<u64>>())
+            };
+            (pid, in_flight, ids, capped)
+        };
+        // Lock released: the kill+wait (potentially slow) runs off the state
+        // lock. A concurrent `invoke()` now sees Restarting/Failed and
+        // queues or fails immediately.
+        let parked_child = self.inner.stale_child.lock().take();
+        if let Some(mut c) = parked_child {
             let _ = c.kill();
         }
-        let in_flight = self.inner.slots.lock().len();
-        let ids: Vec<u64> = self.inner.slots.lock().keys().copied().collect();
         for id in ids {
             #[allow(clippy::significant_drop_tightening)] // reason: the slot
             // MutexGuard must stay held across the send.
@@ -147,20 +182,11 @@ impl Supervisor {
                 code,
                 in_flight: u32::try_from(in_flight).unwrap_or(u32::MAX),
             });
-        // Crash-loop cap (F3.5): a crash loop must not become a spawn storm.
-        let now = Instant::now();
-        let window = self.inner.spec.restart_window_ms;
-        sh.restart_times
-            .retain(|t| now.duration_since(*t) < Duration::from_millis(window));
-        sh.restart_times.push(now);
-        if sh.restart_times.len()
-            > usize::try_from(self.inner.spec.max_restarts_in_window).unwrap_or(5)
-        {
-            sh.state = WorkerState::Failed;
+        // Capped: the worker is Failed, no respawn — matches the original
+        // (pre-restructuring) early return here.
+        if capped {
             return;
         }
-        sh.state = WorkerState::Restarting;
-        sh.writer = None;
         let backoff = self.inner.spec.restart_backoff_ms;
         let sup = Self {
             inner: Arc::clone(&self.inner),
@@ -204,8 +230,10 @@ impl Supervisor {
         let drained_in_flight = u32::try_from(self.inner.slots.lock().len()).unwrap_or(0);
         let _ = drained_in_flight;
 
-        // (3) shutdown, wait ≤1 s, else kill.
-        {
+        // (3) shutdown, wait ≤1 s, else kill. The child is parked in
+        // `stale_child` and torn down AFTER the state lock is released —
+        // `kill()` blocks until the process dies.
+        let parked = {
             let mut sh = self.inner.state.lock();
             if let Some(w) = sh.writer.take()
                 && w.send(WorkerFrame::Req {
@@ -217,14 +245,15 @@ impl Supervisor {
             {
                 // already dead
             }
-            if let Some(mut c) = sh.child.take() {
-                let exited = c
-                    .wait_timeout(Duration::from_millis(RELOAD_SHUTDOWN_MS))
-                    .unwrap_or(None);
-                if exited.is_none() {
-                    let _ = c.kill();
-                }
-            }
+            sh.child.take().map(|mut c| {
+                let _ = c.wait_timeout(Duration::from_millis(RELOAD_SHUTDOWN_MS));
+                c
+            })
+        };
+        if let Some(mut c) = parked
+            && c.try_wait().is_ok_and(|e| e.is_none())
+        {
+            let _ = c.kill();
         }
 
         // (4)+(5) spawn the CURRENT program path and say hello.

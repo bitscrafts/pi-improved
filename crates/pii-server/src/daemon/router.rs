@@ -29,7 +29,19 @@ pub fn spawn_all(
             let ctx = Arc::clone(ctx);
             tokio::spawn(async move {
                 loop {
-                    poll_once(&engine, &ctx, &name);
+                    // `poll_once` is fully synchronous (the `Channel` trait
+                    // is blocking) and a channel poll may block on network
+                    // or file I/O for a long time. Run it on the blocking
+                    // thread pool so a slow poll never starves the async
+                    // executor's worker threads (TDD: poll must not starve
+                    // concurrent tokio tasks).
+                    let eng = Arc::clone(&engine);
+                    let ctx2 = Arc::clone(&ctx);
+                    let name2 = name.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        poll_once(&eng, &ctx2, &name2);
+                    })
+                    .await;
                     tokio::time::sleep(Duration::from_millis(interval_ms.max(10))).await;
                 }
             })
@@ -168,6 +180,126 @@ mod tests {
         assert!(
             matches!(denied_result, Err(pii_abi::PiiError::Denied(_))),
             "path outside the configured channel scope must be Denied: {denied_result:?}"
+        );
+    }
+
+    // ---- poll_on_blocking_thread (TDD: poll must not starve tokio) ----
+
+    use super::spawn_all;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// A test-only channel whose `poll` blocks for 300ms (simulating slow
+    /// network/file I/O) and returns no messages.
+    struct SlowChannel {
+        name: &'static str,
+    }
+
+    impl pii_channels::Channel for SlowChannel {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn kind(&self) -> &'static str {
+            "slow-test"
+        }
+        fn poll(
+            &self,
+            _ctx: &pii_core::Ctx,
+            _cursor: Option<u64>,
+        ) -> Result<Vec<pii_channels::Incoming>, pii_abi::PiiError> {
+            std::thread::sleep(Duration::from_millis(300));
+            Ok(Vec::new())
+        }
+        fn send(
+            &self,
+            _ctx: &pii_core::Ctx,
+            _to: &str,
+            _text: &str,
+        ) -> Result<(), pii_abi::PiiError> {
+            Ok(())
+        }
+    }
+
+    /// A minimal `DaemonContext` for the router test (empty workers/cron,
+    /// a scratch channel store).
+    fn router_ctx(
+        channel: Arc<dyn pii_channels::Channel>,
+    ) -> Arc<crate::daemon::status::DaemonContext> {
+        let tmp_root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp"));
+        std::fs::create_dir_all(tmp_root.join("router-test")).expect("mkdir _tmp/router-test");
+        let store = Arc::new(
+            pii_store::channel::ChannelStore::open(&tmp_root.join("router-test/channel.redb"))
+                .expect("channel store"),
+        );
+        let net = Arc::new(pii_net::NetService::new(pii_net::NetConfig {
+            resolver: Arc::new(pii_net::SystemResolver),
+            grants: Arc::new(pii_net::grant::StaticGrants::default()),
+            clock: Arc::new(pii_core::SystemClock),
+        }));
+        let mut channels = std::collections::BTreeMap::new();
+        channels.insert(
+            String::from(channel.name()),
+            crate::daemon::status::ChannelRuntime {
+                channel,
+                poll_interval_ms: 10,
+                graph: String::from("main"),
+            },
+        );
+        Arc::new(crate::daemon::status::DaemonContext {
+            net,
+            workers: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
+            channels: parking_lot::Mutex::new(channels),
+            channel_store: store,
+            cron: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            cron_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            crashes_dir: tmp_root.join("router-test/crashes"),
+            config_path: tmp_root.join("router-test/config.toml"),
+            channels_scope: tmp_root.join("router-test/channels"),
+        })
+    }
+
+    /// While a channel poll blocks for 300ms, a concurrently-scheduled
+    /// lightweight tokio task must still run (~every 10ms). On a
+    /// current-thread runtime the old inline `poll_once` starved the whole
+    /// executor; `spawn_blocking` keeps it responsive.
+    #[tokio::test(flavor = "current_thread")]
+    async fn poll_once_runs_on_blocking_thread() {
+        // A bare engine with a scripted (empty) model; the poll never starts
+        // a run (the slow channel returns no messages), so only the router
+        // path is exercised.
+        let tmp_root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp"));
+        let dir = tmp_root.join("router-test");
+        std::fs::create_dir_all(&dir).expect("mkdir router-test");
+        let fixture = dir.join("fixture-empty.json");
+        std::fs::write(&fixture, r#"{"turns":[]}"#).expect("write fixture");
+        let engine = crate::Engine::new(crate::EngineConfig {
+            workspace: dir.clone(),
+            store_path: dir.join(format!("store-{}.redb", std::process::id())),
+            model: format!("scripted:{}", fixture.display()),
+            sandbox: pii_tools::sandbox::SandboxProfileName::Off,
+            graph_dir: dir.clone(),
+            route_policy: std::collections::BTreeMap::new(),
+            session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+        })
+        .expect("engine");
+        let ctx = router_ctx(Arc::new(SlowChannel { name: "slow" }));
+        let _handles = spawn_all(&engine, &ctx);
+
+        // A heartbeat task that ticks every 10ms while the poll blocks.
+        let ticks = Arc::new(parking_lot::Mutex::new(0u32));
+        let t = Arc::clone(&ticks);
+        let heartbeat = tokio::spawn(async move {
+            for _ in 0..30 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                *t.lock() += 1;
+            }
+        });
+        heartbeat.await.expect("heartbeat");
+        let n = *ticks.lock();
+        assert!(
+            n >= 20,
+            "tokio executor was starved by the channel poll: only {n}/30 ticks ran"
         );
     }
 }
