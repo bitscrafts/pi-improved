@@ -68,12 +68,18 @@ Phase 5.2 as scoped by the 026 report is now COMPLETE: F-13 (module
 reorganization, chosen over a full 3-crate split per the documented
 `dispatch.rs → daemon::methods` coupling tradeoff — the alternatives were
 recorded in agent-memory for a future opus feasibility pass, not
-discarded), F-14 (dead-field cleanup), and all six F-12 warn-band files
-are done and independently gate-verified. Remaining structural items are
-genuinely NEXT-PHASE scope, not leftover 5.2 work: F-11 (357-site
-string-typed `PiiError`, a Phase 5.1 planner decision already tracked
-separately), F-16-F-20 (sync-blocking seam, test coverage gaps), F-22
+discarded), F-14 (dead-field cleanup), all six F-12 warn-band files, and
+D4/D7 (sync-blocking seam) are done and independently gate-verified.
+Remaining structural items are genuinely NEXT-PHASE scope: F-11
+(357-site string-typed `PiiError`, a Phase 5.1 planner decision already
+tracked separately), F-18/F-19/F-20 (test coverage gaps: `pii-proto`
+round-trips, `pii-store::MemStore` contract, `pii-tools`, `pii-web`
+handlers), F16's bounded accept pool (`pii-net/src/listen.rs:190`), F-22
 (`real_granite.rs` self-skip unverified).
+
+| Spec | Item | Status | Evidence |
+|---|---|---|---|
+| 52 | D4/D7: channel poll off the tokio executor, worker kill off the state lock | **DONE** | D4: `router.rs`'s `spawn_all` wrapped the fully-synchronous `Channel::poll` in `tokio::task::spawn_blocking` — a slow network/file-backed poll no longer starves the async executor. D7: `Supervisor::death`/`::reload` restructured to release the `state` mutex before the blocking `ChildProc::kill()` (which blocks on `wait()`). **Two real regressions caught during independent re-verification, not visible in the implementer's own reported diff**: (1) a same-thread mutex re-lock deadlock from taking `slots.lock()` twice inside one tuple expression (Rust's temporary-lifetime-extension kept the first guard alive), caught by re-running the PRE-EXISTING `kill9_fails_in_flight_with_workerdied` test and watching it hang for the first time; (2) the crash-loop-cap's early return was dropped, so a `Failed` worker still respawned — caught by `restart_storm_is_capped` asserting `Failed` and getting `Ready`. Both fixed, plus two clippy findings (a second lock-held-across-kill site, a pedantic `map().unwrap_or()`). Implemented via pidag/pi (glm-5.3-flash free tier, iter1) — the run itself hung 20+ minutes on a SEPARATE pidag bug (unbounded output-drain wait, fixed separately in pidag commit `2db967c`) before this content was recovered from the worker's session log and independently verified/fixed/committed. Full gate green (`_tmp/gate-spec52-final2.log`, `EXIT=0`). Committed `b48b497`. |
 
 ### Phase 5.0 re-baseline (2026-09-16) — COMPLETE
 
