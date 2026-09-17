@@ -27,6 +27,12 @@ pub(super) fn count_effective_lines(src: &str) -> usize {
             in_cfg_test = true;
             continue;
         }
+        // Whole-file test module (F15): an inner `#![cfg(test)]` attribute
+        // means the entire remaining file is test-only code and counts as
+        // zero effective lines.
+        if trimmed == "#![cfg(test)]" {
+            return 0;
+        }
         // Track brace depth to know when the cfg(test) module body ends.
         let opens = trimmed.matches('{').count().cast_signed();
         let closes = trimmed.matches('}').count().cast_signed();
