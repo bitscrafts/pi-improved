@@ -48,8 +48,20 @@ below for the full run trace.
 | 42 | A5 — failover reason operator surface (`pii graph trace --reason`, doc 006 update) | **DONE** | `crates/pii-cli/src/cmd_trace.rs`: new `--reason <node-id>` flag prints the byte-identical `FailurePayload` from the latest `fail`-port event for that node (`no-failure` when the node never failed, or when the latest event across retries recovered) — 335 lines (≤450), zero `unwrap/expect/panic!/todo!/unimplemented!`. `_docs/06-research/006-pii-graph-engine.md` gained a new "## 10. Failover reason on the fail port" section (old §10 renumbered to §11). 4 named tests (`trace_reason_prints_no_failure_for_never_failed_node`, `trace_reason_prints_failure_payload_for_fail_port`, `trace_reason_uses_latest_event_across_retries`, `trace_reason_missing_node_prints_no_failure`) independently re-run and pass. **Implemented end-to-end through the real `pidag sdd --run` worker chain** (iter1 free model got 11/14 exit criteria; iter2 paid model — `--allow-paid` — fixed the remaining 3: the two doc-grep criteria and one stray `unwrap()` in a test), the FIRST Track-A spec to go through pidag rather than a subagent, closing the loop on this session's own harness fixes. Full gate green post-merge (`_tmp/gate-spec42-final.log`, `EXIT=0`). |
 
 Track A (failover becomes real) is now fully done: A1 (spec 37, classify,
-landed earlier) through A5. Phase 5.2 (structural debt ratchet, incl. the
-`agent.rs` split) is next — see 026 report's own sequencing rationale.
+landed earlier) through A5. Phase 5.2 (structural debt ratchet) is next.
+
+### Phase 5.2 (structural debt ratchet) — in progress
+
+| Spec | Item | Status | Evidence |
+|---|---|---|---|
+| 43 | Split `agent.rs` into `agent/{mod,turn,tools,memorize,tests}.rs` | **DONE** | Pure move, no behavior change: `AgentNode`/`AgentFactory`/`NodeFactory` impl/`resolve_model`/`route_provider_failure` stay in `mod.rs`; the turn loop moves to `turn.rs`; `run_tool_calls`/`call_tool_bounded`/`emit_live` move to `tools.rs`; `split_memorize`/`history_messages` move to `memorize.rs`; the test module moves verbatim to `tests.rs` (self-gated via an inner `#![cfg(test)]`, prompting a small `xtask/src/lint_files.rs` extension to recognize that shape as zero effective lines). `registry.rs` (the only external call site) untouched. New `agent_line_gate.rs` regression test. Implemented via the real `pidag sdd --run` worker chain, iter1/free model, 12/12 exit criteria first try — no paid escalation needed. Full gate green (`_tmp/gate-spec43-final.log`, `EXIT=0`). Committed `a337ab2`. |
+
+Remaining Phase 5.2 items (026 report, not yet started): split
+`service.rs` similarly; F-12-F-14 (pii-server-fusion, `heal.rs` product
+fields leaking into the generic store); F-16-F-20 (sync-blocking seam,
+test coverage gaps); F-22 (`real_granite.rs` self-skip unverified);
+ratchet `xtask lint-files` toward zero warn-band files (several crates
+still sit between 380-450 effective lines).
 
 ### Phase 5.0 re-baseline (2026-09-16) — COMPLETE
 
