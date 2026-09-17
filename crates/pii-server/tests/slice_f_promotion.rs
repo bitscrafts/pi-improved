@@ -108,8 +108,8 @@ fn promotion_gate_requires_fresh_approval_each_cycle() {
             span: 0,
         },
     );
-    let id0 = pii_server::nodes::gate::approval_id(&c, 0);
-    let id1 = pii_server::nodes::gate::approval_id(&c, 1);
+    let id0 = pii_server::node_kinds::nodes::gate::approval_id(&c, 0);
+    let id1 = pii_server::node_kinds::nodes::gate::approval_id(&c, 1);
     assert_ne!(id0, id1, "a new cycle must mint a fresh approval id");
 }
 

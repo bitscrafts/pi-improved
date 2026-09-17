@@ -58,7 +58,7 @@ async fn memory_put_search_consolidate_round_trip() {
         .tempdir_in("/projects/pi-improved/_tmp")
         .expect("tempdir");
     let engine = engine_in(dir.path());
-    let stream = pii_server::loopback::spawn_loopback(engine);
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (r, w) = tokio::io::split(stream);
     let (client, _hello) = pii_proto::client::Client::connect(r, w, client_info())
         .await

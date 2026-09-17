@@ -51,7 +51,7 @@ async fn hello_skew_is_hard_refusal() {
         .tempdir_in("/projects/pi-improved/_tmp")
         .expect("tempdir");
     let engine = engine_in(dir.path());
-    let stream = pii_server::loopback::spawn_loopback(engine);
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (mut r, mut w) = tokio::io::split(stream);
 
     // Send a hello with the WRONG protocol version.
@@ -104,7 +104,7 @@ async fn method_before_hello_refused() {
         .tempdir_in("/projects/pi-improved/_tmp")
         .expect("tempdir");
     let engine = engine_in(dir.path());
-    let stream = pii_server::loopback::spawn_loopback(engine);
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (mut r, mut w) = tokio::io::split(stream);
 
     let req = Request {
@@ -147,7 +147,7 @@ async fn valid_hello_creates_session() {
         .tempdir_in("/projects/pi-improved/_tmp")
         .expect("tempdir");
     let engine = engine_in(dir.path());
-    let stream = pii_server::loopback::spawn_loopback(engine);
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (r, w) = tokio::io::split(stream);
     let client_info = PeerInfo {
         name: "test".into(),
@@ -183,7 +183,7 @@ async fn hello_non_json_encoding_refused() {
         .tempdir_in("/projects/pi-improved/_tmp")
         .expect("tempdir");
     let engine = engine_in(dir.path());
-    let stream = pii_server::loopback::spawn_loopback(engine);
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (mut r, mut w) = tokio::io::split(stream);
 
     let req = Request {

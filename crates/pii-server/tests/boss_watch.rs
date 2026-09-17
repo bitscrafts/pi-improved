@@ -48,8 +48,8 @@ use pii_abi::{NodeId, RunEvent, RunId, RunStatus, SuspendReason, Terminal};
 use pii_core::{Budget, BudgetShare, CapKind, CapSet, Ctx, PiiError, Principal};
 use pii_graph::spec::GraphSpec;
 use pii_server::daemon::approvals;
-use pii_server::nodes::gate::approval_id;
-use pii_server::nodes::heal::{GateResult, GateRunner, HealFactory};
+use pii_server::node_kinds::nodes::gate::approval_id;
+use pii_server::node_kinds::nodes::heal::{GateResult, GateRunner, HealFactory};
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 
@@ -147,7 +147,7 @@ fn check_entry_spec(engine: &Arc<Engine>) -> GraphSpec {
 }
 
 /// The `approval_id` the real `gate` node formula
-/// (`pii_server::nodes::gate::approval_id`) computes for `(run, node,
+/// (`pii_server::node_kinds::nodes::gate::approval_id`) computes for `(run, node,
 /// cycle)` — used to prove the OBSERVED suspend id reflects the real
 /// `cycle` forwarded by `cyc`, not the `cfg.cycle=0` fallback.
 fn expected_approval_id(run: &RunId, node: &str, cycle: u64) -> String {
@@ -290,7 +290,7 @@ async fn boss_watch_timer_suspends_for_real() {
         "one real Timer suspend: {before:?}"
     );
 
-    pii_server::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
+    pii_server::engine::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
     let after = wait_for_journal_len(&engine, &run_id, before.len() + 1).await;
 
     let timer_suspends_after = after
@@ -676,7 +676,7 @@ kind = "data"
 
     // Wait past the 1ms fire time, then resume.
     tokio::time::sleep(Duration::from_millis(50)).await;
-    pii_server::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
+    pii_server::engine::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
 
     // The resume is async — wait for the journal to grow past the initial
     // suspend (the timer fires and forwards to heal_detect).

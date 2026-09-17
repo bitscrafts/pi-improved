@@ -11,10 +11,10 @@ use pii_model::{ChatMessage, ChatRequest, Role};
 
 use pii_graph::node::GraphNode;
 
-use crate::agent::AgentNode;
-use crate::agent::memorize::{history_messages, split_memorize};
-use crate::agent::route_provider_failure;
-use crate::compaction;
+use crate::node_kinds::agent::AgentNode;
+use crate::node_kinds::agent::memorize::{history_messages, split_memorize};
+use crate::node_kinds::agent::route_provider_failure;
+use crate::node_kinds::compaction;
 
 impl GraphNode for AgentNode {
     #[allow(clippy::too_many_lines)] // reason: the turn loop is one cohesive

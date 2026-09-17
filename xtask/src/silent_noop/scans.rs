@@ -11,7 +11,7 @@ use super::helpers::{
 /// Scan 1 (R1a): methods in `method.rs` whose `Method::X` has no dispatch arm.
 pub(crate) fn scan_methods(root: &Path, violations: &mut Vec<String>) -> Vec<String> {
     let method = root.join("crates/pii-proto/src/method.rs");
-    let dispatch = root.join("crates/pii-server/src/dispatch.rs");
+    let dispatch = root.join("crates/pii-server/src/engine/dispatch.rs");
     let Ok(m_src) = std::fs::read_to_string(&method) else {
         violations.push(format!(
             "SILENT-NOOP FAIL: cannot read {}",
@@ -233,7 +233,7 @@ pub(crate) fn scan_protected_paths(root: &Path, violations: &mut Vec<String>) ->
     }
     let sites: &[(&str, &str)] = &[
         (
-            "crates/pii-server/src/runs.rs",
+            "crates/pii-server/src/engine/runs.rs",
             "run_caps fs_write deny wiring",
         ),
         (

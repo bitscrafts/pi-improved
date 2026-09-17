@@ -13,7 +13,9 @@ use pii_graph::node::NodeRegistry;
 use pii_model::ModelProvider;
 use pii_tools::ToolSet;
 
-use crate::{EngineConfig, agent, nodes, tool};
+use crate::EngineConfig;
+use crate::engine::tool;
+use crate::node_kinds::{agent, nodes};
 
 /// Builds the registry with the built-ins plus `agent`, `tool`, `gate` and
 /// `memory` (F2.2, F5.9, F6.7).

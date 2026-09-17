@@ -11,7 +11,7 @@ use pii_store::approval::ApprovalStore;
 
 use pii_graph::node::{GraphNode, NodeFactory};
 
-/// Registered into [`crate::registry`]; every `gate` node shares one
+/// Registered into [`crate::engine::registry`]; every `gate` node shares one
 /// approval store.
 pub struct GateFactory {
     /// The shared approval table.

@@ -32,7 +32,7 @@ pub const ALLOWLIST: &[&str] = &[
     // crate); its production path uses TcpStream via dial.rs/Conn, and the
     // only raw loopback-bind in a test is the streaming dechunk fake.
     "crates/pii-net/src/service.rs",
-    "crates/pii-server/src/uds.rs",
+    "crates/pii-server/src/engine/uds.rs",
     // B2 (011 A.11): client-side connect moved to pii-uds so clients do not
     // pull the daemon tree; the sanctioned client connect site lives here.
     "crates/pii-uds/src/lib.rs",

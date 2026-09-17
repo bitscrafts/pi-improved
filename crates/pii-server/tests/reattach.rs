@@ -61,7 +61,7 @@ async fn run_one_prompt(engine: &Arc<Engine>) -> Vec<SeqEvent> {
         .unwrap()
         .into_iter()
         .filter_map(|(seq, ev)| {
-            pii_server::bus::map_event(&run_id, &ev).map(|event| SeqEvent { seq, event })
+            pii_server::engine::bus::map_event(&run_id, &ev).map(|event| SeqEvent { seq, event })
         })
         .collect()
 }
@@ -99,7 +99,8 @@ async fn reattach_since_seq_no_duplicates() {
     // Reattach with since_seq = 3: replay must deliver 4..=N exactly once,
     // and any live events already in the bus buffer must be deduped.
     let mut merged: Vec<SeqEvent> = Vec::new();
-    let _last = pii_server::bus::reattach(&engine.store, &run_id, since, &mut live, &mut merged);
+    let _last =
+        pii_server::engine::bus::reattach(&engine.store, &run_id, since, &mut live, &mut merged);
     let seqs: Vec<u64> = merged.iter().map(|e| e.seq).collect();
     assert_eq!(seqs.len(), total - usize::try_from(since).unwrap_or(0));
     assert!(

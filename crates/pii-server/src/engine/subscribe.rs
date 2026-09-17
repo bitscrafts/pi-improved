@@ -15,8 +15,8 @@ use pii_proto::run::SeqEvent;
 use pii_proto::{Envelope, Notification, Request, Response, write_frame};
 
 use crate::Engine;
-use crate::bus::reattach;
-use crate::conn::SubscriptionRegistry;
+use crate::engine::bus::reattach;
+use crate::engine::conn::SubscriptionRegistry;
 
 /// Advertised in `sys.hello`'s `capabilities`/limits (F1.10) and enforced
 /// here (M1, opus review).

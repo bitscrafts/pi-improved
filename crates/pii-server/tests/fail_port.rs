@@ -63,7 +63,7 @@ fn fail_port_outcome_is_journaled() {
     // provider. Loading via `load_toml_with_registry` so the agent node's
     // caps default from this registry (matching what will actually run).
     let mut registry = NodeRegistry::builtin();
-    registry.register(Arc::new(pii_server::agent::AgentFactory {
+    registry.register(Arc::new(pii_server::node_kinds::agent::AgentFactory {
         provider: Arc::new(ContextOverflowProvider),
         route_policy: std::collections::BTreeMap::new(),
         workspace: dir.clone(),

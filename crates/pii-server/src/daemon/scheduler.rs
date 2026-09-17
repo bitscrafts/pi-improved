@@ -15,7 +15,7 @@ use crate::Engine;
 
 /// Drives the timer wheel (F5.5).
 ///
-/// Firing resumes each due run through [`crate::runs::spawn_resume`];
+/// Firing resumes each due run through [`crate::engine::runs::spawn_resume`];
 /// cross-process safety for "was this timer already taken" comes from
 /// `TimerWheel::take_due`'s single write txn.
 pub struct Scheduler {
@@ -88,7 +88,7 @@ impl Scheduler {
         for d in due {
             let run_id = RunId::from(d.run.as_str());
             let key = ResumeKey(d.key.clone());
-            let _ = crate::runs::spawn_resume(Arc::clone(&self.engine), run_id, Some(key));
+            let _ = crate::engine::runs::spawn_resume(Arc::clone(&self.engine), run_id, Some(key));
         }
     }
 }

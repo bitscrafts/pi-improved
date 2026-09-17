@@ -1,7 +1,7 @@
 //! Protocol handlers for the daemon-only methods (F7.1).
 //!
 //! `worker.*`, `approve.*`, `cron.*`, `channel.*`, `memory.*`, `sys.reload`,
-//! `run.resume`. Split out of [`crate::dispatch`] to keep that file under
+//! `run.resume`. Split out of [`crate::engine::dispatch`] to keep that file under
 //! the 450-line gate.
 
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use pii_proto::sys::StatusResult;
 use pii_proto::{ErrorCode, Request, Response, RpcError};
 
 use crate::Engine;
-use crate::dispatch::{err_code, value_response};
+use crate::engine::dispatch::{err_code, value_response};
 
 fn err(req: &Request, c: ErrorCode, m: &str) -> Response {
     Response::err(req.id.clone(), RpcError::new(c, m))
@@ -328,7 +328,7 @@ pub(crate) fn run_resume(engine: &Arc<Engine>, req: &Request) -> Response {
     let Some(run_id) = req.params.get("run_id").and_then(|v| v.as_str()) else {
         return err(req, ErrorCode::InvalidParams, "run.resume needs 'run_id'");
     };
-    match crate::runs::spawn_resume(Arc::clone(engine), RunId::from(run_id), None) {
+    match crate::engine::runs::spawn_resume(Arc::clone(engine), RunId::from(run_id), None) {
         Ok(()) => value_response(req, Some(serde_json::json!({"resumed": true})), |c, m| {
             err(req, c, m)
         }),

@@ -7,7 +7,7 @@ use pii_abi::{PiiError, ResumeKey, RunId};
 use pii_graph::spec::GraphSpec;
 
 use crate::Engine;
-use crate::bus::BridgeObserver;
+use crate::engine::bus::BridgeObserver;
 
 /// Spawns the graph on a blocking thread with a bus-bridging context and
 /// returns at once (F2.3).
@@ -99,7 +99,7 @@ pub fn spawn_run(
                     None
                 }
             };
-        crate::nodes::heal::record_loop_budget_escalation(
+        crate::node_kinds::nodes::heal::record_loop_budget_escalation(
             &engine.heals,
             &spec.name,
             &heal_input,

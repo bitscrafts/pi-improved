@@ -22,7 +22,7 @@ use pii_model::ModelProvider;
 
 use pii_graph::node::GraphNode;
 
-use crate::compaction::Compaction;
+use crate::node_kinds::compaction::Compaction;
 
 /// Agent node config (F2.10).
 pub struct AgentNode {

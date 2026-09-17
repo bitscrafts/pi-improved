@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 
 use pii_proto::{Envelope, ErrorCode, Id, Response, parse_frame};
-use pii_server::uds::authorize_peer;
+use pii_server::engine::uds::authorize_peer;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 /// A foreign uid is refused with code 101 and a message naming the uid.
@@ -47,7 +47,7 @@ async fn refusal_writes_101_frame() {
 
     // Socket bind/connect are centralized in pii-server::uds's testkit
     // (the net-check allowlist file); the test only orchestrates.
-    let listener = pii_server::uds::test_bind_socket(&sock_path).expect("bind");
+    let listener = pii_server::engine::uds::test_bind_socket(&sock_path).expect("bind");
 
     // Accept loop: refuse (as if a foreign uid) with a 101 frame — this
     // exercises the daemon's refusal + frame-writer path (F9/F21).
@@ -63,7 +63,7 @@ async fn refusal_writes_101_frame() {
     });
 
     // Same-uid connect reaches the accept loop; the peer reads the 101 frame.
-    let mut stream = pii_server::uds::test_connect_socket(&sock_path)
+    let mut stream = pii_server::engine::uds::test_connect_socket(&sock_path)
         .await
         .expect("connect");
     let mut line = String::new();

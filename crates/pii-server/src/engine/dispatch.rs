@@ -2,7 +2,7 @@
 //! `run.start` return their ids immediately; `run.trace` reads the journal;
 //! `graph.lint` returns `V<n>` strings verbatim.
 //!
-//! `event.subscribe`/`event.unsubscribe` live in [`crate::subscribe`] (M1,
+//! `event.subscribe`/`event.unsubscribe` live in [`crate::engine::subscribe`] (M1,
 //! opus review — split out to stay under the 450-line lint cap after real
 //! subscription cancellation replaced the old ack-only no-op).
 
@@ -22,8 +22,8 @@ use pii_proto::session::{
 use pii_proto::{ErrorCode, Notification, Request, Response, RpcError};
 
 use crate::Engine;
-use crate::conn::{PeerIdentity, SubscriptionRegistry};
-use crate::subscribe;
+use crate::engine::conn::{PeerIdentity, SubscriptionRegistry};
+use crate::engine::subscribe;
 
 /// Dispatches one request to a response (F2.7).
 // reason: a method-match dispatch is the natural form; extracting every arm
@@ -371,7 +371,7 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
     let events = journal
         .into_iter()
         .filter_map(|(seq, ev)| {
-            crate::bus::map_event(run_id, &ev).map(|event| SeqEvent { seq, event })
+            crate::engine::bus::map_event(run_id, &ev).map(|event| SeqEvent { seq, event })
         })
         .collect();
     Ok(TraceResult {
@@ -394,7 +394,7 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
 /// Handles notifications (no response expected).
 ///
 /// `event.unsubscribe` (M1, opus review) is dispatched as a `Request` via
-/// [`dispatch`] → [`crate::subscribe::subscribe`]'s cancellation path, not
+/// [`dispatch`] → [`crate::engine::subscribe::subscribe`]'s cancellation path, not
 /// through this notification handler — a `Notification` has no id to
 /// acknowledge on, so a client that sends it as one gets no response and no
 /// cancellation. This is intentionally a no-op, not a leak.

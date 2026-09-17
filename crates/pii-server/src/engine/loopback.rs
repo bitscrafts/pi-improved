@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use crate::Engine;
-use crate::conn::{PeerIdentity, serve_connection};
+use crate::engine::conn::{PeerIdentity, serve_connection};
 
 /// Serves the engine over an in-process duplex pair; returns the client
 /// half. No `if loopback` branch exists anywhere in dispatch.

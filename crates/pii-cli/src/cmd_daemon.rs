@@ -182,7 +182,7 @@ async fn run_daemon(
     cfg: Config,
     model: String,
 ) -> ExitCode {
-    let sock_path = match pii_server::uds::prepare_socket(&runtime_dir) {
+    let sock_path = match pii_server::engine::uds::prepare_socket(&runtime_dir) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
@@ -264,7 +264,7 @@ async fn run_daemon(
                     return;
                 };
                 let uid = cred.uid();
-                if let Err(e) = pii_server::uds::authorize_peer(daemon_uid, uid) {
+                if let Err(e) = pii_server::engine::uds::authorize_peer(daemon_uid, uid) {
                     // F2.8/F9: log the refusal AND write a code-101 frame before
                     // closing (EC3 greps for this line).
                     #[allow(clippy::print_stderr)]
@@ -274,10 +274,10 @@ async fn run_daemon(
                     let _ = write_101(stream).await;
                     return;
                 }
-                pii_server::conn::serve_connection(
+                pii_server::engine::conn::serve_connection(
                     engine,
                     stream,
-                    pii_server::conn::PeerIdentity::Uds { uid: Some(uid) },
+                    pii_server::engine::conn::PeerIdentity::Uds { uid: Some(uid) },
                 )
                 .await;
             });

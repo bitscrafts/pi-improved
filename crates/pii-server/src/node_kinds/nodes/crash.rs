@@ -11,7 +11,7 @@ use pii_core::{CapKind, Ctx};
 
 use pii_graph::node::{GraphNode, NodeFactory};
 
-/// Registered into [`crate::registry`] only (not `lint_registry`): this
+/// Registered into [`crate::engine::registry`] only (not `lint_registry`): this
 /// kind exists purely to test F5.4's crash file, not to lint-pass a
 /// production graph.
 pub struct DebugCrashFactory;

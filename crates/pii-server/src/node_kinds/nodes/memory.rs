@@ -11,7 +11,7 @@ use pii_store::MemStore;
 
 use pii_graph::node::{GraphNode, NodeFactory};
 
-/// Registered into [`crate::registry`]; every `memory` node shares one
+/// Registered into [`crate::engine::registry`]; every `memory` node shares one
 /// memory store.
 pub struct MemoryFactory {
     /// The shared memory store.

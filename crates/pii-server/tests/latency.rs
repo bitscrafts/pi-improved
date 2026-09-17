@@ -48,7 +48,7 @@ async fn prompt_returns_before_run_finishes() {
         .tempdir_in("/projects/pi-improved/_tmp")
         .expect("tempdir");
     let engine = engine_in(dir.path());
-    let stream = pii_server::loopback::spawn_loopback(engine);
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (r, w) = tokio::io::split(stream);
     let client_info = PeerInfo {
         name: "test".into(),

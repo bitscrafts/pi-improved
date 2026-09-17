@@ -61,7 +61,7 @@ fn routing_config_denies_unknown() {
 fn route_step_resolves_model() {
     let policy: std::collections::BTreeMap<String, String> =
         std::iter::once(("patch".to_owned(), "modelX".to_owned())).collect();
-    let factory = pii_server::agent::AgentFactory {
+    let factory = pii_server::node_kinds::agent::AgentFactory {
         provider: Arc::new(pii_model::ScriptedProvider::empty()),
         workspace: scratch("ws"),
         live: None,
@@ -79,7 +79,7 @@ fn route_step_resolves_model() {
     // The node built: assert via its size (a boxed node is live and non-trivial).
     let _ = &node; // the node built (expect above already guarantees it)
     // Direct assertion on the resolution function (the load-bearing unit):
-    let m = pii_server::agent::resolve_model_for_test(
+    let m = pii_server::node_kinds::agent::resolve_model_for_test(
         &serde_json::json!({"route_step": "patch"}),
         &policy,
     );
@@ -90,7 +90,10 @@ fn route_step_resolves_model() {
 #[test]
 fn no_route_step_uses_explicit_model() {
     let policy = std::collections::BTreeMap::new();
-    let m = pii_server::agent::resolve_model_for_test(&serde_json::json!({"model": "m"}), &policy);
+    let m = pii_server::node_kinds::agent::resolve_model_for_test(
+        &serde_json::json!({"model": "m"}),
+        &policy,
+    );
     assert_eq!(m.expect("no routing error"), Some(String::from("m")));
 }
 
@@ -111,7 +114,7 @@ async fn route_decision_is_journaled() {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
     })
     .expect("engine");
-    let _reg = pii_server::registry::registry(
+    let _reg = pii_server::engine::registry::registry(
         &engine_cfg_of(&engine),
         engine.provider.clone(),
         engine.bus.subscribe_tx(),
@@ -175,7 +178,7 @@ fn engine_cfg_of(engine: &Arc<pii_server::Engine>) -> pii_server::EngineConfig {
 #[test]
 fn unassigned_step_fails_loud() {
     let policy = std::collections::BTreeMap::new();
-    let err = pii_server::agent::resolve_model_for_test(
+    let err = pii_server::node_kinds::agent::resolve_model_for_test(
         &serde_json::json!({"route_step": "patch"}),
         &policy,
     )

@@ -274,8 +274,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn memory_tools_round_trip_through_a_real_daemon() {
         use pii_core::{Budget, CapKind, CapSet, Ctx};
-        use pii_server::conn::{PeerIdentity, serve_connection};
-        use pii_server::uds::test_bind_socket;
+        use pii_server::engine::conn::{PeerIdentity, serve_connection};
+        use pii_server::engine::uds::test_bind_socket;
         use pii_server::{Engine, EngineConfig};
         use pii_tools::Tool as _;
         use pii_tools::memory::{MemoryPutTool, MemorySearchTool};

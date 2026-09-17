@@ -57,7 +57,7 @@ fn test_node(provider: Arc<RecordingProvider>) -> AgentNode {
         toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
         workspace: std::path::PathBuf::from("."),
         live: None,
-        compaction: crate::compaction::Compaction::default(),
+        compaction: crate::node_kinds::compaction::Compaction::default(),
         memory: None,
     }
 }
@@ -71,7 +71,7 @@ fn test_ctx() -> Ctx {
 /// positional fixtures).
 #[test]
 fn agent_factory_ports_include_fail() {
-    let ports = crate::agent::AgentFactory {
+    let ports = crate::node_kinds::agent::AgentFactory {
         provider: Arc::new(RecordingProvider {
             seen: Mutex::new(Vec::new()),
         }),
@@ -135,7 +135,7 @@ fn provider_failure_with_context_overflow_routes_to_fail() {
         toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
         workspace: std::path::PathBuf::from("."),
         live: None,
-        compaction: crate::compaction::Compaction::default(),
+        compaction: crate::node_kinds::compaction::Compaction::default(),
         memory: None,
     };
     let outcome = node.run(&test_ctx(), &fail_input()).expect("run");
@@ -176,7 +176,7 @@ fn provider_failure_5xx_routes_to_fail_after_retry_exhausted() {
         toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
         workspace: std::path::PathBuf::from("."),
         live: None,
-        compaction: crate::compaction::Compaction::default(),
+        compaction: crate::node_kinds::compaction::Compaction::default(),
         memory: None,
     };
     let outcome = node.run(&test_ctx(), &fail_input()).expect("run");
@@ -212,7 +212,7 @@ fn non_provider_error_still_routes_to_err() {
         toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
         workspace: std::path::PathBuf::from("."),
         live: None,
-        compaction: crate::compaction::Compaction::default(),
+        compaction: crate::node_kinds::compaction::Compaction::default(),
         memory: None,
     };
     let outcome = node.run(&test_ctx(), &fail_input()).expect("run");
@@ -496,7 +496,7 @@ fn agent_emits_assistant_delta() {
         toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
         workspace: std::path::PathBuf::from("."),
         live: Some(tx),
-        compaction: crate::compaction::Compaction::default(),
+        compaction: crate::node_kinds::compaction::Compaction::default(),
         memory: None,
     };
     let input = NodeInput {
@@ -575,7 +575,7 @@ fn agent_streaming_uses_session_from_input() {
         toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
         workspace: std::path::PathBuf::from("."),
         live: Some(tx),
-        compaction: crate::compaction::Compaction::default(),
+        compaction: crate::node_kinds::compaction::Compaction::default(),
         memory: None,
     };
     // No session in input -> fallback to empty string.
@@ -708,7 +708,7 @@ fn memorize_marker_is_written_and_stripped() {
         toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
         workspace: std::path::PathBuf::from("."),
         live: None,
-        compaction: crate::compaction::Compaction::default(),
+        compaction: crate::node_kinds::compaction::Compaction::default(),
         memory: Some(Arc::clone(&store)),
     };
     let input = NodeInput {

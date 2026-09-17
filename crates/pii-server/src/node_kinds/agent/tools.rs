@@ -10,7 +10,7 @@ use pii_abi::PiiError;
 use pii_core::Ctx;
 use pii_model::{ChatMessage, Role};
 
-use crate::agent::AgentNode;
+use crate::node_kinds::agent::AgentNode;
 
 impl AgentNode {
     /// Emits a live, bus-only event (F12, opus review): never journalled.

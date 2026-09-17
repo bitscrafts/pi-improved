@@ -67,7 +67,7 @@ fn cancel_before_model_call_returns_cancelled() {
     let ctx = Ctx::root(net_caps(), Budget::unlimited());
     ctx.cancel_token().cancel();
     let provider_arc = Arc::new(provider);
-    let factory = pii_server::agent::AgentFactory {
+    let factory = pii_server::node_kinds::agent::AgentFactory {
         provider: provider_arc.clone() as Arc<dyn ModelProvider>,
         workspace: scratch(),
         live: None,
@@ -162,7 +162,7 @@ fn cancel_mid_tool_loop_stops() {
     });
     // A two-token budget: the loop must stop after the first turn charges
     // the second — the brake fires before a third model call.
-    let factory = pii_server::agent::AgentFactory {
+    let factory = pii_server::node_kinds::agent::AgentFactory {
         provider: Arc::new(ToolTurnArc(provider)),
         workspace: scratch(),
         live: None,
@@ -204,7 +204,7 @@ fn tool_calls_budget_exhausts() {
     let provider = ToolTurnProvider {
         turns: std::sync::atomic::AtomicUsize::new(0),
     };
-    let factory = pii_server::agent::AgentFactory {
+    let factory = pii_server::node_kinds::agent::AgentFactory {
         provider: Arc::new(ToolTurnArc(Arc::new(provider))),
         workspace: scratch(),
         live: None,
@@ -226,7 +226,7 @@ fn tool_calls_budget_exhausts() {
 /// R4: a tiny `max_wall_ms` budget routes to `budget` (`WallMs` 0 = the
 #[test]
 fn wall_ms_budget_exhausts() {
-    let factory = pii_server::agent::AgentFactory {
+    let factory = pii_server::node_kinds::agent::AgentFactory {
         provider: Arc::new(ToolTurnArc(Arc::new(ToolTurnProvider {
             turns: std::sync::atomic::AtomicUsize::new(0),
         }))),

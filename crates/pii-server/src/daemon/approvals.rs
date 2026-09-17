@@ -30,7 +30,7 @@ pub fn resolve(
             approval_id: id.to_owned(),
             allow,
         });
-        crate::runs::spawn_resume(
+        crate::engine::runs::spawn_resume(
             Arc::clone(engine),
             RunId::from(approval.run_id.as_str()),
             None,

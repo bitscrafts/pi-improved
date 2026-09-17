@@ -19,7 +19,7 @@ use std::path::Path;
 /// tests;` in `mod.rs`, so its whole body is a test body and is excluded.
 #[test]
 fn agent_module_has_no_single_file_over_450_lines() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/agent");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/node_kinds/agent");
     let mut offenders: Vec<(String, usize)> = Vec::new();
     for entry in std::fs::read_dir(&dir).expect("agent/ directory exists") {
         let entry = entry.expect("dir entry");

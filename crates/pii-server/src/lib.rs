@@ -6,22 +6,11 @@
 //! journaler stays the only redb writer** (the spec instructs reuse of the
 //! existing run entry rather than a second journaling path).
 
-pub mod agent;
-pub mod bus;
-pub mod compaction;
-pub mod conn;
 pub mod daemon;
-pub mod dispatch;
-pub mod loopback;
-pub mod nodes;
-pub mod registry;
-pub mod runs;
-pub mod session_durability;
-pub mod subscribe;
-pub mod tool;
-pub mod uds;
+pub mod engine;
+pub mod node_kinds;
 
-pub use registry::{lint_registry, registry};
+pub use engine::registry::{lint_registry, registry};
 
 /// Default cap on `session_runs` entries retained per session (D3/D6, 026
 /// report 5.0.4) when a caller does not set `EngineConfig.session_runs_cap`
@@ -41,7 +30,7 @@ use pii_proto::session::{ContentBlock, SessionStatus, WireMessage};
 use pii_tools::ToolSet;
 use pii_tools::sandbox::SandboxProfileName;
 
-use crate::bus::Bus;
+use crate::engine::bus::Bus;
 
 /// Every field is a security-relevant choice; there is deliberately no
 /// `Default` (pass-2 §1.2).
@@ -122,7 +111,7 @@ pub struct Engine {
     /// after construction — the registry is built inside `Engine::new`, so the
     /// factory cannot hold the `Arc<Engine>` directly (chicken-and-egg). Same
     /// pattern as the `worker` node's shared pool.
-    spawn_handle: nodes::spawn::SpawnEngineHandle,
+    spawn_handle: node_kinds::nodes::spawn::SpawnEngineHandle,
     /// Session → runs it has spawned (for session-scoped `event.subscribe`).
     session_runs: parking_lot::Mutex<BTreeMap<String, Vec<String>>>,
     /// Set once by `pii daemon` (F5.1): `None` for a bare `Engine` (oneshot,
@@ -216,7 +205,8 @@ impl Engine {
             pii_model::provider_from_spec(&cfg.model)?
         };
         let bus = Bus::new();
-        let spawn_engine: nodes::spawn::SpawnEngineHandle = Arc::new(parking_lot::Mutex::new(None));
+        let spawn_engine: node_kinds::nodes::spawn::SpawnEngineHandle =
+            Arc::new(parking_lot::Mutex::new(None));
         let reg = registry(
             &cfg,
             provider.clone(),
@@ -391,7 +381,7 @@ impl Engine {
         // 2026-09-05 (session memory): merge the prior transcript into
         // extra_input under `history` (see `merge_history` doc comment).
         let extra_input = Some(merge_history(extra_input, &history));
-        runs::spawn_run(
+        engine::runs::spawn_run(
             Arc::clone(self),
             spec,
             run_id.clone(),
@@ -422,7 +412,7 @@ impl Engine {
             .get("prompt")
             .and_then(serde_json::Value::as_str)
             .map_or_else(|| input.to_string(), str::to_owned);
-        runs::spawn_run(
+        engine::runs::spawn_run(
             Arc::clone(self),
             spec,
             run_id.clone(),
@@ -454,7 +444,7 @@ impl Engine {
             return pii_graph::load_toml_with_registry(&src, &self.reg);
         }
         if name == "default" {
-            return pii_graph::load_toml_with_registry(registry::DEFAULT_TOML, &self.reg);
+            return pii_graph::load_toml_with_registry(engine::registry::DEFAULT_TOML, &self.reg);
         }
         Err(PiiError::NotFound(format!("graph '{name}'")))
     }

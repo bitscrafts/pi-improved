@@ -91,7 +91,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
                 return ExitCode::from(1);
             }
         };
-        let stream = pii_server::loopback::spawn_loopback(engine);
+        let stream = pii_server::engine::loopback::spawn_loopback(engine);
         let (r, w) = tokio::io::split(stream);
         pii_tui::run_tui(r, w).await
     };

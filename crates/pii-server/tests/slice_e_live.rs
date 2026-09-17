@@ -38,7 +38,7 @@ fn heal_fix_resolves_patch_model() {
     .unwrap();
     let cfg = Config::load(&toml).expect("config parse");
     let policy = cfg.evolve.routing;
-    let m = pii_server::agent::resolve_model_for_test(
+    let m = pii_server::node_kinds::agent::resolve_model_for_test(
         &serde_json::json!({"route_step": "patch"}),
         &policy,
     );

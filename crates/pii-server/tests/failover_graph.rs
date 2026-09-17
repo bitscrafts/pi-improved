@@ -113,7 +113,7 @@ fn graph_spec(registry: &NodeRegistry) -> pii_graph::GraphSpec {
 fn run_ladder(dir_name: &str, provider: Arc<LadderProvider>) -> (Terminal, Vec<(String, String)>) {
     let dir = scratch(dir_name);
     let mut registry = NodeRegistry::builtin();
-    registry.register(Arc::new(pii_server::agent::AgentFactory {
+    registry.register(Arc::new(pii_server::node_kinds::agent::AgentFactory {
         provider,
         route_policy: std::collections::BTreeMap::new(),
         workspace: dir.clone(),

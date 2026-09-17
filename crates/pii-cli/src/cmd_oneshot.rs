@@ -175,7 +175,7 @@ async fn run_over_loopback(
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
     };
     let engine = Engine::new(cfg).map_err(|e| e.to_string())?;
-    let stream = pii_server::loopback::spawn_loopback(engine);
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (r, w) = tokio::io::split(stream);
     drive_session(r, w, client_info.clone(), a, model).await
 }

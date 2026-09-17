@@ -67,7 +67,7 @@ fn truncate(s: &str) -> String {
     s.chars().take(512).collect()
 }
 
-/// Registered into [`crate::registry`]; every `heal_detect` node shares the
+/// Registered into [`crate::engine::registry`]; every `heal_detect` node shares the
 /// heal ledger and one runner.
 pub struct HealFactory {
     /// The shared heal-attempt ledger.

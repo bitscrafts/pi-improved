@@ -17,7 +17,7 @@ use pii_proto::{
 };
 
 use crate::Engine;
-use crate::dispatch;
+use crate::engine::dispatch;
 
 /// B5 (opus review): a connection with no traffic for this long is dropped
 /// so a client that vanishes without a clean close (crash, `kill -9`, a
