@@ -55,13 +55,17 @@ landed earlier) through A5. Phase 5.2 (structural debt ratchet) is next.
 | Spec | Item | Status | Evidence |
 |---|---|---|---|
 | 43 | Split `agent.rs` into `agent/{mod,turn,tools,memorize,tests}.rs` | **DONE** | Pure move, no behavior change: `AgentNode`/`AgentFactory`/`NodeFactory` impl/`resolve_model`/`route_provider_failure` stay in `mod.rs`; the turn loop moves to `turn.rs`; `run_tool_calls`/`call_tool_bounded`/`emit_live` move to `tools.rs`; `split_memorize`/`history_messages` move to `memorize.rs`; the test module moves verbatim to `tests.rs` (self-gated via an inner `#![cfg(test)]`, prompting a small `xtask/src/lint_files.rs` extension to recognize that shape as zero effective lines). `registry.rs` (the only external call site) untouched. New `agent_line_gate.rs` regression test. Implemented via the real `pidag sdd --run` worker chain, iter1/free model, 12/12 exit criteria first try — no paid escalation needed. Full gate green (`_tmp/gate-spec43-final.log`, `EXIT=0`). Committed `a337ab2`. |
+| 44 | Split `xtask/src/silent_noop.rs` into `silent_noop/{mod,scans,helpers}.rs` | **DONE** | Pure move, no scan-logic change: `AllowEntry`/`allowlist()`/`run()`/`report_lines()`/tests stay in `mod.rs`; the five scans move to `scans.rs`; shared ID/parsing utilities move to `helpers.rs`. `main.rs`'s `mod silent_noop;` and its `silent_noop::run(` call spelling (self-asserted by `run_ci_includes_self_improvement`) untouched. `silent-noop-check --list` output independently diffed byte-identical before/after. **This was the only hard `xtask lint-files` violation this session (458 effective lines, 8 over the 450 cap) — `lint-files` now exits 0 for the first time.** Implemented via the real `pidag sdd --run` worker chain: iter1 (free model) hit 11/12 criteria, the one miss was the spec's OWN exit-criterion bug (a blanket `unwrap/expect` grep across all 3 new files that didn't exclude the test module, same as the original file's own pre-existing, allowed `.expect("workspace root")` inside `#[cfg(test)]`) — fixed the spec, re-verified manually rather than re-running iter2/paid unnecessarily since the implementation itself was already correct. Full gate green (`_tmp/gate-spec44-final.log`, `EXIT=0`). Committed `8988f5f`. |
 
 Remaining Phase 5.2 items (026 report, not yet started): split
-`service.rs` similarly; F-12-F-14 (pii-server-fusion, `heal.rs` product
-fields leaking into the generic store); F-16-F-20 (sync-blocking seam,
-test coverage gaps); F-22 (`real_granite.rs` self-skip unverified);
-ratchet `xtask lint-files` toward zero warn-band files (several crates
-still sit between 380-450 effective lines).
+`service.rs` (`pii-net`, 427 effective lines, warn band) similarly; F-12-F-14
+(pii-server-fusion, `heal.rs` product fields leaking into the generic
+store); F-16-F-20 (sync-blocking seam, test coverage gaps); F-22
+(`real_granite.rs` self-skip unverified); ratchet the remaining warn-band
+files toward the 380-line target (`pii-store/src/mem.rs` 416,
+`pii-graph/src/run.rs` 411, `pii-tui/src/lib.rs` 435, `xtask/src/main.rs`
+411 effective lines — none of these are hard failures, all are optional
+debt paydown).
 
 ### Phase 5.0 re-baseline (2026-09-16) — COMPLETE
 
