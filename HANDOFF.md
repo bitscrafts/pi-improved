@@ -84,9 +84,15 @@ partial: `pii-store::MemStore` contract tests DONE, committed `ca1856a`
 (spec-53; surfaced a real bug candidate in `MemStore::put`'s
 `sum_dl`/stale-postings handling on idempotent re-put — reported, not
 patched, per the spec's own guardrail against touching production code
-in a test-only spec). Still open: `pii-proto` round-trips (F-18), the
-rest of F-19 (`pii-tools`, `pii-web`), and F-20 (9 crates with zero
-`tests/` dirs at all).
+in a test-only spec). F-18 (`pii-proto` wire round-trips) DONE,
+committed `8b4b13d` (spec-55; covers `method.rs`/`run.rs`/`session.rs`/
+`sys.rs`; includes a literal-wire-string assertion for every `Method`
+variant and a hand-written-JSON deserialization check for
+`ContentBlock`'s tagged-enum shape, catching classes of bug a plain
+round-trip wouldn't; `client.rs` deferred, needs a live UDS mock).
+Still open: the rest of F-19 (`pii-tools`, `pii-web`), and F-20 (crates
+with zero `tests/` dirs at all, beyond what specs 53/55 already
+closed).
 
 | Spec | Item | Status | Evidence |
 |---|---|---|---|
