@@ -142,3 +142,123 @@ pub fn default_timeout() -> Duration {
 pub fn inside_workspace(workspace: &Path, p: &Path) -> bool {
     p.starts_with(workspace)
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use std::path::PathBuf;
+
+    use pii_core::{ArgvScope, Budget, CapKind, CapSet, ProcOutput};
+    use serde_json::json;
+
+    use super::{BashTool, MAX_OUTPUT, TRUNCATION_MARKER, render};
+    use crate::Tool;
+
+    fn tmp_root() -> PathBuf {
+        PathBuf::from("/projects/pi-improved/_tmp")
+    }
+
+    /// A root context granting `PROC` for `/bin/sh` only.
+    fn proc_ctx() -> pii_core::Ctx {
+        let mut caps = CapSet::empty();
+        caps.kinds = CapKind::PROC;
+        caps.proc_argv0 = ArgvScope::new(vec![String::from("/bin/sh")]);
+        pii_core::Ctx::root(caps, Budget::unlimited())
+    }
+
+    #[test]
+    fn render_truncates_large_output() {
+        let out = ProcOutput {
+            exit_code: 0,
+            stdout: vec![b'a'; MAX_OUTPUT + 10],
+            stderr: Vec::new(),
+            timed_out: false,
+            cancelled: false,
+        };
+        let v = render(&out);
+        assert_eq!(v["truncated"], json!(true));
+        let text = v["output"].as_str().unwrap();
+        // Truncated at the cap, marker appended after it (marker is ASCII so
+        // byte-truncation is safe).
+        assert_eq!(text.len(), MAX_OUTPUT + TRUNCATION_MARKER.len());
+        assert!(text.ends_with(TRUNCATION_MARKER));
+        // The stdout field is capped independently (cap + marker).
+        let so = v["stdout"].as_str().unwrap();
+        assert_eq!(so.len(), MAX_OUTPUT + TRUNCATION_MARKER.len());
+        assert!(so.ends_with(TRUNCATION_MARKER));
+    }
+
+    #[test]
+    fn render_untruncated_when_small() {
+        let out = ProcOutput {
+            exit_code: 3,
+            stdout: b"hello".to_vec(),
+            stderr: b" world".to_vec(),
+            timed_out: false,
+            cancelled: false,
+        };
+        let v = render(&out);
+        assert_eq!(v["truncated"], json!(false));
+        assert_eq!(v["output"].as_str().unwrap(), "hello world");
+        assert_eq!(v["exit_code"], json!(3));
+        assert_eq!(v["stdout"].as_str().unwrap(), "hello");
+        assert_eq!(v["stderr"].as_str().unwrap(), " world");
+        assert!(!v["output"].as_str().unwrap().contains("[...truncated...]"));
+    }
+
+    #[test]
+    fn bash_denies_dangerous_command() {
+        let dir = tempfile::Builder::new()
+            .prefix("bash-deny-")
+            .tempdir_in(tmp_root())
+            .unwrap();
+        let canon = dunce::canonicalize(dir.path()).unwrap();
+        let ctx = proc_ctx();
+        let tool = BashTool { workspace: canon };
+        for cmd in ["sudo rm -rf /", "echo ok && reboot"] {
+            let err = tool.call(&ctx, &json!({"command": cmd})).unwrap_err();
+            assert!(
+                matches!(err, pii_abi::PiiError::Denied(_)),
+                "'{cmd}' must be denied, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bash_denies_cwd_outside_workspace() {
+        let dir = tempfile::Builder::new()
+            .prefix("bash-cwd-")
+            .tempdir_in(tmp_root())
+            .unwrap();
+        let canon = dunce::canonicalize(dir.path()).unwrap();
+        let ctx = proc_ctx();
+        let tool = BashTool { workspace: canon };
+        let err = tool
+            .call(&ctx, &json!({"command": "echo hi", "cwd": "/etc"}))
+            .unwrap_err();
+        assert!(matches!(err, pii_abi::PiiError::Denied(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn bash_runs_real_command() {
+        let dir = tempfile::Builder::new()
+            .prefix("bash-run-")
+            .tempdir_in(tmp_root())
+            .unwrap();
+        let canon = dunce::canonicalize(dir.path()).unwrap();
+        let ctx = proc_ctx();
+        let tool = BashTool { workspace: canon };
+        let res = tool
+            .call(&ctx, &json!({"command": "echo hello"}))
+            .expect("echo must run");
+        assert_eq!(res["exit_code"], json!(0));
+        assert!(res["output"].as_str().unwrap().contains("hello"));
+        assert_eq!(res["truncated"], json!(false));
+    }
+}

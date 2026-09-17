@@ -195,3 +195,164 @@ impl Tool for MultiEditTool {
         Ok(json!({"edits_applied": edits.len()}))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use std::path::PathBuf;
+
+    use pii_abi::PiiError;
+    use pii_core::{Budget, CapKind, CapSet, Ctx, PathScope};
+    use serde_json::json;
+
+    use super::{EditTool, FsReadTool, FsWriteTool, MultiEditTool};
+    use crate::Tool;
+
+    fn tmp_root() -> PathBuf {
+        PathBuf::from("/projects/pi-improved/_tmp")
+    }
+
+    /// A root context granting `FS_READ | FS_WRITE` over exactly `allow`.
+    fn fs_ctx(allow: &[PathBuf]) -> Ctx {
+        let mut caps = CapSet::empty();
+        caps.kinds = CapKind::FS_READ | CapKind::FS_WRITE;
+        caps.fs_read = PathScope::new(allow.to_vec());
+        caps.fs_write = PathScope::new(allow.to_vec());
+        Ctx::root(caps, Budget::unlimited())
+    }
+
+    fn tempdir(prefix: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(prefix)
+            .tempdir_in(tmp_root())
+            .unwrap();
+        let canon = dunce::canonicalize(dir.path()).unwrap();
+        (dir, canon)
+    }
+
+    #[test]
+    fn fs_read_respects_offset_limit() {
+        let (_dir, canon) = tempdir("fs-read-");
+        std::fs::write(canon.join("lines.txt"), "l1\nl2\nl3\nl4\nl5\n").unwrap();
+        let ctx = fs_ctx(std::slice::from_ref(&canon));
+        let tool = FsReadTool { workspace: canon };
+        let res = tool
+            .call(&ctx, &json!({"path": "lines.txt", "offset": 1, "limit": 2}))
+            .unwrap();
+        assert_eq!(res["content"].as_str().unwrap(), "l2\nl3");
+        assert_eq!(res["total_lines"], json!(5));
+        // No offset/limit: full content.
+        let all = tool.call(&ctx, &json!({"path": "lines.txt"})).unwrap();
+        assert_eq!(all["content"].as_str().unwrap(), "l1\nl2\nl3\nl4\nl5");
+        // Offset past the end: empty content, total unchanged.
+        let past = tool
+            .call(&ctx, &json!({"path": "lines.txt", "offset": 99}))
+            .unwrap();
+        assert_eq!(past["content"].as_str().unwrap(), "");
+        assert_eq!(past["total_lines"], json!(5));
+    }
+
+    #[test]
+    fn fs_write_then_read_roundtrip() {
+        let (_dir, canon) = tempdir("fs-write-");
+        let ctx = fs_ctx(std::slice::from_ref(&canon));
+        let w = FsWriteTool {
+            workspace: canon.clone(),
+        };
+        let r = FsReadTool { workspace: canon };
+        let res = w
+            .call(&ctx, &json!({"path": "out.txt", "content": "abc"}))
+            .unwrap();
+        assert_eq!(res["written"], json!(3));
+        let got = r.call(&ctx, &json!({"path": "out.txt"})).unwrap();
+        assert_eq!(got["content"].as_str().unwrap(), "abc");
+    }
+
+    #[test]
+    fn edit_requires_exactly_one_match() {
+        let (_dir, canon) = tempdir("edit-miss-");
+        std::fs::write(canon.join("f.txt"), "alpha beta alpha\n").unwrap();
+        let ctx = fs_ctx(std::slice::from_ref(&canon));
+        let tool = EditTool { workspace: canon };
+        // 0 matches (no "gamma").
+        let err = tool
+            .call(
+                &ctx,
+                &json!({"path": "f.txt", "old_string": "gamma", "new_string": "x"}),
+            )
+            .unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
+        // 2 matches ("alpha" twice).
+        let err = tool
+            .call(
+                &ctx,
+                &json!({"path": "f.txt", "old_string": "alpha", "new_string": "x"}),
+            )
+            .unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn edit_succeeds_on_unique_match() {
+        let (_dir, canon) = tempdir("edit-hit-");
+        std::fs::write(canon.join("f.txt"), "alpha beta\n").unwrap();
+        let ctx = fs_ctx(std::slice::from_ref(&canon));
+        let tool = EditTool {
+            workspace: canon.clone(),
+        };
+        let res = tool
+            .call(
+                &ctx,
+                &json!({"path": "f.txt", "old_string": "beta", "new_string": "gamma"}),
+            )
+            .unwrap();
+        assert_eq!(res["edited"], json!(true));
+        let on_disk = std::fs::read_to_string(canon.join("f.txt")).unwrap();
+        assert_eq!(on_disk, "alpha gamma\n");
+    }
+
+    #[test]
+    fn multi_edit_is_all_or_nothing() {
+        let (_dir, canon) = tempdir("multi-edit-");
+        std::fs::write(canon.join("f.txt"), "one two\n").unwrap();
+        let ctx = fs_ctx(std::slice::from_ref(&canon));
+        let tool = MultiEditTool {
+            workspace: canon.clone(),
+        };
+        // First edit would succeed, second fails (no match) → file unchanged.
+        let err = tool
+            .call(
+                &ctx,
+                &json!({"path": "f.txt", "edits": [
+                    {"old_string": "one", "new_string": "ONE"},
+                    {"old_string": "nope", "new_string": "X"}
+                ]}),
+            )
+            .unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
+        let on_disk = std::fs::read_to_string(canon.join("f.txt")).unwrap();
+        assert_eq!(on_disk, "one two\n", "file must be untouched on failure");
+        // All-or-nothing means even the successful prefix was never written.
+        // A valid run then applies both edits.
+        let res = tool
+            .call(
+                &ctx,
+                &json!({"path": "f.txt", "edits": [
+                    {"old_string": "one", "new_string": "ONE"},
+                    {"old_string": "two", "new_string": "TWO"}
+                ]}),
+            )
+            .unwrap();
+        assert_eq!(res["edits_applied"], json!(2));
+        assert_eq!(
+            std::fs::read_to_string(canon.join("f.txt")).unwrap(),
+            "ONE TWO\n"
+        );
+    }
+}
