@@ -202,16 +202,13 @@ value = "child-done"
         attempts: Vec::new(),
         attempt_count: 2,
         patch_hash: None,
-        worktree: None,
-        branch: None,
-        base_commit: None,
         gate_before: None,
         gate_after: None,
         decision: None,
         model: None,
         tokens_in: 0,
         tokens_out: 0,
-        micro_usd: 0,
+        extra: serde_json::Map::new(),
     };
     attempt.attempt_count = 2;
     engine.heals.put_attempt(&attempt).unwrap();

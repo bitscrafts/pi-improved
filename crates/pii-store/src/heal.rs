@@ -83,15 +83,6 @@ pub struct HealAttempt {
     /// Hash of the patch content, content-addressed via the CAS (never inline).
     #[serde(default)]
     pub patch_hash: Option<String>,
-    /// Disposable worktree the patch was made in.
-    #[serde(default)]
-    pub worktree: Option<String>,
-    /// Branch the patch commits onto.
-    #[serde(default)]
-    pub branch: Option<String>,
-    /// Base commit the patch was authored against.
-    #[serde(default)]
-    pub base_commit: Option<String>,
     /// The gate result BEFORE the patch (`"fail"` / `"pass"` / gate exit code).
     #[serde(default)]
     pub gate_before: Option<String>,
@@ -110,9 +101,13 @@ pub struct HealAttempt {
     /// Token / cost accounting.
     #[serde(default)]
     pub tokens_out: u64,
-    /// Micro-dollar spend.
+    /// Product-specific fields the generic store need not know about
+    /// (spec 46, F-14): a free-form bag for feature-owned data. Empty by
+    /// default; old rows with now-removed fields still deserialize since
+    /// `#[serde(default)]` maps any unknown-here JSON keys to nothing and
+    /// this field simply starts empty.
     #[serde(default)]
-    pub micro_usd: u64,
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// The heal-attempt ledger (S0.1).
@@ -237,16 +232,13 @@ impl HealStore {
             attempts: Vec::new(),
             attempt_count: 0,
             patch_hash: None,
-            worktree: None,
-            branch: None,
-            base_commit: None,
             gate_before: None,
             gate_after: None,
             decision: None,
             model: None,
             tokens_in: 0,
             tokens_out: 0,
-            micro_usd: 0,
+            extra: serde_json::Map::new(),
         });
         existing.last_seen_ms = run.ts_ms;
         existing.attempt_count = existing.attempt_count.saturating_add(1);
@@ -336,16 +328,13 @@ impl HealStore {
             attempts: Vec::new(),
             attempt_count: 0,
             patch_hash: None,
-            worktree: None,
-            branch: None,
-            base_commit: None,
             gate_before: None,
             gate_after: None,
             decision: None,
             model: None,
             tokens_in: 0,
             tokens_out: 0,
-            micro_usd: 0,
+            extra: serde_json::Map::new(),
         });
         attempt.last_seen_ms = decision.ts_ms;
         attempt.decision = Some(decision);
@@ -587,5 +576,66 @@ mod tests {
             .unwrap();
         let reloaded = store.get_attempt("deny-sig").unwrap().unwrap();
         assert!(!reloaded.decision.unwrap().allow);
+    }
+
+    /// R1/R4 (spec 46): a fresh `HealAttempt` built via `record_run` on a
+    /// brand-new signature has an empty `extra` bag.
+    #[test]
+    fn heal_attempt_extra_defaults_to_empty() {
+        let dir = Builder::new()
+            .prefix("heal-extra-")
+            .tempdir_in("/projects/pi-improved/_tmp")
+            .unwrap();
+        let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
+        let run = HealAttemptRun {
+            run_id: String::from("r1"),
+            outcome: HealState::Detected,
+            ts_ms: 100,
+            detail: String::from("gate failed"),
+        };
+        let a = store.record_run("extra-sig", "quality-gate", run).unwrap();
+        assert!(a.extra.is_empty());
+        let reloaded = store.get_attempt("extra-sig").unwrap().unwrap();
+        assert!(reloaded.extra.is_empty());
+    }
+
+    /// R5 (spec 46): an old-shape encoded payload with the removed
+    /// `worktree`/`branch`/`base_commit`/`micro_usd` fields still present
+    /// must decode cleanly into the new `HealAttempt` shape, with `extra`
+    /// defaulting to empty. Proves the JSON codec's structural (not
+    /// positional) tolerance of removed fields.
+    #[test]
+    fn heal_attempt_old_shape_deserializes_with_removed_fields_present() {
+        use super::HealAttempt;
+        let json = r#"{
+            "signature_hash": "old-shape",
+            "gate": "quality-gate",
+            "state": "detected",
+            "first_seen_ms": 1,
+            "last_seen_ms": 2,
+            "attempts": [],
+            "attempt_count": 3,
+            "patch_hash": "somehash",
+            "worktree": "/tmp/wt-123",
+            "branch": "heal/fix-abc",
+            "base_commit": "deadbeef",
+            "gate_before": "fail",
+            "gate_after": "pass",
+            "decision": null,
+            "model": "modelX",
+            "tokens_in": 10,
+            "tokens_out": 20,
+            "micro_usd": 500
+        }"#;
+        let row: HealAttempt =
+            serde_json::from_str(json).expect("old-shape row must decode without error");
+        assert_eq!(row.signature_hash, "old-shape");
+        assert_eq!(row.patch_hash, Some(String::from("somehash")));
+        assert_eq!(row.tokens_in, 10);
+        assert_eq!(row.tokens_out, 20);
+        assert!(
+            row.extra.is_empty(),
+            "extra must be empty when decoding an old-shape row"
+        );
     }
 }
