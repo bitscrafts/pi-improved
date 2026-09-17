@@ -1,17 +1,9 @@
-//! Store-backed run entry points (spec F4.8, F4.11) and the scheduler tick.
+//! The scheduler tick engine (spec F4.8, F4.11).
 //!
-//! One scheduler tick (pass-3 §4.3): propagate dead to a fixpoint, fail
+//! [`Engine`] drives the tick loop: propagate dead to a fixpoint, fail
 //! loudly on any unsatisfiable join, then drain **all** ready nodes into one
 //! batch (never `.pop()`), partition by parallel safety, and apply results as
 //! they arrive. Every branch of the loop returns — never a hang.
-//!
-//! `run` journals every event to the [`pii_store::Store`] and snapshots the
-//! blackboard every 32 events (see [`crate::journal`]). `resume` replays the
-//! whole journal to rebuild the state — a node with `NodeFinished` is never
-//! re-invoked (its value is in the journal); a node with `NodeStarted` and no
-//! terminal event **is** re-run, which is the documented Phase-1 boundary.
-//! Cyclic execution also lands in Phase 2: `run`/`resume` reject any cycle
-//! with [`PiiError::Invalid`] even when `loop_budget` makes it lint-clean.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -20,228 +12,30 @@ use parking_lot::RwLock;
 
 use pii_abi::{NodeId, NodeInput, PiiError, ResumeKey, RunEvent, RunId, RunStatus, Terminal};
 use pii_core::{Ctx, Metric};
-use pii_store::Store;
 
 use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
 use crate::node::{GraphNode, NodeRegistry};
-use crate::run_helpers::{
-    CancelTokenSet, build_nodes, fresh_tokens, interrupted_nodes, replay, terminal_determination,
-    terminal_status, validate_for_exec,
-};
+use crate::run_helpers::{CancelTokenSet, terminal_determination, terminal_status};
 use crate::sched::dispatch::{
     DispatchOutcome, Env, FinishedNode, apply, build_node_input, cancel_losers, dispatch,
 };
 use crate::sched::state::{Readiness, RunState, propagate_dead, readiness};
 use crate::spec::{GraphSpec, NodeSpec};
-
-/// Runs a graph to a terminal disposition, journaling every event to the
-/// store under `run_id`.
-///
-/// # Errors
-/// Returns [`PiiError::Invalid`] for cyclic specs (Phase-1 boundary) or node
-/// build failures, [`PiiError::Cancelled`] when the root context is torn down
-/// mid-run, and store errors from journaling.
-pub fn run(
-    store: &Store,
-    spec: &GraphSpec,
-    reg: &NodeRegistry,
-    ctx: &Ctx,
-    run_id: &RunId,
-    input: serde_json::Value,
-) -> Result<Terminal, PiiError> {
-    run_with_validate(store, spec, reg, ctx, run_id, input, true)
-}
-
-/// [`run`] with an explicit validation switch.
-///
-/// `validate` defaults to `true` (the library always validates unless a caller
-/// opts out). The CLI's `--no-validate` passes `false` so the runtime
-/// `UnsatisfiableJoin` path (pass-3 Test C) can be exercised on a graph that
-/// V6 rejects at load time.
-///
-/// # Errors
-/// Returns [`PiiError::Invalid`] for cyclic specs (Phase-1 boundary), node
-/// build failures, or (when `validate` is true) load-time validation errors;
-/// [`PiiError::Cancelled`] when the root context is torn down mid-run; and
-/// store errors from journaling.
-pub fn run_with_validate(
-    store: &Store,
-    spec: &GraphSpec,
-    reg: &NodeRegistry,
-    ctx: &Ctx,
-    run_id: &RunId,
-    input: serde_json::Value,
-    validate: bool,
-) -> Result<Terminal, PiiError> {
-    if validate {
-        validate_for_exec(spec, reg)?;
-    }
-    let built = build_nodes(spec, reg)?;
-    let spec_json = spec.to_json()?;
-    let graph_hash = store.put_graph(&spec_json)?;
-    // The run input is stored content-addressed; `Started.input_hash` is the
-    // key resume uses to recover it without reading snapshots.
-    let input_bytes =
-        serde_json::to_vec(&input).map_err(|e| PiiError::Internal(format!("input serde: {e}")))?;
-    let input_hash = store.put_graph(&input_bytes)?;
-
-    let bb = Arc::new(RwLock::new(Blackboard::new(input)));
-    let jr = Journaler::fresh(
-        store,
-        ctx.observer().clone(),
-        run_id.clone(),
-        graph_hash,
-        Arc::clone(&bb),
-    );
-    jr.append(&RunEvent::Started {
-        graph: spec.name.clone(),
-        input_hash,
-    })?;
-
-    let tokens = fresh_tokens(ctx, spec);
-    let mut st = RunState::from_spec(spec);
-    let mut fin = Vec::new();
-    let mut failure = None;
-    let no_resume_keys: BTreeMap<NodeId, ResumeKey> = BTreeMap::new();
-    let engine = Engine {
-        spec,
-        reg,
-        root: ctx,
-        run_id,
-        bb: &bb,
-        jr: &jr,
-        built: &built,
-        tokens: &tokens,
-        resume_keys: &no_resume_keys,
-    };
-    engine.tick_loop(&mut st, &mut fin, &mut failure)
-}
-
-/// Resumes a run by replaying its journal, then continuing the tick loop.
-///
-/// `resume_key` is the specific key the caller knows just fired (e.g. the
-/// daemon scheduler's due timer wheel entry); `None` for a bare/manual
-/// resume (CLI, approval resolve) that has no single known key. Either way,
-/// the node(s) the journal shows as still-suspended are dispatched through
-/// [`crate::node::GraphNode::on_resume`] (spec 30 D1) rather than a fresh
-/// `run()` — a fired timer resumes to `Next` instead of re-suspending.
-///
-/// # Errors
-/// Returns [`PiiError::NotFound`] for an unknown run or graph body,
-/// [`PiiError::Invalid`] for a cyclic spec, and store errors from journaling.
-pub fn resume(
-    store: &Store,
-    reg: &NodeRegistry,
-    ctx: &Ctx,
-    run_id: &RunId,
-    resume_key: Option<&ResumeKey>,
-) -> Result<Terminal, PiiError> {
-    let header = store
-        .get_run(run_id)?
-        .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
-    let spec_bytes = store
-        .get_graph(&header.graph)?
-        .ok_or_else(|| PiiError::NotFound(format!("graph body '{}'", header.graph)))?;
-    let spec = GraphSpec::from_json(&spec_bytes)?;
-    validate_for_exec(&spec, reg)?;
-    let journal = store.read_journal(run_id)?;
-
-    // Recover the run input from the content-addressed store.
-    let input = journal
-        .iter()
-        .find_map(|(_, ev)| match ev {
-            RunEvent::Started { input_hash, .. } => store
-                .get_graph(input_hash)
-                .ok()
-                .flatten()
-                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()),
-            _ => None,
-        })
-        .unwrap_or(serde_json::Value::Null);
-
-    let bb = Arc::new(RwLock::new(Blackboard::new(input.clone())));
-    let jr = Journaler::adopt(store, ctx.observer().clone(), header, Arc::clone(&bb));
-
-    // Replay the journal: rebuild state, blackboard, and completion order.
-    let mut st = RunState::from_spec(&spec);
-    let mut fin: Vec<FinishedNode> = Vec::new();
-    let mut failure: Option<String> = None;
-    let mut suspended: BTreeMap<NodeId, ResumeKey> = BTreeMap::new();
-    replay(
-        &journal,
-        &spec,
-        &mut st,
-        &bb,
-        &mut fin,
-        &mut failure,
-        &mut suspended,
-    );
-
-    // Spec 11 J3 — interrupted-turn closer: a node whose last relevant event
-    // is `NodeStarted` with no later terminal event (`NodeFinished`/
-    // `NodeFailed`/`NodeCancelled`/`NodeDead`) was left mid-flight by a crash
-    // or cancel. Append a synthetic `NodeInterrupted` marker for each (in the
-    // seq order of their last `NodeStarted`) so the journal records the
-    // previous attempt's fate instead of showing an unexplained duplicate
-    // `NodeStarted` after `Resumed`. Purely an audit marker: `replay` treats
-    // it as a no-op and the node still re-runs, exactly as before.
-    let interrupted = interrupted_nodes(&journal);
-    for node in &interrupted {
-        jr.append(&RunEvent::NodeInterrupted { node: node.clone() })?;
-    }
-
-    let payload_bytes =
-        serde_json::to_vec(&input).map_err(|e| PiiError::Internal(format!("input serde: {e}")))?;
-    // The Resumed event's key is the caller-supplied key when known (e.g.
-    // the scheduler's due timer), else whichever key the journal shows as
-    // still-suspended (at most one — a suspend halts the whole tick loop),
-    // else empty (a bare resume of a run that was not actually suspended).
-    let fired_key = resume_key
-        .cloned()
-        .or_else(|| suspended.values().next().cloned())
-        .unwrap_or_else(|| ResumeKey(String::new()));
-    jr.append(&RunEvent::Resumed {
-        key: fired_key,
-        payload_hash: pii_store::hash(&payload_bytes),
-    })?;
-
-    // Nodes killed by the final (unjournalled) propagation before the crash.
-    let newly = propagate_dead(&spec, &mut st);
-    for id in &newly {
-        jr.append(&RunEvent::NodeDead { node: id.clone() })?;
-    }
-
-    let built = build_nodes(&spec, reg)?;
-    let tokens = fresh_tokens(ctx, &spec);
-    let engine = Engine {
-        spec: &spec,
-        reg,
-        root: ctx,
-        run_id,
-        bb: &bb,
-        jr: &jr,
-        built: &built,
-        tokens: &tokens,
-        resume_keys: &suspended,
-    };
-    engine.tick_loop(&mut st, &mut fin, &mut failure)
-}
-
-struct Engine<'a> {
-    spec: &'a GraphSpec,
-    reg: &'a NodeRegistry,
-    root: &'a Ctx,
-    run_id: &'a RunId,
-    bb: &'a Arc<RwLock<Blackboard>>,
-    jr: &'a Journaler<'a>,
-    built: &'a BTreeMap<NodeId, Box<dyn GraphNode>>,
-    tokens: &'a CancelTokenSet,
+pub(super) struct Engine<'a> {
+    pub(super) spec: &'a GraphSpec,
+    pub(super) reg: &'a NodeRegistry,
+    pub(super) root: &'a Ctx,
+    pub(super) run_id: &'a RunId,
+    pub(super) bb: &'a Arc<RwLock<Blackboard>>,
+    pub(super) jr: &'a Journaler<'a>,
+    pub(super) built: &'a BTreeMap<NodeId, Box<dyn GraphNode>>,
+    pub(super) tokens: &'a CancelTokenSet,
     /// Nodes the journal shows as still-suspended, keyed to their latest
     /// resume key (spec 30 D1): empty for a fresh `run()`, populated by
     /// `resume()`'s journal replay. Threaded into [`Env`] so `dispatch`
     /// routes these nodes through `on_resume` instead of `run`.
-    resume_keys: &'a BTreeMap<NodeId, ResumeKey>,
+    pub(super) resume_keys: &'a BTreeMap<NodeId, ResumeKey>,
 }
 
 impl Engine<'_> {
@@ -249,7 +43,7 @@ impl Engine<'_> {
     // Kept as one function for reviewability of the batch drain and its two
     // terminal arms; splitting would cost more than the line budget saves.
     #[allow(clippy::too_many_lines)]
-    fn tick_loop(
+    pub(super) fn tick_loop(
         &self,
         st: &mut RunState,
         fin: &mut Vec<FinishedNode>,
