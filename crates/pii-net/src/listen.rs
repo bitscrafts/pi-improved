@@ -180,20 +180,81 @@ fn accept_loop(
         eprintln!("pii-net: set_nonblocking: {e}");
         return;
     }
+    // Bounded worker pool: spawns a fixed number of connection-serving
+    // threads that drain a bounded queue of accepted streams, instead of
+    // one thread per connection. Excess connections wait in the queue
+    // (backpressure via the OS listen backlog) rather than spawning more
+    // threads. Workers exit when the queue closes and drains (i.e. after
+    // the accept loop returns on stop or listener error).
+    let pool_size = crate::limits::accept_pool_size();
+    let (conn_tx, conn_rx) = std::sync::mpsc::sync_channel::<TcpStream>(pool_size);
+    let conn_rx = Arc::new(parking_lot::Mutex::new(conn_rx));
+    let mut workers = Vec::with_capacity(pool_size);
+    for i in 0..pool_size {
+        let rx = Arc::clone(&conn_rx);
+        let h = Arc::clone(&handler);
+        let name = format!("pii-net-conn-{i}");
+        match std::thread::Builder::new().name(name).spawn(move || {
+            loop {
+                let stream = {
+                    let guard = rx.lock();
+                    guard.recv().ok()
+                };
+                let Some(stream) = stream else { return };
+                serve_conn(stream, Arc::clone(&h));
+            }
+        }) {
+            Ok(handle) => workers.push(handle),
+            Err(e) => {
+                eprintln!("pii-net: spawn conn worker {i}: {e}");
+                break;
+            }
+        }
+    }
     loop {
         if stop.try_recv().is_ok() {
             return;
         }
         match listener.accept() {
             Ok((stream, _peer)) => {
-                let h = Arc::clone(&handler);
-                std::thread::spawn(move || serve_conn(stream, h));
+                // Bounded, non-blocking send: if the queue is full (all
+                // workers busy) we keep the stream and retry after the poll
+                // sleep, so stop detection is never starved. The connection
+                // has been accepted from the backlog already; holding it
+                // here is the backpressure mechanism.
+                let mut pending = Some(stream);
+                loop {
+                    if stop.try_recv().is_ok() {
+                        drop(pending); // closing the socket resets the client
+                        return;
+                    }
+                    match conn_tx.try_send(match pending.take() {
+                        Some(s) => s,
+                        // Should be impossible: we only loop when try_send
+                        // failed, which consumed the stream.
+                        None => break,
+                    }) {
+                        Ok(()) => break,
+                        Err(std::sync::mpsc::TrySendError::Full(s)) => {
+                            pending = Some(s);
+                        }
+                        Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                            // All workers gone; nothing can serve conns.
+                            return;
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(20));
             }
-            Err(_) => return,
+            Err(_) => break,
         }
+    }
+    drop(conn_tx); // close the queue; workers drain remaining conns then exit
+    for w in workers {
+        let _ = w.join();
     }
 }
 
