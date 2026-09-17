@@ -107,12 +107,34 @@ pub enum Recovery {
 ///
 /// `Provider` is the endpoint we called; `Upstream` is an aggregator relaying an error from
 /// the model behind it. `classify` does not detect origin — the caller states it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum Origin {
     /// The endpoint we called produced the error itself.
     Provider,
     /// An aggregator relayed an error from the model behind it.
     Upstream,
+}
+
+/// A [`classify`]-ready provider failure.
+///
+/// Every field is `pub` (a data carrier, unlike [`FailoverReason`]); `provider`
+/// is the provider's `name()` string (`"ollama"`, `"llamacpp"`), not a label.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProviderFailure {
+    /// The HTTP status the provider returned, when the transport is HTTP.
+    pub status: Option<u16>,
+    /// Which side produced the failure (the provider, or a relaying aggregator).
+    pub origin: Origin,
+    /// The provider's `name()` string.
+    pub provider: String,
+    /// The real error text (HTTP body, not a re-synthesized summary).
+    pub message: String,
+}
+
+/// Adapter over [`classify`]: `classify(f.status, &f.message, f.origin)`.
+#[must_use]
+pub fn classify_provider(f: &ProviderFailure) -> FailoverReason {
+    classify(f.status, &f.message, f.origin)
 }
 
 #[rustfmt::skip]
@@ -236,8 +258,9 @@ fn classify_message_only(m: &str, origin: Origin) -> FailoverReason {
 }
 
 #[cfg(test)]
+#[rustfmt::skip]
 mod tests {
-    use super::{ALL, FailoverReason, Origin, Recovery, classify};
+    use super::{ALL, FailoverReason, Origin, ProviderFailure, Recovery, classify, classify_provider};
 
     const P: Origin = Origin::Provider;
     const U: Origin = Origin::Upstream;
@@ -245,70 +268,22 @@ mod tests {
     fn check(status: Option<u16>, msg: &str, origin: Origin, want: FailoverReason) {
         assert_eq!(classify(status, msg, origin), want);
     }
-    #[test]
-    fn classify_401_is_auth() {
-        check(Some(401), "invalid api key", P, FailoverReason::Auth);
-    }
-    #[test]
-    fn classify_403_billing_text_is_billing() {
-        check(Some(403), "Key limit exceeded", P, FailoverReason::Billing);
-    }
-    #[test]
-    fn classify_403_plain_is_auth() {
-        check(Some(403), "forbidden", P, FailoverReason::Auth);
-    }
-    #[test]
-    fn classify_402_is_billing() {
-        check(Some(402), "", P, FailoverReason::Billing);
-    }
+    #[test] fn classify_401_is_auth() { check(Some(401), "invalid api key", P, FailoverReason::Auth); }
+    #[test] fn classify_403_billing_text_is_billing() { check(Some(403), "Key limit exceeded", P, FailoverReason::Billing); }
+    #[test] fn classify_403_plain_is_auth() { check(Some(403), "forbidden", P, FailoverReason::Auth); }
+    #[test] fn classify_402_is_billing() { check(Some(402), "", P, FailoverReason::Billing); }
     #[test]
     fn classify_404_naming_model_is_model_not_found() {
         let msg = "model 'foo' not found, try pulling it first";
         check(Some(404), msg, P, FailoverReason::ModelNotFound);
     }
-    #[test]
-    fn classify_404_bare_is_unknown() {
-        check(Some(404), "404 page not found", P, FailoverReason::Unknown);
-    }
-    #[test]
-    fn classify_408_is_timeout() {
-        check(Some(408), "", P, FailoverReason::Timeout);
-    }
-    #[test]
-    fn classify_413_is_payload_too_large() {
-        check(Some(413), "", P, FailoverReason::PayloadTooLarge);
-    }
-    #[test]
-    fn classify_429_provider_is_rate_limit() {
-        check(Some(429), "Too Many Requests", P, FailoverReason::RateLimit);
-    }
-    #[test]
-    fn classify_429_upstream_is_upstream_rate_limit() {
-        check(
-            Some(429),
-            "Provider returned error",
-            U,
-            FailoverReason::UpstreamRateLimit,
-        );
-    }
-    #[test]
-    fn classify_429_overloaded_text_is_overloaded() {
-        check(
-            Some(429),
-            "server is overloaded",
-            U,
-            FailoverReason::Overloaded,
-        );
-    }
-    #[test]
-    fn classify_429_billing_text_is_billing() {
-        check(
-            Some(429),
-            "insufficient credits",
-            P,
-            FailoverReason::Billing,
-        );
-    }
+    #[test] fn classify_404_bare_is_unknown() { check(Some(404), "404 page not found", P, FailoverReason::Unknown); }
+    #[test] fn classify_408_is_timeout() { check(Some(408), "", P, FailoverReason::Timeout); }
+    #[test] fn classify_413_is_payload_too_large() { check(Some(413), "", P, FailoverReason::PayloadTooLarge); }
+    #[test] fn classify_429_provider_is_rate_limit() { check(Some(429), "Too Many Requests", P, FailoverReason::RateLimit); }
+    #[test] fn classify_429_upstream_is_upstream_rate_limit() { check(Some(429), "Provider returned error", U, FailoverReason::UpstreamRateLimit); }
+    #[test] fn classify_429_overloaded_text_is_overloaded() { check(Some(429), "server is overloaded", U, FailoverReason::Overloaded); }
+    #[test] fn classify_429_billing_text_is_billing() { check(Some(429), "insufficient credits", P, FailoverReason::Billing); }
     #[test]
     fn classify_503_and_529_are_overloaded() {
         check(Some(503), "", P, FailoverReason::Overloaded);
@@ -324,33 +299,9 @@ mod tests {
         let msg = "This model's maximum context length is 8192 tokens";
         check(Some(400), msg, P, FailoverReason::ContextOverflow);
     }
-    #[test]
-    fn classify_500_context_text_is_context_overflow() {
-        check(
-            Some(500),
-            "context length exceeded",
-            P,
-            FailoverReason::ContextOverflow,
-        );
-    }
-    #[test]
-    fn classify_message_only_timeout() {
-        check(
-            None,
-            "deadline exceeded after 5000ms",
-            P,
-            FailoverReason::Timeout,
-        );
-    }
-    #[test]
-    fn classify_message_only_prompt_too_long() {
-        check(
-            None,
-            "llamacpp: prompt too long",
-            P,
-            FailoverReason::ContextOverflow,
-        );
-    }
+    #[test] fn classify_500_context_text_is_context_overflow() { check(Some(500), "context length exceeded", P, FailoverReason::ContextOverflow); }
+    #[test] fn classify_message_only_timeout() { check(None, "deadline exceeded after 5000ms", P, FailoverReason::Timeout); }
+    #[test] fn classify_message_only_prompt_too_long() { check(None, "llamacpp: prompt too long", P, FailoverReason::ContextOverflow); }
     #[test]
     fn every_recovery_is_reachable_and_compress_is_exact() {
         let mut compress = Vec::new();
@@ -365,20 +316,14 @@ mod tests {
         }
         assert_eq!(
             compress,
-            vec![
-                FailoverReason::ContextOverflow,
-                FailoverReason::PayloadTooLarge
-            ]
+            vec![FailoverReason::ContextOverflow, FailoverReason::PayloadTooLarge]
         );
         assert!(retry_same >= 1);
         assert!(next_provider >= 1);
     }
     #[test]
     fn compress_reasons_never_advance_chain() {
-        for r in [
-            FailoverReason::ContextOverflow,
-            FailoverReason::PayloadTooLarge,
-        ] {
+        for r in [FailoverReason::ContextOverflow, FailoverReason::PayloadTooLarge] {
             assert_eq!(r.recovery(), Recovery::Compress);
             assert_ne!(r.recovery(), Recovery::NextProvider);
         }
@@ -386,12 +331,7 @@ mod tests {
     #[test]
     fn unknown_is_next_provider_not_retry() {
         assert_eq!(FailoverReason::Unknown.recovery(), Recovery::NextProvider);
-        check(
-            None,
-            "net: no address reachable for host",
-            P,
-            FailoverReason::Unknown,
-        );
+        check(None, "net: no address reachable for host", P, FailoverReason::Unknown);
         check(Some(418), "", P, FailoverReason::Unknown);
         check(Some(200), "", P, FailoverReason::Unknown);
     }
@@ -443,6 +383,50 @@ mod tests {
                     let _ = classify(status, message, origin);
                 }
             }
+        }
+    }
+
+    fn pf(status: Option<u16>, message: &str, origin: Origin) -> ProviderFailure {
+        ProviderFailure {
+            status,
+            origin,
+            provider: String::from("ollama"),
+            message: String::from(message),
+        }
+    }
+
+    #[test]
+    fn provider_failure_roundtrips_through_classify_provider() {
+        let f = pf(Some(429), "Provider returned error", U);
+        assert_eq!(classify_provider(&f), FailoverReason::UpstreamRateLimit);
+    }
+
+    #[test]
+    fn classify_provider_matches_classify_for_every_status_class() {
+        #[rustfmt::skip]
+        let cases: [(Option<u16>, &str, Origin); 18] = [
+            (Some(401), "invalid api key", P),
+            (Some(403), "Key limit exceeded", P),
+            (Some(403), "forbidden", P),
+            (Some(402), "", P),
+            (Some(404), "model 'foo' not found, try pulling it first", P),
+            (Some(404), "404 page not found", P),
+            (Some(408), "", P),
+            (Some(413), "", P),
+            (Some(429), "Too Many Requests", P),
+            (Some(429), "Provider returned error", U),
+            (Some(429), "server is overloaded", U),
+            (Some(429), "insufficient credits", P),
+            (Some(503), "", P),
+            (Some(500), "", U),
+            (Some(400), "This model's maximum context length is 8192 tokens", P),
+            (Some(500), "context length exceeded", P),
+            (None, "deadline exceeded after 5000ms", P),
+            (None, "llamacpp: prompt too long", P),
+        ];
+        for (status, message, origin) in cases {
+            let f = pf(status, message, origin);
+            assert_eq!(classify_provider(&f), classify(status, message, origin));
         }
     }
 }

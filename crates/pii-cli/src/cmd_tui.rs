@@ -82,6 +82,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
             sandbox: SandboxProfileName::Off,
             graph_dir: store_dir.join("graphs"),
             route_policy: std::collections::BTreeMap::new(),
+            session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         };
         let engine = match Engine::new(cfg) {
             Ok(e) => e,

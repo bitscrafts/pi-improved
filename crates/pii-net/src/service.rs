@@ -284,15 +284,25 @@ impl NetService {
             }
             *n += 1;
         }
-        match dial(ctx, &pinned, &target.host, self.0.clock.as_ref()) {
-            Ok(stream) => {
-                // Spec 17 R3/R4: TLS wraps the dialed stream AFTER dial, inside
-                // pii-net — the authorize→pin→grant→dial chokepoint is unchanged.
-                let stream = if scheme == Scheme::Https {
-                    Stream::Tls(Box::new(dial_tls(stream, &target.host)?))
+        // Single exit path (D1): dial AND the TLS wrap that follows it are
+        // folded into one `Result` before the match, so ANY failure after
+        // the lease increment above — dial failure or TLS handshake
+        // failure — takes the same `Err` arm and decrements the lease. A
+        // `?` on the TLS step here would bypass the decrement and leak the
+        // lease; that was the bug this comment guards against.
+        let dial_result: Result<Stream, PiiError> =
+            dial(ctx, &pinned, &target.host, self.0.clock.as_ref()).and_then(|stream| {
+                // Spec 17 R3/R4: TLS wraps the dialed stream AFTER dial,
+                // inside pii-net — the authorize→pin→grant→dial chokepoint
+                // is unchanged.
+                if scheme == Scheme::Https {
+                    Ok(Stream::Tls(Box::new(dial_tls(stream, &target.host)?)))
                 } else {
-                    Stream::Plain(stream)
-                };
+                    Ok(Stream::Plain(stream))
+                }
+            });
+        match dial_result {
+            Ok(stream) => {
                 let mut conn = Conn {
                     stream,
                     key: k,

@@ -413,3 +413,66 @@ fn request_https_dispatch_takes_tls_path() {
     );
     fake.stop();
 }
+
+/// D1 (Phase 5.0): a TLS setup failure that happens strictly INSIDE
+/// `dial_tls` — after `dial()` has already succeeded and the lease was
+/// incremented for the attempt — must still release the lease. This uses
+/// a real, deterministic failure mode of `dial_tls` (an invalid TLS server
+/// name, per its own doc comment: `PiiError::Invalid` "when `host` is not
+/// a valid TLS server name") rather than a lazily-surfacing handshake I/O
+/// error: `dial_tls` is a synchronous, network-free step (it only builds
+/// the `rustls::ClientConnection`), so this failure fires at EXACTLY the
+/// point the bug lived — between the lease increment and `Conn` coming
+/// into existence, where the old code's bare `?` inside the `Ok(stream)`
+/// match arm short-circuited past the lease-decrement `Err` arm entirely
+/// (and no `Conn` ever existed to fall back on its `Drop` guard either).
+/// Dials the real fake server (so `dial()` itself succeeds and the lease
+/// is genuinely charged), then targets it with a host string that is not
+/// a valid DNS name/IP, so only the TLS server-name step fails.
+#[test]
+fn tls_handshake_failure_releases_lease() {
+    let fake = pii_net::testing::FakeHttpServer::start(r#"{"routes":[]}"#).unwrap();
+    let mut grants = StaticGrants::default();
+    let bad_key = "http:bad_host!name";
+    grants.insert("user", bad_key, grant(true, &[String::from("*:*")]));
+    let svc = NetService::new(NetConfig {
+        resolver: {
+            let mut r = pii_net::StaticResolver::new();
+            // Points at the real fake server, so `dial()` succeeds — only
+            // the TLS server-name validation that follows must fail.
+            r.insert("bad_host!name", fake.addr.port(), vec![fake.addr]);
+            Arc::new(r)
+        },
+        grants: Arc::new(grants),
+        clock: Arc::new(pii_net::FixedClock::new()),
+    });
+    let ctx = net_ctx();
+    // Before the failing attempt, every grant's lease count starts at 0.
+    assert!(
+        svc.grant_info().iter().all(|g| g.conns == 0),
+        "lease counts must start at 0: {:?}",
+        svc.grant_info()
+    );
+    let err = svc
+        .connect(
+            &ctx,
+            &target("bad_host!name", fake.addr.port()),
+            bad_key,
+            2_000,
+            pii_net::Scheme::Https,
+        )
+        .err()
+        .expect("an invalid TLS server name must fail dial_tls");
+    assert!(
+        matches!(err, PiiError::Invalid(_)),
+        "want PiiError::Invalid from an unparseable TLS server name, got {err:?}"
+    );
+    // The lease was incremented before dial+TLS ran; the dial_tls failure
+    // must have decremented it back to 0 (D1 acceptance).
+    let info = svc.grant_info();
+    assert!(
+        info.iter().all(|g| g.conns == 0),
+        "TLS setup failure leaked a connection lease: {info:?}"
+    );
+    fake.stop();
+}

@@ -61,7 +61,7 @@ pub struct NodeRegistry {
 }
 
 impl NodeRegistry {
-    /// Builds the registry with the four built-in kinds.
+    /// Builds the registry with the five built-in kinds.
     #[must_use]
     pub fn builtin() -> Self {
         let mut map: BTreeMap<&'static str, Arc<dyn NodeFactory>> = BTreeMap::new();

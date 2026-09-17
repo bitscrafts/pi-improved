@@ -59,6 +59,10 @@ pub struct DaemonContext {
     pub crashes_dir: std::path::PathBuf,
     /// The config file path (F5.12 `sys.reload` re-reads this).
     pub config_path: std::path::PathBuf,
+    /// Base directory every channel's fs scope is rooted under (Phase 5.0
+    /// D2): `<runtime_dir>/channels`. A channel named `name` gets exactly
+    /// `channels_scope.join(name)`; never a hardcoded literal path.
+    pub channels_scope: std::path::PathBuf,
 }
 
 /// Resident set size in KiB from `/proc/self/status` (F5.12); `0` when the

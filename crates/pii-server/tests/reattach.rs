@@ -23,6 +23,7 @@ fn engine_in(dir: &std::path::Path, fixture: &std::path::Path) -> Arc<Engine> {
         model: format!("scripted:{}", fixture.display()),
         sandbox: SandboxProfileName::Off,
         route_policy: std::collections::BTreeMap::new(),
+        session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         graph_dir: dir.join("graphs"),
     })
     .unwrap()

@@ -2,7 +2,8 @@
 //!
 //! `QUERY` is exactly one of: (none) → ndjson dump of every journal event as
 //! `{"seq":<u64>,"event":<RunEvent>}`; `--count-finished <node>`; `--node-status
-//! <node>`; `--max-batch-width`; `--terminal`; `--output`; `--overlapped <a>,<b>`.
+//! <node>`; `--max-batch-width`; `--terminal`; `--output`; `--overlapped <a>,<b>`;
+//! `--reason <node>`.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -13,7 +14,7 @@ use crate::cli_util::{next_value, open_store, usage_error};
 
 const TRACE_USAGE: &str = "usage: pii graph trace <run_id> --db <path> [QUERY]\nQUERY is \
 one of: (none) | --count-finished <node> | --node-status <node> | --max-batch-width | \
---terminal | --output | --overlapped <a>,<b>";
+--terminal | --output | --overlapped <a>,<b> | --reason <node>";
 
 /// The single query the trace command answers.
 enum Query {
@@ -24,6 +25,7 @@ enum Query {
     Terminal,
     Output,
     Overlapped(String, String),
+    Reason(String),
 }
 
 /// `pii graph trace ...` — answers one query over the stored journal.
@@ -82,6 +84,7 @@ fn parse_query(args: &mut std::env::ArgsOs) -> Result<Query, ExitCode> {
                 None => Err(usage_error("--overlapped wants <a>,<b>", TRACE_USAGE)),
             }
         }
+        "--reason" => Ok(Query::Reason(next_value(args, "--reason", TRACE_USAGE)?)),
         other => Err(usage_error(
             &format!("unknown trace query '{other}'"),
             TRACE_USAGE,
@@ -121,6 +124,7 @@ fn answer(run: &str, db: &Path, query: &Query) -> ExitCode {
         Query::Terminal => println!("{}", terminal_word(&header)),
         Query::Output => print_output(&journal),
         Query::Overlapped(a, b) => println!("{}", overlapped(&journal, a, b)),
+        Query::Reason(node) => println!("{}", reason_for(&journal, node)),
     }
     ExitCode::SUCCESS
 }
@@ -229,4 +233,103 @@ fn last_window(journal: &[(u64, RunEvent)], node: &str) -> Option<(u32, u32)> {
         } if n.as_str() == node => Some((*at_ms, *dur_ms)),
         _ => None,
     })
+}
+
+/// The failover reason on the fail port (A5): the latest `NodeFinished` for
+/// `node` decides — same "last event wins" convention `node_status` and
+/// `last_window` use, so a node that failed once and succeeded on retry
+/// reports `no-failure`, not the stale attempt's reason.
+///
+/// No `NodeFinished` at all, or the latest one is not on the `fail` port →
+/// `no-failure`. On `fail`, the stored `value` (`FailurePayload`) is printed
+/// as-is — byte-identical to what the journal holds, not reformatted.
+fn reason_for(journal: &[(u64, RunEvent)], node: &str) -> String {
+    let latest = journal.iter().rev().find_map(|(_, ev)| match ev {
+        RunEvent::NodeFinished {
+            node: n,
+            port,
+            value,
+            ..
+        } if n.as_str() == node => Some((port.as_str().to_owned(), value.clone())),
+        _ => None,
+    });
+    match latest {
+        Some((port, value)) if port == "fail" => {
+            serde_json::to_string(&value).unwrap_or_else(|_| "no-failure".to_owned())
+        }
+        _ => "no-failure".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use super::reason_for;
+    use pii_abi::{NodeId, PortName, RunEvent};
+
+    /// A `NodeFinished` event for `node` on `port` carrying `value`.
+    fn finished(node: &str, port: &str, value: serde_json::Value) -> RunEvent {
+        RunEvent::NodeFinished {
+            node: NodeId::from(node),
+            port: PortName::from(port),
+            value,
+            value_hash: "h".to_string(),
+            at_ms: 0,
+            dur_ms: 1,
+        }
+    }
+
+    fn journal(events: Vec<RunEvent>) -> Vec<(u64, RunEvent)> {
+        events
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| (i as u64, e))
+            .collect()
+    }
+
+    #[test]
+    fn trace_reason_prints_no_failure_for_never_failed_node() {
+        let j = journal(vec![finished("n", "ok", serde_json::json!({"x": 1}))]);
+        assert_eq!(reason_for(&j, "n"), "no-failure");
+    }
+
+    #[test]
+    fn trace_reason_prints_failure_payload_for_fail_port() {
+        let payload = serde_json::json!({
+            "status": 503,
+            "reason": "overloaded",
+            "provider": "ollama"
+        });
+        let j = journal(vec![finished("n", "fail", payload.clone())]);
+        // Byte-identical to the stored value, not reformatted.
+        assert_eq!(
+            reason_for(&j, "n"),
+            serde_json::to_string(&payload).unwrap_or_default()
+        );
+    }
+
+    #[test]
+    fn trace_reason_uses_latest_event_across_retries() {
+        let j = journal(vec![
+            finished(
+                "n",
+                "fail",
+                serde_json::json!({"status": 503, "reason": "overloaded"}),
+            ),
+            finished("n", "ok", serde_json::json!({"recovered": true})),
+        ]);
+        assert_eq!(reason_for(&j, "n"), "no-failure");
+    }
+
+    #[test]
+    fn trace_reason_missing_node_prints_no_failure() {
+        let j = journal(vec![finished("n", "ok", serde_json::json!({}))]);
+        assert_eq!(reason_for(&j, "missing"), "no-failure");
+    }
 }

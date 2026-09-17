@@ -118,6 +118,12 @@ impl Daemon {
             &runtime_dir.join("timer.redb"),
         )?);
 
+        // Phase 5.0 D2: the channel fs scope is rooted under the resolved
+        // runtime dir, never a literal path. A missing directory is a
+        // config error at daemon start (fail loud), not a silent per-poll
+        // `Denied` discovered later.
+        let channels_scope = resolve_channels_scope(runtime_dir)?;
+
         let ctx = Arc::new(DaemonContext {
             net,
             workers,
@@ -128,6 +134,7 @@ impl Daemon {
             channel_runs: Mutex::new(BTreeMap::new()),
             crashes_dir: runtime_dir.join("crashes"),
             config_path,
+            channels_scope,
         });
         engine.attach_daemon_ctx(Arc::clone(&ctx));
         // Spec 32 R1: give the `spawn` node the engine handle it needs to
@@ -195,6 +202,21 @@ impl Daemon {
             }
         })
     }
+}
+
+/// Resolves the channels fs-scope root under `runtime_dir` (Phase 5.0 D2:
+/// never a literal path) and ensures the directory exists. A creation
+/// failure is a loud config error at daemon start, not a silent per-poll
+/// `Denied` discovered later when a channel actually tries to write.
+fn resolve_channels_scope(runtime_dir: &Path) -> Result<PathBuf, PiiError> {
+    let channels_scope = runtime_dir.join("channels");
+    std::fs::create_dir_all(&channels_scope).map_err(|e| {
+        PiiError::Invalid(format!(
+            "channels scope dir '{}': {e}",
+            channels_scope.display()
+        ))
+    })?;
+    Ok(channels_scope)
 }
 
 fn build_channel(

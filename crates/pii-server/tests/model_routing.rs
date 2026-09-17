@@ -108,6 +108,7 @@ async fn route_decision_is_journaled() {
         sandbox: SandboxProfileName::Off,
         graph_dir: dir.join("graphs"),
         route_policy: std::iter::once(("patch".to_owned(), "modelX".to_owned())).collect(),
+        session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
     })
     .expect("engine");
     let _reg = pii_server::registry::registry(
@@ -165,6 +166,7 @@ fn engine_cfg_of(engine: &Arc<pii_server::Engine>) -> pii_server::EngineConfig {
         sandbox: engine.cfg.sandbox,
         graph_dir: engine.cfg.graph_dir.clone(),
         route_policy: engine.cfg.route_policy.clone(),
+        session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
     }
 }
 

@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::effects::Effects;
+use crate::failover::FailoverReason;
 use crate::ids::PortName;
 
 /// Input handed to a node when it is scheduled.
@@ -18,6 +19,22 @@ pub struct NodeInput {
     pub payload: serde_json::Value,
     /// The blackboard's node-value map, keyed by node id.
     pub nodes: serde_json::Value,
+}
+
+/// Payload emitted on a node's `fail` port for a classified provider
+/// failure (A3). Distinct from the free-form `{"error": String}` shape
+/// the `err` port already uses for non-provider failures.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FailurePayload {
+    /// HTTP status if the provider gave one (`None` for e.g. a local
+    /// context-overflow with no HTTP leg, matching `ProviderFailure::status`).
+    pub status: Option<u16>,
+    /// The classified reason as its `Debug`/`serde` tag — reuses
+    /// `FailoverReason`'s own derive, not a re-stringified copy.
+    pub reason: FailoverReason,
+    /// `ProviderFailure::provider` (e.g. `"ollama"`, `"llamacpp"`), passed
+    /// through unchanged.
+    pub provider: String,
 }
 
 /// Result of a node's execution.
@@ -94,8 +111,26 @@ pub trait NodeMeta {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::{NodeInput, Outcome, ResumeKey, SuspendReason};
+    use super::{FailurePayload, NodeInput, Outcome, ResumeKey, SuspendReason};
+    use crate::failover::{FailoverReason, Origin, classify};
     use crate::ids::PortName;
+
+    #[test]
+    fn failure_payload_roundtrips() {
+        // Construct the reason via classify on a real 429 body so the test also
+        // proves `FailurePayload.reason`'s field type lines up with a
+        // `FailoverReason` the classifier actually produces.
+        let reason = classify(Some(429), "Too Many Requests", Origin::Provider);
+        assert_eq!(reason, FailoverReason::RateLimit);
+        let original = FailurePayload {
+            status: Some(429),
+            reason,
+            provider: String::from("ollama"),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: FailurePayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, original);
+    }
 
     #[test]
     fn outcome_serde_roundtrip() {

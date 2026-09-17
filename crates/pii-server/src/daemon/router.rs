@@ -37,18 +37,20 @@ pub fn spawn_all(
         .collect()
 }
 
-fn channel_ctx(name: &str) -> Ctx {
+fn channel_ctx(channels_scope: &std::path::Path, name: &str) -> Ctx {
     // The channel needs NET (Discord) AND FS (the cli channel's inbox/
     // outbox files are read/written through Ctx::fs). Capability denial is
     // enforced by Ctx::fs/ctx.net; the router grants both.
+    //
+    // Phase 5.0 D2: the fs scope is `<runtime_dir>/channels/<name>` —
+    // derived from the daemon's resolved runtime dir (`channels_scope`,
+    // set in `daemon/mod.rs::Daemon::build` from `resolve_runtime_dir`),
+    // never a hardcoded literal.
+    let scope = channels_scope.join(name);
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::NET | CapKind::FS_READ | CapKind::FS_WRITE;
-    caps.fs_read = PathScope::new(vec![std::path::PathBuf::from(
-        "/projects/pi-improved/_tmp/phase3",
-    )]);
-    caps.fs_write = PathScope::new(vec![std::path::PathBuf::from(
-        "/projects/pi-improved/_tmp/phase3",
-    )]);
+    caps.fs_read = PathScope::new(vec![scope.clone()]);
+    caps.fs_write = PathScope::new(vec![scope.clone()]);
     Ctx::with_observer(
         caps,
         Budget::unlimited(),
@@ -63,12 +65,8 @@ fn channel_ctx(name: &str) -> Ctx {
         &{
             let mut c = CapSet::empty();
             c.kinds = CapKind::NET | CapKind::FS_READ | CapKind::FS_WRITE;
-            c.fs_read = PathScope::new(vec![std::path::PathBuf::from(
-                "/projects/pi-improved/_tmp/phase3",
-            )]);
-            c.fs_write = PathScope::new(vec![std::path::PathBuf::from(
-                "/projects/pi-improved/_tmp/phase3",
-            )]);
+            c.fs_read = PathScope::new(vec![scope.clone()]);
+            c.fs_write = PathScope::new(vec![scope]);
             c
         },
         &pii_core::BudgetShare::Shared,
@@ -85,7 +83,7 @@ fn poll_once(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, name: &str) {
         return;
     };
     let cursor = ctx.channel_store.get(name).ok().flatten().map(|c| c.cursor);
-    let rctx = channel_ctx(name);
+    let rctx = channel_ctx(&ctx.channels_scope, name);
     let Ok(incoming) = channel.poll(&rctx, cursor) else {
         let _ = ctx.channel_store.record_error(name);
         return;
@@ -121,8 +119,55 @@ pub fn reply(ctx: &Arc<DaemonContext>, channel: &str, chat: &str, text: &str) {
     else {
         return;
     };
-    let rctx = channel_ctx(channel);
+    let rctx = channel_ctx(&ctx.channels_scope, channel);
     if c.send(&rctx, chat, text).is_err() {
         let _ = c.send(&rctx, chat, text);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::channel_ctx;
+
+    /// Phase 5.0 D2: the channel fs scope is `<channels_scope>/<name>`,
+    /// derived from the daemon's runtime dir — never a hardcoded literal.
+    /// A path inside that scope resolves `Allowed` (the write succeeds); a
+    /// path outside it resolves `Denied`.
+    #[test]
+    fn channel_ctx_scope_denies_outside_allows_inside() {
+        let tmp_root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp"));
+        std::fs::create_dir_all(tmp_root).expect("mkdir _tmp root");
+        let root = tempfile::Builder::new()
+            .prefix("channel-scope-")
+            .tempdir_in(tmp_root)
+            .expect("tempdir");
+        // Canonicalize: `channel_ctx`'s scope check compares against the
+        // *canonical* path (symlinks/`..` resolved by `canonical_for`), and
+        // `tmp_root` is built from `CARGO_MANIFEST_DIR/../../_tmp` which
+        // still has `..` components at this point.
+        let root_path = dunce::canonicalize(root.path()).expect("canonicalize tempdir");
+        let channels_scope = root_path.join("channels");
+        std::fs::create_dir_all(&channels_scope).expect("mkdir channels_scope");
+
+        let rctx = channel_ctx(&channels_scope, "cli-test");
+
+        // Inside: <channels_scope>/cli-test/inbox.jsonl -> Allowed.
+        let inside = channels_scope.join("cli-test").join("inbox.jsonl");
+        let write_result = rctx.fs().expect("fs cap").write(&inside, b"hello");
+        assert!(
+            write_result.is_ok(),
+            "path inside the configured channel scope must be Allowed: {write_result:?}"
+        );
+        assert_eq!(std::fs::read(&inside).expect("read back"), b"hello");
+
+        // Outside: a sibling directory not under <channels_scope>/cli-test -> Denied.
+        let outside = root.path().join("other-channel").join("inbox.jsonl");
+        let denied_result = rctx.fs().expect("fs cap").write(&outside, b"nope");
+        assert!(
+            matches!(denied_result, Err(pii_abi::PiiError::Denied(_))),
+            "path outside the configured channel scope must be Denied: {denied_result:?}"
+        );
     }
 }

@@ -25,7 +25,7 @@ use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunStatus};
 use redb::{Database, ReadableDatabase, ReadableTable};
 use tables::{
     GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_BY_STATUS, RUN_JOURNAL, RUN_SNAPSHOT, SESSION,
-    SESSION_TOKENS,
+    SESSION_MSG, SESSION_SNAPSHOT, SESSION_TOKENS,
 };
 
 pub use codec::{from_bytes, hash, to_bytes};
@@ -38,6 +38,23 @@ pub struct Store {
     /// promise** — exposed so the batched-append tests can assert 1-vs-N
     /// write transactions without strace. Monotonic.
     write_txn_count: AtomicU64,
+    /// Test instrumentation: cumulative bytes written by the session
+    /// durability path (meta + per-message appends + periodic snapshots)
+    /// since the store was opened (D3/D6, 026 report 5.0.4). **Not a
+    /// public API promise** — exposed so the counting-store test can prove
+    /// the append-per-message fix keeps total bytes written close to
+    /// linear in the transcript size instead of the pre-fix O(n^2)
+    /// full-session rewrite. Monotonic.
+    session_bytes_written: AtomicU64,
+    /// Test instrumentation only — not a public API promise. When `true`,
+    /// [`Store::append_session_message`] and [`Store::put_session`] return
+    /// a synthetic [`PiiError::Internal`] instead of touching redb, for
+    /// deterministically exercising failure-handling call sites (D3/D6:
+    /// the "persist failure reaches the Observer" test) without relying on
+    /// flaky OS-level tricks (rlimits, permission bits — both no-ops for
+    /// root, and cargo test's shared-process threading makes a real
+    /// process-wide rlimit unsafe to use from one test among many).
+    fail_session_writes_for_test: std::sync::atomic::AtomicBool,
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
@@ -106,12 +123,20 @@ impl Store {
                 .open_table(SESSION_TOKENS)
                 .map_err(|e| PiiError::Internal(format!("store: open session_tokens: {e}")))?;
             write
+                .open_table(SESSION_MSG)
+                .map_err(|e| PiiError::Internal(format!("store: open session_msg: {e}")))?;
+            write
+                .open_table(SESSION_SNAPSHOT)
+                .map_err(|e| PiiError::Internal(format!("store: open session_snapshot: {e}")))?;
+            write
                 .commit()
                 .map_err(|e| PiiError::Internal(format!("store: commit tables: {e}")))?;
         }
         Ok(Self {
             db,
             write_txn_count: AtomicU64::new(0),
+            session_bytes_written: AtomicU64::new(0),
+            fail_session_writes_for_test: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -123,6 +148,25 @@ impl Store {
     #[must_use]
     pub fn write_txn_count(&self) -> u64 {
         self.write_txn_count.load(Ordering::Relaxed)
+    }
+
+    /// Cumulative bytes written by the session durability path (D3/D6, 026
+    /// report 5.0.4). **Test instrumentation only** — not a public API
+    /// promise.
+    #[must_use]
+    pub fn session_bytes_written(&self) -> u64 {
+        self.session_bytes_written.load(Ordering::Relaxed)
+    }
+
+    /// **Test instrumentation only** — not a public API promise. When set,
+    /// every subsequent [`Store::put_session`] / [`Store::append_session_message`]
+    /// / [`Store::put_session_snapshot`] call fails immediately with a
+    /// synthetic [`PiiError::Internal`], without touching redb — the
+    /// deterministic fault-injection hook D3/D6's "persist failure reaches
+    /// the Observer" test uses.
+    pub fn set_fail_session_writes_for_test(&self, fail: bool) {
+        self.fail_session_writes_for_test
+            .store(fail, Ordering::Relaxed);
     }
 
     /// Opens a (counted) write transaction. A transaction is opened and

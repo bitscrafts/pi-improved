@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use pii_abi::{HttpMethod, HttpRequest, HttpResponse, PiiError};
+use pii_abi::{HttpMethod, HttpRequest, HttpResponse, Origin, PiiError, ProviderFailure};
 use pii_core::{Ctx, HttpTransport};
 
 use crate::{ChatMessage, ChatRequest, ChatResponse, ModelProvider, ToolCall, ToolSpec};
@@ -122,10 +122,12 @@ impl OllamaProvider {
         };
         let resp = self.transport.request(ctx, &http)?;
         if resp.status == 429 || resp.status >= 500 {
-            return Err(PiiError::Unavailable(format!(
-                "ollama: upstream status {}",
-                resp.status
-            )));
+            return Err(PiiError::Provider(ProviderFailure {
+                status: Some(resp.status),
+                origin: Origin::Provider,
+                provider: String::from("ollama"),
+                message: String::from_utf8_lossy(&resp.body).into_owned(),
+            }));
         }
         if !(200..300).contains(&resp.status) {
             return Err(PiiError::Invalid(format!(
@@ -216,10 +218,12 @@ impl ModelProvider for OllamaProvider {
             );
         }
         if resp.status == 429 || resp.status >= 500 {
-            return Err(PiiError::Unavailable(format!(
-                "ollama: upstream status {}",
-                resp.status
-            )));
+            return Err(PiiError::Provider(ProviderFailure {
+                status: Some(resp.status),
+                origin: Origin::Provider,
+                provider: String::from("ollama"),
+                message: String::from_utf8_lossy(&resp.body).into_owned(),
+            }));
         }
         if !(200..300).contains(&resp.status) {
             return Err(PiiError::Invalid(format!(
@@ -410,6 +414,98 @@ impl OllamaProvider {
             obj.insert(String::from("stream"), serde_json::Value::Bool(true));
         }
         body
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::sync::Arc;
+
+    use parking_lot::Mutex;
+    use pii_abi::{FailoverReason, HttpRequest, HttpResponse, PiiError, classify_provider};
+    use pii_core::{Budget, CapSet, Ctx};
+
+    use super::OllamaProvider;
+    use crate::{ChatMessage, ChatRequest, ModelProvider, Role};
+
+    fn ctx() -> Ctx {
+        Ctx::root(CapSet::empty(), Budget::unlimited())
+    }
+
+    fn req() -> ChatRequest {
+        ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::new(Role::User, "hi")],
+            tools: Vec::new(),
+            max_tokens: 100,
+            temperature: 0.0,
+            num_ctx: 0,
+        }
+    }
+
+    /// A transport serving one fixed `(status, body)` response.
+    struct FixedTransport(Mutex<Vec<u8>>, u16);
+    impl pii_core::HttpTransport for FixedTransport {
+        fn request(&self, _ctx: &Ctx, _req: &HttpRequest) -> Result<HttpResponse, PiiError> {
+            Ok(HttpResponse {
+                status: self.1,
+                headers: Vec::new(),
+                body: self.0.lock().clone(),
+            })
+        }
+    }
+
+    fn provider_with(status: u16, body: &[u8]) -> OllamaProvider {
+        OllamaProvider::new(
+            Arc::new(FixedTransport(Mutex::new(body.to_vec()), status)),
+            "http://fake.local:1",
+            "m".into(),
+            None,
+        )
+    }
+
+    /// T6: a 429 response body is carried into `ProviderFailure` verbatim,
+    /// not re-synthesized — `classify_provider` sees the real text.
+    #[test]
+    fn ollama_429_constructs_provider_failure_with_body_text() {
+        let p = provider_with(429, b"insufficient credits");
+        let err = p.chat(&ctx(), &req()).unwrap_err();
+        match err {
+            PiiError::Provider(f) => {
+                assert_eq!(f.status, Some(429));
+                assert!(
+                    f.message.contains("insufficient credits"),
+                    "real body text must survive: {f:?}"
+                );
+                assert_eq!(classify_provider(&f), FailoverReason::Billing);
+            }
+            other => panic!("expected Provider, got {other:?}"),
+        }
+    }
+
+    /// T7: a 503 response carries its status through unchanged.
+    #[test]
+    fn ollama_5xx_constructs_provider_failure() {
+        let p = provider_with(503, b"overloaded");
+        let err = p.chat(&ctx(), &req()).unwrap_err();
+        match err {
+            PiiError::Provider(f) => {
+                assert_eq!(f.status, Some(503));
+                assert_eq!(classify_provider(&f), FailoverReason::Overloaded);
+            }
+            other => panic!("expected Provider, got {other:?}"),
+        }
+    }
+
+    /// T8: a 4xx client error stays `Invalid` — the `!(200..300)` branch is
+    /// untouched by R4.
+    #[test]
+    fn ollama_4xx_non_retryable_stays_invalid() {
+        let p = provider_with(400, b"bad request");
+        let err = p.chat(&ctx(), &req()).unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
     }
 }
 

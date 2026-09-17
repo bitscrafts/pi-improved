@@ -44,6 +44,21 @@ pub struct CoreSection {
     /// Default Ollama host, e.g. `"http://127.0.0.1:11434"`. Overridden
     /// by `$OLLAMA_HOST`.
     pub ollama_host: Option<String>,
+    /// Max runs retained per session in the in-memory `session_runs` index
+    /// (D3/D6, 026 report 5.0.4): oldest run ids are evicted (LRU) once a
+    /// session's run count exceeds this. `None` (absent key) falls back to
+    /// [`crate::DEFAULT_SESSION_RUNS_CAP`] — see [`Self::session_runs_cap`].
+    pub session_runs_cap: Option<usize>,
+}
+
+impl CoreSection {
+    /// Resolves the effective `session_runs_cap` (D3/D6): the configured
+    /// value if present, else [`crate::DEFAULT_SESSION_RUNS_CAP`].
+    #[must_use]
+    pub fn session_runs_cap(&self) -> usize {
+        self.session_runs_cap
+            .unwrap_or(crate::DEFAULT_SESSION_RUNS_CAP)
+    }
 }
 
 /// `[net]`: egress policy knobs (F2.2).

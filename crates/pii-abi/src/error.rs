@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use crate::failover::{ProviderFailure, Recovery, classify_provider};
+
 /// Errors surfaced by the Pii kernel ABI.
 ///
 /// `is_retryable` and `is_terminal` are mutually exclusive but NOT exhaustive:
@@ -38,13 +40,21 @@ pub enum PiiError {
     /// (F1.2). Worker death and HTTP 429/5xx are its producers.
     #[error("unavailable: {0}")]
     Unavailable(String),
+    /// A structured provider failure: the primitives `classify_provider`
+    /// needs to reach a `FailoverReason`, not a formatted string.
+    #[error("provider failure: {0:?}")]
+    Provider(ProviderFailure),
 }
 
 impl PiiError {
     /// True when re-running the failed operation is worth trying.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
-        matches!(self, Self::Timeout { .. } | Self::Unavailable(_))
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Timeout { .. } | Self::Unavailable(_) => true,
+            Self::Provider(f) => classify_provider(f).recovery() == Recovery::RetrySame,
+            _ => false,
+        }
     }
 
     /// True when the operation can never succeed, so retrying is pointless.
@@ -68,6 +78,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::PiiError;
+    use crate::failover::{Origin, ProviderFailure};
 
     #[test]
     fn pii_error_display() {
@@ -85,6 +96,12 @@ mod tests {
             PiiError::BudgetExhausted(String::new()),
             PiiError::NotFound(String::new()),
             PiiError::Internal(String::new()),
+            PiiError::Provider(ProviderFailure {
+                status: Some(500),
+                origin: Origin::Provider,
+                provider: String::from("ollama"),
+                message: String::new(),
+            }),
         ];
         for v in &variants {
             assert!(
@@ -118,5 +135,35 @@ mod tests {
         ] {
             assert!(v.is_terminal(), "{name} should be terminal");
         }
+    }
+
+    fn provider_failure(status: Option<u16>, message: &str) -> ProviderFailure {
+        ProviderFailure {
+            status,
+            origin: Origin::Provider,
+            provider: String::from("ollama"),
+            message: String::from(message),
+        }
+    }
+
+    #[test]
+    fn provider_error_is_retryable_iff_recovery_is_retry_same() {
+        let err = PiiError::Provider(provider_failure(Some(500), ""));
+        assert!(err.is_retryable());
+        assert!(!err.is_terminal());
+    }
+
+    #[test]
+    fn provider_error_next_provider_is_not_retryable_or_terminal() {
+        let err = PiiError::Provider(provider_failure(Some(401), ""));
+        assert!(!err.is_retryable());
+        assert!(!err.is_terminal());
+    }
+
+    #[test]
+    fn provider_error_compress_is_not_retryable_or_terminal() {
+        let err = PiiError::Provider(provider_failure(None, "llamacpp: prompt too long"));
+        assert!(!err.is_retryable());
+        assert!(!err.is_terminal());
     }
 }

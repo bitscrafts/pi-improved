@@ -16,10 +16,10 @@ disallowed-methods = [
     { path = "std::net::UdpSocket::bind", reason = "use NetService - grants, accounting, resolve-once-pin (§4)" },
 ]
 disallowed-macros = [
-    { path = "tracing::info", reason = "use pii_obs::record! - closed Action taxonomy" },
-    { path = "tracing::warn", reason = "use pii_obs::record!" },
-    { path = "tracing::error", reason = "use pii_obs::record!" },
-    { path = "println", reason = "use pii_obs::record! or, in pii-cli only, the UI writer" },
+    { path = "tracing::info", reason = "use pii_core::Observer::event/metric (ObsEvent taxonomy) - no pii_obs crate exists" },
+    { path = "tracing::warn", reason = "use pii_core::Observer::event/metric" },
+    { path = "tracing::error", reason = "use pii_core::Observer::event/metric" },
+    { path = "println", reason = "use pii_core::Observer::event/metric, or in pii-cli only, the UI writer" },
 ]
 
 disallowed-types = [

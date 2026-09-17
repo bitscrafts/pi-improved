@@ -25,6 +25,18 @@ pub enum ObsEvent {
         /// The capability that was denied.
         cap: String,
     },
+    /// A durable-store write failed outside the run journal (D3/D6, 026
+    /// report 5.0.4) — e.g. a session append/snapshot. The Phase-1
+    /// journaler has its own `Result` return for callers that check it
+    /// directly; this variant exists for call sites (like session
+    /// persistence) that are best-effort by design and must not panic or
+    /// abort on a write failure, but also must not silently swallow it.
+    PersistError {
+        /// What was being persisted (e.g. `"session:<id>"`).
+        context: String,
+        /// The error text.
+        message: String,
+    },
 }
 
 /// A named numeric metric.

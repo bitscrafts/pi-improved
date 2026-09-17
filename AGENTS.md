@@ -1,9 +1,11 @@
 # Pii — Project Agents Guide
 
-**Pii** ("Pi Improved") — a single static Rust binary unifying a terminal coding
+**Pii** ("Pi Improved") — a Rust workspace unifying a terminal coding
 agent, a personal assistant daemon, a reactive IoT/automation engine, and a
-self-improving cognitive layer. This implements the architecture researched in
-`_docs/06-research/001-003-*.md`.
+self-improving cognitive layer around one event-sourced daemon substrate.
+Four binaries ship today (`pii`, `pii-mcp`, `pii-web`, `pii-evolve`); `pii`
+(from `pii-cli`) is the primary entry point and embeds the daemon in-process.
+This implements the architecture researched in `_docs/06-research/001-003-*.md`.
 
 ## SDD/TDD workflow (mandatory)
 
@@ -36,7 +38,9 @@ pidag sdd specs/01-xxx.md --run --concurrency N
   parallel workers.
 - **TDD enforced by pidag:** the `quality-gate` step runs `cargo fmt/check/clippy/test`
   and the `validate-iter{n}` step runs the spec's exit criteria. The SDD loop implements →
-  quality-gates → validates → re-implements up to 3 iterations.
+  quality-gates → validates → re-implements up to `max_iterations` (`.pidag/config.toml`
+  `[sdd]`, currently 2: run 1 free model, run 2 escalates to a paid model, then STOPS —
+  no further auto-escalation).
 
 ## Repos
 
@@ -44,7 +48,8 @@ pidag sdd specs/01-xxx.md --run --concurrency N
   yantrikclaw, grok-build, hermes-agent). NEVER modify.
 - `_docs/` — SSOT documentation (01-overview … 06-research).
 - `_tmp/` — test artifacts, sessions, scratch.
-- `crates/` — the Pii Rust workspace (when Phase 0 lands).
+- `crates/` — the Pii Rust workspace (18 crates + `xtask`; landed, not
+  aspirational — Phase 0 completed 2026-09-02).
 
 ## Hard rules
 
@@ -55,8 +60,10 @@ pidag sdd specs/01-xxx.md --run --concurrency N
   content. If a pi/sonnet/workhorse run writes `specs/`, kill it, `git checkout`
   the touched specs, and return spec-creation to the planner. Workhorse only
   *implements* existing specs.
-- **450-line file gate, traits-first, `#![forbid(unsafe_code)]`** except pii-hw/pii-memory
-  (see pass-2 `001-...:128` and pass-3).
+- **450-line file gate, traits-first, `#![forbid(unsafe_code)]`** — workspace-wide,
+  no per-crate override exists today (`Cargo.toml:54`). Earlier research docs
+  planned an unsafe carve-out for `pii-hw`/`pii-memory`; `pii-hw` was never built
+  and `pii-memory` ships with the same forbid as every other crate.
 - Tests under `_tmp/`, never `/tmp`.
 - **Memory + HANDOFF are mandatory:** after any commit, update `HANDOFF.md` and store an
   agent-memory insight (topic `pii`).

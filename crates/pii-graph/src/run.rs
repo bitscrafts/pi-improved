@@ -554,12 +554,20 @@ impl Engine<'_> {
         let bytes = serde_json::to_vec(terminal)
             .map_err(|e| PiiError::Internal(format!("terminal serde: {e}")))?;
         let output_hash = pii_store::hash(&bytes);
-        self.jr.set_status(status);
         self.jr.set_dur_ms(self.root.elapsed_ms());
+        // Append the terminal event BEFORE flipping status: `set_status`
+        // flushes immediately, and if it ran first while other events were
+        // still pending, that flush would persist the new (non-Running)
+        // status without the `Finished` event in the same transaction —
+        // a reader polling `get_run` would see the run as done and read the
+        // journal before the terminal event landed (reattach/bus race).
+        // Buffering `Finished` first means `set_status`'s flush carries both
+        // the status transition and the terminal event atomically.
         self.jr.append(&RunEvent::Finished {
             terminal: terminal.clone(),
             output_hash,
         })?;
+        self.jr.set_status(status);
         // Spec 11 J2 durability barrier: the terminal event must be durable
         // before run()/resume() returns — every post-run journal reader
         // (trace, tests, reattach, bus) depends on a complete journal.

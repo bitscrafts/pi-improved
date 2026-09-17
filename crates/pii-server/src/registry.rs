@@ -65,15 +65,15 @@ pub fn registry(
 /// starter graphs, with a provider that is never called and scratch stores
 /// that are never meaningfully written (lint never executes a node).
 ///
-/// **B3 (opus review)**: the lint scratch DBs used to be hardcoded to
-/// `/projects/pi-improved/_tmp/phase3/lint-{approval,memory}.redb`, so on
-/// any other machine (or a different runtime dir) both opens failed and
-/// `gate`/`memory` were silently dropped from the registry — `pii graph
-/// lint` then reported a false `V0: unknown kind 'memory'` for graphs that
-/// are actually fine. They are now placed under `runtime_dir` (the same
-/// directory the caller's real store/config already lives in), which is
-/// always a real, writable path in this process, not a literal string that
-/// only exists in this checkout.
+/// **B3 (opus review)**: the lint scratch DBs used to be hardcoded to a
+/// literal `_tmp/phase3/lint-{approval,memory}.redb` path under one specific
+/// checkout root, so on any other machine (or a different runtime dir) both
+/// opens failed and `gate`/`memory` were silently dropped from the registry —
+/// `pii graph lint` then reported a false `V0: unknown kind 'memory'` for
+/// graphs that are actually fine. They are now placed under `runtime_dir`
+/// (the same directory the caller's real store/config already lives in),
+/// which is always a real, writable path in this process, not a literal
+/// string that only exists in this checkout.
 #[must_use]
 pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();

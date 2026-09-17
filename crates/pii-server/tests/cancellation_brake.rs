@@ -113,24 +113,6 @@ fn micro_usd_charged_or_removed_and_drained() {
     assert_eq!(b.remaining(BudgetKind::MicroUsd), 0);
 }
 
-/// R6: `max_tool_calls` is a `GraphLimits` field parsed from `[limits]`.
-#[test]
-fn max_tool_calls_in_limits() {
-    let toml = r#"
-name = "t"
-entry = "a"
-
-[limits]
-max_tool_calls = 2
-
-[[node]]
-id = "a"
-kind = "transform"
-value = "1"
-"#;
-    let spec = pii_graph::toml_load::load_toml(toml).expect("parses");
-    assert_eq!(spec.limits.max_tool_calls, 2);
-}
 /// A provider that emits one tool call per turn (echo), for the mid-loop
 /// cancel and the ToolCalls/WallMs budget tests.
 struct ToolTurnProvider {

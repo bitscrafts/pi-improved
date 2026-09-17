@@ -18,9 +18,9 @@ pub use cap::CapKind;
 pub use effects::Effects;
 pub use error::PiiError;
 #[rustfmt::skip]
-pub use failover::{classify, FailoverReason, Origin, Recovery};
+pub use failover::{classify, classify_provider, FailoverReason, Origin, ProviderFailure, Recovery};
 pub use failover::ALL;
 pub use http::{HttpMethod, HttpRequest, HttpResponse};
 pub use ids::{NodeId, PortName, RunId};
 pub use journal::{RunEvent, RunHeader, RunStatus, Terminal};
-pub use node::{NodeInput, NodeMeta, Outcome, ResumeKey, SuspendReason};
+pub use node::{FailurePayload, NodeInput, NodeMeta, Outcome, ResumeKey, SuspendReason};

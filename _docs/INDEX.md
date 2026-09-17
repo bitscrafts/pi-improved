@@ -70,4 +70,4 @@ messaging gateway with one performant, local-first, modular system.
 - [x] Repos cloned (5/5)
 - [x] Claude Code (opus) architecture research complete
 - [x] SSOT docs written
-- [ ] Implementation started
+- [x] Implementation started (`crates/` — 18 crates, 35k+ src lines, 40+ specs landed as of 2026-09-16)

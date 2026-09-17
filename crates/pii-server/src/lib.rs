@@ -23,6 +23,11 @@ pub mod uds;
 
 pub use registry::{lint_registry, registry};
 
+/// Default cap on `session_runs` entries retained per session (D3/D6, 026
+/// report 5.0.4) when a caller does not set `EngineConfig.session_runs_cap`
+/// from config explicitly.
+pub const DEFAULT_SESSION_RUNS_CAP: usize = 256;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -54,6 +59,15 @@ pub struct EngineConfig {
     pub graph_dir: PathBuf,
     /// `[evolve.routing]` step -> model policy (spec 28). Empty = no routing.
     pub route_policy: BTreeMap<String, String>,
+    /// Max runs retained per session in the in-memory `session_runs` index
+    /// (D3/D6, 026 report 5.0.4 config key) — oldest run ids are evicted
+    /// (LRU by insertion order) once a session's run list exceeds this so
+    /// a long-lived session cannot grow the index unboundedly. Config key:
+    /// `[core].session_runs_cap` (`daemon/config.rs`); callers outside the
+    /// daemon (tests, `pii -p`, `pii tui`) pass
+    /// [`DEFAULT_SESSION_RUNS_CAP`] explicitly since `EngineConfig`
+    /// deliberately has no `Default`.
+    pub session_runs_cap: usize,
 }
 
 /// An executing or completed run.
@@ -114,6 +128,13 @@ pub struct Engine {
     /// Set once by `pii daemon` (F5.1): `None` for a bare `Engine` (oneshot,
     /// tui, tests), `Some` once the daemon has built its runtime context.
     daemon_ctx: parking_lot::Mutex<Option<Arc<daemon::status::DaemonContext>>>,
+    /// Observer for events raised outside a run's own `Ctx` (D3/D6, 026
+    /// report 5.0.4) — currently just session-persist failures. `None`
+    /// (the default) means [`NullObserver`][pii_core::NullObserver];
+    /// [`Engine::attach_observer`] lets a daemon or test wire a real one
+    /// without threading it through every constructor (same pattern as
+    /// [`Engine::attach_daemon_ctx`]).
+    obs: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
 }
 
 /// A conversation session.
@@ -226,6 +247,7 @@ impl Engine {
             spawn_handle: Arc::clone(&spawn_engine),
             session_runs: parking_lot::Mutex::new(BTreeMap::new()),
             daemon_ctx: parking_lot::Mutex::new(None),
+            obs: parking_lot::Mutex::new(None),
         }))
     }
 
@@ -241,6 +263,25 @@ impl Engine {
     /// startup after the engine is already `Arc`-shared.
     pub fn attach_daemon_ctx(&self, ctx: Arc<daemon::status::DaemonContext>) {
         *self.daemon_ctx.lock() = Some(ctx);
+    }
+
+    /// Attaches an observer for events raised outside a run's own `Ctx`
+    /// (D3/D6, 026 report 5.0.4) — e.g. so `session.persist` failures reach
+    /// the same observer a daemon wires up for everything else. Optional:
+    /// a bare `Engine` (tests, oneshot) that never calls this gets
+    /// [`pii_core::NullObserver`] semantics from [`Engine::observer`].
+    pub fn attach_observer(&self, obs: Arc<dyn pii_core::Observer>) {
+        *self.obs.lock() = Some(obs);
+    }
+
+    /// The engine's out-of-band observer (D3/D6): the one attached via
+    /// [`Engine::attach_observer`], or a fresh [`pii_core::NullObserver`]
+    /// when none was ever attached.
+    fn observer(&self) -> Arc<dyn pii_core::Observer> {
+        self.obs
+            .lock()
+            .clone()
+            .unwrap_or_else(|| Arc::new(pii_core::NullObserver))
     }
 
     /// The daemon's runtime context, when this engine is running under
@@ -343,6 +384,7 @@ impl Engine {
             .entry(session_id.to_owned())
             .or_default()
             .push(run_id.to_string());
+        self.trim_session_runs(session_id);
         // P4.2 (spec 16): persist the run_id/status transition so the session
         // reflects the running run after a restart too.
         self.persist_session(session_id);

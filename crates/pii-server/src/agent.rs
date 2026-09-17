@@ -95,6 +95,29 @@ fn resolve_model(
     )
 }
 
+/// A2/A3 seam: `PiiError::Provider` is classified and routed to the
+/// `fail` port; every other error kind keeps the pre-A3 `err` port shape
+/// (`{"error": <Display>}`) — this function narrows, it does not widen,
+/// what counts as a routable failure.
+fn route_provider_failure(e: &PiiError) -> Outcome {
+    if let PiiError::Provider(pf) = e {
+        let reason = pii_abi::classify_provider(pf);
+        return Outcome::Next {
+            port: PortName::from("fail"),
+            value: serde_json::to_value(pii_abi::FailurePayload {
+                status: pf.status,
+                reason,
+                provider: pf.provider.clone(),
+            })
+            .unwrap_or_else(|_| serde_json::json!({ "error": e.to_string() })),
+        };
+    }
+    Outcome::Next {
+        port: PortName::from("err"),
+        value: serde_json::json!({ "error": e.to_string() }),
+    }
+}
+
 impl pii_graph::node::NodeFactory for AgentFactory {
     fn kind(&self) -> &'static str {
         "agent"
@@ -113,6 +136,7 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             PortName::from("ok"),
             PortName::from("err"),
             PortName::from("budget"),
+            PortName::from("fail"),
         ])
     }
 
@@ -238,9 +262,12 @@ impl GraphNode for AgentNode {
                 temperature: 0.0,
                 num_ctx: 0,
             };
-            // A retryable provider error is retried once (F2.10), then the
-            // node fails on `err`. A non-retryable error propagates as a node
-            // failure (run failure), not a routable `err`.
+            // A retryable provider error is retried once (F2.10), then
+            // routed; a non-retryable error is routed directly (not retried).
+            // Either way `route_provider_failure` classifies a
+            // `PiiError::Provider` to the `fail` port and keeps every other
+            // error kind on the `err` port — no harder `Err` for a provider
+            // call (spec 40, A3).
             // R3 (spec 15): stream assistant text deltas to the live bus as
             // the provider hands them over; the accumulated response drives
             // the loop exactly as the buffered path did (G7: chat unchanged).
@@ -262,14 +289,9 @@ impl GraphNode for AgentNode {
                 Ok(r) => r,
                 Err(e) if e.is_retryable() => match self.provider.chat(ctx, &req) {
                     Ok(r) => r,
-                    Err(e2) => {
-                        return Ok(Outcome::Next {
-                            port: PortName::from("err"),
-                            value: serde_json::json!({ "error": e2.to_string() }),
-                        });
-                    }
+                    Err(e2) => return Ok(route_provider_failure(&e2)),
                 },
-                Err(e) => return Err(e),
+                Err(e) => return Ok(route_provider_failure(&e)),
             };
             // B6 (opus review): charge the run's token budget for the model
             // call that just happened. A graph's declared `max_tokens`
@@ -577,9 +599,12 @@ mod tests {
     use parking_lot::Mutex;
     use std::sync::Arc;
 
-    use pii_abi::NodeInput;
+    use pii_abi::{
+        FailoverReason, FailurePayload, NodeInput, Origin, Outcome, PiiError, PortName,
+        ProviderFailure,
+    };
     use pii_core::{Budget, CapSet, Ctx};
-    use pii_graph::node::GraphNode;
+    use pii_graph::node::{GraphNode, NodeFactory as _};
     use pii_model::{ChatRequest, Role};
 
     use super::{AgentNode, ModelProvider};
@@ -598,11 +623,7 @@ mod tests {
             "recording"
         }
 
-        fn chat(
-            &self,
-            _ctx: &Ctx,
-            req: &ChatRequest,
-        ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+        fn chat(&self, _ctx: &Ctx, req: &ChatRequest) -> Result<pii_model::ChatResponse, PiiError> {
             self.seen.lock().push(req.clone());
             Ok(pii_model::ChatResponse {
                 text: String::from("ok"),
@@ -631,6 +652,173 @@ mod tests {
 
     fn test_ctx() -> Ctx {
         Ctx::root(CapSet::empty(), Budget::unlimited())
+    }
+
+    /// R1 (spec 40): the agent factory advertises the `fail` port after
+    /// `ok`/`err`/`budget` (appended last, order-preserving for the existing
+    /// positional fixtures).
+    #[test]
+    fn agent_factory_ports_include_fail() {
+        let ports = super::AgentFactory {
+            provider: Arc::new(RecordingProvider {
+                seen: Mutex::new(Vec::new()),
+            }),
+            route_policy: std::collections::BTreeMap::new(),
+            workspace: std::path::PathBuf::from("."),
+            live: None,
+            memory: None,
+        }
+        .ports(&serde_json::json!({}))
+        .expect("ports");
+        let names: Vec<&str> = ports.iter().map(PortName::as_str).collect();
+        assert_eq!(
+            names,
+            vec!["ok", "err", "budget", "fail"],
+            "fail appended last, ok/err/budget order preserved"
+        );
+    }
+
+    /// A provider whose `chat` always returns a fixed error. The default
+    /// `chat_streaming` routes through `chat`, so both the streaming call and
+    /// (when retried) the plain call fail with the same error.
+    struct FailingProvider {
+        error: PiiError,
+    }
+
+    impl ModelProvider for FailingProvider {
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+
+        fn chat(
+            &self,
+            _ctx: &Ctx,
+            _req: &ChatRequest,
+        ) -> Result<pii_model::ChatResponse, PiiError> {
+            Err(self.error.clone())
+        }
+    }
+
+    fn fail_input() -> NodeInput {
+        NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::json!({ "prompt": "hi" }),
+            nodes: serde_json::Value::Null,
+        }
+    }
+
+    /// T3 (spec 40, the 026 acceptance test): a `PiiError::Provider`
+    /// classified `ContextOverflow` routes to the `fail` port carrying a
+    /// `FailurePayload`, not to `err` and not a hard node `Err`.
+    #[test]
+    fn provider_failure_with_context_overflow_routes_to_fail() {
+        let err = PiiError::Provider(ProviderFailure {
+            status: None,
+            origin: Origin::Provider,
+            provider: String::from("llamacpp"),
+            message: String::from("llamacpp: prompt too long"),
+        });
+        let node = AgentNode {
+            system: String::from("You are pii."),
+            route_step: None,
+            max_turns: 4,
+            model: None,
+            provider: Arc::new(FailingProvider { error: err }),
+            toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
+            workspace: std::path::PathBuf::from("."),
+            live: None,
+            compaction: super::Compaction::default(),
+            memory: None,
+        };
+        let outcome = node.run(&test_ctx(), &fail_input()).expect("run");
+        let Outcome::Next { port, value } = outcome else {
+            panic!("expected an outcome, got a termination");
+        };
+        assert_eq!(port.as_str(), "fail", "provider failure must route to fail");
+        let payload: FailurePayload =
+            serde_json::from_value(value).expect("fail payload deserializes");
+        assert_eq!(
+            payload,
+            FailurePayload {
+                status: None,
+                reason: FailoverReason::ContextOverflow,
+                provider: String::from("llamacpp"),
+            }
+        );
+    }
+
+    /// T4 (spec 40): a retryable provider failure (503 -> `ServerError` ->
+    /// `RetrySame`) whose retry also fails routes to `fail` after the retry
+    /// is exhausted — the retry-then-classify path, not just the
+    /// immediately-non-retryable one.
+    #[test]
+    fn provider_failure_5xx_routes_to_fail_after_retry_exhausted() {
+        let err = PiiError::Provider(ProviderFailure {
+            status: Some(503),
+            origin: Origin::Provider,
+            provider: String::from("ollama"),
+            message: String::from("upstream unavailable"),
+        });
+        assert!(err.is_retryable(), "503 must be retryable per spec-39");
+        let node = AgentNode {
+            system: String::from("You are pii."),
+            route_step: None,
+            max_turns: 4,
+            model: None,
+            provider: Arc::new(FailingProvider { error: err }),
+            toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
+            workspace: std::path::PathBuf::from("."),
+            live: None,
+            compaction: super::Compaction::default(),
+            memory: None,
+        };
+        let outcome = node.run(&test_ctx(), &fail_input()).expect("run");
+        let Outcome::Next { port, value } = outcome else {
+            panic!("expected an outcome, got a termination");
+        };
+        assert_eq!(
+            port.as_str(),
+            "fail",
+            "retry-exhausted provider goes to fail"
+        );
+        let payload: FailurePayload =
+            serde_json::from_value(value).expect("fail payload deserializes");
+        assert_eq!(
+            payload.reason,
+            FailoverReason::Overloaded,
+            "503 must classify to Overloaded (RetrySame) per spec-39"
+        );
+    }
+
+    /// T5 (spec 40, negative case): a non-`Provider` error still routes to
+    /// `err` with the pre-A3 free-form `{"error": <Display>}` shape — R3 must
+    /// not widen what counts as a `fail`.
+    #[test]
+    fn non_provider_error_still_routes_to_err() {
+        let node = AgentNode {
+            system: String::from("You are pii."),
+            route_step: None,
+            max_turns: 4,
+            model: None,
+            provider: Arc::new(FailingProvider {
+                error: PiiError::Invalid(String::from("bad request shape")),
+            }),
+            toolset: pii_tools::ToolSet::builtin(std::path::PathBuf::from(".")),
+            workspace: std::path::PathBuf::from("."),
+            live: None,
+            compaction: super::Compaction::default(),
+            memory: None,
+        };
+        let outcome = node.run(&test_ctx(), &fail_input()).expect("run");
+        let Outcome::Next { port, value } = outcome else {
+            panic!("expected an outcome, got a termination");
+        };
+        assert_eq!(port.as_str(), "err", "non-provider error stays on err");
+        assert_eq!(
+            value,
+            serde_json::json!({ "error": "invalid: bad request shape" }),
+            "err port keeps the free-form {{error: Display}} shape"
+        );
     }
 
     /// 2026-09-05 (session memory): `history` in the run's input payload
@@ -794,7 +982,7 @@ mod tests {
         let err = node
             .call_tool_bounded(&test_ctx(), &call)
             .expect_err("memory_put must be denied without MEMORY_WRITE");
-        assert!(matches!(err, pii_abi::PiiError::Denied(_)), "{err:?}");
+        assert!(matches!(err, PiiError::Denied(_)), "{err:?}");
     }
 
     /// R4 (spec 14): a tool whose `call()` exceeds its declared `timeout()`
@@ -824,7 +1012,7 @@ mod tests {
                 &self,
                 _ctx: &Ctx,
                 _args: &serde_json::Value,
-            ) -> Result<serde_json::Value, pii_abi::PiiError> {
+            ) -> Result<serde_json::Value, PiiError> {
                 std::thread::sleep(Duration::from_secs(5));
                 Ok(serde_json::json!({}))
             }
@@ -844,10 +1032,7 @@ mod tests {
         let err = node
             .call_tool_bounded(&test_ctx(), &call)
             .expect_err("slow tool must time out");
-        assert!(
-            matches!(err, pii_abi::PiiError::Timeout { .. }),
-            "got {err:?}"
-        );
+        assert!(matches!(err, PiiError::Timeout { .. }), "got {err:?}");
         assert!(started.elapsed() < Duration::from_secs(2), "must not hang");
     }
 
@@ -868,7 +1053,7 @@ mod tests {
                 &self,
                 _ctx: &Ctx,
                 _req: &ChatRequest,
-            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+            ) -> Result<pii_model::ChatResponse, PiiError> {
                 Ok(pii_model::ChatResponse {
                     text: String::from("Hello"),
                     tool_calls: Vec::new(),
@@ -882,7 +1067,7 @@ mod tests {
                 _ctx: &Ctx,
                 _req: &ChatRequest,
                 on_delta: &mut dyn FnMut(&str),
-            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+            ) -> Result<pii_model::ChatResponse, PiiError> {
                 on_delta("Hel");
                 on_delta("lo");
                 Ok(pii_model::ChatResponse {
@@ -948,7 +1133,7 @@ mod tests {
                 &self,
                 _ctx: &Ctx,
                 _req: &ChatRequest,
-            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+            ) -> Result<pii_model::ChatResponse, PiiError> {
                 Ok(pii_model::ChatResponse {
                     text: String::from("x"),
                     tool_calls: Vec::new(),
@@ -962,7 +1147,7 @@ mod tests {
                 _ctx: &Ctx,
                 _req: &ChatRequest,
                 on_delta: &mut dyn FnMut(&str),
-            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+            ) -> Result<pii_model::ChatResponse, PiiError> {
                 on_delta("x");
                 Ok(pii_model::ChatResponse {
                     text: String::from("x"),
@@ -1094,7 +1279,7 @@ mod tests {
                 &self,
                 _ctx: &Ctx,
                 _req: &ChatRequest,
-            ) -> Result<pii_model::ChatResponse, pii_abi::PiiError> {
+            ) -> Result<pii_model::ChatResponse, PiiError> {
                 Ok(pii_model::ChatResponse {
                     text: String::from("Sure.\nMEMORIZE: user prefers dark mode"),
                     tool_calls: Vec::new(),
@@ -1126,7 +1311,7 @@ mod tests {
             nodes: serde_json::Value::Null,
         };
         let outcome = node.run(&test_ctx(), &input).expect("run");
-        let pii_abi::Outcome::Next { value, .. } = outcome else {
+        let Outcome::Next { value, .. } = outcome else {
             panic!("expected ok port");
         };
         let text = value

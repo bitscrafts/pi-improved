@@ -1,6 +1,15 @@
 # Pii — Feature-Gating Subsystems (how to make the monolith compilable-down)
 
-**Date**: 2026-09-08 · **Author**: orchestrator · **Status**: DESIGN NOTE — pattern for optional subsystems
+**Date**: 2026-09-08 (design) · 2026-09-16 (status column added, F-07) ·
+**Author**: orchestrator · **Status**: DESIGN NOTE — pattern for optional subsystems
+
+## Current reality (2026-09-16)
+
+**None of the features below are implemented.** The only Cargo features that
+actually exist in the workspace today are `pii-net/testing`, `pii-proto/client`,
+and `pii-server/testkit` (all test-only, not the surfaces this doc discusses).
+Every subsystem in the table is compiled in unconditionally. This doc remains
+the target design; do not read the "Status" column as "done."
 
 ## Why this exists
 

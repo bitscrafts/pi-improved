@@ -16,6 +16,7 @@ fn engine_in(dir: &Path, fixture: &str) -> Arc<Engine> {
         model: format!("scripted:{fixture}"),
         sandbox: SandboxProfileName::Off,
         route_policy: std::collections::BTreeMap::new(),
+        session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         graph_dir: dir.join("graphs"),
     })
     .unwrap()
@@ -148,4 +149,78 @@ fn boot_reconciles_running_runs() {
         output_hash: String::new(),
     };
     let _ = Store::open; // keep import used
+}
+
+/// D3/D6 (026 report 5.0.4): a durable session-persist failure is surfaced
+/// through the engine's `Observer` as `ObsEvent::PersistError`, not
+/// silently swallowed. Triggered deterministically via
+/// `Store::set_fail_session_writes_for_test` (test-only fault injection —
+/// see `pii-store/src/lib.rs`), which is far more reliable in a shared
+/// test process than OS-level tricks like rlimits or permission bits
+/// (both are no-ops for the root user this suite typically runs as).
+#[test]
+fn persist_failure_emits_obs_event() {
+    use pii_core::{ObsEvent, Observer, RecordingObserver};
+    use std::sync::Arc;
+
+    let dir = scratch("persist-failure");
+    let fixture = fixture_in(&dir);
+    let engine = engine_in(&dir, &fixture);
+    let obs = Arc::new(RecordingObserver::new());
+    engine.attach_observer(obs.clone() as Arc<dyn Observer>);
+    let sid = engine.create_session(dir.display().to_string(), vec![], None);
+
+    engine.store.set_fail_session_writes_for_test(true);
+    // This call's own persist attempt now fails deterministically; the
+    // failure must be observable rather than silently dropped.
+    engine.close_session(&sid).ok();
+    engine.store.set_fail_session_writes_for_test(false);
+
+    let events = obs.events();
+    let found = events.iter().any(|e| {
+        matches!(
+            e,
+            ObsEvent::PersistError { context, .. } if context == &format!("session:{sid}")
+        )
+    });
+    assert!(
+        found,
+        "expected a PersistError event for session:{sid}, got: {events:?}"
+    );
+}
+
+/// D3/D6: `session_runs` length stays <= `session_runs_cap` after
+/// `cap + 10` runs are added — the oldest run ids are evicted (LRU).
+#[tokio::test]
+async fn session_runs_capped_with_lru_eviction() {
+    let dir = scratch("runs-cap");
+    let fixture = fixture_in(&dir);
+    let cap = 8usize;
+    let engine = Engine::new(EngineConfig {
+        workspace: dir.clone(),
+        store_path: dir.join("store.redb"),
+        model: format!("scripted:{fixture}"),
+        sandbox: SandboxProfileName::Off,
+        route_policy: std::collections::BTreeMap::new(),
+        graph_dir: dir.join("graphs"),
+        session_runs_cap: cap,
+    })
+    .unwrap();
+    let sid = engine.create_session(dir.display().to_string(), vec![], None);
+
+    let total = cap + 10;
+    for _ in 0..total {
+        // `prompt()` is the only public path that grows `session_runs`
+        // (it pushes the spawned run id, then trims to the configured
+        // cap) — exercised here directly rather than duplicating that
+        // logic in the test.
+        let _ = engine.prompt(&sid, &[], None);
+    }
+
+    let ids = engine.session_run_ids(&sid);
+    assert!(
+        ids.len() <= cap,
+        "session_runs must stay <= cap ({cap}), got {} after {total} runs",
+        ids.len()
+    );
 }

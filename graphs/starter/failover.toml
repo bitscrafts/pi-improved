@@ -1,0 +1,181 @@
+# Spec-41 (Phase 5.1 Track A4): failover ladder — two sequential model
+# nodes, each retried on a transient failure and advanced to the next
+# provider on anything else. `compress`/`exhausted` are deliberate dead
+# ends: `Compress` reasons are not fixed by retrying or switching provider
+# (the payload is still too large), and a `secondary` exhaustion means the
+# chain has nothing left to try (`crates/pii-abi/src/failover.rs`).
+name = "starter/failover"
+entry = "primary"
+caps = ["fs_read", "fs_write", "proc"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 600000
+max_tokens = 20000
+
+# --- primary: first model in the chain ---
+[[node]]
+id = "primary"
+kind = "agent"
+# `loop_budget = 3`, not 2: the scheduler's re-entry accounting
+# (`crates/pii-graph/src/sched/state.rs`) makes a budgeted node's Nth
+# execution unconditionally terminal, regardless of the port it takes on
+# that Nth run — so `loop_budget = N` allows only `N - 1` executions whose
+# outcome (ok/fail) actually matters. One real retry attempt that can
+# SUCCEED therefore needs budget 3: attempt 1 (may fail), attempt 2 (the
+# retry — may succeed and proceed to `done`), with budget 3 never reached
+# in the success case (a runaway-loop governor, not a third attempt).
+loop_budget = 3
+system = "You are pii."
+
+[[node]]
+id = "route_failure"
+kind = "route"
+on = "$.payload.reason"
+rules = [
+  { eq = "rate_limit", port = "retry" },
+  { eq = "overloaded", port = "retry" },
+  { eq = "server_error", port = "retry" },
+  { eq = "timeout", port = "retry" },
+  { eq = "context_overflow", port = "compress" },
+  { eq = "payload_too_large", port = "compress" },
+  { port = "secondary" },
+]
+
+# Retry back-edge: the same shape as heal-fix.toml's `retry` node — carries
+# the failure payload back to `primary`, which has a `loop_budget` bounding
+# the cycle (one retry attempt before falling through).
+[[node]]
+id = "retry_primary"
+kind = "transform"
+expr = "$.payload"
+
+# `Compress` never advances the chain (R3) — a deliberate dead end. Wiring
+# this into `AgentNode`'s existing compaction mechanism is a follow-on, not
+# this spec.
+[[node]]
+id = "compress"
+kind = "transform"
+expr = "$.payload"
+
+# --- secondary: second and last model in the chain ---
+# No `loop_budget`/retry back-edge here (unlike `primary`): `secondary` is
+# entered exactly once, from `route_failure`'s fallback port. A node that
+# is not the graph's `entry` gets no readiness bypass on its first pass, so
+# a second inbound edge purely for a self-loop retry would leave `secondary`
+# permanently unresolvable whenever that edge is Dead (the common case where
+# `primary` never fails at all) — a real scheduler deadlock, not a policy
+# choice. `route_failure_2`'s retry rule below therefore ends the chain the
+# same way `compress` does, rather than looping back into `secondary`.
+[[node]]
+id = "secondary"
+kind = "agent"
+system = "You are pii, a backup model."
+
+[[node]]
+id = "route_failure_2"
+kind = "route"
+on = "$.payload.reason"
+rules = [
+  { eq = "rate_limit", port = "retry" },
+  { eq = "overloaded", port = "retry" },
+  { eq = "server_error", port = "retry" },
+  { eq = "timeout", port = "retry" },
+  { eq = "context_overflow", port = "compress" },
+  { eq = "payload_too_large", port = "compress" },
+  { port = "exhausted" },
+]
+
+# A `RetrySame` failure on `secondary` also ends the chain (see the note on
+# `secondary` above for why a real retry loop back to `secondary` cannot be
+# scheduled without deadlocking whenever `secondary`'s subtree is never
+# entered) — a dead end, same shape as `compress`.
+[[node]]
+id = "retry_secondary"
+kind = "transform"
+expr = "$.payload"
+
+# Same dead-end shape as `compress` above (secondary's own Compress case).
+[[node]]
+id = "compress_secondary"
+kind = "transform"
+expr = "$.payload"
+
+# Terminal: the chain has nothing left to try (secondary's own NextProvider
+# fallback with no third model). A dead end, same as `compress`.
+[[node]]
+id = "exhausted"
+kind = "transform"
+expr = "$.payload"
+
+[[node]]
+id = "done"
+kind = "transform"
+join = "any"
+value = "done"
+
+[[edge]]
+from = "primary"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "primary"
+port = "fail"
+to = "route_failure"
+kind = "data"
+
+[[edge]]
+from = "route_failure"
+port = "retry"
+to = "retry_primary"
+kind = "data"
+
+[[edge]]
+from = "retry_primary"
+port = "ok"
+to = "primary"
+kind = "data"
+
+[[edge]]
+from = "route_failure"
+port = "compress"
+to = "compress"
+kind = "data"
+
+[[edge]]
+from = "route_failure"
+port = "secondary"
+to = "secondary"
+kind = "data"
+
+[[edge]]
+from = "secondary"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "secondary"
+port = "fail"
+to = "route_failure_2"
+kind = "data"
+
+[[edge]]
+from = "route_failure_2"
+port = "retry"
+to = "retry_secondary"
+kind = "data"
+
+[[edge]]
+from = "route_failure_2"
+port = "compress"
+to = "compress_secondary"
+kind = "data"
+
+[[edge]]
+from = "route_failure_2"
+port = "exhausted"
+to = "exhausted"
+kind = "data"

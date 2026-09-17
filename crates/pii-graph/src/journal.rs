@@ -50,6 +50,12 @@ struct JournalState {
     last_seq: u64,
     /// Events buffered but not yet flushed to the store (write-behind).
     pending: Vec<RunEvent>,
+    /// True when `header` has fields changed (`status`/`dur_ms`) since the
+    /// last flush that `pending` alone would not capture — guards against
+    /// `flush`'s empty-pending fast path silently dropping a header-only
+    /// update (e.g. `set_status` called right after an `append` that itself
+    /// already flushed and drained `pending` at the batch/snapshot boundary).
+    header_dirty: bool,
 }
 
 /// Appends run events to the store in bounded write-behind batches, advancing
@@ -126,6 +132,7 @@ impl<'a> Journaler<'a> {
                 header,
                 last_seq,
                 pending: Vec::new(),
+                header_dirty: false,
             }),
             bb,
             batch: batch.max(1),
@@ -153,13 +160,16 @@ impl<'a> Journaler<'a> {
         {
             let mut st = self.state.lock();
             st.header.status = status;
+            st.header_dirty = true;
         }
         let _ = self.flush();
     }
 
     /// Records the total run duration on the header.
     pub fn set_dur_ms(&self, ms: u32) {
-        self.state.lock().header.dur_ms = ms;
+        let mut st = self.state.lock();
+        st.header.dur_ms = ms;
+        st.header_dirty = true;
     }
 
     /// Appends `event`: assigns the seq eagerly, notifies the observer
@@ -217,14 +227,18 @@ impl<'a> Journaler<'a> {
     /// Returns [`PiiError::Internal`] on a redb or serialisation failure.
     pub fn flush(&self) -> Result<u64, PiiError> {
         let mut st = self.state.lock();
-        if st.pending.is_empty() {
+        if st.pending.is_empty() && !st.header_dirty {
             return Ok(st.last_seq);
         }
         let events: Vec<RunEvent> = st.pending.drain(..).collect();
         let refs: Vec<&RunEvent> = events.iter().collect();
         // The drained clone is bounded by `batch` (write-behind threshold)
-        // or the pre-finish barrier — never the whole journal.
+        // or the pre-finish barrier — never the whole journal. `refs` may be
+        // empty here (a header-only flush, e.g. `set_status` after a prior
+        // `append` already drained `pending` at a batch/snapshot boundary);
+        // `append_events` still persists the header unconditionally.
         self.store.append_events(&mut st.header, &refs)?;
+        st.header_dirty = false;
         st.last_seq = st.header.seq.saturating_sub(1);
         Ok(st.last_seq)
     }

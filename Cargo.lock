@@ -1717,6 +1717,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "pii-http-fetch"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "pii-abi",
+ "pii-core",
+ "pii-model",
+ "pii-net",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "pii-mcp"
 version = "0.1.0"
 dependencies = [

@@ -59,7 +59,7 @@ fn ollama_provider_uses_transport() {
 }
 
 #[test]
-fn ollama_maps_5xx_to_unavailable() {
+fn ollama_maps_5xx_to_provider_failure() {
     // A scripted transport returning a queue of statuses — the FakeHttpServer
     // serves the first matching route for every call, so it cannot express
     // "503 then 429 then 400". pii-model tests use a fake transport (no
@@ -90,12 +90,12 @@ fn ollama_maps_5xx_to_unavailable() {
     let e2 = p.chat(&ctx(), &req()).unwrap_err();
     let e3 = p.chat(&ctx(), &req()).unwrap_err();
     assert!(
-        matches!(e1, PiiError::Unavailable(_)),
-        "503 → Unavailable: {e1:?}"
+        matches!(e1, PiiError::Provider(_)),
+        "503 → Provider: {e1:?}"
     );
     assert!(
-        matches!(e2, PiiError::Unavailable(_)),
-        "429 → Unavailable: {e2:?}"
+        matches!(e2, PiiError::Provider(_)),
+        "429 → Provider: {e2:?}"
     );
     assert!(
         e1.is_retryable() && e2.is_retryable(),

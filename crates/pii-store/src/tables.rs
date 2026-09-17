@@ -77,10 +77,29 @@ pub(crate) const HEAL_ATTEMPT: TableDefinition<'_, &str, &[u8]> =
 pub(crate) const CHANNEL_CURSOR: TableDefinition<'_, &str, &[u8]> =
     TableDefinition::new("channel_cursor");
 
-/// Session blobs: session id -> encoded session state (part 1 substrate).
+/// Session META blobs: session id -> encoded `{cwd,tools,graph,status,
+/// run_id}` (part 1 substrate; part 2/D3-D6 narrowed this to meta-only —
+/// the transcript lives in [`SESSION_MSG`] so a status/`run_id` change never
+/// re-serialises the growing message list).
 pub(crate) const SESSION: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("session");
 
 /// Cumulative `(input, output)` token counts per session — a separate table
 /// so token updates never deserialise the whole session blob.
 pub(crate) const SESSION_TOKENS: TableDefinition<'_, &str, (u64, u64)> =
     TableDefinition::new("session_tokens");
+
+/// Append-only session transcript `(session_id, seq)` -> encoded
+/// `WireMessage` (D3/D6, 026 report 5.0.4): one row per message, written
+/// exactly once. Replaces the pre-fix behaviour of re-serialising the
+/// WHOLE (monotonically growing) transcript on every turn, which made
+/// cumulative bytes written O(n^2) over a session's lifetime.
+pub(crate) const SESSION_MSG: TableDefinition<'_, (&str, u64), &[u8]> =
+    TableDefinition::new("session_msg");
+
+/// Periodic full-session snapshots `(session_id, seq)` -> encoded full
+/// `Session` bytes (D3/D6, 026 report 5.0.4), taken every
+/// `SESSION_SNAPSHOT_EVERY` appended messages so a restart/reseed replays
+/// only the [`SESSION_MSG`] tail after the latest snapshot instead of the
+/// session's entire history. Mirrors [`RUN_SNAPSHOT`]'s pattern.
+pub(crate) const SESSION_SNAPSHOT: TableDefinition<'_, (&str, u64), &[u8]> =
+    TableDefinition::new("session_snapshot");

@@ -246,7 +246,19 @@ spec — v1 is static-structure-only, no daemon dependency.
   human-escalation), `slow`/`soak`/`soak_cron` (stress), `consolidate`
   (memory maintenance), `crash` (known-bad debug graph).
 
-## 10. Status of adjacent work (as of 2026-09-06)
+## 10. Failover reason on the fail port
+
+The failover graph (`graphs/starter/failover.toml`, frozen A2–A4 work)
+routes a node's `fail` port to a fallback node (the `primary` path is the
+ok-port continuation). To make a failed run debuggable from the persisted
+journal, `pii graph trace <run_id> --node-status <id>` (A5, `--reason`) prints
+the byte-identical JSON payload of the latest `fail`-port event for that
+node: no failure ever emitted means `no-failure`, and a node that recovered
+on retry shows the latest (successful) event, so it also prints
+`no-failure`. The stored value is printed as-is, never reformatted, so a
+live session and the persisted trace stay byte-comparable.
+
+## 11. Status of adjacent work (as of 2026-09-06)
 
 - **Journal hardening** (specs/11-journal-hardening.md, committed
   `b60a763`, IN FLIGHT via pidag): batch journal appends (one redb

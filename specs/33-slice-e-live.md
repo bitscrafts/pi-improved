@@ -9,6 +9,16 @@
   paths) — that is the one ordering where getting it wrong lets a model delete
   the test that proves it worked.
 
+> **Amendment (planner, 2026-09-16, Phase 5.0.7 / F-03,F-04):** R5 and its
+> exit criterion below were edited to reflect ground truth —
+> `scripts/phase4.7/slice-e2e.sh` was never shipped, yet the spec was
+> committed DONE at `29625cf` with an unverifiable exit criterion pointing at
+> a nonexistent script (026 report F-04). This edit is adopted here as a
+> planner-authored change per AGENTS.md §"specs/ are READ-ONLY for the
+> workhorse" — the prior working-tree diff was factually correct but had no
+> owner (026 report F-03); it now does. No further edits to R1–R4 or the TDD
+> Contract were made.
+
 ## Verified Premises
 
 - `graphs/starter/heal-fix.toml` exists and is complete: `probe` (bash, runs
@@ -57,10 +67,13 @@ byte-identical before and after.
   `gate_before`/`gate_after`/`patch_hash`/`model`/`tokens_in`/`tokens_out`
   (all fields already exist, `crates/pii-store/src/heal.rs:66-116`) — today
   nothing populates them.
-- **R5 (e2e script)**: `scripts/phase4.7/slice-e2e.sh` drives
-  `heal-seed → boss-watch detect → spawn → heal-fix → approve → heal-collect →
-  heal-prune`, with the main tree byte-identical to HEAD before and after
-  (`git status --porcelain` empty apart from `_tmp/`).
+- **R5 (e2e behaviour, script NOT yet shipped)**: spec 33 landed with structural
+  reproduction/validation/ledger via the `slice_e_live.rs` test battery (R1–R4),
+  but the standalone driver `scripts/phase4.7/slice-e2e.sh` (seed → detect →
+  spawn → heal-fix → approve → collect → prune, main tree byte-identical to
+  HEAD before and after) **does not exist** — tracked as a known gap, not a
+  landed requirement. The e2e cycle it was to drive is only partially asserted
+  by the in-crate tests; a full tree-byte-identical cycle remains unproven.
 
 ### Non-Functional
 
@@ -98,7 +111,7 @@ Machine-checked (each >=1 test, non-vacuity `grep -qE "ok\\. [1-9]"`):
 - [ ] `cargo test -p pii-server heal_fix_ 2>&1 | grep -qE "test result: ok\. [1-9]"` — routed model + reproduction (R1, R2)
 - [ ] `cargo test -p pii-server still_broken_ 2>&1 | grep -qE "test result: ok\. [1-9]"` — loop-budget gate (R3)
 - [ ] `cargo test -p pii-server ledger_ 2>&1 | grep -qE "test result: ok\. [1-9]"` — ledger population (R4)
-- [ ] `bash scripts/phase4.7/slice-e2e.sh` — e2e cycle (R5)
+- [ ] `bash scripts/phase4.7/slice-e2e.sh` — e2e cycle (R5) — **NOT SHIPPED**: script absent; replace with the in-crate structural proof that landed: `cargo test -p pii-server --test slice_e_live 2>&1 | grep -qE "test result: ok\. [1-9]"` (R1–R4)
 - [ ] `cargo test --workspace` — 0 failures (N1)
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` — 0 errors (N1)
 - [ ] `cargo fmt --all --check` — clean (N1)
@@ -119,4 +132,4 @@ Machine-checked (each >=1 test, non-vacuity `grep -qE "ok\\. [1-9]"`):
 - `graphs/starter/heal-fix.toml` — `route_step = "patch"` on `fix` (R1).
 - `crates/pii-server/src/nodes/heal.rs` — ledger population (R4).
 - `crates/pii-server/tests/` — the TDD contract tests.
-- `scripts/phase4.7/slice-e2e.sh` — the e2e script (R5).
+- `scripts/phase4.7/slice-e2e.sh` — the e2e script (R5). **NOT YET SHIPPED** (does not exist; the R1–R4 structural proof lives in `crates/pii-server/tests/slice_e_live.rs`).

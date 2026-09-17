@@ -23,7 +23,7 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 use parking_lot::Mutex;
-use pii_abi::PiiError;
+use pii_abi::{Origin, PiiError, ProviderFailure};
 use pii_core::Ctx;
 
 use crate::llamacpp_tools::{build_schema_from_tools, parse_tool_calls};
@@ -31,6 +31,19 @@ use crate::{ChatMessage, ChatRequest, ChatResponse, ModelProvider, Role};
 
 /// Default context window when `PII_LLAMACPP_NUM_CTX` is unset.
 pub const DEFAULT_NUM_CTX: u32 = 4096;
+
+/// Builds the R5 context-overflow `ProviderFailure` (spec 39): the two
+/// `i32::try_from` guards in [`LlamaCppProvider::run`] share this constructor
+/// so the message text stays byte-identical to `classify`'s `CONTEXT`
+/// pattern (`"prompt too long"`).
+fn context_overflow() -> PiiError {
+    PiiError::Provider(ProviderFailure {
+        status: None,
+        origin: Origin::Provider,
+        provider: String::from("llamacpp"),
+        message: String::from("llamacpp: prompt too long"),
+    })
+}
 
 /// One in-process GGUF model provider.
 pub struct LlamaCppProvider {
@@ -98,8 +111,7 @@ impl LlamaCppProvider {
         let mut batch = LlamaBatch::new(tokens.len().max(1), 1);
         for (i, &tok) in tokens.iter().enumerate() {
             let is_last = i == tokens.len() - 1;
-            let pos = i32::try_from(i)
-                .map_err(|_| PiiError::Internal("llamacpp: prompt too long".into()))?;
+            let pos = i32::try_from(i).map_err(|_| context_overflow())?;
             batch
                 .add(tok, pos, &[0], is_last)
                 .map_err(|e| PiiError::Internal(format!("llamacpp: batch add: {e}")))?;
@@ -126,8 +138,7 @@ impl LlamaCppProvider {
         let mut sampler = sampler;
         let mut text = String::new();
         let mut tokens_out: u64 = 0;
-        let mut pos = i32::try_from(tokens.len())
-            .map_err(|_| PiiError::Internal("llamacpp: prompt too long".into()))?;
+        let mut pos = i32::try_from(tokens.len()).map_err(|_| context_overflow())?;
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         loop {
             // `LlamaSampler::sample` already accepts the token into every
@@ -320,6 +331,24 @@ mod tests {
         let p = build_prompt(&msgs);
         assert!(p.contains("<|start_of_role|>assistant<|end_of_role|>"));
         assert!(!p.contains("tool"), "no tool scaffolding in text path: {p}");
+    }
+
+    /// T9 (spec 39 R5): the shared context-overflow constructor produces a
+    /// `ProviderFailure` that `classify_provider` maps to `ContextOverflow`
+    /// via the `CONTEXT` pattern's literal `"prompt too long"` entry.
+    #[test]
+    fn llamacpp_context_overflow_constructs_provider_failure() {
+        use pii_abi::{FailoverReason, PiiError, classify_provider};
+
+        let err = super::context_overflow();
+        match err {
+            PiiError::Provider(f) => {
+                assert_eq!(f.status, None);
+                assert_eq!(f.provider, "llamacpp");
+                assert_eq!(classify_provider(&f), FailoverReason::ContextOverflow);
+            }
+            other => panic!("expected Provider, got {other:?}"),
+        }
     }
 
     /// Real-model acceptance (N4: `#[ignore]` — not run in CI). Loads the

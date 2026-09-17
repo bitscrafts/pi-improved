@@ -1,6 +1,15 @@
-# Pii — pii-mcp: MCP server + client (feature-gated crate)
+# Pii — pii-mcp: MCP server + client (separate, ungated binary)
 
-**Date**: 2026-09-08 · **Author**: orchestrator · **Status**: DESIGN NOTE — the mechanism for Hermes↔pii integration
+**Date**: 2026-09-08 (design) · 2026-09-16 (status corrected, F-08) ·
+**Author**: orchestrator · **Status**: DESIGN NOTE — the mechanism for Hermes↔pii integration
+
+## Current reality (2026-09-16)
+
+`pii-mcp` is an **unconditional workspace member** (`Cargo.toml:20`) — it
+builds a separate `pii-mcp` binary on every `cargo build --workspace`, not a
+feature-gated/opt-in one. The "feature-gated, default off" framing below was
+the design intent and has not been implemented; treat "feature-gated" in this
+doc as aspirational, not current.
 
 ## Why
 
