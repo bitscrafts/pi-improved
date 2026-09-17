@@ -90,9 +90,28 @@ committed `8b4b13d` (spec-55; covers `method.rs`/`run.rs`/`session.rs`/
 variant and a hand-written-JSON deserialization check for
 `ContentBlock`'s tagged-enum shape, catching classes of bug a plain
 round-trip wouldn't; `client.rs` deferred, needs a live UDS mock).
-Still open: the rest of F-19 (`pii-tools`, `pii-web`), and F-20 (crates
-with zero `tests/` dirs at all, beyond what specs 53/55 already
-closed).
+F-19 (`pii-tools` bash/fs/worktree) DONE, committed `d69f415` — the 3
+files with zero coverage now have inline `#[cfg(test)]` modules
+matching the crate's own convention; caught and fixed one real spec
+violation before committing (`worktree.rs`'s test fixtures used
+`std::process::Command` directly, tripping the workspace's
+disallowed-methods lint — scoped `#[allow(...)]` with a rationale
+comment on the two test-setup functions specifically). `pii-web` has
+thin (2 tests / 297 lines) but non-zero coverage — not pursued further
+tonight, genuinely lower priority than the zero-coverage crates that
+were actually closed.
+
+**F-20 status**: of the 8 crates originally lacking a `tests/`
+integration dir (`pii-abi`, `pii-channels`, `pii-cli`, `pii-core`,
+`pii-proto`, `pii-tools`, `pii-uds`, `pii-web`), all now have SOME
+direct test coverage (`pii-proto` via spec-55, `pii-tools` via
+spec-56; the other 6 already had inline `#[cfg(test)]` in most of
+their files per this session's earlier audit — `pii-abi` 6/9,
+`pii-channels` 1/3, `pii-cli` 3/13, `pii-core` 11/12, `pii-uds` 1/1,
+`pii-web` 1/1 files covered). Genuinely thin spots remain (`pii-cli`
+3/13, `pii-channels` 1/3) but F-20 as originally scoped ("crates with
+ZERO tests at all") is closed — every crate has real coverage now, not
+none.
 
 | Spec | Item | Status | Evidence |
 |---|---|---|---|
