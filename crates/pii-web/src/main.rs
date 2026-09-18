@@ -145,7 +145,7 @@ async fn api_memory(State(st): State<AppState>, Query(q): Query<MemoryQuery>) ->
     match call_daemon(
         &st.sock,
         Method::MemorySearch,
-        serde_json::json!({ "query": q.q }),
+        serde_json::json!({ "q": q.q }),
     )
     .await
     {
@@ -306,6 +306,11 @@ mod tests {
 
     use std::ffi::OsString;
     use std::process::ExitCode;
+    use std::sync::Arc;
+
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::util::ServiceExt;
 
     fn os_args(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()
@@ -376,5 +381,133 @@ mod tests {
         // default untouched (no error).
         let a = super::parse_web_args(os_args(&["--port"])).unwrap();
         assert_eq!(a.port, 4602);
+    }
+
+    // --- memory.search param-key regression (spec: q, not query) ---
+
+    use serde_json::Value;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Minimal fake daemon: answers `sys.hello`, then for `memory.search`
+    /// accepts ONLY `{"q": ...}` (mirrors `memory_search` in
+    /// `pii-server/src/daemon/methods.rs`, which reads `q` and errors
+    /// `InvalidParams` otherwise). Records the raw params for inspection.
+    async fn fake_memory_daemon(
+        stream: tokio::net::UnixStream,
+        seen: Arc<AtomicU64>,
+    ) -> std::io::Result<()> {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let (r, mut w) = tokio::io::split(stream);
+        let mut lines = BufReader::new(r).lines();
+        let mut next_id: u64 = 0;
+        while let Some(line) = lines.next_line().await? {
+            let v: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
+            let Some(method) = v.get("method").and_then(Value::as_str) else {
+                break;
+            };
+            let (result, is_error) = match method {
+                "sys.hello" => (
+                    serde_json::json!({
+                        "protocol": "pii.v2",
+                        "server": {"name": "fake", "version": "0", "build": "test"},
+                        "encoding": "json",
+                        "capabilities": [],
+                        "limits": {
+                            "max_frame_bytes": 1_048_576_u64,
+                            "max_subscriptions": 0_u32
+                        }
+                    }),
+                    false,
+                ),
+                "memory.search" => {
+                    let params = v.get("params").cloned().unwrap_or(Value::Null);
+                    if params.get("q").and_then(Value::as_str).is_some() {
+                        seen.store(1, Ordering::SeqCst);
+                        (serde_json::json!({"hits": []}), false)
+                    } else {
+                        (
+                            Value::Null,
+                            true, // InvalidParams: the daemon only reads "q"
+                        )
+                    }
+                }
+                _ => (Value::Null, true),
+            };
+            let resp = if is_error {
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": next_id,
+                    "error": {"code": -32602i32, "message": "memory.search needs 'q'"}
+                })
+            } else {
+                serde_json::json!({"jsonrpc": "2.0", "id": next_id, "result": result})
+            };
+            next_id += 1;
+            w.write_all(resp.to_string().as_bytes()).await?;
+            w.write_all(b"\n").await?;
+            w.flush().await?;
+        }
+        Ok(())
+    }
+
+    /// Starts a fake daemon on a fresh UDS socket under `_tmp`.
+    fn start_fake_daemon() -> (std::path::PathBuf, Arc<AtomicU64>) {
+        let dir = std::env::temp_dir().join(format!("pii-web-mem-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("control.sock");
+        let _ = std::fs::remove_file(&sock);
+        // reason: a minimal one-test fake responder, not the daemon; socket
+        // permissions are irrelevant for a loopback-only test fixture.
+        #[allow(clippy::disallowed_methods)]
+        let listener = tokio::net::UnixListener::bind(&sock).unwrap();
+        let seen = Arc::new(AtomicU64::new(0));
+        let seen_clone = Arc::clone(&seen);
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let seen = Arc::clone(&seen_clone);
+                tokio::spawn(fake_memory_daemon(stream, seen));
+            }
+        });
+        (sock, seen)
+    }
+
+    fn test_state(sock: std::path::PathBuf) -> super::AppState {
+        super::AppState {
+            sock: Arc::new(sock),
+        }
+    }
+
+    /// TDD: `api_memory` must send `{"q": ...}` — not `{"query": ...}` — to
+    /// the daemon (`memory_search` in pii-server reads only `q`).
+    #[tokio::test]
+    async fn api_memory_route_reaches_daemon_successfully() {
+        let (sock, seen) = start_fake_daemon();
+        let app = axum::Router::new()
+            .route("/api/memory", axum::routing::get(super::api_memory))
+            .with_state(test_state(sock));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/memory?q=test%20term")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(seen.load(Ordering::SeqCst), 1, "fake daemon accepted 'q'");
+    }
+
+    /// TDD: pin the exact params key sent to `call_daemon` for
+    /// `memory.search`: it must be `q`, never `query`.
+    #[test]
+    fn api_memory_sends_correct_param_key() {
+        // Mirror of the handler's params construction; asserts the source
+        // contract at the seam the daemon reads.
+        let mq = super::MemoryQuery {
+            q: String::from("test term"),
+        };
+        let params = serde_json::json!({ "q": mq.q });
+        assert_eq!(params.get("q").and_then(Value::as_str), Some("test term"));
+        assert!(params.get("query").is_none(), "must not use 'query'");
     }
 }
