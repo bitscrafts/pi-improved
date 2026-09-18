@@ -157,6 +157,62 @@ fn restart_completes_under_2s() {
 }
 
 #[test]
+fn respawn_honors_configured_backoff() {
+    let ctx = full_ctx();
+    let mut spec = worker_spec("wb", "a");
+    spec.restart_backoff_ms = 200;
+    let sup = Supervisor::new(spec);
+    sup.start(&ctx).unwrap();
+
+    kill9(sup.info().pid);
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let restarted = loop {
+        let evs = sup.events();
+        if let Some(WorkerEvent::Restarted { took_ms, .. }) = evs
+            .iter()
+            .find(|e| matches!(e, WorkerEvent::Restarted { .. }))
+        {
+            break Some(*took_ms);
+        }
+        if std::time::Instant::now() >= deadline {
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let took = restarted.expect("worker restarted within 5s");
+    assert!(took >= 200, "took_ms must include the backoff: {took}ms");
+}
+
+#[test]
+fn respawn_zero_backoff_does_not_sleep() {
+    let ctx = full_ctx();
+    let mut spec = worker_spec("wz", "a");
+    spec.restart_backoff_ms = 0;
+    let sup = Supervisor::new(spec);
+    sup.start(&ctx).unwrap();
+
+    kill9(sup.info().pid);
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let restarted = loop {
+        let evs = sup.events();
+        if let Some(WorkerEvent::Restarted { took_ms, .. }) = evs
+            .iter()
+            .find(|e| matches!(e, WorkerEvent::Restarted { .. }))
+        {
+            break Some(*took_ms);
+        }
+        if std::time::Instant::now() >= deadline {
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let took = restarted.expect("worker restarted within 5s");
+    assert!(took < 100, "zero backoff must not sleep: {took}ms");
+}
+
+#[test]
 fn restart_storm_is_capped() {
     let ctx = full_ctx();
     // A worker that crashes on every `crash` invoke; low restart cap.

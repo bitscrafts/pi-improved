@@ -276,13 +276,16 @@ impl Supervisor {
 /// Respawn after death (F3.5): hello → restart event → flush queue.
 #[allow(clippy::needless_pass_by_value)] // reason: `sup` is moved into the
 // respawn thread; it is not consumed here but must be owned by the thread.
-fn respawn(sup: Supervisor, _backoff_ms: u64) {
+fn respawn(sup: Supervisor, backoff_ms: u64) {
+    // t0 includes the backoff sleep: took_ms reports true wall-clock
+    // from death to ready, not just the post-sleep spawn time.
+    let t0 = Instant::now();
+    std::thread::sleep(Duration::from_millis(backoff_ms));
     let ctx = sup.inner.ctx.lock().clone();
     let Some(ctx) = ctx else {
         sup.inner.state.lock().state = WorkerState::Failed;
         return;
     };
-    let t0 = Instant::now();
     match sup.spawn_and_hello(&ctx) {
         Ok(()) => {
             let mut sh = sup.inner.state.lock();
