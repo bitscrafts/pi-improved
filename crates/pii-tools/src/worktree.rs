@@ -56,6 +56,7 @@ impl Tool for WorktreeTool {
             .get("signature")
             .and_then(Value::as_str)
             .ok_or_else(|| PiiError::Invalid("worktree requires 'signature' string".into()))?;
+        validate_signature(sig)?;
         let dir = self.workspace.join("_tmp").join("heal-worktrees");
         std::fs::create_dir_all(&dir)
             .map_err(|e| PiiError::Internal(format!("worktree mkdir: {e}")))?;
@@ -70,6 +71,11 @@ impl Tool for WorktreeTool {
             )));
         }
         let wt = dir.join(sig);
+        if !is_contained(&dir, &wt) {
+            return Err(PiiError::Invalid(format!(
+                "worktree: signature escapes heal-worktrees dir: {sig:?}"
+            )));
+        }
         if wt.exists() {
             return Err(PiiError::Invalid(format!(
                 "worktree: {sig} already provisioned at {}",
@@ -119,6 +125,36 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// A signature must be a lowercase-or-uppercase hex string of at least 8
+/// characters (blake3 hex prefixes). Anything else — path separators,
+/// absolute paths, non-hex characters — is rejected before it can reach
+/// `dir.join(sig)` or a branch name.
+fn validate_signature(sig: &str) -> Result<(), PiiError> {
+    const MIN_SIG_LEN: usize = 8;
+    if sig.len() < MIN_SIG_LEN {
+        return Err(PiiError::Invalid(format!(
+            "worktree: signature must be at least {MIN_SIG_LEN} hex chars, got {sig:?}"
+        )));
+    }
+    if !sig.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(PiiError::Invalid(format!(
+            "worktree: signature must be hex, got {sig:?}"
+        )));
+    }
+    Ok(())
+}
+
+/// Defensive containment check, independent of the signature regex: returns
+/// `false` unless `candidate` is a strict child of `dir`.
+fn is_contained(dir: &Path, candidate: &Path) -> bool {
+    candidate.strip_prefix(dir).is_ok_and(|rel| {
+        !rel.as_os_str().is_empty()
+            && !rel
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+    })
+}
+
 fn dir_size(dir: &Path) -> Result<u64, PiiError> {
     let mut total = 0u64;
     for entry in std::fs::read_dir(dir).map_err(|e| PiiError::Internal(e.to_string()))? {
@@ -144,7 +180,7 @@ mod tests {
         clippy::indexing_slicing
     )]
 
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use pii_abi::PiiError;
     use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx};
@@ -232,15 +268,15 @@ mod tests {
             workspace: canon.clone(),
         };
         let res = tool
-            .call(&ctx, &json!({"signature": "sig-add-test"}))
+            .call(&ctx, &json!({"signature": "a11add7e5f60"}))
             .expect("worktree add must succeed in a real repo");
         let wt = res["worktree"].as_str().unwrap();
-        assert!(wt.ends_with("_tmp/heal-worktrees/sig-add-test"), "got {wt}");
-        assert_eq!(res["branch"].as_str().unwrap(), "heal/sig-add-test");
+        assert!(wt.ends_with("_tmp/heal-worktrees/a11add7e5f60"), "got {wt}");
+        assert_eq!(res["branch"].as_str().unwrap(), "heal/a11add7e5f60");
         let base = res["base_commit"].as_str().unwrap();
         assert_eq!(base.len(), 40, "full hex sha expected, got {base}");
         // The worktree really exists on disk.
-        assert!(std::path::Path::new(wt).exists());
+        assert!(Path::new(wt).exists());
         cleanup_worktrees(&canon);
     }
 
@@ -252,10 +288,10 @@ mod tests {
         let tool = WorktreeTool {
             workspace: canon.clone(),
         };
-        tool.call(&ctx, &json!({"signature": "sig-dup"}))
+        tool.call(&ctx, &json!({"signature": "b0bd1c35"}))
             .expect("first provision must succeed");
         let err = tool
-            .call(&ctx, &json!({"signature": "sig-dup"}))
+            .call(&ctx, &json!({"signature": "b0bd1c35"}))
             .unwrap_err();
         assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
         cleanup_worktrees(&canon);
@@ -272,8 +308,106 @@ mod tests {
         let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
         let tool = WorktreeTool { workspace: canon };
         let err = tool
-            .call(&ctx, &json!({"signature": "sig-nocap"}))
+            .call(&ctx, &json!({"signature": "0ca47a55"}))
             .unwrap_err();
         assert!(matches!(err, PiiError::Denied(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn worktree_rejects_path_traversal_signature() {
+        let (_d, canon) = git_repo("wt-trav-");
+        cleanup_worktrees(&canon);
+        let ctx = proc_ctx();
+        let tool = WorktreeTool {
+            workspace: canon.clone(),
+        };
+        let err = tool
+            .call(&ctx, &json!({"signature": "../../../etc"}))
+            .unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
+        assert!(
+            !canon.join("etc").exists(),
+            "no directory may be created outside heal-worktrees/"
+        );
+        cleanup_worktrees(&canon);
+    }
+
+    #[test]
+    fn worktree_rejects_absolute_path_signature() {
+        let (_d, canon) = git_repo("wt-abs-");
+        cleanup_worktrees(&canon);
+        let ctx = proc_ctx();
+        let tool = WorktreeTool {
+            workspace: canon.clone(),
+        };
+        let err = tool
+            .call(&ctx, &json!({"signature": "/tmp/evil"}))
+            .unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
+        assert!(!PathBuf::from("/tmp/evil").exists(), "got {err:?}");
+        cleanup_worktrees(&canon);
+    }
+
+    #[test]
+    fn worktree_rejects_non_hex_signature() {
+        let (_d, canon) = git_repo("wt-nonhex-");
+        cleanup_worktrees(&canon);
+        let ctx = proc_ctx();
+        let tool = WorktreeTool {
+            workspace: canon.clone(),
+        };
+        let err = tool
+            .call(&ctx, &json!({"signature": "not-hex-chars!"}))
+            .unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
+        cleanup_worktrees(&canon);
+    }
+
+    #[test]
+    fn worktree_rejects_too_short_signature() {
+        let (_d, canon) = git_repo("wt-short-");
+        cleanup_worktrees(&canon);
+        let ctx = proc_ctx();
+        let tool = WorktreeTool {
+            workspace: canon.clone(),
+        };
+        let err = tool.call(&ctx, &json!({"signature": "abc"})).unwrap_err();
+        assert!(matches!(err, PiiError::Invalid(_)), "got {err:?}");
+        cleanup_worktrees(&canon);
+    }
+
+    #[test]
+    fn worktree_accepts_valid_hex_signature() {
+        let (_d, canon) = git_repo("wt-hex-");
+        cleanup_worktrees(&canon);
+        let ctx = proc_ctx();
+        let tool = WorktreeTool {
+            workspace: canon.clone(),
+        };
+        let res = tool
+            .call(&ctx, &json!({"signature": "a1b2c3d4e5f6"}))
+            .expect("valid hex signature must provision");
+        let wt = res["worktree"].as_str().unwrap();
+        assert!(wt.ends_with("_tmp/heal-worktrees/a1b2c3d4e5f6"), "got {wt}");
+        assert_eq!(res["branch"].as_str().unwrap(), "heal/a1b2c3d4e5f6");
+        assert!(Path::new(wt).exists());
+        cleanup_worktrees(&canon);
+    }
+
+    #[test]
+    fn worktree_containment_check_is_defensive() {
+        let dir = PathBuf::from("/tmp/containment-root");
+        // Direct children are contained.
+        assert!(super::is_contained(&dir, &dir.join("a1b2c3d4")));
+        // Escapes are not.
+        assert!(!super::is_contained(&dir, &dir.join("..").join("evil")));
+        assert!(!super::is_contained(&dir, Path::new("/tmp/evil")));
+        // The dir itself is not a child.
+        assert!(!super::is_contained(&dir, &dir));
+        // Prefix tricks do not fool strip_prefix.
+        assert!(!super::is_contained(
+            &dir,
+            &PathBuf::from("/tmp/containment-root-evil/x")
+        ));
     }
 }
