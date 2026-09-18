@@ -5,9 +5,24 @@ use pii_abi::PiiError;
 use redb::{ReadableDatabase, ReadableTable};
 
 use crate::mem::{MemStore, Posting};
-use crate::tables::{MEM_ARCHIVE, MEM_DF, MEM_DOC, MEM_EDGE, MEM_TERM, MEM_VEC};
+use crate::tables::{MEM_ARCHIVE, MEM_DF, MEM_DOC, MEM_EDGE, MEM_LAYER, MEM_TERM, MEM_VEC};
 
 impl MemStore {
+    /// Stored layer tag for one doc (`None` when absent or never written —
+    /// pre-existing docs carry no `mem_layer` row).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn layer(&self, id: &str) -> Result<Option<u8>, PiiError> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| PiiError::Internal(format!("memstore: begin_read: {e}")))?;
+        let table = read
+            .open_table(MEM_LAYER)
+            .map_err(|e| PiiError::Internal(format!("memstore: open mem_layer: {e}")))?;
+        Ok(table.get(id).ok().flatten().map(|v| v.value()))
+    }
     /// Postings for one term (F4.5): `(doc_id, tf)` in key order.
     ///
     /// # Errors

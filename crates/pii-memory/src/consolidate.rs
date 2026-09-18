@@ -156,8 +156,11 @@ fn concepts_of(text: &str) -> Vec<String> {
     crate::tokenize::tokenize(text).into_iter().collect()
 }
 
-fn layer_of(_store: &MemStore, _id: &str) -> u8 {
-    0
+fn layer_of(store: &MemStore, id: &str) -> u8 {
+    // Additive `mem_layer` table; docs written before the table existed
+    // carry no row and fall back to L1 (0) — identical to the previous
+    // stub behavior, so nothing regresses.
+    store.layer(id).ok().flatten().unwrap_or(0)
 }
 
 /// True when a negation token occurs within the window of any concept.

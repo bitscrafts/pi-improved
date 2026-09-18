@@ -203,6 +203,17 @@ pub fn write_fact(
         vector: vec,
         edges: concepts.into_iter().map(|c| (c, 1u64)).collect(),
         dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+        layer: layer_byte(doc.layer),
+    }
+}
+
+/// Layer tags for the additive `mem_layer` table (stable, 0-based).
+#[must_use]
+pub fn layer_byte(layer: Layer) -> u8 {
+    match layer {
+        Layer::L1 => 0,
+        Layer::L2 => 1,
+        Layer::L3 => 2,
     }
 }
 

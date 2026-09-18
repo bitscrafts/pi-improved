@@ -35,7 +35,13 @@ fn ctx_now(_ms: u64) -> Ctx {
 }
 
 fn put(store: &MemStore, text: &str) -> String {
-    let doc = Doc::new(Layer::L1, DocKind::Atom, text, vec![], 1.0, 0);
+    put_layer(store, text, Layer::L1)
+}
+
+/// Writes a doc on an explicit layer, returning its id. The layer tag is
+/// persisted in the additive `mem_layer` store table.
+fn put_layer(store: &MemStore, text: &str, layer: Layer) -> String {
+    let doc = Doc::new(layer, DocKind::Atom, text, vec![], 1.0, 0);
     let toks = tokenize(text);
     let mut terms = std::collections::BTreeMap::new();
     for t in &toks {
@@ -48,6 +54,7 @@ fn put(store: &MemStore, text: &str) -> String {
         vector: None,
         edges: Vec::new(),
         dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+        layer: pii_memory::doc::layer_byte(layer),
     };
     store.put(&rows).unwrap();
     doc.id
@@ -109,4 +116,56 @@ fn negation_veto_blocks_merge() {
     let clean = "sandbox probe enforce profile";
     assert!(pii_memory::consolidate::negated(veto, &shared));
     assert!(!pii_memory::consolidate::negated(clean, &shared));
+}
+
+#[test]
+fn layer_of_reads_real_layer_value() {
+    let store = MemStore::open(&tmp_root().join("phase3/cons-layer-read.redb")).unwrap();
+    let a = put_layer(&store, "atom fact one alpha beta", Layer::L1);
+    let b = put_layer(&store, "scene distill alpha gamma", Layer::L2);
+    let la = store.layer(&a).unwrap();
+    let lb = store.layer(&b).unwrap();
+    assert_eq!(la, Some(pii_memory::doc::layer_byte(Layer::L1)));
+    assert_eq!(lb, Some(pii_memory::doc::layer_byte(Layer::L2)));
+    assert_ne!(la, lb, "layer tags must differ, not both 0");
+}
+
+#[test]
+fn consolidate_same_layer_only_true_blocks_cross_layer_merge() {
+    let store =
+        std::sync::Arc::new(MemStore::open(&tmp_root().join("phase3/cons-guard.redb")).unwrap());
+    // Two docs with two shared concepts but on different layers.
+    let a = put_layer(&store, "sandbox probe enforce alpha beta", Layer::L1);
+    let b = put_layer(&store, "sandbox probe enforce alpha gamma", Layer::L2);
+    let mut c = cfg();
+    c.same_layer_only = true;
+    let report = consolidate(&store, &ctx_now(1_000), &c).unwrap();
+    for id in [&a, &b] {
+        assert!(
+            store.doc(id).unwrap().is_some(),
+            "cross-layer merge must NOT happen under same_layer_only=true: {report:?}"
+        );
+    }
+}
+
+#[test]
+fn consolidate_same_layer_only_false_still_merges_cross_layer() {
+    let store = std::sync::Arc::new(
+        MemStore::open(&tmp_root().join("phase3/cons-guard-off.redb")).unwrap(),
+    );
+    let a = put_layer(&store, "sandbox probe enforce alpha beta", Layer::L1);
+    let b = put_layer(&store, "sandbox probe enforce alpha gamma", Layer::L2);
+    let mut c = cfg();
+    c.same_layer_only = false;
+    let report = consolidate(&store, &ctx_now(1_000), &c).unwrap();
+    assert_eq!(report.merged, 1, "flag false merges regardless of layer");
+    let gone = if store.doc(&a).unwrap().is_some() {
+        b
+    } else {
+        a
+    };
+    assert!(
+        store.doc(&gone).unwrap().is_none() && store.archived(&gone).unwrap().is_some(),
+        "the loser is archived, never deleted"
+    );
 }

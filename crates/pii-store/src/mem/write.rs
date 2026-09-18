@@ -5,7 +5,7 @@ use pii_abi::PiiError;
 use redb::{ReadableDatabase, ReadableTable};
 
 use crate::mem::{MemStore, PutRows};
-use crate::tables::{MEM_DF, MEM_DOC, MEM_EDGE, MEM_TERM, MEM_VEC};
+use crate::tables::{MEM_DF, MEM_DOC, MEM_EDGE, MEM_LAYER, MEM_TERM, MEM_VEC};
 
 impl MemStore {
     /// Inserts one doc with all its index rows **in a single write txn**
@@ -58,6 +58,12 @@ impl MemStore {
                 edge.insert((concept.as_str(), rows.id.as_str()), cur + w)
                     .map_err(|e| PiiError::Internal(format!("memstore: put edge: {e}")))?;
             }
+            let mut layer = write
+                .open_table(MEM_LAYER)
+                .map_err(|e| PiiError::Internal(format!("memstore: open mem_layer: {e}")))?;
+            layer
+                .insert(rows.id.as_str(), rows.layer)
+                .map_err(|e| PiiError::Internal(format!("memstore: put layer: {e}")))?;
         }
         write
             .commit()

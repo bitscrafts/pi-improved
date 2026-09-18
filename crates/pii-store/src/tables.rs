@@ -62,6 +62,10 @@ pub(crate) const MEM_META: TableDefinition<'_, &str, u64> = TableDefinition::new
 pub(crate) const MEM_ARCHIVE: TableDefinition<'_, &str, &[u8]> =
     TableDefinition::new("mem_archive");
 
+/// Per-doc layer byte (additive, F4.12 `same_layer_only`): doc id -> layer
+/// tag. Absent for pre-existing docs; readers fall back to L1.
+pub(crate) const MEM_LAYER: TableDefinition<'_, &str, u8> = TableDefinition::new("mem_layer");
+
 /// Timer wheel `(fire_at_ms, run_id)` -> resume key (F5.5).
 pub(crate) const TIMER_WHEEL: TableDefinition<'_, (u64, &str), &str> =
     TableDefinition::new("timer_wheel");

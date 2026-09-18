@@ -37,6 +37,7 @@ fn put_rows(id: &str, dl: u32) -> PutRows {
         vector: None,
         edges: Vec::new(),
         dl,
+        layer: 0,
     }
 }
 

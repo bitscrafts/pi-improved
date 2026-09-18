@@ -46,6 +46,7 @@ fn put(store: &MemStore, text: &str) {
         vector: vec,
         edges: Vec::new(),
         dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+        layer: pii_memory::doc::layer_byte(doc.layer),
     };
     store.put(&rows).unwrap();
 }

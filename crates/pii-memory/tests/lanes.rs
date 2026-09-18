@@ -52,6 +52,7 @@ fn put(store: &MemStore, text: &str, kind: DocKind, created: u64) -> String {
         vector: vec,
         edges: Vec::new(),
         dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+        layer: pii_memory::doc::layer_byte(doc.layer),
     };
     store.put(&rows).unwrap();
     ret
@@ -214,6 +215,7 @@ fn graph_lane_recalls_doc_via_shared_concept() {
         vector: None,
         edges: vec![(concept.to_owned(), 5)],
         dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
+        layer: pii_memory::doc::layer_byte(doc.layer),
     };
     store.put(&rows).unwrap();
 

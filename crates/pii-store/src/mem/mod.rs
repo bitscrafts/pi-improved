@@ -41,6 +41,8 @@ pub struct PutRows {
     pub edges: Vec<(String, u64)>,
     /// Token count of the doc text (dl for BM25).
     pub dl: u32,
+    /// Layer tag stored in the additive `mem_layer` table (u8; 0 = L1).
+    pub layer: u8,
 }
 
 /// One posting row read back from `mem_term`.

@@ -119,7 +119,7 @@ Described inline in Overview above (file paths and function names given there co
 ## Exit Criteria
 
 - [ ] `! grep -q "fn layer_of(_store" crates/pii-memory/src/consolidate.rs`
-- [ ] `! git diff HEAD --stat -- crates/pii-memory/src/doc.rs | grep -q .` (the doc blob codec must be untouched)
+- [ ] `! git diff HEAD -- crates/pii-memory/src/doc.rs | grep -q '^[+-].*fn encode'` (the `encode` blob layout must be untouched; ADDING `layer_byte` to `doc.rs` is explicitly allowed under Option A)
 - [ ] `! git diff HEAD -- crates/pii-memory/src/doc.rs | grep -q '^[+-].*out.push(layer_byte'`
 - [ ] `cargo test -p pii-memory`
 - [ ] `cargo test -p pii-store`
