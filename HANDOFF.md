@@ -1,5 +1,11 @@
 # Pii — Session Handoff
 
+**Opus reviewer: start at `_docs/06-research/030-OPUS-START-HERE.md`,
+not this file** — it's a compact single-entry-point summary of the 4
+decisions actually being asked of you; this HANDOFF.md is the full
+detailed ledger, useful for auditing HOW a decision was reached, not
+for finding WHAT to decide.
+
 ## CURRENT STATE — 2026-09-17: Phase 5.0 COMPLETE + Phase 5.1 Track A COMPLETE + Phase 5.2 structural-debt/warn-band ratchet COMPLETE (F-13, F-14, all six F-12 warn-band files)
 
 Full history before the 2026-09-16 pin lives at
