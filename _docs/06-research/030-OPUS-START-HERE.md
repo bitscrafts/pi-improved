@@ -18,6 +18,46 @@ in the pidag repo itself. Repo hygiene: 18G of stale `_tmp/` scratch
 archived off-disk, hardcoded absolute paths and orphaned docs found and
 partially fixed (spec-61 queued for the rest).
 
+## USER-MANDATED (not optional): unify the DAG/graph format across pii and pidag
+
+**User (verbatim, 2026-09-18): "using the same dag format in both could
+be a must!"** This is stronger than the 4 decisions below — it's a
+stated requirement, not a design preference up for debate. Ground
+truth already gathered, in `/projects/pidag/docs/`:
+
+- `pii-vs-pidag-dag-format-notes.md` — internal comparison: pii uses
+  port-based graph routing (declarative pattern-match routes, not
+  arbitrary code — see pii's `graphs/starter/verify-fix.toml`,
+  `failover.toml`); pidag uses a flat DAG with `depends_on` +
+  `retry_attempts`/`retry_backoff_ms`. Neither is a strict superset of
+  the other today.
+- `sota-orchestrator-research-2026-09.md` — external validation:
+  Temporal's declarative retry taxonomy and Argo's exit handlers are
+  compatible with BOTH formats without contradicting pidag's own
+  static-graph thesis (`ARCHITECTURE.md`: "does not reason during the
+  run"); LangGraph's arbitrary-code conditional routing was explicitly
+  rejected as incompatible with that thesis — this sets a hard
+  constraint on what "unified" can mean: whatever shape is chosen must
+  stay declarative-only, no runtime-code routing in either project.
+
+**Opus is asked to decide the unification SHAPE**, not whether to do
+it: (a) pidag adopts pii's port-based routing wholesale, (b) pii
+adopts pidag's flatter model, (c) a new shared crate/schema both
+projects depend on, or (d) a translation layer (each keeps its native
+format, a converter maps between them for tooling/analysis purposes
+only). Option (c) is the only one that structurally prevents drift
+long-term; options (a)/(b) require a real migration in the losing
+project; option (d) is cheapest but doesn't satisfy "same format" as
+literally stated by the user.
+
+**Status**: spec-129 (a small, additive, non-retryable-error-
+classification field — NOT format unification, just the highest-
+confidence cross-format-compatible pattern from the research) is
+currently being implemented via a sonnet subagent as a first concrete
+step. It does not preempt or substitute for the unification decision —
+it was scoped deliberately small so it wouldn't need to wait on the
+bigger architectural call.
+
 ## The 4 decisions you're being asked to make
 
 Full grounding for each is in `_docs/06-research/029-...md` (linked
