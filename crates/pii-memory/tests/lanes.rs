@@ -18,8 +18,17 @@ use pii_memory::rrf::rrf;
 use pii_memory::search::MemorySearcher;
 use pii_memory::tokenize::tokenize;
 use pii_store::MemStore;
+use std::path::PathBuf;
 
-const DB: &str = "/projects/pi-improved/_tmp/phase3/lanes-test.redb";
+fn tmp_root() -> PathBuf {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(root.join("phase3")).expect("create crate-local _tmp/phase3");
+    root
+}
+
+fn db() -> PathBuf {
+    tmp_root().join("phase3/lanes-test.redb")
+}
 
 fn put(store: &MemStore, text: &str, kind: DocKind, created: u64) -> String {
     let mut doc = Doc::new(Layer::L1, kind, text, vec![], 1.0, created);
@@ -82,8 +91,8 @@ fn quantise_roundtrip_under_one_percent() {
 
 #[test]
 fn rrf_equals_bm25_when_lanes_disabled() {
-    let _ = std::fs::remove_file(DB);
-    let store = MemStore::open(std::path::Path::new(DB)).unwrap();
+    let _ = std::fs::remove_file(db());
+    let store = MemStore::open(db().as_path()).unwrap();
     let ids: Vec<String> = (0..10)
         .map(|i| {
             put(
@@ -108,9 +117,10 @@ fn rrf_equals_bm25_when_lanes_disabled() {
 
 #[test]
 fn degrades_honestly_without_embedder() {
-    let store = MemStore::open(std::path::Path::new(
-        "/projects/pi-improved/_tmp/phase3/lanes-degrade.redb",
-    ))
+    let store = MemStore::open(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase3/lanes-degrade.redb"
+    )))
     .unwrap();
     put(
         &store,
@@ -144,7 +154,7 @@ fn decay_orders_by_age_with_fixed_clock() {
 /// G1.4 (spec 09 v2): a search hit carries the doc TEXT, not just the id.
 #[test]
 fn memory_hit_carries_doc_text() {
-    let db = "/projects/pi-improved/_tmp/phase3/mem-hit-text.redb";
+    let db = concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/mem-hit-text.redb");
     let _ = std::fs::remove_file(db);
     let store = MemStore::open(std::path::Path::new(db)).unwrap();
     put(
@@ -174,7 +184,7 @@ fn memory_hit_carries_doc_text() {
 /// dormant — see the "when it fires" note on `graph_lane`.
 #[test]
 fn graph_lane_recalls_doc_via_shared_concept() {
-    let db = "/projects/pi-improved/_tmp/phase3/graph-lane.redb";
+    let db = concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/graph-lane.redb");
     let _ = std::fs::remove_file(db);
     let store = MemStore::open(std::path::Path::new(db)).unwrap();
 

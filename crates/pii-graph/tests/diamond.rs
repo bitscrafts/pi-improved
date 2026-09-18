@@ -26,7 +26,11 @@ use pii_graph::run;
 use pii_graph::toml_load::load_toml;
 use pii_store::Store;
 
-const TMP_ROOT: &str = "/projects/pi-improved/_tmp";
+fn tmp_root() -> PathBuf {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
+    root
+}
 
 fn ws_root() -> PathBuf {
     // Tests run from crates/pii-graph; examples live at the workspace root.
@@ -63,7 +67,7 @@ fn run_example_with_validate(name: &str, input: serde_json::Value, validate: boo
     let spec = load_example(name);
     let dir = tempfile::Builder::new()
         .prefix("diamond-test-")
-        .tempdir_in(TMP_ROOT)
+        .tempdir_in(tmp_root())
         .expect("tempdir under _tmp");
     let store = Store::open(&dir.path().join("db.redb")).expect("store open");
     let run_id = store.next_run_id().expect("run id");

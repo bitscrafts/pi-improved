@@ -602,7 +602,10 @@ fn agent_streaming_uses_session_from_input() {
 #[test]
 fn memory_injects_labeled_system_message_when_hits_exist() {
     use pii_store::MemStore;
-    let db = "/projects/pi-improved/_tmp/phase3/agent-mem-inject.redb";
+    let db = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase3/agent-mem-inject.redb"
+    );
     let _ = std::fs::remove_file(db);
     let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
     // Seed a doc matching the prompt.
@@ -643,7 +646,10 @@ fn memory_injects_labeled_system_message_when_hits_exist() {
 #[test]
 fn memory_injects_nothing_on_zero_hits() {
     use pii_store::MemStore;
-    let db = "/projects/pi-improved/_tmp/phase3/agent-mem-zero.redb";
+    let db = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase3/agent-mem-zero.redb"
+    );
     let _ = std::fs::remove_file(db);
     let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
     let provider = Arc::new(RecordingProvider {
@@ -696,7 +702,10 @@ fn memorize_marker_is_written_and_stripped() {
         }
     }
     use pii_store::MemStore;
-    let db = "/projects/pi-improved/_tmp/phase3/agent-mem-write.redb";
+    let db = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase3/agent-mem-write.redb"
+    );
     let _ = std::fs::remove_file(db);
     let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
     let node = AgentNode {

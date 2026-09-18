@@ -106,13 +106,19 @@ mod tests {
     use crate::{Engine, EngineConfig};
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/scheduler-test");
+        let dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/_tmp/phase3/scheduler-test"
+        ));
         let _ = std::fs::create_dir_all(dir);
         dir.join(format!("{name}-{}.redb", std::process::id()))
     }
 
     fn engine() -> Arc<Engine> {
-        let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/scheduler-test");
+        let dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/_tmp/phase3/scheduler-test"
+        ));
         let _ = std::fs::create_dir_all(dir);
         Engine::new(EngineConfig {
             workspace: dir.to_path_buf(),

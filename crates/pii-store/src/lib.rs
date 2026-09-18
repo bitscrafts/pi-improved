@@ -525,8 +525,9 @@ mod tests {
     use crate::Store;
 
     fn tmp_store(name: &str) -> Store {
-        // N8: all test artifacts live under /projects/pi-improved/_tmp.
-        let dir = std::path::Path::new("/projects/pi-improved/_tmp/pi-store-test").to_path_buf();
+        // N8: all test artifacts live under the crate-local `_tmp` (CARGO_MANIFEST_DIR-relative).
+        let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/pi-store-test"))
+            .to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("{}-{}.redb", name, std::process::id()));
         let _ = std::fs::remove_file(&path);

@@ -26,7 +26,11 @@ use pii_graph::run;
 use pii_graph::toml_load::load_toml;
 use pii_store::Store;
 
-const TMP_ROOT: &str = "/projects/pi-improved/_tmp";
+fn tmp_root() -> PathBuf {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
+    root
+}
 
 fn ws_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -49,8 +53,8 @@ fn load_crash_resume() -> pii_graph::GraphSpec {
 fn root_ctx(run: pii_abi::RunId) -> (Ctx, pii_core::CancelToken) {
     let caps = CapSet {
         kinds: CapKind::FS_READ | CapKind::FS_WRITE,
-        fs_write: PathScope::new(vec![PathBuf::from(TMP_ROOT)]),
-        fs_read: PathScope::new(vec![PathBuf::from(TMP_ROOT)]),
+        fs_write: PathScope::new(vec![tmp_root()]),
+        fs_read: PathScope::new(vec![tmp_root()]),
         ..CapSet::default()
     };
     let ctx = Ctx::with_observer(
@@ -68,7 +72,7 @@ fn resume_never_reinvokes_completed_node() {
     let spec = load_crash_resume();
     let dir = tempfile::Builder::new()
         .prefix("resume-test-")
-        .tempdir_in(TMP_ROOT)
+        .tempdir_in(tmp_root())
         .expect("tempdir under _tmp");
     let store = Arc::new(Store::open(&dir.path().join("db.redb")).expect("store open"));
     let run_id = store.next_run_id().expect("run id");
@@ -198,7 +202,7 @@ kind = "data"
 
     let dir = tempfile::Builder::new()
         .prefix("timer-fire-")
-        .tempdir_in(TMP_ROOT)
+        .tempdir_in(tmp_root())
         .expect("tempdir under _tmp");
     let store = Arc::new(Store::open(&dir.path().join("db.redb")).expect("store open"));
     let run_id = store.next_run_id().expect("run id");
@@ -278,7 +282,7 @@ kind = "data"
 
     let dir = tempfile::Builder::new()
         .prefix("timer-once-")
-        .tempdir_in(TMP_ROOT)
+        .tempdir_in(tmp_root())
         .expect("tempdir under _tmp");
     let store = Arc::new(Store::open(&dir.path().join("db.redb")).expect("store open"));
     let run_id = store.next_run_id().expect("run id");

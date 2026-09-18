@@ -9,9 +9,18 @@
 )]
 
 use pii_server::daemon::config::Config;
+use std::path::Path;
+
+fn ws_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .to_path_buf()
+}
 
 fn scratch(name: &str) -> std::path::PathBuf {
-    let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/slice-e-it").join(name);
+    let dir = ws_root().join("_tmp/phase3/slice-e-it").join(name);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -21,7 +30,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
 #[test]
 fn heal_fix_resolves_patch_model() {
     // The shipped graph must carry the routing declaration (R1).
-    let graph = std::fs::read_to_string("/projects/pi-improved/graphs/starter/heal-fix.toml")
+    let graph = std::fs::read_to_string(ws_root().join("graphs/starter/heal-fix.toml"))
         .expect("heal-fix.toml");
     assert!(
         graph.contains("route_step = \"patch\""),
@@ -55,7 +64,7 @@ fn heal_fix_resolves_patch_model() {
 /// this routing (the load-bearing structural guarantee).
 #[test]
 fn unreproduced_break_escalates() {
-    let graph = std::fs::read_to_string("/projects/pi-improved/graphs/starter/heal-fix.toml")
+    let graph = std::fs::read_to_string(ws_root().join("graphs/starter/heal-fix.toml"))
         .expect("heal-fix.toml");
     // The probe routes exit-0 to `unexpected_ok` (a gate), never to `fix`.
     assert!(
@@ -78,7 +87,7 @@ fn still_broken_after_loop_budget_does_not_reach_gate() {
     // exceeding loop_budget is a terminal failure. Assert the shipped
     // heal-fix graph's `escalate` gate is only reachable from
     // `route_retest.ok` (a passing retest), never from a failed retest.
-    let graph = std::fs::read_to_string("/projects/pi-improved/graphs/starter/heal-fix.toml")
+    let graph = std::fs::read_to_string(ws_root().join("graphs/starter/heal-fix.toml"))
         .expect("heal-fix.toml");
     // The retry back-edge must be bounded by loop_budget on the fix node.
     assert!(

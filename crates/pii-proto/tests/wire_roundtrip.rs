@@ -192,7 +192,7 @@ fn wire_run_header_roundtrips() {
 #[test]
 fn session_create_params_roundtrips() {
     let params = SessionCreateParams {
-        cwd: "/projects/pi-improved".to_string(),
+        cwd: env!("CARGO_MANIFEST_DIR").to_string(),
         model: Some("ollama-cloud/glm-5.3-flash:cloud".to_string()),
         tools: vec!["read".to_string(), "bash".to_string()],
         graph: None,

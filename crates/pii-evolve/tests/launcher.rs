@@ -111,9 +111,11 @@ impl StubDaemon {
 /// _keepalive)` — the `TempDir` must stay alive for the socket file to exist.
 /// The caller converts to a tokio listener inside its own runtime thread.
 fn bind_socket(tag: &str) -> (PathBuf, std::os::unix::net::UnixListener, tempfile::TempDir) {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
     let dir = tempfile::Builder::new()
         .prefix(tag)
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(&root)
         .expect("tempdir");
     let path = dir.path().join("control.sock");
     let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
@@ -147,7 +149,7 @@ fn launch_records_run_id_in_state_md() {
 
     let state_dir = tempfile::Builder::new()
         .prefix("launch-state-dir")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("state dir");
     let cfg = BossLaunch::new(path, state_dir.path().to_path_buf());
     let launched: LaunchedRun = run_cycle(&cfg).expect("run_cycle");
@@ -179,7 +181,7 @@ fn run_cycle_sends_run_start() {
 
     let state_dir = tempfile::Builder::new()
         .prefix("launch-rpc-dir")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("state dir");
     // Pre-seed cycle_count = 4 so the next cycle is 5.
     let mut state = StateDoc::default();

@@ -196,7 +196,7 @@ mod tests {
 
         let dir = tempfile::Builder::new()
             .prefix("gate-cycle-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
             .unwrap();
         let approvals = Arc::new(ApprovalStore::open(&dir.path().join("approval.redb")).unwrap());
         let node = GateNode {

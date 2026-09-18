@@ -23,7 +23,10 @@ fn engine_in(dir: &Path, fixture: &str) -> Arc<Engine> {
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
-    let base = Path::new("/projects/pi-improved/_tmp/phase3/session-it");
+    let base = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase3/session-it"
+    ));
     let _ = std::fs::create_dir_all(base);
     let dir = base.join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

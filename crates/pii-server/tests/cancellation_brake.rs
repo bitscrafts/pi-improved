@@ -89,7 +89,7 @@ fn cancel_before_model_call_returns_cancelled() {
 }
 
 fn scratch() -> std::path::PathBuf {
-    let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/brake-it");
+    let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/brake-it"));
     let _ = std::fs::create_dir_all(dir);
     dir.to_path_buf()
 }

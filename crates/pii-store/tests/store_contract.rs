@@ -15,7 +15,7 @@ use pii_abi::{RunEvent, RunHeader, RunId, RunStatus, Terminal};
 use pii_store::Store;
 
 fn tmp_store(name: &str) -> (PathBuf, Store) {
-    let dir = PathBuf::from("/projects/pi-improved/_tmp/pi-store-test");
+    let dir = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/pi-store-test"));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!(
         "{}-{}-{}.redb",

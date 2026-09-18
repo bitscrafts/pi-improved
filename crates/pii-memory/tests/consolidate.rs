@@ -12,6 +12,13 @@ use pii_memory::consolidate::{ConsolidateCfg, MAX_CANDIDATES, consolidate};
 use pii_memory::doc::{Doc, DocKind, Layer, encode};
 use pii_memory::tokenize::tokenize;
 use pii_store::MemStore;
+use std::path::PathBuf;
+
+fn tmp_root() -> PathBuf {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(root.join("phase3")).expect("create crate-local _tmp/phase3");
+    root
+}
 
 fn cfg() -> ConsolidateCfg {
     ConsolidateCfg {
@@ -48,10 +55,7 @@ fn put(store: &MemStore, text: &str) -> String {
 
 #[test]
 fn merge_requires_two_shared_concepts() {
-    let store = MemStore::open(std::path::Path::new(
-        "/projects/pi-improved/_tmp/phase3/cons-merge.redb",
-    ))
-    .unwrap();
+    let store = MemStore::open(&tmp_root().join("phase3/cons-merge.redb")).unwrap();
     // One shared concept: NOT merged.
     let a = put(&store, "sandbox probe enforce profile one");
     let b = put(&store, "sandbox never merges a single concept pair");
@@ -69,12 +73,8 @@ fn merge_requires_two_shared_concepts() {
 
 #[test]
 fn consolidate_cap_is_hard() {
-    let store = std::sync::Arc::new(
-        MemStore::open(std::path::Path::new(
-            "/projects/pi-improved/_tmp/phase3/cons-cap.redb",
-        ))
-        .unwrap(),
-    );
+    let store =
+        std::sync::Arc::new(MemStore::open(&tmp_root().join("phase3/cons-cap.redb")).unwrap());
     // Many highly-similar docs → candidate pairs >> 200.
     for i in 0..40 {
         put(

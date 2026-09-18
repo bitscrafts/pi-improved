@@ -8,20 +8,36 @@ use std::time::Duration;
 
 use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx};
 use pii_worker::{Supervisor, WorkerEvent, WorkerSpec, WorkerState};
+use std::path::PathBuf;
 
 /// A full-cap context: SPAWN + PROC, and `proc_argv0` permitting the worker
 /// program and the `kill` utility.
 fn full_ctx() -> Ctx {
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
+    // Tests run from the crate dir; resolve the workspace binary the same
+    // way worker_spec() does below, so the ArgvScope prefix (a plain string
+    // comparison, not a canonicalized path comparison) matches exactly.
+    let pii_bin = std::env::current_dir()
+        .unwrap()
+        .ancestors()
+        .nth(2)
+        .unwrap()
+        .join("target/debug/pii");
     caps.proc_argv0 = ArgvScope::new(vec![
-        String::from("/projects/pi-improved/target/debug/pii"),
+        pii_bin.to_string_lossy().into_owned(),
         String::from("/usr/bin/kill"),
         String::from("/bin/sh"),
         // Test worker wrapper scripts (flood/tag-swap fixtures): the
         // flood fixture gets a per-run pid suffix to dodge ETXTBSY races.
-        String::from("/projects/pi-improved/_tmp/phase3/test/swap"),
-        String::from("/projects/pi-improved/_tmp/phase3/test/flood"),
+        String::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/_tmp/phase3/test/swap"
+        )),
+        String::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/_tmp/phase3/test/flood"
+        )),
     ]);
     Ctx::root(caps, Budget::unlimited())
 }
@@ -200,7 +216,7 @@ fn stderr_flood_does_not_deadlock() {
 
     let ctx = full_ctx();
     // A flood worker: writes 10 MB to stderr while answering echo (F3.2).
-    let scratch = std::path::PathBuf::from("/projects/pi-improved/_tmp/phase3/test");
+    let scratch = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/test"));
     let _ = std::fs::create_dir_all(&scratch);
     let prog = scratch.join(format!("flood-{}-{}.sh", std::process::id(), line!()));
     // Atomic write (tmp + rename): a leftover running instance from a prior
@@ -208,7 +224,10 @@ fn stderr_flood_does_not_deadlock() {
     let tmp = prog.with_extension("tmp");
     std::fs::write(
         &tmp,
-        "#!/bin/sh\nfor i in $(seq 1 2000); do echo flood-line-$i 1>&2; done\nexec /projects/pi-improved/target/debug/pii worker-exec --name w --tag a\n",
+        format!(
+            "#!/bin/sh\nfor i in $(seq 1 2000); do echo flood-line-$i 1>&2; done\nexec {pii} worker-exec --name w --tag a\n",
+            pii = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/debug/pii"),
+        ),
     )
     .unwrap();
     std::fs::rename(&tmp, &prog).unwrap();
@@ -245,10 +264,13 @@ fn reload_swaps_program_and_tag() {
     use std::os::unix::fs::PermissionsExt;
 
     let ctx = full_ctx();
-    let scratch = std::path::PathBuf::from("/projects/pi-improved/_tmp/phase3/test");
+    let scratch = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/test"));
     let _ = std::fs::create_dir_all(&scratch);
     let prog = scratch.join(format!("swap-{}-{}.sh", std::process::id(), line!()));
-    let pii_bin = std::path::PathBuf::from("/projects/pi-improved/target/debug/pii");
+    let pii_bin = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../target/debug/pii"
+    ));
     let write_prog = |tag: &str| {
         // Operators never write in place over a running program (ETXTBSY);
         // they write a temp file and rename over the path — the atomic form.

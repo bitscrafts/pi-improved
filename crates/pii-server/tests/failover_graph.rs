@@ -26,12 +26,22 @@ use pii_graph::node::NodeRegistry;
 use pii_graph::toml_load::load_toml_with_registry;
 use pii_model::{ChatResponse, ModelProvider};
 use pii_store::Store;
+use std::path::{Path, PathBuf};
 
-const FAILOVER_TOML_PATH: &str = "/projects/pi-improved/graphs/starter/failover.toml";
+fn failover_toml() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .join("graphs/starter/failover.toml")
+}
 
-fn scratch(name: &str) -> std::path::PathBuf {
-    let dir =
-        std::path::Path::new("/projects/pi-improved/_tmp/phase5/failover-graph-it").join(name);
+fn scratch(name: &str) -> PathBuf {
+    let dir = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase5/failover-graph-it"
+    ))
+    .join(name);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -105,7 +115,7 @@ impl ModelProvider for LadderProvider {
 }
 
 fn graph_spec(registry: &NodeRegistry) -> pii_graph::GraphSpec {
-    let toml = std::fs::read_to_string(FAILOVER_TOML_PATH)
+    let toml = std::fs::read_to_string(failover_toml())
         .expect("real graphs/starter/failover.toml must exist");
     load_toml_with_registry(&toml, registry).expect("failover.toml loads")
 }

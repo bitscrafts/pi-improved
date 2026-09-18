@@ -408,7 +408,7 @@ mod tests {
     fn factory(results: Vec<GateResult>) -> HealFactory {
         let dir = Builder::new()
             .prefix("heal-node-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
             .unwrap();
         let heals = std::sync::Arc::new(HealStore::open(&dir.path().join("heal.redb")).unwrap());
         HealFactory {

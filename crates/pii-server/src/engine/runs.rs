@@ -330,6 +330,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::{run_caps, validate_scope_root};
     use pii_core::Ctx;
+    use std::path::PathBuf;
     use tempfile::Builder;
 
     fn ctx_for(caps: pii_core::CapSet) -> Ctx {
@@ -456,12 +457,12 @@ mod tests {
         use pii_store::Store;
         let dir = Builder::new()
             .prefix("heal-scope-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
             .unwrap();
         let store = Store::open(&dir.path().join("store.redb")).unwrap();
         let run = RunId::from("r-scoped");
         // Put the run input (with scope_root) as a content-addressed graph.
-        let input = serde_json::json!({ "prompt": "fix", "scope_root": "/projects/pi-improved/_tmp/heal-wt-1" });
+        let input = serde_json::json!({ "prompt": "fix", "scope_root": concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/heal-wt-1") });
         let input_hash = store
             .put_graph(&serde_json::to_vec(&input).unwrap())
             .unwrap();
@@ -484,9 +485,10 @@ mod tests {
         let recovered = super::stored_run_scope_root(&store, &run).unwrap();
         assert_eq!(
             recovered,
-            Some(std::path::PathBuf::from(
-                "/projects/pi-improved/_tmp/heal-wt-1"
-            )),
+            Some(PathBuf::from(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/_tmp/heal-wt-1"
+            ))),
             "resume must recover the original scope_root"
         );
     }
@@ -499,7 +501,7 @@ mod tests {
         use pii_store::Store;
         let dir = Builder::new()
             .prefix("heal-scope-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
             .unwrap();
         let store = Store::open(&dir.path().join("store.redb")).unwrap();
         let run = RunId::from("r-plain");

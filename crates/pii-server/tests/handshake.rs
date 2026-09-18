@@ -48,7 +48,7 @@ fn fixtures_hello() -> PathBuf {
 async fn hello_skew_is_hard_refusal() {
     let dir = tempfile::Builder::new()
         .prefix("handshake-")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
@@ -101,7 +101,7 @@ async fn hello_skew_is_hard_refusal() {
 async fn method_before_hello_refused() {
     let dir = tempfile::Builder::new()
         .prefix("handshake-")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
@@ -144,7 +144,7 @@ async fn method_before_hello_refused() {
 async fn valid_hello_creates_session() {
     let dir = tempfile::Builder::new()
         .prefix("handshake-")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
@@ -180,7 +180,7 @@ async fn valid_hello_creates_session() {
 async fn hello_non_json_encoding_refused() {
     let dir = tempfile::Builder::new()
         .prefix("handshake-")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);

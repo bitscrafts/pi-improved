@@ -211,6 +211,12 @@ async fn run_client(cmd: &[String]) -> Result<(), String> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+    fn mcp_tmp_root() -> PathBuf {
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -245,7 +251,7 @@ mod tests {
         use pii_core::{Budget, CapKind, CapSet, Ctx};
         let dir = tempfile::Builder::new()
             .prefix("pii-mcp-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(mcp_tmp_root())
             .unwrap();
         let file = dir.path().join("a.txt");
         std::fs::write(&file, "hello mcp").unwrap();
@@ -282,7 +288,7 @@ mod tests {
 
         let dir = tempfile::Builder::new()
             .prefix("pii-mcp-memory-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(mcp_tmp_root())
             .unwrap();
         let sock = dir.path().join("control.sock");
         let fixtures_hello = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

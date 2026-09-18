@@ -45,7 +45,7 @@ fn slow_fixture() -> PathBuf {
 async fn prompt_returns_before_run_finishes() {
     let dir = tempfile::Builder::new()
         .prefix("latency-")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);

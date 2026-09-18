@@ -386,8 +386,14 @@ mod tests {
     fn caps(kinds: CapKind) -> CapSet {
         CapSet {
             kinds,
-            fs_write: PathScope::from_strings(&[Path::new("/projects/pi-improved/_tmp")]),
-            fs_read: PathScope::from_strings(&[Path::new("/projects/pi-improved/_tmp")]),
+            fs_write: PathScope::from_strings(&[Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/_tmp"
+            ))]),
+            fs_read: PathScope::from_strings(&[Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/_tmp"
+            ))]),
             ..CapSet::default()
         }
     }
@@ -414,7 +420,10 @@ mod tests {
         let err = child
             .fs()
             .unwrap()
-            .write(Path::new("/projects/pi-improved/_tmp/x"), b"x")
+            .write(
+                Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/x")),
+                b"x",
+            )
             .unwrap_err();
         assert!(matches!(err, PiiError::Denied(c) if c == "fs_write"));
     }

@@ -161,7 +161,7 @@ mod tests {
     use crate::Tool;
 
     fn tmp_root() -> PathBuf {
-        PathBuf::from("/projects/pi-improved/_tmp")
+        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
     }
 
     /// A root context granting `PROC` for `/bin/sh` only.

@@ -12,16 +12,25 @@
 use pii_graph::node::NodeFactory as _;
 use pii_server::daemon::config::{Config, EvolveSection};
 use pii_tools::sandbox::SandboxProfileName;
+use std::path::Path;
 use std::sync::Arc;
 
 fn scratch(name: &str) -> std::path::PathBuf {
-    let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/routing-it").join(name);
+    let dir = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase3/routing-it"
+    ))
+    .join(name);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
 fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new("/projects/pi-improved/fixtures/phase3/model").to_path_buf()
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .join("fixtures/phase3/model")
 }
 
 /// R1: `[evolve.routing] patch = "..."` parses into `Config.evolve.routing`.

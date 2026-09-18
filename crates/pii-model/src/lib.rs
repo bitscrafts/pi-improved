@@ -275,12 +275,19 @@ mod tests {
     use super::{ChatRequest, Role, ScriptedProvider, provider_from_spec};
     use crate::ModelProvider as _;
     use pii_core::{Budget, CapSet, Ctx};
+    use std::path::PathBuf;
+
+    fn contract_tmp_root() -> PathBuf {
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
 
     #[test]
     fn scripted_returns_turns_in_order() {
         let dir = tempfile::Builder::new()
             .prefix("pii-model-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(contract_tmp_root())
             .unwrap();
         let f = dir.path().join("two.json");
         std::fs::write(&f, r#"{"turns":[{"text":"one"},{"text":"two"}]}"#).unwrap();
@@ -371,17 +378,17 @@ mod contract {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     #![allow(clippy::indexing_slicing)] // reason: json pointer-style asserts on test bodies
 
-    use std::sync::Arc;
-
     use super::{ChatMessage, ChatRequest, OllamaProvider, Role, ScriptedProvider};
     use crate::ModelProvider as _;
     use pii_abi::PiiError;
     use pii_core::{Budget, CapSet, Ctx};
+    use std::path::PathBuf;
+    use std::sync::Arc;
 
     /// Per-test scratch file (N8: artifacts under _tmp). Tests run in parallel,
     /// so a shared path would race one assertion against another test's body.
     struct RecordingTransport {
-        path: &'static str,
+        path: PathBuf,
     }
     impl pii_core::HttpTransport for RecordingTransport {
         fn request(
@@ -390,7 +397,7 @@ mod contract {
             req: &pii_abi::HttpRequest,
         ) -> Result<pii_abi::HttpResponse, PiiError> {
             let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
-            std::fs::write(self.path, serde_json::to_vec(&body).unwrap()).unwrap();
+            std::fs::write(&self.path, serde_json::to_vec(&body).unwrap()).unwrap();
             Ok(pii_abi::HttpResponse {
                 status: 200,
                 headers: Vec::new(),
@@ -402,12 +409,17 @@ mod contract {
         }
     }
 
-    const PATH_FORWARDS: &str = "/projects/pi-improved/_tmp/ollama-last-request-forwards.json";
-    const PATH_DEFAULTS: &str = "/projects/pi-improved/_tmp/ollama-last-request-defaults.json";
+    fn contract_tmp_root() -> PathBuf {
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
 
-    fn provider_for_contract(path: &'static str) -> OllamaProvider {
+    fn provider_for_contract(path: &std::path::Path) -> OllamaProvider {
         OllamaProvider::new(
-            Arc::new(RecordingTransport { path }),
+            Arc::new(RecordingTransport {
+                path: path.to_path_buf(),
+            }),
             "http://fake.local:1",
             "m".into(),
             None,
@@ -429,10 +441,15 @@ mod contract {
             temperature: 0.7,
             num_ctx: 16_384,
         };
-        let _ = provider_for_contract(PATH_FORWARDS)
-            .chat(&ctx, &req)
-            .unwrap();
-        let body = last_body(PATH_FORWARDS);
+        let _ =
+            provider_for_contract(&contract_tmp_root().join("ollama-last-request-forwards.json"))
+                .chat(&ctx, &req)
+                .unwrap();
+        let body = last_body(
+            &contract_tmp_root()
+                .join("ollama-last-request-forwards.json")
+                .to_string_lossy(),
+        );
         assert_eq!(body["stream"], serde_json::json!(false));
         // The wire carries f32; JSON numbers widen 0.7f32 to 0.699999988079071.
         let got = body["options"]["temperature"].as_f64().unwrap();
@@ -452,10 +469,15 @@ mod contract {
             temperature: 0.0,
             num_ctx: 0,
         };
-        let _ = provider_for_contract(PATH_DEFAULTS)
-            .chat(&ctx, &req)
-            .unwrap();
-        let body = last_body(PATH_DEFAULTS);
+        let _ =
+            provider_for_contract(&contract_tmp_root().join("ollama-last-request-defaults.json"))
+                .chat(&ctx, &req)
+                .unwrap();
+        let body = last_body(
+            &contract_tmp_root()
+                .join("ollama-last-request-defaults.json")
+                .to_string_lossy(),
+        );
         assert_eq!(body["options"]["num_ctx"], serde_json::json!(8192));
     }
     /// R4 (spec 15): the scripted provider's streaming path hands the full
@@ -465,7 +487,7 @@ mod contract {
     fn scripted_provider_streams_full_text() {
         let dir = tempfile::Builder::new()
             .prefix("scripted-stream-")
-            .tempdir_in("/projects/pi-improved/_tmp")
+            .tempdir_in(contract_tmp_root())
             .unwrap();
         let fixture = dir.path().join("turns.json");
         std::fs::write(

@@ -45,7 +45,11 @@ impl pii_model::ModelProvider for ContextOverflowProvider {
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
-    let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/fail-port-it").join(name);
+    let dir = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/_tmp/phase3/fail-port-it"
+    ))
+    .join(name);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

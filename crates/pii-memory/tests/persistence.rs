@@ -14,8 +14,17 @@ use pii_memory::doc::{Doc, DocKind, Layer, encode};
 use pii_memory::embed::{Embedder, TrigramEmbedder};
 use pii_memory::vector::vector_search;
 use pii_store::MemStore;
+use std::path::PathBuf;
 
-const DB: &str = "/projects/pi-improved/_tmp/phase3/persist-test.redb";
+fn tmp_root() -> PathBuf {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(root.join("phase3")).expect("create crate-local _tmp/phase3");
+    root
+}
+
+fn db() -> PathBuf {
+    tmp_root().join("phase3/persist-test.redb")
+}
 
 fn put(store: &MemStore, text: &str) {
     let doc = Doc::new(Layer::L1, DocKind::Atom, text, vec![], 1.0, 0);
@@ -43,8 +52,8 @@ fn put(store: &MemStore, text: &str) {
 
 #[test]
 fn vector_lane_survives_restart() {
-    let _ = std::fs::remove_file(DB);
-    let store = MemStore::open(std::path::Path::new(DB)).unwrap();
+    let _ = std::fs::remove_file(db());
+    let store = MemStore::open(db().as_path()).unwrap();
     for i in 0..100 {
         put(
             &store,
@@ -67,7 +76,7 @@ fn vector_lane_survives_restart() {
 
     // Drop the store; reopen in a NEW MemStore over the same file.
     drop(store);
-    let reopened = MemStore::open(std::path::Path::new(DB)).unwrap();
+    let reopened = MemStore::open(db().as_path()).unwrap();
     assert!(reopened.n_docs().unwrap() > 0, "docs persisted");
     let after = vector_search(&reopened, &qv, 10).unwrap();
     assert_eq!(

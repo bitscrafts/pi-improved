@@ -148,7 +148,10 @@ mod tests {
 
     #[test]
     fn cursor_advances_exactly_once() {
-        let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/channeltest");
+        let dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/_tmp/phase3/channeltest"
+        ));
         let _ = std::fs::create_dir_all(dir);
         let path = dir.join(format!("ch-{}.redb", std::process::id()));
         let s = ChannelStore::open(&path).unwrap();

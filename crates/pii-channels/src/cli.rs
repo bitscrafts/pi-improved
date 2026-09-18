@@ -98,7 +98,10 @@ mod tests {
     use crate::Channel;
 
     fn scratch() -> PathBuf {
-        let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/clichannel");
+        let dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/_tmp/phase3/clichannel"
+        ));
         let _ = std::fs::create_dir_all(dir);
         dir.join(format!("t-{}", std::process::id()))
     }

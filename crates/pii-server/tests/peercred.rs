@@ -41,7 +41,7 @@ fn peercred_rejects_foreign_uid() {
 async fn refusal_writes_101_frame() {
     let dir = tempfile::Builder::new()
         .prefix("peercred-101-")
-        .tempdir_in("/projects/pi-improved/_tmp")
+        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
         .expect("tempdir");
     let sock_path: PathBuf = dir.path().join("control.sock");
 

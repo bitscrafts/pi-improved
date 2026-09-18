@@ -170,7 +170,9 @@ mod tests {
     use crate::ctx::Ctx;
 
     fn tmp_root() -> PathBuf {
-        PathBuf::from("/projects/pi-improved/_tmp")
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
     }
 
     /// A root context granting `FS_WRITE` over exactly `allow`.

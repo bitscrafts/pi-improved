@@ -25,8 +25,13 @@ use pii_graph::node::NodeRegistry;
 use pii_graph::run;
 use pii_graph::spec::{Edge, EdgeKind, GraphLimits, GraphSpec, JoinPolicy, NodeSpec, RetryPolicy};
 use pii_store::Store;
+use std::path::PathBuf;
 
-const TMP_ROOT: &str = "/projects/pi-improved/_tmp";
+fn tmp_root() -> PathBuf {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
+    root
+}
 
 fn node(id: &str, kind: &str, loop_budget: Option<u32>, cfg: serde_json::Value) -> NodeSpec {
     NodeSpec {
@@ -107,7 +112,7 @@ struct RunOut {
 fn run_spec(spec: &GraphSpec, input: serde_json::Value) -> RunOut {
     let dir = tempfile::Builder::new()
         .prefix("loops-test-")
-        .tempdir_in(TMP_ROOT)
+        .tempdir_in(tmp_root())
         .expect("tempdir under _tmp");
     let store = Store::open(&dir.path().join("db.redb")).expect("store open");
     let run_id = store.next_run_id().expect("run id");

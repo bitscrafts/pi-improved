@@ -19,8 +19,13 @@ use pii_core::{Observer, RecordingObserver};
 use pii_graph::blackboard::Blackboard;
 use pii_graph::journal::Journaler;
 use pii_store::Store;
+use std::path::PathBuf;
 
-const TMP_ROOT: &str = "/projects/pi-improved/_tmp";
+fn tmp_root() -> PathBuf {
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
+    root
+}
 
 fn fixture() -> (
     Store,
@@ -30,7 +35,7 @@ fn fixture() -> (
 ) {
     let dir = tempfile::Builder::new()
         .prefix("journal-test-")
-        .tempdir_in(TMP_ROOT)
+        .tempdir_in(tmp_root())
         .expect("tempdir under _tmp");
     let store = Store::open(&dir.path().join("db.redb")).expect("store open");
     let run = RunId::from("r000000000001");

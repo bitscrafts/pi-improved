@@ -178,7 +178,10 @@ mod tests {
     use super::{Approval, ApprovalStore};
 
     fn scratch() -> std::path::PathBuf {
-        let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/approvaltest");
+        let dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/_tmp/phase3/approvaltest"
+        ));
         let _ = std::fs::create_dir_all(dir);
         dir.join(format!("ap-{}.redb", std::process::id()))
     }
