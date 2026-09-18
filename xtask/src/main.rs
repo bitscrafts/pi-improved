@@ -4,6 +4,9 @@
 // reason: the gate runner reports violations on stderr; the output
 // abstractions replacing direct prints arrive in Phase 1.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
+// reason: spec 67 qualified the `std::println` disallowed-macro rule; xtask
+// dev-tooling intentionally prints to stdout (see lib.rs for the full note).
+#![allow(clippy::disallowed_macros)]
 #![allow(clippy::too_long_first_doc_paragraph)]
 // reason: dev-tooling doc comments carry the full spec-34 context in one
 // paragraph; splitting them would hide the load-bearing detail.
@@ -81,19 +84,12 @@ fn run_ci(rest: &[String]) -> ExitCode {
     let reach_ok = report(reachability::run(&workspace_root()));
     let drift_ok = report(doc_drift::run(&workspace_root()));
     let silent_noop_ok = report(silent_noop::run(&workspace_root(), false));
-    let fmt_ok = run_cmd("cargo", &["fmt", "--all", "--check"]);
-    let clippy_ok = run_cmd(
-        "cargo",
-        &[
-            "clippy",
-            "--workspace",
-            "--all-targets",
-            "--",
-            "-D",
-            "warnings",
-        ],
-    );
-    let test_ok = run_cmd("cargo", &["test", "--workspace"]);
+    // Spec 67 (R3): delegate fmt/clippy/build/test to quality-gate.sh —
+    // it isolates clippy and doctests into their own CARGO_TARGET_DIR
+    // (the F-01 fix) so this shared-target-dir race cannot recur here.
+    // The gates above stay local: quality-gate.sh does not run deps/net/
+    // lint/proto/bench/reachability/drift/silent-noop.
+    let cargo_gate_ok = run_cmd("bash", &["quality-gate.sh"]);
     if deps_ok == ExitCode::SUCCESS
         && net_ok == ExitCode::SUCCESS
         && lint_ok == ExitCode::SUCCESS
@@ -102,9 +98,7 @@ fn run_ci(rest: &[String]) -> ExitCode {
         && reach_ok == ExitCode::SUCCESS
         && drift_ok == ExitCode::SUCCESS
         && silent_noop_ok == ExitCode::SUCCESS
-        && fmt_ok == ExitCode::SUCCESS
-        && clippy_ok == ExitCode::SUCCESS
-        && test_ok == ExitCode::SUCCESS
+        && cargo_gate_ok == ExitCode::SUCCESS
     {
         ExitCode::SUCCESS
     } else {

@@ -7,7 +7,7 @@
 
 #![forbid(unsafe_code)]
 // reason: the MCP server binary must print startup/error messages to stderr.
-#![allow(clippy::print_stdout, clippy::print_stderr)]
+#![allow(clippy::print_stdout, clippy::print_stderr, clippy::disallowed_macros)]
 // reason: the CLI binary uses process::exit for fatal startup errors.
 #![allow(clippy::exit)]
 

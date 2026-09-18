@@ -65,6 +65,17 @@ else
     status=1
 fi
 
+echo "==> cargo run -q -p xtask -- lint-files"
+# 450-effective-line file gate (spec 67, Fix 1): pure text scan, no
+# target-dir isolation needed. Also enforced here so pidag runs whose
+# exit criteria omit lint-files still get the gate.
+if cargo run -q -p xtask -- lint-files; then
+    echo "PASS: lint-files"
+else
+    echo "FAIL: lint-files"
+    status=1
+fi
+
 if [ "$status" -eq 0 ]; then
     echo "quality-gate: ALL PASS"
 else

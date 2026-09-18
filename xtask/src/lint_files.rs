@@ -37,6 +37,13 @@ pub(super) fn count_effective_lines(src: &str) -> usize {
         let opens = trimmed.matches('{').count().cast_signed();
         let closes = trimmed.matches('}').count().cast_signed();
         if in_cfg_test {
+            // Attribute stack before the item body (F15 fix): with brace
+            // depth still 0, further `#[...]` lines belong to the same
+            // cfg(test)-gated item (`#[cfg(test)]` + `#[rustfmt::skip]` +
+            // `mod tests { ... }`) and must NOT reset the tracking state.
+            if cfg_test_depth == 0 && trimmed.starts_with("#[") {
+                continue;
+            }
             cfg_test_depth += opens - closes;
             if cfg_test_depth <= 0 {
                 in_cfg_test = false;
@@ -87,7 +94,17 @@ pub(super) fn run() -> Result<(), Vec<String>> {
             files.push((path.display().to_string(), count_effective_lines(&src)));
         }
     }
-    check_counts(&files)
+    check_counts(&files)?;
+    let (max_path, max_count) = files
+        .iter()
+        .max_by_key(|(_, count)| *count)
+        .map_or_else(|| (String::from("<none>"), 0), |(p, c)| (p.clone(), *c));
+    println!(
+        "lint-files: {} files checked, max effective {} lines (file: {max_path})",
+        files.len(),
+        max_count
+    );
+    Ok(())
 }
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -157,5 +174,20 @@ mod tests {
         src.push_str(&code_lines(200));
         src.push_str("\n}\n");
         assert_eq!(count_effective_lines(&src), 10);
+    }
+
+    #[test]
+    fn count_effective_lines_handles_attribute_stack_before_cfg_test_body() {
+        // `#[cfg(test)]` followed by another attribute before `mod tests {`
+        // — the pre-fix code reset `in_cfg_test` on the attribute line and
+        // counted the whole module body as production code.
+        let src = "#[cfg(test)]\n#[rustfmt::skip]\nmod tests {\n    fn a() {}\n    fn b() {}\n    fn c() {}\n}\n";
+        assert_eq!(count_effective_lines(src), 0);
+    }
+
+    #[test]
+    fn count_effective_lines_handles_bare_cfg_test_fn() {
+        let src = "#[cfg(test)]\nfn helper() {}\nfn production() {}\n";
+        assert_eq!(count_effective_lines(src), 1);
     }
 }

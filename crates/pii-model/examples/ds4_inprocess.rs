@@ -17,7 +17,7 @@
 //! ```
 
 // reason: this is a diagnostic example binary; its output IS its purpose.
-#![allow(clippy::print_stdout, clippy::print_stderr)]
+#![allow(clippy::print_stdout, clippy::print_stderr, clippy::disallowed_macros)]
 
 use std::path::Path;
 use std::time::Instant;

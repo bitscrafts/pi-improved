@@ -10,6 +10,14 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::print_stdout, clippy::print_stderr)]
+// reason: spec 67 qualified the `std::println` disallowed-macro rule; these
+// dev-tooling subcommands intentionally report their results on stdout like
+// the rest of xtask (main.rs carries the same allow with the Phase-1 note).
+// The clippy::print_stdout lint never fired on this code (it only covers
+// literal-string macro heads), so this is the first time these prints are
+// linted; an allow here documents the existing intent rather than hiding a
+// new violation.
+#![allow(clippy::disallowed_macros)]
 // reason: same exemption as main.rs — this is dev tooling that reports
 // progress/refusals on stdout/stderr, not the agent runtime.
 #![allow(clippy::too_long_first_doc_paragraph)]

@@ -37,16 +37,15 @@ check() {
 export PATH=/usr/local/cargo/bin:$PATH
 cd "$REPO" || exit 1
 
+# Spec 67 (R3): delegate fmt/clippy/build/test to quality-gate.sh — it
+# isolates clippy and doctests into their own CARGO_TARGET_DIR (the F-01
+# fix), avoiding the shared-target-dir race the per-command invocations
+# below had. The other mvp-verify checks (release build, xtask gates,
+# live daemon/LLM/ledger/approval/soak) are NOT in quality-gate.sh and
+# stay here.
 echo "== 1. Build & static checks =="
-check "workspace builds (debug, all targets)" cargo build --workspace --all-targets
+check "quality-gate.sh (fmt/clippy/build/test + lint-files)" bash quality-gate.sh
 check "workspace builds (release, pii-cli)" cargo build --release -p pii-cli
-check "cargo fmt --check" cargo fmt --all --check
-check "cargo clippy -D warnings (workspace, all targets)" \
-    cargo clippy --workspace --all-targets -- -D warnings
-
-echo
-echo "== 2. Unit test suite =="
-check "cargo test --workspace" cargo test --workspace
 
 echo
 echo "== 3. xtask gates =="

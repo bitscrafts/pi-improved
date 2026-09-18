@@ -2,7 +2,9 @@
 
 #![forbid(unsafe_code)]
 // reason: the CLI must write to stdout/stderr directly (spec F5.5).
-#![allow(clippy::print_stdout, clippy::print_stderr)]
+// spec 67 qualified the `std::println` disallowed-macro rule; the CLI's
+// control subcommands print method results on stdout by design.
+#![allow(clippy::print_stdout, clippy::print_stderr, clippy::disallowed_macros)]
 
 mod cli_util;
 mod cmd_ctl;
