@@ -119,7 +119,7 @@ impl HealStore {
     /// Opens (creating if needed) the heal store on `db`.
     ///
     /// # Errors
-    /// [`PiiError::Internal`] on a redb failure.
+    /// [`PiiError::StoreOp`] on a redb failure.
     pub fn open(path: &std::path::Path) -> Result<Self, PiiError> {
         // RSS-gate fix (2026-09-05): redb defaults to a 1 GiB cache; this
         // store is small (approvals/channels/heal/memory/timers), so 4 MiB
@@ -129,17 +129,29 @@ impl HealStore {
         let db = Database::builder()
             .set_cache_size(4 * 1024 * 1024)
             .create(path)
-            .map_err(|e| PiiError::Internal(format!("heal: open {}: {e}", path.display())))?;
+            .map_err(|e| PiiError::StoreOp {
+                op: String::from("open"),
+                resource: String::from("heal_db"),
+                detail: format!("{}: {e}", path.display()),
+            })?;
         {
-            let write = db
-                .begin_write()
-                .map_err(|e| PiiError::Internal(format!("heal: begin_write: {e}")))?;
+            let write = db.begin_write().map_err(|e| PiiError::StoreOp {
+                op: String::from("begin_write"),
+                resource: String::from("heal_attempt"),
+                detail: format!("{e}"),
+            })?;
             write
                 .open_table(HEAL_ATTEMPT)
-                .map_err(|e| PiiError::Internal(format!("heal: open table: {e}")))?;
-            write
-                .commit()
-                .map_err(|e| PiiError::Internal(format!("heal: commit tables: {e}")))?;
+                .map_err(|e| PiiError::StoreOp {
+                    op: String::from("open"),
+                    resource: String::from("heal_table"),
+                    detail: format!("{e}"),
+                })?;
+            write.commit().map_err(|e| PiiError::StoreOp {
+                op: String::from("commit"),
+                resource: String::from("heal_table"),
+                detail: format!("{e}"),
+            })?;
         }
         Ok(Self { db })
     }
@@ -147,40 +159,58 @@ impl HealStore {
     /// Inserts a new attempt row or updates an existing signature (S0.1).
     ///
     /// # Errors
-    /// [`PiiError::Internal`] on a redb or encode failure.
+    /// [`PiiError::StoreOp`] on a redb or encode failure.
     pub fn put_attempt(&self, a: &HealAttempt) -> Result<(), PiiError> {
         let bytes = to_bytes(a)?;
-        let write = self
-            .db
-            .begin_write()
-            .map_err(|e| PiiError::Internal(format!("heal: begin_write: {e}")))?;
+        let write = self.db.begin_write().map_err(|e| PiiError::StoreOp {
+            op: String::from("begin_write"),
+            resource: String::from("heal_attempt"),
+            detail: format!("{e}"),
+        })?;
         {
             let mut t = write
                 .open_table(HEAL_ATTEMPT)
-                .map_err(|e| PiiError::Internal(format!("heal: open table: {e}")))?;
+                .map_err(|e| PiiError::StoreOp {
+                    op: String::from("open"),
+                    resource: String::from("heal_table"),
+                    detail: format!("{e}"),
+                })?;
             t.insert(a.signature_hash.as_str(), bytes.as_slice())
-                .map_err(|e| PiiError::Internal(format!("heal: insert: {e}")))?;
+                .map_err(|e| PiiError::StoreOp {
+                    op: String::from("insert"),
+                    resource: String::from("heal_attempt"),
+                    detail: format!("{e}"),
+                })?;
         }
-        write
-            .commit()
-            .map_err(|e| PiiError::Internal(format!("heal: commit put: {e}")))
+        write.commit().map_err(|e| PiiError::StoreOp {
+            op: String::from("commit"),
+            resource: String::from("heal_attempt"),
+            detail: format!("{e}"),
+        })
     }
 
     /// Reads one attempt by signature hash (`None` when unknown).
     ///
     /// # Errors
-    /// [`PiiError::Internal`] on a redb or decode failure.
+    /// [`PiiError::StoreOp`] on a redb or decode failure.
     pub fn get_attempt(&self, sig: &str) -> Result<Option<HealAttempt>, PiiError> {
-        let read = self
-            .db
-            .begin_read()
-            .map_err(|e| PiiError::Internal(format!("heal: begin_read: {e}")))?;
+        let read = self.db.begin_read().map_err(|e| PiiError::StoreOp {
+            op: String::from("begin_read"),
+            resource: String::from("heal_attempt"),
+            detail: format!("{e}"),
+        })?;
         let t = read
             .open_table(HEAL_ATTEMPT)
-            .map_err(|e| PiiError::Internal(format!("heal: open table: {e}")))?;
-        let Some(v) = t
-            .get(sig)
-            .map_err(|e| PiiError::Internal(format!("heal: get: {e}")))?
+            .map_err(|e| PiiError::StoreOp {
+                op: String::from("open"),
+                resource: String::from("heal_table"),
+                detail: format!("{e}"),
+            })?;
+        let Some(v) = t.get(sig).map_err(|e| PiiError::StoreOp {
+            op: String::from("get"),
+            resource: String::from("heal_attempt"),
+            detail: format!("{e}"),
+        })?
         else {
             return Ok(None);
         };
@@ -190,21 +220,31 @@ impl HealStore {
     /// Every recorded attempt, in signature order.
     ///
     /// # Errors
-    /// [`PiiError::Internal`] on a redb or decode failure.
+    /// [`PiiError::StoreOp`] on a redb or decode failure.
     pub fn list_attempts(&self) -> Result<Vec<HealAttempt>, PiiError> {
-        let read = self
-            .db
-            .begin_read()
-            .map_err(|e| PiiError::Internal(format!("heal: begin_read: {e}")))?;
+        let read = self.db.begin_read().map_err(|e| PiiError::StoreOp {
+            op: String::from("begin_read"),
+            resource: String::from("heal_attempt"),
+            detail: format!("{e}"),
+        })?;
         let t = read
             .open_table(HEAL_ATTEMPT)
-            .map_err(|e| PiiError::Internal(format!("heal: open table: {e}")))?;
+            .map_err(|e| PiiError::StoreOp {
+                op: String::from("open"),
+                resource: String::from("heal_table"),
+                detail: format!("{e}"),
+            })?;
         let mut out = Vec::new();
-        for row in t
-            .iter()
-            .map_err(|e| PiiError::Internal(format!("heal: iter: {e}")))?
-        {
-            let row = row.map_err(|e| PiiError::Internal(format!("heal: row: {e}")))?;
+        for row in t.iter().map_err(|e| PiiError::StoreOp {
+            op: String::from("iter"),
+            resource: String::from("heal_attempt"),
+            detail: format!("{e}"),
+        })? {
+            let row = row.map_err(|e| PiiError::StoreOp {
+                op: String::from("row"),
+                resource: String::from("heal_attempt"),
+                detail: format!("{e}"),
+            })?;
             out.push(from_bytes(row.1.value())?);
         }
         Ok(out)
@@ -216,7 +256,7 @@ impl HealStore {
     /// `ATTEMPT_RING_CAP` (oldest evicted, count never lost) per spec 26 R3.
     ///
     /// # Errors
-    /// [`PiiError::Internal`] on a redb or encode failure.
+    /// [`PiiError::StoreOp`] on a redb or encode failure.
     pub fn record_run(
         &self,
         sig: &str,
@@ -266,7 +306,7 @@ impl HealStore {
     /// token counts accumulate across attempts).
     ///
     /// # Errors
-    /// [`PiiError::Internal`] on a redb or encode/decode failure.
+    /// [`PiiError::StoreOp`] on a redb or encode/decode failure.
     #[allow(clippy::too_many_arguments)] // reason: one evidence row, no
     // natural sub-grouping that wouldn't just be re-destructured downstream.
     pub fn record_repair(
@@ -312,7 +352,7 @@ impl HealStore {
     /// an approved one.
     ///
     /// # Errors
-    /// [`PiiError::Internal`] on a redb or encode/decode failure.
+    /// [`PiiError::StoreOp`] on a redb or encode/decode failure.
     pub fn record_decision(
         &self,
         sig: &str,

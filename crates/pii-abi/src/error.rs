@@ -44,6 +44,21 @@ pub enum PiiError {
     /// needs to reach a `FailoverReason`, not a formatted string.
     #[error("provider failure: {0:?}")]
     Provider(ProviderFailure),
+    /// A structured store-operation failure (spec 47 R1 pilot): the redb
+    /// operation (`op`) that failed, the resource it targeted, and the
+    /// underlying error detail. Classification matches `Internal` — neither
+    /// retryable nor terminal — because a store failure may be transient
+    /// (I/O hiccup) or permanent (disk full); callers decide.
+    #[error("store op {op} on {resource}: {detail}")]
+    StoreOp {
+        /// The store operation that failed (`open`, `begin_write`,
+        /// `commit`, `insert`, `get`, `iter`, …).
+        op: String,
+        /// The resource the operation targeted (`heal_db`, `heal_attempt`, …).
+        resource: String,
+        /// The underlying error detail.
+        detail: String,
+    },
 }
 
 impl PiiError {
@@ -96,6 +111,11 @@ mod tests {
             PiiError::BudgetExhausted(String::new()),
             PiiError::NotFound(String::new()),
             PiiError::Internal(String::new()),
+            PiiError::StoreOp {
+                op: String::from("commit"),
+                resource: String::from("heal_attempt"),
+                detail: String::from("disk full"),
+            },
             PiiError::Provider(ProviderFailure {
                 status: Some(500),
                 origin: Origin::Provider,
@@ -135,6 +155,40 @@ mod tests {
         ] {
             assert!(v.is_terminal(), "{name} should be terminal");
         }
+    }
+
+    /// Spec 47 R2: the `StoreOp` display carries all three context fields.
+    #[test]
+    fn store_op_display_carries_context() {
+        let err = PiiError::StoreOp {
+            op: String::from("commit"),
+            resource: String::from("heal_attempt"),
+            detail: String::from("disk full"),
+        };
+        let s = err.to_string();
+        assert!(s.contains("commit"), "display must contain op: {s}");
+        assert!(
+            s.contains("heal_attempt"),
+            "display must contain resource: {s}"
+        );
+        assert!(s.contains("disk full"), "display must contain detail: {s}");
+    }
+
+    /// Spec 47 R2: `StoreOp` classification is pinned — like `Internal` and
+    /// `NotFound`, it is NEITHER retryable nor terminal (a store failure may
+    /// be transient or permanent; callers decide, so blanket-retrying would
+    /// spin forever on a disk full).
+    #[test]
+    fn store_op_retry_terminal_classification() {
+        let err = PiiError::StoreOp {
+            op: String::from("commit"),
+            resource: String::from("heal_attempt"),
+            detail: String::from("disk full"),
+        };
+        assert!(
+            !err.is_retryable() && !err.is_terminal(),
+            "StoreOp must be neither retryable nor terminal (pinned)"
+        );
     }
 
     fn provider_failure(status: Option<u16>, message: &str) -> ProviderFailure {
