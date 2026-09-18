@@ -6,21 +6,57 @@ decisions actually being asked of you; this HANDOFF.md is the full
 detailed ledger, useful for auditing HOW a decision was reached, not
 for finding WHAT to decide.
 
-## CURRENT STATE — 2026-09-18: Phase 5.0/5.1/5.2/5.3 ALL COMPLETE. Spec backlog is clear.
+## CURRENT STATE — 2026-09-18 (late): fable review implemented (specs 62-69). Backlog clear.
 
-Every pidag-runnable spec (43 through 61) is implemented, gate-verified,
-and committed. F-16/F-18/F-19/F-20/F-22 closed. F-11 has a bounded pilot
-committed (`c8fb4d9`, `pii-store/src/heal.rs` structured `StoreOp`
-error); the full 817-site sweep remains deliberately out of scope for
-one spec (too large — see `c8fb4d9`'s own commit message).
+Phase 5.0/5.1/5.2/5.3 ALL COMPLETE (specs 43-61). On top of that, a
+two-pass fable codebase review (`_docs/06-research/032-*.md`) produced
+11 ranked candidates; specs 62-69 implemented them all:
 
-**Nothing left to implement without a design decision first.** Every
-remaining item (coding-harness graph, modularity idea, Chromecast-
-protocol module, `_docs/06-research/` reorg, DAG format unification
-with pidag) is explicitly gated on opus review — see
-`_docs/06-research/030-OPUS-START-HERE.md`. Do not write new pidag
-specs for these until that review lands; they are architecture
-decisions, not routine implementation work.
+- 62 `883d768` worktree signature validation — SECURITY: the tool took
+  `signature` from tool JSON unvalidated into `dir.join(sig)`, so an
+  absolute path or `..` escaped the worktree dir, and unlike
+  fs/search/bash it never routes through the FsCap layer.
+- 63 `890c285` pii-web sent the wrong memory-search param key
+  (`query` vs the daemon's `q`), so that page always 502'd.
+- 64 `fe35c37` worker `restart_backoff_ms` was a no-op (`_backoff_ms`).
+- 65 `2e47219` doc `layer` was never persisted at all, so
+  `same_layer_only` could never fire. Fixed ADDITIVELY (new MEM_LAYER
+  table; `encode` untouched) after a first attempt tried to change the
+  storage format and was reverted — see `_docs/06-research/033-*.md`.
+- 66 `6871616` F-11 pass 2: `PiiError::store_op` constructor + heal.rs
+  and session.rs conversions (net shrink, not the +280 lines the
+  literal form would have cost).
+- 67 `c47de9d` gate hygiene: `xtask lint-files` is now a
+  quality-gate.sh step (it was not enforced at all before — 23 of 77
+  specs omitted it); clippy.toml's `println` rule was dead (needs
+  `std::println`); and the line counter miscounted any
+  `#[cfg(test)] #[other_attr] mod tests` by counting the whole test
+  body as production code.
+- 68 `75606c4` pii-cli pure-logic test gaps + 5 small hygiene fixes.
+- 69 `55a8328` `lint-files --report` mode + corrected the 031 doc's
+  size list (raw `wc -l` is not the enforced metric; no file is
+  actually over the 450 effective-line gate, max 360).
+
+**Gate status: `./quality-gate.sh` exits 0, now 5 steps**
+(fmt / clippy / tests / doc-tests / lint-files — the last added by 67).
+
+**Two pidag defects found and recorded in pidag's `docs/FINDINGS.md`**
+during this work (both about the escalation ladder, not pii):
+1. `26c1ff7` — a TIMED-OUT iteration leaves partial work that
+   validation still passes (the validator reaches it via `after`, not a
+   gate), so the stronger rung fires on a verdict rather than on
+   whether rung 1 finished; and the retry prompt
+   (`implement-iter{n}` = "Fix the failures reported in:
+   {{validate-iter{n-1}.output}}") never hands over the previous
+   attempt's diff, so even a correctly-triggered escalation re-derives
+   instead of inheriting. Two candidate fixes recorded.
+2. `2db967c` (earlier) — unbounded stdout/stderr drain could hang a
+   worker node past its configured timeout.
+
+**Nothing left to implement without a design decision first.** Coding-
+harness graph, modularity idea, Chromecast-protocol module,
+`_docs/06-research/` reorg, and the pii↔pidag DAG-format unification are
+all gated on opus review — see `_docs/06-research/030-OPUS-START-HERE.md`.
 
 Full history before the 2026-09-16 pin lives at
 `_docs/99-archive/handoff-2026-09.md` (2002 lines, archived intact —
