@@ -90,6 +90,20 @@ this spec was drafted):
   signature style of its neighbors (`decode_kind`, `created_of`) —
   same error handling, same `Option<Vec<u8>>` input shape.
 
+**CRITICAL FINDING (updated 2026-09-18 after a failed run — read this
+before starting):** the first attempt at this spec discovered that
+`Doc.layer` is NOT persisted at all. `encode` currently writes
+`[kind_u8, created_u64_le, text]` and never writes the layer, which is
+why `layer_of` was a constant stub — there was nothing to read. The
+first worker attempt responded by ADDING a layer byte to `encode`,
+shifting every decoder's offsets. That is a CHANGE TO AN EVENT-SOURCED
+DAEMON'S ON-DISK DOCUMENT FORMAT and it is FORBIDDEN by this spec (see
+the guardrail below). The spec's original N3 anticipated this exact
+blocker and told the worker to STOP AND REPORT; the first worker did
+not do that. DO NOT REPEAT THAT MISTAKE.
+
+The correct handling is now spelled out in R4 and R5 below.
+
 ## Architecture
 
 Described inline in Overview above (file paths and function names given there constitute the architecture context for this change).
@@ -105,10 +119,14 @@ Described inline in Overview above (file paths and function names given there co
 ## Exit Criteria
 
 - [ ] `! grep -q "fn layer_of(_store" crates/pii-memory/src/consolidate.rs`
+- [ ] `! git diff HEAD --stat -- crates/pii-memory/src/doc.rs | grep -q .` (the doc blob codec must be untouched)
+- [ ] `! git diff HEAD -- crates/pii-memory/src/doc.rs | grep -q '^[+-].*out.push(layer_byte'`
 - [ ] `cargo test -p pii-memory`
-- [ ] `cargo build -p pii-memory`
-- [ ] `cargo clippy -p pii-memory -- -D warnings`
+- [ ] `cargo test -p pii-store`
+- [ ] `cargo build -p pii-memory -p pii-store`
+- [ ] `cargo clippy -p pii-memory -p pii-store -- -D warnings`
 - [ ] `cargo fmt --check`
+- [ ] `cargo run -q -p xtask -- lint-files`
 
 ## Guardrails
 
@@ -118,11 +136,38 @@ Described inline in Overview above (file paths and function names given there co
   broken.
 - Do NOT modify any file under `specs/`.
 - No emojis, no AI-tool mentions in any comment or commit message.
-- If the document blob format turns out not to store `Layer`
-  in a way `layer_of` can cheaply decode (e.g. it requires a full
-  document parse rather than a single-field peek like `decode_kind`
-  does), STOP and report the actual storage shape rather than
-  inventing an expensive workaround — the alternative (removing the
-  flag entirely if it can't be cheaply implemented) may be the right
-  call, but that decision should come back to the user/orchestrator,
-  not be made unilaterally by the workhorse.
+- If the document blob format turns out not to store `Layer` in a way
+  `layer_of` can cheaply decode, see the "R4/R5" section below — it
+  spells out the two permitted options. Do NOT add a byte to `encode`.
+
+## R4/R5: the permitted options (choose ONE, do not invent a third)
+
+The layer is genuinely not persisted today. There are exactly two
+permitted ways to fix `layer_of`. A change to the `encode` blob layout
+is NOT one of them.
+
+**Option A (RECOMMENDED — additive, no migration, backward
+compatible):** persist the layer in a NEW, additive store location
+rather than changing the existing `encode` blob. Add a new redb table
+(or use an existing per-doc metadata mechanism if one already exists —
+check `crates/pii-store/src/mem/` for what tables exist before adding
+one) keyed by doc id, written at `put` time from the `Doc` the caller
+already supplies. Existing persisted documents simply have no row;
+`layer_of` falls back to `Layer::L1` for those — which is EXACTLY
+today's behavior for every document, so nothing regresses and no
+migration is needed. New writes carry the real layer. This touches
+`crates/pii-store` (new table + write path) as well as
+`crates/pii-memory` (read path); that wider scope is expected and
+authorized for Option A.
+
+**Option B (if Option A proves genuinely impractical):** do not
+implement `layer_of`. Instead delete the `same_layer_only` field and
+its guard (`if cfg.same_layer_only && ...`), and update the two
+production callers that set it to `true` to stop setting it.
+Rationale: a config flag naming a guarantee the code cannot provide is
+worse than no flag. Smaller change, but a user-visible capability
+removal.
+
+Option A is preferred. Option B is acceptable. Anything else — in
+particular shifting byte offsets in `encode` — is forbidden. If you
+believe neither is workable, STOP and report.
