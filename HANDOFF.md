@@ -6,7 +6,21 @@ decisions actually being asked of you; this HANDOFF.md is the full
 detailed ledger, useful for auditing HOW a decision was reached, not
 for finding WHAT to decide.
 
-## CURRENT STATE — 2026-09-17: Phase 5.0 COMPLETE + Phase 5.1 Track A COMPLETE + Phase 5.2 structural-debt/warn-band ratchet COMPLETE (F-13, F-14, all six F-12 warn-band files)
+## CURRENT STATE — 2026-09-18: Phase 5.0/5.1/5.2/5.3 ALL COMPLETE. Spec backlog is clear.
+
+Every pidag-runnable spec (43 through 61) is implemented, gate-verified,
+and committed. F-16/F-18/F-19/F-20/F-22 closed. F-11 has a bounded pilot
+committed (`c8fb4d9`, `pii-store/src/heal.rs` structured `StoreOp`
+error); the full 817-site sweep remains deliberately out of scope for
+one spec (too large — see `c8fb4d9`'s own commit message).
+
+**Nothing left to implement without a design decision first.** Every
+remaining item (coding-harness graph, modularity idea, Chromecast-
+protocol module, `_docs/06-research/` reorg, DAG format unification
+with pidag) is explicitly gated on opus review — see
+`_docs/06-research/030-OPUS-START-HERE.md`. Do not write new pidag
+specs for these until that review lands; they are architecture
+decisions, not routine implementation work.
 
 Full history before the 2026-09-16 pin lives at
 `_docs/99-archive/handoff-2026-09.md` (2002 lines, archived intact —
