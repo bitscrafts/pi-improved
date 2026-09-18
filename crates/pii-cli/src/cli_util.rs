@@ -19,7 +19,7 @@ pub(crate) fn usage_error(msg: &str, usage: &str) -> ExitCode {
 /// Returns the usage exit code when the flag has no following value.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn next_value(
-    args: &mut std::env::ArgsOs,
+    args: &mut dyn Iterator<Item = std::ffi::OsString>,
     flag: &str,
     usage: &str,
 ) -> Result<String, ExitCode> {
