@@ -86,6 +86,20 @@ impl PiiError {
     pub const fn is_cancelled(&self) -> bool {
         matches!(self, Self::Cancelled)
     }
+
+    /// Convenience constructor for [`PiiError::StoreOp`] — turns the common
+    /// `.map_err(|e| PiiError::Internal(format!("store: {op} {resource}: {e}")))`
+    /// shape into a one-line call. `detail` accepts anything `Display`, so
+    /// both `impl std::fmt::Display` errors and pre-formatted strings work
+    /// without an extra `.to_string()` at call sites.
+    #[must_use]
+    pub fn store_op(op: &str, resource: &str, detail: impl std::fmt::Display) -> Self {
+        Self::StoreOp {
+            op: op.to_string(),
+            resource: resource.to_string(),
+            detail: detail.to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -155,6 +169,22 @@ mod tests {
         ] {
             assert!(v.is_terminal(), "{name} should be terminal");
         }
+    }
+
+    /// Spec 66: the `store_op` convenience constructor produces exactly the
+    /// manual struct-literal form — same `Display`, same classification.
+    #[test]
+    fn store_op_constructor_matches_manual_construction() {
+        let constructed = PiiError::store_op("open", "heal_db", "boom");
+        let manual = PiiError::StoreOp {
+            op: String::from("open"),
+            resource: String::from("heal_db"),
+            detail: String::from("boom"),
+        };
+        assert_eq!(constructed, manual);
+        assert_eq!(constructed.to_string(), manual.to_string());
+        assert_eq!(constructed.is_retryable(), manual.is_retryable());
+        assert_eq!(constructed.is_terminal(), manual.is_terminal());
     }
 
     /// Spec 47 R2: the `StoreOp` display carries all three context fields.

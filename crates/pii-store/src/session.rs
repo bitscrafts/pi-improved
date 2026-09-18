@@ -21,7 +21,7 @@ impl crate::Store {
     /// call's cost never grows with message count).
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn put_session(&self, id: &str, bytes: &[u8]) -> Result<(), PiiError> {
         if self
             .fail_session_writes_for_test
@@ -34,18 +34,18 @@ impl crate::Store {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "session", e))?;
         {
             let mut table = write
                 .open_table(SESSION)
-                .map_err(|e| PiiError::Internal(format!("store: open session: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session", e))?;
             table
                 .insert(id, bytes)
-                .map_err(|e| PiiError::Internal(format!("store: put session: {e}")))?;
+                .map_err(|e| PiiError::store_op("put", "session", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit session: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "session", e))?;
         self.session_bytes_written
             .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
         Ok(())
@@ -54,18 +54,18 @@ impl crate::Store {
     /// Fetches a session blob by id.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn get_session(&self, id: &str) -> Result<Option<Vec<u8>>, PiiError> {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "session", e))?;
         let table = read
             .open_table(SESSION)
-            .map_err(|e| PiiError::Internal(format!("store: open session: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "session", e))?;
         let got = table
             .get(id)
-            .map_err(|e| PiiError::Internal(format!("store: get session: {e}")))?;
+            .map_err(|e| PiiError::store_op("get", "session", e))?;
         Ok(got.map(|v| v.value().to_vec()))
     }
 
@@ -74,73 +74,72 @@ impl crate::Store {
     /// session leaves no orphaned transcript behind.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn del_session(&self, id: &str) -> Result<(), PiiError> {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "session", e))?;
         {
             let mut table = write
                 .open_table(SESSION)
-                .map_err(|e| PiiError::Internal(format!("store: open session: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session", e))?;
             table
                 .remove(id)
-                .map_err(|e| PiiError::Internal(format!("store: del session: {e}")))?;
+                .map_err(|e| PiiError::store_op("del", "session", e))?;
         }
         {
             let mut msg = write
                 .open_table(SESSION_MSG)
-                .map_err(|e| PiiError::Internal(format!("store: open session_msg: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_msg", e))?;
             let keys: Vec<u64> = msg
                 .range((id, 0)..(id, u64::MAX))
-                .map_err(|e| PiiError::Internal(format!("store: range session_msg: {e}")))?
+                .map_err(|e| PiiError::store_op("range", "session_msg", e))?
                 .filter_map(|item| item.ok().map(|(k, _)| k.value().1))
                 .collect();
             for seq in keys {
                 msg.remove((id, seq))
-                    .map_err(|e| PiiError::Internal(format!("store: del session_msg: {e}")))?;
+                    .map_err(|e| PiiError::store_op("del", "session_msg", e))?;
             }
         }
         {
             let mut snap = write
                 .open_table(SESSION_SNAPSHOT)
-                .map_err(|e| PiiError::Internal(format!("store: open session_snapshot: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_snapshot", e))?;
             let keys: Vec<u64> = snap
                 .range((id, 0)..(id, u64::MAX))
-                .map_err(|e| PiiError::Internal(format!("store: range session_snapshot: {e}")))?
+                .map_err(|e| PiiError::store_op("range", "session_snapshot", e))?
                 .filter_map(|item| item.ok().map(|(k, _)| k.value().1))
                 .collect();
             for seq in keys {
                 snap.remove((id, seq))
-                    .map_err(|e| PiiError::Internal(format!("store: del session_snapshot: {e}")))?;
+                    .map_err(|e| PiiError::store_op("del", "session_snapshot", e))?;
             }
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit del session: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "session", e))?;
         Ok(())
     }
 
     /// Lists all session ids in table (iteration) order.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn all_sessions(&self) -> Result<Vec<String>, PiiError> {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "session", e))?;
         let table = read
             .open_table(SESSION)
-            .map_err(|e| PiiError::Internal(format!("store: open session: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "session", e))?;
         let mut out = Vec::new();
         let iter = table
             .iter()
-            .map_err(|e| PiiError::Internal(format!("store: iter session: {e}")))?;
+            .map_err(|e| PiiError::store_op("iter", "session", e))?;
         for item in iter {
-            let (key, _) =
-                item.map_err(|e| PiiError::Internal(format!("store: read session: {e}")))?;
+            let (key, _) = item.map_err(|e| PiiError::store_op("read", "session", e))?;
             out.push(key.value().to_owned());
         }
         Ok(out)
@@ -152,28 +151,28 @@ impl crate::Store {
     /// max persisted value.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn next_session_id(&self) -> Result<u64, PiiError> {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "session", e))?;
         let next;
         {
             let mut meta = write
                 .open_table(META)
-                .map_err(|e| PiiError::Internal(format!("store: open meta: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "meta", e))?;
             let cur = meta
                 .get(SESSION_ID_COUNTER_KEY)
-                .map_err(|e| PiiError::Internal(format!("store: read session counter: {e}")))?
+                .map_err(|e| PiiError::store_op("read", "session counter", e))?
                 .map_or(0, |v| v.value());
             next = cur + 1;
             meta.insert(SESSION_ID_COUNTER_KEY, next)
-                .map_err(|e| PiiError::Internal(format!("store: write session counter: {e}")))?;
+                .map_err(|e| PiiError::store_op("write", "session counter", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit session counter: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "session counter", e))?;
         Ok(next)
     }
 
@@ -182,23 +181,23 @@ impl crate::Store {
     /// never deserialise the whole session blob.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn set_session_tokens(&self, id: &str, input: u64, output: u64) -> Result<(), PiiError> {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "session", e))?;
         {
             let mut table = write
                 .open_table(SESSION_TOKENS)
-                .map_err(|e| PiiError::Internal(format!("store: open session_tokens: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_tokens", e))?;
             table
                 .insert(id, (input, output))
-                .map_err(|e| PiiError::Internal(format!("store: put session tokens: {e}")))?;
+                .map_err(|e| PiiError::store_op("put", "session tokens", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit session tokens: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "session tokens", e))?;
         Ok(())
     }
 
@@ -207,18 +206,18 @@ impl crate::Store {
     /// can distinguish "never counted" from "counted as zero".
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn get_session_tokens(&self, id: &str) -> Result<Option<(u64, u64)>, PiiError> {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "session", e))?;
         let table = read
             .open_table(SESSION_TOKENS)
-            .map_err(|e| PiiError::Internal(format!("store: open session_tokens: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "session_tokens", e))?;
         let got = table
             .get(id)
-            .map_err(|e| PiiError::Internal(format!("store: get session tokens: {e}")))?;
+            .map_err(|e| PiiError::store_op("get", "session tokens", e))?;
         Ok(got.map(|v| v.value()))
     }
 
@@ -230,7 +229,7 @@ impl crate::Store {
     /// linear (each message written exactly once, plus periodic snapshots).
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn append_session_message(&self, session_id: &str, bytes: &[u8]) -> Result<u64, PiiError> {
         if self
             .fail_session_writes_for_test
@@ -243,33 +242,32 @@ impl crate::Store {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "session", e))?;
         let seq;
         {
             let mut meta = write
                 .open_table(META)
-                .map_err(|e| PiiError::Internal(format!("store: open meta: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "meta", e))?;
             let counter_key = session_msg_counter_key(session_id);
             let cur = meta
                 .get(counter_key.as_str())
-                .map_err(|e| PiiError::Internal(format!("store: read session_msg counter: {e}")))?
+                .map_err(|e| PiiError::store_op("read", "session_msg counter", e))?
                 .map_or(0, |v| v.value());
             seq = cur;
-            meta.insert(counter_key.as_str(), cur + 1).map_err(|e| {
-                PiiError::Internal(format!("store: write session_msg counter: {e}"))
-            })?;
+            meta.insert(counter_key.as_str(), cur + 1)
+                .map_err(|e| PiiError::store_op("write", "session_msg counter", e))?;
         }
         {
             let mut table = write
                 .open_table(SESSION_MSG)
-                .map_err(|e| PiiError::Internal(format!("store: open session_msg: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_msg", e))?;
             table
                 .insert((session_id, seq), bytes)
-                .map_err(|e| PiiError::Internal(format!("store: append session_msg: {e}")))?;
+                .map_err(|e| PiiError::store_op("append", "session_msg", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit session_msg: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "session_msg", e))?;
         self.session_bytes_written
             .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
         Ok(seq)
@@ -278,22 +276,21 @@ impl crate::Store {
     /// Reads every appended transcript message for a session, in seq order.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn session_messages(&self, session_id: &str) -> Result<Vec<(u64, Vec<u8>)>, PiiError> {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "session", e))?;
         let table = read
             .open_table(SESSION_MSG)
-            .map_err(|e| PiiError::Internal(format!("store: open session_msg: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "session_msg", e))?;
         let mut out = Vec::new();
         let range = table
             .range((session_id, 0)..(session_id, u64::MAX))
-            .map_err(|e| PiiError::Internal(format!("store: range session_msg: {e}")))?;
+            .map_err(|e| PiiError::store_op("range", "session_msg", e))?;
         for item in range {
-            let (key, value) =
-                item.map_err(|e| PiiError::Internal(format!("store: read session_msg item: {e}")))?;
+            let (key, value) = item.map_err(|e| PiiError::store_op("read", "session_msg", e))?;
             let (_, seq) = key.value();
             out.push((seq, value.value().to_vec()));
         }
@@ -306,7 +303,7 @@ impl crate::Store {
     /// snapshot (if any) with only this tail.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn session_messages_since(
         &self,
         session_id: &str,
@@ -315,17 +312,16 @@ impl crate::Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "session", e))?;
         let table = read
             .open_table(SESSION_MSG)
-            .map_err(|e| PiiError::Internal(format!("store: open session_msg: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "session_msg", e))?;
         let mut out = Vec::new();
         let range = table
             .range((session_id, since_seq.saturating_add(1))..(session_id, u64::MAX))
-            .map_err(|e| PiiError::Internal(format!("store: range session_msg: {e}")))?;
+            .map_err(|e| PiiError::store_op("range", "session_msg", e))?;
         for item in range {
-            let (key, value) =
-                item.map_err(|e| PiiError::Internal(format!("store: read session_msg item: {e}")))?;
+            let (key, value) = item.map_err(|e| PiiError::store_op("read", "session_msg", e))?;
             let (_, seq) = key.value();
             out.push((seq, value.value().to_vec()));
         }
@@ -337,7 +333,7 @@ impl crate::Store {
     /// snapshot + messages since" instead of the entire transcript.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn put_session_snapshot(
         &self,
         session_id: &str,
@@ -347,18 +343,18 @@ impl crate::Store {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "session", e))?;
         {
             let mut table = write
                 .open_table(SESSION_SNAPSHOT)
-                .map_err(|e| PiiError::Internal(format!("store: open session_snapshot: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_snapshot", e))?;
             table
                 .insert((session_id, seq), bytes)
-                .map_err(|e| PiiError::Internal(format!("store: put session_snapshot: {e}")))?;
+                .map_err(|e| PiiError::store_op("put", "session_snapshot", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit session_snapshot: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "session_snapshot", e))?;
         self.session_bytes_written
             .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
         Ok(())
@@ -367,7 +363,7 @@ impl crate::Store {
     /// Returns the highest-seq full-session snapshot for a session, if any.
     ///
     /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
+    /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn latest_session_snapshot(
         &self,
         session_id: &str,
@@ -375,17 +371,17 @@ impl crate::Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "session", e))?;
         let table = read
             .open_table(SESSION_SNAPSHOT)
-            .map_err(|e| PiiError::Internal(format!("store: open session_snapshot: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "session_snapshot", e))?;
         let mut latest: Option<(u64, Vec<u8>)> = None;
         let range = table
             .range((session_id, 0)..=(session_id, u64::MAX))
-            .map_err(|e| PiiError::Internal(format!("store: range session_snapshot: {e}")))?;
+            .map_err(|e| PiiError::store_op("range", "session_snapshot", e))?;
         for item in range {
             let (key, value) =
-                item.map_err(|e| PiiError::Internal(format!("store: read session_snapshot: {e}")))?;
+                item.map_err(|e| PiiError::store_op("read", "session_snapshot", e))?;
             let (_, seq) = key.value();
             latest = Some((seq, value.value().to_vec()));
         }
