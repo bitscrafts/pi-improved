@@ -31,7 +31,7 @@ impl Common {
     /// Returns the usage exit code on an unknown flag, missing value, or
     /// invalid `--input` JSON.
     fn parse(
-        args: &mut std::env::ArgsOs,
+        args: &mut dyn Iterator<Item = std::ffi::OsString>,
         usage: &str,
         allow_novalidate: bool,
     ) -> Result<Self, ExitCode> {
@@ -178,6 +178,17 @@ fn load_and_validate(
 /// before dispatch and after each node).
 fn root_ctx(allow_write: &[PathBuf], run: RunId, limits: &pii_graph::GraphLimits) -> Ctx {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    root_ctx_in(&cwd, allow_write, run, limits)
+}
+
+/// [`root_ctx`] with the working directory supplied by the caller — the
+/// testable seam (same CapSet/Budget construction, no process-global read).
+fn root_ctx_in(
+    cwd: &std::path::Path,
+    allow_write: &[PathBuf],
+    run: RunId,
+    limits: &pii_graph::GraphLimits,
+) -> Ctx {
     let mut fs_write = vec![cwd.join("_tmp")];
     // Canonicalise each --allow-write so the grant matches the canonical
     // target FsCap checks (opus review F15): a relative or symlinked grant
@@ -190,7 +201,7 @@ fn root_ctx(allow_write: &[PathBuf], run: RunId, limits: &pii_graph::GraphLimits
     }
     let caps = CapSet {
         kinds: CapKind::FS_READ | CapKind::FS_WRITE | CapKind::PROC,
-        fs_read: PathScope::new(vec![cwd]),
+        fs_read: PathScope::new(vec![cwd.to_path_buf()]),
         fs_write: PathScope::new(fs_write),
         proc_argv0: ArgvScope::new(vec![String::from("/bin/sh")]),
         ..CapSet::default()
@@ -227,5 +238,165 @@ fn report(result: Result<Terminal, PiiError>) -> ExitCode {
             eprintln!("error: {e}");
             ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use std::ffi::OsString;
+    use std::process::ExitCode;
+
+    use pii_abi::{PiiError, ResumeKey, Terminal};
+
+    use pii_abi::RunId;
+    use pii_core::BudgetKind;
+    use pii_core::CapKind;
+
+    use super::{Common, report, root_ctx_in};
+
+    fn os_args(argv: &[&str]) -> std::vec::IntoIter<OsString> {
+        argv.iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    // --- Common::parse ---------------------------------------------------
+
+    #[test]
+    fn common_parse_handles_valid_args() {
+        let mut args = os_args(&[
+            "--db",
+            "/tmp/run.redb",
+            "--run-id",
+            "r1",
+            "--input",
+            r#"{"k":1}"#,
+            "--allow-write",
+            "/tmp/w",
+            "--allow-write",
+            "/tmp/w2",
+            "--no-validate",
+        ]);
+        let c = Common::parse(&mut args, "USAGE", true).unwrap();
+        assert_eq!(c.db, std::path::PathBuf::from("/tmp/run.redb"));
+        assert_eq!(c.run_id.map(|r| r.to_string()), Some(String::from("r1")));
+        assert_eq!(c.input, serde_json::json!({"k": 1}));
+        assert_eq!(
+            c.allow_write,
+            vec![
+                std::path::PathBuf::from("/tmp/w"),
+                std::path::PathBuf::from("/tmp/w2")
+            ]
+        );
+        assert!(c.no_validate);
+    }
+
+    #[test]
+    fn common_parse_defaults_and_missing_db() {
+        // --input defaults to {}; a missing --db is a usage error (2).
+        let mut args = os_args(&[]);
+        assert_eq!(
+            Common::parse(&mut args, "USAGE", false).err().unwrap(),
+            ExitCode::from(2)
+        );
+        let mut args = os_args(&["--db", "x.redb"]);
+        let c = Common::parse(&mut args, "USAGE", false).unwrap();
+        assert_eq!(c.input, serde_json::json!({}));
+        assert!(!c.no_validate);
+        assert!(c.run_id.is_none());
+        assert!(c.allow_write.is_empty());
+    }
+
+    #[test]
+    fn common_parse_rejects_unknown_flag_and_bad_json() {
+        let mut args = os_args(&["--db", "x.redb", "--bogus"]);
+        assert_eq!(
+            Common::parse(&mut args, "USAGE", false).err().unwrap(),
+            ExitCode::from(2)
+        );
+        let mut args = os_args(&["--db", "x.redb", "--input", "not-json"]);
+        assert_eq!(
+            Common::parse(&mut args, "USAGE", false).err().unwrap(),
+            ExitCode::from(2)
+        );
+    }
+
+    // --- root_ctx --------------------------------------------------------
+
+    #[test]
+    fn root_ctx_builds_expected_capset() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let grant = tmp.path().join("grant");
+        let cwd = tmp.path().to_path_buf();
+        let limits = pii_graph::GraphLimits {
+            max_tokens: 123,
+            max_tool_calls: 7,
+            max_micro_usd: 99,
+            ..pii_graph::GraphLimits::default()
+        };
+        let ctx = root_ctx_in(
+            &cwd,
+            std::slice::from_ref(&grant),
+            RunId::from("r1"),
+            &limits,
+        );
+        let caps = ctx.caps();
+        assert_eq!(
+            caps.kinds,
+            CapKind::FS_READ | CapKind::FS_WRITE | CapKind::PROC
+        );
+        // fs_read allow = [cwd]; fs_write allow = [cwd/_tmp] + canonicalised
+        // grants; proc argv0 = /bin/sh; other scopes empty.
+        assert!(caps.fs_read.permits(&cwd));
+        assert!(!caps.fs_read.permits(std::path::Path::new("/etc")));
+        assert!(caps.fs_write.permits(&cwd.join("_tmp")));
+        assert!(
+            caps.fs_write
+                .permits(&dunce::canonicalize(&grant).expect("canon"))
+        );
+        assert!(caps.proc_argv0.permits("/bin/sh"));
+        assert!(!caps.net_hosts.permits("example.com"));
+        // Budget mirrors the graph limits.
+        assert_eq!(ctx.budget().remaining(BudgetKind::Tokens), 123);
+        assert_eq!(ctx.budget().remaining(BudgetKind::ToolCalls), 7);
+        assert_eq!(ctx.budget().remaining(BudgetKind::MicroUsd), 99);
+        // Trace context carries the run id.
+        assert_eq!(ctx.trace().run, RunId::from("r1"));
+    }
+
+    // --- report ----------------------------------------------------------
+
+    #[test]
+    fn report_maps_terminal_states_to_exit_codes() {
+        assert_eq!(
+            report(Ok(Terminal::Success {
+                output: serde_json::json!({"ok": true})
+            })),
+            ExitCode::SUCCESS
+        );
+        assert_eq!(
+            report(Ok(Terminal::Failure {
+                error: String::from("boom")
+            })),
+            ExitCode::from(1)
+        );
+        assert_eq!(
+            report(Ok(Terminal::Suspended {
+                key: ResumeKey(String::from("k"))
+            })),
+            ExitCode::from(4)
+        );
+        assert_eq!(
+            report(Err(PiiError::Invalid(String::from("bad")))),
+            ExitCode::from(1)
+        );
     }
 }

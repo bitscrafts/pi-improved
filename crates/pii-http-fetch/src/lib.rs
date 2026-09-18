@@ -93,7 +93,7 @@ impl Tool for HttpFetchTool {
         match &outcome {
             Ok((status, bytes)) => {
                 let _ = self.audit.append(&format!(
-                    "FEED: GET {} -> 200-OK status={status} bytes_out=0 bytes_in={bytes} headers=none method=GET body=none",
+                    "FEED: GET {} -> status={status} bytes_out=0 bytes_in={bytes} headers=none method=GET body=none",
                     args.url
                 ));
             }

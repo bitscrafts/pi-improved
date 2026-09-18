@@ -4,6 +4,13 @@
 //! watch runs, sessions, approvals, heals, and memory. VIEWER-ONLY: no
 //! write RPC is proxied. axum lives here, not in the workspace root or
 //! pii-cli (deps-check invariant).
+//!
+//! Exposure note: this crate has no authentication of its own — it forwards
+//! the daemon's read surface under pii-web's own process uid, bypassing the
+//! peer-uid check the daemon's UDS socket normally enforces. `--host 0.0.0.0`
+//! is accepted, but binding off loopback exposes that read surface to the
+//! network without additional authentication; the default bind is loopback
+//! for this reason.
 
 #![forbid(unsafe_code)]
 // reason: the web server must print startup/error messages to stderr.

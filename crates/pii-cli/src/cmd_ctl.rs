@@ -71,7 +71,7 @@ pub(crate) fn print_result(method: Method, params: serde_json::Value) -> ExitCod
 }
 
 #[allow(clippy::redundant_pub_crate)]
-pub(crate) fn next_str(args: &mut std::env::ArgsOs) -> Option<String> {
+pub(crate) fn next_str(args: &mut dyn Iterator<Item = std::ffi::OsString>) -> Option<String> {
     args.next().and_then(|a| a.into_string().ok())
 }
 

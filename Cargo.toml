@@ -46,6 +46,8 @@ dunce = "1.0"
 tempfile = "3"
 tokio = { version = "1.53", default-features = false }
 landlock = "0.4"
+# Exact pin per the F5.1 pii-tui dependency allowlist (spec phase2 part3,
+# commit 09809b8): the allowlist names ratatui=0.30.2 and deps-check enforces it.
 ratatui = "=0.30.2"
 crossterm = "0.29"
 llama-cpp-2 = { version = "0.1.156", default-features = false, features = ["common"] }

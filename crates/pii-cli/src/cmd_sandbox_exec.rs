@@ -60,14 +60,49 @@ pub(crate) fn cmd_sandbox_exec(args: &mut std::env::ArgsOs) -> ExitCode {
         .current_dir(&workspace)
         .status();
     match status {
-        Ok(s) => {
-            #[allow(clippy::cast_sign_loss)]
-            let code = s.code().unwrap_or(1) as u32 & 0xff;
-            ExitCode::from(u8::try_from(code).unwrap_or(1))
-        }
+        Ok(s) => ExitCode::from(coerce_child_exit(s.code())),
         Err(e) => {
             eprintln!("error: spawn {prog}: {e}");
             ExitCode::from(2)
         }
+    }
+}
+
+/// Coerces a child's raw exit code to the parent's exit code: `code & 0xff`,
+/// with `1` as the fallback when the child was killed by a signal
+/// (`ExitStatus::code()` returns `None`).
+fn coerce_child_exit(code: Option<i32>) -> u8 {
+    #[allow(clippy::cast_sign_loss)] // raw wait status is a positive small int
+    code.map_or(1, |c| (c as u32 & 0xff) as u8)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    use super::coerce_child_exit;
+
+    #[test]
+    fn sandbox_exec_exit_code_coercion() {
+        // Successful exit passes through, masked to 8 bits.
+        let ok = ExitStatus::from_raw(0);
+        assert_eq!(coerce_child_exit(ok.code()), 0);
+        // Exit code 42 -> 42.
+        let code = ExitStatus::from_raw(42 << 8);
+        assert_eq!(coerce_child_exit(code.code()), 42);
+        // Killed by SIGKILL (signal 9): code() is None, falls back to 1.
+        let killed = ExitStatus::from_raw(9);
+        assert!(killed.code().is_none());
+        assert_eq!(coerce_child_exit(killed.code()), 1);
+        // Killed by SIGINT (signal 2): same fallback.
+        let sigint = ExitStatus::from_raw(2);
+        assert!(sigint.code().is_none());
+        assert_eq!(coerce_child_exit(sigint.code()), 1);
+        // An out-of-range exit code (e.g. 300) is masked to its low 8 bits.
+        let masked = ExitStatus::from_raw((0x012c & 0xff) << 8);
+        assert_eq!(coerce_child_exit(masked.code()), 44); // 300 & 0xff
     }
 }

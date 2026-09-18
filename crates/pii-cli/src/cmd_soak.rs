@@ -158,14 +158,42 @@ async fn run_one(client: &Client, graph: &str) -> bool {
             .call(Method::RunGet, serde_json::json!({"run_id": run_id}))
             .await
             && let Some(status) = h.get("status").and_then(|v| v.as_str())
+            && let Some(outcome) = soak_status(status)
         {
-            match status {
-                "succeeded" => return true,
-                "failed" => return false,
-                _ => {}
-            }
+            return outcome;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     false
+}
+
+/// Maps a `RunGet` `status` string to the soak outcome. Terminal statuses map
+/// to `Some(true)` (`succeeded`) / `Some(false)` (`failed`); anything else
+/// (including a future daemon-side rename of these literals, which would
+/// silently spin this driver to its poll timeout) is `None` — keep polling.
+fn soak_status(status: &str) -> Option<bool> {
+    match status {
+        "succeeded" => Some(true),
+        "failed" => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::soak_status;
+
+    #[test]
+    fn cmd_soak_status_matching() {
+        assert_eq!(soak_status("succeeded"), Some(true));
+        assert_eq!(soak_status("failed"), Some(false));
+        // Unknown statuses keep polling (None), including near-miss renames
+        // a daemon-side change could introduce.
+        assert_eq!(soak_status("running"), None);
+        assert_eq!(soak_status("Succeeded"), None);
+        assert_eq!(soak_status("ok"), None);
+        assert_eq!(soak_status(""), None);
+    }
 }

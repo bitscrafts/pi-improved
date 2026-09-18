@@ -1,7 +1,9 @@
-//! `DiscordChannel` (F6.3): plaintext HTTP against a Discord-API-compatible endpoint.
+//! `DiscordChannel` (F6.3): HTTP(S) against a Discord-API-compatible endpoint.
 //!
-//! TLS is cut to Phase 3b, so `PII_DISCORD_API_BASE` must point at plaintext
-//! `http://` in this phase (the fake, or a future 3b `https://`).
+//! TLS is available now: the transport the daemon wires in (`pii-net`
+//! `NetService`) handles `https://` URLs (rustls, spec 17), so the default
+//! `DEFAULT_API_BASE` below works as-is; `PII_DISCORD_API_BASE` may point at
+//! either scheme (tests point it at a plaintext loopback fake).
 
 use std::sync::Arc;
 
@@ -11,8 +13,8 @@ use serde::Deserialize;
 
 use crate::{Channel, Incoming};
 
-/// Default Discord API base (blocked on 3b's TLS; tests point this at a
-/// loopback fake).
+/// Default Discord API base (https works: pii-net's TLS landed in spec 17;
+/// tests point this at a loopback fake).
 pub const DEFAULT_API_BASE: &str = "https://api.discord.com";
 
 /// One message as Discord's API shapes it.

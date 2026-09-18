@@ -33,7 +33,11 @@ pub(crate) fn cmd_run_ctl(args: &mut std::env::ArgsOs) -> ExitCode {
     }
 }
 
-fn run_ls(args: &mut std::env::ArgsOs) -> ExitCode {
+/// Parses `run ls` flags: `[--status S] [--graph G]`. Pure; the testable seam
+/// for [`run_ls`].
+fn parse_ls_flags(
+    args: &mut dyn Iterator<Item = std::ffi::OsString>,
+) -> (Option<String>, Option<String>) {
     let mut status: Option<String> = None;
     let mut graph: Option<String> = None;
     while let Some(a) = next_str(args) {
@@ -43,6 +47,11 @@ fn run_ls(args: &mut std::env::ArgsOs) -> ExitCode {
             _ => {}
         }
     }
+    (status, graph)
+}
+
+fn run_ls(args: &mut std::env::ArgsOs) -> ExitCode {
+    let (status, graph) = parse_ls_flags(args);
     let mut params = serde_json::json!({});
     if let Some(s) = &status
         && let Some(obj) = params.as_object_mut()
@@ -89,4 +98,38 @@ fn run_start(args: &mut std::env::ArgsOs) -> ExitCode {
         Method::RunStart,
         serde_json::json!({"graph": graph, "input": input}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::ffi::OsString;
+
+    use super::parse_ls_flags;
+
+    fn os_args(argv: &[&str]) -> std::vec::IntoIter<OsString> {
+        argv.iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    #[test]
+    fn run_ls_parses_graph_filter() {
+        let mut args = os_args(&["--graph", "foo"]);
+        let (status, graph) = parse_ls_flags(&mut args);
+        assert_eq!(status, None);
+        assert_eq!(graph.as_deref(), Some("foo"));
+        // Both filters together, plus an ignored unknown flag.
+        let mut args = os_args(&["--status", "failed", "--graph", "g1", "--extra"]);
+        let (status, graph) = parse_ls_flags(&mut args);
+        assert_eq!(status.as_deref(), Some("failed"));
+        assert_eq!(graph.as_deref(), Some("g1"));
+        // No flags at all.
+        let mut args = os_args(&[]);
+        let (status, graph) = parse_ls_flags(&mut args);
+        assert_eq!(status, None);
+        assert_eq!(graph, None);
+    }
 }
