@@ -18,12 +18,21 @@ in the pidag repo itself. Repo hygiene: 18G of stale `_tmp/` scratch
 archived off-disk, hardcoded absolute paths and orphaned docs found and
 partially fixed (spec-61 queued for the rest).
 
-## USER-MANDATED (not optional): unify the DAG/graph format across pii and pidag
+## USER-MANDATED (staged, not immediate): unify the DAG/graph format across pii and pidag
 
 **User (verbatim, 2026-09-18): "using the same dag format in both could
-be a must!"** This is stronger than the 4 decisions below — it's a
-stated requirement, not a design preference up for debate. Ground
-truth already gathered, in `/projects/pidag/docs/`:
+be a must!"** Then clarified on follow-up: **"'identical file format'
+is a good option for future, 'Compatible principles' is good for
+now!"** — so this is a TWO-PHASE requirement, not an immediate merge:
+
+- **Phase now**: compatible principles across both formats (already
+  satisfied by the constraint below — declarative-only, no
+  runtime-code routing in either project). No migration needed today.
+- **Phase later**: a single identical shared schema/format, once
+  there's a concrete need driving it (e.g. the coding-harness graph in
+  §1 below, which would live in whichever project ends up hosting it).
+
+Ground truth already gathered, in `/projects/pidag/docs/`:
 
 - `pii-vs-pidag-dag-format-notes.md` — internal comparison: pii uses
   port-based graph routing (declarative pattern-match routes, not
@@ -40,21 +49,39 @@ truth already gathered, in `/projects/pidag/docs/`:
   constraint on what "unified" can mean: whatever shape is chosen must
   stay declarative-only, no runtime-code routing in either project.
 
-**Opus is asked to decide the unification SHAPE**, not whether to do
-it: (a) pidag adopts pii's port-based routing wholesale, (b) pii
-adopts pidag's flatter model, (c) a new shared crate/schema both
-projects depend on, or (d) a translation layer (each keeps its native
-format, a converter maps between them for tooling/analysis purposes
-only). Option (c) is the only one that structurally prevents drift
-long-term; options (a)/(b) require a real migration in the losing
-project; option (d) is cheapest but doesn't satisfy "same format" as
-literally stated by the user.
+**Direction (assistant's recommendation, pending opus confirmation):
+pidag should end up as a constrained SUBSET of pii's schema, not the
+reverse.** Reasoning: pii's port-based routing is a strict
+superset in expressiveness (a fixed pass/fail edge is just a port with
+one rule; the reverse doesn't hold — pidag's flat depends_on cannot
+express pii's branching/pattern-match routes without new machinery).
+pii is also the general-purpose orchestration engine (memory, channels,
+tool calls, heals); pidag is a specialized single-workflow consumer
+(implement → validate → gate → retry/iterate). A specialized tool
+naturally profiles down from a general one; going the other direction
+would regress pii's existing branching capability that `failover.toml`/
+`heal-fix.toml` already rely on. Concretely: pidag's SDD DAG would
+become expressible as pii's schema restricted to just the port
+patterns pidag actually needs (a `pass` port and a `fail` port,
+nothing more exotic) — one shared crate/schema, pii as the superset,
+pidag as the constrained profile.
+
+**Opus is asked to confirm or override this direction** and pick the
+concrete unification vehicle once Phase-later is actually triggered:
+(a) pidag adopts pii's port-based routing wholesale as a constrained
+subset (assistant's recommendation), (b) pii adopts pidag's flatter
+model (assistant's view: a regression, not recommended), (c) a new
+third shared crate/schema neither currently has (higher cost, no
+clear advantage over (a) given pii's format is already sufficient),
+or (d) a translation layer only, no shared format (cheapest, but
+doesn't satisfy the user's "identical format, future" goal).
 
 **Status**: spec-129 (a small, additive, non-retryable-error-
 classification field — NOT format unification, just the highest-
 confidence cross-format-compatible pattern from the research) is
-currently being implemented via a sonnet subagent as a first concrete
-step. It does not preempt or substitute for the unification decision —
+DONE — implemented via a sonnet subagent, gate-verified, committed
+(`39e81a2`), and the resulting pidag binary is now installed and in
+use. It does not preempt or substitute for the unification decision —
 it was scoped deliberately small so it wouldn't need to wait on the
 bigger architectural call.
 
