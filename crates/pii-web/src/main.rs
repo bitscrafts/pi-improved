@@ -166,13 +166,23 @@ async fn api_health(State(st): State<AppState>) -> Response {
     }
 }
 
-/// `pii web [--port 4602] [--host 127.0.0.1] [--instance default]`.
-#[allow(clippy::too_many_lines)]
-// reason: flag parsing + socket resolution +
-// server startup is one cohesive sequence (same pattern as cmd_daemon).
-#[allow(clippy::disallowed_methods)] // reason: pii-web is the sanctioned web
-// server; it binds a loopback TCP listener directly (net-check allowlists it).
-pub(crate) fn cmd_web(args: &mut std::env::ArgsOs) -> ExitCode {
+/// Parsed `pii web` flags.
+#[derive(Debug)]
+struct WebArgs {
+    port: u16,
+    host: String,
+    instance: String,
+}
+
+/// Parses `pii web` flags: `--port`, `--host`, `--instance`.
+///
+/// A bad `--port` value falls back to the default (4602); an unknown flag
+/// is a fatal error (`ExitCode::from(2)`).
+fn parse_web_args<I>(args: I) -> Result<WebArgs, ExitCode>
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
+    let mut args = args.into_iter();
     let mut port: u16 = 4602;
     let mut host = String::from("127.0.0.1");
     let mut instance = String::from("default");
@@ -197,10 +207,28 @@ pub(crate) fn cmd_web(args: &mut std::env::ArgsOs) -> ExitCode {
             }
             other => {
                 eprintln!("error: unknown flag '{other}'");
-                return ExitCode::from(2);
+                return Err(ExitCode::from(2));
             }
         }
     }
+    Ok(WebArgs {
+        port,
+        host,
+        instance,
+    })
+}
+
+/// `pii web [--port 4602] [--host 127.0.0.1] [--instance default]`.
+#[allow(clippy::disallowed_methods)] // reason: pii-web is the sanctioned web
+// server; it binds a loopback TCP listener directly (net-check allowlists it).
+pub(crate) fn cmd_web(args: std::env::ArgsOs) -> ExitCode {
+    let web_args = match parse_web_args(args) {
+        Ok(a) => a,
+        Err(code) => return code,
+    };
+    let port = web_args.port;
+    let host = web_args.host;
+    let instance = web_args.instance;
     // Resolve the daemon socket; refuse to start if unreachable.
     let Some(runtime_dir) = pii_uds::runtime_dir(&instance) else {
         eprintln!("error: no usable runtime dir (set PII_RUNTIME_DIR)");
@@ -269,12 +297,19 @@ pub(crate) fn cmd_web(args: &mut std::env::ArgsOs) -> ExitCode {
 fn main() -> ExitCode {
     let mut args = std::env::args_os();
     let _argv0 = args.next();
-    cmd_web(&mut args)
+    cmd_web(args)
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::ffi::OsString;
+    use std::process::ExitCode;
+
+    fn os_args(args: &[&str]) -> Vec<OsString> {
+        args.iter().map(OsString::from).collect()
+    }
 
     /// R4 (spec 19): the embedded SPA is self-contained — no external asset
     /// references (no CDN, no http(s) links, no external script src).
@@ -293,5 +328,53 @@ mod tests {
         let default_host = "127.0.0.1";
         assert_eq!(default_host, "127.0.0.1");
         assert_ne!(default_host, "0.0.0.0");
+    }
+
+    /// R2 (spec 20): flag-parsing behavior, pinned.
+    #[test]
+    fn parse_web_args_defaults() {
+        let a = super::parse_web_args(os_args(&[])).unwrap();
+        assert_eq!(
+            (a.port, a.host.as_str(), a.instance.as_str()),
+            (4602, "127.0.0.1", "default")
+        );
+    }
+
+    #[test]
+    fn parse_web_args_port() {
+        let a = super::parse_web_args(os_args(&["--port", "8080"])).unwrap();
+        assert_eq!(a.port, 8080);
+    }
+
+    #[test]
+    fn parse_web_args_bad_port_falls_back() {
+        let a = super::parse_web_args(os_args(&["--port", "notanumber"])).unwrap();
+        assert_eq!(a.port, 4602);
+    }
+
+    #[test]
+    fn parse_web_args_host() {
+        let a = super::parse_web_args(os_args(&["--host", "0.0.0.0"])).unwrap();
+        assert_eq!(a.host, "0.0.0.0");
+    }
+
+    #[test]
+    fn parse_web_args_instance() {
+        let a = super::parse_web_args(os_args(&["--instance", "foo"])).unwrap();
+        assert_eq!(a.instance, "foo");
+    }
+
+    #[test]
+    fn parse_web_args_unknown_flag_errors() {
+        let code = super::parse_web_args(os_args(&["--bogus"])).unwrap_err();
+        assert_eq!(code, ExitCode::from(2));
+    }
+
+    #[test]
+    fn parse_web_args_dangling_flag() {
+        // Pin current behavior: a dangling `--port` with no value leaves the
+        // default untouched (no error).
+        let a = super::parse_web_args(os_args(&["--port"])).unwrap();
+        assert_eq!(a.port, 4602);
     }
 }
