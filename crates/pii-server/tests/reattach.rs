@@ -68,9 +68,11 @@ async fn run_one_prompt(engine: &Arc<Engine>) -> Vec<SeqEvent> {
 
 #[tokio::test]
 async fn reattach_since_seq_no_duplicates() {
+    let tmp_root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp");
+    std::fs::create_dir_all(tmp_root).expect("create _tmp root");
     let dir = tempfile::Builder::new()
         .prefix("reattach-")
-        .tempdir_in("/projects/pi-improved/_tmp/phase2")
+        .tempdir_in(tmp_root)
         .expect("tempdir");
     let fixture = dir.path().join("hello.json");
     std::fs::write(

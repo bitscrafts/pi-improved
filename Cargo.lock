@@ -1645,6 +1645,7 @@ dependencies = [
 name = "pii-channels"
 version = "0.1.0"
 dependencies = [
+ "parking_lot",
  "pii-abi",
  "pii-core",
  "serde",
