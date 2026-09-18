@@ -29,7 +29,9 @@ mod silent_noop;
 
 use std::process::ExitCode;
 
-use cli_parse::{parse_mem_eval, parse_promote_collect, parse_rss_gate, parse_worktree_flag};
+use cli_parse::{
+    parse_mem_eval, parse_promote_collect, parse_report_flag, parse_rss_gate, parse_worktree_flag,
+};
 
 const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|silent-noop-check|reachability-check|doc-drift-check|memory-eval|rss-gate|heal-seed|heal-collect <sig>|promote-build [--worktree P]|promote-collect <sig> <approval_id> [--approval-db P] [--by NAME]|heal-prune [--all]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
@@ -206,7 +208,18 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Some("lint-files") => report(lint_files::run()),
+        Some("lint-files") => {
+            // spec 69: `--report [N]` prints top-N by effective lines and
+            // always exits 0; without the flag the pass/fail gate is unchanged.
+            match parse_report_flag(&rest) {
+                Ok(Some(n)) => report(lint_files::run_report(n)),
+                Ok(None) => report(lint_files::run()),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("proto-gen") => report(proto_gen::generate().map_err(|e| vec![e])),
         Some("proto-check") => report(proto_gen::check()),
         Some("bench-gate") => match bench::run_cli(&rest) {

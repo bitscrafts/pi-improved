@@ -3,6 +3,32 @@
 
 #![allow(clippy::missing_errors_doc)] // reason: pure move of private fns; Err(String) is the CLI error message itself.
 
+use crate::lint_files::REPORT_DEFAULT_N;
+
+/// Parses `lint-files --report [N]` (spec 69). `Some(n)` means report mode
+/// with top-n (default 20 when the value is omitted); `None` means the
+/// normal pass/fail gate.
+pub fn parse_report_flag(rest: &[String]) -> Result<Option<usize>, String> {
+    let mut report: Option<usize> = None;
+    let mut i = 0usize;
+    while i < rest.len() {
+        match rest.get(i).map(String::as_str) {
+            Some("--report") => {
+                report = Some(rest.get(i + 1).and_then(|v| v.parse().ok()).map_or(
+                    REPORT_DEFAULT_N,
+                    |n: usize| {
+                        i += 1;
+                        n
+                    },
+                ));
+            }
+            other => return Err(format!("unknown lint-files arg '{other:?}'")),
+        }
+        i += 1;
+    }
+    Ok(report)
+}
+
 /// Parses `memory-eval --corpus <f> --queries <f> [--top-k N]` (F4.16).
 pub fn parse_mem_eval(rest: &[String]) -> Result<(String, String, usize), String> {
     let mut corpus = String::new();

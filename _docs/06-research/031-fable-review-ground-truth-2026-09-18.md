@@ -54,23 +54,26 @@ Standing policy: files should stay under ~450 lines (splits happened
 tonight for several files that crossed it — see commits `aaee53c`,
 `39db2e1`, `b98a581`, `11df84d`, `629ac9f`, `8988f5f`, `a337ab2` for
 the pattern used: split into `module/{mod,submod1,submod2}.rs`, keep
-the public API surface identical). Files currently over 450 lines
-(non-test `src/`), largest first:
+the public API surface identical). CORRECTION (spec 69): the list below
+was originally measured with raw `wc -l`, which is NOT the enforced
+metric — the gate (`cargo xtask lint-files`) counts effective lines,
+excluding comments, blanks, and `#[cfg(test)]` bodies. Re-measured with
+`cargo run -q -p xtask -- lint-files --report` (effective, raw, path):
+NO file is currently over the 450 effective-line gate (max 360); the
+"13 offenders" claimed earlier were an artifact of the wrong metric.
+Top of the current list, for reference:
 
 ```
-801  crates/pii-model/src/ollama.rs
-681  crates/pii-store/src/heal.rs
-627  crates/pii-store/src/lib.rs
-570  crates/pii-store/src/session.rs
-532  crates/pii-graph/src/sched/state.rs
-530  crates/pii-server/src/engine/runs.rs
-521  crates/pii-model/src/lib.rs
-513  crates/pii-graph/src/render.rs
-512  crates/pii-core/src/ctx.rs
-511  crates/pii-server/src/lib.rs
-490  crates/pii-server/src/node_kinds/nodes/heal.rs
-481  crates/pii-graph/src/validate.rs
-474  crates/pii-server/src/daemon/config.rs
+360  627  crates/pii-store/src/lib.rs
+358  403  crates/pii-server/src/engine/dispatch.rs
+350  444  crates/pii-server/src/daemon/mod.rs
+347  458  crates/pii-graph/src/sched/dispatch.rs
+341  801  crates/pii-model/src/ollama.rs
+335  481  crates/pii-graph/src/validate.rs
+329  511  crates/pii-server/src/lib.rs
+306  385  crates/pii-net/src/listen.rs
+303  557  xtask/src/deps.rs
+300  566  crates/pii-store/src/session.rs
 ```
 
 These are candidates for the SAME split pattern already used
