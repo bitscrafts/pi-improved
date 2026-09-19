@@ -26,13 +26,35 @@ Released **2026-09-17** (pyproject 3.0.1, engine 3.0.1). 4.2k+ GitHub stars.
 | | |
 |---|---|
 | Parameters | 25M–121M, **sliceable at any depth 2–20 layers from ONE weight set** |
-| Binary size | **8–29 MB** (single `.cact` file) |
+| Binary size | **8–29 MB** shipped (single `.cact` file) — *but not reproducible locally, see below* |
 | Quantization | **CQ2, 2.125 bits per weight**, trained in (not post-hoc) |
 | Engine | under 1 MB per platform, 13 platform folders |
 | Decode speed | up to **4k tok/s** on a Raspberry Pi 5 |
 | Context | 256-token sliding window, tools pinned as KV sinks |
 | Languages | EN, FR, ES, DE, NL, IT, PL |
 | License | Apache-2.0 (weights + code); the 2-bit post-training runs on their paid platform |
+
+### CORRECTION (2026-09-19, from the Colab notebook, cells 27-29)
+
+**The advertised 8 MB floor is not reproducible from the open repo.** A local
+`needle build --layers N` produces **4-bit** artifacts, because
+`needle/model/quantize.py:61` sets `WEIGHT_BITS = 4` and `export.py`'s
+`_cq_pack` raises `ValueError(f"CQ packing supports bits={WEIGHT_BITS}")`
+for any other width (both verified directly against `main`). The 2-bit
+quantiser behind the shipped artifact is **not in the open repo** — only
+Cactus can currently produce the 8 MB binary. Local builds measured:
+
+| layers | size | share of bytes |
+|---|---|---|
+| 2 | **13.3 MB** | 38% |
+| 8 | 27.4 MB | 78% |
+| 20 | 35.3 MB | 100% |
+
+**The ladder is a compute dial, not a size dial.** 2 layers is 10% of the
+depth but still ~38% of the bytes, because ~70.8M of the 121M parameters
+live in the *engram* — the hashed n-gram tables the ladder cannot cut. What
+slicing saves is MFLOPs per token, i.e. battery and latency on a watch or an
+MCU — not flash.
 
 Benchmarks (full test splits, exact-match):
 - **Mobile Actions** (961 instances): 20-layer Needle 3 = **86.0**, vs
@@ -164,6 +186,118 @@ limitation: a trigger bypasses the guess gates but not the contradiction
 gates — a two-tier safety model worth copying (cheap deterministic override
 for recall; non-negotiable gates for safety).
 
+## The Colab notebook — measured results (the most valuable artifact)
+
+The video by Elvis Saravia (**Prompt Engineering**, 2026-09-18, "Needle 3:
+You Don't Need an LLM for Function Calling") links a **Colab notebook**,
+resolved from `tinyurl.com/yewmt3za` to
+`colab.research.google.com/drive/1lugh7FfHKYmcghyip5d7XYGDCVCXeeR5`.
+A local copy is at `_docs/06-research/assets/034-needle3-colab-notebook.ipynb`
+(37 cells). Its framing: *"Every number below was measured, not copied from
+the docs. Where the model does badly, that's shown too."* It delivers on
+that, and **several results contradict the vendor material above.**
+
+Measured on laptop CPU: cold load ~10 s (35 MB from HF, cached after);
+two-call turn **~100 ms**; `decode_tps` reported per response.
+
+### N1. `reset()` between independent requests, or you get phantom calls
+
+A `Needle` instance keeps conversation history. Reused across independent
+requests it **re-emits a previous call for an unrelated prompt** — "order me
+a pizza" set the thermostat. The call looks perfectly well-formed and
+confidence only drops to ~0.45. With `reset()` it correctly returns `[]`.
+
+This is the **most important operational finding in the notebook**: silent,
+plausible wrong behaviour, not an error. Any server handling multiple users
+from one instance has a correctness bug.
+
+### N2. A required argument with no default gets the call withheld
+
+`set_thermostat(room, celsius)` with no default means "make it warmer in
+here" produces **nothing** — there is no number span to ground `celsius` in,
+and Needle refuses to invent one. Deliberate, mostly good — but the failure
+mode is **silence, not an error**, and the fix is in the *tool definition*
+(add a default), not the prompt.
+
+### N3. Refusal is the actual feature
+
+"water the plants" — a plausible smart-home request with no matching tool —
+correctly does nothing. This is the reason to use this over prompting a big
+LLM to "only output JSON", and it held up under test.
+
+### N4. Extraction: copies, does not normalise (and `strict` does not help)
+
+`Invoice(vendor, total, due_date)` on clean templated text works, and
+`total` is a **real float**, not a string. But on conversational text
+("payable by the 14th of next month (Oct 2026)") **both `strict=True` and
+`strict=False` return `None`** — "the 14th of next month" is not a span it
+can copy into `due_date`.
+
+**Use for:** receipts, notifications, log lines, form-shaped text.
+**Do not use for:** free-form prose needing inference or reformatting.
+
+### N5. Classification: an honest NEGATIVE result — 1 out of 5
+
+The Cactus site claims extraction "generalised well to classification
+problems too". The notebook tested a 6-way banking intent task, following
+Cactus's own advice to name enum options the way users speak. Result:
+**1/5 correct** — two returned `None`, two picked the wrong label. For
+scale, a hosted classifier API on a comparable 77-way banking task scores
+~80%.
+
+"Do not read the marketing line as a general text-classification claim."
+
+### N6. Embeddings are strongly anisotropic — rank, never threshold
+
+Raw cosine: a paraphrase scores ~0.95 and a **completely unrelated**
+sentence still scores ~0.91. Absolute values are nearly meaningless. The
+notebook applies the classic mean-centring ("all-but-the-top") fix and
+measures top-1 routing accuracy raw vs centred.
+
+**Rule: never threshold on raw cosine here — rank, and centre the index.**
+
+### N7. Confidence routing FAILS on vague input — the strongest caveat
+
+The notebook ran Cactus's own documented act/confirm/refuse pattern
+(threshold 0.7) against vague commands:
+
+| request | call | confidence |
+|---|---|---|
+| "turn off all the lights" | (correct) | — |
+| "lock up" | (correct) | — |
+| "do the thing" | `lock_door(door="the thing")` | 0.996 |
+| "handle it" | `lock_door(door="handle")` | **1.000** |
+| "sort that out for me" | `lock_door(door="out")` | **1.000** |
+| "just do it" | `lock_door(door="just")` | 0.989 |
+
+**Every vague-but-meaningless command locks the front door at near-maximum
+confidence.** The argument is an arbitrary word lifted from the sentence:
+the span-grounding rule is satisfied (every value *is* a span of the
+request), the grammar is satisfied (it is a valid string), and **nothing
+downstream objects**.
+
+This is a direct, measured counterexample to mechanism 2 as a safety gate.
+The confidence score measures *how well the call follows from the text*, not
+*whether the request was meaningful*. A calibration that survives benchmark
+inputs does not survive adversarial or merely lazy ones.
+
+### N8. A working end-to-end pattern (~20 lines)
+
+Final cell: three tools (`lights`, `door`, `fan` with a `Literal` enum),
+`reset()` per command, and — the detail worth copying — **`complete()`
+decides, it does not execute; the caller dispatches `[call["name"]](**args)`
+explicitly** so the application stays in control of what actually runs.
+(`agent.run()` does both.) Multi-call turns work: "dim the bedroom to 20 and
+put the fan on high" produced both calls in order.
+
+### N9. Packaging defects found
+
+The published quickstart **does not install cleanly**:
+`cactus-needle` is missing three dependencies its own documented examples
+require — `pydantic` (extraction), `numpy` and `sentencepiece` (`needle
+build`). Also: telemetry is **on by default** (function name, version, OS —
+not prompts or outputs); `NEEDLE_TELEMETRY=0` opts out.
+
 ## Reality check: the ESP32 port, measured
 
 An independent port (`github.com/andrisgauracs/needle-2-esp32`, C99, ~3,700
@@ -251,10 +385,14 @@ Ranked, with the honest caveats attached:
    out-of-bounds; multi-call) directly addresses tonight's measured
    non-discriminating exit criteria. This is free, needs no dependency, and
    is the highest-leverage item here.
-2. **Take the confidence-band routing design (act / confirm / refuse) as the
-   missing "paused, awaiting human input" state** in pidag/pii's graph work
-   — with the caveat that a *calibrated* score is the hard part, and that
-   Needle's own head goes dark once tuned.
+2. **The confidence-band routing design (act / confirm / refuse) is a
+   *starting point, not a safety gate*.** The notebook's N7 measured it
+   locking a door at 0.989–1.000 confidence on meaningless input. Adopt the
+   *shape* (three bands, show the call + reasoning in the middle) — but treat
+   the score as "does this call follow from the text", never as "was this
+   request meaningful". Any gate still needs a deterministic check the model
+   cannot satisfy by finding a plausible span. Also note Needle's own head
+   goes dark (`None`) once fine-tuned.
 3. **Consider a Needle-backed router node** for pii's graph: a cheap, local,
    grammar-guaranteed node that turns free text into a structured call, for
    the class of graph decisions that are *retrieval-and-assembly* rather
