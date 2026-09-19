@@ -391,7 +391,13 @@ the linked section only if you want the reasoning before deciding.
 4. **Chromecast-protocol module** (new tonight — house-wide Google
    Home/Cast control as a standalone daemon or pii companion crate).
    → [§5](029-coding-harness-design-questions-for-opus.md#5-new-idea-2026-09-17-mid-session-chromecast-protocol-as-a-standalone-daemon--pii-companion-module)
-   **Decide**: scope it as a real next project, or defer?
+   → **feasibility grounded in `pii-net`, 2026-09-19**:
+   [038](038-pii-chromecast-device-manager-feasibility.md)
+   **Decide**: scope it as a real next project, or defer? And the sharper
+   sub-question: **control is nearly free, discovery needs UDP multicast which
+   `pii-net` blocks unconditionally** — is auto-discovery worth widening the
+   SSRF boundary, or is a named-device registry the whole feature? (Register
+   row A10.)
 
 Plus one small housekeeping question, not architectural:
 **`_docs/06-research/` reorganization** (28 files, flat-by-number, no

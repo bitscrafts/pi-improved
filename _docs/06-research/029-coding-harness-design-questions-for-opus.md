@@ -187,6 +187,15 @@ A Chromecast-protocol module is:
   independent standalone daemon that pii/Hermes both talk to, rather
   than living inside either.
 
+> **Technical deep-dive added 2026-09-19**:
+> [`038-pii-chromecast-device-manager-feasibility.md`](038-pii-chromecast-device-manager-feasibility.md)
+> — grounded against `pii-net`. Headline: **control** is nearly free (TLS:8009 +
+> `dial_tls` + private-IP grant all exist), but **discovery needs UDP multicast,
+> which `pii-net` blocks unconditionally** (`AddrClass::Multicast`, no
+> `allow_multicast` field). So "manage all devices" does *not* require touching
+> the SSRF boundary if devices are named in config. The real design question is
+> whether casting has anything for a *graph to route on*.
+
 **Ask for opus**: is this genuinely a good candidate MODULE to build
 (house-wide Cast-protocol control: TTS announcements, media casting,
 device discovery, potentially the voice-INPUT bridge too if IFTTT/
