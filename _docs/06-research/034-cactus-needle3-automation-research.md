@@ -298,7 +298,14 @@ require — `pydantic` (extraction), `numpy` and `sentencepiece` (`needle
 build`). Also: telemetry is **on by default** (function name, version, OS —
 not prompts or outputs); `NEEDLE_TELEMETRY=0` opts out.
 
-## Reality check: the ESP32 port, measured
+## Side section: the Needle **2** ESP32 port, measured
+
+> **VERSION NOTE.** This section is about **Needle 2** — a separate,
+> independent port, kept only as an on-device reality check. The rest of this
+> document, including the Colab notebook above, is **Needle 3**. Do not
+> confuse the two: the `needle-2-esp32` repo contains Python *scripts*
+> (`tools/*.py`), **not** the notebook; the Needle 3 notebook is the Colab in
+> the previous section.
 
 An independent port (`github.com/andrisgauracs/needle-2-esp32`, C99, ~3,700
 lines, no dependencies, not derived from Cactus's C++ engine) runs Needle 2
@@ -351,10 +358,14 @@ proof of feasibility, not a product.
    the lowest confidence of the run (0.46). Description wording is described
    as "a tuning knob".
 
-## The Python that the videos point at
+## Secondary Python: the Needle 2 ESP32 tooling (NOT the notebook)
 
-The "valuable Python" in the referenced material is in
-`andrisgauracs/needle-2-esp32/tools/`:
+> The **Needle 3 notebook** is the Colab in the earlier section
+> (`assets/034-needle3-colab-notebook.ipynb`). The Python below is a
+> **different, Needle 2-era** set of scripts with a different purpose:
+> validating a C engine, not demonstrating the model.
+
+Helper scripts in `andrisgauracs/needle-2-esp32/tools/`:
 
 - **`ref_forward.py`** — a **NumPy re-implementation of the Simple
   Attention Network forward pass, read straight from the `.cact` blob**,
