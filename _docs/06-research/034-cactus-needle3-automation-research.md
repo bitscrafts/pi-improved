@@ -25,14 +25,15 @@ Released **2026-09-17** (pyproject 3.0.1, engine 3.0.1). 4.2k+ GitHub stars.
 
 | | |
 |---|---|
-| Parameters | 25M–121M, **sliceable at any depth 2–20 layers from ONE weight set** |
-| Binary size | **8–29 MB** shipped (single `.cact` file) — *but not reproducible locally, see below* |
+| Parameters | **29–121M**, sliceable at any depth 2–20 layers from ONE weight set |
+| Binary size | **8–29 MB** shipped CQ2 (4L = 8 MB, 20L = 29 MB) — *not locally reproducible, see below* |
 | Quantization | **CQ2, 2.125 bits per weight**, trained in (not post-hoc) |
 | Engine | under 1 MB per platform, 13 platform folders |
-| Decode speed | up to **4k tok/s** on a Raspberry Pi 5 |
-| Context | 256-token sliding window, tools pinned as KV sinks |
+| Decode speed | **400–4k tok/s decode, 1–10k tok/s prefill** on a Raspberry Pi 5 |
+| Context | **1024-token window**, global attention at layers 4, 9, 14, 19 |
+| Training | **360B tokens** of a proprietary structured dataset |
 | Languages | EN, FR, ES, DE, NL, IT, PL |
-| License | Apache-2.0 (weights + code); the 2-bit post-training runs on their paid platform |
+| License | Apache-2.0 (weights + code); the 2-bit quantisation runs on their paid platform |
 
 ### CORRECTION (2026-09-19, from the Colab notebook, cells 27-29)
 
@@ -41,8 +42,10 @@ Released **2026-09-17** (pyproject 3.0.1, engine 3.0.1). 4.2k+ GitHub stars.
 `needle/model/quantize.py:61` sets `WEIGHT_BITS = 4` and `export.py`'s
 `_cq_pack` raises `ValueError(f"CQ packing supports bits={WEIGHT_BITS}")`
 for any other width (both verified directly against `main`). The 2-bit
-quantiser behind the shipped artifact is **not in the open repo** — only
-Cactus can currently produce the 8 MB binary. Local builds measured:
+quantiser behind the shipped artifact is **not in the open repo** — and the
+official release page confirms this from its side: *"The Cactus Platform is
+the full path: Cactus datasets, the **2-bit quantisation behind the shipped
+model**…"*. Local builds measured:
 
 | layers | size | share of bytes |
 |---|---|---|
@@ -53,8 +56,17 @@ Cactus can currently produce the 8 MB binary. Local builds measured:
 **The ladder is a compute dial, not a size dial.** 2 layers is 10% of the
 depth but still ~38% of the bytes, because ~70.8M of the 121M parameters
 live in the *engram* — the hashed n-gram tables the ladder cannot cut. What
-slicing saves is MFLOPs per token, i.e. battery and latency on a watch or an
-MCU — not flash.
+slicing saves is MFLOPs per token (the page claims **over 2x fewer MFLOPs
+per token than a transformer of the same configuration**, Figure 1), i.e.
+battery and latency on a watch or an MCU — not flash.
+
+> **CORRECTION 2 — context window.** An earlier draft of this document said
+> "256-token sliding window, tools pinned as KV sinks". **That is a Needle 2
+> / ESP32-port figure, not Needle 3.** The official architecture block on
+> `cactuscompute.com/needle` states **`window 1024` with global attention at
+> layers 4, 9, 14, 19**. Treat 1024 as the Needle 3 context, and 256 as the
+> ESP32 port's *implementation* limit (see the side section below) — the
+> distinction matters a lot for the tool-fitting arithmetic.
 
 Benchmarks (full test splits, exact-match):
 - **Mobile Actions** (961 instances): 20-layer Needle 3 = **86.0**, vs
@@ -79,6 +91,20 @@ read by gather at zero arithmetic. Most parameters are in the engram, so the
 conv taps and multi-lane hyper-connections. The **ladder** is the key
 property: blocks 0 and 19 are always kept, the rest added by bisection, so
 every subnetwork nests inside the next — one artifact, many depths.
+
+**The official architecture block** (`cactuscompute.com/needle`) names the
+components precisely, and adds detail worth having: `mHC lane read/write`
+over **4 residual lanes** (`X' = P X + 2σ(h) ⊗ y`, `P = Sinkhorn(A)` — a
+Sinkhorn-normalised lane mixer); `Engram fusion · hashed 2- and 3-gram
+memory` (`x ← x + σ(⟨x̂,k̂⟩/√d)·v`) at **sites 3, 7, 11, 15, 19**, with
+**18,432 slots**, read by gather; `Q,K,V` at **12q : 2kv** with a
+**3-tap causal conv per channel**; RoPE + QK-norm; `Monarch Hadamard FFN`
+as `y = D₄M₃D₃M₂ silu(D₂c(x)M₁D₁x + b)` with `Mᵢ = Aᵢ ⊗ Bᵢ` at 32×32;
+`ZCRMSNorm`; embedding 8,192 × 768, **tied unembed**, SentencePiece BPE with
+8,192 pieces; and an **`mtp t+2` auxiliary head (training only)**. Total
+**20 × 768 = 121M, of which 70.8M sits in the engram tables**.
+Its claim: **over 2× fewer MFLOPs per token** than a transformer of the same
+configuration.
 
 ## The four mechanisms worth stealing (mapped to pii)
 
@@ -239,13 +265,18 @@ can copy into `due_date`.
 ### N5. Classification: an honest NEGATIVE result — 1 out of 5
 
 The Cactus site claims extraction "generalised well to classification
-problems too". The notebook tested a 6-way banking intent task, following
+problems too". **Verified 2026-09-19: the official release page still carries
+that exact line** — under *Structured extraction*: *"The decode grammar
+guarantees the output parses. Extraction generalised well to classification
+problems too."* The notebook tested a 6-way banking intent task, following
 Cactus's own advice to name enum options the way users speak. Result:
 **1/5 correct** — two returned `None`, two picked the wrong label. For
 scale, a hosted classifier API on a comparable 77-way banking task scores
 ~80%.
 
 "Do not read the marketing line as a general text-classification claim."
+This is a live discrepancy between the vendor page and measured behaviour,
+not a stale reading of an older page.
 
 ### N6. Embeddings are strongly anisotropic — rank, never threshold
 
@@ -319,11 +350,14 @@ fully offline on an ESP32-S3:
 | Boot prime | ~51 s, once |
 | Workload | **compute-bound**, not memory-bound — faster flash/PSRAM buys nothing |
 
-Hard limits: 256-token window is the real ceiling (example schema = 104
+Hard limits **of this port** (Needle 2-era C implementation, not of Needle 3
+itself): 256-token window is the real ceiling here (example schema = 104
 prompt tokens; a second tool takes it to 182); **2–3 tools fit**, ~5 needs
 the retrieval head the port doesn't implement; types supported are `string`
 (+`enum`), `integer`, `number`, `boolean` — **nested objects and arrays are
-rejected at compile time**; tool names ≤ 39 chars.
+rejected at compile time**; tool names ≤ 39 chars. Needle 3's own window is
+1024 (see CORRECTION 2 above), so this port's tool budget is a limitation of
+the port, not of the model.
 
 **Relevant to the parked Google Home / home-automation thread**: on-device
 natural-language intent routing on a ~$10 board is real and verified, but
@@ -416,6 +450,41 @@ Ranked, with the honest caveats attached:
    to `pii-mcp` registering every builtin tool wholesale.
 6. **For the home-automation thread**: a Pi-5-class host, not an ESP32, for
    anything interactive; and budget for the multilingual-confidence caveat.
+
+## Facts confirmed on the official release page (2026-09-19)
+
+Checked line by line against `cactuscompute.com/needle`:
+
+- **Confirmed:** the 2-bit quantisation behind the shipped 8–29 MB binary is
+  **platform-only** ("*the 2-bit quantisation behind the shipped model*" —
+  Cactus Platform section). This independently corroborates the notebook's
+  finding that local builds are 4-bit only.
+- **Confirmed:** the ladder sizes map to **4L = 8 MB, 20L = 29 MB**, and
+  *"the first 4 layers are an 8 MB model, all 20 are a 29 MB one"*.
+- **Corrected:** context is **1024** (`window 1024`, global at layers
+  4/9/14/19) — not 256.
+- **Corrected:** parameters are **29–121M** (the page's own range), and the
+  speed claim is **400–4k tok/s decode, 1–10k prefill** on a Pi 5 (the
+  earlier "up to 4k" was the decode ceiling only).
+- **New:** training is **360B tokens of a proprietary structured dataset**;
+  decode 400–4k, prefill 1–10k on a Pi 5.
+- **New:** an **in-browser WebAssembly sandbox** runs the model live on the
+  page, with 13 preset demos (2-call, trigger routing, polarity+exclusion,
+  negation, catch-all skipping named devices, enum+door security, relative
+  dim, thermostat nudge, 5-change scene, status question).
+- **New:** **13 deployment targets** with exact folder names and artifacts
+  (`macos-arm64`, `linux-{x86_64,arm64,armv7,riscv64,mipsel}`,
+  `windows-{x86_64,arm64}`, `android-{arm64,armv7,riscv64}`,
+  `ios-{arm64,sim-arm64}`, `tvos-arm64`, `watchos-arm64`, `wasm`,
+  `wasm-component`) — each an engine under 1 MB plus `libneedle.a`/`needle.h`
+  (or `needle.js`/`needle.wasm`, or a WASI `.component.wasm` + `.wit`).
+- **Strengthened:** *"4L can match DeepSeek V4 Flash when tuned on
+  downstream tasks for one epoch"*, and tuned subnetworks *"from 4 layers up
+  … starting at 29M parameters"* pass DeepSeek V4 Flash. **One epoch** is the
+  headline for cheap customisation — but note the notebook's caution that
+  the confidence head is not tuned by this path.
+- **Still disputed:** the page repeats *"Extraction generalised well to
+  classification problems too"*, which the notebook measured at 1/5.
 
 ## Open questions for later analysis
 
