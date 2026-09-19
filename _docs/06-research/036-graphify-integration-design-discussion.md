@@ -272,3 +272,121 @@ command is the right one.
 fires on the many greps our pidag workflow already runs (spec audits, drift
 checks). If that proves too loud, install the skill + always-on rules and drop
 the hook — the AGENTS.md/CLAUDE.md rules still carry the guidance.
+
+---
+
+## 6. Could the commit-hook idea work? — YES, measured (and it is safe here)
+
+**Answer: yes, and it does not threaten the effect-verification seam — but I
+would still wait.** Tested in a throwaway repo, twice.
+
+**Mechanics, measured:**
+
+| | |
+|---|---|
+| Hook latency | **0.093 s** — `post-commit` *launches a detached background rebuild* and returns immediately (`[graphify hook] launching background rebuild (log: /root/.cache/graphify-rebuild.log)`) |
+| Actually rebuilds? | **Yes.** ~12 s later the graph contained the new symbol (`gamma present: True`, 3 → 4 nodes) |
+| Rapid consecutive commits | **Handled.** Two commits 1 s apart → both rebuilds ran, graph ended with **both** new symbols (5 nodes) |
+| Writes go where? | **Only inside `graphify-out/`** |
+
+**The seam question — answered by measurement, not reasoning.** pidag's rule is
+*workers never commit; the orchestrator commits*, and the effect-verification
+seam depends on tree state. Concern: does a background rebuild mid-run dirty
+the tracked tree?
+
+**No.** With `graphify-out/` gitignored (as we have it), the tracked tree was
+**clean immediately after the commit and still clean after the background
+rebuild finished** — verified twice, including the two-rapid-commits case. The
+hook writes only into the ignored directory.
+
+**The one real caveat:** `graphify hook install` also writes a tracked
+`.gitattributes` (`graphify-out/graph.json merge=graphify`) and registers a git
+merge driver (`merge.graphify.driver`). In my first test, before I gitignored
+the output, `.gitattributes` **and 15 MB of `graphify-out/` got swept into the
+next commit**. With the output ignored, `.gitattributes` is the only new
+tracked file — harmless (a union-merge rule for a file we ignore), but it *is*
+a tracked-file change, so it must be committed deliberately rather than
+appearing in a worker's diff.
+
+**Why I would still not install it yet** — three reasons, all about *when*, not
+*whether*:
+
+1. **The orchestrator commits mid-run.** pidag's flow is orchestrator-commits
+   after each spec. A rebuild firing on every one of those during a long
+   session is churn we do not need while a worker is editing the same tree.
+   (Cheap, but not free, and it competes with the worker for CPU/disk.)
+2. **It is asynchronous, so "the graph is current" is eventually-true, not
+   immediately-true.** A query issued 1 s after a commit may read the previous
+   graph. For a gate that must be a *hard* oracle, that is a bad property —
+   fine for orientation, wrong for anything we might later gate on.
+3. **Nothing is broken without it.** `graphify update .` is 2.9 s as a no-op
+   and idempotent; running it deliberately, right before we want to query, is
+   strictly more predictable than a background race.
+
+**Recommendation:** keep it off for now. If we later want it, the prerequisite
+is committing `.gitattributes` deliberately and confirming no worker diff can
+sweep it. Revisit when the graph becomes load-bearing (i.e. if Decision 5's
+`reachability-check` upgrade makes a query part of a gate — at which point
+asynchronous freshness becomes a real design problem to solve, not a
+convenience to add).
+
+---
+
+## 7. Could pidag have an `xtask ci` like pii? — it already has the CI, differently
+
+**Ground truth, both sides:**
+
+| | pii | pidag |
+|---|---|---|
+| `xtask` crate | **yes** — `deps-check`, `net-check`, `lint-files`, `silent-noop-check`, `reachability-check`, `doc-drift-check`, `memory-eval`, `rss-gate`, `heal-*`, `proto-gen`, `proto-check`, `bench-gate`, `ci` | **no** |
+| Gate script | `quality-gate.sh` (5 steps) | `deploy/scripts/quality-gate.sh` (66 lines: fmt/check/clippy/test) |
+| CI | `cargo xtask ci` composes 8 gates + delegates cargo checks to `quality-gate.sh` | `.github/workflows/ci.yml` — a `gate` job **and a `guards` job** |
+
+**pidag's CI already contains the `xtask`-shaped thing — as shell in the
+workflow.** Its `guards` job is four hand-written greps encoding defects that
+were once invisible in review:
+
+- no bare-name self-invocation (`Command::new("pidag")` → must use `self_exe()`)
+- no swallowed vault writes (`let _ = self` in `core/event.rs`)
+- no redb outside a blocking closure
+- specs declare a status
+
+Each carries a comment explaining what it cost to rediscover. **That is
+exactly the `reachability-check`/`silent-noop` idea, implemented as grep.**
+
+**So the honest answer to "could we?" is: yes, trivially — but the interesting
+question is whether it should be `xtask` (Rust, testable) instead of greps in
+YAML.** Three arguments for the migration:
+
+1. **Testability.** pii's `xtask` tests its own gates (e.g.
+   `run_ci_includes_self_improvement` asserts the gate body contains
+   `reachability::run`, and `net_check_rejects_socket_outside_pii_net` asserts
+   the checker works). YAML greps cannot be unit-tested; they can only be
+   observed failing.
+2. **It is the precondition for Decision 5.** The `reachability-check` upgrade
+   (string search → real call graph) cannot be written as a YAML grep — it
+   needs a Rust AST walk. If that upgrade lands, pidag needs an `xtask`-shaped
+   home for it, and porting the existing guards alongside makes the migration
+   a single coherent move rather than two.
+3. **Consistency with the unification mandate.** This package already carries
+   a user-mandated direction to converge pii and pidag. A shared gate shape
+   (`cargo xtask <gate>`) is a small, concrete convergence step that does not
+   touch the DAG-format question at all.
+
+**And two honest arguments against doing it now:**
+
+1. **pidag's gates are not broken.** Four greps in YAML work today and cost
+   nothing to keep. This is tidying, not repair.
+2. **It adds a crate to a repo whose build discipline is already delicate.**
+   pidag's CI comments record real pain: linking ~46 test binaries, a 26G→8.5G
+   `target/` reduction via `line-tables-only`, `-j 2`, and a hard warning never
+   to use `--all-targets` in the gate (13 pre-existing test-file lints are out
+   of scope by `SPEC-AUDIT-2026-08-10.md` P8). An `xtask` crate is one more
+   thing to link and keep in the gate's `-p pidag` scope.
+
+**Recommendation:** **do not migrate for its own sake.** Treat it as the
+natural *home* for Decision 5 — i.e. if the `reachability-check` upgrade is
+approved, build it as `xtask` and port the four existing guards in the same
+change. That way the crate pays for itself with a gate that is strictly
+stronger, which is the same standard we are holding the code graph to.
+Otherwise pidag's YAML greps stay as they are.
