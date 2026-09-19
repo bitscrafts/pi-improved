@@ -1,10 +1,18 @@
-# pi-improved — OPUS REVIEW ENTRY POINT (2026-09-17)
+# pi-improved — OPUS REVIEW ENTRY POINT (updated 2026-09-19)
 
 **Read this file first. It is the only file you need to open to give a
 decision on every open question. Everything else is optional
 deep-dive material, linked below, not required reading.**
 
-## What changed tonight (one paragraph)
+**Decision count: 4 original (coding-harness graph shape, F-13 scope,
+modularity idea, Chromecast module) + 3 new (2026-09-19, code-knowledge graph:
+the `reachability-check` upgrade, native-service shape/placement, and DAG-format
+interaction) + 1 housekeeping (`_docs/06-research/` reorg).**
+
+**Newest section: "NEW (2026-09-19): code-knowledge graph" — jump there if you
+have already ruled on the original four.**
+
+## What changed since this package was opened (one paragraph)
 
 Phase 5.2 (structural debt: F-12/F-13/F-14/D4/D7) and Phase 5.3
 (test-coverage gaps: F-16/F-18/F-19/F-20, F-22 verified) are both
@@ -17,6 +25,22 @@ separate pidag bug (unbounded output-drain hang) was found and fixed
 in the pidag repo itself. Repo hygiene: 18G of stale `_tmp/` scratch
 archived off-disk, hardcoded absolute paths and orphaned docs found and
 partially fixed (spec-61 queued for the rest).
+
+**Since then (2026-09-18/19), still awaiting your review:**
+
+- **A full fable-model codebase review was run and implemented** — 8 specs
+  (62-69) covering a security fix (worktree signature validation), a broken
+  feature (pii-web memory search key), a dead config knob (worker restart
+  backoff), persistence of the doc layer, F-11 pass 2, gate hygiene, and
+  `pii-cli` test gaps. All gate-verified and committed. Review doc:
+  `032-fable-pii-review-2026-09-18.md`. **Read it if you want an independent
+  second opinion on the codebase before ruling on the four original decisions
+  — it was produced by a different model with different blind spots.**
+- **The `reachability-check` upgrade (Decision 5) was derived from that
+  review**, as was the measured `PiiError`-dominance evidence above.
+- **Two pidag defects were documented** in `pidag/docs/FINDINGS.md`
+  (`26c1ff7`, `2db967c`), one of which is the source of the failover
+  constraint quoted in the new section.
 
 ## USER-MANDATED (staged, not immediate): unify the DAG/graph format across pii and pidag
 
@@ -85,7 +109,159 @@ use. It does not preempt or substitute for the unification decision —
 it was scoped deliberately small so it wouldn't need to wait on the
 bigger architectural call.
 
-## The 4 decisions you're being asked to make
+## NEW (2026-09-19): code-knowledge graph — tooling applied, native service proposed
+
+**Added to this package after the original four decisions. Same rule as
+above: the DECISION is here, the reasoning is in the linked docs.**
+
+Ground truth (three docs, all committed):
+
+- `035-graphify-code-knowledge-graph-research.md` — what graphify is, and a
+  **measured** trial on pii (269 code files → 4,187 nodes, 9,646 edges, 216
+  communities, fully local, zero LLM calls, no API key).
+- `036-graphify-integration-design-discussion.md` — the wiring mechanics, each
+  one tested (uv isolation, `GRAPHIFY_OUT`, dual CLAUDE/AGENTS, hooks, skills).
+- `037-pii-native-graph-service-design.md` — the native-service design.
+
+**Already applied, for your context only — not a decision.** graphify external
+tooling is now wired in **both** pii (`22152e7`) and pidag (`d93a6a4`):
+`graphify-out/` gitignored, always-on rules in `CLAUDE.md` + `AGENTS.md`, a
+PreToolUse soft nudge in `.claude/`, Hermes + pi skills. Git hooks deliberately
+**not** installed (a post-commit rebuild changes what "clean tree" means, and
+the pidag effect-verification seam depends on tree state). Both graphs built
+locally, $0. **Do not re-propose this as new work** — review it only if you
+think the approach is wrong.
+
+### Evidence this produces for the EXISTING four decisions (machine-checked)
+
+graphify's god-node list on pii — the most-connected concepts, by edge count:
+
+```
+PiiError 406   Ctx 168   GraphSpec 60   Store 44   RunEvent 42
+Response 42    GraphNode 42   Engine 37   NodeRegistry 30   CapKind 29
+```
+
+Read this against the questions already in front of you:
+
+- **`PiiError` at 406 edges is 2.4× the runner-up.** The most load-bearing
+  abstraction in the codebase is the error type. This independently supports
+  the F-11 direction (structured error taxonomy) that motivated specs 60/66 —
+  a judgement originally made by hand, now confirmed by a tool that knew
+  nothing about our reasoning.
+- **`GraphSpec` / `GraphNode` / `NodeRegistry` / `Engine` clustering high** is
+  direct input to **§1 (coding-harness graph shape)** and **§3 (modularity
+  idea)**: the graph engine's own abstractions are among the most-connected
+  things in the tree, which is evidence for *and* a caution about extending
+  them.
+- Use it as evidence, not proof: these are co-occurrence/call edges with
+  `EXTRACTED` vs `INFERRED` tags, and a high edge count can mean "central" or
+  merely "widely referenced in signatures".
+
+### Decision 5 — upgrade `xtask reachability-check` from string search to a real call graph
+
+The smallest, most defensible native step, and **the only one I would do
+first.** `xtask reachability-check` exists for the B1 class
+(`ollama::provider_from_env` with zero non-test callers) and the M3 class
+(`Supervisor::invoke` called only from tests). Its own doc admits the
+weakness verbatim: *"Pure text search is sufficient: we check 'does this
+string appear as a call outside tests', **not graph structure**."*
+
+A string search cannot distinguish a **call** from a string literal, a doc
+comment, or a same-named field — which is the **"check that looks rigorous
+while testing the wrong surface"** failure mode **already documented twice in
+`pidag/docs/FINDINGS.md`**. A tree-sitter call graph turns the gate into: *"is
+there an `EXTRACTED` `calls` edge from a non-test file to this symbol?"* Same
+living-list interface, strictly stronger oracle. This is **the same class of
+upgrade as F-11**: a typed structural fact replacing a string-matching
+approximation.
+
+**Decide**: approve this as the first native step? Reasoning:
+[§ Shape 2 in 037](037-pii-native-graph-service-design.md).
+
+### Decision 6 — should pii host a code-knowledge graph as a native SERVICE, and where?
+
+Two shapes, and I recommend rejecting the first:
+
+- **Shape 1 (reject): wrap graphify's output.** A node kind over
+  `graphify-out/graph.json`. Imports a foreign artifact schema, a foreign
+  extractor's measured quirks (one source file produced **zero** nodes; two
+  files produced duplicate nodes), and 15 MB into our verification seams.
+- **Shape 2 (recommend): a pii-native code graph, gate-first.** Not a
+  browsing product — a stronger verification seam.
+
+The reason this is cheap is that **the seam already exists**, and `memory` is
+the precedent. `pii-server`'s own module doc states the registration rule:
+node kinds live in `engine/registry.rs` because they *"need a resource the
+engine owns … that `pii-graph` itself must not know about."* That is exactly a
+code graph's situation. The five-part pattern is already exercised end to end
+by `memory` — a `NodeFactory` in the registry, `effects()`/`required_caps()`,
+named `ports()`, a method in the **closed wire vocabulary**
+(`pii-proto/src/method.rs`), and **one shared tool** (`pii-tools/src/memory.rs`)
+so that `pii-mcp` and the server's agent loop share *"one code path, one
+capability gate, one bound."* Nothing in that list is new work.
+
+Note there are **three** graphs in play and they must not be conflated: the
+**execution** graph (`pii-graph` — the DAG being run), the **concept** graph
+(`pii-memory/src/graph_lane.rs`, F4.8, over memory docs), and the **code**
+graph, which does not exist today. pii already hosts two; the question is the
+third.
+
+**Decide (a)**: Shape 1 or Shape 2?
+**Decide (b) placement**: a new lane in `pii-memory`, a sibling store in
+`pii-store`, or parser-in-`xtask` only?
+**Decide (c) dependencies**: a Rust-only tree-sitter parser drags in grammar
+crates, against a strict `deps-check`, a **450-line effective-size gate**, and
+workspace-wide `#![forbid(unsafe_code)]` (`Cargo.toml:54`). Recommend scope
+**Rust-only** (not graphify's ~40 languages) and prefer reusing **`petgraph`**
+(already in-workspace via amem). If the grammar crates still fail policy, keep
+the parser in **`xtask`** — outside `crates/`, and it already hosts every gate.
+**Decide (d)**: expose to agents at **runtime** (a tool — more useful, risks
+becoming a toy) or **gate-time only** (`xtask` — cheaper, cannot drift)?
+
+### Decision 7 — does a code graph interact with the DAG-format-unification mandate?
+
+This is the question I am least sure of, and it is why this belongs in your
+review rather than mine. A code-knowledge graph **is a graph**, and this
+package already carries a **user-mandated** requirement to unify the DAG/graph
+format across pii and pidag ("*using the same dag format in both could be a
+must!*", staged as compatible-now / identical-later).
+
+Three sub-questions:
+
+- Is a code graph a **third format** to reconcile, or is it orthogonal (a
+  different kind of graph entirely — data structure vs. execution plan)?
+- Does it **change which direction unification should go**? The current
+  recommendation is pidag becomes a constrained subset of pii's port-based
+  routing. If pii gains a native graph *service* over a code corpus, does that
+  strengthen the case for pii-as-superset, or muddy it?
+- Does a code graph **inform or subsume the coding-harness graph (§1)**? §1
+  proposes forking `verify-fix.toml`. A code graph is a different artifact — but
+  if pii's thesis is "everything is a graph", a reviewer could argue the
+  coding-harness graph should *consume* the code graph rather than be its
+  sibling. **Decide**: same thing, related, or unrelated?
+
+### Constraint to confirm before any of 5-7 is built
+
+From the stored failover architectural correction: *"a graph cannot branch on
+a reason `Pii` never produces"* — the model node had to return a **successful
+`Outcome`** carrying `{status, reason, provider}` instead of `Err`, and the
+proof this pattern works is that the escalation ladder **already functions**
+because the **tool node reports `exit_code` as payload** rather than failing.
+
+So a code-graph node whose finding the graph **routes on** must return a
+successful `Outcome` with the finding in the payload, **not `Err`**. Corollary:
+a node that merely **answers** is a **tool** (effect-free, read-only); a node
+whose judgement the graph **routes on** is a **route payload**. Those are
+different designs and should be picked deliberately.
+
+**Decide**: confirm this constraint, or say why it does not apply here.
+
+### Veto condition (please hold me to it)
+
+If the code graph cannot make a **gate** measurably stronger, it does not
+belong in pii. pii's value is its verification seams, not its browsing.
+
+## The 4 original decisions you're being asked to make
 
 Full grounding for each is in `_docs/06-research/029-...md` (linked
 per-section below) — this list is the DECISION, not the reasoning; open
@@ -119,17 +295,39 @@ thematic grouping) → [§4](029-coding-harness-design-questions-for-opus.md#4-s
 
 ## What does NOT need your review
 
-- Everything closed tonight (specs 43-59) is independently gate-
-  verified and committed — re-litigating implementation details is not
-  a good use of your time unless something in the summary below looks
-  wrong to you.
-- The remaining mechanical backlog (specs 57-61, in flight as of this
-  writing) is routine test-coverage/hygiene work, same pattern as
-  43-59 — no design judgment needed, just flagging it exists.
+- Everything closed in the sessions this package covers (specs 43-69) is
+  independently gate-verified and committed — re-litigating implementation
+  details is not a good use of your time unless something in the summary
+  below looks wrong to you.
+- The graphify tooling wiring (`22152e7`, `d93a6a4`) is a mechanical
+  integration, already tested and applied. Not a decision — flagged in the
+  new section only so you are not surprised by it.
+- The remaining mechanical items in the pi-improved backlog are routine
+  test-coverage/hygiene work, same pattern as 43-59 — no design judgment
+  needed.
 
-## Full commit list tonight (for provenance, not review)
+## Full commit list (for provenance, not review)
 
 ```
+# --- 2026-09-18/19: fable review implemented (specs 62-69) + graphify research ---
+8c45d3e docs: Graphify research -- tooling vs a native code-knowledge-graph feature
+22152e7 chore: wire graphify tooling in pii (local AST, gitignored output)
+c2e2d12 docs: native pii graph service design -- the memory seam
+552922b docs: Graphify integration design discussion (mechanics tested)
+(corresponding pidag commit for the same wiring: d93a6a4)
+55a8328 feat(xtask): lint-files --report mode; correct the 031 size list (spec-69)
+75606c4 test(pii-cli): close pure-logic test gaps; hygiene batch (spec-68)
+c47de9d fix: gate hygiene -- wire lint-files, clippy.toml, line-counter (spec-67)
+6871616 refactor(pii-store): add PiiError::store_op constructor (spec-66)
+2e47219 fix(pii-memory): persist + read the doc layer (spec-65)
+fe35c37 fix(pii-worker): apply restart_backoff_ms in respawn (spec-64)
+890c285 fix(pii-web): send the correct memory-search param key (spec-63)
+883d768 fix(pii-tools): validate worktree signature, block path escape (spec-62)
+1fc2d00 fix: replace hardcoded /projects/pi-improved/_tmp paths (spec-61)
+35c4353 docs: mark Phase 5.x complete in HANDOFF.md
+(plus the fable review doc itself: 032-fable-pii-review-2026-09-18.md)
+
+# --- earlier session: Phase 5.2/5.3 closure ---
 34ad977 test: add pii-channels discord.rs coverage; fix hardcoded tmp path
 70d00ca docs: record F-19/F-20 closure — Phase 5.3 backlog cleared
 d69f415 test: add pii-tools coverage for bash/fs/worktree (F-19)
@@ -165,9 +363,16 @@ later than the session this was written in.)
 
 1. `_docs/06-research/029-coding-harness-design-questions-for-opus.md`
    — the 5 decision sections above, full reasoning + ground truth.
-2. `HANDOFF.md` — full session ledger, spec-by-spec evidence, commit
+2. `_docs/06-research/032-fable-pii-review-2026-09-18.md` — the independent
+   fable-model review of the whole codebase (10 findings, several
+   security/behavioural), all implemented as specs 62-69. A different model's
+   second opinion; useful context for the four original decisions.
+3. `_docs/06-research/035/036/037-graphify-*.md` — the code-knowledge-graph
+   chain: what the tool is (measured on pii), how it was wired, and the
+   native-service design behind Decisions 5-7.
+4. `HANDOFF.md` — full session ledger, spec-by-spec evidence, commit
    SHAs, every finding. Read this only if you want to audit HOW a
    decision was reached, not just WHAT the decision options are.
-3. `_docs/06-research/026-codebase-analysis-and-phase5-plan.md` — the
+5. `_docs/06-research/026-codebase-analysis-and-phase5-plan.md` — the
    original Phase 5 punch list (F-11 through F-22) tonight's work
    closed most of.
