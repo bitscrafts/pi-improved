@@ -6,11 +6,15 @@ deep-dive material, linked below, not required reading.**
 
 **Decision count: 4 original (coding-harness graph shape, F-13 scope,
 modularity idea, Chromecast module) + 3 new (2026-09-19, code-knowledge graph:
-the `reachability-check` upgrade, native-service shape/placement, and DAG-format
-interaction) + 1 housekeeping (`_docs/06-research/` reorg).**
+the `reachability-check` upgrade, native-service shape/placement, and whether
+the coding harness should consume the graph) + 1 housekeeping
+(`_docs/06-research/` reorg).**
 
-**Newest section: "NEW (2026-09-19): code-knowledge graph" — jump there if you
-have already ruled on the original four.**
+**Newest section: "NEW (2026-09-19): code-knowledge graph — TWO SEPARATE
+THINGS" — jump there if you have already ruled on the original four.** It is
+split into **Track A** (graphify as a tool for our own implementation work —
+already applied, *not* a decision) and **Track B** (pii maintaining a code
+graph inside its future coding harness — the three decisions).
 
 ## What changed since this package was opened (one paragraph)
 
@@ -109,10 +113,19 @@ use. It does not preempt or substitute for the unification decision —
 it was scoped deliberately small so it wouldn't need to wait on the
 bigger architectural call.
 
-## NEW (2026-09-19): code-knowledge graph — tooling applied, native service proposed
+## NEW (2026-09-19): code-knowledge graph — TWO SEPARATE THINGS
 
 **Added to this package after the original four decisions. Same rule as
 above: the DECISION is here, the reasoning is in the linked docs.**
+
+**User clarification (2026-09-19, verbatim): "2 things here graphify as a
+tool for our direct implementation and pii maintaining a graph like this in
+its future coding harness!"**
+
+These are **two distinct tracks** and must not be conflated. Track A is
+about *us* (this session, and Claude Code subagents) working on the code.
+Track B is about *pii at runtime* doing coding work. They share a tool and an
+idea; they share no decisions.
 
 Ground truth (three docs, all committed):
 
@@ -123,16 +136,33 @@ Ground truth (three docs, all committed):
   one tested (uv isolation, `GRAPHIFY_OUT`, dual CLAUDE/AGENTS, hooks, skills).
 - `037-pii-native-graph-service-design.md` — the native-service design.
 
-**Already applied, for your context only — not a decision.** graphify external
-tooling is now wired in **both** pii (`22152e7`) and pidag (`d93a6a4`):
-`graphify-out/` gitignored, always-on rules in `CLAUDE.md` + `AGENTS.md`, a
-PreToolUse soft nudge in `.claude/`, Hermes + pi skills. Git hooks deliberately
-**not** installed (a post-commit rebuild changes what "clean tree" means, and
-the pidag effect-verification seam depends on tree state). Both graphs built
-locally, $0. **Do not re-propose this as new work** — review it only if you
-think the approach is wrong.
+---
 
-### Evidence this produces for the EXISTING four decisions (machine-checked)
+## TRACK A — graphify as a tool for OUR direct implementation work
+
+**Status: DONE and applied. Not a decision — review only if you think the
+approach is wrong.**
+
+graphify external tooling is now wired in **both** pii (`22152e7`) and pidag
+(`d93a6a4`): `graphify-out/` gitignored, always-on rules in `CLAUDE.md` +
+`AGENTS.md`, a PreToolUse soft nudge in `.claude/`, Hermes + pi skills. Git
+hooks deliberately **not** installed (a post-commit rebuild changes what
+"clean tree" means, and the pidag effect-verification seam depends on tree
+state). Both graphs built locally, $0.
+
+**What Track A buys, concretely — and its limits:**
+
+- `graphify query` / `path` / `explain` answer *"what does this touch?"* and
+  *"how do these connect?"* without a grep-and-read sweep. Free, local.
+- The god-node table is **evidence for architecture judgements** (below).
+- **Limit, measured:** it is for *orientation on unfamiliar ground*. A
+  published head-to-head found it uses **more** tokens than semantic search on
+  targeted work in a known codebase (BFS ~1,500 tok vs 100-350 tok per hit).
+  On a codebase we know well, it is not automatically cheaper than reading.
+- **Limit:** community labels need an LLM, so the local path yields the graph
+  but not readable community names.
+
+### Evidence Track A produces for the EXISTING decisions (machine-checked)
 
 graphify's god-node list on pii — the most-connected concepts, by edge count:
 
@@ -140,8 +170,6 @@ graphify's god-node list on pii — the most-connected concepts, by edge count:
 PiiError 406   Ctx 168   GraphSpec 60   Store 44   RunEvent 42
 Response 42    GraphNode 42   Engine 37   NodeRegistry 30   CapKind 29
 ```
-
-Read this against the questions already in front of you:
 
 - **`PiiError` at 406 edges is 2.4× the runner-up.** The most load-bearing
   abstraction in the codebase is the error type. This independently supports
@@ -156,6 +184,50 @@ Read this against the questions already in front of you:
 - Use it as evidence, not proof: these are co-occurrence/call edges with
   `EXTRACTED` vs `INFERRED` tags, and a high edge count can mean "central" or
   merely "widely referenced in signatures".
+
+---
+
+## TRACK B — pii maintaining a code graph inside its future coding harness
+
+**Status: proposed. Decisions 5-7 below. This is where your judgement is
+actually needed.**
+
+The link to §1 is direct and it is the reason this track exists: **§1 asks for
+one implementing DAG** (fork `verify-fix.toml`, add multi-criteria validation
+and model escalation). A coding harness that *implements specs* is a graph
+that edits a codebase — and a code graph is precisely the index such a graph
+would want to consult. The gap §1 identifies is that nothing composes the
+three existing patterns into one graph; the question here is whether a
+**fourth thing** — a maintained view of the code's own structure — belongs
+inside that harness or alongside it.
+
+Two shapes, and I recommend rejecting the first:
+
+- **Shape 1 (reject): wrap graphify's output.** A node kind over
+  `graphify-out/graph.json`. Imports a foreign artifact schema, a foreign
+  extractor's measured quirks (one source file produced **zero** nodes; two
+  files produced duplicate nodes), and 15 MB into our verification seams.
+  Also drags a Python tool into pii's runtime dependency story.
+- **Shape 2 (recommend): a pii-native code graph.** In Rust, scoped to what
+  our gates need, maintained by the engine like `memory` is.
+
+**Why this is cheap: the seam already exists, and `memory` is the precedent.**
+`pii-server`'s own module doc states the registration rule — node kinds live
+in `engine/registry.rs` because they *"need a resource the engine owns … that
+`pii-graph` itself must not know about."* That is exactly a code graph's
+situation. The five-part pattern is already exercised end to end by `memory`:
+a `NodeFactory` in the registry, `effects()`/`required_caps()`, named
+`ports()`, a method in the **closed wire vocabulary**
+(`pii-proto/src/method.rs`), and **one shared tool**
+(`pii-tools/src/memory.rs`) so that `pii-mcp` and the server's agent loop share
+*"one code path, one capability gate, one bound."* Nothing in that list is new
+work.
+
+**Three graphs are in play and must not be conflated:** the **execution**
+graph (`pii-graph` — the DAG being run), the **concept** graph
+(`pii-memory/src/graph_lane.rs`, F4.8, over memory docs), and the **code**
+graph, which does not exist today. pii already hosts two; Track B is about the
+third.
 
 ### Decision 5 — upgrade `xtask reachability-check` from string search to a real call graph
 
@@ -180,32 +252,6 @@ approximation.
 
 ### Decision 6 — should pii host a code-knowledge graph as a native SERVICE, and where?
 
-Two shapes, and I recommend rejecting the first:
-
-- **Shape 1 (reject): wrap graphify's output.** A node kind over
-  `graphify-out/graph.json`. Imports a foreign artifact schema, a foreign
-  extractor's measured quirks (one source file produced **zero** nodes; two
-  files produced duplicate nodes), and 15 MB into our verification seams.
-- **Shape 2 (recommend): a pii-native code graph, gate-first.** Not a
-  browsing product — a stronger verification seam.
-
-The reason this is cheap is that **the seam already exists**, and `memory` is
-the precedent. `pii-server`'s own module doc states the registration rule:
-node kinds live in `engine/registry.rs` because they *"need a resource the
-engine owns … that `pii-graph` itself must not know about."* That is exactly a
-code graph's situation. The five-part pattern is already exercised end to end
-by `memory` — a `NodeFactory` in the registry, `effects()`/`required_caps()`,
-named `ports()`, a method in the **closed wire vocabulary**
-(`pii-proto/src/method.rs`), and **one shared tool** (`pii-tools/src/memory.rs`)
-so that `pii-mcp` and the server's agent loop share *"one code path, one
-capability gate, one bound."* Nothing in that list is new work.
-
-Note there are **three** graphs in play and they must not be conflated: the
-**execution** graph (`pii-graph` — the DAG being run), the **concept** graph
-(`pii-memory/src/graph_lane.rs`, F4.8, over memory docs), and the **code**
-graph, which does not exist today. pii already hosts two; the question is the
-third.
-
 **Decide (a)**: Shape 1 or Shape 2?
 **Decide (b) placement**: a new lane in `pii-memory`, a sibling store in
 `pii-store`, or parser-in-`xtask` only?
@@ -218,27 +264,51 @@ the parser in **`xtask`** — outside `crates/`, and it already hosts every gate
 **Decide (d)**: expose to agents at **runtime** (a tool — more useful, risks
 becoming a toy) or **gate-time only** (`xtask` — cheaper, cannot drift)?
 
-### Decision 7 — does a code graph interact with the DAG-format-unification mandate?
+### Decision 7 — should the coding harness (§1) CONSUME this graph?
 
-This is the question I am least sure of, and it is why this belongs in your
-review rather than mine. A code-knowledge graph **is a graph**, and this
-package already carries a **user-mandated** requirement to unify the DAG/graph
-format across pii and pidag ("*using the same dag format in both could be a
-must!*", staged as compatible-now / identical-later).
+This is the Track B question that matters most, and the one I am least sure
+of — which is why it belongs in your review rather than mine.
 
-Three sub-questions:
+If pii maintains a code graph, then a coding-harness DAG could **use** it
+rather than merely coexist with it. Three candidate uses, each a design
+choice:
 
-- Is a code graph a **third format** to reconcile, or is it orthogonal (a
-  different kind of graph entirely — data structure vs. execution plan)?
-- Does it **change which direction unification should go**? The current
-  recommendation is pidag becomes a constrained subset of pii's port-based
-  routing. If pii gains a native graph *service* over a code corpus, does that
-  strengthen the case for pii-as-superset, or muddy it?
-- Does a code graph **inform or subsume the coding-harness graph (§1)**? §1
-  proposes forking `verify-fix.toml`. A code graph is a different artifact — but
-  if pii's thesis is "everything is a graph", a reviewer could argue the
-  coding-harness graph should *consume* the code graph rather than be its
-  sibling. **Decide**: same thing, related, or unrelated?
+1. **Pre-edit orientation.** Before the `agent` node in a `verify-fix`-derived
+   harness writes anything, a `graph.code.query` call tells it what the
+   target symbol touches — turning the harness's context from "read the files
+   you guess are relevant" into "read the subgraph the graph says is
+   relevant." This is the direct analogue of what Track A does for *us*.
+2. **Post-edit blast-radius check.** After an edit, ask which
+   `EXTRACTED` edges now point at changed symbols. Potentially a **stronger
+   gate input** than the current single `test_command` exit code — it can
+   catch "this passed the tests but broke an unreferenced caller."
+3. **Tool-set narrowing for the harness's own agent.** Today `pii-mcp`
+   registers `ToolSet::builtin` wholesale (fable Finding 6 / security
+   Finding, spec-62's neighbourhood) — every tool visible every turn. A
+   queryable code graph makes it possible to narrow the admissible set
+   per turn.
+
+**Decide**: is any of these worth designing into the harness now, or is the
+harness graph (§1) a *separate* decision that the code graph should not
+complicate? Honest counter-argument I want you to weigh: §1's gap is
+already well-defined (compose three existing patterns into one DAG), and
+adding a fourth concern could delay a decision that is otherwise ready.
+
+### Does Track B interact with the DAG-format-unification mandate?
+
+A code-knowledge graph **is a graph**, and this package already carries a
+**user-mandated** requirement to unify the DAG/graph format across pii and
+pidag (*"using the same dag format in both could be a must!"*, staged as
+compatible-now / identical-later).
+
+- Is a code graph a **third format** to reconcile, or orthogonal (a data
+  structure, not an execution plan)?
+- Does it **change the unification direction**? The current recommendation is
+  pidag becomes a constrained subset of pii's port-based routing. If pii gains
+  a native graph *service* over a code corpus, does that strengthen the
+  pii-as-superset case or muddy it?
+- Does it **subsume the coding-harness graph (§1)**, or sit beside it?
+  **Decide**: same thing, related, or unrelated?
 
 ### Constraint to confirm before any of 5-7 is built
 
@@ -248,11 +318,13 @@ a reason `Pii` never produces"* — the model node had to return a **successful
 proof this pattern works is that the escalation ladder **already functions**
 because the **tool node reports `exit_code` as payload** rather than failing.
 
-So a code-graph node whose finding the graph **routes on** must return a
+So a code-graph node whose finding the harness **routes on** must return a
 successful `Outcome` with the finding in the payload, **not `Err`**. Corollary:
 a node that merely **answers** is a **tool** (effect-free, read-only); a node
 whose judgement the graph **routes on** is a **route payload**. Those are
-different designs and should be picked deliberately.
+different designs and should be picked deliberately — note that Decision 7's
+use (2) above (blast-radius as gate input) is exactly the *route payload*
+case.
 
 **Decide**: confirm this constraint, or say why it does not apply here.
 
@@ -272,6 +344,10 @@ the linked section only if you want the reasoning before deciding.
    (reuse `validate-exit-criteria.sh` directly) and model-escalation-
    on-retry. → [§1 in 029](029-coding-harness-design-questions-for-opus.md#1-the-core-question-one-implementing-dag-not-an-abstract-loop)
    **Decide**: approve this shape, or a different one?
+   **NOTE (2026-09-19): see Track B, Decision 7 — a code-knowledge graph
+   could *feed* this harness (pre-edit orientation, post-edit blast radius,
+   tool-set narrowing). Decide whether that belongs in the harness or is a
+   separate concern that should not delay this decision.**
 
 2. **F-13 scope** (already implemented as module-reorg, not full
    3-crate split). → [§2](029-coding-harness-design-questions-for-opus.md#2-f-13-scope-options-recorded-2026-09-17-deferred-until-now)
