@@ -162,6 +162,31 @@ state). Both graphs built locally, $0.
 - **Limit:** community labels need an LLM, so the local path yields the graph
   but not readable community names.
 
+**No session-start call is required (measured).** The graph is persistent on
+disk; the design is *build once, query many, refresh deliberately.* The hook
+fires only when `graph.json` exists and instructs a **query** — never a
+rebuild — and the skill has an explicit fast path (*"skip Steps 1–5 entirely
+and jump straight to `query` … The graph is already built — use it."*). A
+refresh is cheap when you want one: `graphify update .` = **2.9 s** as a no-op,
+**4.8 s** with real changes. Refresh **after code changes**, not at session
+open.
+
+**Open question this surfaced — what corpus should the graph cover?**
+`graphify extract . --code-only` on pidag gave **3,101 nodes**; a later
+`graphify update .` gave **5,098**, because update is not corpus-narrow — it
+re-scanned `specs/` (1,156 nodes), `.claude/` (140) and `.orchestration/`
+(133) alongside `.rs` files. Two readings, and this is genuinely a judgement
+call:
+
+- **Keep specs in.** pidag's `specs/*.md` are its *contract* — linking them to
+  the code that implements them is arguably high-value, not noise.
+- **Exclude agent-config.** `.claude/` / `.orchestration/` are our own agent
+  scaffolding, not the codebase.
+
+**Decide**: should the graph be "the codebase" (`.rs` only, plus `specs/` if we
+want the contract link) or "the whole tree"? Recommend code + specs, exclude
+agent config.
+
 ### Evidence Track A produces for the EXISTING decisions (machine-checked)
 
 graphify's god-node list on pii — the most-connected concepts, by edge count:

@@ -195,3 +195,80 @@ Sequenced, reversible, nothing committed yet:
   discipline depends on knowing exactly what writes to the repo.
 - **Scope:** apply to **pii only** first, or also **pidag**? pidag is a much
   smaller tree (one crate) where the payoff is likely lower.
+
+---
+
+## 5. Must graphify be called at the START of a session? — NO (measured)
+
+**Short answer: no. Nothing needs to run at session begin.** The graph is
+persistent on disk; the design is *build once, query many, refresh
+deliberately.* Measured on pidag:
+
+| what | evidence |
+|---|---|
+| The graph persists across sessions | `graphify-out/graph.json` (3.6 MB) sits on disk; nothing rebuilds it on open |
+| The hook points at a **query**, not a rebuild | fires only when `graph.json` **exists**, and instructs *"run `graphify query …` before reading source files"* — it never asks for a rebuild |
+| The skill has an explicit **fast path** | *"Before doing anything else, check whether `graphify-out/graph.json` exists … **skip Steps 1–5 entirely and jump straight to `## For /graphify query`**. Do not run detect. Do not check corpus size. The graph is already built — use it."* |
+| A refresh is cheap **if** you want one | `graphify update .` → **2.9 s** as a no-op (*"No code-graph topology changes detected"*), **4.8 s** with real changes |
+
+So the correct session-begin behaviour is **do nothing** — query on demand. The
+nudge exists precisely so the agent reaches for the graph *instead of* a
+grep-and-read sweep, not so it rebuilds anything.
+
+### The right moment to refresh is AFTER code changes, not at session start
+
+That is what the tool's own design assumes: it offers a `post-commit`/
+`post-checkout` hook (which we declined) **and** an explicit `graphify update .`
+for the manual case. The natural trigger is "I changed code", not "I opened a
+session". `update` is idempotent and cheap, so running it at session start is
+*harmless* — but it is not required, and if nothing changed it is 3 s of
+nothing.
+
+### CAVEAT I hit while measuring this — `update` WIDENS the corpus
+
+`graphify extract . --code-only` on pidag produced **3,101 nodes**. A later
+`graphify update .` produced **5,098** — because update re-scanned more than
+code:
+
+```
+.rs 2142   .md 1997   (none) 835   .sh 122   .toml 2
+top dirs: src 1191, specs 1156, tests 1126, deploy 275, .claude 140, .orchestration 133
+```
+
+So **`update` ≠ `extract --code-only`** — it is not corpus-narrow. It pulled in
+`specs/` (1156 nodes) and agent-config dirs (`.claude/` 140,
+`.orchestration/` 133). Two consequences worth a decision later:
+
+- **Good:** connecting `specs/*.md` to code in one graph is arguably *valuable*
+  for us — pidag's specs are its contract.
+- **Noise:** `.claude/` and `.orchestration/` (our own agent config) are not
+  code and should probably be excluded.
+- **Cost:** the graph grew 3,101 → 5,098 nodes; more nodes means a larger
+  `graph.json` and noisier traversal.
+
+**No LLM spend occurred** — the AST path is deterministic, and `cost.json`
+records no tokens. (A `GEMINI_API_KEY` is present in the environment; the
+code/structural path did not use it.)
+
+**Recommendation:** leave session start alone; refresh deliberately after code
+changes; and if we adopt the broader corpus, add an exclude for
+`.claude/`/`.orchestration/` so the graph stays "the codebase", not "everything
+in the tree".
+
+### For pidag specifically
+
+pidag's graph is **already built and persists**. Nothing runs at session open.
+The first `Read`/`Grep` in the project fires the soft nudge pointing at
+`graphify query` — that is the entire per-session cost.
+
+One interaction to keep in mind: pidag's hard rule is *workers never commit;
+the orchestrator commits*, and the effect-verification seam depends on tree
+state. `graphify update .` writes only inside the **gitignored**
+`graphify-out/`, so it cannot dirty the tracked tree or disturb that seam —
+which is another reason the git-hook route was declined and the explicit
+command is the right one.
+
+**One caveat on the nudge for pidag:** the hook matches `Bash|Grep`, so it
+fires on the many greps our pidag workflow already runs (spec audits, drift
+checks). If that proves too loud, install the skill + always-on rules and drop
+the hook — the AGENTS.md/CLAUDE.md rules still carry the guidance.
