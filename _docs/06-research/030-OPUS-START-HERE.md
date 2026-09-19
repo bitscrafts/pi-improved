@@ -4,6 +4,10 @@
 decision on every open question. Everything else is optional
 deep-dive material, linked below, not required reading.**
 
+> Workspace-wide, the single entry point for every open topic across *all*
+> projects is `/projects/docs/01-overview/OPEN-REGISTER.md` (rows A2, A4, C10 are this
+> package's). This file remains the full decision detail for the pii items.
+
 **Decision count: 4 original (coding-harness graph shape, F-13 scope,
 modularity idea, Chromecast module) + 3 new (2026-09-19, code-knowledge graph:
 the `reachability-check` upgrade, native-service shape/placement, and whether
