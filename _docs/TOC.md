@@ -44,6 +44,20 @@
 - `023-llamacpp-granite-on-pi-process.md` — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
 - `024-pii-memory-mcp-status-and-next.md` — verified status of Pii's memory + MCP: both work end-to-end (3 real memory RPCs, 15 tests; Hermes↔pii-mcp connected + tools responding), 8 honest capability caveats, and the ordered next steps N1-N6
 - `025-model-routing-and-failover-plan.md` — PLAN: port Hermes's typed-failure failover (FailoverReason taxonomy, per-reason recovery policy, ordered provider chain) into Pii, plus cost routing (cascading + safety rules + peak-aware provider preference). Gap analysis, 7-spec breakdown for the planner, risks
+- `026-codebase-analysis-and-phase5-plan.md` — codebase/package map, debt + risk findings (S1-S3), Phase 5 plan (5.0 re-baseline, 5.1 Track A failover, 5.2 structural ratchet)
+- `027-orchestration-resumption-spec38-verification.md` — verification of spec-38 + the gate state at that checkpoint
+- `028-sdd-orchestration-review-checkpoint.md` — consolidated checkpoint: map, debt, next-phase
+- `029-coding-harness-design-questions-for-opus.md` — coding-harness graph: the design questions put to opus
+- `030-OPUS-START-HERE.md` — compact entry point for an opus review pass: the open architecture decisions, linked to their reasoning
+- `031-fable-review-ground-truth-2026-09-18.md` — ground truth supplied to the fable review
+- `032-fable-pii-review-2026-09-18.md` — review findings and candidate improvements
+- `033-spec65-guardrail-violation-doc-format.md` — spec-65 guardrail violation: the worker changed the doc storage format
+- `034-cactus-needle3-automation-research.md` — Cactus Needle 3 research and relevance to pii: grammar-constrained decode, confidence-band routing, tool retrieval; measured caveats (classification 1/5, confidence routing failing on vague input)
+- `035-graphify-code-knowledge-graph-research.md` — graphify: (A) tooling for our own work, (B) a native pii feature
+- `036-graphify-integration-design-discussion.md` — graphify integration design notes
+- `037-pii-native-graph-service-design.md` — a native "pii graph" service: the design answer
+- `038-pii-chromecast-device-manager-feasibility.md` — pii as a Chromecast/Google Home device manager: feasibility
+- `039-jev-system-one-decision-layer-analysis.md` — ANALYSIS: System-1 decision layer for pii — Jev (TypeSafe) what it is + common usages; **Laya (Apache-2.0, local, $0) as the open Jev counterpart**; where it fits (a decision feeding `route`; graph stays sole edge authority); Jev vs Needle 3 (judge vs dispatcher); decision forks incl. discarded options. No implementation
 
 ## 99-archive
 - (empty)

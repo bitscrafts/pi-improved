@@ -488,6 +488,15 @@ Checked line by line against `cactuscompute.com/needle`:
 
 ## Open questions for later analysis
 
+> **Follow-up (2026-09-21):** `039-jev-system-one-decision-layer-analysis.md`
+> compares Needle 3 against Jev (TypeSafe System One) and resolves this
+> "same shape of decision?" question: the **seam** is the same (a decision
+> source feeding `route`), but the **decision classes differ** — Needle is the
+> *dispatcher* (text → grounded tool call), Jev is the *classifier/scorer*
+> (state → typed judgement with calibrated confidence). Jev does not replace
+> Needle; register B6 is unchanged. §3.5 of 039 carries the side-by-side table
+> and the per-decision assignment.
+
 - Does grammar-constrained decoding map cleanly onto pii's existing
   `ToolSpec` JSON, or does it need a schema subset (no nested objects/arrays,
   per the ESP32 port's compile-time rejections)?

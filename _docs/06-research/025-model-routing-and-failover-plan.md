@@ -342,6 +342,15 @@ value-per-effort item in the whole plan.
 
 ## 7. Bottom line
 
+> **Follow-up (2026-09-21):** `039-jev-system-one-decision-layer-analysis.md`
+> supplies the **decision-engine** half this plan leaves open. §4.4 item 5 here
+> names a tier-0 classifier ("granite in-process") but does not settle what the
+> classifier *is*; 039 analyses a System-1 decision source (Jev/Laya-class) for
+> exactly that slot, and §3.5 there distinguishes it from Needle 3 (a
+> *dispatcher*, not a classifier). 039 is analysis only, proposes no
+> implementation, and keeps every constraint below intact — notably §4.4 item 3's
+> rule that the non-negotiable branch must be a static rule matching first.
+
 Two co-equal tracks, one substrate.
 
 **Failover (A)**: Hermes's edge is not "it has a fallback list" — it is that

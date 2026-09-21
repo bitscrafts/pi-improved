@@ -238,6 +238,13 @@ Ordering: 5.0.1 first (blocking); 5.0.2–5.0.4 next, parallel-safe (disjoint cr
 
 ### Phase 5.1 — Track A: failover becomes real (plan 025 §5, A2–A5)
 
+> **Related (2026-09-21):** `039-jev-system-one-decision-layer-analysis.md` —
+> supplies the *decision-engine* half that plan 025 leaves open (025 §4.4 item 5
+> names a tier-0 classifier but does not say what provides it). Analysis only;
+> it proposes a System-1 (Jev/Laya-class) decision source feeding the existing
+> `route` node, with the graph staying the sole authority over edges. No
+> implementation.
+
 | Step | Scope | Acceptance |
 |---|---|---|
 | **A2 structured provider failure** (planner design decision first; F-11) | Add `pii_abi::ProviderFailure { status: Option<u16>, origin: Origin, provider: String, message: String }` carried by a new `PiiError::Provider(ProviderFailure)` variant (preferred over overloading `Unavailable`); `OllamaProvider`/`LlamaCppProvider` construct it; `classify` gains `impl From<&ProviderFailure>` (or a `classify_provider` adapter). **No message-string parsing anywhere in `pii-server`.** | `grep -rn 'upstream status {' crates/pii-model` → 0; tests: Ollama 429 with aggregator origin → `UpstreamRateLimit`/`NextProvider`; llama.cpp `n_ctx` overflow → `ContextOverflow`/`Compress`; `grep -rn 'classify' crates --include='*.rs' \| grep -v failover.rs \| grep -v '#\[cfg(test)\]'` ≥ 1. |
