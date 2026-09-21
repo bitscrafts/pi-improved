@@ -419,3 +419,121 @@ provider impl, or `.rs` change.
 **Tracked in:** `/projects/docs/01-overview/OPEN-REGISTER.md` row **A16**
 (AWAITING a user decision) — per the `open-item-tracking` procedure, so the
 next-step fork is findable and does not rot with this session.
+
+---
+
+## 6. MEASURED — Laya downloaded and run for real (2026-09-21)
+
+The shared caveat above ("neither has been measured on pii's own decisions")
+was closed for Laya by actually downloading and running it in this container.
+**Everything in this section is measured here, not quoted from a vendor.**
+
+**Environment:** container `lnx`, **no GPU** (`torch.cuda.is_available()` →
+`False`), 32 vCPU, 125 GB RAM. This is the CPU path — the worst case for a
+421M-parameter encoder, and the honest one to report.
+
+**Setup:** `uv venv` (CPython 3.12.14) → `uv pip install laya` → **laya 0.3.4**,
+torch 2.14.0, transformers 5.17.0. Install succeeded (no packaging defects, unlike
+Needle 3's documented missing `pydantic`/`numpy`/`sentencepiece`). Disk: venv
+5.4 GB, HF cache 2.8 GB. Scripts kept at `/projects/_tmp/laya-test/`.
+
+### 6.1 The documented quickstart runs and gives the documented answers
+
+`laya.load("convaiinnovations/laya")` + the email-triage example from the model
+card produced: **department `billing` (confidence 0.89)**, urgency **1.51/2**,
+churn risk **43.1%**, phishing **3.1%** — matching the card's shape. It really
+does return typed answers with **`output_tokens: 0`**: there is no generation
+step to hallucinate in.
+
+### 6.2 Latency, measured (CPU, no GPU)
+
+| what | measured | vendor claim (T4 GPU) |
+|---|---|---|
+| cold load (first build) | **23.0 s** | seconds |
+| 1 question | **140 ms** | 39.5 ms |
+| 4 questions, one call | **328 ms** | — |
+| steady median (4 questions, 6 runs) | **307.9 ms** (min 305.9, max 324.9) | 158.6 ms for 10 on GPU |
+| `Router(preload=True)` startup | **63.4 s** (3 checkpoints) | — |
+| Router, 3-4 questions | **83–365 ms** | 32.8 ms |
+
+**Reading:** the claims are directionally right but GPU-flattered. On CPU this is
+a **~0.3 s decision**, not a 40 ms one — still ~10-25× faster than a frontier LLM
+call and ~1000× cheaper, but it is *not* free-latency, and a graph node calling it
+per step would notice. Batching is real and cheap: 4 questions cost barely more
+than 1.
+
+### 6.3 The headline measured result — confidence tracks correctness
+
+A 4-case refund spot-check with known labels: **4/4 correct**, and the confidence
+separated cleanly — `noul=0.948` (conf 0.948) and `noul=0.958` (conf 0.958) on the
+two genuine refund requests vs `0.442` and `0.035` on the two negatives.
+Calibration is *observable in a handful of calls*, which is the property that
+makes threshold gating meaningful.
+
+**And it fails the way it says it fails.** The pii-shaped routing question
+("which tier should implement spec 41?") answered `strong` at **confidence 0.067**
+with the distribution `cheap 0.18 / mid 0.33 / strong 0.49` — i.e. it correctly
+reported that it did not know. That is the opposite of Needle's measured N7
+failure (a *meaningless* call emitted at 0.996 confidence), and it is the single
+most important contrast between the two systems.
+
+### 6.4 Language handling — the Router works, and the caveat is subtler than documented
+
+The docs warn the English checkpoint collapses on non-Latin scripts (Khmer at
+**0.000 accuracy / 0.952 confidence**) and that the `Router` fixes it by detecting
+script in <0.5 ms. Measured here:
+
+- Script detection works: Portuguese routed to `english`, a Devanagari-shaped case
+  would go to `multilingual`, and the routing metadata explains *why*.
+- **A German case "failed" (`dept=other`, confidence 0.49) and the cause was NOT
+  language.** With the *same* short German sentence the model was unsure; with a
+  richer state (from/subject/body, as the docs' own example uses) the identical
+  German request scored **billing at 0.9995 confidence**. So thin state, not
+  foreign language, is what degrades it — a **state-quality** caveat that the
+  vendor material does not state as clearly as the script caveat.
+- Portuguese with a full envelope → `billing`, confidence 0.82-0.89.
+- One residual oddity: routing metadata picked `english` for the Portuguese case
+  while still answering correctly; the multilingual checkpoint answered a second
+  Portuguese case at **0.99 confidence in 90 ms** (the fastest call measured).
+
+### 6.5 A real finding — the `action` head is inert
+
+Every answer carries `action.act_probability`, and across all cases measured
+(meaningful, irrelevant, **gibberish `"asdkjh qweoiu zxcvb"`, and an empty
+`body: ""`) it returned **exactly 1.0**. Read against the installed source
+(`laya/agent.py:310`: `ext = {"act_probability": round(float(act[r, 0]), 4)}`,
+a raw softmax over 2 logits), this is a separate head that is not trained to
+discriminate on this checkpoint.
+
+**Consequence for the integration design:** do **not** gate on `act_probability`
+— in the installed build it carries no signal. Gate on **`confidence`**, which is
+derived from the probability distribution's shape and *did* vary meaningfully
+(1.000 → 0.067) in the measurements above. This is a concrete, measured refinement
+of §4 F7: "adopt the shape, not the score" now has a named field to trust and a
+named field to ignore.
+
+### 6.6 What this changes in the analysis
+
+- **§3.3's core claim is now evidence-backed:** Laya runs locally on CPU, $0,
+  zero egress, returns calibrated typed answers, and **correctly reports its own
+  uncertainty** — the property Jev is sold on, confirmed on our own hardware.
+- **§4 F2's "testable at $0 today" is done, not proposed.** The remaining work is
+  an *evaluation*, not an installation: run Laya against real pii decisions
+  (a routing/tier judgement, a guardrail `Noul`, a consolidation "same fact?"
+  `Noul`) and compute our own ECE / risk-coverage curves from its `eval/` shape.
+- **A new cost constraint for the design:** at ~0.3 s/decision on CPU it is a good
+  *per-task* gate and a poor *per-tool-call* gate. Batch questions (4 questions
+  cost ~2.3× one) rather than calling it repeatedly.
+- **Still unmeasured:** accuracy on *pii's* decision distribution, and behaviour
+  under the hostile-state condition (§4 F7) — a state engineered to argue for its
+  own classification has not been tested here.
+
+**Nothing in this section changes the recommendation's shape** (§5): Laya on the
+free/local rung, Jev on the paid cross-check rung, the graph still the sole
+authority over edges. It upgrades the recommendation from *reasoned* to *measured*,
+and it names the one field (`confidence`) and the one anti-field
+(`act_probability`) the integration must use.
+
+**Reproduce:** `/projects/_tmp/laya-test/` — `run_laya.py` (quickstart),
+`bench_laya.py` (latency + calibration), `router_laya.py` (language routing),
+`de_check.py` (thin-vs-rich state), `action_check.py` (`act_probability` head).
