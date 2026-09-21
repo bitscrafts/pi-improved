@@ -537,3 +537,30 @@ and it names the one field (`confidence`) and the one anti-field
 **Reproduce:** `/projects/_tmp/laya-test/` — `run_laya.py` (quickstart),
 `bench_laya.py` (latency + calibration), `router_laya.py` (language routing),
 `de_check.py` (thin-vs-rich state), `action_check.py` (`act_probability` head).
+
+---
+
+## 7. llama.cpp and integration shape — see doc 040
+
+**Follow-up (2026-09-21):** `040-laya-on-llamacpp-and-graph-driving.md` answers
+the two questions this doc leaves open and was requested alongside it:
+
+1. **"Does it run from llama.cpp?"** — YES, as a published **hybrid**: the
+   ModernBERT backbone in llama.cpp as `modern-bert` (Q8_0), the decision head in
+   PyTorch. Verified here end-to-end with **Δp = 0.0006** against pure PyTorch.
+   Important honest caveat measured there: on CPU the hybrid is **slower**, not
+   faster (HTTP round-trip per backbone call) — the win is format, quantised
+   memory and one-image-many-models, not speed. The host's llama.cpp setup was
+   also renamed to be generic (it was named after laguna, which is only a model),
+   and Laya now runs as a second instance on 8083.
+2. **"How can it improve our projects — graph driving? state machine?"** — the
+   answer to both is the same principle, now with external literature behind it
+   (deterministic shells / probabilistic cores; rules-before-model; state
+   guardrails as a *separate* layer with no model in the guarantee):
+   **the graph drives and Laya decides** (its answer lands in `$.payload` so the
+   existing `route` node branches on it — the exact shape spec 40 proved for
+   provider failures), and **Laya is a transition guard that never owns the
+   transition table**. Ranked applications L1–L5 and the five caveats are in 040.
+
+This section 6 is the *measurement* half for Laya; 040 is the *deployment and
+integration* half.
