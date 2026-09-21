@@ -415,3 +415,7 @@ workspace OPEN-REGISTER.
 
 **Explicitly out of scope for this doc:** any implementation, spec, node kind,
 provider impl, or `.rs` change.
+
+**Tracked in:** `/projects/docs/01-overview/OPEN-REGISTER.md` row **A16**
+(AWAITING a user decision) — per the `open-item-tracking` procedure, so the
+next-step fork is findable and does not rot with this session.
