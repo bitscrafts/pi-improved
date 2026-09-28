@@ -55,7 +55,17 @@ resume-first on all agents).
 - **workdir (OUTPUT)** → `/projects/_tmp/pii-review/`, scratch for results and logs. Repo rule: nothing needed
   to *start* lives there, so clearing `_tmp` loses no input. It will be recreated if absent.
 
-## THE RESUME COMMAND
+## THE ONE COMMAND (nothing else to assemble)
+
+```bash
+bash /root/.hermes/scripts/pii-review-run.sh
+```
+
+`DRY_RUN=1` in front prints what it will do and spends nothing. It probes the window, dispatches in test
+mode on the resumed session, proves the tree stayed clean, files the report into `_docs/` + amem, and
+writes a commit-ready summary. **Exit 2 = window shut, nothing spent.**
+
+## THE RESUME COMMAND (what the script runs, for reference)
 
 ```bash
 cd /projects/pi-improved

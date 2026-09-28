@@ -72,6 +72,8 @@ live. Nothing is deleted — superseded documents move to `99-archive/` with a d
 A condensation of this size is 2–3 sessions. **This map is the resume point**: each row names its canonical, its
 inputs, and its action, so a later session can pick up any single topic without re-deriving the survey.
 
+**The pending review, in one command:** `bash /root/.hermes/scripts/pii-review-run.sh` (after the amem intervention).
+
 **Scope caveat:** the pii **code** work is separate and unaffected — this map concerns `_docs/06-research/` only.
 The staged full review (`042`) is still the pending item that must run before the pii intervention.
 
