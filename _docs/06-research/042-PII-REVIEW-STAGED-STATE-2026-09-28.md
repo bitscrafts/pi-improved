@@ -49,9 +49,11 @@ The only pii review that exists on disk is **2026-09-18**.
 *derives from* its own prior work instead of re-deriving it (register: review→implement→re-review pipeline;
 resume-first on all agents).
 
-**Path convention:** inputs are in the project's own `_docs/` tree (durable); `/projects/_tmp/pii-review/` is
-**OUTPUT-only** scratch for this run (results, logs). Repo rule: `_tmp` must never be load-bearing, so if that
-directory is cleared, nothing needed to *start* the review is lost.
+**Path convention — the two arguments differ on purpose:**
+- **brief (INPUT)** → the project's `_docs/`, **durable**; a `_tmp` copy was reduced to a pointer so it cannot
+  drift from this one.
+- **workdir (OUTPUT)** → `/projects/_tmp/pii-review/`, scratch for results and logs. Repo rule: nothing needed
+  to *start* lives there, so clearing `_tmp` loses no input. It will be recreated if absent.
 
 ## THE RESUME COMMAND
 
