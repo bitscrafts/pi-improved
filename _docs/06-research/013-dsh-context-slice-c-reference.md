@@ -11,7 +11,7 @@ The user asked to record, for future pi-improved implementation, the insight
 that **dsh-context is the design to steal for Slice C** (context management).
 This doc is the SSOT for that reference. It builds on:
 
-- `_docs/06-research/008-pii-evolve.md` — Slice C / "manage its own context"
+- `_docs/06-research/012-p47-remaining-opus-plan.md` — Slice C / "manage its own context"
   (compaction + `state.md` + external memory as source of truth).
 - `_docs/06-research/012-p47-remaining-opus-plan.md` — **D9**: Slice C is
   unbuilt; `crates/pii-server/src/compaction.rs:69` counts a turn as a

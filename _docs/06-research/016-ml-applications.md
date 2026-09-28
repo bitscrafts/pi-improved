@@ -17,7 +17,7 @@ first dataset, only an export/label pass over what's already durable in redb.
   This does not ban ML crates — it bans `unsafe` in *Pii's own* code. Pure-Rust
   crates whose public API needs no `unsafe` at the call site are fine; crates
   that force `unsafe` usage in the caller are not.
-- No GPU (confirmed in `004-granite-nano-tier-probe.md`: "no-GPU box"). Every
+- No GPU (confirmed in `014-local-model-spec-implementation.md`: "no-GPU box"). Every
   model here must train/infer on CPU, ideally single-digit milliseconds at
   inference since some candidates (routing, no-op detection) sit in the hot
   path of a running graph.
@@ -153,7 +153,7 @@ run, cheap enough (single matrix-vector multiply on a 256-dim embedding) to
 run synchronously when a run finishes.
 
 ### C2. Learned router: pick tier-0 (B1 embedder) vs tier-1 (small LLM) vs cloud
-**Data**: `004-granite-nano-tier-probe.md` already defines the tier
+**Data**: `014-local-model-spec-implementation.md` already defines the tier
 boundaries (tier 0 = nano/no-reasoning/$0, tier 1 = local ~9B via
 llama.cpp, presumably tier 2 = cloud). Training data: historical
 `(prompt, tier_used, outcome)` triples where outcome is success/failure or
@@ -215,7 +215,7 @@ one run's label, K1 groups many runs to find labels nobody defined yet.
 operator hasn't named: e.g. "all runs where `heal-fix`'s `route_retest`
 fires twice then escalates" forming a tight cluster reveals a recurring
 gate/model combination that never actually converges, which is exactly the
-kind of finding `009-pii-evolve-opus-review-pass1.md` and the heal ledger
+kind of finding `012-p47-remaining-opus-plan.md` and the heal ledger
 are trying to surface manually today (`HealState::Escalated` rows are
 already collected one at a time; clustering would show *which escalations
 look alike*).
@@ -264,7 +264,7 @@ infrastructure to wire in — only a new step inside it).
 
 1. **C2 — Learned tier-0 router (fitted head for B1 embedder).**
    **Why first**: this is not a new feature, it is the missing half of an
-   *already-decided* architecture (`004-granite-nano-tier-probe.md`,
+   *already-decided* architecture (`014-local-model-spec-implementation.md`,
    pass-3 §3.1: "B1 (an `Arc<dyn Embedder>` + fitted head)"). The embedder
    (`TrigramEmbedder`) and the trait boundary (`Embedder`) already exist and
    are load-bearing in `pii-memory`. Building this closes a known gap

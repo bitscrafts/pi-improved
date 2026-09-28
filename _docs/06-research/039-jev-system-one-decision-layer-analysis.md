@@ -11,7 +11,7 @@ on how it can be used on pii"* → *"no implementation, just analysis!"* →
   failover plan (Tracks A/B). **Jev is absent from it**; this doc supplies the
   missing decision-engine half.
 - `_docs/06-research/016-ml-applications.md` (classical ML on Pii),
-  `017-tiny-models-real-usage.md` (tiny chat models incl. routing).
+  `014-local-model-spec-implementation.md` (tiny chat models incl. routing).
 - Landed code this analysis reads: `crates/pii-abi/src/failover.rs` (spec 37,
   `FailoverReason` + `Recovery`), spec 39 (structured provider failure), spec 40
   (`AgentNode` `fail` port + `FailurePayload{status,reason,provider}`), spec 41

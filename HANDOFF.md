@@ -1,5 +1,10 @@
 # Pii — Session Handoff
 
+> **2026-09-28 — ⚠ THE claude+opus FULL REVIEW OF THIS REPO HAS NOT RUN YET.** Both attempts today were blocked
+> by scheduler bugs, not by this repo. Before any pii review or intervention work, read
+> **[`_docs/06-research/042-PII-REVIEW-STAGED-STATE-2026-09-28.md`](_docs/06-research/042-PII-REVIEW-STAGED-STATE-2026-09-28.md)**
+> — state, staged assets, and the exact resume command.
+
 **Opus reviewer: start at `_docs/06-research/030-OPUS-START-HERE.md`,
 not this file** — it's a compact single-entry-point summary of the 4
 decisions actually being asked of you; this HANDOFF.md is the full

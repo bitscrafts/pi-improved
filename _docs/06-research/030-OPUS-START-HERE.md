@@ -4,6 +4,10 @@
 decision on every open question. Everything else is optional
 deep-dive material, linked below, not required reading.**
 
+> **2026-09-28 — the full review this document asks for HAS NOT RUN yet; it is staged and ready.**
+> State + exact resume command: [`042-PII-REVIEW-STAGED-STATE-2026-09-28.md`](042-PII-REVIEW-STAGED-STATE-2026-09-28.md).
+> It must derive from `031`/`032`, verify specs 62-69, and rule on the eight decisions below.
+
 > Workspace-wide, the single entry point for every open topic across *all*
 > projects is `/projects/docs/01-overview/OPEN-REGISTER.md` (rows A2, A4, C10 are this
 > package's). This file remains the full decision detail for the pii items.
@@ -133,10 +137,10 @@ idea; they share no decisions.
 
 Ground truth (three docs, all committed):
 
-- `035-graphify-code-knowledge-graph-research.md` — what graphify is, and a
+- `037-pii-native-graph-service-design.md` — what graphify is, and a
   **measured** trial on pii (269 code files → 4,187 nodes, 9,646 edges, 216
   communities, fully local, zero LLM calls, no API key).
-- `036-graphify-integration-design-discussion.md` — the wiring mechanics, each
+- `037-pii-native-graph-service-design.md` — the wiring mechanics, each
   one tested (uv isolation, `GRAPHIFY_OUT`, dual CLAUDE/AGENTS, hooks, skills).
 - `037-pii-native-graph-service-design.md` — the native-service design.
 

@@ -7,7 +7,7 @@
 Today Pii's only live model backend is [`OllamaProvider`](/projects/pi-improved/crates/pii-model/src/ollama.rs)
 — an HTTP client (`Arc<dyn HttpTransport>` → `POST {OLLAMA_HOST}/api/chat`)
 implementing the sync [`ModelProvider`](/projects/pi-improved/crates/pii-model/src/lib.rs)
-trait. `004-granite-nano-tier-probe.md` already established that Granite 4.2's
+trait. `014-local-model-spec-implementation.md` already established that Granite 4.2's
 thinking-mode toggle (`enable_thinking=False`) is **not controllable through
 Ollama at all** — Ollama replaces the model's own Jinja chat template, so the
 probe had to fall back to `llama-server` (the llama.cpp reference HTTP
@@ -160,7 +160,7 @@ Two implementation choices for `ctx_slot`:
 1. **`Mutex<LlamaContext>`** — simplest. `GraphNode::run` already executes on
    a blocking thread per pii-graph's worker model, so a `chat()` call that
    blocks on the mutex while another turn is decoding is exactly the "one
-   model slot" semantics `004-granite-nano-tier-probe.md` already assumes
+   model slot" semantics `014-local-model-spec-implementation.md` already assumes
    for tier 1 ("occupies the single Ollama slot"). No new concurrency model,
    just a different lock type.
 2. **Dedicated owning thread + `mpsc` channel** — `chat()` sends
@@ -224,7 +224,7 @@ that should get "an LLM but never the network" is inexpressible with
 
 ### GGUF availability
 
-`004-granite-nano-tier-probe.md` already pins a verified artifact:
+`014-local-model-spec-implementation.md` already pins a verified artifact:
 `granite-4.2-3b-Q4_K_M.gguf` (2.24GB) from `ibm-granite/granite-4.2-3b-GGUF`
 on Hugging Face, kept at `/projects/_tmp/`. The 8B variant (opus's
 recommended tier-1 primary, 5.3GB) is presumably available from the sibling

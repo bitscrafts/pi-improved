@@ -1,0 +1,58 @@
+{
+ "ts": "2026-09-28T20:00:57Z",
+ "groups": [
+  {
+   "canonical": "002-pii-architecture-plan-pass2.md",
+   "absorbed": [
+    "001-pii-architecture-plan.md",
+    "003-pii-architecture-plan-pass3.md"
+   ],
+   "new_size": 271047
+  },
+  {
+   "canonical": "012-p47-remaining-opus-plan.md",
+   "absorbed": [
+    "008-pii-evolve.md",
+    "009-pii-evolve-opus-review-pass1.md"
+   ],
+   "new_size": 51580
+  },
+  {
+   "canonical": "026-codebase-analysis-and-phase5-plan.md",
+   "absorbed": [
+    "010-pii-full-review-pass1.md",
+    "011-pii-architecture-conformance-review-pass1.md"
+   ],
+   "new_size": 100453
+  },
+  {
+   "canonical": "037-pii-native-graph-service-design.md",
+   "absorbed": [
+    "035-graphify-code-knowledge-graph-research.md",
+    "036-graphify-integration-design-discussion.md"
+   ],
+   "new_size": 42749
+  },
+  {
+   "canonical": "014-local-model-spec-implementation.md",
+   "absorbed": [
+    "004-granite-nano-tier-probe.md",
+    "017-tiny-models-real-usage.md"
+   ],
+   "new_size": 42872
+  }
+ ],
+ "absorbed": {
+  "001-pii-architecture-plan.md": "002-pii-architecture-plan-pass2.md",
+  "003-pii-architecture-plan-pass3.md": "002-pii-architecture-plan-pass2.md",
+  "008-pii-evolve.md": "012-p47-remaining-opus-plan.md",
+  "009-pii-evolve-opus-review-pass1.md": "012-p47-remaining-opus-plan.md",
+  "010-pii-full-review-pass1.md": "026-codebase-analysis-and-phase5-plan.md",
+  "011-pii-architecture-conformance-review-pass1.md": "026-codebase-analysis-and-phase5-plan.md",
+  "035-graphify-code-knowledge-graph-research.md": "037-pii-native-graph-service-design.md",
+  "036-graphify-integration-design-discussion.md": "037-pii-native-graph-service-design.md",
+  "004-granite-nano-tier-probe.md": "014-local-model-spec-implementation.md",
+  "017-tiny-models-real-usage.md": "014-local-model-spec-implementation.md"
+ },
+ "refs_repointed": 31
+}
