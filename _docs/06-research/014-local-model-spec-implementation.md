@@ -11,7 +11,7 @@
 
 This asks a narrower, more operational question than prior docs: not "can granite
 run inside Pii" (settled — [015](015-llm-in-process-llama-cpp.md),
-[023](023-llamacpp-granite-on-pi-process.md), specs 35/36) but "can granite/laguna
+[023](../02-guides/023-llamacpp-granite-on-pi-process.md), specs 35/36) but "can granite/laguna
 replace the cloud workhorse (`ollama-cloud/glm-5.3-flash:cloud`, per
 `.pidag/config.toml`) that `pidag sdd` dispatches spec implementation to."
 
@@ -32,7 +32,7 @@ and `pidag` is not on `PATH`), that gap is flagged rather than guessed at.
   empty `content` unless thinking is turned off (`--reasoning off` on
   llama.cpp; **not controllable on Ollama** — it replaces the model's own
   Jinja template).
-- [023](023-llamacpp-granite-on-pi-process.md) and
+- [023](../02-guides/023-llamacpp-granite-on-pi-process.md) and
   `_docs/02-guides/pi-local-llamacpp.md` document the working setup: one
   llama.cpp **router** (port 8082, `--models-preset llama-models.ini
   --models-max 2 --jinja`) serving both `granite-4.2-3b` and `laguna-xs-2.1`,

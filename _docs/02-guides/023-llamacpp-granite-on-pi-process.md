@@ -1,3 +1,6 @@
+<!-- MOVED 2026-09-28 from 06-research/ to 02-guides/ — how-to, not research.
+     The subject rule: docs live with their subject, not with the workflow that produced them. -->
+
 # Making llama.cpp + granite work on pi — the full process
 
 **Date**: 2026-09-10 · **Status**: VERIFIED WORKING

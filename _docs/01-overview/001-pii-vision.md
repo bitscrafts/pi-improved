@@ -61,5 +61,5 @@ messaging gateway with one performant, local-first, modular system.
 | 4 | IoT/reactive (MQTT, hardware, WASM plugins) | 2–3 wk |
 | 5 | Self-improvement (skills, distillation, trajectories) | 3–4 wk |
 
-See [06-research/001-pii-architecture-plan.md](../06-research/001-pii-architecture-plan.md)
+See [06-research/001-pii-architecture-plan.md](../06-research/002-pii-architecture-plan-pass2.md)
 for the full plan.

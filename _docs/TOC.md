@@ -19,6 +19,7 @@
 - (empty)
 
 ## 06-research
+- 000-CANDIDATES-INDEX.md — the researched-not-scheduled candidate index
 - 000-TOPIC-MAP.md — SSOT topic map of the 06-research corpus (canonical vs superseded + actions)
 - `002-pii-architecture-plan-pass2.md` — pass 2: 12 new directions (observability, client-server, networking, layered memory, plugins, sync, callbacks, MCU, WASM first-class, critical review)
 - `005-dsh-vs-pii-harness-analysis.md` — DeepSeek Harness (dsh) comparative analysis: convergent architecture validation, 5 upgrade paths, journal-hardening spec 11 extracted
@@ -34,7 +35,7 @@
 - `020-git-graph-web-ui.md` — port vscode-git-graph to Pii's web viewer: journal-as-git-graph, configurable columns + detail level, WASM vs server-render
 - `021-mqtt-broker.md` — MQTT for Pii: broker vs bridge, topic mapping, security (pii-net chokepoint), Android coordination
 - `022-android-events-app.md` — Android background app receiving/emitting Pii events: transport (MQTT/REST), background-service pattern, notification mapping, auth
-- `023-llamacpp-granite-on-pi-process.md` — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
+- `02-guides/023-llamacpp-granite-on-pi-process.md` — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
 - `024-pii-memory-mcp-status-and-next.md` — verified status of Pii's memory + MCP: both work end-to-end (3 real memory RPCs, 15 tests; Hermes↔pii-mcp connected + tools responding), 8 honest capability caveats, and the ordered next steps N1-N6
 - `025-model-routing-and-failover-plan.md` — PLAN: port Hermes's typed-failure failover (FailoverReason taxonomy, per-reason recovery policy, ordered provider chain) into Pii, plus cost routing (cascading + safety rules + peak-aware provider preference). Gap analysis, 7-spec breakdown for the planner, risks
 - `026-codebase-analysis-and-phase5-plan.md` — codebase/package map, debt + risk findings (S1-S3), Phase 5 plan (5.0 re-baseline, 5.1 Track A failover, 5.2 structural ratchet)
@@ -44,7 +45,7 @@
 - `030-OPUS-START-HERE.md` — compact entry point for an opus review pass: the open architecture decisions, linked to their reasoning
 - `031-fable-review-ground-truth-2026-09-18.md` — ground truth supplied to the fable review
 - `032-fable-pii-review-2026-09-18.md` — review findings and candidate improvements
-- `033-spec65-guardrail-violation-doc-format.md` — spec-65 guardrail violation: the worker changed the doc storage format
+- `05-operations/033-spec65-guardrail-violation-doc-format.md` — spec-65 guardrail violation: the worker changed the doc storage format
 - `034-cactus-needle3-automation-research.md` — Cactus Needle 3 research and relevance to pii: grammar-constrained decode, confidence-band routing, tool retrieval; measured caveats (classification 1/5, confidence routing failing on vague input)
 - `037-pii-native-graph-service-design.md` — a native "pii graph" service: the design answer
 - `038-pii-chromecast-device-manager-feasibility.md` — pii as a Chromecast/Google Home device manager: feasibility

@@ -34,10 +34,11 @@ messaging gateway with one performant, local-first, modular system.
   - `feature-gating.md` — how to make the monolith compilable-down: Cargo features gate surfaces (tui/web/evolve/channels/tls/memory/sandbox/github), never the engine substrate; trims vs service-izes
   - `pii-mcp-bridge.md` — the Hermes↔pii integration: pii-mcp crate (MCP server + client, feature-gated, rmcp quarantine); MCP = integration surface, UDS JSON-RPC = control plane
   - `pi-local-llamacpp.md` — how to call pi with local llama.cpp models (granite/laguna): the built-in `llamacpp` provider, router port 8082, and the critical `--provider`/`--model`-before-`-p` flag order
-- [03-reference/](03-reference/) — technical reference  *(not yet created in this project)*
-- [04-development/](04-development/) — developer docs / analysis  *(not yet created in this project)*
-- [05-operations/](05-operations/) — operational / environment docs  *(not yet created in this project)*
+- `03-reference/` — technical reference  *(section not created in this project)*
+- `04-development/` — developer docs / analysis  *(section not created in this project)*
+- [05-operations/](05-operations/) — operational docs, including incident records
 - [06-research/](06-research/) — research write-ups (numbered)
+- `000-CANDIDATES-INDEX.md` — **the ten "researched, not scheduled" candidates**, one entry point (index, deliberately not merged)
 - `000-TOPIC-MAP.md` — **start here for the research tree**: the SSOT topic map for all 42 research docs (canonical / evidence / superseded + the condensation actions).
   - `030-OPUS-START-HERE.md` — compact entry point for an opus review
     pass: the 4 open architecture decisions, linked to their full
@@ -56,7 +57,7 @@ messaging gateway with one performant, local-first, modular system.
   - `020-git-graph-web-ui.md` — port vscode-git-graph to Pii's web viewer: journal-as-git-graph, configurable columns + detail level, WASM vs server-render
   - `021-mqtt-broker.md` — MQTT for Pii: broker vs bridge, topic mapping, security (pii-net chokepoint), Android coordination
   - `022-android-events-app.md` — Android background app receiving/emitting Pii events: transport (MQTT/REST), background-service pattern, notification mapping, auth
-  - `023-llamacpp-granite-on-pi-process.md` — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
+  - `02-guides/023-llamacpp-granite-on-pi-process.md` — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
   - `024-pii-memory-mcp-status-and-next.md` — verified status of Pii's memory + MCP: both work end-to-end (3 real memory RPCs, 15 tests; Hermes↔pii-mcp connected + tools responding), 8 honest capability caveats (memory is not a first-class MCP tool, not in the agent loop, vector lane is trigram-lexical, no e2e coverage), and the ordered next steps N1-N6
   - `025-model-routing-and-failover-plan.md` — PLAN: port Hermes's typed-failure failover (FailoverReason taxonomy, per-reason recovery policy, ordered provider chain) into Pii, plus cost routing (cascading + safety rules + peak-aware provider preference). Gap analysis vs `PiiError`'s 2-way split, 7-spec breakdown for the planner, risks
   - `026-codebase-analysis-and-phase5-plan.md` — codebase/package map, debt + risk findings (S1-S3), and the Phase 5 plan (5.0 re-baseline, 5.1 Track A failover, 5.2 structural ratchet)
@@ -66,7 +67,7 @@ messaging gateway with one performant, local-first, modular system.
   - `030-OPUS-START-HERE.md` — compact entry point for an opus review pass: the open architecture decisions, linked to their reasoning
   - `031-fable-review-ground-truth-2026-09-18.md` — ground truth supplied to the fable review
   - `032-fable-pii-review-2026-09-18.md` — review findings and candidate improvements
-  - `033-spec65-guardrail-violation-doc-format.md` — spec-65 guardrail violation: the worker changed the doc storage format
+  - `05-operations/033-spec65-guardrail-violation-doc-format.md` — spec-65 guardrail violation: the worker changed the doc storage format
   - `034-cactus-needle3-automation-research.md` — Cactus Needle 3 research and relevance to pii (grammar-constrained decode, confidence-band routing, tool retrieval; measured caveats incl. classification 1/5 and confidence routing failing on vague input)
   - `037-pii-native-graph-service-design.md` — a native "pii graph" service: the design answer
   - `038-pii-chromecast-device-manager-feasibility.md` — pii as a Chromecast/Google Home device manager: feasibility (control nearly free; discovery hits the SSRF boundary)

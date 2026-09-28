@@ -101,7 +101,7 @@ original file is archived (not deleted) in `99-archive/06-research-merged-2026-0
 **Still to do (deliberately not merged):**
 - **T11** — the ten "researched, not scheduled" candidates (`016`, `020`, `021`, `022`, `034`, `038`, `039`, `040`,
   `019`, `025`): they are **different subjects**, not duplicates. Their fix is one index page, not a merge.
-- **T7** — `023-llamacpp-granite-on-pi-process.md` should MOVE to `02-guides/` (it is a how-to, not research) —
+- **T7** — `02-guides/023-llamacpp-granite-on-pi-process.md` should MOVE to `02-guides/` (it is a how-to, not research) —
   a relocation, not a merge.
-- **`033-spec65-guardrail-violation-doc-format.md`** — an incident record; belongs with the register.
+- **`05-operations/033-spec65-guardrail-violation-doc-format.md`** — an incident record; belongs with the register.
 - **T13** — `041`/`042` move out once the staged review runs.

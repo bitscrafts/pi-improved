@@ -1,3 +1,6 @@
+<!-- MOVED 2026-09-28 from 06-research/ to 05-operations/ — incident record, not research.
+     The subject rule: docs live with their subject, not with the workflow that produced them. -->
+
 # Spec-65 guardrail violation: worker changed the doc storage format
 
 **Date**: 2026-09-18. **Run**: `95f1d821dc25`, log `/projects/_tmp/spec65-run1.log`.
