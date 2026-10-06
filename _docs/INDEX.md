@@ -84,3 +84,4 @@ messaging gateway with one performant, local-first, modular system.
 - [`06-research/042-PII-REVIEW-STAGED-STATE-2026-09-28.md`](06-research/042-PII-REVIEW-STAGED-STATE-2026-09-28.md) — the full review's staged state: never dispatched, why, and the exact resume command (read before the pii intervention).
 - `041-BRIEF-full-review.md` — the brief for the full opus review of this repo (derives from `031`/`032`)
 - **Consolidated (2026-09-28):** `002` now carries passes 1+3 · `012` carries `008`+`009` · `026` carries `010`+`011` · `037` carries `035`+`036` · `014` carries `004`+`017` (absorbed verbatim as `## [merged]` sections; originals in `99-archive/06-research-merged-2026-09-28/`).
+- [`_docs/06-research/043-opus-full-review-2026-10-06.md`](043-opus-full-review-2026-10-06.md) — the full claude+opus review of this codebase (2026-10-06): gate results run for real, the eight decisions, the defects.

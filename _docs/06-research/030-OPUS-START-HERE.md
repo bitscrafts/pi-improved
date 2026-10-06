@@ -4,6 +4,9 @@
 decision on every open question. Everything else is optional
 deep-dive material, linked below, not required reading.**
 
+> **2026-10-06 — THE FULL REVIEW HAS RUN: [`_docs/06-research/043-opus-full-review-2026-10-06.md`](043-opus-full-review-2026-10-06.md).** It ran the gate commands for real,
+> answers the eight decisions below, and lists the defects. Read it before ruling on the items here.
+
 > **2026-09-28 — the full review this document asks for HAS NOT RUN yet; it is staged and ready.**
 > State + exact resume command: [`042-PII-REVIEW-STAGED-STATE-2026-09-28.md`](042-PII-REVIEW-STAGED-STATE-2026-09-28.md).
 > It must derive from `031`/`032`, verify specs 62-69, and rule on the eight decisions below.

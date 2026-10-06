@@ -1,5 +1,31 @@
 # CONTINUATION — pi-improved: the full analysis you started, finished for real (resume of this session)
 
+## AMENDED 2026-10-06 (dispatch day — binding on this run)
+
+- **The tree moved after this brief was written** (docs-only): HEAD is now **`d713593`** — four commits, all
+  documentation (research corpus consolidation into canonicals + the staged review's own filing). No code changed
+  since the brief. The inventory was **REGENERATED 2026-10-06** against `d713593` (18,929 lines) — use the
+  regenerated `/projects/_tmp/pii-review/codebase-inventory.txt`, and treat doc paths/names below as claims to
+  re-check, not facts.
+- **NEW CONTRACT — full documentation review** (user, 2026-10-06): "codebase and documentation must be fully
+  reviewed" is a coverage obligation, not flavour. Review the whole `_docs/` tree (01-overview, 02-guides,
+  05-operations, 06-research canonicals, manuals, 99-archive pointers) plus `HANDOFF.md`, `README`-type files,
+  `AGENTS.md`, `CLAUDE.md`. For each area: is it accurate against today's tree, internally consistent,
+  non-duplicative (each fact in exactly one place), and current after the research consolidation? Report per-area
+  verdicts, stale/duplicate/contradicted documents with `file:line` evidence, and a NOT COVERED table. Where a
+  document is stale, propose the specific correction — do not re-derive its content.
+- **NEW CONTRACT — Rust best-practices refinement dimension** (user, 2026-10-06): beyond defect-finding, assess
+  the source against current Rust best practice as a DISTINCT ranked section. Cover at least: hot-path
+  allocations/clones (`.clone()` in request paths), error-handling taxonomy (`Box<dyn Error>` vs
+  thiserror/anyhow, expect/unwrap outside tests), async correctness (blocking calls in async contexts,
+  unbounded channels/tasks, cancellation safety), trait design and the 450-line/traits-first gate in practice,
+  API design (typed-state builders, From/Into ergonomics, unused `pub` surface), and dependency hygiene
+  (unused features, duplicate functionality across deps). Under `#![forbid(unsafe_code)]` do NOT propose unsafe
+  rewrites. Every item carries: severity, `file:line`, the concrete change, and the gate command that would
+  prove it (`cargo clippy -D warnings`, a benchmark, or a test).
+- Still binding: read-only for tracked files; test mode runs the six gate commands and nothing that mutates the
+  repo; no commits.
+
 You analysed this repository in **this same session** (`ef17e6d6-…`, 2026-09-18). Your brief then was explicit
 that the run it followed had a hole, and that yours would close it:
 
@@ -40,7 +66,8 @@ Candidates 5 and 12 were deliberately not specced.
 
 ## The state of the tree today
 
-- Repo `/projects/pi-improved`, branch `master`, **HEAD `4a0a2db`**, tree clean.
+- Repo `/projects/pi-improved`, branch `master`, **`d713593` at dispatch time (AMENDED banner wins over any
+  stale hash below)**, tree clean at staging.
 - `cargo` works in this session: `PATH` includes `/usr/local/cargo/bin`, and the Rust toolchain is installed.
 - **18,929-line inventory** of every crate, file, surface and doc: `/projects/_tmp/pii-review/codebase-inventory.txt`
   — an appendix, for LOOKING UP a file you are already interested in. **Do not read it end to end.**

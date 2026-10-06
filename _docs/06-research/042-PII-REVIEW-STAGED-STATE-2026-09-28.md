@@ -5,6 +5,25 @@
      docs INDEX, the open-register row) carries a POINTER to this file, never a copy.
      Per the workspace SSOT rule: each fact in exactly one place; link, don't duplicate. -->
 
+## ADDENDUM 2026-10-06 — first attempt ran and hit the session limit; retry is scheduled
+
+- **13:17Z attempt** (resumed `ef17e6d6`, test mode, opus): **REAL work — 33 turns, $11.10** (50 Bash =
+  the six gate commands all ran; 7 sonnet subagents covered the skipped crates, the two docs areas and a
+  mutation-verification of specs 62–68) — then the Anthropic **session limit** stopped it before synthesis:
+  "You've hit your session limit · resets 4:10pm (UTC)". The pre-fix runner filed that error text as
+  `041-opus-full-review-2026-10-06.md` (963 bytes) and stored it in amem — **INVALID; both now tombstoned**
+  (file carries a tombstone header; amem keys overwritten with the tombstone; INDEX/030 pointer reverts
+  applied). Read-only was respected in substance (its one Edit attempt did NOT land).
+- **Runner fixed**: `/root/.hermes/scripts/pii-review-run.sh` now has a VALIDITY GATE — error-text detector
+  (proven to fire on the real artifact) + 5 KB floor — refusing to file/store a non-report.
+- **Retry scheduled**: one-shot cron `288aed3a4576` at **2026-10-06T16:15Z** (reset + 5 min), running the
+  same one command, probe first. Its session stays reattachable; per user directive the session is KEPT for
+  continuation.
+- **After the retry lands (interactive session's job, the runner does not commit):** verify report >5 KB +
+  provenance header + amem retrievability, store the distilled summary, commit the filing set
+  (`041-opus-full-review-2026-10-06.md`, `041-BRIEF-full-review.md` amendment, INDEX, 030 pointer) with a
+  HANDOFF update, then turn ranked candidates into specs.
+
 **One line:** the pi-improved claude+opus full review was **never dispatched**; everything is staged and the
 exact command is below. Read this file before touching the pii review.
 
