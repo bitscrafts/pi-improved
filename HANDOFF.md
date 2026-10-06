@@ -255,3 +255,22 @@ steered afterward with an explicit rule: never run bare `git stash`/
 See `_docs/99-archive/handoff-2026-09.md` for the full session-by-session
 history through 2026-09-15 (spec 01–38 implementation notes, fork-bomb
 incident, model-escalation config, Opus/026 analysis derivation, etc.).
+
+
+## 2026-10-06 16:50Z — opus full review LANDED (043), intervention prerequisites now real
+
+- The claude+opus full review RAN to completion (resumed session ef17e6d6-1741-42d6-87c6-16ffc775d231,
+  21 turns, $15.42, stop_reason end_turn; first attempt 13:17Z died at the session limit and its
+  tombstone remains the honest record). Report: `_docs/06-research/043-opus-full-review-2026-10-06.md`
+  (renamed from 041 at filing — number collision resolved). Full text also in amem
+  `pii/review/full-codebase-2026-10-06/` (manifest + distilled + parts, path-correction note included).
+- Headlines: all six gates ran for real (536 passed / 0 failed at load; the one failure was a
+  proven load flake — itself candidate 7); two proven bugs (D1 chunked-decoder panic at
+  pii-net/src/service/dechunk.rs:45 — the chokepoint every streamed model turn uses; D2 bash
+  render panic on multibyte, pii-tools/src/bash.rs:115); reachability-check proven blind by
+  mutation; specs 62-68 verified by behaviour (4 of 8 only partly guarded); 15 ranked candidates
+  = the next spec batch; eight decisions ruled (report §8); doc-review verdicts (§9, includes
+  THIS HANDOFF's stale lower half — to be corrected in the docs pass).
+- Read-only held; scratch evidence under /projects/_tmp/pii-review/ (gate logs, mutation logs).
+- NEXT: spec batch from report §10 (start: D1 dechunk fix + reachability seeds), docs corrections
+  from §9 (AGENTS/CLAUDE drift, stale HANDOFF lower half, INDEX/TOC, 041-number discipline).
