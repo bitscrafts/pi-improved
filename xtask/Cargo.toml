@@ -10,6 +10,7 @@ description.workspace = true
 [lib]
 name = "xtask"
 path = "src/lib.rs"
+doctest = false
 
 [dependencies]
 serde_json = { workspace = true }

@@ -20,3 +20,10 @@ client = ["dep:tokio"]
 
 [lints]
 workspace = true
+# Zero doctests in this crate (```json annotation blocks aside), yet the doc
+# phase is poisoned under `cargo test -j 2` by the cargo doctest fingerprint
+# bug root-caused for pii-abi (spec 70 commit): rustdoc races dep rlib
+# rebuilds and fails with E0463 "can't find crate". Nothing to lose; the lib
+# and unit-test compilations cover the crate.
+[lib]
+doctest = false

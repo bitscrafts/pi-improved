@@ -20,5 +20,15 @@ nix = { version = "0.29", features = ["process", "signal"] }
 [dev-dependencies]
 tempfile = { workspace = true }
 
+# The doctest phase for this crate compiles with ZERO doctests, yet under the
+# gate's `cargo test -j 2` it is poisoned by the same cargo doctest fingerprint
+# bug already root-caused and fixed for pii-abi (spec 70 commit): the doc phase
+# races dep rlib rebuilds and rustdoc fails with E0463 "can't find crate for
+# pii_abi/nix/parking_lot" (plus E0432 on crate::CapKind), while a standalone
+# `cargo test -p pii-core --doc` runs 0 tests and passes. There are no
+# doctests to lose; lib/check/clippy/unit tests cover the crate.
+[lib]
+doctest = false
+
 [lints]
 workspace = true
