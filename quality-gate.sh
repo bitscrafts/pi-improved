@@ -76,6 +76,18 @@ else
     status=1
 fi
 
+echo "==> cargo run -q -p xtask -- reachability-check"
+# Declared-capability caller gate (spec 72, D3 fix): every seed entry's
+# needle must have a REAL external caller — outside the declaring crate,
+# outside comments and cfg(test) bodies. Runs AFTER the test steps and
+# BEFORE the summary so a deleted caller turns the shared gate red.
+if cargo run -q -p xtask -- reachability-check; then
+    echo "PASS: reachability-check"
+else
+    echo "FAIL: reachability-check"
+    status=1
+fi
+
 if [ "$status" -eq 0 ]; then
     echo "quality-gate: ALL PASS"
 else

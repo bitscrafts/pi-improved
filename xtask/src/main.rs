@@ -10,6 +10,10 @@
 #![allow(clippy::too_long_first_doc_paragraph)]
 // reason: dev-tooling doc comments carry the full spec-34 context in one
 // paragraph; splitting them would hide the load-bearing detail.
+// The private `mod` items below link the same source files as the lib,
+// whose `pub` items (spec 72: the integration tests drive the real
+// `reachability` gate) are then "unreachable" from this bin — by design.
+#![allow(unreachable_pub)]
 
 mod bench;
 pub mod cli_parse;

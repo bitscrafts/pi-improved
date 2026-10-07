@@ -56,10 +56,10 @@ no behaviour change for checks that PASS; clippy/fmt clean.
 
 - [ ] `cargo run -q -p xtask -- reachability-check` exits 0 on HEAD
 - [ ] scratch-export check with both callers muted exits NONZERO (worker proves with a script under _tmp/)
-- [ ] `grep -n 'line_is_test' crates/xtask/src/reachability.rs | wc -l` = 0
-- [ ] `grep -c '/projects/pi-improved' crates/xtask/src/reachability.rs` = 0
+- [ ] `grep -n 'line_is_test' xtask/src/reachability.rs | wc -l` = 0
+- [ ] `[ "$(grep -c '/projects/pi-improved' xtask/src/reachability.rs)" = 0 ]`
 - [ ] `grep -n 'reachability' quality-gate.sh | wc -l` >= 1
-- [ ] `cargo test -p xtask 2>&1 | tail -1 | grep -q '0 failed'`; clippy+fmt clean
+- [ ] `cargo test -p xtask >/tmp/xt.log 2>&1 && ! grep -q 'test result: FAILED' /tmp/xt.log && cargo clippy -p xtask --all-targets -- -D warnings && cargo fmt --all --check`
 
 ## Implementation Notes (worker)
 

@@ -2,7 +2,10 @@
 
 // reason: see deps.rs — `pub(super)` is the correct visibility for these
 // binary-internal helpers; clippy `redundant_pub_crate` conflicts with rustc
-// `unreachable_pub` (deny), allowed narrowly per spec F16.
+// `unreachable_pub` (deny), allowed narrowly per spec F16. The items are
+// `pub` only because the lib build (spec 72's integration tests import
+// `reachability`, which reuses `count_effective_lines`) links this module
+// without the bin's private-mod context; the bin marks nothing public.
 #![allow(clippy::redundant_pub_crate)]
 
 use std::fs;
@@ -12,7 +15,7 @@ const MAX_EFFECTIVE_LINES: usize = 450;
 const WARN_EFFECTIVE_LINES: usize = 380;
 const ROOTS: &[&str] = &["crates", "xtask"];
 /// `--report` default: top-20 files by effective line count.
-pub(super) const REPORT_DEFAULT_N: usize = 20;
+pub const REPORT_DEFAULT_N: usize = 20;
 
 /// One entry for report mode: path, effective count, raw `wc -l` count.
 type CountedFile = (String, usize, usize);
@@ -21,7 +24,7 @@ type CountedFile = (String, usize, usize);
 /// `//`, **excluding `#[cfg(test)]` module bodies** (F15, opus review: tests
 /// do not count against the budget — otherwise the gate punishes testing).
 #[must_use]
-pub(super) fn count_effective_lines(src: &str) -> usize {
+pub fn count_effective_lines(src: &str) -> usize {
     let mut count = 0usize;
     let mut in_cfg_test = false;
     let mut cfg_test_depth: isize = 0;
@@ -118,7 +121,11 @@ fn print_report(files: &[CountedFile], n: usize) {
 
 /// `--report [N]` mode: print the top-N files by effective line count and
 /// exit 0 unconditionally — a reporting tool, not a gate check.
-pub(super) fn run_report(n: usize) -> Result<(), Vec<String>> {
+///
+/// # Errors
+/// Propagates a collect failure (unreadable file) so the caller can report
+/// it; the success path always prints the report.
+pub fn run_report(n: usize) -> Result<(), Vec<String>> {
     let files = collect_counts()?;
     println!(
         "top {n} of {} files by effective lines (effective, raw, path):",
@@ -133,7 +140,7 @@ pub(super) fn run_report(n: usize) -> Result<(), Vec<String>> {
 ///
 /// # Errors
 /// Returns one message per violating file, or an I/O error line.
-pub(super) fn run() -> Result<(), Vec<String>> {
+pub fn run() -> Result<(), Vec<String>> {
     let files = collect_counts()?;
     let pass_fail: Vec<(String, usize)> =
         files.iter().map(|(p, eff, _)| (p.clone(), *eff)).collect();

@@ -25,10 +25,24 @@
 // invariants, refusal semantics) in one paragraph; splitting them would
 // hide the load-bearing detail.
 
+/// `cargo xtask <flags>`: CLI parsing shared by the bin and the lib's own
+/// tests (`lint_files`' unit tests parse the `--report` flag through it).
+#[cfg(test)]
+pub mod cli_parse;
 /// `cargo xtask heal-collect`/`promote-collect`: the ONLY way a repair patch
 /// leaves a disposable worktree sandbox.
 pub mod heal_collect;
 /// `cargo xtask heal-seed`: seed record shape shared with `heal_collect`.
 pub mod heal_seed;
+/// `cargo xtask lint-files`: re-exported so `reachability` (spec 72 R2
+/// reuses the effective-line skipping) compiles identically in the lib and
+/// the bin.
+#[cfg_attr(not(test), allow(unreachable_pub))]
+pub mod lint_files;
 /// `cargo xtask promote-build`: build + dev-daemon soak step (spec 34 R2).
 pub mod promote_build;
+/// `cargo xtask reachability-check`: the declared-capability caller gate
+/// (spec 72). Public so the integration tests in `tests/` can drive the
+/// REAL check over scratch exports — the same `run` the binary and
+/// `quality-gate.sh` execute.
+pub mod reachability;
