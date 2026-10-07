@@ -87,3 +87,40 @@ pub(super) fn read_to_deadline(conn: &mut Conn) -> Result<Vec<u8>, PiiError> {
         }
     }
 }
+
+#[cfg(test)]
+mod review_demo {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+    use super::dechunk_step;
+
+    /// Mirrors http.rs: feed bytes incrementally, drain `consumed` after each step.
+    fn feed_split(body: &[u8], k: usize) -> Result<Vec<u8>, String> {
+        let mut pending: Vec<u8> = Vec::new();
+        let mut out = Vec::new();
+        for part in [&body[..k], &body[k..]] {
+            pending.extend_from_slice(part);
+            let mut consumed = 0usize;
+            dechunk_step(&pending, &mut consumed, &mut |d| out.extend_from_slice(d))
+                .map_err(|e| format!("split at {k}: {e}"))?;
+            if consumed > pending.len() {
+                return Err(format!("split at {k}: consumed {consumed} > pending {} (drain would panic)", pending.len()));
+            }
+            pending.drain(..consumed);
+        }
+        Ok(out)
+    }
+
+    #[test]
+    fn every_split_point_decodes() {
+        let body = b"5\r\nhello\r\n0\r\n\r\n";
+        let mut failures = Vec::new();
+        for k in 0..=body.len() {
+            match feed_split(body, k) {
+                Ok(o) if o == b"hello" => {}
+                Ok(o) => failures.push(format!("split at {k}: got {:?}", String::from_utf8_lossy(&o))),
+                Err(e) => failures.push(e),
+            }
+        }
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
+}
