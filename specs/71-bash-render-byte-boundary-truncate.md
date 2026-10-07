@@ -49,7 +49,7 @@ No signature changes; no new deps; `#![forbid(unsafe_code)]` holds; clippy
 > (Verified FAILING on the pre-implementation tree; after implementation all must pass.)
 
 - [ ] `cargo test -p pii-tools --lib renders_multibyte 2>&1 | grep -q 'test result: ok. 1 passed'`
-- [ ] `cargo test -p pii-tools --lib 2>&1 | tail -1 | grep -q '0 failed'`
+- [ ] `cargo test -p pii-tools --lib 2>&1 | grep -q 'test result: ok. 34 passed; 0 failed'`
 - [ ] `cargo clippy -p pii-tools --all-targets -- -D warnings` (exit 0)
 - [ ] `cargo fmt --all --check`
 
