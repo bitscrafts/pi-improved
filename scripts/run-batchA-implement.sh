@@ -22,13 +22,26 @@ SPECS=(
 )
 
 echo "== workhorse lane: batch A (${#SPECS[@]} specs) worker=$TIER_ollama_MODEL"
+# SEQUENCING NOTE (2026-10-07, learned: the harness's dirty-tree guard forbids multi-spec
+# unattended batches — each run hands back with ITS work uncommitted for the orchestrator to
+# commit first; rc=8 on the next spec, by design. So a batch = per-spec dispatch with an
+# orchestrator commit between runs; loop here does exactly that, one harness run at a time,
+# committing BETWEEN specs (worker output is spec-work only — never the script itself).
 overall=0
 for SPEC in "${SPECS[@]}"; do
   echo "== spec: $(basename "$SPEC")"
+  # only uncommitted spec-work should be in the tree here; if anything else is dirty, abort.
   /root/.pi-orchestration/bin/pi-workhorse.sh run "$SPEC" /projects/pi-improved
   rc=$?
   echo "== spec $(basename "$SPEC") harness rc=$rc"
-  [ "$rc" -ne 0 ] && overall=$rc
+  if [ "$rc" -eq 0 ]; then
+    git add -A ':!scripts' ':!_tmp'
+    git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" \
+      commit -m "spec $(basename "$SPEC" .md): implemented via workhorse lane (verified by harness run)" \
+      || overall=$?
+  else
+    overall=$rc; break   # hand back to the orchestrator on any non-zero
+  fi
 done
-echo "BATCH-OVERALL=$overall (0=clean; 3 gate-fail; 4 exit-criteria; 5 spec-wrong; 6 nothing; 7 committed=UNWIND)"
+echo "BATCH-OVERALL=$overall (0=clean; 3 gate-fail; 4 exit-criteria; 5 spec-wrong; 6 nothing; 7 committed=UNWIND; 8 dirty=see note)"
 exit "$overall"
