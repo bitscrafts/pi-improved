@@ -44,7 +44,9 @@ No signature changes; no new deps; `#![forbid(unsafe_code)]` holds; clippy
 | boundary ASCII unchanged | 70000 ASCII bytes | cut at exactly 65536, marker appended |
 | both streams capped independently | stdout+stderr each > cap | each field ≤ cap; combined path unaffected |
 
-## Exit Criteria (checked on the pre-implementation tree, currently FAILING)
+## Exit Criteria
+
+> (Verified FAILING on the pre-implementation tree; after implementation all must pass.)
 
 - [ ] `cargo test -p pii-tools --lib renders_multibyte 2>&1 | grep -q 'test result: ok. 1 passed'`
 - [ ] `cargo test -p pii-tools --lib 2>&1 | tail -1 | grep -q '0 failed'`

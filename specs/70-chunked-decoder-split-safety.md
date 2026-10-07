@@ -63,13 +63,15 @@ out, same final pos) — the existing passing suite must stay green.
 | oversized chunk still refused | `A\r\n` + 11 bytes | `Ok` at 12 bytes pending, `Err(body too large)` per `total_len` when complete |
 | trailer chunk | `5\r\nhello\r\n0\r\nX-T: v\r\n\r\n` split at trailer mid-line | waits then completes, pos lands after final CRLF |
 
-## Exit Criteria (checked on the pre-implementation tree, currently FAILING)
+## Exit Criteria
+
+> (Verified FAILING on the pre-implementation tree; after implementation all must pass.)
 
 - [ ] `cargo test -p pii-net --lib every_split_point_decodes 2>&1 || echo FAIL-SHOWN && cargo test -p pii-net --lib every_split_point_decodes 2>&1 | grep -q 'test result: ok'`
 - [ ] `cargo test -p pii-net --lib 2>&1 | grep -q 'test result: ok'`
 - [ ] `cargo clippy -p pii-net --all-targets -- -D warnings 2>&1 | tail -1 | grep -q warning= && false || true`
 - [ ] `cargo fmt --all --check`
-- [ ] `grep -c '+ 2 > raw.len()' crates/pii-net/src/service/dechunk.rs` (the completeness condition, on the CODE line not a comment)
+- [ ] `[ "$(grep -c '+ 2 > raw.len()' crates/pii-net/src/service/dechunk.rs)" -ge 1 ]` (the completeness condition, on the CODE line not a comment)
 
 ## Implementation Notes (worker)
 

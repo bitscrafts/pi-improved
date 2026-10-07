@@ -50,7 +50,9 @@ no behaviour change for checks that PASS; clippy/fmt clean.
 | `reachability_passes_on_head` | run on HEAD | exit 0 |
 | `comments_are_not_callers` | a comment containing `.invoke(` in an unrelated crate, seed pointing at a symbol whose only textual match is that comment | exit != 0 (comment does not satisfy) — i.e. the check does NOT pass on the comment |
 
-## Exit Criteria (FAILING on today's tree where applicable)
+## Exit Criteria
+
+> (Verified FAILING on the pre-implementation tree; after implementation all must pass.)
 
 - [ ] `cargo run -q -p xtask -- reachability-check` exits 0 on HEAD
 - [ ] scratch-export check with both callers muted exits NONZERO (worker proves with a script under _tmp/)
