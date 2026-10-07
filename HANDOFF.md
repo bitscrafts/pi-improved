@@ -362,3 +362,24 @@ incident, model-escalation config, Opus/026 analysis derivation, etc.).
   Batch A (specs 70-72) COMPLETE pending this commit.
 
 ## CURRENT STATE — 2026-10-07 (batch A landed): D1+D2+D3 fixed, specs 70-72 committed; gate green.
+
+
+## 2026-10-07 21:55Z — batch B LANDED (direct-pi lane): specs 73+74, quality gate green
+
+- Lane: pi DIRECT glm-5.3-flash (no pi-orchestration; user rule 2026-08-19) via
+  scripts/run-spec-direct.sh — resumed twice on handoff envelopes after iteration-budget
+  recon cuts (resume-first working as designed; recon billed once).
+- Spec 73 (candidate 7 + D9): boss_watch helpers take PII_TEST_DEADLINE_SECS (default 60),
+  R3 messages carry condition+deadline+last journal len; 9th test ships #[ignore] (the
+  criteria-grepping composition is documented in the envelope). Root cause measured:
+  the 7.6s wait is the REAL heal-gate subprocess (cargo xtask silent-noop-check,
+  cold ~10s/warm ~1.5s) + batched journal flush at barriers. FULL quality-gate.sh
+  green (the flake that red'd three gate runs today is closed).
+- Spec 74: all four partly-guarded fixes now guarded — 62 both-off caller-path
+  (worktree_join_containment.rs), 65 hermetic consolidate + pii-store layer read-back,
+  66 op-before-resource message order, 68 exit-255 case (as-u8 mask documented as the
+  CONTRACT, not dead code). Every row mutation-proven RED/GREEN
+  (_tmp/spec74/SPEC74-MUTATION-LOG.md).
+- Worker honesty note: criterion `p pii` was mechanically unsatisfiable (no lib named pii)
+  — intent-equivalent verified; spec wording fixed.
+- Commits: 5712f1c (73+74+criteria annotations). Tree clean.
