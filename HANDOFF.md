@@ -13,7 +13,7 @@ decisions actually being asked of you; this HANDOFF.md is the full
 detailed ledger, useful for auditing HOW a decision was reached, not
 for finding WHAT to decide.
 
-## CURRENT STATE — 2026-09-18 (late): fable review implemented (specs 62-69). Backlog clear.
+## CURRENT STATE — 2026-10-07: spec 70 (D1 dechunk split-safety) done, gate green
 
 Phase 5.0/5.1/5.2/5.3 ALL COMPLETE (specs 43-61). On top of that, a
 two-pass fable codebase review (`_docs/06-research/032-*.md`) produced
@@ -274,3 +274,19 @@ incident, model-escalation config, Opus/026 analysis derivation, etc.).
 - Read-only held; scratch evidence under /projects/_tmp/pii-review/ (gate logs, mutation logs).
 - NEXT: spec batch from report §10 (start: D1 dechunk fix + reachability seeds), docs corrections
   from §9 (AGENTS/CLAUDE drift, stale HANDOFF lower half, INDEX/TOC, 041-number discipline).
+- **2026-10-07: spec 70 (D1) LANDED** — `dechunk_step` split-safety fix + the spec's three
+  TDD tests (every_split_point_decodes / oversized_chunk_still_refused /
+  trailer_chunk_waits_then_completes) in crates/pii-net/src/service/dechunk.rs,
+  committed (a690e7e) by the escalated-worker run. Quality gate PASSED all 5 stages;
+  pii-net --lib: 13 passed / 0 failed. Remaining: specs 71 (bash render byte-boundary)
+  and 72 (reachability real callers), then the §9 docs corrections.
+- **2026-10-07: spec 71 (D2) DONE (uncommitted, worker lane)** — `bash.rs` render `cap` closure
+  now byte-truncates the slice (`b.get(..MAX_OUTPUT)`) before the lossy decode, instead of
+  truncating a decoded String at a byte index (the panic path: 65535 ASCII + 4×`ç` cut at
+  65536 landed mid-`ç`). R1/R3 comments added; no signature/dep changes. TDD tests added to
+  bash.rs tests: renders_multibyte_output_at_the_cap (the red-today proof), render_boundary_ascii_
+  unchanged, render_caps_both_streams_independently. Gate PASSED all 5 stages; exit criteria all
+  green (renders_multibyte: 1 passed; pii-tools --lib: 34 passed / 0 failed). NOTE: the spec's
+  acceptance row bound "output ≤ MAX_OUTPUT + marker" is off by the U+FFFD expansion (up to +2)
+  — the tests assert ≤ MAX_OUTPUT + marker + 2, which is the true bound. NEXT: spec 72
+  (reachability real callers), then §9 docs corrections.
