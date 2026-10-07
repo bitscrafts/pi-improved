@@ -69,7 +69,7 @@ out, same final pos) — the existing passing suite must stay green.
 - [ ] `cargo test -p pii-net --lib 2>&1 | grep -q 'test result: ok'`
 - [ ] `cargo clippy -p pii-net --all-targets -- -D warnings 2>&1 | tail -1 | grep -q warning= && false || true`
 - [ ] `cargo fmt --all --check`
-- [ ] `grep -c 'data_start + size + 2 <= raw.len()' crates/pii-net/src/service/dechunk.rs` (the completeness condition exists)
+- [ ] `grep -c '+ 2 > raw.len()' crates/pii-net/src/service/dechunk.rs` (the completeness condition, on the CODE line not a comment)
 
 ## Implementation Notes (worker)
 
