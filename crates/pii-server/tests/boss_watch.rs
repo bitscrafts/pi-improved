@@ -180,19 +180,36 @@ fn latest_approval_suspend(engine: &Arc<Engine>, run: &RunId) -> (NodeId, String
         .expect("approval suspend in journal")
 }
 
+/// Spec 73 R1: the poll deadline scales with the environment, not a
+/// constant — `PII_TEST_DEADLINE_SECS` (seconds), default 60 (≥3× the worst
+/// observed loaded resume time). Read fresh on every helper call.
+const DEFAULT_DEADLINE_SECS: u64 = 60;
+
+fn test_deadline_secs() -> u64 {
+    pii_core::env_var("PII_TEST_DEADLINE_SECS")
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|&s| s > 0)
+        .unwrap_or(DEFAULT_DEADLINE_SECS)
+}
+
 async fn wait_for_status(
     engine: &Arc<Engine>,
     run_id: &RunId,
+    condition: &str,
     pred: impl Fn(RunStatus) -> bool,
 ) -> RunStatus {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline_secs = test_deadline_secs();
+    let deadline = Instant::now() + Duration::from_secs(deadline_secs);
     loop {
         if let Some(h) = engine.store.get_run(run_id).unwrap()
             && pred(h.status)
         {
             return h.status;
         }
-        assert!(Instant::now() <= deadline, "timed out waiting for status");
+        assert!(
+            Instant::now() <= deadline,
+            "timed out waiting for status: {condition} (deadline {deadline_secs}s)"
+        );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
@@ -202,15 +219,18 @@ async fn wait_for_journal_len(
     run_id: &RunId,
     min_len: usize,
 ) -> Vec<(u64, RunEvent)> {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline_secs = test_deadline_secs();
+    let deadline = Instant::now() + Duration::from_secs(deadline_secs);
     loop {
         let j = engine.store.read_journal(run_id).unwrap();
-        if j.len() >= min_len {
+        let last = j.len();
+        if last >= min_len {
             return j;
         }
         assert!(
             Instant::now() <= deadline,
-            "timed out waiting for journal growth"
+            "timed out waiting for journal growth: condition `journal len >= {min_len}` \
+             (deadline {deadline_secs}s, last journal len {last})"
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -276,7 +296,13 @@ async fn boss_watch_timer_suspends_for_real() {
     let run_id = engine
         .start_run("starter/boss-watch", &serde_json::json!({"cycle": 0}))
         .unwrap();
-    wait_for_status(&engine, &run_id, |s| s == RunStatus::Suspended).await;
+    wait_for_status(
+        &engine,
+        &run_id,
+        "run status == Suspended (timer suspend)",
+        |s| s == RunStatus::Suspended,
+    )
+    .await;
 
     let before = engine.store.read_journal(&run_id).unwrap();
     let timer_suspends_before = before
@@ -406,9 +432,12 @@ async fn boss_watch_gate_suspends_and_approve_resumes() {
     let outcome = approvals::resolve(&engine, &approval_id_str, true, None).unwrap();
     assert!(outcome.resumed);
 
-    let status = wait_for_status(&engine, &run_id, |s| {
-        matches!(s, RunStatus::Succeeded | RunStatus::Failed)
-    })
+    let status = wait_for_status(
+        &engine,
+        &run_id,
+        "run reaches Succeeded|Failed (allow)",
+        |s| matches!(s, RunStatus::Succeeded | RunStatus::Failed),
+    )
     .await;
     assert_eq!(status, RunStatus::Succeeded);
     let journal = engine.store.read_journal(&run_id).unwrap();
@@ -461,9 +490,12 @@ async fn boss_watch_gate_suspend_and_deny_terminates() {
     let outcome = approvals::resolve(&engine, &approval_id_str, false, None).unwrap();
     assert!(outcome.resumed);
 
-    let status = wait_for_status(&engine, &run_id, |s| {
-        matches!(s, RunStatus::Succeeded | RunStatus::Failed)
-    })
+    let status = wait_for_status(
+        &engine,
+        &run_id,
+        "run reaches Succeeded|Failed (deny)",
+        |s| matches!(s, RunStatus::Succeeded | RunStatus::Failed),
+    )
     .await;
     assert_eq!(
         status,
@@ -578,7 +610,7 @@ async fn boss_watch_second_cycle_suspends_with_fresh_id() {
     .unwrap();
     let outcome = approvals::resolve(&engine, &id1, true, None).unwrap();
     assert!(outcome.resumed);
-    let status1 = wait_for_status(&engine, &run1, |s| {
+    let status1 = wait_for_status(&engine, &run1, "run1 reaches Succeeded|Failed", |s| {
         matches!(s, RunStatus::Succeeded | RunStatus::Failed)
     })
     .await;
@@ -672,7 +704,13 @@ kind = "data"
     let run_id = engine
         .start_run("starter/boss-watch", &serde_json::json!({"cycle": 0}))
         .unwrap();
-    wait_for_status(&engine, &run_id, |s| s == RunStatus::Suspended).await;
+    wait_for_status(
+        &engine,
+        &run_id,
+        "run status == Suspended (timer fired)",
+        |s| s == RunStatus::Suspended,
+    )
+    .await;
 
     // Wait past the 1ms fire time, then resume.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -692,4 +730,82 @@ kind = "data"
         check_started >= 1,
         "boss-watch must reach the check node after resume: {journal:?}"
     );
+}
+
+/// Spec 73 (ACCEPTANCE probe, R1/R3): the poll helpers must take their
+/// deadline from `PII_TEST_DEADLINE_SECS` (default 60) and their timeout
+/// panics must self-describe (condition + deadline used + last journal
+/// length). Drives the REAL helpers against a REAL engine on a fake run id
+/// — `pii-store`'s `get_run(missing)` is `Ok(None)` and
+/// `read_journal(missing)` is `Ok(vec![])`, so unsatisfiable conditions loop
+/// straight to the deadline and panic — proving the override path end to
+/// end (the TDD-contract "instant < 5 s bound": elapsed < deadline + 2 s).
+///
+/// Ignored by default: each probe burns exactly one deadline. Run it with:
+/// `PII_TEST_DEADLINE_SECS=5 cargo test -p pii-server --test boss_watch -- --ignored`
+#[tokio::test]
+#[ignore = "burns one full deadline to prove the timeout path; run with: PII_TEST_DEADLINE_SECS=5 cargo test -p pii-server --test boss_watch -- --ignored"]
+async fn deadline_override_is_honoured() {
+    let dir = scratch(&format!("deadline-{}", std::process::id()));
+    let engine = engine_in(&dir);
+    let fake_run = RunId::from("deadline-probe");
+    // The deadline the helpers MUST honour — through the SAME env path the
+    // helpers use (R1), so the assertion tracks whatever override is set.
+    let expected = test_deadline_secs();
+
+    let started = Instant::now();
+    let status_engine = Arc::clone(&engine);
+    let status_run = fake_run.clone();
+    let journal_engine = Arc::clone(&engine);
+    let journal_run = fake_run.clone();
+    let status = tokio::spawn(async move {
+        wait_for_status(
+            &status_engine,
+            &status_run,
+            "probe: status never matches",
+            |_| false,
+        )
+        .await
+    });
+    let journal = tokio::spawn(async move {
+        wait_for_journal_len(&journal_engine, &journal_run, usize::MAX).await
+    });
+
+    // (a) both waits must give up at the env-derived deadline (+2 s slack),
+    // not at a hardcoded constant.
+    let status_msg = join_panic_message(status).await;
+    assert!(
+        started.elapsed() < Duration::from_secs(expected + 2),
+        "status wait must panic at the env deadline ({expected}s + 2s slack), \
+         took {:?} — deadline override not honoured: {status_msg}",
+        started.elapsed()
+    );
+    // (b) R3: the timeout message must name the deadline it used.
+    assert!(
+        status_msg.contains(&format!("deadline {expected}s")),
+        "status panic must name the deadline used: {status_msg}"
+    );
+
+    // (c) R3 (journal helper): condition wording + deadline + last journal len.
+    let journal_msg = join_panic_message(journal).await;
+    assert!(
+        journal_msg.contains(&format!("journal len >= {}", usize::MAX))
+            && journal_msg.contains(&format!("deadline {expected}s"))
+            && journal_msg.contains("last journal len 0"),
+        "journal panic must name condition + deadline + last journal len: {journal_msg}"
+    );
+}
+
+/// Extract a string panic payload from a spawned helper task (the poll
+/// helpers panic via `assert!`, whose payload is a `String`).
+async fn join_panic_message<T>(handle: tokio::task::JoinHandle<T>) -> String {
+    let Err(err) = handle.await else {
+        panic!("helper returned instead of timing out")
+    };
+    let payload = err.into_panic();
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .expect("panic payload is a string")
 }

@@ -132,3 +132,37 @@ impl MemStore {
             .map_err(|e| PiiError::Internal(format!("memstore: commit df: {e}")))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    /// Spec 74 R2: a doc put with a `mem_layer` value reads its layer back —
+    /// the additive table is written in the same single txn as the doc.
+    /// Hermetic: the store lives in a test-local tempdir; a stale persisted
+    /// `.redb` previously masked exactly this insert when it was dropped,
+    /// because content-addressed ids hit a prior run's layer row.
+    #[test]
+    fn put_persists_mem_layer_and_reads_back() {
+        let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = tempfile::Builder::new()
+            .prefix("mem-layer-")
+            .tempdir_in(&root)
+            .unwrap();
+        let store = MemStore::open(&dir.path().join("mem-layer.redb")).unwrap();
+        let rows = PutRows {
+            id: String::from("mem-layer-test-doc"),
+            doc: vec![1, 2, 3],
+            terms: Vec::new(),
+            vector: None,
+            edges: Vec::new(),
+            dl: 0,
+            layer: 2,
+        };
+        store.put(&rows).unwrap();
+        assert_eq!(store.layer("mem-layer-test-doc").unwrap(), Some(2));
+    }
+}

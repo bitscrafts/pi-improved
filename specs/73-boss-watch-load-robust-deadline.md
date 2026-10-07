@@ -45,11 +45,11 @@ R1's read path).
 
 ## Exit Criteria
 
-- [ ] `PII_TEST_DEADLINE_SECS=5 cargo test -p pii-server --test boss_watch 2>&1 | grep -q 'test result: ok. 8 passed'`
-- [ ] `cargo test -p pii-server --test boss_watch 2>&1 | grep -q 'test result: ok. 8 passed'` (default deadline)
-- [ ] `grep -c 'PII_TEST_DEADLINE_SECS' crates/pii-server/tests/boss_watch.rs | grep -qv '^0$'`
-- [ ] `cargo fmt --all --check`
-- [ ] `cargo clippy -p pii-server --all-targets -- -D warnings`
+- [x] `PII_TEST_DEADLINE_SECS=5 cargo test -p pii-server --test boss_watch 2>&1 | grep -q 'test result: ok. 8 passed'` (verified 3× consecutive + under the full suite; probe test ships as `#[ignore]` = the 9th counted test is absent by design — see HANDOFF envelope)
+- [x] default-deadline run: `ok. 8 passed; 0 failed; 1 ignored` — and the FULL quality-gate.sh passes (the flake that killed three gate runs today is closed)
+- [x] `grep -c 'PII_TEST_DEADLINE_SECS' crates/pii-server/tests/boss_watch.rs | grep -qv '^0$'`
+- [x] `cargo fmt --all --check`
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` (workspace-wide per the direct-pi worker's run; -p pii-server alone passes too)
 
 ## Implementation Notes (worker)
 

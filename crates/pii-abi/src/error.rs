@@ -187,6 +187,20 @@ mod tests {
         assert_eq!(constructed.is_terminal(), manual.is_terminal());
     }
 
+    /// Spec 74 R3: the rendered message pins the FIELD ORDER the constructor
+    /// fills — op before resource — at the representative call-site shape.
+    /// Swapping the constructor's two fields (op <-> resource) re-renders the
+    /// message; this makes the swap loud instead of silent.
+    #[test]
+    fn store_op_message_renders_op_before_resource() {
+        let err = PiiError::store_op("insert", "heal_attempt", "lock contention");
+        assert_eq!(
+            err.to_string(),
+            "store op insert on heal_attempt: lock contention",
+            "op must render before resource"
+        );
+    }
+
     /// Spec 47 R2: the `StoreOp` display carries all three context fields.
     #[test]
     fn store_op_display_carries_context() {

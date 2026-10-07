@@ -16,8 +16,23 @@ use std::path::PathBuf;
 
 fn tmp_root() -> PathBuf {
     let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
-    std::fs::create_dir_all(root.join("phase3")).expect("create crate-local _tmp/phase3");
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
     root
+}
+
+/// Opens a FRESH `MemStore` in a test-local tempdir (spec 74 R2). The old
+/// per-test fixed paths (`_tmp/phase3/cons-*.redb`) persisted across runs:
+/// doc ids are content-addressed, so a re-put on a stale table found the
+/// PREVIOUS run's `mem_layer` row and masked a dropped layer insert (043's
+/// fresh.sh had to move those files aside to see that mutation red). The
+/// tempdir is removed when the test ends; nothing survives it.
+fn fresh_store(prefix: &str) -> (tempfile::TempDir, MemStore) {
+    let dir = tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir_in(tmp_root())
+        .unwrap();
+    let store = MemStore::open(&dir.path().join("cons.redb")).unwrap();
+    (dir, store)
 }
 
 fn cfg() -> ConsolidateCfg {
@@ -62,7 +77,7 @@ fn put_layer(store: &MemStore, text: &str, layer: Layer) -> String {
 
 #[test]
 fn merge_requires_two_shared_concepts() {
-    let store = MemStore::open(&tmp_root().join("phase3/cons-merge.redb")).unwrap();
+    let (_dir, store) = fresh_store("cons-merge-");
     // One shared concept: NOT merged.
     let a = put(&store, "sandbox probe enforce profile one");
     let b = put(&store, "sandbox never merges a single concept pair");
@@ -80,8 +95,8 @@ fn merge_requires_two_shared_concepts() {
 
 #[test]
 fn consolidate_cap_is_hard() {
-    let store =
-        std::sync::Arc::new(MemStore::open(&tmp_root().join("phase3/cons-cap.redb")).unwrap());
+    let (_dir, store) = fresh_store("cons-cap-");
+    let store = std::sync::Arc::new(store);
     // Many highly-similar docs → candidate pairs >> 200.
     for i in 0..40 {
         put(
@@ -120,7 +135,7 @@ fn negation_veto_blocks_merge() {
 
 #[test]
 fn layer_of_reads_real_layer_value() {
-    let store = MemStore::open(&tmp_root().join("phase3/cons-layer-read.redb")).unwrap();
+    let (_dir, store) = fresh_store("cons-layer-read-");
     let a = put_layer(&store, "atom fact one alpha beta", Layer::L1);
     let b = put_layer(&store, "scene distill alpha gamma", Layer::L2);
     let la = store.layer(&a).unwrap();
@@ -132,8 +147,8 @@ fn layer_of_reads_real_layer_value() {
 
 #[test]
 fn consolidate_same_layer_only_true_blocks_cross_layer_merge() {
-    let store =
-        std::sync::Arc::new(MemStore::open(&tmp_root().join("phase3/cons-guard.redb")).unwrap());
+    let (_dir, store) = fresh_store("cons-guard-");
+    let store = std::sync::Arc::new(store);
     // Two docs with two shared concepts but on different layers.
     let a = put_layer(&store, "sandbox probe enforce alpha beta", Layer::L1);
     let b = put_layer(&store, "sandbox probe enforce alpha gamma", Layer::L2);
@@ -150,9 +165,8 @@ fn consolidate_same_layer_only_true_blocks_cross_layer_merge() {
 
 #[test]
 fn consolidate_same_layer_only_false_still_merges_cross_layer() {
-    let store = std::sync::Arc::new(
-        MemStore::open(&tmp_root().join("phase3/cons-guard-off.redb")).unwrap(),
-    );
+    let (_dir, store) = fresh_store("cons-guard-off-");
+    let store = std::sync::Arc::new(store);
     let a = put_layer(&store, "sandbox probe enforce alpha beta", Layer::L1);
     let b = put_layer(&store, "sandbox probe enforce alpha gamma", Layer::L2);
     let mut c = cfg();

@@ -56,7 +56,7 @@ Test-file/store test additions only; no production behaviour change; no new deps
 
 - [ ] `cargo test -p pii-server --lib --bins --tests 2>&1 | grep -q 'test result: ok'`
 - [ ] `cargo test -p pii-store --lib 2>&1 | grep -q 'test result: ok'`
-- [ ] `cargo test -p pii --lib 2>&1 | grep -q 'test result: ok'` (the cli bin's sandbox tests)
+- [ ] `cargo test -p pii-cli --bin pii 2>&1 | grep -q 'test result: ok'` (the cli bin's sandbox tests; no lib target exists — `p pii` matches nothing)
 - [ ] `cargo fmt --all --check`
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] worker's mutation-log for all four rows shows RED-on-mutation, GREEN-on-HEAD (file under `_tmp/`)

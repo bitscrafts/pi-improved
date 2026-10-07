@@ -68,9 +68,13 @@ pub(crate) fn cmd_sandbox_exec(args: &mut std::env::ArgsOs) -> ExitCode {
     }
 }
 
-/// Coerces a child's raw exit code to the parent's exit code: `code & 0xff`,
-/// with `1` as the fallback when the child was killed by a signal
-/// (`ExitStatus::code()` returns `None`).
+/// Coerces a child's raw exit code to the parent's exit code: masked to the
+/// low 8 bits, with `1` as the fallback when the child was killed by a
+/// signal (`ExitStatus::code()` returns `None`). Spec 74 R4 documents the
+/// reality here: a wait status only encodes the low 8 bits of a child's
+/// exit code, so codes >= 256 are not representable — the mask-to-u8
+/// coercion IS the documented behaviour, and the 128..=255 band must
+/// survive it verbatim.
 fn coerce_child_exit(code: Option<i32>) -> u8 {
     #[allow(clippy::cast_sign_loss)] // raw wait status is a positive small int
     code.map_or(1, |c| (c as u32 & 0xff) as u8)
@@ -104,5 +108,18 @@ mod tests {
         // An out-of-range exit code (e.g. 300) is masked to its low 8 bits.
         let masked = ExitStatus::from_raw((0x012c & 0xff) << 8);
         assert_eq!(coerce_child_exit(masked.code()), 44); // 300 & 0xff
+    }
+
+    /// Spec 74 R4: the high band 128..=255 must survive the coercion
+    /// verbatim — the case the table above lacked. A 7-bit collapse (e.g.
+    /// masking with 0x7f) turns 255 into 127 silently; this pins that shut.
+    /// Codes >= 256 are not representable (a wait status encodes 8 bits of
+    /// exit code), so the documented u8 mask is what is asserted — not an
+    /// impossible identity.
+    #[test]
+    fn sandbox_exec_exit_code_255_is_reported_verbatim() {
+        let code = ExitStatus::from_raw(255 << 8);
+        assert_eq!(code.code(), Some(255));
+        assert_eq!(coerce_child_exit(code.code()), 255);
     }
 }

@@ -42,12 +42,7 @@ for N in "$@"; do
   fi
 
   timeout 3300 pi --provider "$PI_PROVIDER" --model "$PI_MODEL" --thinking off \
-    "${RESUME_ARGS[@]}" -p "Implement the spec at $SPEC, following it exactly:
-     RED first (the failing test must be seen failing), then minimal GREEN.
-     The repo gate is: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace --lib --bins --tests (run what the spec's Exit Criteria name).
-     You may NOT commit; you may NOT edit specs/ or anything outside the files the spec names.
-     Scratch/mutation exports go under /projects/_tmp/ (never /tmp, never the repo tree).
-     When every Exit Criterion command passes, print a final line: SPEC-DONE $N criteria=<passed>/<total> and list each criterion command + exit code."
+    "${RESUME_ARGS[@]}" -p "RESUME. Continue the previous session EXACTLY where the handoff envelope says: read /projects/_tmp/spec73/HANDOFF-73.md (spec 73) or /projects/_tmp/spec-74-incomplete-handoff-2026-10-07.md (spec 74) FIRST — recon is done, designs are settled, do NOT re-derive. Execute 'What remains (in order)' verbatim: RED (observe it fail on the scratch export), GREEN minimal, run every Exit Criteria command verbatim, and print as the final line: SPEC-DONE <N> criteria=<passed>/<total> listing each criterion command + its exit code. Do NOT commit; do not edit specs/. Scratch under /projects/_tmp/ only."
   rc=$?
   echo "== direct-pi $TAG exit rc=$rc"
   [ "$rc" -ne 0 ] && overall=$rc
