@@ -4,6 +4,9 @@
 decision on every open question. Everything else is optional
 deep-dive material, linked below, not required reading.**
 
+> **2026-10-09 — THE RE-REVIEW HAS RUN: [`_docs/06-research/045-opus-rereview-2026-10-09.md`](045-opus-rereview-2026-10-09.md).** Batches A-D judged by behaviour;
+> read it with 043 before acting on any candidate below.
+
 > **2026-10-06 — THE FULL REVIEW HAS RUN: [`_docs/06-research/043-opus-full-review-2026-10-06.md`](043-opus-full-review-2026-10-06.md).** It ran the gate commands for real,
 > answers the eight decisions below, and lists the defects. Read it before ruling on the items here.
 

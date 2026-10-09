@@ -26,7 +26,7 @@ EFFORT_LEVEL="${EFFORT:-high}"
 RUNNER=/root/.hermes/skills/research/opus-review/scripts
 CLAUDE=/root/.local/bin/claude
 AMEM_URL="${AMEM_URL:-http://10.10.10.217:7420}"
-DEST_REL="_docs/06-research/044-opus-rereview-$(date -u +%Y-%m-%d).md"
+DEST_REL="_docs/06-research/045-opus-rereview-$(date -u +%Y-%m-%d).md"
 POINTER="$DOCS/030-OPUS-START-HERE.md"
 INDEX="$REPO/_docs/INDEX.md"
 # ===================================================================
