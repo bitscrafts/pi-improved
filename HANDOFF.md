@@ -517,6 +517,56 @@ envelope-on-budget). One spec per run; orchestrator verifies criteria LIVE then 
 - 043 §10 remaining: item 15 (deferred by the review) and, if wanted, the pii-store F-11
   follow-through in `mem/*.rs` + `session.rs` (the same constructor, other files).
 
+
+## 2026-10-09 — 045's list is worked through, and one item was a real defect (specs 83-94)
+Started from the re-review's own #1 recommendation and its ranked candidates; every step verified by
+measurement, not by report.
+
+**The N1 class (a gate that was green on one machine only)** — reviewer's candidate 1+2:
+- 83 `lanes.rs` hermetic (3 tests depended on a `_tmp/phase3` dir they never created; fresh clone = red
+  gate). Orchestrator reproduced: HEAD's file → 3 FAILED "No such file or directory"; fixed → 8 passed.
+- 84 `cargo xtask fresh-gate` — exports HEAD and runs the gate OUTSIDE the developer tree. Its first
+  green run found a SECOND instance in `conn_heartbeat_tests.rs` (spec 80's file) → 85 fixed it; its
+  next run found a THIRD (`pii-store` heal) plus 21 `pii-tools` tests and three `spec72_reachability`
+  tests that cannot run outside a git repo at all → 86 swept the class and added a retention rule
+  (one failed export) + a free-space floor after the volume hit 0 bytes mid-run.
+
+**The re-review's ranked findings:** 87 reachability is stateful (N2 — whole-file lexer + cfg(test)
+gate; mutation-proven, unlike the fixture it replaced); 88 lag recovery idempotent for approvals (N3 —
+`put_approval_if_absent` in one txn, no re-broadcast, never erases a decision) + lost `RunFinished`
+recovered; 89 the gate compiles the `llamacpp` feature (N4 — an injected E0308 fails it by name);
+90 the `doctest = false` comments stop claiming a gate effect they cannot have (N8).
+
+**Candidate 6 — the mutation verification the reviewer's killed run never produced:** 91 measured which
+guards bite and filed FIVE green mutants (no `get_graph` seam; seeded limits already `u64::MAX`;
+`recover_finished` wiring unpinned; `store_op` argument swaps undetected; prefix-only assertion).
+92 closed four of the five; the three redb-fault sites stay green with the reason stated (no test-only
+way to induce a redb error) — register row `pii R5b-residual`.
+
+**Finding 6 turned out to be a REAL defect, not a test gap (93/94):**
+`replay` discarded the `Err` from `apply_completion`, so a resumed run reached a DIFFERENT terminal than
+the live run did. Measured: live `loop_budget exceeded for node 'fix'` vs replayed `no progress: node
+'gate' never became ready` (they part at journal seq 3; control `loop_budget=3` shows no divergence).
+93 filed the reproduction + control as a defect record and patched nothing; 94 fixed it (replay now
+mirrors `dispatch::apply` on `Err`) and the recording test became a pinning test — reverse mutation
+(orchestrator-reproduced) turns it RED with exactly those two terminals.
+
+**Evidence:** `_docs/06-research/046-…md` (91), `047-…md` (92), `048-…md` (93 measurement),
+`049-…md` (94 re-measure). Commits: 83 `ee38646`, 84 `ff9a664`, 85+86 `5376dfa`, 87 `b0b46d2`,
+88 `1985745`, 89 `71009f2`, 90 `312a868`, 91 `a2e66f8`, 92 `3d64163`, 93 `0940a13`, 94 `dc55096`.
+
+**Still open (N7, deliberately not specced):** `rt.shutdown_timeout` at `pii-cli/src/cmd_daemon.rs:158`
+and the remaining blocking inline methods (`SessionCreate`, `RunCancel`, `RunStart/Get/List`,
+`ApproveResolve`, `SysReload`, `RunResume`, `SessionClose`, `GraphApply`, `EventSubscribe` replay).
+Changes shutdown and dispatch semantics, so it needs a decision before a spec.
+
+**Lessons banked this stretch:** a `write_file` that truncated spec 93 was committed unchecked — the
+worker refused to guess at a contract it could not read (correct); tails of every spec authored since
+were then checked. A blanket `git add -A` twice swept unrelated files into a commit (a `.hermes-tmp.*`
+artifact; then spec 93's file) — both caught and split. The disk hit 0 bytes during a worker run and
+killed it silently; 74G was reclaimed from session scratch only, and `fresh-gate` now refuses below a
+free-space floor.
+
 ## 2026-10-09 — 045 re-review landed, and its #1 finding is CLOSED (specs 83-86)
 
 The re-review (`_docs/06-research/045-opus-rereview-2026-10-09.md`, committed `5b95879`) judged
