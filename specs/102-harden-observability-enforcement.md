@@ -50,3 +50,38 @@ R6. `specs/` is read-only for you.
 - Do NOT edit files under `specs/`.
 - Scratch under `/projects/_tmp/` only (exports are small here; still delete your own).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result (2026-10-09) — landed, then hardened twice by orchestrator controls
+**Spec 102 as delivered (12 turns, $0.36):** `xtask/observability-exemptions.txt` holds the four
+sanctioned crates with reasons; every `// observability: none` line is gone from `crates/`; the print
+allowlist became a per-file budget (96 sites over 20 files); the dead-exemption rule is keyed on a
+`pii_observe::` path (not on contract words — those appear in the contract crate itself, which would have
+flagged it); fail-closed on unreadable inputs; 75 unit tests.
+
+**Orchestrator-verified controls (mine, all pasted):**
+- **No churn (R4)**: inserting 12 comment lines above the listed prints left the allowlist byte-identical
+  (`sha256` `5a32e552f014` before and after) and the lint at 0 findings. The churn defect is closed.
+- **Budget (R4)**: one extra `eprintln!` in `cmd_ctl.rs` → `1 findings`, exit 1; restored → exit 0.
+
+**TWO DEFECTS FOUND BY MY OWN CONTROLS, FIXED HERE (orchestrator):** the failure path fabricated
+findings. With a fifth registry entry (or with the registry file absent) the lint reported the true
+finding **plus five false ones** — `crate pii-abi/pii-proto/pii-uds does not depend on pii-observe`,
+`pii-uds makes no use of the contract`, and the absurd
+**`crate pii-observe does not depend on pii-observe`** (a crate required to depend on itself). Two fixes:
+1. `exempt_reason()` — the sanctioned set is now honoured from the const, independent of whether the
+   registry file is readable or valid, so an unusable registry yields exactly ONE finding and no cascade.
+2. the contract crate is never subject to the self-dependency rule (`CONTRACT_CRATE`).
+Re-run after the fix:
+```
+registry absent  → 1 finding: "xtask/observability-exemptions.txt:1: registry unreadable: No such file…"
+fifth entry      → 1 finding: "…:5: `pii-core` is not in the sanctioned exemption set (pii-abi, …)"
+healthy tree     → 0 findings, registry size 4 (4 crates exempt)
+```
+Two unit tests pin both behaviours (`sanctioned_set_is_honoured_without_a_usable_registry`,
+`contract_crate_is_never_required_to_depend_on_itself`).
+
+**Process note (mine):** my first edit of the lint silently did not persist (I checked only the tool's
+report, not the file), and my first version of the new tests tripped the workspace's own lints
+(`expect_used` is DENIED here, and `std::fs::` was an unnecessary qualification) — the gate caught both
+(`FAIL: clippy`). Fixed and re-verified. Reading back the artefact, not the tool's success message, is the
+lesson; it is the same one this repo keeps paying for.

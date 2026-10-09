@@ -118,4 +118,3 @@ mod tests {
         assert_eq!(got, None);
     }
 }
-// observability: none — path helpers only, nothing to observe

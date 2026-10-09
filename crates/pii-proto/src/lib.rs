@@ -316,4 +316,3 @@ mod tests {
         assert_eq!(err.code, i32::from(ErrorCode::InvalidRequest));
     }
 }
-// observability: none — wire types and consts only, nothing to observe

@@ -1,23 +1,31 @@
 //! Spec 98: the observability seam and the ban on raw prints fail the gate.
 //!
 //! Rules: every crate depends on `pii-observe` and uses its contract in
-//! `src/` (R1a/R1b) unless it carries a named exemption (R1c); no raw
-//! `eprintln!`/`println!`/`dbg!`/`print!` outside the checked-in allowlist
-//! (R1d); every `pub const` in the name registry is listed in `ALL` (R1e).
+//! `src/` (R1a/R1b) unless it is in the checked-in exemption registry (R1c,
+//! spec 102: pinned to a sanctioned set, and a crate with a real seam may not
+//! stay listed); no file holds more raw `eprintln!`/`println!`/`dbg!`/`print!`
+//! than its per-file budget in the checked-in allowlist (R1d); every `pub const` in the name registry is listed in `ALL` (R1e).
 //! The lint fails closed: unreadable inputs are findings, never skips.
 
 // reason: see lint_files.rs — binary-internal helpers; clippy
 // `redundant_pub_crate` conflicts with rustc `unreachable_pub`.
 #![allow(clippy::redundant_pub_crate)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const CRATES: &str = "crates";
 const ALLOWLIST: &str = "xtask/observability-allowlist.txt";
 const NAMES: &str = "crates/pii-observe/src/names.rs";
-const EXEMPT_MARK: &str = "// observability: none";
+const EXEMPTIONS: &str = "xtask/observability-exemptions.txt";
+/// The only crates that may be exempt; a registry entry outside this set is a finding.
+const SANCTIONED: &[&str] = &["pii-abi", "pii-proto", "pii-uds", "pii-observe"];
+
+/// The contract crate itself: never required to depend on itself.
+const CONTRACT_CRATE: &str = "pii-observe";
+/// Reason used when the sanctioned set is honoured without a usable registry.
+const SANCTIONED_REASON: &str = "sanctioned exemption (registry unusable or entry missing)";
 const CONTRACT_WORDS: &[&str] = &["Observer", "Observable", "Event", "Measure", "Health"];
 const PRINT_MACROS: &[&str] = &["eprintln", "println", "dbg", "print"];
 
@@ -59,32 +67,39 @@ fn print_sites(src: &str) -> Vec<usize> {
         .collect()
 }
 
-/// Parses the allowlist: `path:line  # reason`. Returns entries or one message
-/// per malformed line (an entry without a reason is malformed).
-fn parse_allowlist(text: &str) -> Result<Vec<String>, Vec<String>> {
-    let (mut entries, mut errs) = (Vec::new(), Vec::new());
+/// True when `src` carries a real seam: a `pii_observe::` path in code.
+fn has_seam(src: &str) -> bool {
+    src.lines()
+        .any(|l| l.split("//").next().unwrap_or("").contains("pii_observe::"))
+}
+
+/// Parses the budget allowlist: `path  # reason  # N`. Returns `(path, N)` or one
+/// message per malformed line (no reason, non-numeric count, duplicate path).
+fn parse_budgets(text: &str) -> Result<Vec<(String, usize)>, Vec<String>> {
+    let (mut entries, mut errs): (Vec<(String, usize)>, Vec<String>) = (Vec::new(), Vec::new());
     for (i, raw) in text.lines().enumerate() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let (site, reason) = line.split_once('#').unwrap_or((line, ""));
-        let site = site.trim();
+        let at = i + 1;
+        let (head, count) = line.rsplit_once('#').unwrap_or((line, ""));
+        let Ok(n) = count.trim().parse::<usize>() else {
+            errs.push(format!(
+                "{ALLOWLIST}:{at}: `{line}` is not `path  # reason  # N`"
+            ));
+            continue;
+        };
+        let (path, reason) = head.split_once('#').unwrap_or((head, ""));
+        let path = path.trim();
         if reason.trim().is_empty() {
             errs.push(format!(
-                "{ALLOWLIST}:{}: entry `{site}` has no `# reason`",
-                i + 1
+                "{ALLOWLIST}:{at}: entry `{path}` has no `# reason`"
             ));
-        } else if site
-            .rsplit_once(':')
-            .is_none_or(|(_, n)| n.parse::<usize>().is_err())
-        {
-            errs.push(format!(
-                "{ALLOWLIST}:{}: `{site}` is not `path:line`",
-                i + 1
-            ));
+        } else if entries.iter().any(|(p, _)| p == path) {
+            errs.push(format!("{ALLOWLIST}:{at}: duplicate entry `{path}`"));
         } else {
-            entries.push(site.to_owned());
+            entries.push((path.to_owned(), n));
         }
     }
     if errs.is_empty() {
@@ -94,47 +109,35 @@ fn parse_allowlist(text: &str) -> Result<Vec<String>, Vec<String>> {
     }
 }
 
-/// Entries appearing more than once.
-fn duplicates(entries: &[String]) -> Vec<String> {
-    let mut seen = BTreeSet::new();
-    let mut dups = BTreeSet::new();
-    for e in entries {
-        if !seen.insert(e.as_str()) {
-            dups.insert(e.clone());
+/// Parses the exemption registry: `crate  # reason`. Returns `(crate, reason)` or
+/// one message per bad line (no reason, unsanctioned crate, duplicate).
+fn parse_exemptions(text: &str) -> Result<Vec<(String, String)>, Vec<String>> {
+    let (mut entries, mut errs): (Vec<(String, String)>, Vec<String>) = (Vec::new(), Vec::new());
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let at = i + 1;
+        let (name, reason) = line.split_once('#').unwrap_or((line, ""));
+        let (name, reason) = (name.trim(), reason.trim());
+        if reason.is_empty() {
+            errs.push(format!("{EXEMPTIONS}:{at}: `{name}` has no `# reason`"));
+        } else if !SANCTIONED.contains(&name) {
+            errs.push(format!(
+                "{EXEMPTIONS}:{at}: `{name}` is not in the sanctioned exemption set ({})",
+                SANCTIONED.join(", ")
+            ));
+        } else if entries.iter().any(|(n, _)| n == name) {
+            errs.push(format!("{EXEMPTIONS}:{at}: duplicate entry `{name}`"));
+        } else {
+            entries.push((name.to_owned(), reason.to_owned()));
         }
     }
-    dups.into_iter().collect()
-}
-
-/// Outcome of scanning a crate's entry files for `// observability: none`.
-#[derive(Debug, PartialEq, Eq)]
-enum Exemption {
-    None,
-    Reason(String),
-    Invalid(String),
-}
-
-/// Parses exemption lines across the crate's entry-file sources.
-fn parse_exemption(krate: &str, sources: &[&str]) -> Exemption {
-    let marks: Vec<&str> = sources
-        .iter()
-        .flat_map(|s| s.lines())
-        .map(str::trim)
-        .filter(|l| l.starts_with(EXEMPT_MARK))
-        .collect();
-    match marks.as_slice() {
-        [] => Exemption::None,
-        [one] => {
-            let reason = one[EXEMPT_MARK.len()..]
-                .trim_start_matches(|c: char| c.is_whitespace() || c == '—' || c == '-')
-                .trim();
-            if reason.is_empty() {
-                Exemption::Invalid(format!("crate {krate}: `{EXEMPT_MARK}` needs a reason"))
-            } else {
-                Exemption::Reason(reason.to_owned())
-            }
-        }
-        _ => Exemption::Invalid(format!("crate {krate}: more than one `{EXEMPT_MARK}` line")),
+    if errs.is_empty() {
+        Ok(entries)
+    } else {
+        Err(errs)
     }
 }
 
@@ -214,17 +217,46 @@ struct Tally {
     files: usize,
     exempt: Vec<(String, String)>,
     sites: usize,
+    budget_total: usize,
+    registry_size: usize,
 }
 
-fn scan(root: &Path) -> Tally {
-    let mut t = Tally {
-        findings: Vec::new(),
-        files: 0,
-        exempt: Vec::new(),
-        sites: 0,
-    };
-    let allow = match fs::read_to_string(root.join(ALLOWLIST)) {
-        Ok(text) => match parse_allowlist(&text) {
+fn read_budgets(root: &Path, t: &mut Tally) -> BTreeMap<String, usize> {
+    match fs::read_to_string(root.join(ALLOWLIST)) {
+        Ok(text) => match parse_budgets(&text) {
+            Ok(e) => e.into_iter().collect(),
+            Err(errs) => {
+                t.findings.extend(errs);
+                BTreeMap::new()
+            }
+        },
+        Err(e) => {
+            t.findings
+                .push(format!("{ALLOWLIST}:1: allowlist unreadable: {e}"));
+            BTreeMap::new()
+        }
+    }
+}
+
+/// The exemption reason for `name`, or `None` when the crate must carry a real seam.
+///
+/// The sanctioned set is honoured even when the registry file is unusable: one bad line
+/// (or a missing file) must never fabricate an R1a/R1b failure for every sanctioned crate.
+fn exempt_reason(registry: &[(String, String)], name: &str) -> Option<String> {
+    registry
+        .iter()
+        .find(|(c, _)| c == name)
+        .map(|(_, r)| r.clone())
+        .or_else(|| {
+            SANCTIONED
+                .contains(&name)
+                .then(|| String::from(SANCTIONED_REASON))
+        })
+}
+
+fn read_exemptions(root: &Path, t: &mut Tally) -> Vec<(String, String)> {
+    match fs::read_to_string(root.join(EXEMPTIONS)) {
+        Ok(text) => match parse_exemptions(&text) {
             Ok(e) => e,
             Err(errs) => {
                 t.findings.extend(errs);
@@ -233,15 +265,25 @@ fn scan(root: &Path) -> Tally {
         },
         Err(e) => {
             t.findings
-                .push(format!("{ALLOWLIST}:1: allowlist unreadable: {e}"));
+                .push(format!("{EXEMPTIONS}:1: registry unreadable: {e}"));
             Vec::new()
         }
-    };
-    for d in duplicates(&allow) {
-        t.findings
-            .push(format!("{ALLOWLIST}:1: duplicate allowlist entry `{d}`"));
     }
-    let allow: BTreeSet<String> = allow.into_iter().collect();
+}
+
+fn scan(root: &Path) -> Tally {
+    let mut t = Tally {
+        findings: Vec::new(),
+        files: 0,
+        exempt: Vec::new(),
+        sites: 0,
+        budget_total: 0,
+        registry_size: 0,
+    };
+    let budgets = read_budgets(root, &mut t);
+    t.budget_total = budgets.values().sum();
+    let registry = read_exemptions(root, &mut t);
+    t.registry_size = registry.len();
     let mut crate_dirs: Vec<PathBuf> = match fs::read_dir(root.join(CRATES)) {
         Ok(rd) => rd
             .flatten()
@@ -254,6 +296,7 @@ fn scan(root: &Path) -> Tally {
         }
     };
     crate_dirs.sort();
+    let mut scanned = BTreeSet::new();
     for dir in crate_dirs {
         let name = dir
             .file_name()
@@ -265,7 +308,16 @@ fn scan(root: &Path) -> Tally {
         if !holds_files(&dir) {
             continue; // stray empty directory tree: nothing to check
         }
-        scan_crate(root, &dir, &name, &allow, &mut t);
+        let reason = exempt_reason(&registry, &name);
+        scan_crate(root, &dir, &name, &budgets, reason.as_deref(), &mut t);
+        scanned.insert(name);
+    }
+    for (c, _) in &registry {
+        if !scanned.contains(c) {
+            t.findings.push(format!(
+                "{EXEMPTIONS}:1: exempt crate `{c}` not found under {CRATES}/"
+            ));
+        }
     }
     match fs::read_to_string(root.join(NAMES)) {
         Ok(src) => t.findings.extend(check_registry(NAMES, &src)),
@@ -276,7 +328,14 @@ fn scan(root: &Path) -> Tally {
     t
 }
 
-fn scan_crate(root: &Path, dir: &Path, name: &str, allow: &BTreeSet<String>, t: &mut Tally) {
+fn scan_crate(
+    root: &Path,
+    dir: &Path,
+    name: &str,
+    budgets: &BTreeMap<String, usize>,
+    exempt: Option<&str>,
+    t: &mut Tally,
+) {
     let rel = format!("{CRATES}/{name}");
     let manifest = match fs::read_to_string(dir.join("Cargo.toml")) {
         Ok(m) => m,
@@ -286,6 +345,12 @@ fn scan_crate(root: &Path, dir: &Path, name: &str, allow: &BTreeSet<String>, t: 
             return;
         }
     };
+    if !manifest.lines().any(|l| l.trim() == "[package]") {
+        t.findings.push(format!(
+            "{rel}/Cargo.toml:1: unparsable: no `[package]` table"
+        ));
+        return;
+    }
     let src_dir = dir.join("src");
     if !src_dir.is_dir() {
         t.findings
@@ -294,8 +359,7 @@ fn scan_crate(root: &Path, dir: &Path, name: &str, allow: &BTreeSet<String>, t: 
     }
     let mut files = Vec::new();
     rs_files(&src_dir, &mut files, &mut t.findings);
-    let mut uses = false;
-    let mut entry_srcs = Vec::new();
+    let (mut uses, mut seam) = (false, false);
     for f in &files {
         t.files += 1;
         let shown = f.strip_prefix(root).unwrap_or(f).display().to_string();
@@ -307,34 +371,40 @@ fn scan_crate(root: &Path, dir: &Path, name: &str, allow: &BTreeSet<String>, t: 
             }
         };
         uses |= uses_contract(&src);
-        for line in print_sites(&src) {
-            t.sites += 1;
-            if !allow.contains(&format!("{shown}:{line}")) {
-                t.findings.push(format!("{shown}:{line}: raw print macro (use the pii-observe seam, or allowlist with a reason)"));
-            }
-        }
-        if f == &src_dir.join("lib.rs") || f == &src_dir.join("main.rs") {
-            entry_srcs.push(src);
+        seam |= has_seam(&src);
+        let sites = print_sites(&src);
+        t.sites += sites.len();
+        let budget = budgets.get(&shown).copied().unwrap_or(0);
+        if sites.len() > budget {
+            let lines: Vec<String> = sites.iter().map(usize::to_string).collect();
+            t.findings.push(format!(
+                "{shown}:{}: {} raw print macros exceed the budget of {budget} (use the pii-observe seam, or budget with a reason); sites at lines {}",
+                sites.first().copied().unwrap_or(1),
+                sites.len(),
+                lines.join(",")
+            ));
         }
     }
-    let refs: Vec<&str> = entry_srcs.iter().map(String::as_str).collect();
-    match parse_exemption(name, &refs) {
-        Exemption::Reason(r) => {
-            t.exempt.push((name.to_owned(), r));
-            return;
+    if let Some(reason) = exempt {
+        if seam {
+            t.findings.push(format!(
+                "{rel}/src:1: dead exemption: crate {name} is in {EXEMPTIONS} but uses `pii_observe::` — remove the exemption"
+            ));
         }
-        Exemption::Invalid(m) => {
-            t.findings.push(format!("{rel}/src:1: {m}"));
-            return;
-        }
-        Exemption::None => {}
+        t.exempt.push((name.to_owned(), reason.to_owned()));
+        return;
     }
     let has_dep = manifest.lines().any(|l| {
         let l = l.trim();
         l.strip_prefix("pii-observe")
             .is_some_and(|r| r.trim_start().starts_with(['=', '.']))
     });
-    if !has_dep {
+    // A crate is never required to depend on ITSELF (the contract crate is the
+    // dependency floor), and the sanctioned set is honoured even when the registry
+    // file is unreadable or carries an invalid entry — otherwise one bad line would
+    // fabricate an R1a/R1b failure for every sanctioned crate.
+    let is_contract = name == CONTRACT_CRATE;
+    if !has_dep && !is_contract {
         t.findings.push(format!(
             "{rel}/Cargo.toml:1: crate {name} does not depend on pii-observe"
         ));
@@ -357,9 +427,11 @@ pub fn run() -> Result<(), Vec<String>> {
     }
     if t.findings.is_empty() {
         println!(
-            "lint-observability: {} files checked, {} print sites allowlisted, {} crates exempt, 0 findings",
+            "lint-observability: {} files checked, {} raw prints within a per-file budget total of {}, registry size {} ({} crates exempt), 0 findings",
             t.files,
             t.sites,
+            t.budget_total,
+            t.registry_size,
             t.exempt.len()
         );
         Ok(())
@@ -380,61 +452,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn allowlist_skips_comments_and_blank_lines() {
-        let e = parse_allowlist("# header\n\na.rs:3  # why\nb.rs:9 # also why\n").unwrap();
-        assert_eq!(e, vec!["a.rs:3", "b.rs:9"]);
+    fn budget_skips_comments_and_blank_lines() {
+        let e = parse_budgets("# header\n\na.rs  # why  # 3\nb.rs # also # 9\n").unwrap();
+        assert_eq!(e, vec![("a.rs".to_owned(), 3), ("b.rs".to_owned(), 9)]);
     }
 
     #[test]
-    fn allowlist_entry_without_reason_is_rejected() {
-        assert_eq!(parse_allowlist("a.rs:3\n").unwrap_err().len(), 1);
-        assert_eq!(parse_allowlist("a.rs:3  #   \n").unwrap_err().len(), 1);
-    }
-
-    #[test]
-    fn allowlist_entry_must_be_path_line() {
-        assert!(parse_allowlist("a.rs  # why\n").is_err());
-        assert!(parse_allowlist("a.rs:x  # why\n").is_err());
-    }
-
-    #[test]
-    fn duplicates_are_detected() {
-        let v = vec!["a:1".to_owned(), "b:2".to_owned(), "a:1".to_owned()];
-        assert_eq!(duplicates(&v), vec!["a:1"]);
-        assert!(duplicates(&v[..2]).is_empty());
-    }
-
-    #[test]
-    fn exemption_with_reason_is_accepted() {
-        let s = "//! x\n// observability: none — pure data crate\n";
-        assert_eq!(
-            parse_exemption("c", &[s]),
-            Exemption::Reason("pure data crate".into())
-        );
-    }
-
-    #[test]
-    fn bare_exemption_is_a_finding() {
+    fn budget_entry_without_reason_or_count_is_rejected() {
         for s in [
-            "// observability: none\n",
-            "// observability: none — \n",
-            "// observability: none -\n",
+            "a.rs\n",
+            "a.rs  # 3\n",
+            "a.rs  #   # 3\n",
+            "a.rs  # why\n",
+            "a.rs  # why  # x\n",
         ] {
-            assert!(
-                matches!(parse_exemption("c", &[s]), Exemption::Invalid(m) if m.contains("crate c")),
-                "{s:?}"
-            );
+            assert_eq!(parse_budgets(s).unwrap_err().len(), 1, "{s:?}");
         }
     }
 
     #[test]
-    fn absent_or_duplicate_exemption() {
-        assert_eq!(parse_exemption("c", &["fn x() {}"]), Exemption::None);
-        let two = "// observability: none — a\n// observability: none — b\n";
-        assert!(matches!(
-            parse_exemption("c", &[two]),
-            Exemption::Invalid(_)
-        ));
+    fn budget_duplicates_are_detected() {
+        let e = parse_budgets("a.rs # w # 1\na.rs # w # 2\n");
+        assert!(e.unwrap_err()[0].contains("duplicate"));
+    }
+
+    #[test]
+    fn registry_parses_crate_and_reason() {
+        let e = parse_exemptions("pii-abi  # traits only\n\n# note\n").unwrap();
+        assert_eq!(e, vec![("pii-abi".to_owned(), "traits only".to_owned())]);
+    }
+
+    #[test]
+    fn registry_rejects_missing_reason_unknown_crate_and_fifth_entry() {
+        assert!(parse_exemptions("pii-abi\n").is_err());
+        assert!(parse_exemptions("pii-abi  #  \n").is_err());
+        let unknown = parse_exemptions("pii-core  # nope\n").unwrap_err();
+        assert!(unknown[0].contains("pii-core") && unknown[0].contains("sanctioned"));
+        assert!(parse_exemptions("pii-abi # a\npii-abi # b\n").is_err());
+    }
+
+    #[test]
+    fn dead_exemption_is_a_seam_use_not_a_contract_word() {
+        assert!(has_seam("use pii_observe::Event;"));
+        assert!(!has_seam("// pii_observe::Event\nstruct Event;"));
+        assert!(!has_seam("fn f() {}"));
     }
 
     #[test]
@@ -465,5 +526,59 @@ mod tests {
         let s =
             "pub const A: &str = \"a\";\npub const ALL: &[&str] = &[\n    A,\n    other::X,\n];\n";
         assert_eq!(check_registry("n.rs", s).len(), 1);
+    }
+
+    #[test]
+    fn sanctioned_set_is_honoured_without_a_usable_registry() {
+        // An empty registry stands for "unreadable or invalid file".
+        for c in SANCTIONED {
+            let r = exempt_reason(&[], c);
+            assert_eq!(
+                r.as_deref(),
+                Some(SANCTIONED_REASON),
+                "sanctioned crate {c}"
+            );
+        }
+        // A crate outside the sanctioned set is never exempt without a registry entry.
+        assert!(exempt_reason(&[], "pii-core").is_none());
+        // A registry entry wins over the fallback, so the reason stays honest.
+        let reg = vec![(String::from("pii-uds"), String::from("path helpers only"))];
+        assert_eq!(
+            exempt_reason(&reg, "pii-uds").as_deref(),
+            Some("path helpers only")
+        );
+    }
+
+    #[test]
+    fn contract_crate_is_never_required_to_depend_on_itself() {
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/lint-obs-scan"));
+        assert!(
+            fs::create_dir_all(root.join("crates/pii-observe/src")).is_ok(),
+            "create scratch tree"
+        );
+        assert!(
+            fs::write(
+                root.join("crates/pii-observe/Cargo.toml"),
+                "[package]\nname = \"pii-observe\"\n",
+            )
+            .is_ok(),
+            "write manifest"
+        );
+        assert!(
+            fs::write(
+                root.join("crates/pii-observe/src/lib.rs"),
+                "//! contract crate\n"
+            )
+            .is_ok(),
+            "write lib"
+        );
+        let t = scan(root);
+        assert!(
+            !t.findings
+                .iter()
+                .any(|f| f.contains("crate pii-observe does not depend on pii-observe")),
+            "the contract crate must never be asked to depend on itself: {:?}",
+            t.findings
+        );
     }
 }

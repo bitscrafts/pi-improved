@@ -27,4 +27,3 @@ pub use measure::Measure;
 pub use observer::{
     NoopObserver, NullObserver, Observable, Observed, Observer, Recorder, StderrObserver,
 };
-// observability: none — this is the contract crate itself
