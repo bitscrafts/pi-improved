@@ -729,3 +729,22 @@ adequacy review, instrumentation cost under soak).
    emitted is a per-subsystem review (P3).
 6. The four sanctioned exemptions are crates where emitting is not well-formed — not zero exemptions.
 
+## 2026-10-09 — spec 106: the operator surfaces stop lying (`b5f0f9a`)
+Found while speccing spec 105's residuals, and bigger than them. Three measured defects, all closed:
+1. **`pii run ls` was ALWAYS empty** — `dispatch.rs` did `status.map_or_else(Vec::new, …)`, and an
+   unrecognised `--status` was swallowed into "no filter" → an operator's primary command reported an idle
+   system while runs existed, and `--status bogus` was indistinguishable from "no runs" at exit 0.
+   Now: unfiltered lists every run; `--status bogus` exits 2 naming the accepted values.
+2. **A suspended run had no visible approval** — a run waited for a human with `approve ls` empty and
+   `approvals_pending: 0`. ROOT CAUSE (not what my spec said): `RunSuspended` is broadcast when the event
+   is appended, BEFORE the write-behind journal flush, so `on_suspended` read too early and `return`ed
+   silently. Fixed in `daemon/suspend.rs` (retry the lookup; report the unhandleable; no `let _ =`).
+   **My spec's stated mechanism — an id derived from the policy name — was WRONG**, and this is recorded in
+   the spec: the evidence was measured, the explanation was invented.
+3. **`health` hid the timer store** — now six stores reported, matching the six on disk, with a
+   set-equality test whose mutation control drops `timer` and must go RED.
+**Orchestrator-reproduced:** run ls → 3 runs; `--status bogus` → rc=2; `approve ls` → 2 rows with DISTINCT
+run-scoped ids; `approvals_pending` → 2; health → six stores; no daemon left. Gates green (both trees).
+**Still open after 106:** whether a RESTORED pending approval can be resolved and resumed after a restart
+is not verified (the row is restored with the store; the resume path across a restart is untested).
+
