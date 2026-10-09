@@ -704,3 +704,28 @@ defects spec 102's registry work introduced were found by MY controls, not by th
 (`_docs/06-research/052-…md` P2/P3/P5 hold the remaining hardening: redaction data-safety, per-subsystem
 adequacy review, instrumentation cost under soak).
 
+## 2026-10-09 — P0 + P1 CLOSED (specs 103-105). The scoreboard, then the honest limits
+**Landed:** 103 trajectory substrate (`5191999`), 104 P0 deployable (`07b8eba`), 105 P1 operable (`e2a47c8`).
+
+| what | evidence (orchestrator-reproduced) |
+|---|---|
+| **static binary** | `file` → `ELF 64-bit LSB pie … static-pie linked, stripped` (4,596,744 B) via `cargo build --release --target x86_64-unknown-linux-musl -p pii-cli`; `ldd` → "statically linked"; the DEFAULT build stays dynamic and `001-pii-vision.md` now says exactly that (and that pii-web/mcp/evolve were not measured) |
+| **runs as a service** | `pii daemon --help` rc=0; `--bogus` rc=2; probe `pii health --json` rc=0 live / rc=2 with none; `kill -9` + restart keeps the store (same path, same bytes); log file rotates (`--log-rotate-bytes 120 --log-keep-files 2` → exactly 3 files); `systemd-analyze verify deploy/pii.service` rc=0; `deploy/Dockerfile` present but **untested** (no Docker on this host) |
+| **health identity** | all five stores report `format_version` (the `null` is gone), resolved mounts + policy, build/config hash, counts |
+| **trajectory** | `<root>/trajectories/<run_id>.jsonl`, 9 lines, `run.outcome` verbatim with `run`/`session`; `PII_TRAJECTORY_REDACT=text` → 0 occurrences in the trajectory, 4 in stdout; OFF writes nothing; a failed run records `failure` |
+| **metrics** | `pii metrics` → `pii_runs`, `pii_journal_events_total`, `pii_store_bytes{store="main"}`, `pii_store_format_version{store=…}` |
+| **recovery** | backup (rc=0 + MANIFEST + 6 stores) → guard refuses a non-empty target without `--force` (rc=2) → `mv` aside → restore rc=0 → counts identical (runs 1, journal_events 5) |
+| **the gate** | `quality-gate.sh` ALL PASS (nine steps) · `fresh-gate --worktree` PASS for every spec in the lane |
+
+**Honest limits, carried forward rather than smoothed:**
+1. `timer.redb` is stamped and backed up but **not listed in `health`** — the timer wheel moved into the
+   scheduler and `sys.status` cannot reach it. This is an identity gap of exactly the kind the 2026-09-20
+   directive targets → the next observability item.
+2. Restore does **not** rebuild a pending approval (the suspended-run path produced no approval row).
+3. The `Dockerfile` is untested here; the systemd unit was verified by `systemd-analyze` but never run as a
+   service.
+4. Coverage remains unmeasured (no tooling) — passing tests do not evidence exercised code.
+5. Adequacy of the emitted events is a FLOOR (one named-event test per crate); whether the RIGHT events are
+   emitted is a per-subsystem review (P3).
+6. The four sanctioned exemptions are crates where emitting is not well-formed — not zero exemptions.
+
