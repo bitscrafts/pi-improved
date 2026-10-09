@@ -155,6 +155,11 @@ impl Supervisor {
             };
             (pid, in_flight, ids, capped)
         };
+        self.note_state(if capped {
+            WorkerState::Failed
+        } else {
+            WorkerState::Restarting
+        });
         // Lock released: the kill+wait (potentially slow) runs off the state
         // lock. A concurrent `invoke()` now sees Restarting/Failed and
         // queues or fails immediately.
@@ -221,6 +226,7 @@ impl Supervisor {
             )
         };
         self.inner.state.lock().state = WorkerState::Draining;
+        self.note_state(WorkerState::Draining);
 
         // (2) wait for in-flight to reach zero, deadline 5 s.
         let deadline = Instant::now() + Duration::from_millis(RELOAD_DRAIN_DEADLINE_MS);
@@ -263,6 +269,7 @@ impl Supervisor {
 
         // (6) Ready; flush the queue in FIFO order.
         self.inner.state.lock().state = WorkerState::Ready;
+        self.note_state(WorkerState::Ready);
         let drained = self.drain_queue();
         Ok(ReloadReport {
             old_pid,
@@ -284,10 +291,11 @@ fn respawn(sup: Supervisor, backoff_ms: u64) {
     let ctx = sup.inner.ctx.lock().clone();
     let Some(ctx) = ctx else {
         sup.inner.state.lock().state = WorkerState::Failed;
+        sup.note_state(WorkerState::Failed);
         return;
     };
-    match sup.spawn_and_hello(&ctx) {
-        Ok(()) => {
+    if sup.spawn_and_hello(&ctx).is_ok() {
+        {
             let mut sh = sup.inner.state.lock();
             sh.restarts += 1;
             let restarts = sh.restarts;
@@ -303,11 +311,12 @@ fn respawn(sup: Supervisor, backoff_ms: u64) {
                 });
             drop(sh);
             sup.inner.state.lock().state = WorkerState::Ready;
+            sup.note_state(WorkerState::Ready);
             sup.drain_queue_pub();
         }
-        Err(_) => {
-            sup.inner.state.lock().state = WorkerState::Failed;
-        }
+    } else {
+        sup.inner.state.lock().state = WorkerState::Failed;
+        sup.note_state(WorkerState::Failed);
     }
 }
 

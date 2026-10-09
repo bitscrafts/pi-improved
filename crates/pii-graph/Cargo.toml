@@ -10,6 +10,7 @@ description.workspace = true
 [dependencies]
 pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
+pii-observe = { path = "../pii-observe" }
 pii-store = { path = "../pii-store" }
 serde = { workspace = true }
 serde_json = { workspace = true }

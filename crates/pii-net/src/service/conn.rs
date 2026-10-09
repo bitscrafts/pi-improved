@@ -95,6 +95,8 @@ pub(crate) struct Inner {
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) registry: Mutex<Registry>,
     pub(crate) listeners: Mutex<BTreeMap<u64, crate::listen::ListenerEntry>>,
+    /// Set once by [`super::NetService::set_observer`].
+    pub(crate) observer: std::sync::OnceLock<Arc<dyn pii_observe::Observer>>,
 }
 
 /// Process-wide registry keyed by `(principal, key)`.

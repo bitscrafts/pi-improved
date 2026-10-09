@@ -421,3 +421,24 @@ fn worker_kill_does_not_block_concurrent_invoke() {
     assert!(done.load(Ordering::SeqCst), "killer finished");
     pii_core::set_test_kill_delay_ms(0);
 }
+
+/// Spec 100 R3: a real worker's lifecycle reaches a `pii-observe` observer as
+/// `worker.state.changed` events — starting, then ready.
+#[test]
+fn lifecycle_transitions_reach_the_observer() {
+    use pii_observe::{Recorder, names};
+    let rec = std::sync::Arc::new(Recorder::new());
+    let sup = Supervisor::new(worker_spec("w-obs", "a"));
+    sup.set_observer(rec.clone());
+    sup.start(&full_ctx()).unwrap();
+    let states: Vec<_> = rec
+        .events_named(names::WORKER_STATE_CHANGED)
+        .iter()
+        .filter_map(|e| {
+            e.fields
+                .get("state")
+                .and_then(|v| v.as_str().map(String::from))
+        })
+        .collect();
+    assert_eq!(states, ["starting", "ready"]);
+}

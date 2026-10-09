@@ -66,6 +66,7 @@ impl GraphNode for ToolNode {
             || Err(PiiError::Invalid(format!("unknown tool '{}'", self.tool))),
             |tool| tool.call(ctx, &resolved),
         );
+        self.toolset.observe_call(&self.tool, &resolved, &result);
         match result {
             Ok(v) => Ok(Outcome::Next {
                 port: PortName::from("ok"),

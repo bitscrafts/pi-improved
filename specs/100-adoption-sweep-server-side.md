@@ -62,3 +62,36 @@ R5. `specs/` is read-only for you.
 - Do NOT edit files under `specs/`.
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+Landed: 8 crates now emit through the contract — `pii-store` (persist failures + `Health`),
+`pii-net` (`NET_EGRESS_DENIED`, `NET_ACCEPT_FAILED`), `pii-tools` (`TOOLS_CALL`,
+`TOOLS_DENY_LIST_HIT`), `pii-model` (`MODEL_PROVIDER_IN_FORCE`, `MODEL_REQUEST_LATENCY`,
+`MODEL_PROVIDER_ERROR`), `pii-worker` (`WORKER_STATE_CHANGED`), `pii-graph` (`GRAPH_BATCH_WIDTH` through
+the contract), `pii-memory` (`MEMORY_SEARCH`, `MEMORY_CONSOLIDATE` + `Health`), `pii-server` (the
+aggregator). Both gates green.
+
+**A correction to MY OWN numbers, from the worker (and it is right):** the exempt count was **15 before**
+this spec, not the `19` I had been quoting, and it is **11 after**. Spec 99 (health identity) had already
+taken `pii-store`, `pii-net`, `pii-worker` and `pii-server` off the exempt list by giving them real
+contract use, so only four crates still carried the placeholder when this spec started. Its drop is 4,
+and 8 crates gained emissions. I had been repeating a stale figure; recorded here rather than quietly
+restated.
+
+**Verified by the orchestrator (not taken on report):**
+- `lint-observability` → 11 crates exempt, 0 findings; the list is exactly the four sanctioned
+  (`pii-abi`, `pii-proto`, `pii-uds`, `pii-observe`) plus the seven spec 101 will convert.
+- The adequacy floor runs: `pii-tools --lib call_and_deny_list_hit_reach_the_observer_by_name` ok;
+  `pii-graph --test observe_contract` ok; `pii-memory --test observe_contract` (2) ok.
+- **Mutation control A** (mine): renaming the emitted tool event to `tools.call.MUTANT` turns the
+  adequacy test RED (`assertion left == right failed`). Restored.
+- **Mutation control B** (mine, and this is the answer to the user's "Java interface" question, proven
+  structurally): removing the store registration from the aggregator turns `registry_is_pinned_by_name`
+  RED —
+  `left: ["memory","net","worker","channels"]  right: ["store","memory","net","worker","channels"]`.
+  Restored.
+- `quality-gate.sh` ALL PASS (incl. `PASS: lint-observability`) · `fresh-gate --worktree` PASS.
+
+**Shortfalls, as the worker reported them:** the pinned registry set has no `graph` (it owns no identity,
+so it implements no `Health` — a judgement, not an omission, and spec 102's registry must say so
+explicitly), and the group-line deletion control was not exercised separately.

@@ -70,14 +70,13 @@ pub struct Store {
     /// When set, [`Store::get_graph`] fails with a synthetic error
     /// (test instrumentation; resume fail-closed tests).
     fail_get_graph_for_test: std::sync::atomic::AtomicBool,
+    /// Set once by [`Store::set_observer`].
+    observer: std::sync::OnceLock<std::sync::Arc<dyn pii_observe::Observer>>,
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
 
-/// The on-disk layout version this binary reads and writes.
-pub const FORMAT_VERSION: u64 = 1;
-const FORMAT_VERSION_KEY: &str = "store.format_version";
-pub use identity::{StoreInfo, file_stats};
+pub use identity::{FORMAT_VERSION, StoreInfo, file_stats};
 
 impl Store {
     /// Opens (creating if needed) the store at `path`.
@@ -163,6 +162,7 @@ impl Store {
             fail_read_journal_for_test: std::sync::atomic::AtomicBool::new(false),
             fail_get_run_for_test: std::sync::atomic::AtomicBool::new(false),
             fail_get_graph_for_test: std::sync::atomic::AtomicBool::new(false),
+            observer: std::sync::OnceLock::new(),
         })
     }
 

@@ -102,6 +102,8 @@ pub(crate) struct Inner {
     /// by `control::death` so the state lock is never held across the kill.
     /// Taken by `death` right after releasing the state lock.
     pub stale_child: Mutex<Option<ChildProc>>,
+    /// Set once by [`Supervisor::set_observer`].
+    pub observer: std::sync::OnceLock<Arc<dyn pii_observe::Observer>>,
 }
 
 impl WorkerShared {
@@ -145,6 +147,7 @@ impl Supervisor {
                 state: Mutex::new(WorkerShared::new()),
                 events: Mutex::new(Vec::new()),
                 stale_child: Mutex::new(None),
+                observer: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -181,6 +184,7 @@ impl Supervisor {
     #[allow(clippy::too_many_lines)] // reason: spawn + 3 threads + hello is one
     // cohesive F3.4 unit; splitting it would obscure the handshake ordering.
     pub(crate) fn spawn_and_hello(&self, ctx: &Ctx) -> Result<(), PiiError> {
+        self.note_state(crate::spec::WorkerState::Starting);
         let spec = &self.inner.spec;
         // ETXTBSY retry: a concurrent exec/rename on the program file makes
         // one spawn fail with "Text file busy"; a short bounded retry is
@@ -291,6 +295,7 @@ impl Supervisor {
                     sh.state = crate::spec::WorkerState::Ready;
                     sh.tag = tag;
                 }
+                self.note_state(crate::spec::WorkerState::Ready);
                 self.inner.slots.lock().remove(&hello_id);
                 Ok(())
             }
@@ -325,6 +330,7 @@ impl Supervisor {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     if Instant::now() >= deadline {
                         self.inner.state.lock().state = crate::spec::WorkerState::Failed;
+                        self.note_state(crate::spec::WorkerState::Failed);
                         return Err(PiiError::Unavailable(format!(
                             "WorkerDied: {} pid {pid} — no hello within {ready}ms",
                             self.inner.spec.name

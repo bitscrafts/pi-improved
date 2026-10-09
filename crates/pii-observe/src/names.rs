@@ -18,6 +18,28 @@ pub const CORE_CAP_DENIED: &str = "core.cap.denied";
 pub const HEALTH_STATE_CHANGED: &str = "health.state.changed";
 /// Measure: observer events dropped.
 pub const OBSERVE_EVENTS_DROPPED: &str = "observe.events.dropped";
+/// Event: an egress request was denied by the net policy.
+pub const NET_EGRESS_DENIED: &str = "net.egress.denied";
+/// Event: an outbound dial failed.
+pub const NET_DIAL_FAILED: &str = "net.dial.failed";
+/// Event: accepting an inbound connection failed.
+pub const NET_ACCEPT_FAILED: &str = "net.accept.failed";
+/// Event: a tool was invoked (tool name and outcome).
+pub const TOOLS_CALL: &str = "tools.call";
+/// Event: a bash command matched the deny list.
+pub const TOOLS_DENY_LIST_HIT: &str = "tools.deny_list.hit";
+/// Event: the provider and model a request resolved to.
+pub const MODEL_PROVIDER_IN_FORCE: &str = "model.provider.in_force";
+/// Measure: model request latency.
+pub const MODEL_REQUEST_LATENCY: &str = "model.request.latency";
+/// Event: a model provider returned an error.
+pub const MODEL_PROVIDER_ERROR: &str = "model.provider.error";
+/// Event: a supervised worker changed state.
+pub const WORKER_STATE_CHANGED: &str = "worker.state.changed";
+/// Event: a memory search completed.
+pub const MEMORY_SEARCH: &str = "memory.search";
+/// Event: a memory consolidation completed.
+pub const MEMORY_CONSOLIDATE: &str = "memory.consolidate";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -28,6 +50,17 @@ pub const ALL: &[&str] = &[
     CORE_CAP_DENIED,
     HEALTH_STATE_CHANGED,
     OBSERVE_EVENTS_DROPPED,
+    NET_EGRESS_DENIED,
+    NET_DIAL_FAILED,
+    NET_ACCEPT_FAILED,
+    TOOLS_CALL,
+    TOOLS_DENY_LIST_HIT,
+    MODEL_PROVIDER_IN_FORCE,
+    MODEL_REQUEST_LATENCY,
+    MODEL_PROVIDER_ERROR,
+    WORKER_STATE_CHANGED,
+    MEMORY_SEARCH,
+    MEMORY_CONSOLIDATE,
 ];
 
 #[cfg(test)]

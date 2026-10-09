@@ -8,6 +8,7 @@ pub mod decay;
 pub mod doc;
 pub mod embed;
 pub mod graph_lane;
+mod observe;
 pub mod quant;
 pub mod rrf;
 pub mod search;
@@ -17,6 +18,6 @@ pub mod vector;
 pub use decay::{LAMBDA_ATOM, LAMBDA_PERSONA, LAMBDA_SCENE, LAMBDA_SKILL};
 pub use doc::{Doc, DocKind, Layer};
 pub use embed::{Embedder, NullEmbedder, TrigramEmbedder};
+pub use observe::consolidate_observed;
 pub use search::{MemoryHit, MemorySearchResult, MemorySearcher};
 pub use tokenize::tokenize;
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

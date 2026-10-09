@@ -23,6 +23,10 @@ impl crate::Store {
     /// # Errors
     /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn put_session(&self, id: &str, bytes: &[u8]) -> Result<(), PiiError> {
+        self.report_write("put_session", self.put_session_inner(id, bytes))
+    }
+
+    fn put_session_inner(&self, id: &str, bytes: &[u8]) -> Result<(), PiiError> {
         if self
             .fail_session_writes_for_test
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -231,6 +235,17 @@ impl crate::Store {
     /// # Errors
     /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn append_session_message(&self, session_id: &str, bytes: &[u8]) -> Result<u64, PiiError> {
+        self.report_write(
+            "append_session_message",
+            self.append_session_message_inner(session_id, bytes),
+        )
+    }
+
+    fn append_session_message_inner(
+        &self,
+        session_id: &str,
+        bytes: &[u8],
+    ) -> Result<u64, PiiError> {
         if self
             .fail_session_writes_for_test
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -335,6 +350,18 @@ impl crate::Store {
     /// # Errors
     /// Returns [`PiiError::StoreOp`] on a redb failure.
     pub fn put_session_snapshot(
+        &self,
+        session_id: &str,
+        seq: u64,
+        bytes: &[u8],
+    ) -> Result<(), PiiError> {
+        self.report_write(
+            "put_session_snapshot",
+            self.put_session_snapshot_inner(session_id, seq, bytes),
+        )
+    }
+
+    fn put_session_snapshot_inner(
         &self,
         session_id: &str,
         seq: u64,

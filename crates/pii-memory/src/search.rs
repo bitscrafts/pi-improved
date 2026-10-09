@@ -42,13 +42,18 @@ pub struct MemorySearchResult {
 pub struct MemorySearcher {
     store: Arc<MemStore>,
     embedder: Option<Arc<dyn Embedder>>,
+    pub(crate) observer: Option<Arc<dyn pii_observe::Observer>>,
 }
 
 impl MemorySearcher {
     /// Builds with an optional embedder (`None` = degraded vector lane).
     #[must_use]
     pub fn new(store: Arc<MemStore>, embedder: Option<Arc<dyn Embedder>>) -> Self {
-        Self { store, embedder }
+        Self {
+            store,
+            embedder,
+            observer: None,
+        }
     }
 
     /// Runs the fused search (F4.9/F4.10). If the embedder errors or reports
@@ -58,6 +63,12 @@ impl MemorySearcher {
     /// # Errors
     /// Store failures.
     pub fn search(&self, ctx: &Ctx, q: &str, k: usize) -> Result<MemorySearchResult, PiiError> {
+        let result = self.search_inner(ctx, q, k);
+        self.observe_search(&result);
+        result
+    }
+
+    fn search_inner(&self, ctx: &Ctx, q: &str, k: usize) -> Result<MemorySearchResult, PiiError> {
         let bm = bm25_search(&self.store, q, k)?;
         let bm_ids: Vec<String> = bm.iter().map(|(d, _)| d.clone()).collect();
 
@@ -118,6 +129,10 @@ impl MemorySearcher {
             degraded,
             lanes,
         })
+    }
+
+    pub(crate) fn store_health(&self) -> pii_observe::SubsystemHealth {
+        pii_observe::Health::health(self.store.as_ref())
     }
 
     fn kind_of(&self, id: &str) -> crate::doc::DocKind {

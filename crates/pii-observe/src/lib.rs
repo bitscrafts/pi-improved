@@ -24,5 +24,5 @@ mod observer;
 pub use event::{Event, Fields, Level, OwnedEvent, SpanId};
 pub use health::{Health, State, SubsystemHealth};
 pub use measure::Measure;
-pub use observer::{NoopObserver, NullObserver, Observable, Observed, Observer};
+pub use observer::{NoopObserver, NullObserver, Observable, Observed, Observer, Recorder};
 // observability: none — this is the contract crate itself

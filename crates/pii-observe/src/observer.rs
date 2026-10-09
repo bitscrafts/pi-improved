@@ -22,6 +22,59 @@ impl Observer for NullObserver {}
 /// Alias-style helper kept for ergonomic naming at call sites.
 pub type NoopObserver = NullObserver;
 
+/// An observer that records everything it is told, for tests that assert on
+/// the names a subsystem emitted.
+#[derive(Debug, Default)]
+// reason: pii-observe is the dependency floor (serde only); it cannot take
+// parking_lot, and a poisoned lock here just drops a recording.
+#[allow(clippy::disallowed_types)]
+pub struct Recorder {
+    events: std::sync::Mutex<Vec<crate::OwnedEvent>>,
+    measures: std::sync::Mutex<Vec<Measure>>,
+}
+
+impl Recorder {
+    /// A fresh recorder.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Every event received so far, in order.
+    #[must_use]
+    pub fn events(&self) -> Vec<crate::OwnedEvent> {
+        self.events.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    /// Every measure received so far, in order.
+    #[must_use]
+    pub fn measures(&self) -> Vec<Measure> {
+        self.measures.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    /// The events whose kind is `kind`.
+    #[must_use]
+    pub fn events_named(&self, kind: &str) -> Vec<crate::OwnedEvent> {
+        self.events()
+            .into_iter()
+            .filter(|e| e.kind == kind)
+            .collect()
+    }
+}
+
+impl Observer for Recorder {
+    fn event(&self, e: &Event) {
+        if let Ok(mut g) = self.events.lock() {
+            g.push(crate::OwnedEvent::from(e));
+        }
+    }
+    fn measure(&self, m: &Measure) {
+        if let Ok(mut g) = self.measures.lock() {
+            g.push(*m);
+        }
+    }
+}
+
 /// The per-crate seam: a component that may have an observer attached.
 pub trait Observable {
     /// The attached observer, if any.

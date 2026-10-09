@@ -157,13 +157,65 @@ impl Observer for MultiObserver {
     }
 }
 
+/// Bridges the legacy [`Observer`] surface onto the `pii-observe` contract.
+///
+/// Metrics and persist/denial events a subsystem raises through a [`crate::Ctx`]
+/// reach the contract observer as named [`pii_observe::Event`]s. Metric names
+/// that are not registered in [`pii_observe::names`] are dropped (an event's
+/// kind must be a registered `&'static str`).
+pub struct ContractObserver(Arc<dyn pii_observe::Observer>);
+
+impl ContractObserver {
+    /// Forwards to `inner`.
+    #[must_use]
+    pub fn new(inner: Arc<dyn pii_observe::Observer>) -> Self {
+        Self(inner)
+    }
+}
+
+impl Observer for ContractObserver {
+    fn event(&self, e: &ObsEvent) {
+        use pii_observe::{Event, Level, names};
+        match e {
+            ObsEvent::Denial { principal, cap } => self.0.event(
+                &Event::new("core", Level::Warn, names::CORE_CAP_DENIED)
+                    .field("principal", principal.as_str())
+                    .field("cap", cap.as_str()),
+            ),
+            ObsEvent::PersistError { context, message } => self.0.event(
+                &Event::new("store", Level::Error, names::STORE_PERSIST_ERROR)
+                    .field("context", context.as_str())
+                    .field("message", message.as_str()),
+            ),
+            ObsEvent::Run(_) | ObsEvent::Journal { .. } => {}
+        }
+    }
+
+    fn metric(&self, m: &Metric) {
+        use pii_observe::{Event, Level, names};
+        if let Some(kind) = names::ALL.iter().find(|n| **n == m.name) {
+            self.0
+                .event(&Event::new("graph", Level::Debug, kind).field("value", m.value));
+        }
+    }
+
+    fn flush(&self) {
+        self.0.flush();
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
 
     use std::sync::Arc;
 
-    use super::{Metric, Observer, RecordingObserver};
+    use super::{ContractObserver, Metric, Observer, RecordingObserver};
 
     #[test]
     fn recording_observer_reports_max_metric() {
@@ -176,5 +228,23 @@ mod tests {
         }
         assert_eq!(o.max_metric("graph.batch.width"), 2);
         assert_eq!(o.max_metric("missing"), 0);
+    }
+
+    #[test]
+    fn contract_observer_maps_registered_metrics_and_drops_unknown() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let o = ContractObserver::new(rec.clone());
+        o.metric(&Metric {
+            name: String::from(pii_observe::names::GRAPH_NODE_DEAD),
+            value: 2,
+        });
+        o.metric(&Metric {
+            name: String::from("not.registered"),
+            value: 1,
+        });
+        let evs = rec.events();
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].kind, pii_observe::names::GRAPH_NODE_DEAD);
+        assert_eq!(evs[0].fields.get("value"), Some(&serde_json::json!(2)));
     }
 }

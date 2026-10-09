@@ -11,6 +11,7 @@ description = "Built-in tools: fs read/write/edit, bash mediation, sandbox profi
 pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
 pii-model = { path = "../pii-model" }
+pii-observe = { path = "../pii-observe" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 pii-uds = { path = "../pii-uds" }
 serde_json = { workspace = true }

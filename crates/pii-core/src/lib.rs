@@ -30,7 +30,9 @@ pub use config::env_var;
 pub use ctx::Ctx;
 pub use fscap::FsCap;
 pub use net::HttpTransport;
-pub use observe::{Metric, MultiObserver, NullObserver, ObsEvent, Observer, RecordingObserver};
+pub use observe::{
+    ContractObserver, Metric, MultiObserver, NullObserver, ObsEvent, Observer, RecordingObserver,
+};
 pub use pii_abi::{CapKind, PiiError};
 /// The dependency-free observability contract (spec 97); the legacy
 /// `Observer`/`ObsEvent`/`Metric` types above stay as the compatibility surface.

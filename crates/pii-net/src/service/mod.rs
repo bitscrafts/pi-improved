@@ -4,6 +4,7 @@
 mod conn;
 mod dechunk;
 mod http;
+mod observe;
 
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
@@ -55,6 +56,7 @@ impl NetService {
             clock: cfg.clock,
             registry: Mutex::new(Registry::default()),
             listeners: Mutex::new(BTreeMap::new()),
+            observer: std::sync::OnceLock::new(),
         }))
     }
 
@@ -66,6 +68,22 @@ impl NetService {
     #[allow(clippy::significant_drop_tightening)] // reason: the MutexGuard must
     // stay held across the read-modify-write of the lease counter.
     pub fn connect(
+        &self,
+        ctx: &Ctx,
+        target: &Target,
+        key: &str,
+        timeout_ms: u64,
+        scheme: Scheme,
+    ) -> Result<Conn, PiiError> {
+        let result = self.connect_inner(ctx, target, key, timeout_ms, scheme);
+        if let Err(e) = &result {
+            self.observe_connect_failure(target, key, e);
+        }
+        result
+    }
+
+    #[allow(clippy::significant_drop_tightening)] // reason: see `connect`.
+    fn connect_inner(
         &self,
         ctx: &Ctx,
         target: &Target,

@@ -114,7 +114,7 @@ impl Engine<'_> {
             // Dead propagation to a fixpoint, journaling each new death.
             let newly = propagate_dead(spec, st);
             if !newly.is_empty() {
-                self.metric("graph.node.dead", newly.len() as u64);
+                self.metric(pii_observe::names::GRAPH_NODE_DEAD, newly.len() as u64);
                 for id in &newly {
                     self.jr.append(&RunEvent::NodeDead { node: id.clone() })?;
                 }
@@ -122,7 +122,7 @@ impl Engine<'_> {
 
             // Unsatisfiable join: LOUD, immediate, named (within one tick).
             if let Some(n) = self.unsatisfiable(st) {
-                self.metric("graph.join.unsatisfiable", 1);
+                self.metric(pii_observe::names::GRAPH_JOIN_UNSATISFIABLE, 1);
                 let terminal = Terminal::Failure {
                     error: format!("join can never be satisfied: node '{}'", n.id),
                 };
@@ -165,7 +165,7 @@ impl Engine<'_> {
 
             let ids: Vec<NodeId> = batch.iter().map(|n| n.id.clone()).collect();
             let width = u32::try_from(batch.len()).unwrap_or(u32::MAX);
-            self.metric("graph.batch.width", u64::from(width));
+            self.metric(pii_observe::names::GRAPH_BATCH_WIDTH, u64::from(width));
             self.jr
                 .append(&RunEvent::TickStarted { batch: ids, width })?;
 

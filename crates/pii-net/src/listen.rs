@@ -171,7 +171,7 @@ pub(crate) struct ListenerEntry {
 #[allow(clippy::print_stderr)] // reason: accept-loop startup failure is a
 // daemon-level diagnostic; no logger exists in pii-net.
 fn accept_loop(
-    _service: NetService,
+    service: NetService,
     listener: TcpListener,
     handler: Arc<dyn HttpHandler>,
     stop: std::sync::mpsc::Receiver<()>,
@@ -249,7 +249,10 @@ fn accept_loop(
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(20));
             }
-            Err(_) => break,
+            Err(e) => {
+                service.observe_accept_failure(&e);
+                break;
+            }
         }
     }
     drop(conn_tx); // close the queue; workers drain remaining conns then exit

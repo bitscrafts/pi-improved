@@ -110,6 +110,17 @@ impl AgentNode {
         ctx: &Ctx,
         call: &pii_model::ToolCall,
     ) -> Result<serde_json::Value, PiiError> {
+        let result = self.call_tool_bounded_inner(ctx, call);
+        self.toolset
+            .observe_call(&call.name, &call.arguments, &result);
+        result
+    }
+
+    fn call_tool_bounded_inner(
+        &self,
+        ctx: &Ctx,
+        call: &pii_model::ToolCall,
+    ) -> Result<serde_json::Value, PiiError> {
         let Some(tool) = self.toolset.get(&call.name) else {
             return Err(PiiError::NotFound(format!("tool '{}'", call.name)));
         };

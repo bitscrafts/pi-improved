@@ -218,6 +218,9 @@ pub use llamacpp::LlamaCppProvider;
 
 pub mod llamacpp_tools;
 
+mod observed;
+pub use observed::ObservedProvider;
+
 /// Resolves a model spec: `scripted:<path>` needs no transport.
 ///
 /// `ollama:` (B1, opus review) is now wired through
@@ -539,4 +542,3 @@ mod contract {
         assert_eq!(resp2.text, "full turn text");
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

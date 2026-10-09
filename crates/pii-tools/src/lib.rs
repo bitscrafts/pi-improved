@@ -8,6 +8,7 @@
 pub mod bash;
 pub mod fs;
 pub mod memory;
+mod observe;
 pub mod sandbox;
 pub mod search;
 pub mod worktree;
@@ -51,6 +52,8 @@ pub trait Tool: Send + Sync {
 #[derive(Clone, Default)]
 pub struct ToolSet {
     tools: BTreeMap<&'static str, Arc<dyn Tool>>,
+    /// Receives one event per reported call (see [`ToolSet::observe_call`]).
+    observer: Option<Arc<dyn pii_observe::Observer>>,
 }
 
 impl ToolSet {
@@ -87,7 +90,10 @@ impl ToolSet {
         ] {
             tools.insert(t.name(), t);
         }
-        Self { tools }
+        Self {
+            tools,
+            observer: None,
+        }
     }
 
     /// A subset by name; unknown names are ignored (allowlist semantics).
@@ -100,6 +106,7 @@ impl ToolSet {
                 .filter(|(k, _)| names.iter().any(|n| n == *k))
                 .map(|(k, v)| (*k, Arc::clone(v)))
                 .collect(),
+            observer: self.observer.clone(),
         }
     }
 
@@ -171,4 +178,3 @@ mod tests {
         assert_eq!(set.get("fs_read").map(|t| t.timeout()), Some(None));
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

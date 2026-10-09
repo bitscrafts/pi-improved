@@ -13,15 +13,20 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use pii_abi::PiiError;
-use pii_observe::{Health, SubsystemHealth};
+use pii_observe::{Event, Health, Level, Observable, Observed, Observer, SubsystemHealth, names};
 use redb::{ReadableDatabase, ReadableTable, ReadableTableMetadata};
 
 use crate::tables::{
     GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_JOURNAL, RUN_SNAPSHOT, SESSION, SESSION_MSG,
 };
-use crate::{FORMAT_VERSION, FORMAT_VERSION_KEY, MemStore, Store};
+use crate::{MemStore, Store};
+
+/// The on-disk layout version this binary reads and writes.
+pub const FORMAT_VERSION: u64 = 1;
+const FORMAT_VERSION_KEY: &str = "store.format_version";
 
 /// What a store file reports about itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -271,5 +276,74 @@ mod tests {
         store.append_event(&mut header, &ev).unwrap();
         let after = store.info().unwrap();
         assert_eq!((after.tables["run"], after.tables["run_journal"]), (1, 1));
+    }
+}
+// ---- observability seam (spec 100) ----
+
+impl Observable for Store {
+    fn observer(&self) -> Option<&dyn Observer> {
+        self.observer.get().map(AsRef::as_ref)
+    }
+}
+
+impl Store {
+    /// Attaches the observer (first call wins; later calls are ignored).
+    ///
+    /// Set after construction rather than injected into [`Store::open`]: the
+    /// store is opened at many call sites (and shared as an `Arc`) before any
+    /// observer exists.
+    pub fn set_observer(&self, observer: Arc<dyn Observer>) {
+        let _ = self.observer.set(observer);
+    }
+
+    /// Passes `r` through unchanged, reporting a failure of write `op`.
+    pub(crate) fn report_write<T>(
+        &self,
+        op: &'static str,
+        r: Result<T, PiiError>,
+    ) -> Result<T, PiiError> {
+        if let Err(e) = &r {
+            self.emit(
+                &Event::new("store", Level::Error, names::STORE_PERSIST_ERROR)
+                    .field("op", op)
+                    .field("path", self.path.display().to_string())
+                    .field("error", e.to_string()),
+            );
+        }
+        r
+    }
+}
+
+#[cfg(test)]
+mod observe_tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use pii_observe::Recorder;
+
+    use super::*;
+
+    #[test]
+    fn persist_failure_reaches_the_observer_and_is_still_returned() {
+        let dir =
+            crate::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "store-observe-").unwrap();
+        let store = Store::open(&dir.path().join("s.redb")).unwrap();
+        let rec = Arc::new(Recorder::new());
+        store.set_observer(rec.clone());
+        store.set_fail_session_writes_for_test(true);
+        assert!(store.append_session_message("s1", b"x").is_err());
+        let ev = rec.events_named(names::STORE_PERSIST_ERROR);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(
+            ev[0].fields.get("op"),
+            Some(&"append_session_message".into())
+        );
+        store.set_fail_session_writes_for_test(false);
+        store.append_session_message("s1", b"x").unwrap();
+        assert_eq!(rec.events_named(names::STORE_PERSIST_ERROR).len(), 1);
     }
 }

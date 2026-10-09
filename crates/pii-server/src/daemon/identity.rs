@@ -4,6 +4,7 @@
 //! two daemons is visible at a glance. Everything here is read from the live process —
 //! resolved paths and persisted values, never a profile name or a constant.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use pii_observe::{Health, SubsystemHealth};
@@ -13,8 +14,61 @@ use pii_proto::sys::{
 use pii_tools::sandbox::SandboxProfileName;
 use sha2::{Digest, Sha256};
 
-use super::status::DaemonContext;
+use super::status::{ChannelRuntime, DaemonContext};
 use crate::Engine;
+
+/// The subsystem groups `sys.status` aggregates, in report order. A group
+/// with no live members (no daemon, no workers configured) is still
+/// registered; `registry_is_pinned_by_name` fails if one is dropped.
+const GROUPS: [&str; 5] = ["store", "memory", "net", "worker", "channels"];
+
+/// Every health-reporting subsystem the daemon aggregates, as
+/// `&dyn Health` under its group name.
+struct Registry<'a>(Vec<(&'static str, Vec<&'a dyn Health>)>);
+
+impl<'a> Registry<'a> {
+    fn build(
+        engine: &'a Engine,
+        net: Option<&'a pii_net::NetService>,
+        workers: Option<&'a BTreeMap<String, pii_worker::Supervisor>>,
+        channels: Option<&'a BTreeMap<String, ChannelRuntime>>,
+    ) -> Self {
+        Self(vec![
+            (GROUPS[0], vec![&*engine.store as &dyn Health]),
+            (GROUPS[1], vec![&*engine.memory as &dyn Health]),
+            (
+                GROUPS[2],
+                net.map(|n| n as &dyn Health).into_iter().collect(),
+            ),
+            (
+                GROUPS[3],
+                workers
+                    .into_iter()
+                    .flat_map(|m| m.values().map(|w| w as &dyn Health))
+                    .collect(),
+            ),
+            (
+                GROUPS[4],
+                channels
+                    .into_iter()
+                    .flat_map(|m| m.values().map(|c| c as &dyn Health))
+                    .collect(),
+            ),
+        ])
+    }
+
+    #[cfg(test)]
+    fn group_names(&self) -> Vec<&'static str> {
+        self.0.iter().map(|(g, _)| *g).collect()
+    }
+
+    fn reports(&self) -> Vec<SubsystemHealth> {
+        self.0
+            .iter()
+            .flat_map(|(_, members)| members.iter().map(|h| h.health()))
+            .collect()
+    }
+}
 
 /// Fills the identity fields of `out` from `engine` (and `ctx` when a daemon
 /// is attached). The pre-existing fields are left untouched.
@@ -47,7 +101,14 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         revision: env!("PII_GIT_REV").to_owned(),
         target: env!("PII_TARGET").to_owned(),
     };
-    let mut reports: Vec<SubsystemHealth> = vec![engine.store.health(), engine.memory.health()];
+    let workers = ctx.map(|c| c.workers.lock());
+    let channels = ctx.map(|c| c.channels.lock());
+    let registry = Registry::build(
+        engine,
+        ctx.map(|c| &*c.net),
+        workers.as_deref(),
+        channels.as_deref(),
+    );
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
         out.mounts.extend(daemon_mounts(ctx));
@@ -57,10 +118,10 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
                 .ok()
                 .map(|b| hex(&Sha256::digest(b))),
         };
-        reports.push(ctx.net.health());
-        reports.extend(ctx.workers.lock().values().map(Health::health));
-        reports.extend(ctx.channels.lock().values().map(Health::health));
     }
+    let reports = registry.reports();
+    drop(registry);
+    drop((workers, channels));
     out.counts = counts;
     out.subsystems = reports.into_iter().map(wire).collect();
 }
@@ -134,4 +195,43 @@ fn hex(bytes: &[u8]) -> String {
         let _ = write!(s, "{b:02x}");
         s
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+    use crate::EngineConfig;
+
+    /// The aggregator's registered set, pinned by NAME (spec 100 R2): dropping
+    /// or renaming a registration changes this list and fails the test.
+    #[test]
+    fn registry_is_pinned_by_name() {
+        let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "registry-").unwrap();
+        let engine = Engine::new(EngineConfig {
+            workspace: dir.path().to_path_buf(),
+            store_path: dir.path().join("store.redb"),
+            model: format!(
+                "scripted:{}/../../fixtures/phase2/hello.json",
+                env!("CARGO_MANIFEST_DIR")
+            ),
+            sandbox: SandboxProfileName::Off,
+            route_policy: BTreeMap::new(),
+            session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            graph_dir: dir.path().join("graphs"),
+        })
+        .unwrap();
+        let registry = Registry::build(&engine, None, None, None);
+        assert_eq!(
+            registry.group_names(),
+            ["store", "memory", "net", "worker", "channels"]
+        );
+        let names: Vec<_> = registry.reports().into_iter().map(|h| h.name).collect();
+        assert_eq!(
+            names,
+            ["store", "memory"],
+            "bare engine reports store+memory"
+        );
+    }
 }

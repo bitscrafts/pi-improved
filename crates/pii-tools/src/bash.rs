@@ -23,6 +23,12 @@ const DENY_LIST: &[&str] = &[
 const MAX_OUTPUT: usize = 64 * 1024;
 const TRUNCATION_MARKER: &str = "\n[...truncated...]";
 
+/// The deny-list entry `command` matches, if any.
+#[must_use]
+pub fn deny_list_hit(command: &str) -> Option<&'static str> {
+    DENY_LIST.iter().find(|d| command.contains(**d)).copied()
+}
+
 /// `bash { command, cwd?, timeout_ms? }` (F3.7).
 pub struct BashTool {
     /// Workspace the tool is bound to (cwd must stay inside).
@@ -52,12 +58,10 @@ impl Tool for BashTool {
 
     fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
         let command = require_str(args, "command")?;
-        for d in DENY_LIST {
-            if command.contains(d) {
-                return Err(PiiError::Denied(format!(
-                    "command matches deny list ('{d}')"
-                )));
-            }
+        if let Some(d) = deny_list_hit(command) {
+            return Err(PiiError::Denied(format!(
+                "command matches deny list ('{d}')"
+            )));
         }
         let cwd = match args.get("cwd").and_then(Value::as_str) {
             Some(c) => {

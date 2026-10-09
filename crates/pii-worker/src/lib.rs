@@ -4,6 +4,7 @@
 pub mod control;
 pub mod frame;
 mod health;
+mod observe;
 pub mod spec;
 pub mod supervisor;
 
