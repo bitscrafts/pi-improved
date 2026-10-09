@@ -383,3 +383,37 @@ incident, model-escalation config, Opus/026 analysis derivation, etc.).
 - Worker honesty note: criterion `p pii` was mechanically unsatisfiable (no lib named pii)
   — intent-equivalent verified; spec wording fixed.
 - Commits: 5712f1c (73+74+criteria annotations). Tree clean.
+
+## 2026-10-09 03:19Z — batch C AUTHORED + claude+sonnet lane READY; launch BLOCKED on OAuth re-login
+
+- Specs landed (commit 48305d5; from 043 §10 remaining):
+  - **75** docs-correction pass (§9 items 1-8): HANDOFF historical-snapshot banner + 57-61 row,
+    19-crate count, 030 dedup, TOPIC-MAP refresh, per-file status banners, INDEX/TOC declutter
+    (000-TOPIC-MAP as the list canonical; 023→02-guides, 033→05-operations), pidag-way-of-work
+    iterations=2 (matches config), manuals +run.resume/+run.trace/+pii-uds/+pii-http-fetch.
+  - **76** D7 (15 hardcoded `/projects/pi-improved` in xtask → workspace_root()) + F1
+    (llama-cpp-2 behind a `llamacpp` feature; default build must not link llama) + F2
+    (unused-deps sweep via unused-crate-dependencies warnings, non-test targets only).
+  - **77** D5 journal-flush lossless (drain only after append Ok, restore pending on Err)
+    + 3 `let _ = self.flush()` sites surfaced through the error channel +
+    clippy::let_underscore_must_use enabled for pii-graph (named allows only).
+  - **78** D4 resume fail-open closed: stored_run_scope_root + budget-recovery errors fail
+    the resume (no `.ok().flatten()`, no `u64::MAX` fallback); 2 store-fault-seam RED tests.
+- Lane: **claude+sonnet** per user directive ("proceed with claude+sonnet") —
+  `scripts/run-batchC-claude.sh` (committed 24d29f0): one spec per run, stream-json live
+  monitoring, session id captured, specs/ read-only enforced, dirty-guard, envelope-on-budget.
+- **BLOCKER: claude OAuth session + refresh token BOTH expired (refresh died 2026-10-06T18:47Z).**
+  `claude auth login` is running headless (PTY proc) awaiting the user's browser authorization
+  code. Batch C dispatch starts the moment login completes. Fallback if abandoned:
+  pi+glm-5.3-flash direct lane (same specs, same script shape).
+- Also completed this turn: both HANDOFFs refreshed; no other pending pii work before 75-78.
+
+### §9 docs-correction detail (the spec-75 contract, one line each)
+1. HANDOFF: "historical snapshot" banner above `:188`; +1 row for specs 57-61; `:32` → `_docs/05-operations/033-...`.
+2. AGENTS.md: `:51` 19 crates + xtask; `:8` → 002-pii-architecture-plan-pass2.md; `:~58` → `Cargo.toml:56`.
+3. 030: collapse `:140-145` triples; `:485` 035/036 → 037; "28 files" decision text; +pointer to 043.
+4. 000-TOPIC-MAP: replace plan text w/ current map; "Still to do" done; 041 collision resolved.
+5. 025/024/015/012/032/033: one status banner each (landing commit cited).
+6. INDEX+TOC: link to 000-TOPIC-MAP; fix layout/crate lines; move 023+033.
+7. pidag-way-of-work.md:91 iterations=2; pii-mcp-bridge.md:23 = `pii-mcp` binary.
+8. technical-manual.tex: +2 methods (run.resume, run.trace), +2 crates, "feature-gated"→"separate binary"; 008→012.
