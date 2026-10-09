@@ -13,7 +13,8 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use pii_evolve::driver::{self, BossLaunch};
+use pii_evolve::driver::{BossLaunch, run_cycle_observed};
+use pii_observe::StderrObserver;
 
 const USAGE: &str = "usage: pii-evolve <state-dir> [--socket PATH]";
 
@@ -46,17 +47,8 @@ fn main() -> ExitCode {
     }
 
     let cfg = BossLaunch::new(socket, PathBuf::from(state_dir));
-    match driver::run_cycle(&cfg) {
-        Ok(launched) => {
-            eprintln!(
-                "pii-evolve: launched {} (cycle {})",
-                launched.run_id, launched.cycle
-            );
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("pii-evolve: {e}");
-            ExitCode::FAILURE
-        }
+    match run_cycle_observed(&cfg, &StderrObserver) {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(_) => ExitCode::FAILURE,
     }
 }

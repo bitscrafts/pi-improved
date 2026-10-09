@@ -10,6 +10,7 @@
 use std::path::PathBuf;
 
 use pii_core::PiiError;
+use pii_observe::{Event, Level, NullObserver, Observer, names};
 use pii_proto::client::Client;
 use pii_proto::method::Method;
 use pii_proto::run::{RunStartParams, RunStartResult};
@@ -71,14 +72,37 @@ fn client_info() -> PeerInfo {
 /// Returns [`PiiError`] on `state.md` I/O failure, a socket connect/
 /// handshake failure, or an RPC error from the daemon.
 pub fn run_cycle(cfg: &BossLaunch) -> Result<LaunchedRun, PiiError> {
+    run_cycle_observed(cfg, &NullObserver)
+}
+
+/// [`run_cycle`], reporting [`names::EVOLVE_CYCLE_STARTED`], then either
+/// [`names::EVOLVE_CYCLE_FINISHED`] or [`names::EVOLVE_LAUNCH_FAILED`] to
+/// `observer`.
+///
+/// # Errors
+/// As [`run_cycle`].
+pub fn run_cycle_observed(
+    cfg: &BossLaunch,
+    observer: &dyn Observer,
+) -> Result<LaunchedRun, PiiError> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| PiiError::Internal(format!("tokio runtime: {e}")))?;
-    rt.block_on(run_cycle_async(cfg))
+    let result = rt.block_on(run_cycle_async(cfg, observer));
+    if let Err(e) = &result {
+        observer.event(
+            &Event::new("evolve", Level::Error, names::EVOLVE_LAUNCH_FAILED)
+                .field("error", e.to_string()),
+        );
+    }
+    result
 }
 
-async fn run_cycle_async(cfg: &BossLaunch) -> Result<LaunchedRun, PiiError> {
+async fn run_cycle_async(
+    cfg: &BossLaunch,
+    observer: &dyn Observer,
+) -> Result<LaunchedRun, PiiError> {
     let mut state = StateDoc::load(&cfg.state_dir)?;
     let cycle: u64 = state
         .properties
@@ -87,6 +111,11 @@ async fn run_cycle_async(cfg: &BossLaunch) -> Result<LaunchedRun, PiiError> {
         .unwrap_or(0)
         + 1;
 
+    observer.event(
+        &Event::new("evolve", Level::Info, names::EVOLVE_CYCLE_STARTED)
+            .field("cycle", cycle)
+            .field("graph", cfg.graph.as_str()),
+    );
     let started = launch(cfg, cycle).await?;
 
     state
@@ -97,6 +126,11 @@ async fn run_cycle_async(cfg: &BossLaunch) -> Result<LaunchedRun, PiiError> {
         .insert(String::from("last_run_id"), started.run_id.clone());
     state.phase = String::from("watching");
     state.save(&cfg.state_dir)?;
+    observer.event(
+        &Event::new("evolve", Level::Info, names::EVOLVE_CYCLE_FINISHED)
+            .field("cycle", cycle)
+            .field("run_id", started.run_id.as_str()),
+    );
 
     Ok(LaunchedRun {
         run_id: started.run_id,

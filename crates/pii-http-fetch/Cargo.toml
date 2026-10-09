@@ -12,6 +12,7 @@ pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
 pii-model = { path = "../pii-model" }
 pii-net = { path = "../pii-net" }
+pii-observe = { path = "../pii-observe" }
 parking_lot = { workspace = true }
 serde_json = { workspace = true }
 

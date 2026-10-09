@@ -22,6 +22,28 @@ impl Observer for NullObserver {}
 /// Alias-style helper kept for ergonomic naming at call sites.
 pub type NoopObserver = NullObserver;
 
+/// An observer for command-line binaries: writes each event to stderr as
+/// `<subsystem>: <kind> <fields-json>`. Measures are ignored.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StderrObserver;
+
+impl StderrObserver {
+    /// The line an event is written as.
+    #[must_use]
+    pub fn render(e: &Event) -> String {
+        let fields = serde_json::to_string(&e.fields).unwrap_or_default();
+        format!("{}: {} {fields}", e.subsystem, e.kind)
+    }
+}
+
+impl Observer for StderrObserver {
+    fn event(&self, e: &Event) {
+        use std::io::Write as _;
+        // reason: nowhere to report a failed stderr write; dropping is correct.
+        let _ = writeln!(std::io::stderr(), "{}", Self::render(e));
+    }
+}
+
 /// An observer that records everything it is told, for tests that assert on
 /// the names a subsystem emitted.
 #[derive(Debug, Default)]
@@ -127,6 +149,15 @@ mod tests {
         fn observer(&self) -> Option<&dyn Observer> {
             self.0.as_ref().map(|c| c as &dyn Observer)
         }
+    }
+
+    #[test]
+    fn stderr_observer_renders_subsystem_kind_and_fields() {
+        let e = Event::new("cli", Level::Error, names::CLI_FAILURE).field("why", "x");
+        assert_eq!(
+            StderrObserver::render(&e),
+            r#"cli: cli.failure {"why":"x"}"#
+        );
     }
 
     #[test]

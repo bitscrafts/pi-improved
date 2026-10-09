@@ -2,6 +2,7 @@
 //! `approve`, `cron`. Each connects to the daemon's UDS control socket,
 //! calls one method, prints the JSON result, and exits.
 
+use crate::cli_util::fail;
 use std::process::ExitCode;
 
 use pii_proto::client::Client;
@@ -64,7 +65,7 @@ pub(crate) fn print_result(method: Method, params: serde_json::Value) -> ExitCod
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("ctl", &e);
             ExitCode::from(2)
         }
     }
@@ -91,7 +92,7 @@ pub(crate) fn cmd_net(args: &mut std::env::ArgsOs) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("ctl", &e);
             ExitCode::from(2)
         }
     }

@@ -4,6 +4,7 @@
 //! waits for each terminal, and prints `soak: runs=<N> ok=<n> fail=<n>
 //! ms=<total>` — the load driver `xtask rss-gate` runs against a real daemon.
 
+use crate::cli_util::fail;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -76,7 +77,7 @@ pub(crate) fn cmd_soak(args: &mut std::env::ArgsOs) -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("error: tokio runtime: {e}");
+            fail("soak", format!("tokio runtime: {e}"));
             return ExitCode::from(2);
         }
     };

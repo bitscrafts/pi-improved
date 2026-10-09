@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Read-only web viewer: proxies the daemon's UDS JSON-RPC over loopback HTTP (P4.6)"
 
 [dependencies]
+pii-observe = { path = "../pii-observe" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 pii-uds = { path = "../pii-uds" }
 serde = { workspace = true }

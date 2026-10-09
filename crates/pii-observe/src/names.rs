@@ -40,6 +40,34 @@ pub const WORKER_STATE_CHANGED: &str = "worker.state.changed";
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.
 pub const MEMORY_CONSOLIDATE: &str = "memory.consolidate";
+/// Event: an operator-facing CLI failure (startup, daemon connect, graph error).
+pub const CLI_FAILURE: &str = "cli.failure";
+/// Event: a channel poll failed.
+pub const CHANNEL_POLL_FAILED: &str = "channel.poll.failed";
+/// Event: a channel send failed.
+pub const CHANNEL_SEND_FAILED: &str = "channel.send.failed";
+/// Measure: messages polled but not yet acknowledged past the cursor.
+pub const CHANNEL_CURSOR_LAG: &str = "channel.cursor.lag";
+/// Event: a TUI render or attach failure.
+pub const TUI_FAILURE: &str = "tui.failure";
+/// Event: a reattach resumed after a gap in the stream.
+pub const TUI_REATTACH_GAP: &str = "tui.reattach.gap";
+/// Event: a web request failed.
+pub const WEB_REQUEST_FAILED: &str = "web.request.failed";
+/// Event: the daemon (upstream) returned an error to the web proxy.
+pub const WEB_UPSTREAM_ERROR: &str = "web.upstream.error";
+/// Event: an MCP tool call failed.
+pub const MCP_TOOL_CALL_FAILED: &str = "mcp.tool_call.failed";
+/// Event: an evolve cycle started.
+pub const EVOLVE_CYCLE_STARTED: &str = "evolve.cycle.started";
+/// Event: an evolve cycle finished.
+pub const EVOLVE_CYCLE_FINISHED: &str = "evolve.cycle.finished";
+/// Event: launching the boss graph failed.
+pub const EVOLVE_LAUNCH_FAILED: &str = "evolve.launch.failed";
+/// Event: an `http_fetch` call completed (status or error).
+pub const FETCH_OUTCOME: &str = "fetch.outcome";
+/// Event: an `http_fetch` target was refused by the allowlist.
+pub const FETCH_ALLOWLIST_DENIED: &str = "fetch.allowlist.denied";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -61,6 +89,20 @@ pub const ALL: &[&str] = &[
     WORKER_STATE_CHANGED,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,
+    CLI_FAILURE,
+    CHANNEL_POLL_FAILED,
+    CHANNEL_SEND_FAILED,
+    CHANNEL_CURSOR_LAG,
+    TUI_FAILURE,
+    TUI_REATTACH_GAP,
+    WEB_REQUEST_FAILED,
+    WEB_UPSTREAM_ERROR,
+    MCP_TOOL_CALL_FAILED,
+    EVOLVE_CYCLE_STARTED,
+    EVOLVE_CYCLE_FINISHED,
+    EVOLVE_LAUNCH_FAILED,
+    FETCH_OUTCOME,
+    FETCH_ALLOWLIST_DENIED,
 ];
 
 #[cfg(test)]

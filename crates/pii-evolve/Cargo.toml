@@ -9,6 +9,7 @@ description = "Self-improving boss: state.md management + UDS launcher for the b
 
 [dependencies]
 pii-core = { path = "../pii-core" }
+pii-observe = { path = "../pii-observe" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 tokio = { workspace = true, features = ["rt", "net", "io-util"] }
 serde_json = { workspace = true }

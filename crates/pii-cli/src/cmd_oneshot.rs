@@ -5,6 +5,7 @@
 //! **The daemon is never auto-started.** One dispatch path either way —
 //! `serve_connection` is identical for both (F5.6/F5.8).
 
+use crate::cli_util::fail;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -65,13 +66,13 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
             "--workspace" => a.workspace = next_owned(args).map_or(a.workspace, PathBuf::from),
             "--sandbox" => {
                 let Some(v) = next_owned(args) else {
-                    eprintln!("error: --sandbox needs a value");
+                    fail("oneshot", "--sandbox needs a value");
                     return ExitCode::from(2);
                 };
                 match pii_tools::sandbox::parse_profile(&v) {
                     Ok(p) => a.sandbox = p,
                     Err(e) => {
-                        eprintln!("error: {e}");
+                        fail("oneshot", &e);
                         return ExitCode::from(2);
                     }
                 }
@@ -79,19 +80,19 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
             "--connect" => a.connect = next_owned(args),
             "--input" => {
                 let Some(v) = next_owned(args) else {
-                    eprintln!("error: --input needs a JSON value");
+                    fail("oneshot", "--input needs a JSON value");
                     return ExitCode::from(2);
                 };
                 match serde_json::from_str(&v) {
                     Ok(val) => a.input = val,
                     Err(e) => {
-                        eprintln!("error: --input is not valid JSON: {e}");
+                        fail("oneshot", format!("--input is not valid JSON: {e}"));
                         return ExitCode::from(2);
                     }
                 }
             }
             other => {
-                eprintln!("error: unknown flag '{other}'");
+                fail("oneshot", format!("unknown flag '{other}'"));
                 return ExitCode::from(2);
             }
         }
@@ -120,7 +121,7 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("error: tokio runtime: {e}");
+            fail("oneshot", format!("tokio runtime: {e}"));
             return ExitCode::from(2);
         }
     };
@@ -151,7 +152,7 @@ async fn run_oneshot(a: OneshotArgs, model: String) -> ExitCode {
     match result {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("oneshot", &e);
             ExitCode::from(1)
         }
     }

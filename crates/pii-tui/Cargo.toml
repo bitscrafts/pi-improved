@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Pii terminal UI: a pure protocol client (no engine, no graph)"
 
 [dependencies]
+pii-observe = { path = "../pii-observe" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }

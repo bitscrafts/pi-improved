@@ -20,6 +20,7 @@ mod cmd_tui;
 mod cmd_worker_exec;
 mod ndjson;
 
+use crate::cli_util::fail;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ...";
@@ -34,7 +35,7 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: read {path}: {e}");
+            fail("graph", format!("read {path}: {e}"));
             return ExitCode::from(2);
         }
     };
@@ -42,7 +43,7 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
     let spec = match pii_graph::load_toml_with_registry(&src, &reg) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("graph", &e);
             return ExitCode::from(2);
         }
     };
@@ -74,7 +75,7 @@ fn cmd_graph_show(path: &str) -> ExitCode {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: read {path}: {e}");
+            fail("graph", format!("read {path}: {e}"));
             return ExitCode::from(2);
         }
     };
@@ -84,7 +85,7 @@ fn cmd_graph_show(path: &str) -> ExitCode {
     let spec = match pii_graph::load_toml_with_registry(&src, &reg) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("graph", &e);
             return ExitCode::from(2);
         }
     };
@@ -236,4 +237,3 @@ mod tests {
         assert!(pii_graph::validate(&spec, &reg).is_ok());
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

@@ -21,4 +21,3 @@
 
 pub mod driver;
 pub mod state;
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

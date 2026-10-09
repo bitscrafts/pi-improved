@@ -1648,6 +1648,7 @@ dependencies = [
  "parking_lot",
  "pii-abi",
  "pii-core",
+ "pii-observe",
  "serde",
  "serde_json",
  "tempfile",
@@ -1661,6 +1662,7 @@ dependencies = [
  "pii-abi",
  "pii-core",
  "pii-graph",
+ "pii-observe",
  "pii-proto",
  "pii-server",
  "pii-store",
@@ -1692,6 +1694,7 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "pii-core",
+ "pii-observe",
  "pii-proto",
  "serde_json",
  "tempfile",
@@ -1723,6 +1726,7 @@ dependencies = [
  "pii-core",
  "pii-model",
  "pii-net",
+ "pii-observe",
  "serde_json",
  "tempfile",
 ]
@@ -1732,6 +1736,7 @@ name = "pii-mcp"
 version = "0.1.0"
 dependencies = [
  "pii-core",
+ "pii-observe",
  "pii-server",
  "pii-tools",
  "rmcp",
@@ -1869,6 +1874,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "futures-util",
+ "pii-observe",
  "pii-proto",
  "ratatui",
  "serde_json",
@@ -1892,6 +1898,7 @@ name = "pii-web"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "pii-observe",
  "pii-proto",
  "pii-uds",
  "serde",

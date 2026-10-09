@@ -6,10 +6,10 @@
 
 mod driver;
 mod input;
+mod observe;
 pub mod render;
 mod state;
 
-pub use driver::run_tui;
+pub use driver::{run_tui, run_tui_observed};
 pub use render::render;
 pub use state::{AppState, ConnStatus, LogLine, TuiError};
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

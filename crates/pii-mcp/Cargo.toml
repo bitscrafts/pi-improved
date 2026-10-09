@@ -9,6 +9,7 @@ description = "MCP server + client: expose pii's tools to Hermes/other agents, a
 
 [dependencies]
 pii-core = { path = "../pii-core" }
+pii-observe = { path = "../pii-observe" }
 pii-tools = { path = "../pii-tools" }
 pii-server = { path = "../pii-server" }
 serde_json = { workspace = true }

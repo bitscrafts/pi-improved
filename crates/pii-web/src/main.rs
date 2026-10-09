@@ -27,6 +27,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
+use pii_observe::{Event, Level, Observer, StderrObserver, names};
 use pii_proto::client::Client;
 use pii_proto::method::Method;
 use pii_proto::sys::PeerInfo;
@@ -39,6 +40,43 @@ const INDEX_HTML: &str = include_str!("index.html");
 #[derive(Clone)]
 struct AppState {
     sock: Arc<std::path::PathBuf>,
+    observer: Arc<dyn Observer>,
+}
+
+impl AppState {
+    /// Calls the daemon; a failure is reported as [`names::WEB_UPSTREAM_ERROR`]
+    /// (method and error only — never params, which may carry a search query).
+    async fn upstream(
+        &self,
+        method: Method,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let name = method.to_string();
+        let result = call_daemon(&self.sock, method, params).await;
+        if let Err(e) = &result {
+            self.observer.event(
+                &Event::new("web", Level::Error, names::WEB_UPSTREAM_ERROR)
+                    .field("method", name)
+                    .field("error", e.as_str()),
+            );
+        }
+        result
+    }
+
+    /// The `502` answer for a failed upstream call, reported as
+    /// [`names::WEB_REQUEST_FAILED`].
+    fn bad_gateway(&self, error: &str) -> Response {
+        self.observer.event(
+            &Event::new("web", Level::Error, names::WEB_REQUEST_FAILED)
+                .field("status", 502_u16)
+                .field("error", error),
+        );
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("{{\"error\":\"{error}\"}}"),
+        )
+            .into_response()
+    }
 }
 
 fn client_info() -> PeerInfo {
@@ -77,69 +115,72 @@ async fn index() -> impl IntoResponse {
 
 /// `GET /api/status` — daemon status.
 async fn api_status(State(st): State<AppState>) -> Response {
-    match call_daemon(&st.sock, Method::SysStatus, serde_json::json!({})).await {
+    match st.upstream(Method::SysStatus, serde_json::json!({})).await {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
 /// `GET /api/runs` — run list.
 async fn api_runs(State(st): State<AppState>) -> Response {
-    match call_daemon(&st.sock, Method::RunList, serde_json::json!({})).await {
+    match st.upstream(Method::RunList, serde_json::json!({})).await {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
 /// `GET /api/runs/:id/trace` — run journal trace.
 async fn api_run_trace(State(st): State<AppState>, Path(id): Path<String>) -> Response {
-    match call_daemon(
-        &st.sock,
-        Method::RunTrace,
-        serde_json::json!({ "run_id": id }),
-    )
-    .await
+    match st
+        .upstream(Method::RunTrace, serde_json::json!({ "run_id": id }))
+        .await
     {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
 /// `GET /api/sessions` — session list.
 async fn api_sessions(State(st): State<AppState>) -> Response {
-    match call_daemon(&st.sock, Method::SessionList, serde_json::json!({})).await {
+    match st
+        .upstream(Method::SessionList, serde_json::json!({}))
+        .await
+    {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
 /// `GET /api/sessions/:id` — session transcript.
 async fn api_session(State(st): State<AppState>, Path(id): Path<String>) -> Response {
-    match call_daemon(
-        &st.sock,
-        Method::SessionState,
-        serde_json::json!({ "session_id": id }),
-    )
-    .await
+    match st
+        .upstream(
+            Method::SessionState,
+            serde_json::json!({ "session_id": id }),
+        )
+        .await
     {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
 /// `GET /api/approvals` — approval queue.
 async fn api_approvals(State(st): State<AppState>) -> Response {
-    match call_daemon(&st.sock, Method::ApproveList, serde_json::json!({})).await {
+    match st
+        .upstream(Method::ApproveList, serde_json::json!({}))
+        .await
+    {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
 /// `GET /api/heals` — heal ledger.
 async fn api_heals(State(st): State<AppState>) -> Response {
-    match call_daemon(&st.sock, Method::HealList, serde_json::json!({})).await {
+    match st.upstream(Method::HealList, serde_json::json!({})).await {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
@@ -149,21 +190,18 @@ struct MemoryQuery {
     q: String,
 }
 async fn api_memory(State(st): State<AppState>, Query(q): Query<MemoryQuery>) -> Response {
-    match call_daemon(
-        &st.sock,
-        Method::MemorySearch,
-        serde_json::json!({ "q": q.q }),
-    )
-    .await
+    match st
+        .upstream(Method::MemorySearch, serde_json::json!({ "q": q.q }))
+        .await
     {
         Ok(v) => (StatusCode::OK, v.to_string()).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("{{\"error\":\"{e}\"}}")).into_response(),
+        Err(e) => st.bad_gateway(&e),
     }
 }
 
 /// `GET /api/health` — daemon reachability (for the header indicator).
 async fn api_health(State(st): State<AppState>) -> Response {
-    match call_daemon(&st.sock, Method::SysStatus, serde_json::json!({})).await {
+    match st.upstream(Method::SysStatus, serde_json::json!({})).await {
         Ok(_) => (StatusCode::OK, "{\"daemon\":\"ok\"}").into_response(),
         Err(e) => (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -251,6 +289,7 @@ pub(crate) fn cmd_web(args: std::env::ArgsOs) -> ExitCode {
     }
     let state = AppState {
         sock: Arc::new(sock),
+        observer: Arc::new(StderrObserver),
     };
     let sock_display = state.sock.clone();
     let app = Router::new()
@@ -309,7 +348,12 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
 
     use std::ffi::OsString;
     use std::process::ExitCode;
@@ -480,7 +524,40 @@ mod tests {
     fn test_state(sock: std::path::PathBuf) -> super::AppState {
         super::AppState {
             sock: Arc::new(sock),
+            observer: Arc::new(pii_observe::NullObserver),
         }
+    }
+
+    /// Spec 101 R3: an unreachable daemon surfaces as `web.upstream.error`
+    /// plus `web.request.failed` (status 502), by registered name.
+    #[tokio::test]
+    async fn upstream_failure_is_reported_by_name() {
+        use pii_observe::{Recorder, names};
+        let rec = Arc::new(Recorder::new());
+        let mut st = test_state(std::path::PathBuf::from("/nonexistent/control.sock"));
+        st.observer = rec.clone();
+        let app = axum::Router::new()
+            .route("/api/runs", axum::routing::get(super::api_runs))
+            .with_state(st);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/runs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+        let up = rec.events_named(names::WEB_UPSTREAM_ERROR);
+        assert_eq!(up.len(), 1, "{:?}", rec.events());
+        assert_eq!(
+            up[0].fields.get("method"),
+            Some(&serde_json::json!("run.list"))
+        );
+        let req = rec.events_named(names::WEB_REQUEST_FAILED);
+        assert_eq!(req.len(), 1, "{:?}", rec.events());
+        assert_eq!(req[0].fields.get("status"), Some(&serde_json::json!(502)));
     }
 
     /// TDD: `api_memory` must send `{"q": ...}` — not `{"query": ...}` — to
@@ -518,4 +595,3 @@ mod tests {
         assert!(params.get("query").is_none(), "must not use 'query'");
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

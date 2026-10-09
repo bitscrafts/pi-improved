@@ -24,4 +24,4 @@ pub use http::{HttpMethod, HttpRequest, HttpResponse};
 pub use ids::{NodeId, PortName, RunId};
 pub use journal::{RunEvent, RunHeader, RunStatus, Terminal};
 pub use node::{FailurePayload, NodeInput, NodeMeta, Outcome, ResumeKey, SuspendReason};
-// observability: none — pending the spec 100 adoption sweep (no seam yet)
+// observability: none — kernel ABI: traits and types only, nothing to observe

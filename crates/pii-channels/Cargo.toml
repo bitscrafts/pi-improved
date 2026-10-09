@@ -10,6 +10,7 @@ description = "Channel polling: Discord + file-backed CLI channel (F6.1-F6.4)"
 [dependencies]
 pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
+pii-observe = { path = "../pii-observe" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

@@ -3,6 +3,7 @@
 //! fail-closed, then `exec`s the child — no `unsafe`, so a plain spawned
 //! child (not `pre_exec`) inherits the confinement via `execve`.
 
+use crate::cli_util::fail;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -22,7 +23,7 @@ pub(crate) fn cmd_sandbox_exec(args: &mut std::env::ArgsOs) -> ExitCode {
                 break;
             }
             other => {
-                eprintln!("error: unknown flag '{other}'");
+                fail("sandbox", format!("unknown flag '{other}'"));
                 return ExitCode::from(2);
             }
         }
@@ -38,7 +39,7 @@ pub(crate) fn cmd_sandbox_exec(args: &mut std::env::ArgsOs) -> ExitCode {
     let profile = match pii_tools::sandbox::parse_profile(&profile) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("sandbox", &e);
             return ExitCode::from(2);
         }
     };
@@ -62,7 +63,7 @@ pub(crate) fn cmd_sandbox_exec(args: &mut std::env::ArgsOs) -> ExitCode {
     match status {
         Ok(s) => ExitCode::from(coerce_child_exit(s.code())),
         Err(e) => {
-            eprintln!("error: spawn {prog}: {e}");
+            fail("sandbox", format!("spawn {prog}: {e}"));
             ExitCode::from(2)
         }
     }

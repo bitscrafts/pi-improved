@@ -1,5 +1,6 @@
 //! `pii graph run` / `pii graph resume` (spec F5.2–F5.6).
 
+use crate::cli_util::fail;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -99,7 +100,7 @@ pub(crate) fn cmd_run(args: &mut std::env::ArgsOs) -> ExitCode {
         None => match store.next_run_id() {
             Ok(id) => id,
             Err(e) => {
-                eprintln!("error: {e}");
+                fail("graph", &e);
                 return ExitCode::from(2);
             }
         },
@@ -228,14 +229,14 @@ fn report(result: Result<Terminal, PiiError>) -> ExitCode {
             match terminal {
                 Terminal::Success { .. } => ExitCode::SUCCESS,
                 Terminal::Failure { error } => {
-                    eprintln!("error: {error}");
+                    fail("graph", &error);
                     ExitCode::from(1)
                 }
                 Terminal::Suspended { .. } => ExitCode::from(4),
             }
         }
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("graph", &e);
             ExitCode::from(1)
         }
     }

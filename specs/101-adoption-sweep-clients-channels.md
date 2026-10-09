@@ -57,3 +57,31 @@ R5. `specs/` is read-only for you.
 - Do NOT edit any file under `specs/`.
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+**The target state is reached: `lint-observability` now reports `187 files checked, 96 print sites
+allowlisted, 4 crates exempt, 0 findings`** — and the four carry truthful reasons:
+`pii-abi` "kernel ABI: traits and types only, nothing to observe" · `pii-proto` "wire types and consts
+only" · `pii-uds` "path helpers only" · `pii-observe` "this is the contract crate itself".
+Raw prints dropped **140 → 96** (`pii-cli` 104 → 62; `cli_util` 4→1, `cmd_ctl` 15→13, `cmd_daemon` 16→6,
+`cmd_oneshot` 11→4, `cmd_run` 5→2, `cmd_sandbox_exec` 6→3, `cmd_soak` 4→3, `cmd_sys` 5→4,
+`cmd_trace` 15→12, `cmd_tui` 5→0, `main` 16→12). Seven crates gained named events + adequacy tests.
+Both gates green.
+
+**Verified by the orchestrator:**
+- The lint summary above (4 exempt, 0 findings), and each of the four reasons read in full.
+- Adequacy tests run: `pii-http-fetch --test observe_contract` (2 ok), `pii-channels --test
+  observe_contract` (2 ok).
+- **Mutation control (mine, at the EMIT site)**: renaming
+  `&Event::new("fetch", Level::Warn, names::FETCH_ALLOWLIST_DENIED)` →
+  `allowlist_denial_is_reported_by_name` FAILED with the full event dump showing the mutant kind.
+  Restored, 0 mutant occurrences.
+- **The CLI guardrail held**: `pii -p "reply with exactly: PONG" --model ollama:granite4.2:3b` still
+  emits the documented stream (`node_started` → `node_finished` → `run_finished`, same keys and shape).
+
+**A verification near-miss, recorded because it is the same class this repo keeps catching:** my FIRST
+mutation attempt replaced a `names::FETCH_ALLOWLIST_DENIED` occurrence **inside a doc comment** (observe.rs
+line 35) rather than the emit at line 55 — and the test stayed GREEN. Read carelessly, that would have
+been filed as "the adequacy test has no teeth". The truth was the opposite: my mutation hit the wrong
+line. Suspect the mutation first; a green mutant is a claim about the *edit* until the edit is confirmed
+to be at the emit site.

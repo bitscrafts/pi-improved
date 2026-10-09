@@ -14,6 +14,7 @@
 use std::future::Future;
 
 use pii_core::Ctx;
+use pii_observe::{Event, Level, Observer, StderrObserver, names};
 use pii_tools::ToolSet;
 use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::model::{CallToolResponse, CallToolResult, ContentBlock, TextContent, Tool};
@@ -32,6 +33,7 @@ type DispatchFn = for<'a> fn(
 struct PiiMcpServer {
     tools: ToolSet,
     workspace: std::path::PathBuf,
+    observer: std::sync::Arc<dyn Observer>,
 }
 
 impl PiiMcpServer {
@@ -39,7 +41,45 @@ impl PiiMcpServer {
         Self {
             tools: ToolSet::builtin(workspace.clone()),
             workspace,
+            observer: std::sync::Arc::new(StderrObserver),
         }
+    }
+
+    /// Replaces the observer tool-call failures are reported to.
+    #[cfg(test)]
+    fn with_observer(mut self, observer: std::sync::Arc<dyn Observer>) -> Self {
+        self.observer = observer;
+        self
+    }
+
+    /// Runs one tool call under the capability grant the router hands out,
+    /// reporting a failure (unknown tool or tool error) as
+    /// [`names::MCP_TOOL_CALL_FAILED`]. Arguments are never reported.
+    fn dispatch(&self, name: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let result = self.tools.get(name).map_or_else(
+            || Err(format!("unknown tool '{name}'")),
+            |tool| {
+                let mut caps = pii_core::CapSet::empty();
+                caps.kinds = pii_core::CapKind::FS_READ
+                    | pii_core::CapKind::FS_WRITE
+                    | pii_core::CapKind::PROC
+                    | pii_core::CapKind::MEMORY_READ
+                    | pii_core::CapKind::MEMORY_WRITE;
+                caps.fs_read = pii_core::PathScope::new(vec![self.workspace.clone()]);
+                caps.fs_write = pii_core::PathScope::new(vec![self.workspace.clone()]);
+                caps.proc_argv0 = pii_core::ArgvScope::new(vec![String::from("/bin/sh")]);
+                let ctx = Ctx::root(caps, pii_core::Budget::unlimited());
+                tool.call(&ctx, args).map_err(|e| e.to_string())
+            },
+        );
+        if let Err(e) = &result {
+            self.observer.event(
+                &Event::new("mcp", Level::Warn, names::MCP_TOOL_CALL_FAILED)
+                    .field("tool", name)
+                    .field("error", e.as_str()),
+            );
+        }
+        result
     }
 
     /// Builds the `ToolRouter` rmcp 3.2 uses to dispatch `tools/list` and
@@ -52,26 +92,7 @@ impl PiiMcpServer {
             let args = ctx
                 .arguments
                 .map_or_else(|| serde_json::json!({}), serde_json::Value::Object);
-            // Clone the owned state out of the borrow so the returned future
-            // is 'static (new_dyn requires it).
-            let tools = ctx.service.tools.clone();
-            let workspace = ctx.service.workspace.clone();
-            let result = tools.get(&name).map_or_else(
-                || Err(format!("unknown tool '{name}'")),
-                |tool| {
-                    let mut caps = pii_core::CapSet::empty();
-                    caps.kinds = pii_core::CapKind::FS_READ
-                        | pii_core::CapKind::FS_WRITE
-                        | pii_core::CapKind::PROC
-                        | pii_core::CapKind::MEMORY_READ
-                        | pii_core::CapKind::MEMORY_WRITE;
-                    caps.fs_read = pii_core::PathScope::new(vec![workspace.clone()]);
-                    caps.fs_write = pii_core::PathScope::new(vec![workspace.clone()]);
-                    caps.proc_argv0 = pii_core::ArgvScope::new(vec![String::from("/bin/sh")]);
-                    let ctx = Ctx::root(caps, pii_core::Budget::unlimited());
-                    tool.call(&ctx, &args).map_err(|e| e.to_string())
-                },
-            );
+            let result = ctx.service.dispatch(&name, &args);
             let out = match result {
                 Ok(v) => CallToolResult::success(vec![ContentBlock::Text(TextContent::new(
                     v.to_string(),
@@ -209,7 +230,12 @@ async fn run_client(cmd: &[String]) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
 
     fn mcp_tmp_root() -> PathBuf {
         let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
@@ -221,6 +247,46 @@ mod tests {
     use std::sync::Arc;
 
     use super::PiiMcpServer;
+
+    /// Spec 101 R3: a failed tool call reaches the observer as
+    /// `mcp.tool_call.failed`, naming the tool; a good call stays silent.
+    #[test]
+    fn failed_tool_call_is_reported_by_name() {
+        use pii_observe::{Recorder, names};
+        let dir = tempfile::Builder::new()
+            .prefix("pii-mcp-obs-")
+            .tempdir_in(mcp_tmp_root())
+            .unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let rec = Arc::new(Recorder::new());
+        let server = PiiMcpServer::new(dir.path().to_path_buf()).with_observer(rec.clone());
+        assert!(
+            server
+                .dispatch("fs_read", &serde_json::json!({"path": "a.txt"}))
+                .is_ok()
+        );
+        assert!(rec.events_named(names::MCP_TOOL_CALL_FAILED).is_empty());
+        assert!(
+            server
+                .dispatch("fs_read", &serde_json::json!({"path": "absent.txt"}))
+                .is_err()
+        );
+        assert!(
+            server
+                .dispatch("no_such_tool", &serde_json::json!({}))
+                .is_err()
+        );
+        let failed = rec.events_named(names::MCP_TOOL_CALL_FAILED);
+        assert_eq!(failed.len(), 2, "{:?}", rec.events());
+        assert_eq!(
+            failed[0].fields.get("tool"),
+            Some(&serde_json::json!("fs_read"))
+        );
+        assert_eq!(
+            failed[1].fields.get("tool"),
+            Some(&serde_json::json!("no_such_tool"))
+        );
+    }
 
     /// R2 (spec 21): the MCP server exposes pii's builtin tools.
     #[test]
@@ -355,4 +421,3 @@ mod tests {
         );
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

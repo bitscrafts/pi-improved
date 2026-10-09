@@ -316,4 +316,4 @@ mod tests {
         assert_eq!(err.code, i32::from(ErrorCode::InvalidRequest));
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)
+// observability: none — wire types and consts only, nothing to observe

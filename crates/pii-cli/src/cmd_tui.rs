@@ -2,6 +2,7 @@
 //! launches the terminal UI over the loopback transport (or a live daemon
 //! socket). The daemon is never auto-started.
 
+use crate::cli_util::fail;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -25,7 +26,7 @@ pub(crate) fn cmd_tui(args: &mut std::env::ArgsOs) -> ExitCode {
                 }
             }
             other => {
-                eprintln!("error: unknown flag '{other}'");
+                fail("tui", format!("unknown flag '{other}'"));
                 return ExitCode::from(2);
             }
         }
@@ -37,7 +38,7 @@ pub(crate) fn cmd_tui(args: &mut std::env::ArgsOs) -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("error: tokio runtime: {e}");
+            fail("tui", format!("tokio runtime: {e}"));
             return ExitCode::from(2);
         }
     };
@@ -60,7 +61,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
         let stream = match pii_uds::client_connect(&sock).await {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("error: {e}");
+                fail("tui", &e);
                 return ExitCode::from(1);
             }
         };
@@ -87,7 +88,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
         let engine = match Engine::new(cfg) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("error: {e}");
+                fail("tui", &e);
                 return ExitCode::from(1);
             }
         };
@@ -99,7 +100,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("tui", &e);
             ExitCode::from(1)
         }
     }

@@ -1,6 +1,7 @@
 //! `pii sys status|reload` and `pii run ls|start` (F7.1 helpers): thin
 //! protocol calls, reused by the phase-3 scripts (crash/shutdown/cron).
 
+use crate::cli_util::fail;
 use std::process::ExitCode;
 
 use pii_proto::method::Method;
@@ -75,7 +76,7 @@ fn run_ls(args: &mut std::env::ArgsOs) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("sys", &e);
             ExitCode::from(2)
         }
     }

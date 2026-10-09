@@ -1,11 +1,13 @@
 //! The TUI driver loop (F5.3, F11 opus review).
 
 use futures_util::StreamExt;
+use pii_observe::{NullObserver, Observer};
 use pii_proto::event::Event;
 use pii_proto::sys::PeerInfo;
 use ratatui::layout::Rect;
 
 use crate::input::{KeyOutcome, handle_key, init_session};
+use crate::observe;
 use crate::render::render;
 use crate::state::TuiError;
 
@@ -31,6 +33,20 @@ where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
     W: tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    run_tui_observed(r, w, &NullObserver).await
+}
+
+/// [`run_tui`], reporting attach/render/input failures and event-stream gaps
+/// to `observer`. The TUI owns the terminal, so callers must not hand it an
+/// observer that writes to the terminal.
+///
+/// # Errors
+/// Returns [`TuiError`] on protocol or transport failure.
+pub async fn run_tui_observed<R, W>(r: R, w: W, observer: &dyn Observer) -> Result<(), TuiError>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let client_info = PeerInfo {
         name: "pii-tui".into(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -38,10 +54,13 @@ where
     };
     let (client, _hello) = pii_proto::client::Client::connect(r, w, client_info)
         .await
-        .map_err(|e| TuiError::Client(e.to_string()))?;
+        .map_err(|e| TuiError::Client(e.to_string()))
+        .inspect_err(|e| observe::failure(observer, "attach", e))?;
     let mut events = client.events();
 
-    let (mut state, session_id) = init_session(&client).await?;
+    let (mut state, session_id) = init_session(&client)
+        .await
+        .inspect_err(|e| observe::failure(observer, "attach", e))?;
 
     let mut terminal = ratatui::init();
     let mut keys = crossterm::event::EventStream::new();
@@ -50,20 +69,28 @@ where
     let result: Result<(), TuiError> = loop {
         terminal
             .draw(|f| render(&state, f))
-            .map_err(|e| TuiError::Render(e.to_string()))?;
+            .map_err(|e| TuiError::Render(e.to_string()))
+            .inspect_err(|e| observe::failure(observer, "render", e))?;
 
         tokio::select! {
             key = keys.next() => {
                 match key {
                     Some(Ok(crossterm::event::Event::Key(k))) => {
-                        match handle_key(k, &client, &session_id, &mut state).await? {
+                        match handle_key(k, &client, &session_id, &mut state)
+                            .await
+                            .inspect_err(|e| observe::failure(observer, "input", e))?
+                        {
                             KeyOutcome::Continue => {}
                             KeyOutcome::Submitted => run_active = true,
                             KeyOutcome::Quit => break Ok(()),
                         }
                     }
                     Some(Ok(_)) => {}
-                    Some(Err(e)) => break Err(TuiError::Render(e.to_string())),
+                    Some(Err(e)) => {
+                        let e = TuiError::Render(e.to_string());
+                        observe::failure(observer, "render", &e);
+                        break Err(e);
+                    }
                     None => break Ok(()),
                 }
             }
@@ -79,7 +106,10 @@ where
                             run_active = false;
                         }
                     }
-                    Err(_) => run_active = false,
+                    Err(e) => {
+                        observe::gap(observer, &e);
+                        run_active = false;
+                    }
                 }
             }
         }

@@ -10,11 +10,13 @@
 
 pub mod audit;
 pub mod fetch;
+mod observe;
 
 use pii_abi::PiiError;
 use pii_core::Ctx;
 use pii_core::HttpTransport as _;
 use pii_model::ToolSpec;
+use pii_observe::Observer;
 use serde_json::{Value, json};
 
 /// A callable tool (the `pii-tools::Tool` contract, re-declared here so this
@@ -41,13 +43,18 @@ pub struct HttpFetchTool {
     transport: pii_net::NetService,
     /// Grant key the fetch uses (`http:<host>`), matching `NetService::request`.
     audit: audit::AuditLog,
+    observer: Option<std::sync::Arc<dyn Observer>>,
 }
 
 impl HttpFetchTool {
     /// Builds the tool over the shared chokepoint and an audit sink.
     #[must_use]
     pub fn new(transport: pii_net::NetService, audit: audit::AuditLog) -> Self {
-        Self { transport, audit }
+        Self {
+            transport,
+            audit,
+            observer: None,
+        }
     }
 }
 
@@ -103,8 +110,8 @@ impl Tool for HttpFetchTool {
                     .append(&format!("FEED: DENIED {} reason={e}", args.url));
             }
         }
+        self.observe_outcome(&args.url, &outcome);
         let (status, bytes_in) = outcome?;
         Ok(json!({"status": status, "bytes_in": bytes_in}))
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

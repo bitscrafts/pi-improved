@@ -118,4 +118,4 @@ mod tests {
         assert_eq!(got, None);
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)
+// observability: none — path helpers only, nothing to observe

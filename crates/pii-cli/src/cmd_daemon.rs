@@ -1,6 +1,7 @@
 //! `pii daemon` — binds the UDS control socket, starts the daemon
 //! subsystems, and serves connections (F2.8/F2.9, F5.1-F5.5).
 
+use crate::cli_util::fail;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -41,13 +42,13 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             }
             "--sandbox" => {
                 let Some(v) = args.next().and_then(|a| a.into_string().ok()) else {
-                    eprintln!("error: --sandbox needs a value");
+                    fail("daemon", "--sandbox needs a value");
                     return ExitCode::from(2);
                 };
                 match pii_tools::sandbox::parse_profile(&v) {
                     Ok(p) => sandbox = p,
                     Err(e) => {
-                        eprintln!("error: {e}");
+                        fail("daemon", &e);
                         return ExitCode::from(2);
                     }
                 }
@@ -57,7 +58,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             // future-proofs a daemonize path; it does not change behavior.
             "--foreground" => {}
             other => {
-                eprintln!("error: unknown flag '{other}'");
+                fail("daemon", format!("unknown flag '{other}'"));
                 return ExitCode::from(2);
             }
         }
@@ -66,7 +67,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // the store/runtime dirs can be granted read-write (F17, opus review):
     // a sandboxed daemon must be able to open its own database.
     let Some(runtime_dir) = pii_uds::runtime_dir("default") else {
-        eprintln!("error: no usable runtime dir (set PII_RUNTIME_DIR)");
+        fail("daemon", "no usable runtime dir (set PII_RUNTIME_DIR)");
         return ExitCode::from(2);
     };
     let store_path = store.unwrap_or_else(|| runtime_dir.join("store.redb"));
@@ -102,7 +103,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         match Config::load(&config_path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("error: {e}");
+                fail("daemon", &e);
                 return ExitCode::from(2);
             }
         }
@@ -151,7 +152,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("error: tokio runtime: {e}");
+            fail("daemon", format!("tokio runtime: {e}"));
             return ExitCode::from(2);
         }
     };
@@ -218,7 +219,7 @@ async fn run_daemon(
     let sock_path = match pii_server::engine::uds::prepare_socket(&runtime_dir) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("daemon", &e);
             return ExitCode::from(2);
         }
     };
@@ -235,7 +236,7 @@ async fn run_daemon(
     let engine = match Engine::new(engine_cfg) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("daemon", &e);
             return ExitCode::from(2);
         }
     };
@@ -259,7 +260,7 @@ async fn run_daemon(
     let daemon = match Daemon::build(engine.clone(), &cfg, &runtime_dir, config_path, clock) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("daemon", &e);
             return ExitCode::from(2);
         }
     };
@@ -275,7 +276,7 @@ async fn run_daemon(
     let listener = match UnixListener::bind(&sock_path) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("error: bind {}: {e}", sock_path.display());
+            fail("daemon", format!("bind {}: {e}", sock_path.display()));
             return ExitCode::from(2);
         }
     };

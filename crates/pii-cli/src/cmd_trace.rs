@@ -5,6 +5,7 @@
 //! <node>`; `--max-batch-width`; `--terminal`; `--output`; `--overlapped <a>,<b>`;
 //! `--reason <node>`.
 
+use crate::cli_util::fail;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -101,18 +102,18 @@ fn answer(run: &str, db: &Path, query: &Query) -> ExitCode {
     let header = match store.get_run(&run_id) {
         Ok(Some(h)) => h,
         Ok(None) => {
-            eprintln!("error: run '{run}' not found");
+            fail("trace", format!("run '{run}' not found"));
             return ExitCode::from(2);
         }
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("trace", &e);
             return ExitCode::from(2);
         }
     };
     let journal = match store.read_journal(&run_id) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("error: {e}");
+            fail("trace", &e);
             return ExitCode::from(2);
         }
     };
