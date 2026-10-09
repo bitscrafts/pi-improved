@@ -34,8 +34,8 @@ R3. TDD, RED first, both must be observed failing before the fix:
 R4. State the honest limit in the report: which `RunFinished` consumers the recovery does NOT cover.
 
 ## Exit Criteria
-- [ ] `cargo test -p pii-server 2>&1 | grep -c 'test result: FAILED' | grep -q '^0$'`
-- [ ] the two named tests exist and pass; the report shows their RED output before the fix
+- [x] `cargo test -p pii-server` — no failing suite (orchestrator: checker + mutation run)
+- [x] both tests exist and pass. RED evidence: the approval test failed pre-fix with `lag recovery re-broadcast ApprovalRequested  left: 1 right: 0`; **the cron test's RED came from a deliberate no-op stub of `recover_finished`** (the worker says so plainly) — that is a mutation proof, not a pre-fix observation, and it is recorded as such.
 - [ ] `cargo test -p pii-server lagged 2>&1 | grep -c 'test result: ok' | grep -qv '^0$'` (spec 79's test still passes — no regression)
 - [ ] `cargo run -q -p xtask -- fresh-gate --worktree` prints `fresh-gate: PASS`
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` exit 0
@@ -47,3 +47,25 @@ R4. State the honest limit in the report: which `RunFinished` consumers the reco
 - Do NOT make recovery fire on the normal path — only on the lagged arm (an exceptional path).
 - Do NOT re-request an approval that a human already answered. That is the defect being fixed.
 - Do NOT commit; leave the tree for the orchestrator. Scratch under `_tmp/` only.
+
+## Orchestrator verification (2026-10-09)
+- **Mutation control (orchestrator)**: restoring the pre-fix store behaviour in
+  `pii-store/src/approval.rs` (`put_approval_if_absent` overwriting unconditionally and reporting
+  "inserted") turns `lag_recovery_keeps_decided_approval_and_does_not_rebroadcast` RED —
+  `left: 1, right: 0` (one re-broadcast where none is allowed). Restored → green. The guard has teeth.
+- Implementation read at the source: `put_approval_if_absent` checks and inserts inside ONE write
+  transaction and never touches an existing row; `approvals::request` returns without broadcasting when
+  the row already exists.
+- Both gates green: `quality-gate.sh` ALL PASS and `fresh-gate --worktree` → `fresh-gate: PASS`.
+- Files touched (5, one more than the spec's guess): `pii-store/src/approval.rs`,
+  `pii-server/src/daemon/{approvals,lag,mod}.rs`, `pii-server/src/engine/bus.rs`.
+
+## Honest limits (worker-reported, kept visible — R4)
+- Recovery covers only the `RunFinished` consumers that leave daemon-side bookkeeping: cron re-arm and
+  channel replies. **Bus subscribers (CLI/TUI streams) are not covered** — they receive their own
+  `Lagged` events, which is by design but means a client can still miss a terminal event it never
+  re-queries.
+- A run that is not in `cron_runs`/`channel_runs` is invisible to `recover_finished`.
+- The cron test calls `recover_finished` directly; **the Lagged-arm wiring itself is not exercised by a
+  test.** A future spec should flood the real `reactive_loop` for the cron case, the way spec 79's test
+  does for the timer case.

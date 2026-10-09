@@ -209,9 +209,10 @@ async fn reactive_loop(
                 // Never drop silently (F4): report the gap, then recover the
                 // control state the missed events would have applied.
                 lag::log_warn(&format!(
-                    "reactive loop lagged, {n} events dropped; rescanning suspended runs"
+                    "reactive loop lagged, {n} events dropped; rescanning suspended and finished runs"
                 ));
                 lag::recover_suspended(&engine, &scheduler);
+                lag::recover_finished(&engine, &ctx);
             }
             Err(_) => break,
         }
@@ -473,7 +474,7 @@ mod tests {
     use super::status::DaemonContext;
     use crate::{Engine, EngineConfig};
 
-    fn test_ctx(dir: &std::path::Path) -> Arc<DaemonContext> {
+    pub(super) fn test_ctx(dir: &std::path::Path) -> Arc<DaemonContext> {
         Arc::new(DaemonContext {
             net: Arc::new(pii_net::NetService::new(pii_net::NetConfig {
                 resolver: Arc::new(pii_net::SystemResolver),

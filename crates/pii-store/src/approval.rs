@@ -95,6 +95,38 @@ impl ApprovalStore {
             .map_err(|e| PiiError::Internal(format!("approval: commit put: {e}")))
     }
 
+    /// Inserts `a` only when no row exists for its id, check-and-insert in
+    /// one write transaction. Returns `true` when inserted; an existing row
+    /// (pending or decided) is never touched.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb or encode failure.
+    pub fn put_approval_if_absent(&self, a: &Approval) -> Result<bool, PiiError> {
+        let bytes = to_bytes(a)?;
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| PiiError::Internal(format!("approval: begin_write: {e}")))?;
+        let inserted = {
+            let mut t = write
+                .open_table(APPROVAL)
+                .map_err(|e| PiiError::Internal(format!("approval: open table: {e}")))?;
+            let exists = t
+                .get(a.approval_id.as_str())
+                .map_err(|e| PiiError::Internal(format!("approval: get: {e}")))?
+                .is_some();
+            if !exists {
+                t.insert(a.approval_id.as_str(), bytes.as_slice())
+                    .map_err(|e| PiiError::Internal(format!("approval: insert: {e}")))?;
+            }
+            !exists
+        };
+        write
+            .commit()
+            .map_err(|e| PiiError::Internal(format!("approval: commit put: {e}")))?;
+        Ok(inserted)
+    }
+
     /// Reads one approval (`None` when unknown).
     ///
     /// # Errors

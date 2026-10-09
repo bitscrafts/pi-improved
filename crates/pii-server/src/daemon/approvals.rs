@@ -54,7 +54,7 @@ pub fn request(
     prompt: &str,
 ) -> Result<(), PiiError> {
     let now_ms = pii_core::SystemClock.now_ms();
-    engine.approvals.put_approval(&Approval {
+    let inserted = engine.approvals.put_approval_if_absent(&Approval {
         approval_id: approval_id.to_owned(),
         run_id: run_id.to_owned(),
         node: node.to_owned(),
@@ -65,6 +65,11 @@ pub fn request(
         note: None,
         decided_at_ms: 0,
     })?;
+    if !inserted {
+        // Already requested (pending or decided): a lag rescan must neither
+        // notify twice nor erase a recorded decision.
+        return Ok(());
+    }
     engine.bus.broadcast(Event::ApprovalRequested {
         approval_id: approval_id.to_owned(),
         run_id: run_id.to_owned(),

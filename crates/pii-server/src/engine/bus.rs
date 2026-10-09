@@ -153,7 +153,7 @@ fn reason_str(reason: &pii_abi::SuspendReason) -> String {
     }
 }
 
-fn map_terminal(t: &pii_abi::Terminal) -> WireTerminal {
+pub(crate) fn map_terminal(t: &pii_abi::Terminal) -> WireTerminal {
     match t {
         pii_abi::Terminal::Success { output } => WireTerminal::Success {
             output: output.clone(),
