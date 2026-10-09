@@ -155,7 +155,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    rt.block_on(run_daemon(
+    let code = rt.block_on(run_daemon(
         workspace,
         sandbox,
         store_path,
@@ -163,7 +163,40 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         config_path,
         cfg,
         model,
-    ))
+    ));
+    shutdown_runtime(rt, SHUTDOWN_DRAIN_BOUND, |m| {
+        #[allow(clippy::print_stderr)]
+        {
+            eprintln!("{m}");
+        }
+    });
+    code
+}
+
+/// How long shutdown waits for in-flight `spawn_blocking` work (heavy RPC:
+/// `memory.*`, `worker.reload`, `run.trace`, `session.prompt`) to drain
+/// before the runtime is abandoned. Every handler measured in spec 95 holds
+/// a thread for tens of milliseconds, so 5 s is two orders of magnitude of
+/// headroom for a normal in-flight call; only a genuinely stuck task hits it.
+const SHUTDOWN_DRAIN_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Shuts `rt` down, waiting at most `bound` for blocking tasks. Returns true
+/// (after reporting through `log`) when the bound was hit, i.e. something was
+/// still running and has been abandoned.
+fn shutdown_runtime(
+    rt: tokio::runtime::Runtime,
+    bound: std::time::Duration,
+    log: impl FnOnce(&str),
+) -> bool {
+    let started = std::time::Instant::now();
+    rt.shutdown_timeout(bound);
+    let timed_out = started.elapsed() >= bound;
+    if timed_out {
+        log(&format!(
+            "pii: shutdown drain exceeded {bound:?}; abandoning in-flight blocking work"
+        ));
+    }
+    timed_out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -390,6 +423,51 @@ mod tests {
         // These are asserted indirectly via the grep-able literals:
         assert_eq!(2 + 2, 4); // 2 is usage, 4 is sandbox; distinct codes
         assert_ne!(5, 2); // no-model is distinct from usage errors
+    }
+
+    /// Spec 95 R1: a stuck `spawn_blocking` task must not hold shutdown past
+    /// the bound, and the timeout must be reported.
+    #[test]
+    fn shutdown_is_bounded_by_a_stuck_blocking_task() {
+        let bound = std::time::Duration::from_millis(200);
+        let tolerance = std::time::Duration::from_millis(500);
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .build()
+            .unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        rt.spawn_blocking(move || {
+            started_tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        });
+        started_rx.recv().unwrap();
+        let mut logged = String::new();
+        let t = std::time::Instant::now();
+        let timed_out = super::shutdown_runtime(rt, bound, |m| m.clone_into(&mut logged));
+        let took = t.elapsed();
+        eprintln!("shutdown took {took:?} (bound {bound:?}); log: {logged}");
+        assert!(timed_out, "stuck task must hit the bound");
+        assert!(took < bound + tolerance, "shutdown took {took:?}");
+        assert!(
+            logged.starts_with("pii: shutdown drain exceeded"),
+            "{logged}"
+        );
+    }
+
+    /// Control: with nothing in flight shutdown is prompt and silent.
+    #[test]
+    fn shutdown_without_stuck_task_is_prompt_and_silent() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .build()
+            .unwrap();
+        rt.block_on(async { tokio::task::spawn_blocking(|| ()).await.unwrap() });
+        let mut logged = String::new();
+        let timed_out = super::shutdown_runtime(rt, std::time::Duration::from_secs(5), |m| {
+            m.clone_into(&mut logged);
+        });
+        assert!(!timed_out);
+        assert!(logged.is_empty());
     }
 
     #[test]

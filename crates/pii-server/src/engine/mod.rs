@@ -28,6 +28,8 @@ pub mod conn;
 #[cfg(test)]
 mod conn_heartbeat_tests;
 pub mod dispatch;
+#[cfg(test)]
+mod inline_measure_tests;
 pub mod loopback;
 pub mod methods;
 pub mod registry;

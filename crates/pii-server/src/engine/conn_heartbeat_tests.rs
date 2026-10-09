@@ -170,3 +170,17 @@ async fn heartbeat_run_trace() {
 async fn heartbeat_session_prompt() {
     assert_not_blocked("session.prompt").await;
 }
+
+/// Spec 95: `event.subscribe` replays the journal inline (measured 102 ms for
+/// a 5000-event journal, above the 50 ms bar), so it runs on the blocking pool.
+#[tokio::test]
+async fn heartbeat_event_subscribe() {
+    assert_not_blocked("event.subscribe").await;
+}
+
+/// Spec 95 R4: this test's own light-method control (same harness, a method
+/// the stub answers instantly).
+#[tokio::test]
+async fn heartbeat_control_light_method_for_event_subscribe() {
+    assert_not_blocked("sys.version").await;
+}

@@ -218,6 +218,7 @@ fn is_heavy(method: Method) -> bool {
             | Method::WorkerReload
             | Method::RunTrace
             | Method::SessionPrompt
+            | Method::EventSubscribe
     )
 }
 

@@ -52,3 +52,40 @@ R4 (control). The existing light-method control (`heartbeat_control_light_method
 - Do NOT delete or weaken any existing test, and do not touch `sched/` or the graph replay path.
 - Scratch under `/projects/_tmp/`; delete your own exports (one fresh-gate export is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result (2026-10-09) — shutdown bounded, ONE handler moved on numbers, and the fresh-tree gate found #4
+- **R1** `rt.shutdown_timeout(SHUTDOWN_DRAIN_BOUND)` (5 s) + a log line when the bound is hit, via a new
+  `shutdown_runtime(rt, bound, log)` helper.
+  **My mutation control**: restoring the pre-fix unbounded `drop(rt)` makes
+  `shutdown_is_bounded_by_a_stuck_blocking_task` FAIL — `shutdown took 3.00028618s (bound 200ms)` — while
+  its control (`shutdown_without_stuck_task_is_prompt_and_silent`) stays green. The fix is load-bearing.
+- **R2/R3** All 11 handlers measured through the real `dispatch` (a real worker for `sys.reload`), table in
+  `_tmp/spec95/INLINE-METHODS.md`. Exactly ONE moved: `event.subscribe` replay (2 ms for an 8-event
+  journal, **102 ms for 5000 events** — it reads the whole journal, so it grows past the 50 ms bar).
+  The other ten stay inline with their numbers recorded.
+  **My mutation control**: putting `EventSubscribe` back inline makes `heartbeat_event_subscribe` FAIL —
+  `event.subscribe blocked the async worker: tick late by 298.617834ms`; its control stays green.
+- **Watch items recorded, not hidden:** `run.start` 20 ms idle but **53.8 ms under parallel gate load**
+  (fsync-bound) — it crossed the bar under load and is left inline with that stated; `run.list` 29 ms at
+  ~1000 stored runs; `sys.reload` shares `Supervisor::reload` with `worker.reload` and was measured with
+  one healthy worker only (a slow/stuck worker could hold the worker thread — not driven, not estimated).
+  The scale probes (5000 events, 1000 runs) are `#[ignore]`d; the timed test asserts only that calls
+  succeed, because `run.start` is load-sensitive.
+
+## Fresh-tree gate: FAILED, and it is right to fail
+`cargo run -q -p xtask -- fresh-gate --worktree` → `failing tests:
+["engine::runs::tests::stored_run_scope_root_recovers_from_journal",
+"engine::runs::tests::stored_run_scope_root_none_when_unscoped"]`.
+
+**Attribution (orchestrator-proven, not guessed):** this is a PRE-EXISTING latent defect of the N1 class,
+exposed by the new tests changing intra-binary order. Decisive reproduction in the export:
+- with `crates/pii-server/_tmp` PRESENT → both tests pass (and a full `cargo test --workspace --lib
+  --bins --tests` in the export passes);
+- with that directory *moved aside* → both FAIL at once:
+  `runs.rs:472` and `runs.rs:516` panic `NotFound … crates/pii-server/_tmp/heal-scope-zHiSmL /
+  heal-scope-vSuxNo` — a `tempdir_in(CARGO_MANIFEST_DIR/_tmp)` whose parent the tests never create.
+They only survived spec 86's sweep because another test in the same binary creates the directory first
+and happened to run before them. **Spec 96 fixes the class.**
+
+So this spec's own criterion "`fresh-gate` prints PASS" is NOT met, for a reason that is now measured and
+being fixed — recorded here rather than papered over, and the repo gate (its other criterion) is green.
