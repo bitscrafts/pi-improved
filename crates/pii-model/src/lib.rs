@@ -211,7 +211,9 @@ impl ModelProvider for ScriptedProvider {
 pub mod ollama;
 pub use ollama::OllamaProvider;
 
+#[cfg(feature = "llamacpp")]
 pub mod llamacpp;
+#[cfg(feature = "llamacpp")]
 pub use llamacpp::LlamaCppProvider;
 
 pub mod llamacpp_tools;
@@ -239,7 +241,12 @@ pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError
     };
     match kind {
         "scripted" => Ok(Arc::new(ScriptedProvider::from_fixture(Path::new(rest))?)),
+        #[cfg(feature = "llamacpp")]
         "llamacpp" => llamacpp::provider_from_env(spec),
+        #[cfg(not(feature = "llamacpp"))]
+        "llamacpp" => Err(PiiError::Invalid(String::from(
+            "llamacpp: support not compiled in — rebuild pii-model with feature `llamacpp`",
+        ))),
         "ollama" => Err(PiiError::Invalid(String::from(
             "ollama: needs a transport — call ollama::provider_from_env or resolve_with_transport",
         ))),
@@ -343,6 +350,7 @@ mod tests {
     /// T3 (spec 35): `provider_from_spec("llamacpp:...")` dispatches to the
     /// llamacpp arm — a missing model file yields a clear `llamacpp:`-specific
     /// error, NOT the generic "unknown model spec kind".
+    #[cfg(feature = "llamacpp")]
     #[test]
     fn provider_spec_dispatches_llamacpp() {
         let err = match provider_from_spec("llamacpp:/nonexistent/does-not-exist.gguf") {
@@ -355,7 +363,19 @@ mod tests {
         );
     }
 
+    /// Without the `llamacpp` feature the `llamacpp:` spec fails loud.
+    #[cfg(not(feature = "llamacpp"))]
+    #[test]
+    fn llamacpp_spec_errors_when_feature_off() {
+        let err = match provider_from_spec("llamacpp:/x.gguf") {
+            Ok(_) => panic!("llamacpp: must fail when the feature is off"),
+            Err(e) => e.to_string(),
+        };
+        assert!(err.contains("not compiled in"), "got: {err}");
+    }
+
     /// T4 (spec 35): an empty `llamacpp:` path is rejected with a clear error.
+    #[cfg(feature = "llamacpp")]
     #[test]
     fn llamacpp_requires_path() {
         let err = match provider_from_spec("llamacpp:") {

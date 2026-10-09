@@ -13,11 +13,9 @@ pii-core = { path = "../pii-core" }
 pii-store = { path = "../pii-store" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 petgraph = { workspace = true }
 toml = { workspace = true }
 parking_lot = { workspace = true }
-blake3 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

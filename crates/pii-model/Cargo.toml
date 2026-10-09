@@ -12,10 +12,13 @@ pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-llama-cpp-2 = { workspace = true }
+llama-cpp-2 = { workspace = true, optional = true }
 parking_lot = { workspace = true }
 encoding_rs = "0.8"
+
+[features]
+# In-process llama.cpp provider; off by default so builds do not link llama.
+llamacpp = ["dep:llama-cpp-2"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -32,3 +35,11 @@ workspace = true
 # and unit-test compilations cover the crate.
 [lib]
 doctest = false
+
+[[test]]
+name = "real_granite"
+required-features = ["llamacpp"]
+
+[[example]]
+name = "ds4_inprocess"
+required-features = ["llamacpp"]

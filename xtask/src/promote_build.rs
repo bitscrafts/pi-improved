@@ -50,7 +50,7 @@ pub fn runtime_dir_for(worktree: &Path, ts_ms: u64) -> PathBuf {
 #[allow(clippy::disallowed_methods)] // reason: xtask dev-tooling spawns the
 // build and the dev daemon, same exemption as rss_gate.rs.
 pub fn run(worktree: Option<PathBuf>) -> Result<(), String> {
-    let worktree = worktree.unwrap_or_else(|| PathBuf::from("/projects/pi-improved"));
+    let worktree = worktree.unwrap_or_else(crate::workspace_root);
     let manifest = worktree.join("Cargo.toml");
     if !manifest.exists() {
         return Err(format!(
@@ -196,7 +196,8 @@ mod tests {
     /// default runtime dir) regardless of which worktree is given.
     #[test]
     fn runtime_dir_is_confined_under_tmp_never_prod() {
-        let worktree = std::path::Path::new("/projects/pi-improved");
+        let worktree_buf = crate::workspace_root();
+        let worktree = worktree_buf.as_path();
         let rt = runtime_dir_for(worktree, 12345);
         assert!(
             rt.starts_with(worktree.join("_tmp")),

@@ -51,7 +51,8 @@ pub(crate) fn run(corpus_path: &str, queries_path: &str, top_k: usize) -> Result
         .map(|l| serde_json::from_str(l).map_err(|e| format!("queries line: {e}")))
         .collect::<Result<_, _>>()?;
 
-    let dir = std::path::Path::new("/projects/pi-improved/_tmp/phase3/memeval");
+    let dir_buf = crate::workspace_root().join("_tmp/phase3/memeval");
+    let dir = dir_buf.as_path();
     let _ = std::fs::create_dir_all(dir);
     let path = dir.join("memory-eval.redb");
     let _ = std::fs::remove_file(&path); // deterministic scratch name, cleaned first

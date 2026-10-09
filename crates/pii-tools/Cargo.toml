@@ -13,9 +13,7 @@ pii-core = { path = "../pii-core" }
 pii-model = { path = "../pii-model" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 pii-uds = { path = "../pii-uds" }
-serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 dunce = { workspace = true }
 landlock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "io-util"] }

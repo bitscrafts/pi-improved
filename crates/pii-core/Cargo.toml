@@ -9,10 +9,7 @@ description.workspace = true
 
 [dependencies]
 pii-abi = { path = "../pii-abi" }
-serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-bitflags = { workspace = true }
 parking_lot = { workspace = true }
 dunce = { workspace = true }
 nix = { version = "0.29", features = ["process", "signal"] }

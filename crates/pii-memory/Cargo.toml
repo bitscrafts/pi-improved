@@ -13,7 +13,6 @@ pii-core = { path = "../pii-core" }
 pii-store = { path = "../pii-store" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 parking_lot = { workspace = true }
 
 [dev-dependencies]

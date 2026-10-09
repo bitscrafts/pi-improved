@@ -42,7 +42,8 @@ const SLOPE_KB: i64 = 16384;
 #[allow(clippy::redundant_pub_crate)] // reason: bin crate; widest reachable.
 #[allow(clippy::similar_names)] // reason: soak/sock are distinct gate nouns.
 pub(crate) fn run(secs: u64, interval: u64, max_mb: u64, runs: u32) -> Result<(), String> {
-    let root = std::path::Path::new("/projects/pi-improved");
+    let root_buf = crate::workspace_root();
+    let root = root_buf.as_path();
     let scratch = root.join("_tmp/phase3/rss-gate");
     if scratch.exists() {
         let old = format!("{}.old-{}", scratch.display(), now_secs());

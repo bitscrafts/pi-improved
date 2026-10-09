@@ -1651,7 +1651,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1678,15 +1677,12 @@ dependencies = [
 name = "pii-core"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.13.1",
  "dunce",
  "nix 0.29.0",
  "parking_lot",
  "pii-abi",
- "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1705,7 +1701,6 @@ dependencies = [
 name = "pii-graph"
 version = "0.1.0"
 dependencies = [
- "blake3",
  "parking_lot",
  "petgraph",
  "pii-abi",
@@ -1714,7 +1709,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
  "toml",
 ]
 
@@ -1735,13 +1729,10 @@ dependencies = [
 name = "pii-mcp"
 version = "0.1.0"
 dependencies = [
- "pii-abi",
  "pii-core",
- "pii-proto",
  "pii-server",
  "pii-tools",
  "rmcp",
- "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -1758,7 +1749,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1774,7 +1764,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1790,7 +1779,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
  "webpki-roots",
 ]
 
@@ -1826,7 +1814,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
  "tokio",
  "toml",
 ]
@@ -1837,12 +1824,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "pii-abi",
- "pii-core",
  "redb",
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1856,10 +1841,8 @@ dependencies = [
  "pii-model",
  "pii-proto",
  "pii-uds",
- "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
  "tokio",
 ]
 
@@ -1892,7 +1875,6 @@ name = "pii-web"
 version = "0.1.0"
 dependencies = [
  "axum",
- "pii-abi",
  "pii-proto",
  "pii-uds",
  "serde",
@@ -1900,7 +1882,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
- "tower-http",
 ]
 
 [[package]]
@@ -1912,7 +1893,6 @@ dependencies = [
  "pii-core",
  "serde",
  "serde_json",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -2896,20 +2876,6 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "tower-http"
-version = "0.6.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
-dependencies = [
- "bitflags 2.13.1",
- "bytes",
- "http",
- "pin-project-lite",
- "tower-layer",
- "tower-service",
 ]
 
 [[package]]

@@ -1,9 +1,6 @@
 //! `xtask heal-prune` (S1.5): moves stale worktrees to trash via `mv`,
 //! NEVER `rm -rf`. Removes the git worktree registration first.
 
-const WORKTREES: &str = "/projects/pi-improved/_tmp/heal-worktrees";
-const TRASH: &str = "/projects/pi-improved/_tmp/heal-trash";
-
 /// Runs `heal-prune [--all]`.
 ///
 /// # Errors
@@ -13,8 +10,11 @@ const TRASH: &str = "/projects/pi-improved/_tmp/heal-trash";
 #[allow(clippy::disallowed_methods)] // reason: heal-prune is dev tooling that
 // shells git worktree (same as main::run_cmd / rss_gate).
 pub(crate) fn run(all: bool) -> Result<(), String> {
-    let dir = std::path::Path::new(WORKTREES);
-    let trash = std::path::Path::new(TRASH);
+    let tmp = crate::workspace_root().join("_tmp");
+    let dir = tmp.join("heal-worktrees");
+    let dir = dir.as_path();
+    let trash = tmp.join("heal-trash");
+    let trash = trash.as_path();
     std::fs::create_dir_all(trash).map_err(|e| e.to_string())?;
     // Dev tooling: SystemTime is the honest way to measure 7 real days; the
     // Clock trait is for the agent runtime, not the operator toolbelt.
@@ -56,7 +56,7 @@ pub(crate) fn run(all: bool) -> Result<(), String> {
             moved += 1;
         }
     }
-    println!("heal-prune: moved={moved} worktrees to {TRASH}");
+    println!("heal-prune: moved={moved} worktrees to {}", trash.display());
     Ok(())
 }
 

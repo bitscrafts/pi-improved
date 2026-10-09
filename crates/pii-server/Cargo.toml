@@ -22,7 +22,6 @@ pii-channels = { path = "../pii-channels" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-thiserror = { workspace = true }
 parking_lot = { workspace = true }
 dunce = { workspace = true }
 blake3 = { workspace = true }

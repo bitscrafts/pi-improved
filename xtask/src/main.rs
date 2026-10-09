@@ -33,6 +33,8 @@ mod silent_noop;
 
 use std::process::ExitCode;
 
+use xtask::workspace_root;
+
 use cli_parse::{
     parse_mem_eval, parse_promote_collect, parse_report_flag, parse_rss_gate, parse_worktree_flag,
 };
@@ -63,15 +65,6 @@ fn run_cmd(prog: &str, args: &[&str]) -> ExitCode {
             ExitCode::from(2)
         }
     }
-}
-
-/// Resolves the workspace root from `xtask`'s own manifest dir — used by
-/// both `reachability-check` and `doc-drift-check`.
-fn workspace_root() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .to_path_buf()
 }
 
 /// Runs the full local gate set (F8): deps/net/lint/proto/bench plus
@@ -410,12 +403,9 @@ fn memory_eval_fixture_is_not_rigged() {
     #![allow(clippy::panic)] // test fixture: missing relevant doc is a hard failure
     use std::collections::BTreeMap;
 
-    let corpus =
-        std::fs::read_to_string("/projects/pi-improved/fixtures/phase3/memory/corpus.jsonl")
-            .expect("corpus fixture");
-    let queries =
-        std::fs::read_to_string("/projects/pi-improved/fixtures/phase3/memory/queries.jsonl")
-            .expect("queries fixture");
+    let fixtures = workspace_root().join("fixtures/phase3/memory");
+    let corpus = std::fs::read_to_string(fixtures.join("corpus.jsonl")).expect("corpus fixture");
+    let queries = std::fs::read_to_string(fixtures.join("queries.jsonl")).expect("queries fixture");
     let mut docs: Vec<(String, String)> = Vec::new();
     for line in corpus.lines().filter(|l| !l.trim().is_empty()) {
         let v: serde_json::Value = serde_json::from_str(line).expect("corpus json");

@@ -13,9 +13,9 @@ use std::path::Path;
 use crate::heal_seed::SeedRecord;
 use pii_store::heal::{ApprovalDecision, HealStore};
 
-const SEEDS: &str = "/projects/pi-improved/_tmp/heal-seeds.json";
-const REVIEWS: &str = "/projects/pi-improved/_tmp/heal-reviews";
-const HEAL_DB: &str = "/projects/pi-improved/_tmp/heal-collect.redb";
+fn tmp_path(rel: &str) -> std::path::PathBuf {
+    crate::workspace_root().join("_tmp").join(rel)
+}
 
 /// Runs `heal-collect <sig>` against the default (live) ledger/reviews/heal-db
 /// paths.
@@ -25,9 +25,9 @@ const HEAL_DB: &str = "/projects/pi-improved/_tmp/heal-collect.redb";
 pub fn run(sig: &str) -> Result<(), String> {
     run_at(
         sig,
-        Path::new(SEEDS),
-        Path::new(REVIEWS),
-        Path::new(HEAL_DB),
+        &tmp_path("heal-seeds.json"),
+        &tmp_path("heal-reviews"),
+        &tmp_path("heal-collect.redb"),
     )
 }
 
@@ -176,9 +176,9 @@ pub fn collect_from_approval(
     };
     collect_with_decision(
         sig,
-        Path::new(SEEDS),
-        Path::new(REVIEWS),
-        Path::new(HEAL_DB),
+        &tmp_path("heal-seeds.json"),
+        &tmp_path("heal-reviews"),
+        &tmp_path("heal-collect.redb"),
         &decision,
     )
 }

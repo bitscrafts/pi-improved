@@ -131,7 +131,8 @@ mod tests {
 
     #[test]
     fn trailing_line_number_is_stripped() {
-        let root = std::path::Path::new("/projects/pi-improved");
+        let root_buf = crate::workspace_root();
+        let root = root_buf.as_path();
         assert!(token_exists(root, "crates/pii-store/src/lib.rs:41"));
         assert!(token_exists(root, "crates/pii-store/src/lib.rs"));
     }

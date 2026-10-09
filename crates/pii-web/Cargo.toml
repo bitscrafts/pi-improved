@@ -8,14 +8,12 @@ repository.workspace = true
 description = "Read-only web viewer: proxies the daemon's UDS JSON-RPC over loopback HTTP (P4.6)"
 
 [dependencies]
-pii-abi = { path = "../pii-abi" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 pii-uds = { path = "../pii-uds" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "sync", "net", "time"] }
 axum = "0.8"
-tower-http = { version = "0.6", features = ["cors"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

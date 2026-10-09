@@ -25,6 +25,16 @@
 // invariants, refusal semantics) in one paragraph; splitting them would
 // hide the load-bearing detail.
 
+/// Resolves the workspace root from `xtask`'s own manifest dir, so tooling
+/// works from any checkout or `git archive` export path.
+#[must_use]
+pub fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf()
+}
+
 /// `cargo xtask <flags>`: CLI parsing shared by the bin and the lib's own
 /// tests (`lint_files`' unit tests parse the `--report` flag through it).
 #[cfg(test)]

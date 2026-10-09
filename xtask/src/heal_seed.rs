@@ -23,8 +23,9 @@ pub struct SeedRecord {
     pub original_line: String,
 }
 
-const LEDGER: &str = "/projects/pi-improved/_tmp/heal-seeds.json";
-const WORKTREES: &str = "/projects/pi-improved/_tmp/heal-worktrees";
+fn ledger_path() -> std::path::PathBuf {
+    crate::workspace_root().join("_tmp/heal-seeds.json")
+}
 const MAX_WORKTREES: usize = 50;
 const MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GiB
 
@@ -44,7 +45,8 @@ pub fn run() -> Result<(), String> {
     let head = git_head()?;
     let broken_file = "crates/pii-core/src/clock.rs";
     let sig = blake3_short(&format!("{head}:{broken_file}"));
-    let dir = std::path::Path::new(WORKTREES);
+    let dir_buf = crate::workspace_root().join("_tmp/heal-worktrees");
+    let dir = dir_buf.as_path();
     let _ = std::fs::create_dir_all(dir);
 
     // Rate limit + disk ceiling (S1.1 step 5 refusals). Same signature
@@ -181,7 +183,7 @@ fn blake3_short(s: &str) -> String {
 }
 
 fn read_ledger() -> Vec<SeedRecord> {
-    std::fs::read_to_string(LEDGER)
+    std::fs::read_to_string(ledger_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
@@ -189,7 +191,7 @@ fn read_ledger() -> Vec<SeedRecord> {
 
 fn write_ledger(ledger: &[SeedRecord]) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(ledger).map_err(|e| e.to_string())?;
-    std::fs::write(LEDGER, bytes).map_err(|e| e.to_string())
+    std::fs::write(ledger_path(), bytes).map_err(|e| e.to_string())
 }
 
 fn dir_size(dir: &std::path::Path) -> Result<u64, String> {
