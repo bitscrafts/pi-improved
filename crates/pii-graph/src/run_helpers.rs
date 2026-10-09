@@ -119,6 +119,10 @@ pub(crate) fn replay(
             RunEvent::NodeFinished {
                 node, port, value, ..
             } => {
+                // Replay of an already-journaled completion: the activation
+                // outcome is irrelevant, only the state mutation matters.
+
+                #[allow(clippy::let_underscore_must_use)] // replay: activation outcome irrelevant
                 let _ = crate::sched::state::apply_completion(spec, st, node, port, value);
                 bb.write().record(node.as_str(), value.clone());
                 fin.push(FinishedNode {

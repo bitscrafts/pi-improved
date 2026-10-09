@@ -180,6 +180,9 @@ fn render_header(spec: &GraphSpec, node: &crate::spec::NodeSpec) -> String {
     }
     if let Some(budget) = node.loop_budget {
         use std::fmt::Write as _;
+        // Writing to a `String` is infallible.
+
+        #[allow(clippy::let_underscore_must_use)] // infallible: writing to a String
         let _ = write!(header, " (loop_budget={budget})");
     }
     if let Some(join) = join_suffix(&node.join) {

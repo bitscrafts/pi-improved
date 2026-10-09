@@ -236,3 +236,34 @@ fn run_header(run: &RunId) -> pii_abi::RunHeader {
         dur_ms: 0,
     }
 }
+
+/// D5: a failed `append_events` must not lose the drained events — after one
+/// injected fault the next flush persists them with contiguous seqs.
+#[test]
+fn failed_flush_loses_no_events_and_seqs_stay_contiguous() {
+    let (store, run, obs, bb) = fixture();
+    let jr = Journaler::with_batch(
+        &store,
+        obs as Arc<dyn Observer>,
+        run_header(&run),
+        bb,
+        1_000_000,
+    );
+    for i in 0..3 {
+        jr.append(&RunEvent::NodeDead {
+            node: NodeId::from(format!("n{i}")),
+        })
+        .expect("append");
+    }
+    store.set_fail_append_events_for_test(1);
+    assert!(jr.flush().is_err(), "injected fault must surface");
+    assert_eq!(jr.pending_len(), 3, "failed flush must keep events pending");
+    jr.append(&RunEvent::NodeDead {
+        node: NodeId::from("n3"),
+    })
+    .expect("append");
+    jr.flush().expect("second flush succeeds");
+    let journal = store.read_journal(&run).expect("journal");
+    let seqs: Vec<u64> = journal.iter().map(|(s, _)| *s).collect();
+    assert_eq!(seqs, vec![0, 1, 2, 3], "no lost event, contiguous seqs");
+}

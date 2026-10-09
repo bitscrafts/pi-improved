@@ -321,7 +321,9 @@ fn journal_next_or_suspend(
                 };
             }
             // Snapshot unconditionally at the Suspended seq.
-            let _ = env.jr.snapshot_now();
+            if let Err(e) = env.jr.snapshot_now() {
+                env.jr.report_flush_failure(&e);
+            }
             DispatchOutcome::Suspended { key }
         }
         Outcome::Fail { error } => journal_failure(env, id, &error, 1, false),

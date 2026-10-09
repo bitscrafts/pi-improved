@@ -6,6 +6,10 @@
 //! journaler stays the only redb writer** (the spec instructs reuse of the
 //! existing run entry rather than a second journaling path).
 
+// Out of scope for spec 77 (lint enabled for pii-graph only); the exit-criteria
+// clippy run passes -W for pii-server too, so existing best-effort discards
+// here are allowed until a later per-crate sweep.
+
 pub mod daemon;
 pub mod engine;
 pub mod node_kinds;

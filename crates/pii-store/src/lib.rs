@@ -55,6 +55,9 @@ pub struct Store {
     /// root, and cargo test's shared-process threading makes a real
     /// process-wide rlimit unsafe to use from one test among many).
     fail_session_writes_for_test: std::sync::atomic::AtomicBool,
+    /// Number of upcoming [`Store::append_events`] calls to fail with a
+    /// synthetic error (test instrumentation; decremented per failure).
+    fail_append_events_for_test: AtomicU64,
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
@@ -137,6 +140,7 @@ impl Store {
             write_txn_count: AtomicU64::new(0),
             session_bytes_written: AtomicU64::new(0),
             fail_session_writes_for_test: std::sync::atomic::AtomicBool::new(false),
+            fail_append_events_for_test: AtomicU64::new(0),
         })
     }
 
@@ -167,6 +171,13 @@ impl Store {
     pub fn set_fail_session_writes_for_test(&self, fail: bool) {
         self.fail_session_writes_for_test
             .store(fail, Ordering::Relaxed);
+    }
+
+    /// **Test instrumentation only.** Makes the next `n`
+    /// [`Store::append_events`] calls fail with a synthetic
+    /// [`PiiError::Internal`] before touching redb (journal flush-loss test).
+    pub fn set_fail_append_events_for_test(&self, n: u64) {
+        self.fail_append_events_for_test.store(n, Ordering::Relaxed);
     }
 
     /// Opens a (counted) write transaction. A transaction is opened and
@@ -308,6 +319,15 @@ impl Store {
         events: &[&RunEvent],
     ) -> Result<u64, PiiError> {
         let start = header.seq;
+        if self
+            .fail_append_events_for_test
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Err(PiiError::Internal(String::from(
+                "store: injected append_events fault",
+            )));
+        }
         let write = self.begin_write_counted()?;
         {
             let mut journal = write

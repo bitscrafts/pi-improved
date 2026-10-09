@@ -251,6 +251,10 @@ impl Engine<'_> {
                             let env = &env;
                             s.spawn(move || {
                                 let out = dispatch(env, n);
+                                // Receiver gone => run already torn down; nothing to report.
+
+                                #[allow(clippy::let_underscore_must_use)]
+                                // receiver gone = run torn down
                                 let _ = tx.send((n.id.clone(), out));
                             });
                         }
@@ -329,7 +333,9 @@ impl Engine<'_> {
     /// (resume depends on both), leave the header `Running` for recovery,
     /// then return `Cancelled`. Every cancel exit funnels through here.
     fn cancelled(&self) -> Result<Terminal, PiiError> {
-        let _ = self.jr.flush();
+        if let Err(e) = self.jr.flush() {
+            self.jr.report_flush_failure(&e);
+        }
         Err(PiiError::Cancelled)
     }
 

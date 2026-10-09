@@ -6,6 +6,10 @@
 //! entry points land in a dedicated pass.
 
 #![forbid(unsafe_code)]
+// Spec 77: a discarded `must_use` result is how the journal's flush loss hid.
+// Enabled here (the crate the defect lived in); the gate's `-D warnings` makes
+// any new discard a hard failure. Intentional sites carry a named `allow`.
+#![warn(clippy::let_underscore_must_use)]
 
 pub mod blackboard;
 pub mod cron;

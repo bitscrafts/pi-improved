@@ -162,7 +162,19 @@ impl<'a> Journaler<'a> {
             st.header.status = status;
             st.header_dirty = true;
         }
-        let _ = self.flush();
+        if let Err(e) = self.flush() {
+            self.report_flush_failure(&e);
+        }
+    }
+
+    /// Surfaces a flush failure that the caller cannot propagate through the
+    /// observer's persist-error channel (events stay buffered for a retry).
+    pub fn report_flush_failure(&self, e: &PiiError) {
+        let run = self.state.lock().header.run.clone();
+        self.obs.event(&ObsEvent::PersistError {
+            context: format!("journal:{run}"),
+            message: e.to_string(),
+        });
     }
 
     /// Records the total run duration on the header.
@@ -230,14 +242,18 @@ impl<'a> Journaler<'a> {
         if st.pending.is_empty() && !st.header_dirty {
             return Ok(st.last_seq);
         }
-        let events: Vec<RunEvent> = st.pending.drain(..).collect();
-        let refs: Vec<&RunEvent> = events.iter().collect();
-        // The drained clone is bounded by `batch` (write-behind threshold)
-        // or the pre-finish barrier — never the whole journal. `refs` may be
-        // empty here (a header-only flush, e.g. `set_status` after a prior
-        // `append` already drained `pending` at a batch/snapshot boundary);
-        // `append_events` still persists the header unconditionally.
-        self.store.append_events(&mut st.header, &refs)?;
+        // `pending` is cleared only AFTER `append_events` succeeds, so a
+        // failed write leaves every event buffered for the next flush (D5).
+        // The batch is bounded by `batch` (write-behind threshold) or the
+        // pre-finish barrier — never the whole journal. It may be empty (a
+        // header-only flush, e.g. `set_status` after a prior `append` already
+        // flushed at a batch/snapshot boundary); `append_events` still
+        // persists the header unconditionally.
+        let mut header = st.header.clone();
+        let refs: Vec<&RunEvent> = st.pending.iter().collect();
+        self.store.append_events(&mut header, &refs)?;
+        st.header = header;
+        st.pending.clear();
         st.header_dirty = false;
         st.last_seq = st.header.seq.saturating_sub(1);
         Ok(st.last_seq)
