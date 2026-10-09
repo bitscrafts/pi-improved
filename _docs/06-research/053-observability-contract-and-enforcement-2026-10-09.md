@@ -223,3 +223,31 @@ mistake into its training data.** The laya lesson (a metric that swallowed the e
 70× fake win) is the exact failure mode for a corpus that later teaches a model. Every measure and
 outcome field introduced for this must therefore have a negative case in its tests: *it must not move
 when the thing did not happen, and a failed run must never record a success.*
+
+---
+
+## OUTCOME (added 2026-10-09, end of the lane) — what landed against this analysis
+The plan in §7-8 became specs **97-106**, all landed and each verified by the orchestrator on its own runs:
+
+| spec | what | commit | the proof |
+|---|---|---|---|
+| 97 | the `pii-observe` contract crate (serde-only floor) | `4281c12` | `cargo tree -p pii-observe` = serde + serde_json only; 9 tests; registry mutation bites |
+| 98 | `lint-observability` as a FAILING gate step + registry completeness (R1e) | `5c6fe70` | a re-introduced raw print exits 1 naming `path:line`; an unregistered name const exits 1 |
+| 99 | health IDENTITY + `pii health --json` | `46c4213` | two daemons, different stores → different identity; blanking the store path turns the test RED |
+| 100-101 | the adoption sweep: 15 crates emit, each with a named-event test | `61e197f`, `16ab1c3`, `39c9d60` | exemptions 19 → 15 → 11 → **4**; prints 139 → 96; every adequacy test mutation-verified |
+| 102 | the enforcement is BOUNDED (registry outside the crates + per-file print budget) | `4f891af` | a fifth exemption, a dead exemption, a missing registry each exit 1; line churn leaves the allowlist byte-identical |
+| 103 | the trajectory substrate (correlation, verbatim outcome, redaction at the sink, OFF by default) | `5191999` | 9-line trajectory with the `run.outcome` line; `text` dropped in the trajectory but intact on stdout; a failed run records failure |
+| 104 | P0: the musl release build is STATIC and the vision doc now says exactly that | `07b8eba` | `file` → `static-pie linked`; `--help` rc=0, `--bogus` rc=2; probe rc=0 live / rc=2 bare; `kill -9` + restart keeps the store |
+| 105 | P1: every redb stamped + refused when newer; backup/restore round-trip; `pii metrics`; runbook | `e2a47c8` | six stores at version 1 (was one + a `null`); guard refuses a non-empty target; counts identical after the round-trip |
+| 106 | the operator surfaces stop lying | `b5f0f9a` | `run ls` listed NOTHING by construction; `--status bogus` read as "no runs" at rc=0; a suspended run's approval raced the journal flush and vanished; `health` hid the timer store |
+
+**Final measured state:** 15 crates emit through the contract; **4** sanctioned exemptions (pure-types / the
+contract itself), pinned in `xtask/observability-exemptions.txt` where a fifth is a red gate; 96 raw prints
+on a per-file budget; the lint checks 187 files and fails closed.
+**Honest limits:** adequacy is a FLOOR (one named-event test per crate — no lint can judge whether the RIGHT
+events are emitted; that is a per-subsystem review, P3); coverage is unmeasured; the data-safety hardening
+(what must never reach a log or a trajectory) belongs to P2; instrumentation cost belongs to P5.
+**One lesson this lane paid for twice:** an exemption the exempted party can grant itself is not
+enforcement, and a check whose FAILURE path fabricates findings is worse than no check — both were found by
+orchestrator controls *after* a worker reported success.
+

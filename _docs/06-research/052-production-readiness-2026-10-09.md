@@ -281,3 +281,41 @@ backup, and observability, which is ~3–5 focused sessions. The four-pillar vis
 much larger programme, and three of its four pillars are unbuilt — deciding that explicitly (P4) is
 worth more than starting any of them, because every stale "30+ channels" claim in the docs is a
 promise the code does not keep.
+
+---
+
+## STATUS UPDATE (added 2026-10-09, end of day) — P0 and P1 are CLOSED
+Both phases in §8 landed as specs, each with an orchestrator-reproduced proof (not a worker paste):
+- **P0 deployable → spec 104** (`07b8eba`): the musl release build **is** static
+  (`file` → `static-pie linked`, 4,596,744 bytes; `ldd` → "statically linked"), and `001-pii-vision.md` now
+  says exactly that — the default build stays dynamic and `pii-web`/`pii-mcp`/`pii-evolve` are named as
+  unmeasured. `pii daemon --help` works (`--bogus` rc=2), `examples/pii.production.toml` documents every
+  key, the log file rotates (verified: 3 files at keep=2), the probe exits 2 with no daemon and 0 live, and
+  `kill -9` + restart leaves the store intact. Artefacts: `deploy/Dockerfile` (**untested here — no
+  Docker**), `deploy/pii.service` (`systemd-analyze verify` rc=0, never run as a service).
+- **P1 operable → spec 105** (`e2a47c8`): every redb the daemon opens is stamped and a NEWER version is
+  refused with a clear message; backup → wipe → restore verified with counts identical; the restore guard
+  refuses a non-empty target without `--force`; `pii metrics`; runbook in
+  `_docs/05-operations/105-runbook.md`.
+- **The observability mandate → specs 97-103 + 106** (see `053-…md` §OUTCOME): the contract crate, the
+  failing gate step, health identity, the adoption sweep (15 crates emit, 4 sanctioned exemptions), the
+  bounded enforcement, the trajectory substrate, and three operator-surface defects found by chasing a
+  residual (`run ls` listed nothing by construction; an unknown `--status` read as "no runs" at rc=0; a
+  suspended run's approval vanished to a journal-flush race).
+
+**What P2-P5 still have to do** (unchanged in intent, now with the integration points live):
+- **P2 safety**: the Landlock/`ProcCap` decision (or the documented absence), persist denial events as an
+  audit trail (the contract now carries them, so this is cheap), secret handling beyond env vars. The
+  data-safety half of observability lives here: what must NEVER reach a log or a trajectory, tested against
+  a canary secret — the sink already exists (`pii-observe` + `103`), so the policy can be tested at the sink.
+- **P3 quality gaps**: coverage tooling (still unmeasured) and the per-subsystem ADEQUACY review — whether
+  each crate emits the right events for an operator to diagnose a failure. The mechanical floor (one named
+  event test per crate) is in place; the review is not.
+- **P4**: decide the four-pillar vision; pillars 2 (gateway) and 4 (self-improvement, now with the
+  trajectory substrate as its first brick) need an explicit build-or-rescope decision.
+- **P5**: load/soak, including the instrumentation cost of what 103/105/106 added.
+
+**Residual defects carried, not closed:** resolving+resuming a *restored* pending approval after a restart
+is untested; a `kill -9` leaves no `daemon.stopped` line (documented, not fixed); `timer.redb` is now in
+health but the wheel itself is still inside the scheduler.
+

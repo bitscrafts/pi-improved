@@ -748,3 +748,26 @@ run-scoped ids; `approvals_pending` → 2; health → six stores; no daemon left
 **Still open after 106:** whether a RESTORED pending approval can be resolved and resumed after a restart
 is not verified (the row is restored with the store; the resume path across a restart is untested).
 
+## 2026-10-09 — documentation pass closing the observability + P0/P1 lane
+- `_docs/02-guides/observability-and-deploy-conventions.md` (NEW) — the full convention set: what the gate
+  enforces, health identity, the operator-surface rule, trajectories, and the deploy/runbook commands.
+- `_docs/06-research/053-…md` gained an OUTCOME section: the spec→commit→proof table for 97-106, the final
+  measured state (15 crates emitting, 4 sanctioned exemptions, 96 prints on budget) and the honest limits.
+- `_docs/06-research/052-…md` gained a STATUS UPDATE: P0 and P1 closed with their proofs, and what P2-P5
+  still have to do now that the integration points exist.
+- `_docs/INDEX.md` + `TOC.md`: 053 and the new guide indexed.
+- amem: `pii/observability/enforcement-lane-97-102-2026-10-09` and `pii/close/p0-p1-lane-97-106-2026-10-09`.
+- Skill `observability-enforcement` patched with the three decay modes (self-granted exemption; a failure
+  path that fabricates findings; a green mutant is a claim about the EDIT) and §3b on why "every crate
+  implements the interface" is not expressible in Rust or Java, with the structural answer.
+
+**PENDING YOUR APPROVAL** — `AGENTS.md` is a protected file (the write was refused by the guard, correctly).
+The paragraph to paste there, pointing at the guide above:
+
+> ## Observability + deploy (see `_docs/02-guides/observability-and-deploy-conventions.md`)
+> Emit through `pii-observe`; `lint-observability` fails the gate on a missing seam, an unsanctioned or dead
+> exemption, a raw print over its per-file budget, or a name const missing from `ALL`. Health reports
+> identity (store/mounts/version/counts). Operator surfaces must not lie: an unknown value is refused, never
+> silently read as empty. Static build: `cargo build --release --target x86_64-unknown-linux-musl -p pii-cli`
+> (the default build is dynamic). Runbook: `_docs/05-operations/105-runbook.md`.
+

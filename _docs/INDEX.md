@@ -36,6 +36,7 @@ messaging gateway with one performant, local-first, modular system.
   - `pii-mcp-bridge.md` — the Hermes↔pii integration: pii-mcp crate (MCP server + client, separate binary, rmcp quarantine); MCP = integration surface, UDS JSON-RPC = control plane
   - [`023-llamacpp-granite-on-pi-process.md`](02-guides/023-llamacpp-granite-on-pi-process.md) — the full process of making llama.cpp + granite work on pi: router mode, the built-in `llamacpp` provider, flag order, ds4-bench results, and the in-process provider (spec 35)
   - `pi-local-llamacpp.md` — how to call pi with local llama.cpp models (granite/laguna): the built-in `llamacpp` provider, router port 8082, and the critical `--provider`/`--model`-before-`-p` flag order
+- [`observability-and-deploy-conventions.md`](02-guides/observability-and-deploy-conventions.md) — **the observability + deploy conventions**: what the gate enforces (contract crate, bounded exemption registry, per-file print budget, name-registry completeness), health identity, the operator-surface rule, trajectories, and the deploy/runbook commands
 - [`quality-gate-and-fresh-tree.md`](02-guides/quality-gate-and-fresh-tree.md) — **the gate manual**: all eight steps and why each exists, the two-tree model (`quality-gate.sh` vs `fresh-gate`, and why to believe the export), the `tmp_scratch` rule every test must follow, and the acknowledgement limits
 - `03-reference/` — technical reference  *(section not created in this project)*
 - `04-development/` — developer docs / analysis  *(section not created in this project)*
@@ -55,6 +56,7 @@ messaging gateway with one performant, local-first, modular system.
     [`049`](06-research/049-replay-err-fix-remeasure-2026-10-09.md) fixed it and re-measured ·
     [`050`](06-research/050-inline-methods-measured-2026-10-09.md) measured all 11 inline RPC handlers ·
     [`051`](06-research/051-scratch-helper-and-sweep-2026-10-09.md) killed the non-hermetic-test class at the root
+  - [`06-research/053-observability-contract-and-enforcement-2026-10-09.md`](06-research/053-observability-contract-and-enforcement-2026-10-09.md) — **observability: the contract, the enforcement, and what landed** (2026-10-09): the measured adoption picture (13 crates with zero, 139 raw prints, health with no identity), the `pii-observe` decision and its rationale, the rules the gate now enforces, and the outcome table for specs 97-106 with its honest limits
   - [`06-research/052-production-readiness-2026-10-09.md`](06-research/052-production-readiness-2026-10-09.md) — **honest production-readiness assessment + the road to production** (2026-10-09): what works (proven end-to-end), quality measured, the specification-vs-reality table per pillar and phase, every stale doc claim, the readiness gaps by axis, and a phased P0-P5 plan with measurable exit criteria
 - [99-archive/](99-archive/) — deprecated / historical
 
