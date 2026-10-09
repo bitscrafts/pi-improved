@@ -10,7 +10,7 @@ largest concentration of raw prints in the repo (`pii-cli` had 103 of the 139 wh
 written). Their observability is mostly *error and progress reporting* rather than subsystem metrics.
 
 ## Requirements
-R1. **Convert these six crates** — for each: add the `pii-observe` dependency, take or expose the seam,
+R1. **Convert these seven crates** — for each: add the `pii-observe` dependency, take or expose the seam,
     emit **at least one real event** through `pii_observe::names` consts at its boundary, DELETE its
     `// observability: none — …` placeholder line, and record in the report which raw prints each one
     replaced (the count removed from `xtask/observability-allowlist.txt` per crate):
@@ -23,9 +23,12 @@ R1. **Convert these six crates** — for each: add the `pii-observe` dependency,
     | `pii-web` | request failures and upstream (daemon) errors as events |
     | `pii-mcp` | tool-call failures as events |
     | `pii-evolve` | cycle start/finish and launch failures as events (this crate is the boss/cron launcher — its failures are currently only prints) |
+    | `pii-http-fetch` | fetch outcomes and **allowlist denials** as events (it is a real fetcher with a `http:<host>` grant key, not a types-only crate) |
 R2. **Leave exactly four sanctioned exemptions**, and make each reason truthful and short (they become a
     checked-in registry in spec 102): `pii-abi` (kernel ABI: traits/types only), `pii-proto` (wire
-    types/consts only), `pii-uds` (path helpers only), `pii-observe` (the contract itself). Do not exempt
+    types/consts only), `pii-uds` (path helpers only), `pii-observe` (the contract itself). Measured on
+    HEAD after spec 100 (orchestrator): the 11 remaining exemptions are exactly these four plus the
+    seven crates listed in R1 — so this spec ends with the sanctioned four only. Do not exempt
     anything else; if a crate in the list above genuinely cannot emit, say so in the report with the
     reason instead of exempting it.
 R3. **Adequacy floor for each converted crate**: one passing test asserting a **named** event from it
@@ -35,7 +38,7 @@ R4. **Net print reduction**: report the allowlist total before and after (it mus
 R5. `specs/` is read-only for you.
 
 ## Exit Criteria
-- [ ] `cargo run -q -p xtask -- lint-observability` exits 0 and its summary shows the exempt count is now exactly **4** (paste the summary line)
+- [ ] `cargo run -q -p xtask -- lint-observability` exits 0 and its summary shows the exempt count is now exactly **4** (it was 11 after spec 100; paste the summary line)
 - [ ] `[ "$(grep -rn '// observability: none' crates/ | grep -vE 'pii-abi|pii-proto|pii-uds|pii-observe' | wc -l)" = 0 ]`
 - [ ] the print allowlist total dropped — both numbers pasted, and the per-crate deltas stated
 - [ ] the adequacy table (`crate → test → name`) is in the report and each test passes when run (paste)
