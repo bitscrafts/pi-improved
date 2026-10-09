@@ -516,3 +516,49 @@ envelope-on-budget). One spec per run; orchestrator verifies criteria LIVE then 
   verified each criterion live and ran a mutation control on 79 and 80.
 - 043 §10 remaining: item 15 (deferred by the review) and, if wanted, the pii-store F-11
   follow-through in `mem/*.rs` + `session.rs` (the same constructor, other files).
+
+## 2026-10-09 — 045 re-review landed, and its #1 finding is CLOSED (specs 83-86)
+
+The re-review (`_docs/06-research/045-opus-rereview-2026-10-09.md`, committed `5b95879`) judged
+batches A-D by behaviour. Verdict: D1/D2 landed and are mutation-proven; D3 reachability is
+HALF-held (still satisfied by a `#[cfg(test)]` module, a string literal, a raw string or a
+`/* */` comment — root cause `xtask/src/reachability.rs:178-186`, cfg(test) state evaluated one
+line at a time); three things did NOT hold — the three worst being MY OWN:
+  - **N1 (HIGH)**: three `pii-memory` `lanes` tests were non-hermetic, so **a fresh tree failed
+    the gate** while the developer tree passed only because `crates/pii-memory/_tmp/phase3` had
+    been created earlier by something else.
+  - **N4**: spec 76's `llamacpp` feature gate means the in-process llama provider and its 9
+    real-model tests are compiled by NO gate step (ignored count fell 10 → 1).
+  - **E0463 correction**: `doctest = false` is ignored by an explicit `--doc`, so it never
+    affected `quality-gate.sh`; the 18 `Cargo.toml` comments claiming "the shipped quality gate
+    can never pass" are FALSE. It affects plain `cargo test` only.
+
+**Landed since (all committed, both gates green):**
+- **83** `ee38646` the three `lanes` tests are hermetic (own `tempdir_in` under `tmp_root()`).
+  Orchestrator measured the red→green itself in its own fresh export: 3 FAILED
+  (`No such file or directory` on `_tmp/phase3/*.redb`) → 8 passed.
+- **84** `ff9a664` `cargo xtask fresh-gate [--worktree] [--overlay src=dest]`: exports HEAD via
+  `git archive`, runs the gate THERE, names the failing tests, keeps the export on failure,
+  removes it on success, cleans up only through `safe_to_remove` (fail-safe guard).
+- **85** (in 86's commit) the spec-80 heartbeat tests now create their own scratch
+  (`create_dir_all(_tmp)` + `tempdir_in`) — a first attempt used `.tempdir()` (system temp) and
+  was corrected: this project's rule is tests under `_tmp/`, never `/tmp`.
+- **86** `5376dfa` the tool now keeps at most ONE failed export and REFUSES to start below
+  `FRESH_GATE_MIN_FREE_MB` (default 2048), and the N1-class sweep finished:
+  `pii-store/src/heal.rs`, 21 `pii-tools` tests, and the three `xtask/tests/spec72_reachability`
+  tests that cannot run outside a git repo (fixed with a `tar` snapshot — **the orchestrator had
+  earlier dismissed that exact failure as a verification artifact; that judgment was too
+  lenient**, the export IS the CI model).
+- **Both gates now green**: `bash quality-gate.sh` AND `fresh-gate --worktree` (orchestrator
+  reproduced both verbatim, plus the refusal control: `FRESH_GATE_MIN_FREE_MB=999999` refuses in
+  0.2s naming the numbers, creating nothing).
+
+**Disk incident (2026-10-09)**: five 8G fresh-gate exports + a 35G delegated review export filled
+the 594G volume to 0 bytes, which silently killed a worker mid-edit. Reclaimed 74G from
+session-created scratch only; pre-existing large `_tmp` items were left and listed for the user.
+The tool's retention + free-space check (spec 86) exist so this cannot repeat.
+
+**Still open from 045**: N2 (reachability made stateful — candidate 3), N3 (lag recovery must be
+idempotent for approvals and recover lost `RunFinished` — candidate 4), N4 (compile llama in the
+gate — candidate 5), N7 (`rt.shutdown_timeout`), N8 (the false `doctest = false` comments), and
+045 §4's NOT-VERIFIED mutation runs for 77/78/79/80/82 (candidate 6).
