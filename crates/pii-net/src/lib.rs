@@ -47,3 +47,4 @@ pub fn check_target(
         .ok_or_else(|| PiiError::Denied(format!("net: no grant for '{key}'")))?;
     authorize::authorize(target, &[], &grant, clock.now_ms(), timeout_ms)
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

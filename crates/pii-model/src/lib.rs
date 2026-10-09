@@ -539,3 +539,4 @@ mod contract {
         assert_eq!(resp2.text, "full turn text");
     }
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

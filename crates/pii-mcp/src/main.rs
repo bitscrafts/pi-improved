@@ -355,3 +355,4 @@ mod tests {
         );
     }
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

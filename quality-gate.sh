@@ -102,6 +102,17 @@ else
     status=1
 fi
 
+echo "==> cargo run -q -p xtask -- lint-observability"
+# Spec 98: every crate depends on and uses the pii-observe seam (or carries a
+# named exemption), no new raw prints outside the allowlist, and every name in
+# the registry is listed in ALL.
+if cargo run -q -p xtask -- lint-observability; then
+    echo "PASS: lint-observability"
+else
+    echo "FAIL: lint-observability"
+    status=1
+fi
+
 echo "==> cargo run -q -p xtask -- reachability-check"
 # Declared-capability caller gate (spec 72, D3 fix): every seed entry's
 # needle must have a REAL external caller — outside the declaring crate,

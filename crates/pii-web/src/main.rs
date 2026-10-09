@@ -518,3 +518,4 @@ mod tests {
         assert!(params.get("query").is_none(), "must not use 'query'");
     }
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

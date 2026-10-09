@@ -73,3 +73,37 @@ R5. Do NOT convert any call site in this spec. The sweep is spec 100; this spec'
 - Do NOT edit any file under `specs/`.
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+Landed: `xtask/src/lint_observability.rs`, `xtask/observability-allowlist.txt` (140 entries), the
+`lint-observability` gate step (`grep -c` = 4), and one `// observability: none — …` line added to the
+19 crates' entry files.
+
+**Verified by the orchestrator, not taken on report:**
+- `lint-observability` on the tree → exit 0, with an honest summary:
+  `174 files checked, 140 print sites allowlisted, 19 crates exempt, 0 findings`, and it LISTS each
+  exemption with its reason.
+- **Control A (raw print bites):** re-introducing `eprintln!` at `crates/pii-uds/src/lib.rs:1` →
+  exit 1, `crates/pii-uds/src/lib.rs:1: raw print macro (use the pii-observe seam, or allowlist with a
+  reason)`. Restored.
+- **Control B (R1e — my own spec-97 finding, now closed):** appending an unregistered
+  `pub const ROGUE_PROBE` to `names.rs` → exit 1, ```ROGUE_PROBE` is not listed in ALL``. Restored.
+
+## HONEST CAVEAT — the enforcement is real, the ADOPTION is not yet
+The lint lands green **only because all 19 crates carry a placeholder exemption** with the literal reason
+*"pending the spec 100 adoption sweep (no seam yet)"*. `pii-core` is the only crate that passes on a real
+use site. So today this spec enforces a *shell*: the rule exists, bites, and makes the debt **visible and
+countable** (the lint prints the count) — but 19 crates are exempt from the rule the user asked to
+enforce on every crate.
+
+That is deliberate staging, and it is only acceptable because it cannot become permanent: spec 100 now
+carries hard exit criteria that (a) the placeholder string appears **nowhere**, (b) the exempt set shrinks
+to the sanctioned pure-type crates (`pii-abi`, `pii-proto`, `pii-uds`, `pii-observe`), and (c) every other
+crate passes R1b on genuine `pii_observe::` use. Until spec 100 lands, this row must not be read as
+"observability is enforced on every crate".
+
+Process notes from the worker, recorded as-is: it ran `git stash` by mistake and popped it immediately
+(all 23 paths restored); a stale xtask test binary in the shared target dir failed two xtask tests until
+rebuilt. Also observed in the tree (pre-existing, untracked, 2026-09-18): a directory literally named
+`crates/*` and `crates/_tmp/phase3/slice-e-it` — junk from a bad glob, which the lint has to skip; flagged
+for cleanup, not deleted.

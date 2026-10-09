@@ -51,6 +51,9 @@ R6. Do NOT build skill extraction, distillation, or any learning loop in this sp
     from them belongs to a later spec. `specs/` stays read-only for you.
 
 ## Exit Criteria
+- [ ] **the placeholder debt is GONE**: `grep -rc 'pending the spec 100 adoption sweep' crates/ | grep -v ':0'` is empty, and `cargo run -q -p xtask -- lint-observability` reports an exempt-crate count equal to the sanctioned set only (`pii-abi`, `pii-proto`, `pii-uds`, `pii-observe` — each with the reason for being exempt, or a real seam if it emits)
+- [ ] **every other crate has a real seam**: the lint reports 0 crates exempt outside that sanctioned set, i.e. R1b passes on actual `pii_observe::` use, not on an exemption
+- [ ] the raw-print allowlist shrank: `wc -l < xtask/observability-allowlist.txt` is reported before/after, and every remaining entry has a reason on the line (list the remaining count; 0 is the goal but a named few is acceptable if each is justified)
 - [ ] `cargo test -p pii-observe` exits 0, including: serde round-trip of the extended `Event`, the redaction matrix (Keep/Drop/Replace), the truncation cap, and the "failed run records Failure" case
 - [ ] an end-to-end run with `PII_TRAJECTORY_DIR` set produces `<root>/trajectories/<run_id>.jsonl`; paste the path, `wc -l`, and the `run.outcome` line
 - [ ] a run WITHOUT the env var produces no trajectory file (and no behaviour change to stdout ndjson)

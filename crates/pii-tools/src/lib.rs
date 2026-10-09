@@ -171,3 +171,4 @@ mod tests {
         assert_eq!(set.get("fs_read").map(|t| t.timeout()), Some(None));
     }
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

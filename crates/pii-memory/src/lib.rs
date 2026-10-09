@@ -19,3 +19,4 @@ pub use doc::{Doc, DocKind, Layer};
 pub use embed::{Embedder, NullEmbedder, TrigramEmbedder};
 pub use search::{MemoryHit, MemorySearchResult, MemorySearcher};
 pub use tokenize::tokenize;
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

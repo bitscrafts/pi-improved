@@ -232,3 +232,4 @@ mod tests {
         assert!(pii_graph::validate(&spec, &reg).is_ok());
     }
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

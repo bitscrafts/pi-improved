@@ -48,3 +48,4 @@ pub trait Channel: Send + Sync {
     /// [`PiiError::Unavailable`] on a transient failure.
     fn send(&self, ctx: &Ctx, to: &str, text: &str) -> Result<(), PiiError>;
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

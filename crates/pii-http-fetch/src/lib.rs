@@ -107,3 +107,4 @@ impl Tool for HttpFetchTool {
         Ok(json!({"status": status, "bytes_in": bytes_in}))
     }
 }
+// observability: none — pending the spec 100 adoption sweep (no seam yet)

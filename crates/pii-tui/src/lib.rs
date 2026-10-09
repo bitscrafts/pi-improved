@@ -12,3 +12,4 @@ mod state;
 pub use driver::run_tui;
 pub use render::render;
 pub use state::{AppState, ConnStatus, LogLine, TuiError};
+// observability: none — pending the spec 100 adoption sweep (no seam yet)
