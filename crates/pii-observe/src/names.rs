@@ -85,6 +85,25 @@ pub const DAEMON_PEER_REFUSED: &str = "daemon.peer.refused";
 /// Event: writing the daemon log file failed (the daemon keeps running).
 pub const LOG_WRITE_FAILED: &str = "log.write.failed";
 
+/// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
+pub const METRIC_RUNS: &str = "pii_runs";
+/// Metric (gauge): sessions in the main store.
+pub const METRIC_SESSIONS: &str = "pii_sessions";
+/// Metric (gauge): approvals awaiting a decision.
+pub const METRIC_APPROVALS_PENDING: &str = "pii_approvals_pending";
+/// Metric (counter): journal events ever appended to the main store.
+pub const METRIC_JOURNAL_EVENTS_TOTAL: &str = "pii_journal_events_total";
+/// Metric (gauge): memory documents.
+pub const METRIC_MEMORY_DOCS: &str = "pii_memory_docs";
+/// Metric (gauge): configured cron entries.
+pub const METRIC_CRON_ENTRIES: &str = "pii_cron_entries";
+/// Metric (gauge, label `store`): size of a store file in bytes.
+pub const METRIC_STORE_BYTES: &str = "pii_store_bytes";
+/// Metric (gauge, label `store`): persisted format version of a store.
+pub const METRIC_STORE_FORMAT_VERSION: &str = "pii_store_format_version";
+/// Metric (gauge): daemon uptime in milliseconds.
+pub const METRIC_UPTIME_MS: &str = "pii_uptime_ms";
+
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
     GRAPH_NODE_DEAD,
@@ -127,6 +146,15 @@ pub const ALL: &[&str] = &[
     DAEMON_STOPPED,
     DAEMON_PEER_REFUSED,
     LOG_WRITE_FAILED,
+    METRIC_RUNS,
+    METRIC_SESSIONS,
+    METRIC_APPROVALS_PENDING,
+    METRIC_JOURNAL_EVENTS_TOTAL,
+    METRIC_MEMORY_DOCS,
+    METRIC_CRON_ENTRIES,
+    METRIC_STORE_BYTES,
+    METRIC_STORE_FORMAT_VERSION,
+    METRIC_UPTIME_MS,
 ];
 
 #[cfg(test)]

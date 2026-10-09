@@ -186,3 +186,22 @@ async fn status_keeps_old_keys_and_reports_build_and_counts() {
     // The typed wire struct accepts the payload too.
     let _: StatusResult = serde_json::from_value(v).unwrap();
 }
+
+/// Spec 105 R1: every store the status can reach reports a real version.
+#[tokio::test]
+async fn every_store_reports_a_real_format_version() {
+    let d = scratch("hid-fmt-");
+    let (e, _) = daemon_in(d.path(), "# fmt\n");
+    let v = status_json(e).await;
+    let stores = v["stores"].as_array().unwrap();
+    let names: Vec<_> = stores.iter().map(|s| s["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["main", "memory", "approval", "heal", "channel"]);
+    for s in stores {
+        assert_eq!(
+            s["format_version"], 1,
+            "store {} has no real version",
+            s["name"]
+        );
+        assert!(s["bytes"].as_u64().unwrap() > 0);
+    }
+}

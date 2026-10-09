@@ -41,6 +41,7 @@ messaging gateway with one performant, local-first, modular system.
 - `04-development/` — developer docs / analysis  *(section not created in this project)*
 - [05-operations/](05-operations/) — operational docs, including incident records
   - [`033-spec65-guardrail-violation-doc-format.md`](05-operations/033-spec65-guardrail-violation-doc-format.md) — spec-65 guardrail violation: the worker changed the doc storage format (resolved)
+  - [`105-runbook.md`](05-operations/105-runbook.md) — operator runbook: start/stop, health, metrics, logs, backup/restore, upgrade, wedged daemon
 - [06-research/](06-research/) — research write-ups (numbered)
   - **Start with [`06-research/000-TOPIC-MAP.md`](06-research/000-TOPIC-MAP.md)** — the SSOT topic map for the research tree (canonical / evidence / superseded, per subject). It replaces the per-file list formerly kept here.
   - [`06-research/000-CANDIDATES-INDEX.md`](06-research/000-CANDIDATES-INDEX.md) — the ten "researched, not scheduled" candidates

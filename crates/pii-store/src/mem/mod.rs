@@ -103,10 +103,19 @@ impl MemStore {
                 .commit()
                 .map_err(|e| PiiError::Internal(format!("memstore: commit tables: {e}")))?;
         }
+        crate::identity::stamp(&db, path)?;
         Ok(Self {
             db,
             path: path.to_path_buf(),
         })
+    }
+
+    /// The persisted format version (spec 105).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn format_version(&self) -> Result<u64, PiiError> {
+        crate::identity::read_stamp(&self.db)
     }
 
     /// `n_docs` from `mem_meta` (0 when unset).

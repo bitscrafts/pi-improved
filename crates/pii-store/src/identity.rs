@@ -26,7 +26,7 @@ use crate::{MemStore, Store};
 
 /// The on-disk layout version this binary reads and writes.
 pub const FORMAT_VERSION: u64 = 1;
-const FORMAT_VERSION_KEY: &str = "store.format_version";
+pub(crate) const FORMAT_VERSION_KEY: &str = "store.format_version";
 
 /// What a store file reports about itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +139,37 @@ pub(crate) fn ensure_format_version(
             .map(|_| ())
             .map_err(|e| PiiError::store_op("init", "format_version", e)),
     }
+}
+
+/// Stamps `db` (an auxiliary store: approvals, heal, memory, channel, timer)
+/// with [`FORMAT_VERSION`] in its own `meta` table, refusing a newer one.
+pub(crate) fn stamp(db: &redb::Database, path: &Path) -> Result<(), PiiError> {
+    let write = db
+        .begin_write()
+        .map_err(|e| PiiError::store_op("begin_write", "format_version", e))?;
+    {
+        let mut meta = write
+            .open_table(META)
+            .map_err(|e| PiiError::store_op("open", "meta", e))?;
+        ensure_format_version(&mut meta, path)?;
+    }
+    write
+        .commit()
+        .map_err(|e| PiiError::store_op("commit", "format_version", e))
+}
+
+/// The version recorded in `db`'s `meta` table (0 when unstamped).
+pub(crate) fn read_stamp(db: &redb::Database) -> Result<u64, PiiError> {
+    let read = db.begin_read().map_err(|e| read_err("begin_read", e))?;
+    let meta = match read.open_table(META) {
+        Ok(t) => t,
+        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
+        Err(e) => return Err(read_err("meta", e)),
+    };
+    Ok(meta
+        .get(FORMAT_VERSION_KEY)
+        .map_err(|e| read_err("format_version", e))?
+        .map_or(0, |v| v.value()))
 }
 
 impl Health for Store {

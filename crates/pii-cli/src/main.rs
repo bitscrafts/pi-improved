@@ -7,9 +7,11 @@
 #![allow(clippy::print_stdout, clippy::print_stderr, clippy::disallowed_macros)]
 
 mod cli_util;
+mod cmd_backup;
 mod cmd_ctl;
 mod cmd_daemon;
 mod cmd_health;
+mod cmd_metrics;
 mod cmd_oneshot;
 mod cmd_run;
 mod cmd_sandbox_exec;
@@ -160,6 +162,15 @@ fn main() -> ExitCode {
     }
     if cmd == "health" {
         return cmd_health::cmd_health(&mut args);
+    }
+    if cmd == "metrics" {
+        return cmd_metrics::cmd_metrics(&mut args);
+    }
+    if cmd == "backup" {
+        return cmd_backup::cmd_backup(&mut args);
+    }
+    if cmd == "restore" {
+        return cmd_backup::cmd_restore(&mut args);
     }
     if cmd == "run" {
         return cmd_sys::cmd_run_ctl(&mut args);

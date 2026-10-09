@@ -9,12 +9,15 @@
 #![forbid(unsafe_code)]
 
 pub mod approval;
+pub mod backup;
 pub mod channel;
 mod codec;
 pub mod heal;
 mod identity;
 pub mod mem;
 pub mod session;
+#[cfg(test)]
+mod stamp_tests;
 pub mod testing;
 pub mod timer;
 pub use mem::MemStore;

@@ -95,6 +95,24 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         });
     }
     out.stores.push(memory_store(engine));
+    let dir = engine.store.path().parent().map(Path::to_path_buf);
+    if let Some(dir) = dir {
+        let aux = |name: &str, file: &str, v: Option<u64>| aux_store(name, &dir.join(file), v);
+        out.stores.push(aux(
+            "approval",
+            "approval.redb",
+            engine.approvals.format_version().ok(),
+        ));
+        out.stores
+            .push(aux("heal", "heal.redb", engine.heals.format_version().ok()));
+        if let Some(ctx) = ctx {
+            out.stores.push(aux_store(
+                "channel",
+                &ctx.runtime_dir.join("channel.redb"),
+                ctx.channel_store.format_version().ok(),
+            ));
+        }
+    }
     out.mounts.push(workspace_mount(engine));
     out.build = BuildIdentity {
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -141,12 +159,23 @@ fn memory_store(engine: &Engine) -> StoreStatus {
         name: "memory".into(),
         path: shown(engine.memory.path()),
         bytes,
-        // The memory index file persists no format version (only the main
-        // store does), so none is reported rather than an invented one.
-        format_version: None,
+        format_version: engine.memory.format_version().ok(),
         last_write_ms,
         entries: std::iter::once(("docs".to_owned(), engine.memory.n_docs().unwrap_or(0)))
             .collect(),
+    }
+}
+
+/// A store that carries only a path, size and persisted format version.
+fn aux_store(name: &str, path: &Path, format_version: Option<u64>) -> StoreStatus {
+    let (bytes, last_write_ms) = pii_store::file_stats(path);
+    StoreStatus {
+        name: name.into(),
+        path: shown(path),
+        bytes,
+        format_version,
+        last_write_ms,
+        entries: BTreeMap::new(),
     }
 }
 

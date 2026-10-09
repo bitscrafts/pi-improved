@@ -143,7 +143,16 @@ impl HealStore {
                 .commit()
                 .map_err(|e| PiiError::store_op("commit", "heal_table", e))?;
         }
+        crate::identity::stamp(&db, path)?;
         Ok(Self { db })
+    }
+
+    /// The persisted format version (spec 105).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn format_version(&self) -> Result<u64, PiiError> {
+        crate::identity::read_stamp(&self.db)
     }
 
     /// Inserts a new attempt row or updates an existing signature (S0.1).

@@ -53,7 +53,16 @@ impl ChannelStore {
                 .commit()
                 .map_err(|e| PiiError::Internal(format!("channel: commit tables: {e}")))?;
         }
+        crate::identity::stamp(&db, path)?;
         Ok(Self { db })
+    }
+
+    /// The persisted format version (spec 105).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn format_version(&self) -> Result<u64, PiiError> {
+        crate::identity::read_stamp(&self.db)
     }
 
     /// Reads a channel's cursor (`None` before the first message).

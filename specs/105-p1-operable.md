@@ -59,3 +59,29 @@ R6. **Structured logging documented**: the log file + rotation from spec 104 app
 - Do not leave a daemon running (kill what you start).
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+**Reproduced end to end by the orchestrator (my own runs, my own scratch):**
+```
+1. identity      pii health --json → stores [('main',1),('memory',1),('approval',1),('heal',1),('channel',1)]
+                 stores with null format_version: NONE          ← the hole spec 99 exposed is CLOSED
+2. metrics       pii_runs 1 · pii_journal_events_total 5 · pii_store_bytes{store="main"} 561152 · rc=0
+3. offline       backup with the daemon RUNNING → rc=2
+                 "error: invalid: store '…/store.redb' cannot be opened exclusively (Database already open.
+                  Cannot acquire lock.); stop the daemon first"
+4. backup        rc=0 → MANIFEST.json + approval/channel/heal/memory/store .redb
+5. guard         restore over a non-empty target without --force → rc=2
+                 "refusing to restore over existing stores (… 6 paths …); pass --force to move them aside"
+6. round trip    mv 6 originals aside → restore rc=0 → 6 stores back
+7. counts        before runs=1 journal_events=5 → after runs=1 journal_events=5   ← recovery proven
+                 daemons left running: 0
+```
+Gates: `quality-gate.sh` ALL PASS · `fresh-gate --worktree` PASS · clippy `-D warnings` · `fmt --check`.
+
+**Limits the worker stated, kept here:** restore does NOT rebuild a pending approval (the `gated` run
+suspended but `approve ls` stayed empty, so the round-trip proof is runs + journal, not approvals);
+`timer.redb` is stamped and backed up but is NOT listed in `health` — the timer wheel moved into the
+scheduler and `sys.status` cannot reach it (this is an identity gap of exactly the kind the 2026-09-20
+directive targets: file it as the next observability item); `channel.redb` and `timer.redb` live in the
+runtime dir, so the runbook instructs a second `pii backup … --dir` for that directory; and two tests
+(metrics render, `backup.rs`) were written after their code, without RED first.

@@ -52,7 +52,16 @@ impl TimerWheel {
                 .commit()
                 .map_err(|e| PiiError::Internal(format!("timer: commit tables: {e}")))?;
         }
+        crate::identity::stamp(&db, path)?;
         Ok(Self { db })
+    }
+
+    /// The persisted format version (spec 105).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn format_version(&self) -> Result<u64, PiiError> {
+        crate::identity::read_stamp(&self.db)
     }
 
     /// Registers a timer (idempotent: re-put replaces).

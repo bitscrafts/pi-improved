@@ -19,6 +19,7 @@
 
 ## 05-operations
 - `033-spec65-guardrail-violation-doc-format.md` — spec-65 guardrail violation: the worker changed the doc storage format (resolved)
+- `105-runbook.md` — operator runbook: start/stop, health, metrics, logs, backup/restore, upgrade, wedged daemon
 
 ## 06-research
 - [000-TOPIC-MAP.md](06-research/000-TOPIC-MAP.md) — the SSOT topic map: canonical / evidence / superseded per subject (replaces the per-file list formerly kept here)
