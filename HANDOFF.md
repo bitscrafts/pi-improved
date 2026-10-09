@@ -424,3 +424,42 @@ incident, model-escalation config, Opus/026 analysis derivation, etc.).
 6. INDEX+TOC: link to 000-TOPIC-MAP; fix layout/crate lines; move 023+033.
 7. pidag-way-of-work.md:91 iterations=2; pii-mcp-bridge.md:23 = `pii-mcp` binary.
 8. technical-manual.tex: +2 methods (run.resume, run.trace), +2 crates, "feature-gated"→"separate binary"; 008→012.
+
+
+## 2026-10-09 — batch C LANDED (claude+sonnet lane): specs 75, 76, 77 committed; 78 in flight
+
+Lane: `scripts/run-batchC-claude.sh <N>` (claude+sonnet, bypassPermissions, stream-json live,
+session id captured under `_tmp/claude-batchC/session-*.txt`, dirty-tree guard, specs/ read-only,
+envelope-on-budget). One spec per run; orchestrator verifies criteria LIVE then commits.
+
+- **75** `5111719` docs-correction pass (043 §9 items 1-8): HANDOFF historical-snapshot banner,
+  "19 crates plus the xtask member" (AGENTS.md:51), 030 triple-037 collapsed + dead 035/036 gone,
+  000-TOPIC-MAP current (39 entries / "78 specs authored (70+ landed)"), status banners on
+  012/015/024/025/032/033 with landing commits, INDEX+TOC now link to 000-TOPIC-MAP,
+  manuals += run.resume/run.trace/pii-uds/pii-http-fetch. 15 files, docs only. Criteria 8/8
+  (two honest deviations in its report: banner sits above :195 with a caveat line; link check
+  done manually — this repo has no regen script).
+- **76** `73f90fb` D7 + F1 + F2: all 15 hardcoded `/projects/pi-improved` gone from xtask
+  (paths derive from `CARGO_MANIFEST_DIR`; verified by `cargo check -p xtask` from a scratch
+  export at another path); `llama-cpp-2` is now `optional` behind `llamacpp` (default build:
+  `cargo tree -p pii-model | grep -c llama` = 0; with the feature = 2), module/use/dispatch arm
+  cfg-gated and the feature-off arm fails loud ("support not compiled in — rebuild with feature
+  `llamacpp`"), `real_granite`/`ds4_inprocess` get `required-features`, new test pins the
+  feature-off error; unused-dep sweep across 10 crates (+Cargo.lock). Orchestrator: removed the
+  duplicate `workspace_root()` in main.rs in favour of the one lib helper (one source of truth).
+- **77** `c664d4a` D5: `Journaler::flush` clears `pending` ONLY after `append_events` succeeds
+  (a failed write leaves every event buffered) and the three discard sites now report through
+  `report_flush_failure` (`journal.rs` snapshot path, `run/engine.rs:335`, `sched/dispatch.rs:325`
+  — the last was `let _ = env.jr.snapshot_now()`, not the spec's guessed `self.flush()`).
+  `#![warn(clippy::let_underscore_must_use)]` in pii-graph/src/lib.rs with 3 named allows.
+  New `pii-store::set_fail_append_events_for_test` (follows the existing
+  `set_fail_session_writes_for_test` convention). Orchestrator re-proved RED independently:
+  with the 3 fix files reverted, `failed_flush_loses_no_events_and_seqs_stay_contiguous` fails
+  `left: 0, right: 3`; restored → 7 passed. Orchestrator ALSO removed 19 blanket
+  `#![allow(clippy::let_underscore_must_use)]` files the worker had to add because MY criterion
+  passed `-W` workspace-wide — replaced with the source-level enablement + the 3 documented
+  allows; spec criterion corrected (the criterion was the defect, not the code).
+- Gate: `quality-gate.sh` ALL PASS after each spec. Note `crates/pii-store/src/lib.rs` is now
+  the widest file at 374 effective lines (cap 450) — the fault hook; relevant to 043 candidate 14.
+- Full gate for the batch (after 78 lands): fmt / clippy / tests / doctests / lint-files /
+  reachability-check, all green.
