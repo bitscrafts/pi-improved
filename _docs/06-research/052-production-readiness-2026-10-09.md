@@ -319,3 +319,31 @@ Both phases in §8 landed as specs, each with an orchestrator-reproduced proof (
 is untested; a `kill -9` leaves no `daemon.stopped` line (documented, not fixed); `timer.redb` is now in
 health but the wheel itself is still inside the scheduler.
 
+---
+
+## CORRECTION to §7 and §8/P2 (measured 2026-10-09, by the orchestrator)
+**This document said "security app-layer only (no Landlock/seccomp)". That is WRONG about Landlock.** It
+was written from a smoke test in which the daemon ran with the `off` profile, and I read the absence of a
+profile as the absence of the mechanism.
+
+Measured on this host (kernel `7.1.13`, Landlock ABI **v9** — `landlock_create_ruleset(NULL,0,VERSION)` → 9):
+```
+pii sandbox-exec --profile workspace --workspace $W/ws -- bash -c 'echo inside > $W/ws/inside.txt'   → rc=0, created
+pii sandbox-exec --profile workspace --workspace $W/ws -- bash -c 'echo outside > $W/out/x.txt'     → rc=1 "Permission denied", NOT created
+pii sandbox-exec --profile workspace --workspace $W/ws -- bash -c 'echo clobber > $W/out/keep.txt'  → rc=1 "Permission denied", original intact
+pii sandbox-exec --profile workspace --workspace $W/ws -- bash -c 'head -c 20 /etc/passwd >/dev/null' → rc=0 (reads outside are ALLOWED)
+pii sandbox-exec --profile off       --workspace $W/ws -- bash -c 'echo x > $W/out/off.txt'          → rc=0 (control: permissive)
+```
+So: **Landlock confinement is implemented** (`crates/pii-tools/src/sandbox.rs` via the `landlock` crate;
+applied process-wide in `pii sandbox-exec` and the one-shot/daemon paths) and it **enforces write
+confinement**, with `off` as a working control. What is actually missing is narrower and sharper:
+1. **The daemon's default profile is `off`** — the capability exists but is not on unless asked for, so the
+   shipped default is the unconfined one. That is a default-safety decision, not a missing feature.
+2. **The workspace profile confines writes, not reads** — reading `/etc/passwd` succeeds. Whether that is
+   intended must be stated precisely (and the health string should say what is granted for read, not only
+   for write).
+3. **A kernel-level denial inside a child process is invisible to pii** — it surfaces as the child's
+   `Permission denied`; only denials that go through pii's own tools become `Denial` events. So the audit
+   trail is partial by construction and must say so.
+4. **seccomp is genuinely absent**, and secrets remain env-vars-only.
+
