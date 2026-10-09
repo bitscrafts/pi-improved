@@ -88,59 +88,59 @@ impl Store {
         let db = Database::builder()
             .set_cache_size(8 * 1024 * 1024)
             .create(path)
-            .map_err(|e| PiiError::Internal(format!("store: open {}: {e}", path.display())))?;
+            .map_err(|e| PiiError::store_op("open", &path.display().to_string(), e))?;
         // Define tables up front so reads on first use never race a write.
         {
             let write = db
                 .begin_write()
-                .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+                .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
             {
                 let mut table = write
                     .open_table(META)
-                    .map_err(|e| PiiError::Internal(format!("store: open meta: {e}")))?;
+                    .map_err(|e| PiiError::store_op("open", "meta", e))?;
                 if table
                     .get(RUN_COUNTER_KEY)
-                    .map_err(|e| PiiError::Internal(format!("store: read run_counter: {e}")))?
+                    .map_err(|e| PiiError::store_op("read", "run_counter", e))?
                     .is_none()
                 {
                     table
                         .insert(RUN_COUNTER_KEY, 0)
-                        .map_err(|e| PiiError::Internal(format!("store: init run_counter: {e}")))?;
+                        .map_err(|e| PiiError::store_op("init", "run_counter", e))?;
                 }
             }
             write
                 .open_table(GRAPH_BODY)
-                .map_err(|e| PiiError::Internal(format!("store: open graph_body: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "graph_body", e))?;
             write
                 .open_table(RUN)
-                .map_err(|e| PiiError::Internal(format!("store: open run: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "run", e))?;
             write
                 .open_table(RUN_JOURNAL)
-                .map_err(|e| PiiError::Internal(format!("store: open run_journal: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "run_journal", e))?;
             write
                 .open_table(RUN_SNAPSHOT)
-                .map_err(|e| PiiError::Internal(format!("store: open run_snapshot: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "run_snapshot", e))?;
             write
                 .open_table(RUN_BY_STATUS)
-                .map_err(|e| PiiError::Internal(format!("store: open run_by_status: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "run_by_status", e))?;
             write
                 .open_table(RESUME_INDEX)
-                .map_err(|e| PiiError::Internal(format!("store: open resume_index: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "resume_index", e))?;
             write
                 .open_table(SESSION)
-                .map_err(|e| PiiError::Internal(format!("store: open session: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session", e))?;
             write
                 .open_table(SESSION_TOKENS)
-                .map_err(|e| PiiError::Internal(format!("store: open session_tokens: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_tokens", e))?;
             write
                 .open_table(SESSION_MSG)
-                .map_err(|e| PiiError::Internal(format!("store: open session_msg: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_msg", e))?;
             write
                 .open_table(SESSION_SNAPSHOT)
-                .map_err(|e| PiiError::Internal(format!("store: open session_snapshot: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "session_snapshot", e))?;
             write
                 .commit()
-                .map_err(|e| PiiError::Internal(format!("store: commit tables: {e}")))?;
+                .map_err(|e| PiiError::store_op("commit", "tables", e))?;
         }
         Ok(Self {
             db,
@@ -178,7 +178,7 @@ impl Store {
         self.write_txn_count.fetch_add(1, Ordering::Relaxed);
         self.db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))
+            .map_err(|e| PiiError::store_op("begin_write", "db", e))
     }
 
     /// Allocates the next run id as `r{n:012}` (monotonic, in one write txn).
@@ -189,24 +189,24 @@ impl Store {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
         let next;
         {
             let mut table = write
                 .open_table(META)
-                .map_err(|e| PiiError::Internal(format!("store: open meta: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "meta", e))?;
             let cur = table
                 .get(RUN_COUNTER_KEY)
-                .map_err(|e| PiiError::Internal(format!("store: read counter: {e}")))?
+                .map_err(|e| PiiError::store_op("read", "counter", e))?
                 .map_or(0, |v| v.value());
             next = cur + 1;
             table
                 .insert(RUN_COUNTER_KEY, next)
-                .map_err(|e| PiiError::Internal(format!("store: write counter: {e}")))?;
+                .map_err(|e| PiiError::store_op("write", "counter", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit counter: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "counter", e))?;
         Ok(RunId::from(format!("r{next:012}")))
     }
 
@@ -219,18 +219,18 @@ impl Store {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
         {
             let mut table = write
                 .open_table(GRAPH_BODY)
-                .map_err(|e| PiiError::Internal(format!("store: open graph_body: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "graph_body", e))?;
             table
                 .insert(key.as_str(), spec_json)
-                .map_err(|e| PiiError::Internal(format!("store: put graph: {e}")))?;
+                .map_err(|e| PiiError::store_op("put", "graph", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit graph: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "graph", e))?;
         Ok(key)
     }
 
@@ -242,13 +242,13 @@ impl Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
         let table = read
             .open_table(GRAPH_BODY)
-            .map_err(|e| PiiError::Internal(format!("store: open graph_body: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "graph_body", e))?;
         let got = table
             .get(sha_or_hash)
-            .map_err(|e| PiiError::Internal(format!("store: get graph: {e}")))?;
+            .map_err(|e| PiiError::store_op("get", "graph", e))?;
         Ok(got.map(|v| v.value().to_vec()))
     }
 
@@ -260,17 +260,16 @@ impl Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
         let table = read
             .open_table(GRAPH_BODY)
-            .map_err(|e| PiiError::Internal(format!("store: open graph_body: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "graph_body", e))?;
         let mut out = Vec::new();
         let iter = table
             .iter()
-            .map_err(|e| PiiError::Internal(format!("store: iter graph_body: {e}")))?;
+            .map_err(|e| PiiError::store_op("iter", "graph_body", e))?;
         for item in iter {
-            let (key, _) =
-                item.map_err(|e| PiiError::Internal(format!("store: read graph_body: {e}")))?;
+            let (key, _) = item.map_err(|e| PiiError::store_op("read", "graph_body", e))?;
             out.push(key.value().to_owned());
         }
         Ok(out)
@@ -317,28 +316,28 @@ impl Store {
         {
             let mut journal = write
                 .open_table(RUN_JOURNAL)
-                .map_err(|e| PiiError::Internal(format!("store: open journal: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "journal", e))?;
             for (i, ev) in events.iter().enumerate() {
                 let seq = start + i as u64;
                 let bytes = to_bytes(*ev)?;
                 journal
                     .insert((header.run.as_str(), seq), bytes.as_slice())
-                    .map_err(|e| PiiError::Internal(format!("store: insert event: {e}")))?;
+                    .map_err(|e| PiiError::store_op("insert", "event", e))?;
             }
 
             let mut run_tbl = write
                 .open_table(RUN)
-                .map_err(|e| PiiError::Internal(format!("store: open run: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "run", e))?;
             let mut next_header = header.clone();
             next_header.seq = start + events.len() as u64;
             let header_bytes = to_bytes(&next_header)?;
             run_tbl
                 .insert(header.run.as_str(), header_bytes.as_slice())
-                .map_err(|e| PiiError::Internal(format!("store: put run header: {e}")))?;
+                .map_err(|e| PiiError::store_op("put", "run header", e))?;
 
             let mut status_tbl = write
                 .open_table(RUN_BY_STATUS)
-                .map_err(|e| PiiError::Internal(format!("store: open status: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "status", e))?;
             for st in [
                 RunStatus::Running,
                 RunStatus::Suspended,
@@ -347,15 +346,15 @@ impl Store {
             ] {
                 status_tbl
                     .remove((status_name(st), header.run.as_str()))
-                    .map_err(|e| PiiError::Internal(format!("store: remove status: {e}")))?;
+                    .map_err(|e| PiiError::store_op("remove", "status", e))?;
             }
             status_tbl
                 .insert((status_name(header.status), header.run.as_str()), ())
-                .map_err(|e| PiiError::Internal(format!("store: insert status: {e}")))?;
+                .map_err(|e| PiiError::store_op("insert", "status", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit events: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "events", e))?;
         header.seq += events.len() as u64;
         Ok(start)
     }
@@ -371,13 +370,13 @@ impl Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
         let table = read
             .open_table(RUN)
-            .map_err(|e| PiiError::Internal(format!("store: open run: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "run", e))?;
         let got = table
             .get(run.as_str())
-            .map_err(|e| PiiError::Internal(format!("store: get run: {e}")))?;
+            .map_err(|e| PiiError::store_op("get", "run", e))?;
         match got {
             Some(v) => Ok(Some(from_bytes(v.value())?)),
             None => Ok(None),
@@ -395,17 +394,16 @@ impl Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
         let table = read
             .open_table(RUN_JOURNAL)
-            .map_err(|e| PiiError::Internal(format!("store: open journal: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "journal", e))?;
         let mut out = Vec::new();
         let range = table
             .range((run.as_str(), 0)..(run.as_str(), u64::MAX))
-            .map_err(|e| PiiError::Internal(format!("store: range journal: {e}")))?;
+            .map_err(|e| PiiError::store_op("range", "journal", e))?;
         for item in range {
-            let (key, value) =
-                item.map_err(|e| PiiError::Internal(format!("store: read journal item: {e}")))?;
+            let (key, value) = item.map_err(|e| PiiError::store_op("read", "journal item", e))?;
             let (_, seq) = key.value();
             out.push((seq, from_bytes(value.value())?));
         }
@@ -420,18 +418,18 @@ impl Store {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
         {
             let mut table = write
                 .open_table(RUN_SNAPSHOT)
-                .map_err(|e| PiiError::Internal(format!("store: open snapshot: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "snapshot", e))?;
             table
                 .insert((run.as_str(), seq), bytes)
-                .map_err(|e| PiiError::Internal(format!("store: put snapshot: {e}")))?;
+                .map_err(|e| PiiError::store_op("put", "snapshot", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit snapshot: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "snapshot", e))?;
         Ok(())
     }
 
@@ -443,17 +441,16 @@ impl Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
         let table = read
             .open_table(RUN_SNAPSHOT)
-            .map_err(|e| PiiError::Internal(format!("store: open snapshot: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "snapshot", e))?;
         let mut latest: Option<(u64, Vec<u8>)> = None;
         let range = table
             .range((run.as_str(), 0)..=(run.as_str(), u64::MAX))
-            .map_err(|e| PiiError::Internal(format!("store: range snapshot: {e}")))?;
+            .map_err(|e| PiiError::store_op("range", "snapshot", e))?;
         for item in range {
-            let (key, value) =
-                item.map_err(|e| PiiError::Internal(format!("store: read snapshot: {e}")))?;
+            let (key, value) = item.map_err(|e| PiiError::store_op("read", "snapshot", e))?;
             let (_, seq) = key.value();
             latest = Some((seq, value.value().to_vec()));
         }
@@ -468,18 +465,18 @@ impl Store {
         let write = self
             .db
             .begin_write()
-            .map_err(|e| PiiError::Internal(format!("store: begin_write: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
         {
             let mut table = write
                 .open_table(RESUME_INDEX)
-                .map_err(|e| PiiError::Internal(format!("store: open resume: {e}")))?;
+                .map_err(|e| PiiError::store_op("open", "resume", e))?;
             table
                 .insert(key.0.as_str(), run.as_str())
-                .map_err(|e| PiiError::Internal(format!("store: put resume key: {e}")))?;
+                .map_err(|e| PiiError::store_op("put", "resume key", e))?;
         }
         write
             .commit()
-            .map_err(|e| PiiError::Internal(format!("store: commit resume: {e}")))?;
+            .map_err(|e| PiiError::store_op("commit", "resume", e))?;
         Ok(())
     }
 
@@ -491,18 +488,17 @@ impl Store {
         let read = self
             .db
             .begin_read()
-            .map_err(|e| PiiError::Internal(format!("store: begin_read: {e}")))?;
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
         let table = read
             .open_table(RUN_BY_STATUS)
-            .map_err(|e| PiiError::Internal(format!("store: open status: {e}")))?;
+            .map_err(|e| PiiError::store_op("open", "status", e))?;
         let mut out = Vec::new();
         let s = status_name(status);
         let range = table
             .range((s, "")..(s, "\u{10ffff}"))
-            .map_err(|e| PiiError::Internal(format!("store: range status: {e}")))?;
+            .map_err(|e| PiiError::store_op("range", "status", e))?;
         for item in range {
-            let (key, _) =
-                item.map_err(|e| PiiError::Internal(format!("store: read status: {e}")))?;
+            let (key, _) = item.map_err(|e| PiiError::store_op("read", "status", e))?;
             let (_, run) = key.value();
             out.push(RunId::from(run.to_owned()));
         }
@@ -634,5 +630,18 @@ mod tests {
             .unwrap();
         let got = read.get("k1").unwrap().unwrap();
         assert_eq!(got.value(), run.as_str());
+    }
+
+    #[test]
+    fn open_failure_renders_structured_store_op() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A directory is not a database file, so `open` must fail.
+        let Err(err) = Store::open(&dir) else {
+            panic!("opening a directory must fail");
+        };
+        assert!(matches!(err, pii_abi::PiiError::StoreOp { .. }));
+        let msg = err.to_string();
+        assert!(msg.starts_with("store op open on "), "{msg}");
     }
 }
