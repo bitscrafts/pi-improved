@@ -482,3 +482,35 @@ envelope-on-budget). One spec per run; orchestrator verifies criteria LIVE then 
   12 (daemon/methods.rs → engine/), 14 (F-11 pass 3 + the pii-store split), 15 (deferred).
 - Full gate for the batch (after 78 lands): fmt / clippy / tests / doctests / lint-files /
   reachability-check, all green.
+
+## 2026-10-09 — batch D LANDED (claude+sonnet lane): specs 79, 80, 81, 82
+
+- **79** `ce45f3d` D6: a lagged control event is never dropped silently — the reactive loop
+  logs the gap and rescans `runs_by_status(Suspended)`, re-arming the timer of every suspended
+  run (idempotent). RED-first test floods the bus past its 4096 capacity so the loop's first
+  `recv` is a genuine `Lagged`, drives the REAL `reactive_loop`, polls the real `TimerWheel`.
+  Orchestrator mutation control: restoring `Lagged(_) => {}` makes it FAIL. lag helpers moved to
+  `daemon/lag.rs` (kept `mod.rs` under the effective-line gate). Known gap (worker-reported):
+  timer suspensions only — a missed APPROVAL suspension is not re-requested (could not confirm
+  `approvals::request` is safe twice); pre-fix re-armed neither, so this is a narrowing.
+- **80** `9f...` A1: `is_heavy` routes `memory.*`, `worker.reload`, `run.trace`, `session.prompt`
+  through `spawn_blocking`; response ordering/hello gate/M1 teardown unchanged; `SubscriptionRegistry`
+  behind an `Arc` (Arc cloned per call, never the registry). 7 heartbeat tests on a current_thread
+  runtime: 6 heavy (worst tick delay ~299 ms → ~1.5 ms) + a light-method CONTROL that passes both
+  before and after. Orchestrator mutation control: `is_heavy = false` fails all 6 and leaves the
+  control green. Test seam `serve_connection_with(.., handler)` is `pub(crate)`; production passes
+  the real dispatch.
+- **81** `dc9664c` Decision 2 follow-up: `daemon/methods.rs` → `engine/methods.rs`, pure `git mv`
+  (rename detected at 98%), callers updated in `engine/dispatch.rs` (13), the file's own 4 refs,
+  `node_kinds/mod.rs`, `pii-web/src/main.rs`; `crate::daemon` refs under `engine/` = 0;
+  `git log --follow` still reaches phase3.6.
+- **82** `8109e96` F-11 pass 3: all 64 hand-built `PiiError::Internal(format!("store: …"))` in
+  `pii-store/src/lib.rs` → `PiiError::store_op(op, resource, detail)` with op/resource taken from
+  each message; the `testing.rs` fault seams deliberately untouched; Display shape pinned by
+  `open_failure_renders_structured_store_op`. Process note: this worker converted first, then
+  proved the test red by reverting one line (mutation proof, not RED-first) — recorded as such.
+- Every spec: full `quality-gate.sh` ALL PASS (fmt / clippy -D warnings / tests / doctests /
+  lint-files **with no warning** / reachability-check); no commit by any worker; orchestrator
+  verified each criterion live and ran a mutation control on 79 and 80.
+- 043 §10 remaining: item 15 (deferred by the review) and, if wanted, the pii-store F-11
+  follow-through in `mem/*.rs` + `session.rs` (the same constructor, other files).
