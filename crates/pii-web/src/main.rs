@@ -397,7 +397,7 @@ mod tests {
 
     /// Minimal fake daemon: answers `sys.hello`, then for `memory.search`
     /// accepts ONLY `{"q": ...}` (mirrors `memory_search` in
-    /// `pii-server/src/daemon/methods.rs`, which reads `q` and errors
+    /// `pii-server/src/engine/methods.rs`, which reads `q` and errors
     /// `InvalidParams` otherwise). Records the raw params for inspection.
     async fn fake_memory_daemon(
         stream: tokio::net::UnixStream,

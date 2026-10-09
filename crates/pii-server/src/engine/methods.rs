@@ -15,8 +15,8 @@ use pii_memory::search::MemorySearcher;
 use pii_proto::sys::StatusResult;
 use pii_proto::{ErrorCode, Request, Response, RpcError};
 
-use crate::Engine;
 use crate::engine::dispatch::{err_code, value_response};
+use crate::{Engine, daemon};
 
 fn err(req: &Request, c: ErrorCode, m: &str) -> Response {
     Response::err(req.id.clone(), RpcError::new(c, m))
@@ -37,7 +37,7 @@ pub(crate) fn status_result(engine: &Arc<Engine>) -> StatusResult {
             sessions,
             sandbox_profile: sandbox.to_owned(),
             protocol: pii_proto::PROTOCOL_VERSION.to_owned(),
-            rss_kb: crate::daemon::status::rss_kb(),
+            rss_kb: daemon::status::rss_kb(),
             workers: Vec::new(),
             listeners: Vec::new(),
             channels: Vec::new(),
@@ -127,7 +127,7 @@ pub(crate) fn approve_resolve(engine: &Arc<Engine>, req: &Request) -> Response {
         );
     };
     let note = req.params.get("note").and_then(|v| v.as_str());
-    match crate::daemon::approvals::resolve(engine, id, allow, note) {
+    match daemon::approvals::resolve(engine, id, allow, note) {
         Ok(outcome) => value_response(
             req,
             Some(serde_json::json!({ "resumed": outcome.resumed })),
@@ -312,7 +312,7 @@ pub(crate) fn sys_reload(engine: &Arc<Engine>, req: &Request) -> Response {
     let Some(ctx) = engine.daemon_ctx() else {
         return err(req, ErrorCode::NotFound, "no daemon context");
     };
-    match crate::daemon::reload_config(&ctx) {
+    match daemon::reload_config(&ctx) {
         Ok(n) => value_response(
             req,
             Some(serde_json::json!({"workers_reloaded": n})),

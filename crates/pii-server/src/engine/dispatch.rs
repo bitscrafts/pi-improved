@@ -42,7 +42,7 @@ pub fn dispatch(
         Method::SysHello => err(ErrorCode::InvalidRequest, "hello already handled"),
         Method::SysStatus => value_response(
             req,
-            serde_json::to_value(crate::daemon::methods::status_result(engine)).ok(),
+            serde_json::to_value(crate::engine::methods::status_result(engine)).ok(),
             err,
         ),
         Method::SysVersion => value_response(
@@ -127,19 +127,19 @@ pub fn dispatch(
                 serde_json::json!({"unsubscribed": cancelled}),
             )
         }
-        Method::WorkerList => crate::daemon::methods::worker_list(engine, req),
-        Method::WorkerReload => crate::daemon::methods::worker_reload(engine, req),
-        Method::ApproveList => crate::daemon::methods::approve_list(engine, req),
-        Method::ApproveResolve => crate::daemon::methods::approve_resolve(engine, req),
-        Method::HealList => crate::daemon::methods::heal_list(engine, req),
-        Method::HealGet => crate::daemon::methods::heal_get(engine, req),
-        Method::CronList => crate::daemon::methods::cron_list(engine, req),
-        Method::ChannelList => crate::daemon::methods::channel_list(engine, req),
-        Method::MemorySearch => crate::daemon::methods::memory_search(engine, req),
-        Method::MemoryPut => crate::daemon::methods::memory_put(engine, req),
-        Method::MemoryConsolidate => crate::daemon::methods::memory_consolidate(engine, req),
-        Method::SysReload => crate::daemon::methods::sys_reload(engine, req),
-        Method::RunResume => crate::daemon::methods::run_resume(engine, req),
+        Method::WorkerList => crate::engine::methods::worker_list(engine, req),
+        Method::WorkerReload => crate::engine::methods::worker_reload(engine, req),
+        Method::ApproveList => crate::engine::methods::approve_list(engine, req),
+        Method::ApproveResolve => crate::engine::methods::approve_resolve(engine, req),
+        Method::HealList => crate::engine::methods::heal_list(engine, req),
+        Method::HealGet => crate::engine::methods::heal_get(engine, req),
+        Method::CronList => crate::engine::methods::cron_list(engine, req),
+        Method::ChannelList => crate::engine::methods::channel_list(engine, req),
+        Method::MemorySearch => crate::engine::methods::memory_search(engine, req),
+        Method::MemoryPut => crate::engine::methods::memory_put(engine, req),
+        Method::MemoryConsolidate => crate::engine::methods::memory_consolidate(engine, req),
+        Method::SysReload => crate::engine::methods::sys_reload(engine, req),
+        Method::RunResume => crate::engine::methods::run_resume(engine, req),
         Method::SessionInterrupt => {
             let sid = req
                 .params

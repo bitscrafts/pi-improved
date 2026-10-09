@@ -10,7 +10,7 @@
 //! `tool`).
 //!
 //! **Known coupling (DOCUMENTED, not yet resolved):** [`dispatch`] calls
-//! into [`crate::daemon::methods`] for ~10 JSON-RPC methods
+//! into [`crate::engine::methods`] for ~10 JSON-RPC methods
 //! (`WorkerList/Reload`, `ApproveList/Resolve`, `HealList/Get`,
 //! `CronList`, `ChannelList`, `MemorySearch/Put/Consolidate`, `SysReload`,
 //! `RunResume`). This is a real edge from the engine-bridge concern into
@@ -27,6 +27,7 @@ pub mod bus;
 pub mod conn;
 pub mod dispatch;
 pub mod loopback;
+pub mod methods;
 pub mod registry;
 pub mod runs;
 pub mod session_durability;

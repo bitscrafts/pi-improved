@@ -6,7 +6,6 @@
 pub mod approvals;
 pub mod config;
 mod lag;
-pub mod methods;
 pub mod router;
 pub mod scheduler;
 pub mod status;

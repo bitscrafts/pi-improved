@@ -5,7 +5,7 @@
 //! compact support) and `nodes` (`crash`/`gate`/`heal`/`memory`/`spawn`/
 //! `worker`), plus `compaction` (agent-support, used only by
 //! `agent::turn`). See [`crate::engine`] for the module-boundary map and
-//! the documented `dispatch`→`daemon::methods` coupling this reorg does
+//! the documented `dispatch`→`engine::methods` coupling this reorg does
 //! NOT resolve.
 
 pub mod agent;
