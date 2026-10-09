@@ -14,6 +14,7 @@ mod codec;
 pub mod heal;
 pub mod mem;
 pub mod session;
+mod testing;
 pub mod timer;
 pub use mem::MemStore;
 mod tables;
@@ -58,6 +59,12 @@ pub struct Store {
     /// Number of upcoming [`Store::append_events`] calls to fail with a
     /// synthetic error (test instrumentation; decremented per failure).
     fail_append_events_for_test: AtomicU64,
+    /// When set, [`Store::read_journal`] fails with a synthetic error
+    /// (test instrumentation; resume fail-closed tests).
+    fail_read_journal_for_test: std::sync::atomic::AtomicBool,
+    /// When set, [`Store::get_run`] fails with a synthetic error
+    /// (test instrumentation; resume fail-closed tests).
+    fail_get_run_for_test: std::sync::atomic::AtomicBool,
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
@@ -141,6 +148,8 @@ impl Store {
             session_bytes_written: AtomicU64::new(0),
             fail_session_writes_for_test: std::sync::atomic::AtomicBool::new(false),
             fail_append_events_for_test: AtomicU64::new(0),
+            fail_read_journal_for_test: std::sync::atomic::AtomicBool::new(false),
+            fail_get_run_for_test: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -160,24 +169,6 @@ impl Store {
     #[must_use]
     pub fn session_bytes_written(&self) -> u64 {
         self.session_bytes_written.load(Ordering::Relaxed)
-    }
-
-    /// **Test instrumentation only** — not a public API promise. When set,
-    /// every subsequent [`Store::put_session`] / [`Store::append_session_message`]
-    /// / [`Store::put_session_snapshot`] call fails immediately with a
-    /// synthetic [`PiiError::Internal`], without touching redb — the
-    /// deterministic fault-injection hook D3/D6's "persist failure reaches
-    /// the Observer" test uses.
-    pub fn set_fail_session_writes_for_test(&self, fail: bool) {
-        self.fail_session_writes_for_test
-            .store(fail, Ordering::Relaxed);
-    }
-
-    /// **Test instrumentation only.** Makes the next `n`
-    /// [`Store::append_events`] calls fail with a synthetic
-    /// [`PiiError::Internal`] before touching redb (journal flush-loss test).
-    pub fn set_fail_append_events_for_test(&self, n: u64) {
-        self.fail_append_events_for_test.store(n, Ordering::Relaxed);
     }
 
     /// Opens a (counted) write transaction. A transaction is opened and
@@ -319,14 +310,8 @@ impl Store {
         events: &[&RunEvent],
     ) -> Result<u64, PiiError> {
         let start = header.seq;
-        if self
-            .fail_append_events_for_test
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
-            .is_ok()
-        {
-            return Err(PiiError::Internal(String::from(
-                "store: injected append_events fault",
-            )));
+        if let Some(e) = self.injected_append_events_error() {
+            return Err(e);
         }
         let write = self.begin_write_counted()?;
         {
@@ -380,6 +365,9 @@ impl Store {
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb failure.
     pub fn get_run(&self, run: &RunId) -> Result<Option<RunHeader>, PiiError> {
+        if let Some(e) = self.injected_get_run_error() {
+            return Err(e);
+        }
         let read = self
             .db
             .begin_read()
@@ -401,6 +389,9 @@ impl Store {
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb failure.
     pub fn read_journal(&self, run: &RunId) -> Result<Vec<(u64, RunEvent)>, PiiError> {
+        if let Some(e) = self.injected_read_journal_error() {
+            return Err(e);
+        }
         let read = self
             .db
             .begin_read()

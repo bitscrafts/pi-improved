@@ -135,52 +135,59 @@ pub fn spawn_resume(
     run_id: RunId,
     resume_key: Option<ResumeKey>,
 ) -> Result<(), PiiError> {
-    let cancel = pii_core::CancelToken::new();
-    engine.register_run(&run_id, cancel.clone());
-    let bridge = BridgeObserver {
-        run_id: run_id.clone(),
-        tx: engine.bus.subscribe_tx(),
+    // Spec 78: every recovery below FAILS the resume on error (a confined
+    // run whose scope or budget cannot be read must never start), and the
+    // run is registered only after they all succeed so a refused resume
+    // leaves no handle behind.
+    //
+    // B6 (opus review): recover the graph's declared limits the same way
+    // `pii_graph::run::resume` does internally (header → graph body → spec),
+    // so a resumed run enforces the same budget a fresh run would. An Err or
+    // a missing header/graph/spec is a refusal, never an unlimited budget.
+    let refuse = |what: &str, e: &dyn std::fmt::Display| {
+        PiiError::Invalid(format!("resume {run_id}: refused ({what}): {e}"))
     };
-    // B6 (opus review): recover the graph's declared `max_tokens` the same
-    // way `pii_graph::run::resume` does internally (header → graph body →
-    // spec), so a resumed run enforces the same budget a fresh run would
-    // rather than silently reverting to unlimited. Best-effort: if the
-    // lookup fails here, `resume()` below will hit the same error and
-    // report it properly — this path only affects which budget we start
-    // with, not correctness of the resume itself.
-    let (max_tokens, max_tool_calls, max_micro_usd, max_wall_ms) = engine
+    let header = engine
         .store
         .get_run(&run_id)
-        .ok()
-        .flatten()
-        .and_then(|header| engine.store.get_graph(&header.graph).ok().flatten())
-        .and_then(|bytes| GraphSpec::from_json(&bytes).ok())
-        .map_or((u64::MAX, u64::MAX, u64::MAX, u64::MAX), |spec| {
-            (
-                spec.limits.max_tokens,
-                spec.limits.max_tool_calls,
-                spec.limits.max_micro_usd,
-                spec.limits.max_wall_ms,
-            )
-        });
+        .map_err(|e| refuse("run header unreadable", &e))?
+        .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
+    let graph_bytes = engine
+        .store
+        .get_graph(&header.graph)
+        .map_err(|e| refuse("graph unreadable", &e))?
+        .ok_or_else(|| refuse("graph missing", &header.graph))?;
+    let limits = GraphSpec::from_json(&graph_bytes)
+        .map_err(|e| refuse("graph unparsable", &e))?
+        .limits;
+    let (max_tokens, max_tool_calls, max_micro_usd, max_wall_ms) = (
+        limits.max_tokens,
+        limits.max_tool_calls,
+        limits.max_micro_usd,
+        limits.max_wall_ms,
+    );
     // R1 (spec 20, boss prerequisite): a run that STARTED with a confined
     // `scope_root` must RESUME with the SAME confinement — otherwise a scoped
     // heal/promotion run resumes workspace-wide fs_write, voiding the "human
     // approves promotions" contract. Recover it from the run's journal input
     // (the same source `pii_graph::run::resume` replays from), not a header.
-    let scope_root = stored_run_scope_root(&engine.store, &run_id).ok().flatten();
+    // A store error here propagates (spec 78); only `Ok(None)` means "no scope".
+    let scope_root = stored_run_scope_root(&engine.store, &run_id)?;
     // R4 (spec 26): re-validate the recovered root. `spawn_run` validates on
     // start; `spawn_resume` must too, or a root that has since drifted outside
     // the workspace (or a path that no longer resolves) would resume a run with
     // confinement it was never granted. A stale/invalid root is a loud resume
     // failure, never a silently-widened scope.
     if let Some(root) = scope_root.as_deref() {
-        validate_scope_root(&engine.cfg.workspace, root).map_err(|e| {
-            PiiError::Invalid(format!(
-                "resume {run_id}: refused (invalid scope_root): {e}"
-            ))
-        })?;
+        validate_scope_root(&engine.cfg.workspace, root)
+            .map_err(|e| refuse("invalid scope_root", &e))?;
     }
+    let cancel = pii_core::CancelToken::new();
+    engine.register_run(&run_id, cancel.clone());
+    let bridge = BridgeObserver {
+        run_id: run_id.clone(),
+        tx: engine.bus.subscribe_tx(),
+    };
     let ctx = pii_core::Ctx::with_observer_and_cancel(
         run_caps(
             &engine.cfg.workspace,
@@ -223,26 +230,30 @@ pub fn spawn_resume(
 /// The run input (including `scope_root`) is content-addressed in the
 /// `RunEvent::Started { input_hash }`; this reads it back so a RESUME can
 /// restore the SAME write confinement the run started with. `Ok(None)` when
-/// the run never had a `scope_root` (or the journal is unreadable — a bare
-/// resume degrades to workspace-scoped, the pre-fix behavior, never wider).
+/// the run never had a `scope_root` (no recorded input). A store or parse
+/// error is `Err` — the resume is refused, never degraded (spec 78).
 fn stored_run_scope_root(
     store: &pii_store::Store,
     run_id: &RunId,
 ) -> Result<Option<std::path::PathBuf>, PiiError> {
     let journal = store.read_journal(run_id)?;
-    Ok(journal.iter().find_map(|(_, ev)| match ev {
-        pii_abi::RunEvent::Started { input_hash, .. } => store
-            .get_graph(input_hash)
-            .ok()
-            .flatten()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|v| {
-                v.get("scope_root")
-                    .and_then(serde_json::Value::as_str)
-                    .map(std::path::PathBuf::from)
-            }),
+    let started = journal.iter().find_map(|(_, ev)| match ev {
+        pii_abi::RunEvent::Started { input_hash, .. } => Some(input_hash),
         _ => None,
-    }))
+    });
+    let Some(input_hash) = started else {
+        return Ok(None);
+    };
+    // Spec 78: a store/parse error on the recorded input is NOT "no scope".
+    let Some(bytes) = store.get_graph(input_hash)? else {
+        return Ok(None);
+    };
+    let input: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| PiiError::Internal(format!("run input unparsable: {e}")))?;
+    Ok(input
+        .get("scope_root")
+        .and_then(serde_json::Value::as_str)
+        .map(std::path::PathBuf::from))
 }
 
 /// Root capabilities for a server-side run: fs read everything (or the
@@ -526,5 +537,94 @@ mod tests {
             )
             .unwrap();
         assert_eq!(super::stored_run_scope_root(&store, &run).unwrap(), None);
+    }
+    /// Builds a bare engine over a fresh store in the crate `_tmp`.
+    fn fault_engine(tag: &str) -> (tempfile::TempDir, std::sync::Arc<crate::Engine>) {
+        let dir = Builder::new()
+            .prefix(tag)
+            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .unwrap();
+        let fixture = dir.path().join("fixture.json");
+        std::fs::write(&fixture, r#"{"turns":[]}"#).unwrap();
+        let engine = crate::Engine::new(crate::EngineConfig {
+            workspace: dir.path().to_path_buf(),
+            store_path: dir.path().join("store.redb"),
+            model: format!("scripted:{}", fixture.display()),
+            sandbox: pii_tools::sandbox::SandboxProfileName::Off,
+            graph_dir: dir.path().join("graphs"),
+            route_policy: std::collections::BTreeMap::new(),
+            session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+        })
+        .unwrap();
+        (dir, engine)
+    }
+
+    /// Seeds a resumable run: a content-addressed graph body, a header whose
+    /// `graph` names it, and a journal `Started` event — enough for
+    /// `spawn_resume` to get past the header/graph/budget recovery.
+    fn seed_real_run(engine: &crate::Engine, run: &pii_abi::RunId) {
+        use pii_abi::{RunEvent, RunHeader, RunStatus};
+        let graph_hash = engine
+            .store
+            .put_graph(
+                br#"{"name":"resume-probe","caps":0,"nodes":[],"edges":[],"entry":"n0","limits":{"max_steps":1000,"max_wall_ms":600000,"max_tokens":18446744073709551615,"max_micro_usd":18446744073709551615,"max_tool_calls":18446744073709551615,"max_parallel":0}}"#,
+            )
+            .unwrap();
+        let input_hash = engine
+            .store
+            .put_graph(br#"{"prompt":"resume probe"}"#)
+            .unwrap();
+        let mut header = RunHeader {
+            run: run.clone(),
+            graph: graph_hash.clone(),
+            status: RunStatus::Running,
+            seq: 0,
+            dur_ms: 0,
+        };
+        engine
+            .store
+            .append_event(
+                &mut header,
+                &RunEvent::Started {
+                    graph: graph_hash,
+                    input_hash,
+                },
+            )
+            .unwrap();
+    }
+
+    /// Spec 78 R1: a store error while recovering the run's scope must fail
+    /// the resume, and no run handle may be registered.
+    #[tokio::test(flavor = "current_thread")]
+    async fn resume_fail_closed_on_scope_store_fault() {
+        let (_dir, engine) = fault_engine("resume-fail-scope-");
+        let run = pii_abi::RunId::from("r-fault-scope");
+        // Seed a REAL run (header + resolvable graph + journal) so the resume
+        // reaches the scope step; without it the header lookup refuses first
+        // and this test would pass for a reason its name does not claim.
+        seed_real_run(&engine, &run);
+        engine.store.set_fail_read_journal_for_test(true);
+        let res = super::spawn_resume(std::sync::Arc::clone(&engine), run, None);
+        let err = res.expect_err("scope-store fault must fail the resume");
+        assert!(
+            err.to_string().contains("injected read_journal fault"),
+            "the scope-store error itself must propagate, not be swallowed into \"no scope\": {err}"
+        );
+        assert!(
+            engine.runs.lock().is_empty(),
+            "no run may be registered after a refused resume"
+        );
+    }
+
+    /// Spec 78 R2: a failed graph/run lookup must fail the resume, never
+    /// fall back to an unlimited budget.
+    #[tokio::test(flavor = "current_thread")]
+    async fn resume_fail_closed_on_graph_lookup_fault() {
+        let (_dir, engine) = fault_engine("resume-fail-graph-");
+        let run = pii_abi::RunId::from("r-fault-graph");
+        engine.store.set_fail_get_run_for_test(true);
+        let res = super::spawn_resume(std::sync::Arc::clone(&engine), run, None);
+        assert!(res.is_err(), "graph-lookup fault must fail the resume");
+        assert!(engine.runs.lock().is_empty());
     }
 }
