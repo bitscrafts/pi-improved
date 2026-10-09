@@ -612,3 +612,29 @@ The tool's retention + free-space check (spec 86) exist so this cannot repeat.
 idempotent for approvals and recover lost `RunFinished` — candidate 4), N4 (compile llama in the
 gate — candidate 5), N7 (`rt.shutdown_timeout`), N8 (the false `doctest = false` comments), and
 045 §4's NOT-VERIFIED mutation runs for 77/78/79/80/82 (candidate 6).
+
+## 2026-10-09 (later) — N7 closed, and the N1 class killed at the root (specs 95, 96)
+- **95 `a17c545`** — daemon shutdown is bounded (`rt.shutdown_timeout(5s)` + a log line when the bound is
+  hit; orchestrator-proven: restoring the unbounded drop makes the bound test FAIL with
+  `shutdown took 3.00028618s (bound 200ms)`). All **11** inline handlers MEASURED through the real
+  `dispatch`, nothing stubbed; EXACTLY ONE moved on the numbers — `event.subscribe` replay (2 ms for an
+  8-event journal, **102 ms for 5000 events**); mutation-proven (`EventSubscribe` back inline →
+  `heartbeat_event_subscribe` FAILED, tick late by 298.6 ms). Watch items: `run.start` 20 ms idle but
+  53.8 ms under parallel gate load, `run.list` 29 ms at ~1000 runs, `sys.reload` untested against a
+  slow/stuck worker. Table: `_docs/06-research/050-…md`.
+- **96 `f3d039a`** — the N1 class (a test using a `_tmp` directory it never creates) is closed at the
+  ROOT: `pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), prefix)` creates the crate-local
+  `_tmp`; **18 bare sites → 0**; a new FAILING `lint-scratch` step in `quality-gate.sh` (teeth proven:
+  re-introducing a bare site in `peercred.rs` exits 1 naming file:line). Decisive control: with
+  `crates/pii-server/_tmp` moved aside, the two tests that fresh-gate had caught now pass and recreate
+  the directory themselves. Report: `_docs/06-research/051-…md`.
+- **Why 95 surfaced it:** spec 95's new tests changed intra-binary ordering, and the defect was
+  order-dependent (another test created the directory first). The fresh-tree gate caught what the repo
+  gate could not — which is the whole reason it exists. Spec 95's fresh-gate criterion was recorded as
+  NOT MET with its cause, then closed by 96 rather than hidden.
+- **Recorded trade-off (candidate):** `tempfile` is now a normal dependency of `pii-store` and
+  `mod testing` is a `pub mod` — a dedicated testkit crate as a dev-dependency is the cleaner shape
+  (`pii testkit-crate` in the register).
+- Remaining open: laya lane (policy-file loader, SPEC-E worker-lane wiring, `autoresearch/gate-lat2`
+  merge) and the pre-existing big `_tmp` items awaiting a decision.
+
