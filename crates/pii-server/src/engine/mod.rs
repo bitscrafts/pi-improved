@@ -25,6 +25,8 @@
 
 pub mod bus;
 pub mod conn;
+#[cfg(test)]
+mod conn_heartbeat_tests;
 pub mod dispatch;
 pub mod loopback;
 pub mod methods;

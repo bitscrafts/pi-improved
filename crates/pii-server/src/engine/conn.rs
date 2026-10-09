@@ -105,9 +105,30 @@ pub enum PeerIdentity {
     InProcess,
 }
 
+/// A request handler: the real [`dispatch::dispatch`], or a test stub.
+pub(crate) type Dispatcher = fn(
+    &Arc<Engine>,
+    &Request,
+    PeerIdentity,
+    &mpsc::UnboundedSender<String>,
+    &SubscriptionRegistry,
+) -> Response;
+
 /// Serves one connection until EOF or refusal (F2.6).
 pub async fn serve_connection<S>(engine: Arc<Engine>, io: S, peer: PeerIdentity)
 where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    serve_connection_with(engine, io, peer, dispatch::dispatch).await;
+}
+
+/// [`serve_connection`] with an injectable handler (spec 80 heartbeat tests).
+pub(crate) async fn serve_connection_with<S>(
+    engine: Arc<Engine>,
+    io: S,
+    peer: PeerIdentity,
+    handler: Dispatcher,
+) where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (r, w) = tokio::io::split(io);
@@ -123,7 +144,7 @@ where
             }
         }
     });
-    let subs = SubscriptionRegistry::default();
+    let subs = Arc::new(SubscriptionRegistry::default());
     let mut lines = BufReader::new(r).lines();
     let mut helloed = false;
     loop {
@@ -167,7 +188,7 @@ where
                         }
                     }
                 } else {
-                    let resp = dispatch::dispatch(&engine, &req, peer, &wtx, &subs);
+                    let resp = run_handler(handler, &engine, req, peer, &wtx, &subs).await;
                     if write_resp(&wtx, &resp).is_err() {
                         break;
                     }
@@ -184,6 +205,47 @@ where
     // connection ever created, not just the ones the client explicitly
     // unsubscribed — otherwise a crash/idle-timeout/EOF path still leaks.
     subs.cancel_all();
+}
+
+/// True for the methods that do blocking work (store/redb I/O, process
+/// supervision, prompt setup) and must not run on the async worker (spec 80).
+fn is_heavy(method: Method) -> bool {
+    matches!(
+        method,
+        Method::MemorySearch
+            | Method::MemoryPut
+            | Method::MemoryConsolidate
+            | Method::WorkerReload
+            | Method::RunTrace
+            | Method::SessionPrompt
+    )
+}
+
+/// Runs one request: heavy methods on the blocking pool, the rest inline.
+/// The caller awaits the result before reading the next frame, so response
+/// ordering and subscription ownership are unchanged and nothing outlives
+/// the connection.
+async fn run_handler(
+    handler: Dispatcher,
+    engine: &Arc<Engine>,
+    req: Request,
+    peer: PeerIdentity,
+    wtx: &mpsc::UnboundedSender<String>,
+    subs: &Arc<SubscriptionRegistry>,
+) -> Response {
+    if !is_heavy(req.method) {
+        return handler(engine, &req, peer, wtx, subs);
+    }
+    let id = req.id.clone();
+    let (engine, wtx, subs) = (Arc::clone(engine), wtx.clone(), Arc::clone(subs));
+    tokio::task::spawn_blocking(move || handler(&engine, &req, peer, &wtx, &subs))
+        .await
+        .unwrap_or_else(|e| {
+            Response::err(
+                id,
+                RpcError::new(ErrorCode::Internal, format!("handler task failed: {e}")),
+            )
+        })
 }
 
 fn write_resp(tx: &mpsc::UnboundedSender<String>, resp: &Response) -> Result<(), ()> {

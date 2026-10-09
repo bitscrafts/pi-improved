@@ -27,8 +27,8 @@ R3 (TDD, RED first). A `current_thread`-runtime heartbeat test per heavy method:
     the off-worker property, not something else).
 
 ## Exit Criteria
-- [ ] `[ "$(grep -c 'spawn_blocking' crates/pii-server/src/engine/conn.rs)" -ge 1 ]`
-- [ ] `cargo test -p pii-server heartbeat 2>&1 | grep -q 'test result: ok'`
+- [x] `[ "$(grep -c 'spawn_blocking' crates/pii-server/src/engine/conn.rs)" -ge 1 ]` (verified: `is_heavy` + `run_handler` route the 6 heavy methods)
+- [x] `cargo test -p pii-server heartbeat` → **7 passed / 0 failed** (6 heavy + the light-method control)
 - [ ] `cargo test -p pii-server 2>&1 | grep -c 'test result: FAILED' | grep -q '^0$'`
 - [ ] `cargo clippy -p pii-server --workspace --all-targets -- -D warnings` exits 0 (run workspace-wide: the change touches shared types)
 - [ ] `cargo fmt --all --check` exits 0
@@ -43,3 +43,20 @@ R3 (TDD, RED first). A `current_thread`-runtime heartbeat test per heavy method:
 - Do NOT commit; leave the tree for the orchestrator. Scratch under `_tmp/` only.
 - If the four-method scope cannot be done without a protocol change, STOP and report
   the blocker instead of widening scope.
+
+## Orchestrator verification (2026-10-09)
+- Shape: `run_handler` awaits the blocking call before the loop reads the next frame, so
+  response ordering, the `hello` gate and the M1 `cancel_all` teardown are unchanged;
+  `SubscriptionRegistry` is behind an `Arc` and the Arc (not the registry) is cloned per call.
+  The test seam is `pub(crate) serve_connection_with(.., handler)`; production
+  `serve_connection` passes the real `dispatch::dispatch`, and the tests substitute ONLY the
+  work (a 300 ms stub) — the routing logic under test (`is_heavy` + spawn_blocking + await) is
+  the real one.
+- **Mutation control (orchestrator)**: forcing `is_heavy` to `false` (the pre-fix inline shape)
+  makes all 6 heavy tests FAIL — "blocked the async worker: tick late by 299.4ms" — while the
+  CONTROL `heartbeat_control_light_method_never_late` still PASSES. The tests measure the
+  off-worker property and are not decoration.
+- Worker-reported honesty: its first ticker version was flaky (a pending tick when stopped went
+  unrecorded, so some heavy methods passed by accident); it fixed the ticker and re-ran 4/4.
+  Measured worst-case tick delay before/after: ~299 ms → ~1.3-1.5 ms.
+- Full gate: `quality-gate.sh` ALL PASS.
