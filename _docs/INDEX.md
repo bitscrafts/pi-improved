@@ -54,6 +54,7 @@ messaging gateway with one performant, local-first, modular system.
     [`049`](06-research/049-replay-err-fix-remeasure-2026-10-09.md) fixed it and re-measured ·
     [`050`](06-research/050-inline-methods-measured-2026-10-09.md) measured all 11 inline RPC handlers ·
     [`051`](06-research/051-scratch-helper-and-sweep-2026-10-09.md) killed the non-hermetic-test class at the root
+  - [`06-research/052-production-readiness-2026-10-09.md`](06-research/052-production-readiness-2026-10-09.md) — **honest production-readiness assessment + the road to production** (2026-10-09): what works (proven end-to-end), quality measured, the specification-vs-reality table per pillar and phase, every stale doc claim, the readiness gaps by axis, and a phased P0-P5 plan with measurable exit criteria
 - [99-archive/](99-archive/) — deprecated / historical
 
 ## Status

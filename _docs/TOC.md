@@ -27,6 +27,7 @@
 - [043-opus-full-review-2026-10-06.md](06-research/043-opus-full-review-2026-10-06.md) — the full opus review (2026-10-06)
 - [045-opus-rereview-2026-10-09.md](06-research/045-opus-rereview-2026-10-09.md) — the re-review (2026-10-09) and its ranked findings
 - 046-051 — the 045 work-through evidence (mutation verification, five green mutants, the replay defect measured and fixed, the inline-handler measurements, the scratch-helper sweep) — see [06-research/](06-research/) and INDEX.md
+- [052-production-readiness-2026-10-09.md](06-research/052-production-readiness-2026-10-09.md) — honest production readiness + the road to production (P0-P5)
 - 041-BRIEF-full-review.md / 042-PII-REVIEW-STAGED-STATE-2026-09-28.md — brief and staged state for that review (historical)
 
 ## 99-archive
