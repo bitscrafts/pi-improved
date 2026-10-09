@@ -53,9 +53,7 @@ fn client_info() -> PeerInfo {
 /// protocol instead of the pii-memory API directly.
 #[tokio::test]
 async fn memory_put_search_consolidate_round_trip() {
-    let dir = tempfile::Builder::new()
-        .prefix("memory-rpc-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+    let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "memory-rpc-")
         .expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);

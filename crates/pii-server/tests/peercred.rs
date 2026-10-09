@@ -39,9 +39,7 @@ fn peercred_rejects_foreign_uid() {
 /// see the refusal, not a bare EOF.
 #[tokio::test]
 async fn refusal_writes_101_frame() {
-    let dir = tempfile::Builder::new()
-        .prefix("peercred-101-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+    let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "peercred-101-")
         .expect("tempdir");
     let sock_path: PathBuf = dir.path().join("control.sock");
 

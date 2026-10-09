@@ -46,10 +46,8 @@ fn fixtures_hello() -> PathBuf {
 /// protocol itself became pii.v2 (Phase 3) — the single authorised change.
 #[tokio::test]
 async fn hello_skew_is_hard_refusal() {
-    let dir = tempfile::Builder::new()
-        .prefix("handshake-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-        .expect("tempdir");
+    let dir =
+        pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "handshake-").expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (mut r, mut w) = tokio::io::split(stream);
@@ -99,10 +97,8 @@ async fn hello_skew_is_hard_refusal() {
 /// with code 101 and the connection is closed.
 #[tokio::test]
 async fn method_before_hello_refused() {
-    let dir = tempfile::Builder::new()
-        .prefix("handshake-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-        .expect("tempdir");
+    let dir =
+        pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "handshake-").expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (mut r, mut w) = tokio::io::split(stream);
@@ -142,10 +138,8 @@ async fn method_before_hello_refused() {
 /// A valid hello succeeds and a session can be created.
 #[tokio::test]
 async fn valid_hello_creates_session() {
-    let dir = tempfile::Builder::new()
-        .prefix("handshake-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-        .expect("tempdir");
+    let dir =
+        pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "handshake-").expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (r, w) = tokio::io::split(stream);
@@ -178,10 +172,8 @@ async fn valid_hello_creates_session() {
 /// negotiation is cut to a refusal; the server speaks json only).
 #[tokio::test]
 async fn hello_non_json_encoding_refused() {
-    let dir = tempfile::Builder::new()
-        .prefix("handshake-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-        .expect("tempdir");
+    let dir =
+        pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "handshake-").expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (mut r, mut w) = tokio::io::split(stream);

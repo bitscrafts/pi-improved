@@ -366,7 +366,6 @@ mod tests {
     use pii_abi::{Outcome, PiiError};
     use pii_core::{Budget, CapKind, CapSet, Ctx, TraceCtx};
     use pii_store::heal::HealStore;
-    use tempfile::Builder;
 
     use pii_graph::node::NodeFactory as _;
 
@@ -406,10 +405,8 @@ mod tests {
     }
 
     fn factory(results: Vec<GateResult>) -> HealFactory {
-        let dir = Builder::new()
-            .prefix("heal-node-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-            .unwrap();
+        let dir =
+            pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "heal-node-").unwrap();
         let heals = std::sync::Arc::new(HealStore::open(&dir.path().join("heal.redb")).unwrap());
         HealFactory {
             heals,

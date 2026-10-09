@@ -14,8 +14,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 redb = { workspace = true }
 blake3 = { workspace = true }
-
-[dev-dependencies]
 tempfile = { workspace = true }
 
 [lints]

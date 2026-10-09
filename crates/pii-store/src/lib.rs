@@ -14,7 +14,7 @@ mod codec;
 pub mod heal;
 pub mod mem;
 pub mod session;
-mod testing;
+pub mod testing;
 pub mod timer;
 pub use mem::MemStore;
 mod tables;

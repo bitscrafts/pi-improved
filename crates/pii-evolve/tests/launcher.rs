@@ -147,9 +147,11 @@ fn launch_records_run_id_in_state_md() {
     // its own current-thread runtime, so it must run on the plain test thread.
     spawn_stub(stub, listener);
 
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
     let state_dir = tempfile::Builder::new()
         .prefix("launch-state-dir")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+        .tempdir_in(&root)
         .expect("state dir");
     let cfg = BossLaunch::new(path, state_dir.path().to_path_buf());
     let launched: LaunchedRun = run_cycle(&cfg).expect("run_cycle");
@@ -179,9 +181,11 @@ fn run_cycle_sends_run_start() {
     let (stub, method, params) = StubDaemon::new("r-boss-2");
     spawn_stub(stub, listener);
 
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
     let state_dir = tempfile::Builder::new()
         .prefix("launch-rpc-dir")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+        .tempdir_in(&root)
         .expect("state dir");
     // Pre-seed cycle_count = 4 so the next cycle is 5.
     let mut state = StateDoc::default();

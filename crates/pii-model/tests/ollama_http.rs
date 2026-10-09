@@ -174,9 +174,11 @@ impl pii_core::HttpTransport for NeverCalled {
 
 #[test]
 fn resolve_with_transport_passes_through_scripted() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp");
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
     let dir = tempfile::Builder::new()
         .prefix("pii-model-resolve-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+        .tempdir_in(&root)
         .unwrap();
     let f = dir.path().join("one.json");
     std::fs::write(&f, r#"{"turns":[{"text":"scripted-ok"}]}"#).unwrap();

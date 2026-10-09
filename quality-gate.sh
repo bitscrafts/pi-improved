@@ -91,6 +91,17 @@ else
     status=1
 fi
 
+echo "==> cargo run -q -p xtask -- lint-scratch"
+# Spec 96: a tempdir_in on a crate-local `_tmp` directory must be preceded by
+# create_dir_all / tmp_scratch in the same fn (the N1 class: green in a
+# developer tree where _tmp is left over, NotFound in a fresh clone).
+if cargo run -q -p xtask -- lint-scratch; then
+    echo "PASS: lint-scratch"
+else
+    echo "FAIL: lint-scratch"
+    status=1
+fi
+
 echo "==> cargo run -q -p xtask -- reachability-check"
 # Declared-capability caller gate (spec 72, D3 fix): every seed entry's
 # needle must have a REAL external caller — outside the declaring crate,

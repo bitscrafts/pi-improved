@@ -58,3 +58,30 @@ R4 (proof, two levels).
   class again (the point is that TESTS create what they need).
 - Scratch exports under `/projects/_tmp/` only; delete your OWN exports when done (one ≈ 8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result (2026-10-09) — the class is closed, and a new bare site now fails the gate
+- **Helper:** `pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), prefix) -> io::Result<TempDir>`
+  creates the crate-local `_tmp` and then the temp dir inside it.
+- **Sweep:** the new lint found **18 bare sites before → 0 after**. 12 sites in `pii-server` call
+  `tmp_scratch`; 3 sites in `pii-model`/`pii-evolve` use an explicit `create_dir_all` instead (those
+  crates do not depend on `pii-store`); the rest already created their directory.
+- **Enforcement:** `cargo run -q -p xtask -- lint-scratch` is a new FAILING step in `quality-gate.sh`
+  (after `lint-files`), backed by 4 unit tests.
+  **My teeth control:** re-introducing a bare `tempdir_in(.../_tmp)` site into
+  `crates/pii-server/tests/peercred.rs` makes it exit 1 —
+  `error: crates/pii-server/tests/peercred.rs:83: tempdir_in on a `_tmp` directory with no
+  create_dir_all/tmp_scratch before it in the same fn` — and restoring the file returns it to 0
+  (`233 files checked, 0 bare sites`).
+- **THE decisive control (orchestrator, in the live tree):** with `crates/pii-server/_tmp` MOVED ASIDE,
+  the two tests that spec 95's fresh-gate run had caught failing now PASS, and the directory is recreated
+  by the tests themselves (`tmp_scratch`). That is the class actually gone, not hidden.
+- Both gates green: `quality-gate.sh` ALL PASS (incl. `PASS: lint-scratch`) and
+  `fresh-gate --worktree` → **`fresh-gate: PASS`** (the failure spec 95 exposed is closed).
+
+## Trade-off, flagged rather than buried (candidate for a later spec)
+Making the helper reachable moved `tempfile` from `[dev-dependencies]` to a NORMAL dependency of
+`pii-store` and changed `mod testing` to `pub mod testing` — so the shipped library links `tempfile` and
+the test seams sit on the public surface. Precedent exists (that module's own doc already said the seams
+live on the public surface with no API promise) and no `unused_crate_dependencies` warning fires, so this
+is a deliberate trade-off, not an oversight. The cleaner shape would be a dedicated testkit crate as a
+dev-dependency; recorded as `pii testkit-crate` in the register, not done here.

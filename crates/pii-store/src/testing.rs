@@ -15,6 +15,19 @@ use std::sync::atomic::Ordering;
 
 use crate::{PiiError, Store};
 
+/// **Test instrumentation only.** The sanctioned scratch directory for tests.
+///
+/// Creates `<crate_dir>/_tmp` first (a fresh clone or CI tree has none), then
+/// a unique `prefix`-named directory inside it. Pass `env!("CARGO_MANIFEST_DIR")` as `crate_dir`.
+///
+/// # Errors
+/// Any I/O error creating `_tmp` or the temporary directory.
+pub fn tmp_scratch(crate_dir: &str, prefix: &str) -> std::io::Result<tempfile::TempDir> {
+    let root = std::path::Path::new(crate_dir).join("_tmp");
+    std::fs::create_dir_all(&root)?;
+    tempfile::Builder::new().prefix(prefix).tempdir_in(root)
+}
+
 impl Store {
     /// **Test instrumentation only** — not a public API promise. When set,
     /// every subsequent [`Store::put_session`] / [`Store::append_session_message`]

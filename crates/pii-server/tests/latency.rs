@@ -43,10 +43,8 @@ fn slow_fixture() -> PathBuf {
 /// later (after the 2 s provider sleep).
 #[tokio::test]
 async fn prompt_returns_before_run_finishes() {
-    let dir = tempfile::Builder::new()
-        .prefix("latency-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-        .expect("tempdir");
+    let dir =
+        pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "latency-").expect("tempdir");
     let engine = engine_in(dir.path());
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (r, w) = tokio::io::split(stream);

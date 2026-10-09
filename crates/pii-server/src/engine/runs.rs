@@ -466,10 +466,8 @@ mod tests {
     fn stored_run_scope_root_recovers_from_journal() {
         use pii_abi::{RunEvent, RunHeader, RunId, RunStatus};
         use pii_store::Store;
-        let dir = Builder::new()
-            .prefix("heal-scope-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-            .unwrap();
+        let dir =
+            pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "heal-scope-").unwrap();
         let store = Store::open(&dir.path().join("store.redb")).unwrap();
         let run = RunId::from("r-scoped");
         // Put the run input (with scope_root) as a content-addressed graph.
@@ -510,10 +508,8 @@ mod tests {
     fn stored_run_scope_root_none_when_unscoped() {
         use pii_abi::{RunEvent, RunHeader, RunId, RunStatus};
         use pii_store::Store;
-        let dir = Builder::new()
-            .prefix("heal-scope-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-            .unwrap();
+        let dir =
+            pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "heal-scope-").unwrap();
         let store = Store::open(&dir.path().join("store.redb")).unwrap();
         let run = RunId::from("r-plain");
         let input = serde_json::json!({ "prompt": "hi" });
@@ -540,10 +536,7 @@ mod tests {
     }
     /// Builds a bare engine over a fresh store in the crate `_tmp`.
     fn fault_engine(tag: &str) -> (tempfile::TempDir, std::sync::Arc<crate::Engine>) {
-        let dir = Builder::new()
-            .prefix(tag)
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-            .unwrap();
+        let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), tag).unwrap();
         let fixture = dir.path().join("fixture.json");
         std::fs::write(&fixture, r#"{"turns":[]}"#).unwrap();
         let engine = crate::Engine::new(crate::EngineConfig {

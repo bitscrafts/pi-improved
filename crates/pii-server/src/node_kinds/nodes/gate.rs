@@ -194,10 +194,8 @@ mod tests {
 
         use super::GateNode;
 
-        let dir = tempfile::Builder::new()
-            .prefix("gate-cycle-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
-            .unwrap();
+        let dir =
+            pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "gate-cycle-").unwrap();
         let approvals = Arc::new(ApprovalStore::open(&dir.path().join("approval.redb")).unwrap());
         let node = GateNode {
             policy: String::from("heal-escalation"),
