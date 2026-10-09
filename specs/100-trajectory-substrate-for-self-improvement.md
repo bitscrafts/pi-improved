@@ -66,6 +66,15 @@ R7. **AN ADEQUACY FLOOR, not just presence:** for every crate that is NOT exempt
     `crate → test name → the name asserted`, and the tests must actually run (paste the run). A seam that
     nothing ever exercises is the same defect class this repo keeps finding: the check must be able to
     fail.
+R6b — **FIX THE ALLOWLIST KEYING (orchestrator-measured churn):** the print allowlist is keyed
+    `file:line`, so ANY edit above a listed print invalidates the entry. Measured: spec 99 shifted 12
+    lines in `pii-cli/src/main.rs` and the allowlist diff was 16 lines for **142 entries before and
+    142 after** — pure churn, zero information. Re-key it as a **per-file budget**:
+    `path  # reason  # N` (N = how many raw prints that file may still contain), and fail when a file
+    contains MORE prints than its budget. Consequences: line shifts cost nothing, adding a print to an
+    allowlisted file still fails, and the file shrinks toward zero as the sweep converts sites.
+    Do NOT switch to an inline `// obs-allow` marker at the print site — that reintroduces the
+    self-granted-exemption problem R6 exists to remove.
 R9. **MAKE THE SEAM STRUCTURALLY COMPULSORY where the language allows it** (user question, 2026-10-09:
     *"there is nothing like a java interface that all crates must implement?"* — correct, and neither
     Rust nor Java can express "every package implements X"; a trait binds a TYPE, not a crate). So:
@@ -89,7 +98,7 @@ R8. Do NOT build skill extraction, distillation, or any learning loop in this sp
 - [ ] **the exemption is bounded**: with a 5th crate added to the registry, the lint exits non-zero (control, pasted); with a listed crate given a real seam, the lint exits non-zero as a dead exemption (control, pasted)
 - [ ] **the adequacy floor**: one passing test per non-exempt crate asserting a named event/measure from that crate, with the `crate → test → name` table in the report
 - [ ] **the seam is compulsory by type/registration** (R9): the aggregator's registered subsystem set is asserted by name in a test, and removing one registration turns that test RED (paste both runs); every crate the engine constructs takes its observer in the constructor (list them, or state which have no constructor)
-- [ ] the raw-print allowlist shrank: `wc -l < xtask/observability-allowlist.txt` is reported before/after, and every remaining entry has a reason on the line (list the remaining count; 0 is the goal but a named few is acceptable if each is justified)
+- [ ] the raw-print allowlist (now a per-file budget, R6b) shrank: report the total budget before/after and every remaining entry's reason (0 is the goal; a named few is acceptable if each is justified), and show that a 13th print added to an allowlisted file FAILS the lint (control, pasted)
 - [ ] `cargo test -p pii-observe` exits 0, including: serde round-trip of the extended `Event`, the redaction matrix (Keep/Drop/Replace), the truncation cap, and the "failed run records Failure" case
 - [ ] an end-to-end run with `PII_TRAJECTORY_DIR` set produces `<root>/trajectories/<run_id>.jsonl`; paste the path, `wc -l`, and the `run.outcome` line
 - [ ] a run WITHOUT the env var produces no trajectory file (and no behaviour change to stdout ndjson)
