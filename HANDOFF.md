@@ -530,8 +530,8 @@ line at a time); three things did NOT hold — the three worst being MY OWN:
   - **N4**: spec 76's `llamacpp` feature gate means the in-process llama provider and its 9
     real-model tests are compiled by NO gate step (ignored count fell 10 → 1).
   - **E0463 correction**: `doctest = false` is ignored by an explicit `--doc`, so it never
-    affected `quality-gate.sh`; the 18 `Cargo.toml` comments claiming "the shipped quality gate
-    can never pass" are FALSE. It affects plain `cargo test` only.
+    affected `quality-gate.sh`; the 18 `Cargo.toml` comments claiming the shipped quality gate
+    could not pass without it were FALSE (rewritten by spec 90). It affects plain `cargo test` only.
 
 **Landed since (all committed, both gates green):**
 - **83** `ee38646` the three `lanes` tests are hermetic (own `tempdir_in` under `tmp_root()`).

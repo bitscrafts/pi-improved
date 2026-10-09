@@ -20,13 +20,8 @@ tempfile = { workspace = true }
 [lints]
 workspace = true
 
-# The doctest phase for this crate compiles with ZERO doctests (all crates
-# forbid `print_stdout`/`unwrap_used` in doc examples), yet it is poisoned
-# by the same cargo doctest fingerprint bug already root-caused for pii-abi:
-# after the gate's `cargo check`/`clippy` stages rebuild dep rlibs, the doc
-# phase reuses the lib's stale dep set and rustdoc fails with E0463
-# "can't find crate for pii_abi/pii_core/serde_json" — so the shipped gate
-# can never pass. There are no doctests to lose; lib/check/clippy/unit tests
-# cover the crate (28 tests).
+# Zero doctests (verified); the flag affects plain `cargo test` only — an explicit
+# `--doc` (as the gate uses) ignores it. It avoids a cargo fingerprint problem in shared
+# target dirs; it is not a gate workaround.
 [lib]
 doctest = false

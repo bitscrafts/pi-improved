@@ -30,10 +30,8 @@ workspace = true
 path = "."
 features = ["testing"]
 
-# Zero doctests in this crate (```json annotation blocks aside), yet the doc
-# phase is poisoned under `cargo test -j 2` by the cargo doctest fingerprint
-# bug root-caused for pii-abi (spec 70 commit): rustdoc races dep rlib
-# rebuilds and fails with E0463 "can't find crate". Nothing to lose; the lib
-# and unit-test compilations cover the crate.
+# Zero doctests (verified); the flag affects plain `cargo test` only — an explicit
+# `--doc` (as the gate uses) ignores it. It avoids a cargo fingerprint problem in shared
+# target dirs; it is not a gate workaround.
 [lib]
 doctest = false

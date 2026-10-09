@@ -17,13 +17,8 @@ bitflags = { workspace = true, features = ["serde"] }
 [lints]
 workspace = true
 
-# The doctest phase for this crate compiles with ZERO doctests, yet after a
-# `cargo check`/`cargo clippy` of the workspace its compilation is stale-vs-
-# itself (cargo doctest fingerprint bug: the doc phase reuses the lib's dep
-# rlibs while rebuilding some of their deps, so rustdoc loads a `schemars`
-# compiled against an older `zmij`/`serde_json` and fails with E0463
-# "can't find crate"). It is re-run by `cargo test -j2` and poisoned again by
-# every following `check`, so the shipped quality gate can never pass.
-# There are no doctests to lose; lib/check/clippy/unit tests cover the crate.
+# Zero doctests (verified); the flag affects plain `cargo test` only — an explicit
+# `--doc` (as the gate uses) ignores it. It avoids a cargo fingerprint problem in shared
+# target dirs; it is not a gate workaround.
 [lib]
 doctest = false

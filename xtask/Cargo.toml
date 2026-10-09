@@ -10,6 +10,9 @@ description.workspace = true
 [lib]
 name = "xtask"
 path = "src/lib.rs"
+# Zero doctests (verified); the flag affects plain `cargo test` only — an explicit
+# `--doc` (as the gate uses) ignores it. It avoids a cargo fingerprint problem in shared
+# target dirs; it is not a gate workaround.
 doctest = false
 
 [dependencies]

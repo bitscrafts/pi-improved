@@ -24,12 +24,12 @@ R3. Also fix the same overclaim where it appears in prose: `HANDOFF.md`'s batch-
     repeats it (search, do not guess).
 
 ## Exit Criteria
-- [ ] `[ "$(grep -rn 'can never pass' crates xtask --include='Cargo.toml' | wc -l)" = 0 ]`
-- [ ] `[ "$(grep -rln 'doctest = false' crates xtask --include='Cargo.toml' | wc -l)" -ge 17 ]` (the flag stays)
-- [ ] `[ "$(grep -rn 'explicit .*--doc.*ignores it|--doc.*ignores' crates xtask --include='Cargo.toml' | wc -l)" -ge 17 ]` (each site states the true behaviour)
-- [ ] `[ "$(grep -c 'can never pass' HANDOFF.md)" = 0 ]`
-- [ ] `cargo run -q -p xtask -- lint-files` exits 0 and `cargo test -p xtask` exits 0
-- [ ] `bash quality-gate.sh` exits 0 (comment-only change must not disturb the gate)
+- [x] `grep -rn 'can never pass' crates xtask --include='Cargo.toml'` → 0 (verified)
+- [x] `grep -rln 'doctest = false' crates xtask --include='Cargo.toml'` → 17 files (16 crates + xtask; the spec said "17 crates" loosely — the worker flagged the wording, and the flag is intact everywhere)
+- [x] `grep -rln -E 'explicit .*--doc|--doc.*ignores' crates xtask --include='Cargo.toml'` → 17 (verified **with `-E`**: the criterion as I wrote it used basic regex where `|` is literal — my criterion was wrong, not the work; the worker caught it and said so)
+- [x] `grep -c 'can never pass' HANDOFF.md` → 0 (the E0463 bullet now says the claims "could not pass without it were FALSE (rewritten by spec 90)")
+- [x] `cargo test -p xtask` 3 suites ok; `lint-files` 188 files, max 368 effective lines, exit 0
+- [x] `bash quality-gate.sh` → ALL PASS (verified)
 - [ ] the report lists every file touched
 
 ## Guardrails
@@ -39,3 +39,13 @@ R3. Also fix the same overclaim where it appears in prose: `HANDOFF.md`'s batch-
   ("banners only, no renames"). The re-review's other numbering note (filing the report as 045) is
   already done.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-09)
+- Comment text verified in the tree (e.g. `crates/pii-abi/Cargo.toml`): 3 lines stating that the flag
+  affects plain `cargo test` only, that an explicit `--doc` (which the gate uses) ignores it, and that
+  it is not a gate workaround. The `doctest = false` lines themselves are untouched.
+- 18 files changed, none outside `Cargo.toml`/`HANDOFF.md` (checked).
+- Criterion 3 was mis-written by me (BRE `|` is literal); with `-E` it is 17. Noted rather than quietly
+  fixed — the worker reported the discrepancy instead of "fixing" the check to match.
+- Only the repo gate was re-run (comments cannot change compilation); the fresh-tree gate was left from
+  spec 89's PASS on a tree that differs from this one only by comments.
