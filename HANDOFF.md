@@ -1,5 +1,7 @@
 # Pii — Session Handoff
 
+**Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
+
 **ONE COMMAND when the amem intervention finishes:** `bash /root/.hermes/scripts/pii-review-run.sh` (`DRY_RUN=1` in front to check without spending). It probes the quota window, runs the review in test mode on the resumed session, proves read-only, then files the report into _docs + amem and writes a commit summary. Nothing else needs to be assembled.
 
 > **2026-09-28 — ⚠ THE claude+opus FULL REVIEW OF THIS REPO HAS NOT RUN YET.** Both attempts today were blocked

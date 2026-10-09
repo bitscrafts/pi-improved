@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Phase 0 quality gate: fmt --check, clippy -D warnings, test.
 # Exit 0 only if all three pass.
+# CI-equivalent fresh-tree run (NOT part of this chain; recompiles the workspace):
+#   cargo xtask fresh-gate [--worktree] [--overlay src=dest]  (spec 84)
 set -uo pipefail
 
 export PATH=/usr/local/cargo/bin:$PATH
