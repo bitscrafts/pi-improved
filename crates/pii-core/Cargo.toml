@@ -9,6 +9,7 @@ description.workspace = true
 
 [dependencies]
 pii-abi = { path = "../pii-abi" }
+pii-observe = { path = "../pii-observe" }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }
 dunce = { workspace = true }

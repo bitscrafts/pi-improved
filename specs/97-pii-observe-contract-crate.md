@@ -64,3 +64,25 @@ R6. `specs/` is read-only for you; do NOT edit any spec file.
 - Do NOT weaken or delete an existing test.
 - Scratch under `/projects/_tmp/` only; delete your own exports (one fresh-gate export is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+Landed: `crates/pii-observe/` (`lib.rs`, `event.rs`, `measure.rs`, `health.rs`, `observer.rs`, `names.rs`),
+workspace member added, `pii-core` depends on it and re-exports it as `pii_core::contract` (the old
+`Observer`/`ObsEvent`/`Metric`/sinks stay untouched, so the 101 call sites are unaffected). 10 turns, $0.33.
+
+**Verified by the orchestrator, not taken on report:**
+- **Dependency floor (the whole point)**: `cargo tree -p pii-observe` shows only `serde`/`serde_json` and
+  their proc-macro transitives — **no workspace crate**.
+- `cargo test -p pii-observe` → 9 passed, including `registry_has_no_duplicates_and_no_empties` and
+  `existing_vocabulary_is_preserved`.
+- **Mutation control 1 (the registry test has teeth)**: adding a second const with the same VALUE as
+  `graph.node.dead` and registering it in `ALL` turns the test RED —
+  `duplicate name graph.node.dead`. Restored, re-verified green.
+- Both gates green: `quality-gate.sh` ALL PASS · `fresh-gate --worktree` PASS.
+
+**FINDING (orchestrator, measured — spec 98 must close it):** the registry test only guards the `ALL`
+slice, so a name const that is **never registered** is invisible. Proven: with
+`pub const MUTANT_UNREG: &str = "graph.batch.width";` (a duplicate value, omitted from `ALL`) **all 9
+tests still pass**. A new name can therefore be added and silently never enter the vocabulary the lint
+and the dashboards read. Spec 98's `lint-observability` must enforce registry COMPLETENESS (scan
+`names.rs` for `pub const` and require each to appear in `ALL`), not only uniqueness inside `ALL`.

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/pii-abi",
     "crates/pii-core",
+    "crates/pii-observe",
     "crates/pii-store",
     "crates/pii-graph",
     "crates/pii-cli",

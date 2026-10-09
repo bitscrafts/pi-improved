@@ -1681,6 +1681,7 @@ dependencies = [
  "nix 0.29.0",
  "parking_lot",
  "pii-abi",
+ "pii-observe",
  "serde_json",
  "tempfile",
 ]
@@ -1780,6 +1781,14 @@ dependencies = [
  "serde_json",
  "tempfile",
  "webpki-roots",
+]
+
+[[package]]
+name = "pii-observe"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

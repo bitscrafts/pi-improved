@@ -30,6 +30,12 @@ R1. **New xtask subcommand `lint-observability`** (same shape as `lint-scratch`/
       with the CURRENT sites (measure them; the analysis counted 139 — use the real number your run
       finds) so the lint lands GREEN, and note the count in the report. Deleting allowlist lines is the
       adoption sweep's job (spec 100); ADDING one requires a reason on the same line.
+R1e — **registry completeness** (orchestrator-measured gap, spec 97's own finding): the contract's name
+    registry (`pii-observe/src/names.rs`) guards only its `ALL` slice. Proven: an unregistered const with
+    a duplicate value left all 9 tests green. The lint must therefore require **every `pub const` in
+    `names.rs` to appear in `ALL`**, and that no name in `ALL` is defined outside that module — so a new
+    name cannot be added and silently never enter the vocabulary the lint and dashboards read. Add a
+    matching negative control: an unregistered const in an export must make the lint exit non-zero.
 R2. **Wire it into `quality-gate.sh` as a FAILING step**, placed with the other xtask checks (after
     `lint-scratch`, before the summary), with the same `PASS:`/`FAIL:` output shape.
 R3. **Teeth, proven in a `git archive` export** (do not mutate the repo tree):
@@ -37,8 +43,10 @@ R3. **Teeth, proven in a `git archive` export** (do not mutate the repo tree):
       names that `path:line`;
     - remove a crate's `pii-observe` dependency (or its only contract use) in the export → exits
       non-zero naming that crate;
-    - restore → exits 0 with 0 findings.
-    Record the three commands and their output verbatim in the report.
+    - restore → exits 0 with 0 findings;
+    - **R1e control**: add an unregistered `pub const` to `names.rs` in the export → exits non-zero
+      naming it.
+    Record the commands and their output verbatim in the report.
 R4. **Unit tests for the lint itself** in `crates/xtask` (the repo's pattern): the allowlist parser
     (comment/reason handling), the exemption parser (a bare `// observability: none` with no reason is
     a finding), and the "no duplicates in the allowlist" invariant.
