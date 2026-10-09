@@ -190,7 +190,9 @@ mod tests {
     use crate::Tool;
 
     fn tmp_root() -> PathBuf {
-        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
     }
 
     /// A root context granting `PROC` for `/bin/sh` (all worktree git calls

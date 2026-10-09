@@ -80,6 +80,37 @@ pub fn safe_to_remove(base: &Path, dir: &Path) -> bool {
         && dir.parent() == Some(base)
 }
 
+/// Minimum free MB at the export base: `FRESH_GATE_MIN_FREE_MB`, default 2048.
+pub fn min_free_mb(env: Option<&str>) -> u64 {
+    env.and_then(|v| v.trim().parse().ok()).unwrap_or(2048)
+}
+
+/// Available MB from `df -Pm <path>` output (4th column of the data row).
+pub fn parse_df_free_mb(out: &str) -> Option<u64> {
+    out.lines().nth(1)?.split_whitespace().nth(3)?.parse().ok()
+}
+
+fn free_mb(base: &Path) -> Result<u64, String> {
+    let out = Command::new("df")
+        .args(["-Pm"])
+        .arg(base)
+        .output()
+        .map_err(|e| format!("df: {e}"))?;
+    parse_df_free_mb(&String::from_utf8_lossy(&out.stdout))
+        .ok_or_else(|| format!("could not read free space of {}", base.display()))
+}
+
+/// Existing `fresh-gate-*` dirs under `base` other than `keep`.
+pub fn stale_exports(base: &Path, keep: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(base) else {
+        return Vec::new();
+    };
+    rd.filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p != keep && p.is_dir() && safe_to_remove(base, p))
+        .collect()
+}
+
 fn git_files(root: &Path, args: &[&str]) -> Result<Vec<PathBuf>, String> {
     let out = Command::new("git")
         .arg("-C")
@@ -169,8 +200,22 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let base = PathBuf::from(BASE);
     let dir = base.join(format!("{PREFIX}{}", std::process::id()));
     std::fs::create_dir_all(&base).map_err(|e| format!("mkdir {BASE}: {e}"))?;
+    let free = free_mb(&base)?;
+    let min = min_free_mb(std::env::var("FRESH_GATE_MIN_FREE_MB").ok().as_deref());
+    if free < min {
+        return Err(format!(
+            "fresh-gate refused: only {free} MB free at {BASE}, need {min} MB \
+             (override with FRESH_GATE_MIN_FREE_MB)"
+        ));
+    }
+    // keep at most one failed export: drop older ones before creating this one.
+    for old in stale_exports(&base, &dir) {
+        if safe_to_remove(&base, &old) {
+            std::fs::remove_dir_all(&old).map_err(|e| format!("retention: {e}"))?;
+        }
+    }
     std::fs::create_dir(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    println!("fresh-gate: export dir {}", dir.display());
+    println!("fresh-gate: export dir {} ({free} MB free)", dir.display());
     export_head(&root, &dir)?;
     if opts.worktree {
         overlay_worktree(&root, &dir)?;
@@ -228,6 +273,40 @@ mod tests {
         let (steps, tests) = summarize(out);
         assert_eq!(steps, vec!["test (lib/bins/tests)"]);
         assert_eq!(tests, vec!["lanes::x"]);
+    }
+
+    #[test]
+    fn df_parse_reads_available_column() {
+        let out = "Filesystem 1048576-blocks Used Available Capacity Mounted on\n/dev/x 607697 512456 68418 89% /projects\n";
+        assert_eq!(parse_df_free_mb(out), Some(68418));
+        assert_eq!(parse_df_free_mb("garbage"), None);
+        assert_eq!(parse_df_free_mb(""), None);
+    }
+
+    #[test]
+    fn min_free_default_and_override() {
+        assert_eq!(min_free_mb(None), 2048);
+        assert_eq!(min_free_mb(Some("999999")), 999_999);
+        assert_eq!(min_free_mb(Some("junk")), 2048);
+    }
+
+    #[test]
+    fn stale_exports_excludes_current_and_foreign() {
+        let t = tempfile_dir();
+        for n in ["fresh-gate-1", "fresh-gate-2", "fresh-gate-9", "other"] {
+            std::fs::create_dir(t.join(n)).unwrap();
+        }
+        let keep = t.join("fresh-gate-9");
+        let mut got = stale_exports(&t, &keep);
+        got.sort();
+        assert_eq!(got, vec![t.join("fresh-gate-1"), t.join("fresh-gate-2")]);
+        std::fs::remove_dir_all(&t).unwrap();
+    }
+
+    fn tempfile_dir() -> PathBuf {
+        let p = std::env::temp_dir().join(format!("fg-stale-{}", std::process::id()));
+        std::fs::create_dir_all(&p).unwrap();
+        p
     }
 
     #[test]

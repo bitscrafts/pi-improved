@@ -358,11 +358,18 @@ mod tests {
 
     use super::{ATTEMPT_RING_CAP, ApprovalDecision, HealAttemptRun, HealState, HealStore};
 
+    /// Crate-local scratch root; created here because a fresh export has no `_tmp/`.
+    fn scratch_root() -> std::path::PathBuf {
+        let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
     #[test]
     fn put_get_list_roundtrip() {
         let dir = Builder::new()
             .prefix("heal-store-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .tempdir_in(scratch_root())
             .unwrap();
         let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
         let run = HealAttemptRun {
@@ -395,7 +402,7 @@ mod tests {
     fn attempt_ring_caps_and_counts() {
         let dir = Builder::new()
             .prefix("heal-ring-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .tempdir_in(scratch_root())
             .unwrap();
         let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
         for i in 0..25u64 {
@@ -435,7 +442,7 @@ mod tests {
     fn heal_escalated_run_moves_top_level_state() {
         let dir = Builder::new()
             .prefix("heal-escalate-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .tempdir_in(scratch_root())
             .unwrap();
         let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
         let detail = String::from(
@@ -493,7 +500,7 @@ mod tests {
     fn record_repair_sets_evidence_fields() {
         let dir = Builder::new()
             .prefix("heal-repair-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .tempdir_in(scratch_root())
             .unwrap();
         let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
         let run = HealAttemptRun {
@@ -536,7 +543,7 @@ mod tests {
     fn record_decision_creates_row_for_unknown_signature() {
         let dir = Builder::new()
             .prefix("heal-decision-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .tempdir_in(scratch_root())
             .unwrap();
         let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
         assert!(store.get_attempt("promo-sig").unwrap().is_none());
@@ -564,7 +571,7 @@ mod tests {
     fn record_decision_deny_round_trips() {
         let dir = Builder::new()
             .prefix("heal-decision-deny-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .tempdir_in(scratch_root())
             .unwrap();
         let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
         let decision = ApprovalDecision {
@@ -586,7 +593,7 @@ mod tests {
     fn heal_attempt_extra_defaults_to_empty() {
         let dir = Builder::new()
             .prefix("heal-extra-")
-            .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+            .tempdir_in(scratch_root())
             .unwrap();
         let store = HealStore::open(&dir.path().join("heal.redb")).unwrap();
         let run = HealAttemptRun {

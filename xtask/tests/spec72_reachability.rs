@@ -52,12 +52,19 @@ fn scratch_export(tag: &str) -> PathBuf {
     // `git archive HEAD | tar -x` — a clean snapshot of the committed tree
     // (which includes the working implementation, since the worker's tree
     // is the source of truth for this check's basis).
-    let archive = Command::new("git")
-        .arg("archive")
-        .arg("HEAD")
+    // A `git archive` export (the fresh-gate tree) has no `.git`: snapshot the
+    // source files themselves, which are exactly HEAD there.
+    let mut snapshot = Command::new("git");
+    if workspace_root().join(".git").exists() {
+        snapshot.args(["archive", "HEAD"]);
+    } else {
+        snapshot = Command::new("tar");
+        snapshot.args(["-c", "--exclude=./target", "--exclude=./_tmp", "."]);
+    }
+    let archive = snapshot
         .current_dir(workspace_root())
         .output()
-        .expect("git archive runs in this checkout");
+        .expect("snapshot of the workspace runs");
     assert!(
         archive.status.success(),
         "git archive HEAD failed: {}",
