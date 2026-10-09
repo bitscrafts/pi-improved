@@ -662,3 +662,45 @@ re-opening anything from the re-review.
 Gate manual written this day: `_docs/02-guides/quality-gate-and-fresh-tree.md` (the eight steps, the
 two-tree model, the `tmp_scratch` rule).
 
+## 2026-10-09 — the observability lane (specs 97-105): enforcement, not intention
+User directive: *"we must enforce observability! via traits on every crate"* + *"if needed create an
+observability crate"*, with *"observability is the basis of the self improvement loop pilar"*.
+Analysis first, in `_docs/06-research/053-observability-contract-and-enforcement-2026-10-09.md`.
+
+**The mechanics that exist now** (`pii-observe` = trait contract + a name registry; `lint-observability`
+= a FAILING gate step):
+- a new crate must depend on `pii-observe` and use it (R1a/R1b) or be in `xtask/observability-exemptions.txt`;
+- that registry is **bounded**: only `pii-abi`, `pii-proto`, `pii-uds`, `pii-observe` may appear (each
+  "types only / the contract itself"), a fifth entry is a red gate, and a listed crate that DOES emit is a
+  "dead exemption" red gate;
+- no new raw `eprintln!`/`println!`/`dbg!` beyond the **per-file budget** in
+  `xtask/observability-allowlist.txt` (line shifts cost nothing; an added print fails);
+- every `pub const` in `names.rs` must appear in `ALL` (R1e) — a new name cannot silently miss the
+  vocabulary the lint and dashboards read;
+- the lint fails CLOSED (unreadable registry/allowlist = finding, never a skip).
+
+**Why the enforcement is gate-level and not language-level** (user question: *"there is nothing like a java
+interface that all crates must implement?"* — correct): a trait binds a TYPE, not a crate; neither Rust nor
+Java can say "every package implements X" (Java's nearest are `ServiceLoader`/JPMS/linters). So where a
+crate has a constructor the observer is injected (a caller cannot build the subsystem without a seam), and
+the daemon's aggregator holds `&dyn Health` with a test pinning the registered set BY NAME — a dropped
+impl fails the compile, an unregistered subsystem fails the test.
+
+| spec | what it delivered | commit |
+|---|---|---|
+| 97 | `pii-observe` contract crate (serde-only floor; `Event`/`Measure`/`Observer`/`Observable`/`Health`/`names`) | `4281c12` |
+| 98 | `lint-observability` as a failing gate step; registry completeness (R1e) found by mutation | `5c6fe70` |
+| 99 | health IDENTITY + `pii health --json` (build/config/stores/mounts/counts); two-store divergence test | `46c4213` |
+| 100 | sweep 1 — eight server-side crates emit; named-registry test; adequacy floor | `61e197f` |
+| 101 | sweep 2 — seven client/channel crates emit; the CLI's ndjson output verified unchanged | `16ab1c3`, `39c9d60` |
+| 102 | the enforcement is BOUNDED (registry + budget + dead exemption) | `4f891af` |
+| 103 | trajectory substrate: correlation, verbatim outcome, redaction at the sink, default OFF | RUNNING |
+| 104/105 | P0 deployable / P1 operable | authored, not dispatched |
+
+**Honest limits recorded, not smoothed:** the exemptions are 4 crates where emitting is not well-formed
+(not 0); adequacy is a *floor* (one named-event test per crate — a lint cannot decide whether the RIGHT
+events are emitted); coverage is still unmeasured; the trajectory sink is not built yet; and the two
+defects spec 102's registry work introduced were found by MY controls, not by the worker's report
+(`_docs/06-research/052-…md` P2/P3/P5 hold the remaining hardening: redaction data-safety, per-subsystem
+adequacy review, instrumentation cost under soak).
+
