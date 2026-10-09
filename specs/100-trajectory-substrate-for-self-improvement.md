@@ -66,6 +66,19 @@ R7. **AN ADEQUACY FLOOR, not just presence:** for every crate that is NOT exempt
     `crate → test name → the name asserted`, and the tests must actually run (paste the run). A seam that
     nothing ever exercises is the same defect class this repo keeps finding: the check must be able to
     fail.
+R9. **MAKE THE SEAM STRUCTURALLY COMPULSORY where the language allows it** (user question, 2026-10-09:
+    *"there is nothing like a java interface that all crates must implement?"* — correct, and neither
+    Rust nor Java can express "every package implements X"; a trait binds a TYPE, not a crate). So:
+    - **Constructor injection**: for every crate whose subsystem the engine constructs, put the observer
+      in the constructor (`Store::open(path, obs)`, `NetService::new(cfg, obs)`, …) so a caller cannot
+      build the subsystem without a seam. Where a crate has no constructor (free functions, consts),
+      say so in the report instead of inventing one.
+    - **A named registry pinned by a test**: the daemon's health aggregator must register its
+      subsystems and a test must assert the registered set **by name** (e.g.
+      `["store","memory","net","worker","channels","graph"]`), holding them as `&dyn pii_observe::Health`.
+      Consequence: a crate that drops its `Health` impl fails to compile the aggregator, and a subsystem
+      that is added but not registered fails that test — enforcement by type + test, not only by lint.
+    - Mutation control: removing one registration must turn that test RED (paste it).
 R8. Do NOT build skill extraction, distillation, or any learning loop in this spec — this spec ends at
     "trajectories are on disk, correlated, redacted, with verbatim outcomes". Any temptation to infer
     from them belongs to a later spec. `specs/` stays read-only for you.
@@ -75,6 +88,7 @@ R8. Do NOT build skill extraction, distillation, or any learning loop in this sp
 - [ ] **every other crate has a real seam**: the lint reports 0 crates exempt outside the sanctioned set in `xtask/observability-exemptions.txt`, i.e. R1b passes on actual `pii_observe::` use; `grep -rn '// observability: none' crates/` is EMPTY (the mechanism moved out of the sources)
 - [ ] **the exemption is bounded**: with a 5th crate added to the registry, the lint exits non-zero (control, pasted); with a listed crate given a real seam, the lint exits non-zero as a dead exemption (control, pasted)
 - [ ] **the adequacy floor**: one passing test per non-exempt crate asserting a named event/measure from that crate, with the `crate → test → name` table in the report
+- [ ] **the seam is compulsory by type/registration** (R9): the aggregator's registered subsystem set is asserted by name in a test, and removing one registration turns that test RED (paste both runs); every crate the engine constructs takes its observer in the constructor (list them, or state which have no constructor)
 - [ ] the raw-print allowlist shrank: `wc -l < xtask/observability-allowlist.txt` is reported before/after, and every remaining entry has a reason on the line (list the remaining count; 0 is the goal but a named few is acceptable if each is justified)
 - [ ] `cargo test -p pii-observe` exits 0, including: serde round-trip of the extended `Event`, the redaction matrix (Keep/Drop/Replace), the truncation cap, and the "failed run records Failure" case
 - [ ] an end-to-end run with `PII_TRAJECTORY_DIR` set produces `<root>/trajectories/<run_id>.jsonl`; paste the path, `wc -l`, and the `run.outcome` line
