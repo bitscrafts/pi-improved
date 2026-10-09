@@ -9,6 +9,7 @@
 mod cli_util;
 mod cmd_ctl;
 mod cmd_daemon;
+mod cmd_health;
 mod cmd_oneshot;
 mod cmd_run;
 mod cmd_sandbox_exec;
@@ -155,6 +156,9 @@ fn main() -> ExitCode {
     }
     if cmd == "sys" {
         return cmd_sys::cmd_sys(&mut args);
+    }
+    if cmd == "health" {
+        return cmd_health::cmd_health(&mut args);
     }
     if cmd == "run" {
         return cmd_sys::cmd_run_ctl(&mut args);

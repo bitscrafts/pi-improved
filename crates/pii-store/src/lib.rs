@@ -12,6 +12,7 @@ pub mod approval;
 pub mod channel;
 mod codec;
 pub mod heal;
+mod identity;
 pub mod mem;
 pub mod session;
 pub mod testing;
@@ -19,7 +20,7 @@ pub mod timer;
 pub use mem::MemStore;
 mod tables;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunStatus};
@@ -34,6 +35,7 @@ pub use codec::{from_bytes, hash, to_bytes};
 /// Persistence handle over one redb database file.
 pub struct Store {
     db: Database,
+    path: PathBuf,
     /// Test instrumentation: the number of redb write transactions committed
     /// by the append path since the store was opened. **Not a public API
     /// promise** — exposed so the batched-append tests can assert 1-vs-N
@@ -71,6 +73,11 @@ pub struct Store {
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
+
+/// The on-disk layout version this binary reads and writes.
+pub const FORMAT_VERSION: u64 = 1;
+const FORMAT_VERSION_KEY: &str = "store.format_version";
+pub use identity::{StoreInfo, file_stats};
 
 impl Store {
     /// Opens (creating if needed) the store at `path`.
@@ -110,6 +117,7 @@ impl Store {
                         .insert(RUN_COUNTER_KEY, 0)
                         .map_err(|e| PiiError::store_op("init", "run_counter", e))?;
                 }
+                identity::ensure_format_version(&mut table, path)?;
             }
             write
                 .open_table(GRAPH_BODY)
@@ -147,6 +155,7 @@ impl Store {
         }
         Ok(Self {
             db,
+            path: path.to_path_buf(),
             write_txn_count: AtomicU64::new(0),
             session_bytes_written: AtomicU64::new(0),
             fail_session_writes_for_test: std::sync::atomic::AtomicBool::new(false),
@@ -696,4 +705,3 @@ mod tests {
         }
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

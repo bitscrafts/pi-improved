@@ -5,6 +5,7 @@
 
 pub mod approvals;
 pub mod config;
+pub mod identity;
 mod lag;
 pub mod router;
 pub mod scheduler;
@@ -135,6 +136,7 @@ impl Daemon {
             crashes_dir: runtime_dir.join("crashes"),
             config_path,
             channels_scope,
+            runtime_dir: runtime_dir.to_path_buf(),
         });
         engine.attach_daemon_ctx(Arc::clone(&ctx));
         // Spec 32 R1: give the `spawn` node the engine handle it needs to
@@ -492,6 +494,7 @@ mod tests {
             crashes_dir: dir.join("crashes"),
             config_path: dir.join("config.toml"),
             channels_scope: dir.join("channels"),
+            runtime_dir: dir.to_path_buf(),
         })
     }
 

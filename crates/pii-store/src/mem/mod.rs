@@ -20,6 +20,7 @@ use crate::tables::{MEM_ARCHIVE, MEM_DF, MEM_DOC, MEM_EDGE, MEM_META, MEM_TERM, 
 /// is ever held across a call boundary.
 pub struct MemStore {
     db: Database,
+    path: std::path::PathBuf,
 }
 
 fn err(name: &str, e: impl std::fmt::Display) -> PiiError {
@@ -54,6 +55,12 @@ pub struct Posting {
 }
 
 impl MemStore {
+    /// The file this memory store was opened from.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Opens (creating if needed) the memory database at `path`.
     ///
     /// # Errors
@@ -96,7 +103,10 @@ impl MemStore {
                 .commit()
                 .map_err(|e| PiiError::Internal(format!("memstore: commit tables: {e}")))?;
         }
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            path: path.to_path_buf(),
+        })
     }
 
     /// `n_docs` from `mem_meta` (0 when unset).

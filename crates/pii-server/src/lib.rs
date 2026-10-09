@@ -513,4 +513,3 @@ fn merge_history(
         None => serde_json::json!({ "history": history_json }),
     }
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

@@ -30,7 +30,8 @@ pub(crate) fn status_result(engine: &Arc<Engine>) -> StatusResult {
     let sessions = u32::try_from(engine.sessions.lock().len()).unwrap_or(u32::MAX);
     let sandbox = pii_tools::sandbox::profile_name(engine.cfg.sandbox);
     let docs = engine.memory.n_docs().unwrap_or(0);
-    engine.daemon_ctx().map_or_else(
+    let ctx = engine.daemon_ctx();
+    let mut result = ctx.as_ref().map_or_else(
         || StatusResult {
             uptime_ms,
             runs_active,
@@ -42,9 +43,12 @@ pub(crate) fn status_result(engine: &Arc<Engine>) -> StatusResult {
             listeners: Vec::new(),
             channels: Vec::new(),
             memory: pii_proto::sys::MemoryStatus { docs },
+            ..StatusResult::default()
         },
         |ctx| ctx.status(uptime_ms, runs_active, sessions, sandbox, docs),
-    )
+    );
+    daemon::identity::attach(engine, ctx.as_deref(), &mut result);
+    result
 }
 
 /// `worker.list`.

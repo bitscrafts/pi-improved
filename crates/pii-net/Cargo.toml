@@ -9,6 +9,7 @@ description = "The one socket: grants, authorize, resolve-once-pin, HTTP/1.1 cod
 
 [dependencies]
 pii-abi = { path = "../pii-abi" }
+pii-observe = { path = "../pii-observe" }
 pii-core = { path = "../pii-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }

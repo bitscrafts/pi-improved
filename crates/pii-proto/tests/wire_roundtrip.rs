@@ -11,8 +11,8 @@ use pii_proto::method::Method;
 use pii_proto::run::{RunListParams, RunStartParams, WireRunHeader, WireRunStatus};
 use pii_proto::session::{ContentBlock, SessionCreateParams};
 use pii_proto::sys::{
-    ChannelStatus, HelloResult, Limits, ListenerStatus, MemoryStatus, PeerInfo, StatusResult,
-    WorkerStatus,
+    BuildIdentity, ChannelStatus, ConfigIdentity, Counts, HelloResult, Limits, ListenerStatus,
+    MemoryStatus, MountStatus, PeerInfo, StatusResult, StoreStatus, WorkerStatus,
 };
 use serde_json::{Value, json};
 
@@ -301,6 +301,7 @@ fn status_result_roundtrips() {
             cursor: 99,
         }],
         memory: MemoryStatus { docs: 12 },
+        ..StatusResult::default()
     };
     let s = serde_json::to_string(&result).unwrap();
     let back: StatusResult = serde_json::from_str(&s).unwrap();
@@ -313,4 +314,82 @@ fn status_result_roundtrips() {
     assert_eq!(v["memory"]["docs"], 12);
     // Channel wire shape never carries a token (F6.8).
     assert!(!v["channels"][0].as_object().unwrap().contains_key("token"));
+}
+
+/// Spec 99 R5: the identity fields are additive — every pre-existing key is
+/// still on the wire with its old name, and an old-shape payload (no identity
+/// keys at all) still deserialises.
+#[test]
+fn status_result_keeps_old_keys_and_adds_identity_additively() {
+    let result = StatusResult {
+        uptime_ms: 1,
+        stores: vec![StoreStatus {
+            name: "main".into(),
+            path: "/data/store.redb".into(),
+            bytes: 4096,
+            format_version: Some(1),
+            ..StoreStatus::default()
+        }],
+        mounts: vec![MountStatus {
+            name: "workspace".into(),
+            root: "/work".into(),
+            mode: "rw".into(),
+            policy: "sandbox=off".into(),
+        }],
+        build: BuildIdentity {
+            version: "0.1.0".into(),
+            revision: "abc1234".into(),
+            target: "x86_64-unknown-linux-gnu".into(),
+        },
+        config: ConfigIdentity {
+            path: "/etc/pii.toml".into(),
+            sha256: Some("00".repeat(32)),
+        },
+        counts: Counts {
+            runs: 5,
+            ..Counts::default()
+        },
+        ..StatusResult::default()
+    };
+    let v = serde_json::to_value(&result).unwrap();
+    for key in [
+        "uptime_ms",
+        "runs_active",
+        "sessions",
+        "sandbox_profile",
+        "protocol",
+        "rss_kb",
+        "workers",
+        "listeners",
+        "channels",
+        "memory",
+    ] {
+        assert!(v.get(key).is_some(), "pre-existing key {key} missing");
+    }
+    assert_eq!(v["stores"][0]["path"], "/data/store.redb");
+    assert_eq!(v["stores"][0]["bytes"], 4096);
+    assert_eq!(v["stores"][0]["format_version"], 1);
+    assert_eq!(v["mounts"][0]["root"], "/work");
+    assert_eq!(v["build"]["version"], "0.1.0");
+    assert_eq!(v["config"]["sha256"].as_str().map(str::len), Some(64));
+    assert_eq!(v["counts"]["runs"], 5);
+    assert_eq!(
+        serde_json::from_value::<StatusResult>(v.clone()).unwrap(),
+        result
+    );
+
+    // An old server's payload: strip every identity key; must still parse.
+    let mut old = v;
+    for k in [
+        "stores",
+        "mounts",
+        "build",
+        "config",
+        "counts",
+        "subsystems",
+    ] {
+        old.as_object_mut().unwrap().remove(k);
+    }
+    let parsed: StatusResult = serde_json::from_value(old).unwrap();
+    assert!(parsed.stores.is_empty() && parsed.mounts.is_empty());
 }

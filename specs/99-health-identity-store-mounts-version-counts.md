@@ -59,3 +59,47 @@ R7. **THE decisive test (the directive's own test)**: a test that builds TWO dae
 - Do NOT edit files under `specs/`.
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+Landed: `pii-store/src/identity.rs` (`StoreInfo`, `info()`, `Health for Store`/`MemStore`),
+`FORMAT_VERSION` + stamp-or-refuse in `open`, additive `pii-proto/src/sys.rs` fields, the daemon
+aggregator, and `pii health [--json]`. 12 files; both gates green.
+
+**Verified by the orchestrator from a LIVE daemon (the artefact used as an operator would)** — I started
+a daemon in a scratch dir and ran the new command myself:
+
+```
+$ pii health --json
+{"build":{"revision":"5c6fe70cd7ee-dirty","target":"x86_64-unknown-linux-gnu","version":"0.1.0"},
+ "config":{"path":"/root/.pii/pii.toml","sha256":"0b800423…"},
+ "counts":{"approvals_pending":0,"cron_entries":0,"journal_events":0,"memory_docs":0,"runs":0},
+ "mounts":[{"mode":"rw","name":"workspace","root":"/projects/_tmp/health-orch-demo/ws",
+            "policy":"sandbox=off: no filesystem confinement applied"}, …channels_scope, runtime_dir…],
+ "sandbox_profile":"off","protocol":"pii.v2","rss_kb":18292,
+ "stores":[{"name":"main","path":"…/store.redb","bytes":1056768,"format_version":1,
+            "last_write_ms":1791564480077,"entries":{"graph_body":0,"run":0,"run_journal":0,…}},
+           {"name":"memory","path":"…/memory.redb","bytes":1056768,"format_version":null,…}],
+ "subsystems":[{"name":"store","state":"ok","identity":{…}}, {"name":"memory",…}, {"name":"net",…}]}
+```
+
+That satisfies the directive's four requirements — store, mounts, version, counts — and note the mount
+policy string states the sandbox absence honestly (`sandbox=off: no filesystem confinement applied`)
+rather than printing a profile name.
+
+**The directive's decisive test, verified by the orchestrator with my own mutation control:**
+`two_daemons_differ_in_identity_fields` passes on HEAD; blanking the store path at its construction site
+(`crates/pii-store/src/identity.rs`, `path: self.path.clone()` → `PathBuf::new()`) turns it RED —
+```
+panicked at health_identity.rs:111:5: assertion `left != right` failed:
+different stores must report different paths
+```
+Restored and re-verified green (0 mutant occurrences left).
+
+## Findings / residual (honest)
+1. **The memory store reports `format_version: null`** while the main store reports `1` — the stamp-or-refuse
+   path covers `Store` but not every redb file the daemon opens. A store whose version is unknown cannot be
+   refused on upgrade, so P1's migration story (spec 102) must stamp them all.
+2. **The aggregator registers 3 subsystems today** (store, memory, net); worker/channels/graph are not yet
+   contributors. Spec 100's R9 pins the registered set by name, which is what makes that visible.
+3. `pii health` exits 2 with `error: no daemon answered …; is \`pii daemon\` running?` when nothing listens —
+   the honest failure mode, verified.

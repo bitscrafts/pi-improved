@@ -1,5 +1,7 @@
 //! `sys.*` params and results (F1.4).
 
+use std::collections::BTreeMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -90,14 +92,94 @@ pub struct ChannelStatus {
 }
 
 /// Memory subsystem summary (F5.12).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MemoryStatus {
     /// Documents currently indexed.
     pub docs: u64,
 }
 
+/// One durable store file, as reported by `sys.status` (spec 99).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StoreStatus {
+    /// Role of the store (`main`, `memory`).
+    pub name: String,
+    /// Resolved path of the file the process has open.
+    pub path: String,
+    /// File size in bytes.
+    pub bytes: u64,
+    /// Persisted format version; `None` when the store records none.
+    pub format_version: Option<u64>,
+    /// File modification time (ms since the Unix epoch), when readable.
+    pub last_write_ms: Option<u64>,
+    /// Entry count per table (or subsystem-specific counts).
+    pub entries: BTreeMap<String, u64>,
+}
+
+/// One filesystem root the process actually allows (spec 99 R2).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MountStatus {
+    /// What the root is for (`workspace`, `channels_scope`, `runtime_dir`).
+    pub name: String,
+    /// The RESOLVED absolute path, never a profile name.
+    pub root: String,
+    /// `rw` or `ro`.
+    pub mode: String,
+    /// The policy that granted the root.
+    pub policy: String,
+}
+
+/// Which binary is answering (spec 99 R3).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BuildIdentity {
+    /// Crate version.
+    pub version: String,
+    /// Source revision the binary was built from (`unknown` when the build
+    /// had no git checkout).
+    pub revision: String,
+    /// Target triple.
+    pub target: String,
+}
+
+/// Which config the daemon loaded: path and a hash of its contents (never
+/// the contents).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConfigIdentity {
+    /// Config file path.
+    pub path: String,
+    /// Hex SHA-256 of the file's bytes; `None` when it cannot be read.
+    pub sha256: Option<String>,
+}
+
+/// Cheap totals (spec 99 R4). `memory_docs` mirrors `memory.docs`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Counts {
+    /// Runs in the store.
+    pub runs: u64,
+    /// Journal events in the store.
+    pub journal_events: u64,
+    /// Approvals awaiting a decision.
+    pub approvals_pending: u64,
+    /// Configured cron entries.
+    pub cron_entries: u64,
+    /// Memory documents.
+    pub memory_docs: u64,
+}
+
+/// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SubsystemStatus {
+    /// Subsystem name.
+    pub name: String,
+    /// `ok`, `degraded` or `down`.
+    pub state: String,
+    /// Human-readable detail, if any.
+    pub detail: Option<String>,
+    /// What the subsystem actually is: paths, versions, counts.
+    pub identity: BTreeMap<String, String>,
+}
+
 /// `sys.status` result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StatusResult {
     /// Server uptime.
     pub uptime_ms: u64,
@@ -119,4 +201,22 @@ pub struct StatusResult {
     pub channels: Vec<ChannelStatus>,
     /// Memory subsystem summary.
     pub memory: MemoryStatus,
+    /// Durable stores (spec 99). Additive: absent from older servers.
+    #[serde(default)]
+    pub stores: Vec<StoreStatus>,
+    /// Roots the process allows (spec 99).
+    #[serde(default)]
+    pub mounts: Vec<MountStatus>,
+    /// Binary identity (spec 99).
+    #[serde(default)]
+    pub build: BuildIdentity,
+    /// Config identity (spec 99).
+    #[serde(default)]
+    pub config: ConfigIdentity,
+    /// Totals (spec 99).
+    #[serde(default)]
+    pub counts: Counts,
+    /// Per-subsystem health reports (spec 99 R5).
+    #[serde(default)]
+    pub subsystems: Vec<SubsystemStatus>,
 }

@@ -7,6 +7,7 @@ pub mod authorize;
 pub mod clock;
 pub mod dial;
 pub mod grant;
+mod health;
 pub mod http_codec;
 pub mod limits;
 pub mod listen;
@@ -47,4 +48,3 @@ pub fn check_target(
         .ok_or_else(|| PiiError::Denied(format!("net: no grant for '{key}'")))?;
     authorize::authorize(target, &[], &grant, clock.now_ms(), timeout_ms)
 }
-// observability: none — pending the spec 100 adoption sweep (no seam yet)

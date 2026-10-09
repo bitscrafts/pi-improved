@@ -10,6 +10,7 @@ description.workspace = true
 # THE ONLY crate that knows redb. Never add petgraph/toml here.
 [dependencies]
 pii-abi = { path = "../pii-abi" }
+pii-observe = { path = "../pii-observe" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 redb = { workspace = true }

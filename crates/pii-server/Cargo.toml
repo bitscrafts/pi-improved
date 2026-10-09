@@ -11,6 +11,7 @@ description = "Pii daemon: engine, JSON-RPC dispatch, UDS/loopback transports"
 pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
 pii-store = { path = "../pii-store" }
+pii-observe = { path = "../pii-observe" }
 pii-graph = { path = "../pii-graph" }
 pii-proto = { path = "../pii-proto" }
 pii-model = { path = "../pii-model" }
@@ -25,6 +26,7 @@ toml = { workspace = true }
 parking_lot = { workspace = true }
 dunce = { workspace = true }
 blake3 = { workspace = true }
+sha2 = "0.10"
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "signal", "process", "test-util"] }
 
 [features]

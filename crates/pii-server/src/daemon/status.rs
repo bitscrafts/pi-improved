@@ -63,6 +63,20 @@ pub struct DaemonContext {
     /// D2): `<runtime_dir>/channels`. A channel named `name` gets exactly
     /// `channels_scope.join(name)`; never a hardcoded literal path.
     pub channels_scope: std::path::PathBuf,
+    /// The resolved runtime directory (control socket, stores, crashes).
+    pub runtime_dir: std::path::PathBuf,
+}
+
+impl pii_observe::Health for ChannelRuntime {
+    fn health(&self) -> pii_observe::SubsystemHealth {
+        let mut h = pii_observe::SubsystemHealth::ok(format!("channel.{}", self.channel.name()));
+        h.identity
+            .insert("kind".into(), self.channel.kind().to_owned());
+        h.identity
+            .insert("poll_interval_ms".into(), self.poll_interval_ms.to_string());
+        h.identity.insert("graph".into(), self.graph.clone());
+        h
+    }
 }
 
 /// Resident set size in KiB from `/proc/self/status` (F5.12); `0` when the
@@ -156,6 +170,7 @@ impl DaemonContext {
             listeners,
             channels,
             memory: MemoryStatus { docs: memory_docs },
+            ..StatusResult::default()
         }
     }
 }

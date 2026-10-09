@@ -256,6 +256,7 @@ mod tests {
             crashes_dir: tmp_root.join("router-test/crashes"),
             config_path: tmp_root.join("router-test/config.toml"),
             channels_scope: tmp_root.join("router-test/channels"),
+            runtime_dir: tmp_root.join("router-test"),
         })
     }
 
