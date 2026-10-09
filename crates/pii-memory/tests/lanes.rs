@@ -118,11 +118,11 @@ fn rrf_equals_bm25_when_lanes_disabled() {
 
 #[test]
 fn degrades_honestly_without_embedder() {
-    let store = MemStore::open(std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/_tmp/phase3/lanes-degrade.redb"
-    )))
-    .unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix("lanes-degrade-")
+        .tempdir_in(tmp_root().join("phase3"))
+        .unwrap();
+    let store = MemStore::open(&dir.path().join("lanes-degrade.redb")).unwrap();
     put(
         &store,
         "degraded lane note: the null embedder must not be silent",
@@ -155,9 +155,11 @@ fn decay_orders_by_age_with_fixed_clock() {
 /// G1.4 (spec 09 v2): a search hit carries the doc TEXT, not just the id.
 #[test]
 fn memory_hit_carries_doc_text() {
-    let db = concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/mem-hit-text.redb");
-    let _ = std::fs::remove_file(db);
-    let store = MemStore::open(std::path::Path::new(db)).unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix("mem-hit-text-")
+        .tempdir_in(tmp_root().join("phase3"))
+        .unwrap();
+    let store = MemStore::open(&dir.path().join("mem-hit-text.redb")).unwrap();
     put(
         &store,
         "user prefers dark mode for the terminal",
@@ -185,9 +187,11 @@ fn memory_hit_carries_doc_text() {
 /// dormant — see the "when it fires" note on `graph_lane`.
 #[test]
 fn graph_lane_recalls_doc_via_shared_concept() {
-    let db = concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/graph-lane.redb");
-    let _ = std::fs::remove_file(db);
-    let store = MemStore::open(std::path::Path::new(db)).unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix("graph-lane-")
+        .tempdir_in(tmp_root().join("phase3"))
+        .unwrap();
+    let store = MemStore::open(&dir.path().join("graph-lane.redb")).unwrap();
 
     // The doc text shares NO words with the query below; only the concept
     // edge (tagged out-of-band, as `write_fact` does with its `concepts`

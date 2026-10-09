@@ -27,8 +27,8 @@ R2. No test may depend on another test having run first. After the change, runni
 R3. No behaviour change to what the tests assert (same assertions, same inputs, same crates).
 
 ## Exit Criteria
-- [ ] `[ "$(grep -c '"/_tmp/phase3' crates/pii-memory/tests/lanes.rs)" = 0 ]`
-- [ ] `[ "$(grep -c 'tempdir_in' crates/pii-memory/tests/lanes.rs)" -ge 3 ]`
+- [x] `[ "$(grep -c '"/_tmp/phase3' crates/pii-memory/tests/lanes.rs)" = 0 ]` (verified 0; the one remaining `_tmp/phase3` mention is the expect() message inside `tmp_root()`, which is the helper that CREATES the directory)
+- [x] `[ "$(grep -c 'tempdir_in' crates/pii-memory/tests/lanes.rs)" -ge 3 ]` (verified 3)
 - [ ] FRESH-TREE PROOF: `S=$(mktemp -d /projects/_tmp/lanes-XXXX); git -C /projects/pi-improved archive HEAD | tar -x -C $S; cp -r /projects/pi-improved/crates/pii-memory/tests/lanes.rs $S/crates/pii-memory/tests/; cd $S && CARGO_TARGET_DIR=$S/target cargo test -p pii-memory --test lanes` exits 0 and prints `test result: ok` with 0 failed — with NO `_tmp` anywhere under `$S/crates`
 - [ ] `cargo test -p pii-memory` exits 0 (full crate, both in the export and in the repo tree)
 - [ ] `cargo fmt --all --check` exits 0 and `cargo clippy -p pii-memory --all-targets -- -D warnings` exits 0
@@ -40,3 +40,15 @@ R3. No behaviour change to what the tests assert (same assertions, same inputs, 
 - Do NOT `rm -rf` anything; scratch under `/projects/_tmp/` only, and leave it in place.
 - Do NOT commit; leave the tree for the orchestrator, and report the fresh-tree command's
   exact output (the point of this spec is a measurement, not a claim).
+
+## Orchestrator verification (2026-10-09)
+- **Fresh-tree RED→GREEN measured by the orchestrator** in its own export
+  (`/projects/_tmp/lanes-verify-FYuQ`, confirmed "no _tmp in export"):
+  - HEAD's `lanes.rs` → `degrades_honestly_without_embedder`, `graph_lane_recalls_doc_via_shared_concept`,
+    `memory_hit_carries_doc_text` **FAILED** with
+    `memstore: open .../_tmp/phase3/{lanes-degrade,graph-lane,mem-hit-text}.redb:
+    I/O error: No such file or directory (os error 2)`.
+  - Working-tree `lanes.rs` in the same export → `test result: ok. 8 passed; 0 failed`.
+  This is N1 reproduced and closed by measurement, not by report.
+- Full `quality-gate.sh` ALL PASS in the repo tree (fmt / clippy -D warnings / tests / doctests /
+  lint-files / reachability-check), no lint-files warning.
