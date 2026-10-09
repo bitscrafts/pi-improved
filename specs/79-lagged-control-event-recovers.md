@@ -28,9 +28,9 @@ R3 (TDD, RED first). A test that reproduces the drop: a run is registered as
     FAIL before the fix (observe and record the red) and pass after.
 
 ## Exit Criteria
-- [ ] `[ "$(grep -c 'Lagged(_)) => {}' crates/pii-server/src/daemon/mod.rs)" = 0 ]` (the silent swallow is gone)
-- [ ] `[ "$(grep -c 'runs_by_status' crates/pii-server/src/daemon/mod.rs)" -ge 1 ]` (the recovery rescan exists at the call site)
-- [ ] `cargo test -p pii-server lagged 2>&1 | grep -q 'test result: ok'` (the new test passes)
+- [x] `[ "$(grep -c 'Lagged(_)) => {}' crates/pii-server/src/daemon/mod.rs)" = 0 ]` (verified 0)
+- [x] `[ "$(grep -c 'runs_by_status' crates/pii-server/src/daemon/mod.rs)" -ge 1 ]` (1 — verified)
+- [x] `cargo test -p pii-server lagged 2>&1 | grep -q 'test result: ok'` — verified as **1 passed** (`lagged_control_event_recovers_suspended_timer`, 0.22s), not just "some suite said ok" (the `-q ok` form alone also matches a 0-test run).
 - [ ] `cargo test -p pii-server 2>&1 | grep -c 'test result: FAILED' | grep -q '^0$'` (no failing suite)
 - [ ] `cargo clippy -p pii-server --all-targets -- -D warnings` exits 0
 - [ ] `cargo fmt --all --check` exits 0
@@ -42,3 +42,17 @@ R3 (TDD, RED first). A test that reproduces the drop: a run is registered as
   arm (an exceptional path), which is the point.
 - Tests under `_tmp/`, never `/tmp`. Do NOT commit; leave the tree for the orchestrator.
 - Record in the report: the red evidence for R3 (exact assertion + output before the fix).
+
+## Orchestrator verification (2026-10-09)
+- The test drives the REAL path: `spawn_reactive_loop` (production) and the test both call
+  the same free `reactive_loop`; the test floods the bus past its 4096 capacity so the loop's
+  first `recv` is a genuine `Lagged`, then polls the REAL `TimerWheel`.
+- **Mutation control (orchestrator)**: restoring the silent swallow (`Lagged(_) => {}`) makes
+  the test FAIL — `suspended run's timer must be re-armed after a lag` — so the test is
+  load-bearing, not decoration. Restored and re-verified green.
+- **Known gap (worker-reported, kept visible)**: the rescan re-arms TIMER suspensions only. A
+  missed APPROVAL suspension is not re-requested on lag because the worker could not confirm
+  `approvals::request` is safe to call twice. Narrowing, not widening: no new risk introduced
+  (the pre-fix behaviour re-armed neither). Follow-up candidate if approval suspensions prove
+  reachable through the lag path.
+- Full gate: `quality-gate.sh` ALL PASS.

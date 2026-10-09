@@ -5,6 +5,7 @@
 
 pub mod approvals;
 pub mod config;
+mod lag;
 pub mod methods;
 pub mod router;
 pub mod scheduler;
@@ -191,16 +192,30 @@ impl Daemon {
         let engine = Arc::clone(&self.engine);
         let ctx = Arc::clone(&self.ctx);
         let scheduler = Arc::clone(&self.scheduler);
-        let mut rx = engine.bus.subscribe();
-        tokio::spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Ok(se) => react(&engine, &ctx, &scheduler, &se.event),
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(_) => break,
-                }
+        let rx = engine.bus.subscribe();
+        tokio::spawn(reactive_loop(engine, ctx, scheduler, rx))
+    }
+}
+
+async fn reactive_loop(
+    engine: Arc<Engine>,
+    ctx: Arc<DaemonContext>,
+    scheduler: Arc<scheduler::Scheduler>,
+    mut rx: tokio::sync::broadcast::Receiver<pii_proto::run::SeqEvent>,
+) {
+    loop {
+        match rx.recv().await {
+            Ok(se) => react(&engine, &ctx, &scheduler, &se.event),
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                // Never drop silently (F4): report the gap, then recover the
+                // control state the missed events would have applied.
+                lag::log_warn(&format!(
+                    "reactive loop lagged, {n} events dropped; rescanning suspended runs"
+                ));
+                lag::recover_suspended(&engine, &scheduler);
             }
-        })
+            Err(_) => break,
+        }
     }
 }
 
@@ -440,5 +455,125 @@ impl ShutdownSignal {
             () = graceful => {}
             () = Self::one() => { self.forced.store(true, Ordering::Relaxed); }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::sync::Arc;
+
+    use pii_abi::{NodeId, ResumeKey, RunEvent, RunId, RunStatus, SuspendReason};
+    use pii_core::FixedClock;
+    use pii_proto::event::Event;
+    use pii_store::timer::TimerWheel;
+
+    use super::reactive_loop;
+    use super::scheduler::Scheduler;
+    use super::status::DaemonContext;
+    use crate::{Engine, EngineConfig};
+
+    fn test_ctx(dir: &std::path::Path) -> Arc<DaemonContext> {
+        Arc::new(DaemonContext {
+            net: Arc::new(pii_net::NetService::new(pii_net::NetConfig {
+                resolver: Arc::new(pii_net::SystemResolver),
+                grants: Arc::new(pii_net::grant::StaticGrants::default()),
+                clock: Arc::new(pii_core::SystemClock),
+            })),
+            workers: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
+            channels: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            channel_store: Arc::new(
+                pii_store::channel::ChannelStore::open(&dir.join("channel.redb")).unwrap(),
+            ),
+            cron: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            cron_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            crashes_dir: dir.join("crashes"),
+            config_path: dir.join("config.toml"),
+            channels_scope: dir.join("channels"),
+        })
+    }
+
+    /// Spec 79 (D6): a lagged receiver must not lose the `RunSuspended` it
+    /// missed. A run is suspended on a timer in the store, the bus is flooded
+    /// past its capacity before the loop first reads, and the resume timer
+    /// must still end up armed.
+    #[tokio::test]
+    async fn lagged_control_event_recovers_suspended_timer() {
+        let tmp_root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp"));
+        std::fs::create_dir_all(tmp_root).unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("lagged-recover-")
+            .tempdir_in(tmp_root)
+            .unwrap();
+        let dir = tmp.path().to_path_buf();
+        let fixture = dir.join("fixture.json");
+        std::fs::write(&fixture, r#"{"turns":[]}"#).unwrap();
+        let engine = Engine::new(EngineConfig {
+            workspace: dir.clone(),
+            store_path: dir.join("store.redb"),
+            model: format!("scripted:{}", fixture.display()),
+            sandbox: pii_tools::sandbox::SandboxProfileName::Off,
+            graph_dir: dir.clone(),
+            route_policy: std::collections::BTreeMap::new(),
+            session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+        })
+        .unwrap();
+
+        let run = RunId::from("r-lagged");
+        let key = "timer:r-lagged:t:600000";
+        let mut header = pii_abi::RunHeader {
+            run: run.clone(),
+            graph: String::from("default"),
+            status: RunStatus::Suspended,
+            seq: 0,
+            dur_ms: 0,
+        };
+        engine
+            .store
+            .append_event(
+                &mut header,
+                &RunEvent::Suspended {
+                    node: NodeId::from("t"),
+                    reason: SuspendReason::Timer { in_ms: 600_000 },
+                    key: ResumeKey(String::from(key)),
+                },
+            )
+            .unwrap();
+
+        let ctx = test_ctx(&dir);
+        let wheel = Arc::new(TimerWheel::open(&dir.join("timer.redb")).unwrap());
+        let scheduler = Scheduler::new(
+            Arc::clone(&engine),
+            Arc::clone(&wheel),
+            Arc::new(FixedClock::new()),
+        );
+
+        // Subscribe, then flood past the 4096 capacity before the loop runs:
+        // its first recv is `Lagged`, and the RunSuspended is long gone.
+        let rx = engine.bus.subscribe();
+        for i in 0..5_000u64 {
+            engine.bus.broadcast(Event::Lagged {
+                sub_id: String::from("burst"),
+                dropped: i,
+            });
+        }
+        let handle = tokio::spawn(reactive_loop(Arc::clone(&engine), ctx, scheduler, rx));
+
+        let mut armed = None;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            armed = wheel.next_timer().unwrap();
+            if armed.is_some() {
+                break;
+            }
+        }
+        handle.abort();
+        assert_eq!(
+            armed,
+            Some(600_000),
+            "suspended run's timer must be re-armed after a lag"
+        );
     }
 }
