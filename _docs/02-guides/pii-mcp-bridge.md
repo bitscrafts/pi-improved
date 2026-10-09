@@ -20,7 +20,7 @@ roadmap already planned MCP on both flanks.
 
 ## The two roles (both in one crate)
 
-- **Server** (`pii mcp` subcommand): pii exposes its native tools (fs, edit,
+- **Server** (the standalone `pii-mcp` binary, not a `pii mcp` subcommand): pii exposes its native tools (fs, edit,
   bash, glob, grep, http, memory) as an MCP server over stdio. Hermes registers
   it → `mcp_pii_*` tools appear → Hermes calls pii's tools, exercising the
   engine daily.

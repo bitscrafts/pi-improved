@@ -29,7 +29,7 @@ two-pass fable codebase review (`_docs/06-research/032-*.md`) produced
 - 65 `2e47219` doc `layer` was never persisted at all, so
   `same_layer_only` could never fire. Fixed ADDITIVELY (new MEM_LAYER
   table; `encode` untouched) after a first attempt tried to change the
-  storage format and was reverted — see `_docs/06-research/033-*.md`.
+  storage format and was reverted — see `_docs/05-operations/033-spec65-guardrail-violation-doc-format.md`.
 - 66 `6871616` F-11 pass 2: `PiiError::store_op` constructor + heal.rs
   and session.rs conversions (net shrink, not the +280 lines the
   literal form would have cost).
@@ -179,8 +179,15 @@ none.
 | Spec | Item | Status | Evidence |
 |---|---|---|---|
 | 52 | D4/D7: channel poll off the tokio executor, worker kill off the state lock | **DONE** | D4: `router.rs`'s `spawn_all` wrapped the fully-synchronous `Channel::poll` in `tokio::task::spawn_blocking` — a slow network/file-backed poll no longer starves the async executor. D7: `Supervisor::death`/`::reload` restructured to release the `state` mutex before the blocking `ChildProc::kill()` (which blocks on `wait()`). **Two real regressions caught during independent re-verification, not visible in the implementer's own reported diff**: (1) a same-thread mutex re-lock deadlock from taking `slots.lock()` twice inside one tuple expression (Rust's temporary-lifetime-extension kept the first guard alive), caught by re-running the PRE-EXISTING `kill9_fails_in_flight_with_workerdied` test and watching it hang for the first time; (2) the crash-loop-cap's early return was dropped, so a `Failed` worker still respawned — caught by `restart_storm_is_capped` asserting `Failed` and getting `Ready`. Both fixed, plus two clippy findings (a second lock-held-across-kill site, a pedantic `map().unwrap_or()`). Implemented via pidag/pi (glm-5.3-flash free tier, iter1) — the run itself hung 20+ minutes on a SEPARATE pidag bug (unbounded output-drain wait, fixed separately in pidag commit `2db967c`) before this content was recovered from the worker's session log and independently verified/fixed/committed. Full gate green (`_tmp/gate-spec52-final2.log`, `EXIT=0`). Committed `b48b497`. |
+| 57 | F-20: `pii-channels` `discord.rs` coverage (local fake `HttpTransport`; poll mapping/ordering, send paths) + `reattach.rs` hardcoded tmp path | **DONE** | Committed `34ad977`. |
+| 58 | F-20 tidy: `pii-cli` coverage for `cli_util.rs`/`ndjson.rs` (`next_value` made test-constructible; `journal_line`/`metric_line` helpers) | **DONE** | Committed `3865737`. |
+| 59 | F-20 tidy: `pii-web` flag parsing extracted to `parse_web_args()` and tested; `web_defaults_to_loopback` tautology fixed | **DONE** | Committed `11b8693`. |
+| 60 | F-11 pilot: `PiiError::StoreOp { op, resource, detail }`, 22 `heal.rs` call sites converted | **DONE** | Committed `c8fb4d9`. |
+| 61 | Hardcoded `/projects/pi-improved/_tmp` paths → `CARGO_MANIFEST_DIR`-relative (50 refs, ~25 files); 3 orphaned planning docs relocated to `_docs/99-archive/` | **DONE** | Committed `1fc2d00`. |
 
 ### Phase 5.0 re-baseline (2026-09-16) — COMPLETE
+
+> **HISTORICAL SNAPSHOT (2026-09-16), superseded by CURRENT STATE above** — the "nothing is committed" statements below describe that day's working tree; everything since has landed (see the spec ledger).
 
 This session executed the 026 report's Phase 5.0 punch list
 (`_docs/06-research/026-codebase-analysis-and-phase5-plan.md`, Part 3)

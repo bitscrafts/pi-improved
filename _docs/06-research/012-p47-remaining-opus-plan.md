@@ -5,6 +5,8 @@
 
 # P4.7 — the self-improving module: design, adversarial review, and remaining plan
 
+> **Status update 2026-10-09:** the plan's specs 31-34 LANDED — `09c5560` (31 protected paths), `29f89bb` (32 spawn node + worktree), `29625cf` (33 Slice E live), `33a97ca` (34 Slice F dev/prod + gated promotion); specs 35-36 landed as `a9dce5d` and `bb131bb`. Read the plan below as history.
+
 ## 0. Premise corrections (read these first; three of the brief's assumptions are wrong)
 
 **(a) Slice E is roughly 70% already built — by spec 08, not spec 27.** `graphs/starter/heal-fix.toml` is a complete localize→patch→validate→escalate loop: `probe` (bash, runs `$.input.test_command` in `$.input.worktree`) → `route_probe` on exit code → `fix` (agent, `tools = ["fs_read","fs_write","edit","multi_edit"]`, no bash) → `retest` → `route_retest` → `summarize` (`git diff`) → `escalate` (gate, `policy = "heal-escalation"`) → `done`, with a `retry` back-edge and `loop_budget = 2`. Worktree provisioning, disk ceiling and lifecycle exist: `xtask/src/heal_seed.rs:28` (`_tmp/heal-worktrees`), `:72` (≥50 worktrees → refuse), `:77` (>2 GiB → refuse), `xtask/src/heal_prune.rs:35-55` (`mv` to trash, never `rm -rf`). Write confinement is real and enforced at the capability layer: `crates/pii-server/src/runs.rs:261-283` (`validate_scope_root`), `:232-255` (`run_caps` — fs_write scope = worktree only, fs_read = worktree + workspace), `crates/pii-core/src/fscap.rs:97-151` (canonicalise-then-check). The only exit from the sandbox is `xtask heal-collect <sig>` (`xtask/src/heal_collect.rs:1-3`), which writes `_tmp/heal-reviews/<sig>.patch` and applies nothing.

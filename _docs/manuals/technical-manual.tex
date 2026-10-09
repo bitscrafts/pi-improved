@@ -177,7 +177,9 @@ The workspace is a Rust workspace of crates. The kernel ABI is
 \texttt{pii-tui} & the terminal UI \\
 \texttt{pii-web} & the read-only web viewer \\
 \texttt{pii-mcp} & MCP server + client \\
-\texttt{pii-evolve} & the self-improving boss (feature-gated) \\
+\texttt{pii-uds} & client-side UDS transport helpers (runtime dir, socket connect) \\
+\texttt{pii-http-fetch} & credential-free GET-only HTTP fetch tool (via \texttt{pii-net}) \\
+\texttt{pii-evolve} & the self-improving boss (separate binary) \\
 \texttt{xtask} & build/CI helpers \\
 \bottomrule
 \end{longtable}
@@ -513,6 +515,8 @@ The daemon socket is local-only Unix (0600). The full method surface:
 \texttt{run.get} & run header \\
 \texttt{run.list} & list runs \\
 \texttt{run.cancel} & cancel a run \\
+\texttt{run.resume} & resume an interrupted run \\
+\texttt{run.trace} & fetch a run's journal trace \\
 \texttt{graph.apply} & store/replace a graph \\
 \texttt{graph.get} & fetch a graph \\
 \texttt{graph.list} & list graphs \\
@@ -716,17 +720,17 @@ no I/O beyond them. Used by tests and \texttt{pii -p} style scripting.
 \chapter{The Self-Improving Boss}
 \label{chap:evolve}
 
-The self-improving boss (\texttt{pii-evolve}) is a feature-gated crate
+The self-improving boss (\texttt{pii-evolve}) is a separate-binary crate
 that runs the boss loop as a real pii graph on the daemon — dogfooding
-(008 \S3/\S4). Every 30 minutes it runs the silent-noop-check gate on the
+(012 \S3/\S4). Every 30 minutes it runs the silent-noop-check gate on the
 daemon itself; a detected failure escalates through a \texttt{gate} node
 so a human approves before anything heals. No FS\_WRITE anywhere in the
 watch graph; no agent/model node — detection, forwarding, and the
 approval decision are all deterministic nodes.
 
 The deep design is in the SSOT at
-\texttt{\_docs/06-research/008-pii-evolve.md}. The opus review and the
-remaining-work plan are at \texttt{009-} and \texttt{012-}.
+\texttt{\_docs/06-research/012-p47-remaining-opus-plan.md}. The opus review and the
+remaining-work plan are merged into the same document (\texttt{012-}).
 
 \section{The launcher}
 

@@ -1,5 +1,7 @@
 # In-process LLM support via `llama-cpp-2` (embedding Granite 4.2 inside Pii)
 
+> **Status update 2026-10-09:** IMPLEMENTED, no longer a draft. The in-process `llama-cpp-2` provider landed in `a9dce5d` (spec 35) with config + real-model acceptance in `2b30c00`, and in-process tool calls in `a37ac8a`/`bb131bb` (spec 36). The "nothing implemented" status above is historical.
+
 **Date**: 2026-09-10 · **Author**: research agent (claude-sonnet-5) · **Status**: DRAFT — feasibility study, nothing implemented
 
 ## Context

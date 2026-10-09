@@ -1,5 +1,7 @@
 # 025 — Model routing + provider failover in Pii: plan
 
+> **Status update 2026-10-09:** IMPLEMENTED as specs 37-42 (failover reason classification, structured provider failure, failure-as-payload, failover ladder graph, operator surface). Landing commits: `4624d58` (spec 37) and `eab311f` (Phase 5.1 Track A, failover becomes real). The "No implementation" status below is historical.
+
 **Date**: 2026-09-11
 **Status**: PLAN (design + spec breakdown). No implementation.
 **Trigger**: user directive — "how Hermes deals with provider/model switching when

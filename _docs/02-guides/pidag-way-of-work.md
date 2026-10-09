@@ -88,8 +88,8 @@ implement-iterN → quality-gate-N → validate-iterN
   `quality-gate.sh`).
 - **validate-iterN**: runs the spec's Exit Criteria via
   `validate-exit-criteria.sh` (the `- [ ]` checkbox commands).
-- The loop re-implements up to `max_iterations` (our config: 4) until the
-  exit criteria pass.
+- The loop re-implements up to `max_iterations` (our config: 2 iterations;
+  iteration 2 swaps to paid, then stop) until the exit criteria pass.
 
 ## 6. Hard rules that govern every run
 

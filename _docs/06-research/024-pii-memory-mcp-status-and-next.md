@@ -1,5 +1,7 @@
 # 024 — Pii memory + MCP: verified status, caveats, and what's next
 
+> **Status update 2026-10-09:** next steps N1-N6 LANDED in commit `29ea8aa` (feat(phase4.7): memory over MCP + in the agent loop). The caveats below describe the 2026-09-11 state.
+
 **Date**: 2026-09-11
 **Scope**: Is Pii's memory subsystem fully working? Is MCP working, and can
 Hermes connect to it? What are the honest gaps, and what is the next

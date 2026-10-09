@@ -5,7 +5,7 @@ agent, a personal assistant daemon, a reactive IoT/automation engine, and a
 self-improving cognitive layer around one event-sourced daemon substrate.
 Four binaries ship today (`pii`, `pii-mcp`, `pii-web`, `pii-evolve`); `pii`
 (from `pii-cli`) is the primary entry point and embeds the daemon in-process.
-This implements the architecture researched in `_docs/06-research/001-003-*.md`.
+This implements the architecture researched in `_docs/06-research/002-pii-architecture-plan-pass2.md`.
 
 ## SDD/TDD workflow (mandatory)
 
@@ -48,7 +48,7 @@ pidag sdd specs/01-xxx.md --run --concurrency N
   yantrikclaw, grok-build, hermes-agent). NEVER modify.
 - `_docs/` — SSOT documentation (01-overview … 06-research).
 - `_tmp/` — test artifacts, sessions, scratch.
-- `crates/` — the Pii Rust workspace (18 crates + `xtask`; landed, not
+- `crates/` — the Pii Rust workspace (19 crates plus the xtask member; landed, not
   aspirational — Phase 0 completed 2026-09-02).
 
 ## Hard rules
@@ -61,7 +61,7 @@ pidag sdd specs/01-xxx.md --run --concurrency N
   the touched specs, and return spec-creation to the planner. Workhorse only
   *implements* existing specs.
 - **450-line file gate, traits-first, `#![forbid(unsafe_code)]`** — workspace-wide,
-  no per-crate override exists today (`Cargo.toml:54`). Earlier research docs
+  no per-crate override exists today (`Cargo.toml:56`). Earlier research docs
   planned an unsafe carve-out for `pii-hw`/`pii-memory`; `pii-hw` was never built
   and `pii-memory` ships with the same forbid as every other crate.
 - Tests under `_tmp/`, never `/tmp`.

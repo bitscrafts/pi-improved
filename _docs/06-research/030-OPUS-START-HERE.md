@@ -138,14 +138,13 @@ about *us* (this session, and Claude Code subagents) working on the code.
 Track B is about *pii at runtime* doing coding work. They share a tool and an
 idea; they share no decisions.
 
-Ground truth (three docs, all committed):
+Ground truth (one doc, committed):
 
-- `037-pii-native-graph-service-design.md` — what graphify is, and a
+- `037-pii-native-graph-service-design.md` — what graphify is, with a
   **measured** trial on pii (269 code files → 4,187 nodes, 9,646 edges, 216
-  communities, fully local, zero LLM calls, no API key).
-- `037-pii-native-graph-service-design.md` — the wiring mechanics, each
-  one tested (uv isolation, `GRAPHIFY_OUT`, dual CLAUDE/AGENTS, hooks, skills).
-- `037-pii-native-graph-service-design.md` — the native-service design.
+  communities, fully local, zero LLM calls, no API key); the wiring mechanics,
+  each one tested (uv isolation, `GRAPHIFY_OUT`, dual CLAUDE/AGENTS, hooks,
+  skills); and the native-service design.
 
 ---
 
@@ -407,8 +406,8 @@ the linked section only if you want the reasoning before deciding.
    row A10.)
 
 Plus one small housekeeping question, not architectural:
-**`_docs/06-research/` reorganization** (28 files, flat-by-number, no
-thematic grouping) → [§4](029-coding-harness-design-questions-for-opus.md#4-separate-smaller-ask-reorganize-_docsresearch)
+**`_docs/06-research/` reorganization** (39 entries as of 2026-10-09, flat-by-number; the thematic grouping now lives in
+[`000-TOPIC-MAP.md`](000-TOPIC-MAP.md)) → [§4](029-coding-harness-design-questions-for-opus.md#4-separate-smaller-ask-reorganize-_docsresearch)
 — flat-by-date vs. SSOT subfolders, your call, low stakes either way.
 
 ## What does NOT need your review
@@ -485,8 +484,8 @@ later than the session this was written in.)
    fable-model review of the whole codebase (10 findings, several
    security/behavioural), all implemented as specs 62-69. A different model's
    second opinion; useful context for the four original decisions.
-3. `_docs/06-research/035/036/037-graphify-*.md` — the code-knowledge-graph
-   chain: what the tool is (measured on pii), how it was wired, and the
+3. `_docs/06-research/037-pii-native-graph-service-design.md` — the code-knowledge-graph
+   doc: what the tool is (measured on pii), how it was wired, and the
    native-service design behind Decisions 5-7.
 4. `HANDOFF.md` — full session ledger, spec-by-spec evidence, commit
    SHAs, every finding. Read this only if you want to audit HOW a
@@ -494,3 +493,5 @@ later than the session this was written in.)
 5. `_docs/06-research/026-codebase-analysis-and-phase5-plan.md` — the
    original Phase 5 punch list (F-11 through F-22) tonight's work
    closed most of.
+
+See also: the full review that answered these decisions — [`043-opus-full-review-2026-10-06.md`](043-opus-full-review-2026-10-06.md).

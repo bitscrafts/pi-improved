@@ -1,5 +1,7 @@
 # pii review: findings and candidate improvements (2026-09-18)
 
+> **Status update 2026-10-09:** the findings below were ALL implemented as specs 62-69 (`883d768` … `55a8328`; ledger in HANDOFF.md, summary commit `ef4d782`). "Findings only / nothing committed" is historical; the current review is `043-opus-full-review-2026-10-06.md`.
+
 Status: findings only. No spec, no source change, nothing committed.
 Companion to the 031 ground-truth doc in this directory (crate map,
 dependency graph, raw file sizes, deferred-item list). This doc does not
