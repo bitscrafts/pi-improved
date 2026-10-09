@@ -23,10 +23,10 @@ R3. Prove the step has teeth: in a `git archive` export, inject a deliberate typ
     Remove the injection afterwards (the export is throwaway, not the tree).
 
 ## Exit Criteria
-- [ ] `[ "$(grep -c 'features llamacpp' quality-gate.sh)" -ge 1 ]`
-- [ ] `bash quality-gate.sh` exits 0 (the new step passes)
-- [ ] the injected-type-error proof: gate exit non-zero, output names `llamacpp.rs` (record verbatim)
-- [ ] `cargo tree -p pii-model | grep -c llama` is still 0 (the DEFAULT build must not link llama — spec 76's property preserved)
+- [x] `[ "$(grep -c 'features llamacpp' quality-gate.sh)" -ge 1 ]` (2; was 0)
+- [x] `bash quality-gate.sh` exits 0 with `PASS: clippy (llamacpp)` then `quality-gate: ALL PASS`
+- [x] **ORCHESTRATOR reproduced the teeth proof**: appending `const _INJECTED_ORCH: u32 = "not a u32";` to `crates/pii-model/src/llamacpp.rs` and running the new step gives `error[E0308]: mismatched types --> crates/pii-model/src/llamacpp.rs:439:29`, step rc=101 (which the gate maps to `FAIL: clippy (llamacpp)` + `status=1`). Injection removed and verified absent afterwards.
+- [x] `cargo tree -p pii-model | grep -c llama` → 0 (default build still links no llama)
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` exits 0 and `cargo fmt --all --check` exits 0
 - [ ] `cargo run -q -p xtask -- fresh-gate --worktree` prints `fresh-gate: PASS`
 - [ ] the report says whether the gate got slower and by how much (a rough number is fine)
@@ -37,3 +37,15 @@ R3. Prove the step has teeth: in a `git archive` export, inject a deliberate typ
 - Do NOT touch the provider's logic — this is a gate-coverage spec.
 - Scratch exports under `/projects/_tmp/` only, and clean up after yourself (one export ≈ 8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-09)
+- The step is `CARGO_TARGET_DIR=target/llamacpp-gate cargo clippy -p pii-model --features llamacpp
+  --all-targets -- -D warnings`, in its own target dir (the feature changes unification hashes — the
+  same E0463 hazard the existing clippy/doctest steps isolate against), with a `FAIL: clippy
+  (llamacpp)` branch that sets `status=1`. `llamacpp` is still not a default feature; the real-model
+  tests stay `#[ignore]`d.
+- Teeth proof reproduced by the orchestrator (E0308 named in `llamacpp.rs`, step rc=101); default-tree
+  llama count still 0.
+- Both gates green: repo `quality-gate.sh` ALL PASS · `fresh-gate --worktree` PASS.
+- Cost: the worker measured ~1m30s total gate with the new step (~1m15s of it the cold feature build);
+  the isolated target dir keeps artifacts, so later runs are cheaper.

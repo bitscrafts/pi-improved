@@ -33,6 +33,19 @@ else
     status=1
 fi
 
+echo "==> cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings"
+# Spec 89 (N4): `llamacpp` is off in every other step (spec 76 keeps llama out
+# of the default build), so the in-process llama provider and the tests that
+# carry required-features = ["llamacpp"] would otherwise be compiled by no
+# gate step. Compile + lint only; the real-model tests stay #[ignore]d. Own
+# target dir: the feature changes unification hashes, same hazard as F-01.
+if CARGO_TARGET_DIR=target/llamacpp-gate cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings; then
+    echo "PASS: clippy (llamacpp)"
+else
+    echo "FAIL: clippy (llamacpp)"
+    status=1
+fi
+
 echo "==> cargo test --workspace"
 # pii-worker's supervisor integration tests spawn the real `pii` binary at
 # target/debug/pii (a fixed path, not a `CARGO_BIN_EXE_pii` env lookup), so
