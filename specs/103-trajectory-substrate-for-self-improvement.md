@@ -1,4 +1,4 @@
-# Spec: 100 — the trajectory substrate: the first brick of the self-improvement pillar
+# Spec: 103 — the trajectory substrate: the first brick of the self-improvement pillar
 
 **Project**: /projects/pi-improved
 **Phase**: P0/P1, observability — user directive (2026-10-09): *"observability is the basis of the self
