@@ -207,6 +207,15 @@ fn root_ctx_in(
         proc_argv0: ArgvScope::new(vec![String::from("/bin/sh")]),
         ..CapSet::default()
     };
+    // Spec 103: with $PII_TRAJECTORY_DIR set, the run's journal and verbatim
+    // terminal also go to the trajectory sink; unset, stdout is unchanged.
+    let obs: Arc<dyn pii_core::Observer> = match pii_core::trajectory_sink(None) {
+        Some(sink) => Arc::new(pii_core::MultiObserver::new(vec![
+            Arc::new(pii_core::TrajectoryBridge::new(sink, &run, None)),
+            Arc::new(NdjsonObserver),
+        ])),
+        None => Arc::new(NdjsonObserver),
+    };
     Ctx::with_observer(
         caps,
         Budget::new(
@@ -215,7 +224,7 @@ fn root_ctx_in(
             limits.max_micro_usd,
             limits.max_wall_ms,
         ),
-        Arc::new(NdjsonObserver),
+        obs,
         TraceCtx { run, span: 0 },
     )
 }

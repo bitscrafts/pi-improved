@@ -84,3 +84,27 @@ R6. Do NOT build skill extraction, distillation, or any learning loop in this sp
 - Do NOT edit any file under `specs/`.
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+**Landed.** The sink is off by default (`PII_TRAJECTORY_DIR` or `[core] trajectory_dir` enables it;
+`PII_TRAJECTORY_REDACT=a,b` drops named fields at the sink). `Event`/`OwnedEvent` gained `run`/`session`;
+new `outcome` and `redaction` modules plus `trajectory.rs`; names `RUN_JOURNAL`, `RUN_OUTCOME`,
+`TRAJECTORY_TRUNCATED`, `TRAJECTORY_WRITE_FAILED` all in `ALL` (the completeness lint would have caught a
+miss). Worker notes a process deviation: tests were written alongside the code, so there was no RED first;
+it compensated with a mutation (flipping the Failure→Success mapping turned two tests RED, restored green).
+
+**Reproduced by the orchestrator (my own runs, not the worker's pastes):**
+```
+ON   PII_TRAJECTORY_DIR=<scratch> pii -p "reply with the single word: pong" --json --model ollama:granite4.2:3b
+     → rc=0; <root>/trajectories/r000000000001.jsonl, 9 lines
+     → run.outcome: {"fields":{"detail":{"files_changed":[],"model":null,"text":"pong","tokens_in":928,
+        "tokens_out":49,"turns":1},"reason":"terminal","verdict":"success"},"kind":"run.outcome",
+        "level":"info","run":"r000000000001","session":"s1","span":null,"subsystem":"graph"}
+REDACTION  PII_TRAJECTORY_REDACT=text → rc=0; '"text"' in the trajectory: 0 occurrences;
+     in the same run's stdout ndjson: 4 occurrences. The stream is unaffected; the SINK redacted.
+OFF  same run, no env var → rc=0, no trajectories directory created at all.
+FAILED RUN  cargo test -p pii-graph --test trajectory → 2 passed:
+     failed_run_records_failure_with_the_engine_error_verbatim
+     successful_run_records_success_and_no_failure_outcome   ← the negative case, per the laya lesson
+```
+Gates: `quality-gate.sh` ALL PASS · `fresh-gate --worktree` PASS · clippy `-D warnings` and `fmt --check` 0.

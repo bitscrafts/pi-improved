@@ -32,6 +32,7 @@ pub use fscap::FsCap;
 pub use net::HttpTransport;
 pub use observe::{
     ContractObserver, Metric, MultiObserver, NullObserver, ObsEvent, Observer, RecordingObserver,
+    TRAJECTORY_DIR_ENV, TRAJECTORY_REDACT_ENV, TrajectoryBridge, trajectory_sink,
 };
 pub use pii_abi::{CapKind, PiiError};
 /// The dependency-free observability contract (spec 97); the legacy

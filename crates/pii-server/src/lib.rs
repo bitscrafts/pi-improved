@@ -128,6 +128,8 @@ pub struct Engine {
     /// without threading it through every constructor (same pattern as
     /// [`Engine::attach_daemon_ctx`]).
     obs: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
+    /// Trajectory sink (spec 103); `None` (default) records nothing.
+    trajectory: parking_lot::Mutex<Option<Arc<pii_observe::TrajectorySink>>>,
 }
 
 /// A conversation session.
@@ -242,6 +244,7 @@ impl Engine {
             session_runs: parking_lot::Mutex::new(BTreeMap::new()),
             daemon_ctx: parking_lot::Mutex::new(None),
             obs: parking_lot::Mutex::new(None),
+            trajectory: parking_lot::Mutex::new(None),
         }))
     }
 
@@ -266,6 +269,24 @@ impl Engine {
     /// [`pii_core::NullObserver`] semantics from [`Engine::observer`].
     pub fn attach_observer(&self, obs: Arc<dyn pii_core::Observer>) {
         *self.obs.lock() = Some(obs);
+    }
+
+    /// Attaches the trajectory sink (spec 103): every run spawned from now on
+    /// writes its journal and verbatim outcome to it. Default is no sink.
+    pub fn attach_trajectory(&self, sink: Arc<pii_observe::TrajectorySink>) {
+        *self.trajectory.lock() = Some(sink);
+    }
+
+    /// The per-run observer feeding the trajectory sink, if one is attached.
+    pub(crate) fn trajectory_observer(
+        &self,
+        run: &RunId,
+        session: Option<&str>,
+    ) -> Option<Arc<dyn pii_core::Observer>> {
+        let sink = self.trajectory.lock().clone()?;
+        Some(Arc::new(pii_core::TrajectoryBridge::new(
+            sink, run, session,
+        )))
     }
 
     /// The engine's out-of-band observer (D3/D6): the one attached via

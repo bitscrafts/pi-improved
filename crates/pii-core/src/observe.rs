@@ -204,6 +204,130 @@ impl Observer for ContractObserver {
     }
 }
 
+/// Environment variable that turns the trajectory sink on (a directory).
+pub const TRAJECTORY_DIR_ENV: &str = "PII_TRAJECTORY_DIR";
+/// Environment variable listing field names the sink drops (comma-separated).
+pub const TRAJECTORY_REDACT_ENV: &str = "PII_TRAJECTORY_REDACT";
+
+/// The trajectory sink, if enabled.
+///
+/// `PII_TRAJECTORY_DIR` wins over
+/// `config_dir` (the daemon config's `trajectory_dir`). Default OFF: with
+/// neither set this returns `None`. `PII_TRAJECTORY_REDACT` names fields the
+/// sink drops. Write failures are reported to stderr.
+#[must_use]
+pub fn trajectory_sink(config_dir: Option<&str>) -> Option<Arc<pii_observe::TrajectorySink>> {
+    let dir = crate::env_var(TRAJECTORY_DIR_ENV)
+        .filter(|d| !d.is_empty())
+        .or_else(|| config_dir.filter(|d| !d.is_empty()).map(str::to_owned))?;
+    let policy: Arc<dyn pii_observe::RedactionPolicy> = crate::env_var(TRAJECTORY_REDACT_ENV)
+        .and_then(|l| pii_observe::DropFields::parse(&l))
+        .map_or_else(
+            || Arc::new(pii_observe::NoRedaction) as Arc<dyn pii_observe::RedactionPolicy>,
+            |p| Arc::new(p),
+        );
+    Some(Arc::new(
+        pii_observe::TrajectorySink::new(dir, policy)
+            .with_reporter(Arc::new(pii_observe::StderrObserver)),
+    ))
+}
+
+/// Feeds a run's journal to the trajectory sink (spec 103).
+///
+/// One per run: it stamps every record with the run (and session) id,
+/// forwards each journal event as a `run.journal` event, and — when the
+/// journal records the terminal — also a `run.outcome` event carrying the
+/// terminal verbatim (`Failure` stays `Failure`; nothing is re-derived).
+pub struct TrajectoryBridge {
+    sink: Arc<dyn pii_observe::Observer>,
+    run: pii_observe::RunId,
+    session: Option<pii_observe::SessionId>,
+}
+
+impl TrajectoryBridge {
+    /// A bridge for `run` (and optionally `session`) into `sink`.
+    #[must_use]
+    pub fn new(
+        sink: Arc<dyn pii_observe::Observer>,
+        run: &pii_abi::RunId,
+        session: Option<&str>,
+    ) -> Self {
+        Self {
+            sink,
+            run: pii_observe::RunId(run.to_string()),
+            session: session.map(|s| pii_observe::SessionId(s.to_owned())),
+        }
+    }
+
+    fn stamp(&self, e: pii_observe::Event) -> pii_observe::Event {
+        let e = e.in_run(self.run.clone());
+        match &self.session {
+            Some(s) => e.in_session(s.clone()),
+            None => e,
+        }
+    }
+
+    /// The outcome a terminal maps to, verbatim.
+    #[must_use]
+    pub fn outcome_of(t: &pii_abi::Terminal) -> pii_observe::Outcome {
+        use pii_observe::{Outcome, Verdict};
+        match t {
+            pii_abi::Terminal::Success { output } => Outcome {
+                verdict: Verdict::Success,
+                reason: String::from("terminal"),
+                detail: output.clone(),
+            },
+            pii_abi::Terminal::Failure { error } => Outcome {
+                verdict: Verdict::Failure,
+                reason: String::from("terminal"),
+                detail: serde_json::Value::String(error.clone()),
+            },
+            pii_abi::Terminal::Suspended { key } => Outcome {
+                verdict: Verdict::Suspended,
+                reason: String::from("terminal"),
+                detail: serde_json::Value::String(key.0.clone()),
+            },
+        }
+    }
+
+    /// Records a cancelled run (cancellation is not journalled by the engine).
+    pub fn cancelled(&self, reason: &str) {
+        let o = pii_observe::Outcome {
+            verdict: pii_observe::Verdict::Cancelled,
+            reason: reason.to_owned(),
+            detail: serde_json::Value::Null,
+        };
+        self.sink.event(&self.stamp(o.into_event("graph")));
+    }
+}
+
+impl Observer for TrajectoryBridge {
+    fn event(&self, e: &ObsEvent) {
+        use pii_observe::{Event, Level, names};
+        let ObsEvent::Journal { seq, event } = e else {
+            return;
+        };
+        let body = serde_json::to_value(event).unwrap_or(serde_json::Value::Null);
+        self.sink.event(
+            &self.stamp(
+                Event::new("graph", Level::Info, names::RUN_JOURNAL)
+                    .field("seq", *seq)
+                    .field("event", body),
+            ),
+        );
+        if let pii_abi::RunEvent::Finished { terminal, .. } = event {
+            self.sink
+                .event(&self.stamp(Self::outcome_of(terminal).into_event("graph")));
+        }
+    }
+
+    fn metric(&self, _m: &Metric) {}
+
+    fn flush(&self) {
+        self.sink.flush();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -215,7 +339,9 @@ mod tests {
 
     use std::sync::Arc;
 
-    use super::{ContractObserver, Metric, Observer, RecordingObserver};
+    use super::{
+        ContractObserver, Metric, ObsEvent, Observer, RecordingObserver, TrajectoryBridge,
+    };
 
     #[test]
     fn recording_observer_reports_max_metric() {
@@ -246,5 +372,92 @@ mod tests {
         assert_eq!(evs.len(), 1);
         assert_eq!(evs[0].kind, pii_observe::names::GRAPH_NODE_DEAD);
         assert_eq!(evs[0].fields.get("value"), Some(&serde_json::json!(2)));
+    }
+
+    fn finished(t: pii_abi::Terminal) -> ObsEvent {
+        ObsEvent::Journal {
+            seq: 9,
+            event: pii_abi::RunEvent::Finished {
+                terminal: t,
+                output_hash: String::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn trajectory_bridge_records_a_failed_terminal_verbatim_as_failure() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let b = TrajectoryBridge::new(rec.clone(), &pii_abi::RunId::from("r1"), Some("s1"));
+        b.event(&finished(pii_abi::Terminal::Failure {
+            error: String::from("exit 7"),
+        }));
+        let out = rec.events_named(pii_observe::names::RUN_OUTCOME);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].fields.get("verdict"),
+            Some(&serde_json::json!("failure"))
+        );
+        assert_eq!(
+            out[0].fields.get("detail"),
+            Some(&serde_json::json!("exit 7"))
+        );
+        assert_eq!(out[0].run, Some(pii_observe::RunId("r1".into())));
+        assert_eq!(out[0].session, Some(pii_observe::SessionId("s1".into())));
+    }
+
+    #[test]
+    fn trajectory_bridge_success_emits_success_and_no_failure() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let b = TrajectoryBridge::new(rec.clone(), &pii_abi::RunId::from("r1"), None);
+        b.event(&finished(pii_abi::Terminal::Success {
+            output: serde_json::json!({"text": "hi"}),
+        }));
+        let out = rec.events_named(pii_observe::names::RUN_OUTCOME);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].fields.get("verdict"),
+            Some(&serde_json::json!("success"))
+        );
+        assert_eq!(
+            out[0].fields.get("detail"),
+            Some(&serde_json::json!({"text": "hi"}))
+        );
+    }
+
+    #[test]
+    fn trajectory_bridge_non_terminal_journal_event_has_no_outcome() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let b = TrajectoryBridge::new(rec.clone(), &pii_abi::RunId::from("r1"), None);
+        b.event(&ObsEvent::Journal {
+            seq: 1,
+            event: pii_abi::RunEvent::Started {
+                graph: String::from("g"),
+                input_hash: String::new(),
+            },
+        });
+        assert_eq!(rec.events_named(pii_observe::names::RUN_JOURNAL).len(), 1);
+        assert!(rec.events_named(pii_observe::names::RUN_OUTCOME).is_empty());
+    }
+
+    #[test]
+    fn trajectory_bridge_cancelled_records_cancelled() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let b = TrajectoryBridge::new(rec.clone(), &pii_abi::RunId::from("r1"), None);
+        b.cancelled("cancel");
+        let out = rec.events_named(pii_observe::names::RUN_OUTCOME);
+        assert_eq!(
+            out[0].fields.get("verdict"),
+            Some(&serde_json::json!("cancelled"))
+        );
+    }
+
+    #[test]
+    fn trajectory_sink_is_off_by_default_and_on_with_a_config_dir() {
+        if crate::env_var(super::TRAJECTORY_DIR_ENV).is_some() {
+            return; // the operator's env wins; nothing to assert about "off"
+        }
+        assert!(super::trajectory_sink(None).is_none());
+        assert!(super::trajectory_sink(Some("")).is_none());
+        assert!(super::trajectory_sink(Some("/nonexistent-root")).is_some());
     }
 }

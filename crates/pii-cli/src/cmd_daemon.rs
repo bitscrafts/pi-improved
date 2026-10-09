@@ -240,6 +240,11 @@ async fn run_daemon(
             return ExitCode::from(2);
         }
     };
+    // Spec 103: trajectories are OFF unless $PII_TRAJECTORY_DIR or
+    // `[core] trajectory_dir` is set.
+    if let Some(sink) = pii_core::trajectory_sink(cfg.core.trajectory_dir.as_deref()) {
+        engine.attach_trajectory(sink);
+    }
     // P4.2 (spec 16): a daemon restart must not be amnesia — re-seed sessions
     // that survived, and mark crash-interrupted runs Failed instead of leaving
     // permanent zombies in `run.list --status running`.

@@ -59,7 +59,7 @@ pub fn spawn_run(
             spec.limits.max_micro_usd,
             spec.limits.max_wall_ms,
         ),
-        Arc::new(bridge),
+        with_trajectory(&engine, &run_id, Some(&session_id), bridge),
         pii_core::TraceCtx {
             run: run_id.clone(),
             span: 0,
@@ -195,7 +195,7 @@ pub fn spawn_resume(
             engine.ollama_net_host.as_deref(),
         ),
         pii_core::Budget::new(max_tokens, max_tool_calls, max_micro_usd, max_wall_ms),
-        Arc::new(bridge),
+        with_trajectory(&engine, &run_id, None, bridge),
         pii_core::TraceCtx {
             run: run_id.clone(),
             span: 0,
@@ -224,6 +224,21 @@ pub fn spawn_resume(
         engine.unregister_run(&run_id.to_string());
     });
     Ok(())
+}
+
+/// The run context's observer: the bus bridge, preceded by the trajectory
+/// bridge when a sink is attached (spec 103). The trajectory is written first
+/// so it is on disk before a subscriber can see the terminal and exit.
+fn with_trajectory(
+    engine: &Engine,
+    run_id: &RunId,
+    session: Option<&str>,
+    bridge: BridgeObserver,
+) -> Arc<dyn pii_core::Observer> {
+    match engine.trajectory_observer(run_id, session) {
+        Some(t) => Arc::new(pii_core::MultiObserver::new(vec![t, Arc::new(bridge)])),
+        None => Arc::new(bridge),
+    }
 }
 
 /// Recovers a run's declared `scope_root` from its journal (spec 20 R1).

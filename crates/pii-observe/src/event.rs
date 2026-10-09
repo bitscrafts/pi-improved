@@ -28,6 +28,16 @@ pub enum Level {
 #[serde(transparent)]
 pub struct SpanId(pub u64);
 
+/// Identifies the run an event belongs to (an opaque string).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RunId(pub String);
+
+/// Identifies the session an event belongs to (an opaque string).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SessionId(pub String);
+
 /// Ordered key/value fields; cheap to build (a `Vec`, static keys by default)
 /// and serialised as a JSON object.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -113,6 +123,12 @@ pub struct Event {
     pub fields: Fields,
     /// The span this event belongs to, if any.
     pub span: Option<SpanId>,
+    /// The run this event belongs to, if any (spec 103 correlation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run: Option<RunId>,
+    /// The session this event belongs to, if any (spec 103 correlation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionId>,
 }
 
 impl Event {
@@ -125,6 +141,8 @@ impl Event {
             kind,
             fields: Fields::new(),
             span: None,
+            run: None,
+            session: None,
         }
     }
 
@@ -139,6 +157,20 @@ impl Event {
     #[must_use]
     pub fn in_span(mut self, span: SpanId) -> Self {
         self.span = Some(span);
+        self
+    }
+
+    /// Correlates the event with a run.
+    #[must_use]
+    pub fn in_run(mut self, run: RunId) -> Self {
+        self.run = Some(run);
+        self
+    }
+
+    /// Correlates the event with a session.
+    #[must_use]
+    pub fn in_session(mut self, session: SessionId) -> Self {
+        self.session = Some(session);
         self
     }
 }
@@ -157,6 +189,12 @@ pub struct OwnedEvent {
     pub fields: Fields,
     /// The span this event belongs to, if any.
     pub span: Option<SpanId>,
+    /// The run this event belongs to, if any (absent in pre-103 payloads).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<RunId>,
+    /// The session this event belongs to, if any (absent in pre-103 payloads).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionId>,
 }
 
 impl From<&Event> for OwnedEvent {
@@ -167,6 +205,8 @@ impl From<&Event> for OwnedEvent {
             kind: e.kind.to_owned(),
             fields: e.fields.clone(),
             span: e.span,
+            run: e.run.clone(),
+            session: e.session.clone(),
         }
     }
 }
@@ -198,6 +238,37 @@ mod tests {
         let back: OwnedEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(back, OwnedEvent::from(&e));
         assert_eq!(back.fields.get("count"), Some(&Value::from(3u64)));
+    }
+
+    #[test]
+    fn extended_event_round_trips_with_run_and_session() {
+        let e = Event::new("graph", Level::Info, "k")
+            .in_run(RunId("r1".into()))
+            .in_session(SessionId("s1".into()));
+        let json = serde_json::to_string(&e).unwrap();
+        let v: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v.pointer("/run"), Some(&Value::from("r1")));
+        assert_eq!(v.pointer("/session"), Some(&Value::from("s1")));
+        let back: OwnedEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, OwnedEvent::from(&e));
+    }
+
+    #[test]
+    fn pre_103_payload_still_deserializes() {
+        let line = r#"{"subsystem":"graph","level":"warn","kind":"graph.node.dead","fields":{"count":3},"span":7}"#;
+        let back: OwnedEvent = serde_json::from_str(line).unwrap();
+        assert_eq!(back.run, None);
+        assert_eq!(back.session, None);
+        assert_eq!(back.span, Some(SpanId(7)));
+    }
+
+    #[test]
+    fn uncorrelated_event_serialises_exactly_as_before_103() {
+        let e = Event::new("x", Level::Info, "k").field("a", 1u64);
+        assert_eq!(
+            serde_json::to_string(&e).unwrap(),
+            r#"{"subsystem":"x","level":"info","kind":"k","fields":{"a":1},"span":null}"#
+        );
     }
 
     #[test]

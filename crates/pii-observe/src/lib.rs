@@ -10,8 +10,10 @@
 //! (including `pii-proto`, `pii-tui`, `pii-web`) can depend on it without
 //! creating an upward edge.
 //!
-//! This crate is the contract only. Adopting it across crates, the
-//! enforcement lint, and the health payload are specs 98, 99 and 100.
+//! Spec 103 adds correlation ([`RunId`], [`SessionId`]), a verbatim run
+//! [`Outcome`], a [`RedactionPolicy`], and the std-only [`TrajectorySink`]
+//! (file writing lives here, not in a new crate: it needs only `std::fs`, so
+//! the dependency floor is unchanged).
 
 #![forbid(unsafe_code)]
 
@@ -20,10 +22,16 @@ mod health;
 mod measure;
 pub mod names;
 mod observer;
+mod outcome;
+mod redaction;
+mod trajectory;
 
-pub use event::{Event, Fields, Level, OwnedEvent, SpanId};
+pub use event::{Event, Fields, Level, OwnedEvent, RunId, SessionId, SpanId};
 pub use health::{Health, State, SubsystemHealth};
 pub use measure::Measure;
 pub use observer::{
     NoopObserver, NullObserver, Observable, Observed, Observer, Recorder, StderrObserver,
 };
+pub use outcome::{Outcome, Verdict};
+pub use redaction::{DropFields, NoRedaction, Redaction, RedactionPolicy};
+pub use trajectory::{TrajectoryCaps, TrajectorySink};

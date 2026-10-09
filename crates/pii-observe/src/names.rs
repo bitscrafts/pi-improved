@@ -68,6 +68,14 @@ pub const EVOLVE_LAUNCH_FAILED: &str = "evolve.launch.failed";
 pub const FETCH_OUTCOME: &str = "fetch.outcome";
 /// Event: an `http_fetch` target was refused by the allowlist.
 pub const FETCH_ALLOWLIST_DENIED: &str = "fetch.allowlist.denied";
+/// Event: one journal event of a run (trajectory record; `seq` + `event`).
+pub const RUN_JOURNAL: &str = "run.journal";
+/// Event: a run's terminal outcome, carried verbatim.
+pub const RUN_OUTCOME: &str = "run.outcome";
+/// Event: a run's trajectory hit its size cap and further events were dropped.
+pub const TRAJECTORY_TRUNCATED: &str = "trajectory.truncated";
+/// Event: writing a trajectory failed (the run is not aborted).
+pub const TRAJECTORY_WRITE_FAILED: &str = "trajectory.write.failed";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -103,6 +111,10 @@ pub const ALL: &[&str] = &[
     EVOLVE_LAUNCH_FAILED,
     FETCH_OUTCOME,
     FETCH_ALLOWLIST_DENIED,
+    RUN_JOURNAL,
+    RUN_OUTCOME,
+    TRAJECTORY_TRUNCATED,
+    TRAJECTORY_WRITE_FAILED,
 ];
 
 #[cfg(test)]

@@ -49,6 +49,10 @@ pub struct CoreSection {
     /// session's run count exceeds this. `None` (absent key) falls back to
     /// [`crate::DEFAULT_SESSION_RUNS_CAP`] — see [`Self::session_runs_cap`].
     pub session_runs_cap: Option<usize>,
+    /// Root directory for run trajectories (spec 103); each run appends to
+    /// `<root>/trajectories/<run_id>.jsonl`. Overridden by
+    /// `$PII_TRAJECTORY_DIR`. Absent = trajectories OFF.
+    pub trajectory_dir: Option<String>,
 }
 
 impl CoreSection {
@@ -342,6 +346,13 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::Config;
+
+    #[test]
+    fn trajectory_dir_parses_and_defaults_to_off() {
+        let on = Config::parse("[core]\ntrajectory_dir = \"/var/pii\"\n").unwrap();
+        assert_eq!(on.core.trajectory_dir.as_deref(), Some("/var/pii"));
+        assert_eq!(Config::parse("").unwrap().core.trajectory_dir, None);
+    }
 
     #[test]
     fn parses_a_full_config() {
