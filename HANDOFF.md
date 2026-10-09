@@ -459,7 +459,26 @@ envelope-on-budget). One spec per run; orchestrator verifies criteria LIVE then 
   `#![allow(clippy::let_underscore_must_use)]` files the worker had to add because MY criterion
   passed `-W` workspace-wide — replaced with the source-level enablement + the 3 documented
   allows; spec criterion corrected (the criterion was the defect, not the code).
-- Gate: `quality-gate.sh` ALL PASS after each spec. Note `crates/pii-store/src/lib.rs` is now
-  the widest file at 374 effective lines (cap 450) — the fault hook; relevant to 043 candidate 14.
+- **78** `4dac879` D4: `spawn_resume` refuses (never degrades) — the run header, the graph body
+  (for the declared limits) and the scope-root recovery all propagate their errors; the
+  `u64::MAX` budget fallback is gone; `register_run` moved AFTER every recovery step so a
+  refused resume leaves no handle behind (also closes a leak on the pre-existing invalid-
+  scope_root refusal). Two new store seams (`set_fail_read_journal_for_test`,
+  `set_fail_get_run_for_test`).
+  **Orchestrator review caught and fixed a VACUOUS test**: `resume_fail_closed_on_scope_store_fault`
+  never seeded a run, so `get_run` → `Ok(None)` refused first and the test passed for a reason
+  its name did not claim — proved by mutation (swallowing the scope error left it GREEN). It now
+  seeds a real run (header + resolvable graph + journal `Started`) and asserts the error is the
+  INJECTED one; under the same mutation it now FAILS ("scope-store fault must fail the resume: ()").
+  `resume_fail_closed_on_graph_lookup_fault` faults `get_run`, the exact call the removed
+  `map_or(u64::MAX)` swallowed, so it distinguishes pre/post fix (worker's recorded red).
+  Cleanup: all test-instrumentation seams moved to `crates/pii-store/src/testing.rs` (arming +
+  error construction in one module); that cleared the `lint-files` warn-band warning the batch
+  hours had introduced (395 → under 380 effective lines).
+- Gate: `quality-gate.sh` ALL PASS after every spec AND after the cleanups (fmt / clippy
+  --workspace -D warnings / tests / doctests / lint-files with no warning / reachability-check).
+- **Batch C complete.** 043 §10 items 1-4 (done earlier), 5, 6, 7, 9, 11, 13 now landed; the
+  remaining candidates are items 8 (D6 lagged control events), 10 (A1 spawn_blocking RPC),
+  12 (daemon/methods.rs → engine/), 14 (F-11 pass 3 + the pii-store split), 15 (deferred).
 - Full gate for the batch (after 78 lands): fmt / clippy / tests / doctests / lint-files /
   reachability-check, all green.
