@@ -245,26 +245,41 @@ fn run_get(
     }
 }
 
-/// `run.list` (F6): list run headers, optionally filtered by status.
+/// `run.list` (F6): list run headers. Without a status every run is listed,
+/// ordered by status (running, suspended, succeeded, failed) then run id;
+/// with one, only that status. Unparseable params are a bad-params error
+/// naming the accepted statuses, never a silent "no filter".
 fn run_list(
     engine: &Arc<Engine>,
     req: &Request,
     err: &impl Fn(ErrorCode, &str) -> Response,
 ) -> Response {
-    let params: RunListParams =
-        serde_json::from_value(req.params.clone()).unwrap_or(RunListParams {
-            status: None,
-            since: None,
-        });
-    let status = params.status.map(|s| match s {
-        WireRunStatus::Running => pii_abi::RunStatus::Running,
-        WireRunStatus::Suspended => pii_abi::RunStatus::Suspended,
-        WireRunStatus::Succeeded => pii_abi::RunStatus::Succeeded,
-        WireRunStatus::Failed => pii_abi::RunStatus::Failed,
-    });
-    let runs = status.map_or_else(Vec::new, |st| {
-        engine.store.runs_by_status(st).unwrap_or_default()
-    });
+    let Ok(params) = serde_json::from_value::<RunListParams>(req.params.clone()) else {
+        return err(
+            ErrorCode::InvalidParams,
+            "bad run.list params: status must be one of running|suspended|succeeded|failed",
+        );
+    };
+    let all = [
+        pii_abi::RunStatus::Running,
+        pii_abi::RunStatus::Suspended,
+        pii_abi::RunStatus::Succeeded,
+        pii_abi::RunStatus::Failed,
+    ];
+    let wanted: Vec<pii_abi::RunStatus> = match params.status {
+        None => all.to_vec(),
+        Some(WireRunStatus::Running) => vec![pii_abi::RunStatus::Running],
+        Some(WireRunStatus::Suspended) => vec![pii_abi::RunStatus::Suspended],
+        Some(WireRunStatus::Succeeded) => vec![pii_abi::RunStatus::Succeeded],
+        Some(WireRunStatus::Failed) => vec![pii_abi::RunStatus::Failed],
+    };
+    let mut runs = Vec::new();
+    for st in wanted {
+        match engine.store.runs_by_status(st) {
+            Ok(r) => runs.extend(r),
+            Err(e) => return err_code(err, &e),
+        }
+    }
     let headers: Vec<WireRunHeader> = runs
         .iter()
         .filter_map(|r| run_header(engine, r).ok())

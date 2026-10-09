@@ -88,3 +88,37 @@ R5. **`health` lists EVERY store the daemon opens**, `timer.redb` included, and 
 - Do not leave a daemon running (kill what you start; `pgrep -af 'pii[ ]daemon'` empty in the report).
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+**Closed, and one of MY OWN diagnoses in this spec was WRONG — corrected here.**
+
+**My D2 explanation was wrong.** I claimed the approval id was derived from the policy name
+(`key.strip_prefix("approval:")` → `p`) and that runs would collide on one row. The worker proved
+otherwise and is right: the gate already mints a RUN-SCOPED id (`approval:<blake3>`), and my reading came
+from `engine/bus.rs` where `format!("approval:{policy}")` is a DISPLAY string, not the key. The real cause
+was a **race**: `RunSuspended` is broadcast when the event is appended, BEFORE the write-behind journal
+flush, so `on_suspended` read the journal too early, found nothing, and `return`ed with no log. Fixed in a
+new `daemon/suspend.rs` by retrying the lookup (up to 1s) and reporting anything still unhandleable to the
+observer AND stderr, with the `let _ =` removed. Lesson (mine): a defect can be real while the mechanism I
+assert in a spec is invented — the spec's evidence was measured, its explanation was not.
+
+**Reproduced by the orchestrator on the fixed tree (my own scratch, my own runs):**
+```
+D1  run ls                        → 3 runs: r…002 suspended, r…003 suspended, r…001 succeeded   (was [])
+    run ls --status bogus          → rc=2  "error: run ls: unknown --status 'bogus'
+                                            (accepted: running|suspended|succeeded|failed)"
+    run ls --status suspended      → 2      run ls --status succeeded → 1
+D2  pii approve ls                 → 2 rows            (was [])
+    ids 5299f70e5b449cf1447f9c0b6b6ecbff (run r…003) and dd45234fe0f5d1066f6622b173ce96fd (run r…002)
+    distinct: True  ← two runs, same policy, two approvals: the id is run-scoped
+    health --json approvals_pending → 2                 (was 0 while a run waited for a human)
+D3  health --json stores           → ['approval','channel','heal','main','memory','timer']
+    on disk                        → approval channel heal memory store timer  ← sets now MATCH (six)
+    daemons left running: 0
+```
+Worker's mutation controls (its report): policy-name-as-id → the integration test and
+`approval_row_uses_the_key_id_not_the_policy` both FAILED, then restored; dropping `timer` from the
+reported set → `store_set_check_fails_when_a_store_is_omitted` FAILS. Unreported-suspension paths are
+covered by `missing_journal_entry_is_reported` and `unusable_approval_key_is_reported`.
+Gates: `quality-gate.sh` ALL PASS (incl. `PASS: lint-observability`) · `fresh-gate --worktree` PASS ·
+clippy `-D warnings` · `fmt --check`. Worker left scratch under `/projects/_tmp/` per the no-deletion rule.

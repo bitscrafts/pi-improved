@@ -250,6 +250,10 @@ mod tests {
             workers: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
             channels: parking_lot::Mutex::new(channels),
             channel_store: store,
+            timer_store: Arc::new(
+                pii_store::timer::TimerWheel::open(&tmp_root.join("router-test/timer.redb"))
+                    .unwrap(),
+            ),
             cron: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             cron_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),

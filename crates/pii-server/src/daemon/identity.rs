@@ -111,6 +111,11 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
                 &ctx.runtime_dir.join("channel.redb"),
                 ctx.channel_store.format_version().ok(),
             ));
+            out.stores.push(aux_store(
+                "timer",
+                &ctx.runtime_dir.join("timer.redb"),
+                ctx.timer_store.format_version().ok(),
+            ));
         }
     }
     out.mounts.push(workspace_mount(engine));

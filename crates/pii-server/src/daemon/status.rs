@@ -47,6 +47,8 @@ pub struct DaemonContext {
     pub channels: Mutex<BTreeMap<String, ChannelRuntime>>,
     /// The channel cursor table.
     pub channel_store: Arc<pii_store::channel::ChannelStore>,
+    /// The timer wheel store (shared with the scheduler; reported by health).
+    pub timer_store: Arc<pii_store::timer::TimerWheel>,
     /// Configured cron entries, keyed by name.
     pub cron: Mutex<BTreeMap<String, CronEntry>>,
     /// Run id -> cron name, for runs started by the cron driver (F5.8): a

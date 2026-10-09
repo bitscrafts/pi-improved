@@ -299,6 +299,15 @@ impl Engine {
             .unwrap_or_else(|| Arc::new(pii_core::NullObserver))
     }
 
+    /// Reports a durable-side failure that cannot be propagated to a caller
+    /// (spec 106 R4) through the engine's out-of-band observer.
+    pub(crate) fn report_unhandled(&self, context: &str, message: &str) {
+        self.observer().event(&pii_core::ObsEvent::PersistError {
+            context: context.to_owned(),
+            message: message.to_owned(),
+        });
+    }
+
     /// The daemon's runtime context, when this engine is running under
     /// `pii daemon` (F5.1). `None` for a bare `Engine`.
     #[must_use]

@@ -51,8 +51,23 @@ fn parse_ls_flags(
     (status, graph)
 }
 
+/// The statuses the wire can express; anything else is refused at the edge.
+const STATUSES: [&str; 4] = ["running", "suspended", "succeeded", "failed"];
+
 fn run_ls(args: &mut std::env::ArgsOs) -> ExitCode {
     let (status, graph) = parse_ls_flags(args);
+    if let Some(s) = &status
+        && !STATUSES.contains(&s.as_str())
+    {
+        fail(
+            "usage",
+            format!(
+                "run ls: unknown --status '{s}' (accepted: {})",
+                STATUSES.join("|")
+            ),
+        );
+        return ExitCode::from(2);
+    }
     let mut params = serde_json::json!({});
     if let Some(s) = &status
         && let Some(obj) = params.as_object_mut()

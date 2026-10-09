@@ -10,6 +10,7 @@ mod lag;
 pub mod router;
 pub mod scheduler;
 pub mod status;
+mod suspend;
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -19,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
 
-use pii_abi::{NodeId, PiiError, RunEvent, RunId, SuspendReason};
+use pii_abi::PiiError;
 use pii_core::Clock as _;
 use pii_proto::event::{Event, WireTerminal};
 
@@ -130,6 +131,7 @@ impl Daemon {
             workers,
             channels: Mutex::new(channels),
             channel_store,
+            timer_store: Arc::clone(&wheel),
             cron: Mutex::new(cron),
             cron_runs: Mutex::new(BTreeMap::new()),
             channel_runs: Mutex::new(BTreeMap::new()),
@@ -312,47 +314,9 @@ fn react(
     event: &Event,
 ) {
     match event {
-        Event::RunSuspended { run_id, key, .. } => on_suspended(engine, scheduler, run_id, key),
+        Event::RunSuspended { run_id, key, .. } => suspend::spawn(engine, scheduler, run_id, key),
         Event::RunFinished { run_id, terminal } => on_finished(engine, ctx, run_id, terminal),
         _ => {}
-    }
-}
-
-/// Reacts to a suspension (F5.5/F5.9): arms the timer wheel or creates the
-/// pending approval record, read back from the journal for the full
-/// structured [`SuspendReason`] (the wire event only carries a display
-/// string).
-fn on_suspended(
-    engine: &Arc<Engine>,
-    scheduler: &Arc<scheduler::Scheduler>,
-    run_id: &str,
-    key: &str,
-) {
-    let Ok(journal) = engine.store.read_journal(&RunId::from(run_id)) else {
-        return;
-    };
-    let found = journal.iter().rev().find_map(|(_, e)| match e {
-        RunEvent::Suspended {
-            node,
-            reason,
-            key: k,
-        } if k.0 == key => Some((node, reason)),
-        _ => None,
-    });
-    let Some((node, reason)): Option<(&NodeId, &SuspendReason)> = found else {
-        return;
-    };
-    match reason {
-        SuspendReason::Timer { .. } => {
-            if let Some(fire_at) = key.rsplit(':').next().and_then(|s| s.parse::<u64>().ok()) {
-                scheduler.arm(fire_at, run_id, key);
-            }
-        }
-        SuspendReason::Approval { policy, prompt } => {
-            let approval_id = key.strip_prefix("approval:").unwrap_or(key);
-            let _ = approvals::request(engine, approval_id, run_id, node.as_str(), policy, prompt);
-        }
-        SuspendReason::Event { .. } | SuspendReason::HumanInput { .. } => {}
     }
 }
 
@@ -488,6 +452,7 @@ mod tests {
             channel_store: Arc::new(
                 pii_store::channel::ChannelStore::open(&dir.join("channel.redb")).unwrap(),
             ),
+            timer_store: Arc::new(TimerWheel::open(&dir.join("ctx-timer.redb")).unwrap()),
             cron: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             cron_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),

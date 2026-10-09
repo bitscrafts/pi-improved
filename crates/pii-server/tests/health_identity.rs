@@ -195,7 +195,10 @@ async fn every_store_reports_a_real_format_version() {
     let v = status_json(e).await;
     let stores = v["stores"].as_array().unwrap();
     let names: Vec<_> = stores.iter().map(|s| s["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["main", "memory", "approval", "heal", "channel"]);
+    assert_eq!(
+        names,
+        ["main", "memory", "approval", "heal", "channel", "timer"]
+    );
     for s in stores {
         assert_eq!(
             s["format_version"], 1,
@@ -204,4 +207,54 @@ async fn every_store_reports_a_real_format_version() {
         );
         assert!(s["bytes"].as_u64().unwrap() > 0);
     }
+}
+
+/// Asserts the reported store files equal the store files on disk.
+fn assert_stores_cover_disk(reported: &[String], dir: &Path) {
+    let mut disk: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| Path::new(n).extension().is_some_and(|x| x == "redb"))
+        .collect();
+    disk.sort();
+    let mut rep = reported.to_vec();
+    rep.sort();
+    assert_eq!(rep, disk, "health must report exactly the stores on disk");
+}
+
+fn reported_files(v: &serde_json::Value) -> Vec<String> {
+    v["stores"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            Path::new(s["path"].as_str().unwrap())
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect()
+}
+
+/// Spec 106 R5: the reported store set equals the `.redb` files the daemon
+/// creates on disk, so a store added later cannot be silently omitted.
+#[tokio::test]
+async fn health_reports_every_store_file_on_disk() {
+    let d = scratch("hid-disk-");
+    let (e, _) = daemon_in(d.path(), "# disk\n");
+    let v = status_json(e).await;
+    assert_stores_cover_disk(&reported_files(&v), d.path());
+}
+
+/// Mutation control for R5: a hand-written set missing a store must FAIL.
+#[tokio::test]
+#[should_panic(expected = "health must report exactly the stores on disk")]
+async fn store_set_check_fails_when_a_store_is_omitted() {
+    let d = scratch("hid-mut-");
+    let (e, _) = daemon_in(d.path(), "# mut\n");
+    let v = status_json(e).await;
+    let mut files = reported_files(&v);
+    files.retain(|f| f != "timer.redb");
+    assert_stores_cover_disk(&files, d.path());
 }

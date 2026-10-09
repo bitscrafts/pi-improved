@@ -17,7 +17,7 @@ use pii_abi::{RunEvent, RunId, RunStatus};
 use crate::Engine;
 use crate::daemon::scheduler::Scheduler;
 use crate::daemon::status::DaemonContext;
-use crate::daemon::{on_finished, on_suspended};
+use crate::daemon::{on_finished, suspend};
 use crate::engine::bus::map_terminal;
 
 /// Daemon stderr log line (no tracing dep wired; stderr is the module's channel).
@@ -49,7 +49,7 @@ pub(super) fn recover_suspended(engine: &Arc<Engine>, scheduler: &Arc<Scheduler>
             _ => None,
         });
         if let Some(key) = key {
-            on_suspended(engine, scheduler, run.as_str(), &key);
+            suspend::spawn(engine, scheduler, run.as_str(), &key);
         }
     }
 }
