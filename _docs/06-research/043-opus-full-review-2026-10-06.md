@@ -28,6 +28,14 @@ Read-only held. No tracked file was edited by this run, nothing was committed, a
 | **C-delegated** | a delegated run executed commands; its logs are on disk |
 | **I** | inferred from a delegated read-only review, not re-checked by me |
 
+> **Status banner (orchestrator, 2026-10-09).** §10's ranked candidates were worked through in specs
+> 70-82 and 83-96 — see `045-…md` (the re-review, and its own status banner) and the spec 83-96 table in
+> `HANDOFF.md`. §9's documentation corrections landed in spec 75. Two corrections to this report's own
+> narrative are recorded in spec 90: the `doctest = false` change cannot affect the gate (an explicit
+> `--doc` ignores the flag), so "the shipped quality gate can never pass" was not causally true.
+> Sections still worth reading as live: §8's ruled decisions, and §10's deferred items
+> (native code graph, modularity design, Chromecast).
+
 ## Verdict in five lines
 
 1. All six gate commands ran this time. The verbatim test step failed once on a load-sensitive timing flake; re-run at normal load, the full suite is clean: 63 binaries, 536 passed, 0 failed, 10 ignored.

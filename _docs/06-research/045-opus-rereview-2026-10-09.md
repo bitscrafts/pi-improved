@@ -31,6 +31,26 @@ Two delegated runs did not finish: mutation of batches C and D, and the E0463 re
 | **C-delegated** | a delegated run executed the commands; logs are in its scratch directory |
 | **I** | inferred |
 
+> **Status banner (orchestrator, 2026-10-09, after the work-through).** Every ranked finding in this
+> report has since been dispositioned, and the evidence is committed. Do NOT read this file as a live
+> TODO list.
+>
+> | finding | disposition |
+> |---|---|
+> | N1 (non-hermetic tests; gate green on one machine) | **CLOSED**, and at the ROOT — specs 83, 84 (the `fresh-gate` tool), 85, 86 (sweep + retention/free-space guards), 96 (`tmp_scratch` helper + a FAILING `lint-scratch` gate step; 18 bare sites → 0). Evidence: `046-`…`051-` |
+> | N2 (reachability foolable by `cfg(test)`, strings, comments) | **CLOSED** — spec 87 (whole-file lexer + `CfgTestGate`); mutation-proven |
+> | N3 (lag recovery re-requests approvals; lost `RunFinished`) | **CLOSED** — spec 88 (`put_approval_if_absent` in one txn, no re-broadcast, never erases a decision; `RunFinished` recovered); mutation-proven |
+> | N4 (llama provider compiled by no gate step) | **CLOSED** — spec 89 (gate step `clippy (llamacpp)`); teeth proven by an injected E0308 |
+> | N5 (worktree `both-off` test weak) / N6 (spec-73 circular override test) | **UNCHANGED** — recorded as candidates; the reviewer's own reading stands |
+> | N7 (no `shutdown_timeout`; 10 handlers still inline) | **CLOSED** — spec 95 (bound + log; all 11 handlers MEASURED, exactly one moved on the numbers) |
+> | N8 (false `doctest = false` comments) | **CLOSED** — spec 90 |
+> | candidate 6 (the mutation verification its delegated run never finished) | **DONE** — spec 91 (`046-`) filed 5 green mutants; spec 92 (`047-`) closed 4; the three redb-fault sites are the residual `pii R5b-residual` |
+> | finding 6 (replay drops a state-changing `apply_completion` error) | **A REAL DEFECT, MEASURED AND FIXED** — spec 93 measured the divergence (`048-`), spec 94 fixed it and the recording test became the pinning test (`049-`); orchestrator reverse-mutated |
+> | E0463 `doctest = false` narrative | **CORRECTED** — the flag cannot affect the gate (an explicit `--doc` ignores it); the 18 comments were rewritten by spec 90 |
+>
+> The gate now exists in two trees (repo + `fresh-gate` export); read
+> `_docs/02-guides/quality-gate-and-fresh-tree.md` before trusting any "gate is green" claim.
+
 ## 1. Verdict
 
 1. **Landed and proven by mutation:** D1 chunked decoder (spec 70), D2 bash render (71), and three of the four section-3 closures (65, 66, 68 in spec 74). The full gate is green on HEAD.
