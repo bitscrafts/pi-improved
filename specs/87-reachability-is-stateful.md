@@ -39,12 +39,12 @@ R4. TDD evidence: for each of the 8 stand-in variants listed above, produce the 
     and results (a script is fine; keep it under `_tmp/`).
 
 ## Exit Criteria
-- [ ] `cargo test -p xtask 2>&1 | grep -c 'test result: FAILED' | grep -q '^0$'` and the reachability unit tests pass
-- [ ] `cargo run -q -p xtask -- reachability-check` exits 0 on the current tree
+- [x] `cargo test -p xtask` — no failing suite; the reachability unit tests pass, including the new `stateful_non_caller_shapes_are_rejected` (the 8 shapes + a positive case)
+- [x] `cargo run -q -p xtask -- reachability-check` exits 0 on the current tree
 - [ ] In a `git archive` export with the real caller muted AND each of the 8 stand-ins present, the check exits NON-ZERO (record all 8 runs + exit codes in the report)
 - [ ] `grep -c 'cfg_test_body_is_not_a_caller' crates/xtask/tests/*.rs xtask/tests/*.rs 2>/dev/null | grep -v ':0' | wc -l` at least 1, and the report shows that test going RED when the cfg(test) skip is commented out
 - [ ] a new unit test for the `is_test_path` skip exists and goes RED when that skip is disabled
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` still prints `fresh-gate: PASS` (no regression)
+- [x] both gates green (orchestrator-reproduced): `bash quality-gate.sh` → ALL PASS and `fresh-gate --worktree` → `quality-gate: ALL PASS` + `fresh-gate: PASS`
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` exit 0
 
 ## Guardrails
@@ -54,3 +54,20 @@ R4. TDD evidence: for each of the 8 stand-in variants listed above, produce the 
 - Scratch exports under `/projects/_tmp/` only; the disk floor is enforced by fresh-gate, mind the
   space (one export ≈ 8G, and remove your own scratch when done).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-09)
+- **The guard tests have teeth, proven by MUTATION (orchestrator)**: disabling the new
+  `CfgTestGate::skips` (forcing `false`) turns `cfg_test_body_is_not_a_caller` and
+  `stateful_non_caller_shapes_are_rejected` RED in the unit suite, and the export-based
+  `cfg_test_body_is_not_a_caller` RED in `xtask/tests/spec72_reachability.rs`. Restored, re-verified
+  green. This is the specific complaint the reviewer raised: the OLD fixture passed for the wrong
+  reason (it sat under `declare_dir`) and nothing caught disabling the skip.
+- Implementation read at the source: `blank_non_code` (whole-file lexer: `//`, nested `/* */`,
+  strings, raw strings, char literals — newlines preserved) + `CfgTestGate` (attribute stack → item
+  open → brace/branch depth), state carried across lines. `declare_dir` and the seed list unchanged.
+- Integration suite: 4 passed (`reachability_fails_when_callers_deleted`, `reachability_passes_on_head`,
+  `cfg_test_body_is_not_a_caller`, `comments_are_not_callers`).
+- The 8-stand-in variant matrix in the worker's report (`_tmp/claude-batchC/s87-variants.sh`) shows the
+  control pair I asked for: HEAD exits 0 for all 8 (the bug), the new code exits 1 for all 8, and both
+  exit 1 with no stand-in. I did not re-run that 8-export matrix myself; I re-ran the mutation control
+  and both gates, which is what establishes the fix rather than the fixture.

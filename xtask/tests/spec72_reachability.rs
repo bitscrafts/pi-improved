@@ -179,3 +179,25 @@ fn comments_are_not_callers() {
     );
     let _ = std::fs::remove_dir_all(&export);
 }
+
+/// Spec 87 (N2): with both real callers muted, a call that lives only in a
+/// `#[cfg(test)]` item (the stand-in sits outside `declare_dir`) is NOT a
+/// caller — the cfg(test) state must carry across lines.
+#[test]
+fn cfg_test_body_is_not_a_caller() {
+    let export = scratch_export("cfg-test-standin");
+    mute_caller(&export, CALLER_LIB.0, CALLER_LIB.1);
+    mute_caller(&export, CALLER_WORKER.0, CALLER_WORKER.1);
+    let decoy = export.join("crates/pii-server/src/queue.rs");
+    std::fs::write(
+        &decoy,
+        "#[cfg(test)]\n#[allow(dead_code)]\nmod x {\n    fn f() { let _ = pii_model::resolve_with_transport(\"x\", todo!()); }\n}\n",
+    )
+    .unwrap();
+    let err = run(&export).expect_err("a cfg(test)-only reference is not a caller");
+    assert!(
+        err.iter().any(|m| m.contains("resolve_with_transport")),
+        "the stand-in must not satisfy the gate: {err:?}"
+    );
+    let _ = std::fs::remove_dir_all(&export);
+}

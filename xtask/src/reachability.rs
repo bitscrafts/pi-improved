@@ -31,8 +31,6 @@
 
 use std::path::Path;
 
-use crate::lint_files::count_effective_lines;
-
 /// One reachability entry: `needle` must appear outside comments and
 /// `#[cfg(test)]` bodies in some non-test `.rs` under `search_dir`, and NOT
 /// under `declare_dir` (the crate that declares the symbol) — external
@@ -122,17 +120,13 @@ fn find_external_caller(root: &Path, entry: &ReachEntry) -> bool {
             return;
         }
         if let Ok(src) = std::fs::read_to_string(path) {
-            // Every commented line in a Rust file is `//`-prefixed (the
-            // workspace gate counts effective lines that way), so a
-            // `count_effective_lines` == 0 file is a pure-comment file and
-            // cannot contain a call. The needle match below runs per line,
-            // with comment/cfg(test) lines excluded the same way.
-            let src = src.as_ref();
-            for (non_comment, line) in effective_lines(src) {
-                if line.contains(entry.needle) && non_comment != 0 {
-                    hit = true;
-                    return;
-                }
+            // Lexed over the whole file: comments, strings and cfg(test)
+            // items never contribute candidate lines.
+            if effective_lines(&src)
+                .iter()
+                .any(|line| line.contains(entry.needle))
+            {
+                hit = true;
             }
         }
     });
@@ -171,18 +165,189 @@ fn walk(dir: &Path, visit: &mut dyn FnMut(&Path)) {
     }
 }
 
-/// `(non_comment, line)` for every line whose trimmed text is neither blank
-/// nor `//`-commented: the workspace's own comment convention (the one
-/// `count_effective_lines` counts), used to strip comments and let reuse of
-/// `lint_files`' skipping cover comment lines here.
-fn effective_lines(src: &str) -> impl Iterator<Item = (usize, &str)> {
-    src.lines().filter_map(|line| {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with("//") {
-            return None;
+/// Candidate caller lines: every line left after the whole file is lexed
+/// (comments, strings, raw strings and char literals blanked, state carried
+/// across lines) and `#[cfg(test)]` items are skipped (mod, fn, or an
+/// attribute stack before one). Blank lines are dropped.
+fn effective_lines(src: &str) -> Vec<String> {
+    let code = blank_non_code(src);
+    let mut out = Vec::new();
+    let mut gate = CfgTestGate::default();
+    for line in code.lines() {
+        if gate.skips(line.trim()) {
+            continue;
         }
-        Some((count_effective_lines(t), t))
-    })
+        let t = line.trim();
+        if !t.is_empty() {
+            out.push(t.to_owned());
+        }
+    }
+    out
+}
+
+/// Tracks a `#[cfg(test)]` item across lines: attribute stack, then the
+/// braced body (or a `;`-terminated item).
+#[derive(Default)]
+struct CfgTestGate {
+    active: bool,
+    depth: isize,
+    opened: bool,
+}
+
+impl CfgTestGate {
+    /// True when `t` (a trimmed, lexed line) belongs to a cfg(test) item.
+    fn skips(&mut self, t: &str) -> bool {
+        let rest = if self.active {
+            t
+        } else {
+            let Some(after) = t.strip_prefix("#[cfg(test)]") else {
+                return false;
+            };
+            self.active = true;
+            after.trim()
+        };
+        if !self.opened && (rest.is_empty() || rest.starts_with("#[")) {
+            return true; // attribute stack before the item body
+        }
+        let opens = rest.matches('{').count().cast_signed();
+        let closes = rest.matches('}').count().cast_signed();
+        self.depth += opens - closes;
+        self.opened |= opens > 0;
+        let ended = if self.opened {
+            self.depth <= 0
+        } else {
+            rest.contains(';')
+        };
+        if ended {
+            *self = Self::default();
+        }
+        true
+    }
+}
+
+/// Replaces comments with nothing and the contents of string, raw string and
+/// char literals with nothing (quotes kept), preserving newlines so line
+/// structure survives. Block comments nest, as in Rust.
+fn blank_non_code(src: &str) -> String {
+    let cs: Vec<char> = src.chars().collect();
+    let at = |k: usize| cs.get(k).copied();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0usize;
+    while let Some(c) = at(i) {
+        let prev = i.checked_sub(1).and_then(at);
+        let ident_prev = prev.is_some_and(|p| p.is_alphanumeric() || p == '_');
+        i = match c {
+            '/' if at(i + 1) == Some('/') => skip_line_comment(&cs, i),
+            '/' if at(i + 1) == Some('*') => skip_block_comment(&cs, i, &mut out),
+            '"' => skip_string(&cs, i, &mut out),
+            'r' if (!ident_prev || prev == Some('b')) && raw_hashes(&cs, i).is_some() => {
+                skip_raw_string(&cs, i, &mut out)
+            }
+            '\'' => skip_char_literal(&cs, i, &mut out),
+            _ => {
+                out.push(c);
+                i + 1
+            }
+        };
+    }
+    out
+}
+
+fn skip_line_comment(cs: &[char], mut i: usize) -> usize {
+    while cs.get(i).is_some_and(|&d| d != '\n') {
+        i += 1;
+    }
+    i
+}
+
+fn skip_block_comment(cs: &[char], mut i: usize, out: &mut String) -> usize {
+    let at = |k: usize| cs.get(k).copied();
+    let mut depth = 0usize;
+    while let Some(c) = at(i) {
+        if c == '/' && at(i + 1) == Some('*') {
+            depth += 1;
+            i += 2;
+        } else if c == '*' && at(i + 1) == Some('/') {
+            depth = depth.saturating_sub(1);
+            i += 2;
+            if depth == 0 {
+                break;
+            }
+        } else {
+            if c == '\n' {
+                out.push('\n');
+            }
+            i += 1;
+        }
+    }
+    i
+}
+
+fn skip_string(cs: &[char], mut i: usize, out: &mut String) -> usize {
+    out.push('"');
+    i += 1;
+    while let Some(&c) = cs.get(i) {
+        match c {
+            '\\' => {
+                if cs.get(i + 1) == Some(&'\n') {
+                    out.push('\n');
+                }
+                i += 2;
+            }
+            '"' => {
+                out.push('"');
+                return i + 1;
+            }
+            _ => {
+                if c == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+        }
+    }
+    i
+}
+
+/// `Some(n)` when `cs[i..]` opens a raw string `r#..#"` with `n` hashes.
+fn raw_hashes(cs: &[char], i: usize) -> Option<usize> {
+    let mut j = i + 1;
+    while cs.get(j) == Some(&'#') {
+        j += 1;
+    }
+    (cs.get(j) == Some(&'"')).then(|| j - i - 1)
+}
+
+fn skip_raw_string(cs: &[char], i: usize, out: &mut String) -> usize {
+    let hashes = raw_hashes(cs, i).unwrap_or(0);
+    out.push('"');
+    let mut j = i + hashes + 2;
+    while let Some(&c) = cs.get(j) {
+        if c == '"' && (1..=hashes).all(|k| cs.get(j + k) == Some(&'#')) {
+            out.push('"');
+            return j + hashes + 1;
+        }
+        if c == '\n' {
+            out.push('\n');
+        }
+        j += 1;
+    }
+    j
+}
+
+/// A `'` opens a char literal (`'x'`, `'\n'`); otherwise it is a lifetime.
+fn skip_char_literal(cs: &[char], i: usize, out: &mut String) -> usize {
+    let close = match (cs.get(i + 1), cs.get(i + 2)) {
+        (Some('\\'), _) => (i + 3..i + 12).find(|&k| cs.get(k) == Some(&'\'')),
+        (Some(_), Some('\'')) => Some(i + 2),
+        _ => None,
+    };
+    if let Some(end) = close {
+        out.push_str("''");
+        return end + 1;
+    }
+    out.push('\'');
+    i + 1
 }
 
 #[cfg(test)]
@@ -303,7 +468,7 @@ mod tests {
         let root = scratch_root(
             "cfg-test-body",
             &[(
-                "crates/user/src/lib.rs",
+                "crates/other/src/lib.rs",
                 "#[cfg(test)]\nmod tests {\n    sup.invoke(a);\n}\n",
             )],
         );
@@ -315,14 +480,59 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A test-only path (`tests/`) is not a caller.
+    /// A test-only path (`tests/`) is not a caller. The fixture sits
+    /// OUTSIDE `declare_dir`, so only the `is_test_path` skip can reject it.
     #[test]
     fn test_path_is_not_a_caller() {
         let root = scratch_root(
             "test-path",
-            &[("crates/user/tests/it.rs", "sup.invoke(a);\n")],
+            &[
+                ("crates/other/tests/it.rs", "sup.invoke(a);\n"),
+                ("crates/other/src/x_test.rs", "sup.invoke(a);\n"),
+            ],
         );
-        assert!(is_test_path("crates/user/tests/it.rs"));
+        assert!(is_test_path("crates/other/tests/it.rs"));
+        assert!(
+            !run_entry(&root, &entry("sup.invoke(")),
+            "a tests/ or *_test.rs match is not a caller"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Every non-caller shape from the 045 re-review (N2) must be rejected,
+    /// outside `declare_dir`; a real call after each shape must still count.
+    #[test]
+    fn stateful_non_caller_shapes_are_rejected() {
+        let call = "sup.invoke(a);";
+        let shapes = [
+            format!("#[cfg(test)]\nmod t {{\n    fn f() {{ {call} }}\n}}\n"),
+            format!("#[cfg(test)]\nfn f() {{ {call} }}\n"),
+            format!("#[cfg(test)]\n#[allow(dead_code)]\nmod t {{\n    {call}\n}}\n"),
+            format!("fn f() {{ let _ = \"{call}\"; }}\n"),
+            format!("/* {call} */\n"),
+            format!("/* a\n   {call}\n*/\n"),
+            format!("fn f() {{ let _ = r#\"x\n{call}\n\"#; }}\n"),
+            format!("fn f() {{ let _ = '\\''; }} // {call}\n"),
+        ];
+        for (n, body) in shapes.iter().enumerate() {
+            let root = scratch_root(
+                &format!("shape-{n}"),
+                &[("crates/other/src/lib.rs", body.as_str())],
+            );
+            assert!(
+                !run_entry(&root, &entry("sup.invoke(")),
+                "shape {n} is not a caller: {body}"
+            );
+            let _ = std::fs::remove_dir_all(&root);
+        }
+        let root = scratch_root(
+            "shape-real",
+            &[(
+                "crates/other/src/lib.rs",
+                "#[cfg(test)]\nmod t {}\n/* c */ fn f() { let _ = \"s\"; sup.invoke(a); }\n",
+            )],
+        );
+        assert!(run_entry(&root, &entry("sup.invoke(")), "real call counts");
         let _ = std::fs::remove_dir_all(&root);
     }
 
