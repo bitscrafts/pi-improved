@@ -13,12 +13,28 @@ LOGD=$REPO/_tmp/claude-batchC
 mkdir -p "$LOGD"
 cd "$REPO"
 N="${1:-}"
-[ -n "$N" ] || { echo "usage: run-batchC-claude.sh <spec-number>"; exit 2; }
+[ -n "$N" ] || { echo "usage: run-batchC-claude.sh <spec-number> [--resume <session-id>] [extra-brief-file]"; exit 2; }
 SPEC=$(ls "$REPO"/specs/$N-*.md 2>/dev/null | head -1) || { echo "no spec $N"; exit 2; }
 [ -f "$SPEC" ] || { echo "no spec $N"; exit 2; }
 TAG=$(basename "$SPEC" .md)
-# dirty-tree guard: the worker must start on the committed baseline
-if [ -n "$(git status --porcelain)" ]; then echo "STOPPED: dirty tree:"; git status --porcelain; exit 8; fi
+RESUME_SID=""; EXTRA_BRIEF=""
+shift || true
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --resume) RESUME_SID="${2:?--resume needs a session id}"; shift 2 ;;
+    *) EXTRA_BRIEF="$1"; shift ;;
+  esac
+done
+# dirty-tree guard: the worker must start on the committed baseline.
+# ALLOW_DIRTY=1 is the explicit, logged override for resuming a spec whose WIP is the dirty
+# change itself (e.g. a run cut off mid-edit) — never for starting unrelated work.
+if [ -n "$(git status --porcelain)" ]; then
+  if [ -n "${ALLOW_DIRTY:-}" ]; then
+    echo "== ALLOW_DIRTY: continuing with WIP in the tree:"; git status --porcelain
+  else
+    echo "STOPPED: dirty tree (set ALLOW_DIRTY=1 only to resume this spec's own WIP):"; git status --porcelain; exit 8
+  fi
+fi
 LOG="$LOGD/$TAG.$(date +%s).log"
 BRIEF="$LOGD/brief-$TAG.md"
 cat > "$BRIEF" <<EOF
@@ -32,7 +48,10 @@ background processes, no /loop, no scheduling. If budget runs out mid-work, writ
 COMPLETE handoff envelope (done/remaining/next-start) to $LOGD/HANDOFF-$TAG.md and stop
 honestly — never compress the work to fake completion. Final line: SPEC-DONE $N criteria=<p>/<t> with every criterion command + exit code listed.
 EOF
-stdbuf -oL -eL claude -p "$(cat "$BRIEF")" \
+[ -n "$EXTRA_BRIEF" ] && { printf '\n\n' >> "$BRIEF"; cat "$EXTRA_BRIEF" >> "$BRIEF"; }
+RESUME_ARGS=()
+if [ -n "$RESUME_SID" ]; then RESUME_ARGS=(--resume "$RESUME_SID"); echo "== RESUMING session $RESUME_SID"; fi
+stdbuf -oL -eL claude "${RESUME_ARGS[@]}" -p "$(cat "$BRIEF")" \
   --permission-mode bypassPermissions --model sonnet \
   --output-format stream-json --verbose --include-partial-messages \
   --disallowedTools 'Edit(specs/**) Write(specs/**)' \
