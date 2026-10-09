@@ -1,0 +1,67 @@
+# Spec: 98 — `lint-observability`: make the seam and the ban on raw prints FAIL the gate
+
+**Project**: /projects/pi-improved
+**Phase**: P0/P1, observability — this is the ENFORCEMENT half of the user's directive
+(*"we must enforce observability! via traits on every crate!"*). Design/analysis:
+`_docs/06-research/053-observability-contract-and-enforcement-2026-10-09.md`.
+
+## Context
+Spec 97 landed the contract (`pii-observe`, serde-only). A rule that is not enforced is a rule that
+gets broken — this repo's own history (the `lint-scratch` class, the spec-77 criterion that drove 19
+files of debt) says a convention enforced by prose dies on the next cheap worker run. This spec adds
+the check that fails the gate when a crate has no observability seam or when new raw prints appear.
+
+## Requirements
+R1. **New xtask subcommand `lint-observability`** (same shape as `lint-scratch`/`reachability-check`:
+    prints findings as `path:line: message`, exits non-zero on any finding, prints a one-line summary
+    with counts). Three rules:
+    - **R1a — the dependency:** every crate directory in `crates/` must depend on `pii-observe`
+      (a `pii-observe = { workspace = true }` line in its `Cargo.toml`), UNLESS it carries a named
+      exemption (R1c).
+    - **R1b — the seam:** every crate must contain at least one use of the contract in `src/`
+      (`Observer`, `Observable`, `Event`, `Measure`, `Health`, or a `pii_observe::` path), UNLESS
+      exempted (R1c).
+    - **R1c — named exemptions:** a crate may declare `// observability: none — <reason>` (exactly one
+      line, in `src/lib.rs` or `src/main.rs`). The reason must be non-empty; the message must name the
+      crate. Exemptions are ALLOWED to be rare and are listed in the report.
+    - **R1d — no new raw prints:** `eprintln!`, `println!`, `dbg!`, `print!` in `crates/*/src/**` are
+      findings UNLESS the `file:line` is in the checked-in allowlist
+      `crates/xtask/observability-allowlist.txt` (one `path:line  # reason` per line). Seed that file
+      with the CURRENT sites (measure them; the analysis counted 139 — use the real number your run
+      finds) so the lint lands GREEN, and note the count in the report. Deleting allowlist lines is the
+      adoption sweep's job (spec 100); ADDING one requires a reason on the same line.
+R2. **Wire it into `quality-gate.sh` as a FAILING step**, placed with the other xtask checks (after
+    `lint-scratch`, before the summary), with the same `PASS:`/`FAIL:` output shape.
+R3. **Teeth, proven in a `git archive` export** (do not mutate the repo tree):
+    - re-introduce one raw `eprintln!` into a crate's `src/` → `lint-observability` exits non-zero and
+      names that `path:line`;
+    - remove a crate's `pii-observe` dependency (or its only contract use) in the export → exits
+      non-zero naming that crate;
+    - restore → exits 0 with 0 findings.
+    Record the three commands and their output verbatim in the report.
+R4. **Unit tests for the lint itself** in `crates/xtask` (the repo's pattern): the allowlist parser
+    (comment/reason handling), the exemption parser (a bare `// observability: none` with no reason is
+    a finding), and the "no duplicates in the allowlist" invariant.
+R5. Do NOT convert any call site in this spec. The sweep is spec 100; this spec's job is that the rule
+    exists and bites. `specs/` stays read-only for you.
+
+## Exit Criteria
+- [ ] `cargo run -q -p xtask -- lint-observability` exits 0 on the untouched tree and prints a summary line with the file/finding counts (paste it)
+- [ ] `[ "$(grep -c 'lint-observability' quality-gate.sh)" -ge 1 ]` and `bash quality-gate.sh` exits 0 with a `PASS: lint-observability` line (paste it)
+- [ ] the three export controls from R3 each show the expected exit code, verbatim
+- [ ] `cargo test -p xtask` passes (including the new lint tests)
+- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` prints `fresh-gate: PASS`
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` exit 0
+- [ ] the report states: the number of allowlist entries seeded, the number of crates exempted (with their reasons), and the number of crates currently failing R1b (i.e. the work spec 100 must do)
+- [ ] the report confirms `specs/` was not touched
+
+## Guardrails
+- The lint must FAIL CLOSED: an unreadable `Cargo.toml`, a missing allowlist file, or a crate with no
+  `src/` is a finding, not a silent skip.
+- Do NOT weaken the allowlist rule to make the lint pass: seeding it with the CURRENT sites is honest;
+  adding entries for sites you create is not.
+- Do NOT touch `lint-files`, `lint-scratch` or `reachability-check` behaviour, and do not reorder the
+  existing gate steps other than inserting the new one.
+- Do NOT edit any file under `specs/`.
+- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Do NOT commit; leave the tree for the orchestrator.

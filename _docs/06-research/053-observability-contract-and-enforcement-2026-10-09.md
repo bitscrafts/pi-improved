@@ -174,3 +174,52 @@ existing ones:
 - Whether the redb stores expose a schema/format version we can report today (the spec must measure
   this before promising the health field).
 - Overhead of per-RPC latency histograms under load (no measurements exist).
+
+---
+
+## 8. Observability is the substrate of Pillar 4 (user directive, 2026-10-09)
+
+The user's framing: *"observability is the basis of the self improvement loop pilar"*. That reorders the
+priority of this work and sharpens the contract, and it is worth stating plainly why.
+
+The original vision's Pillar 4 is *"skill extraction, procedural templates, trajectory logging for
+future fine-tuning of a local ~9B model"*, with trajectories carrying `outcome.verifier` (a programmatic
+pass/fail), `user_signal`, `escalation`, and **mandatory `redaction`**. None of that is built (052 §5.1
+says ABSENT). But note what it is made of: **every element of it is an observation** — a run's nodes and
+tools, their latency and outcome, the verifier's verdict, what the user then did, and what was redacted.
+A self-improvement loop is, mechanically, *querying a corpus of structured observations and promoting
+what worked*.
+
+So the honest ordering is not "observability, then later self-improvement". It is:
+
+1. **this contract** (spec 97) — but with the contract carrying what a trajectory needs: **correlation**
+   (`run`, `session`, `span`), an **outcome/verdict** notion, and a **redaction** seam;
+2. **the trajectory substrate** (spec 100) — a durable, append-only, per-run trajectory sink written
+   through the same contract, with redaction applied at the sink (never at the call site, or it will be
+   forgotten);
+3. only then can Pillar 4's extraction/distillation be built *on data the engine already produces for
+   its own health* — which is also the cheapest possible route to that pillar: it reuses the same
+   events, the same sink, the same schema.
+
+**Consequences for the contract and the specs:**
+
+- `Event` must carry `run: Option<RunId>` / `session: Option<SessionId>` / `span: Option<SpanId>` —
+  spec 97 as written has `span` only, so **spec 100 extends the contract with the correlation ids** and
+  is the first consumer that proves they are sufficient.
+- There must be an explicit **outcome** concept (the vision's `outcome.verifier`): the graph already
+  reports a terminal (`success`/`failure` with a reason) — the trajectory record must carry it verbatim,
+  not a re-derived summary.
+- **Redaction belongs in the sink**, with a named policy, because “mandatory redaction” enforced by
+  convention is exactly the class of rule this project has watched fail (0c/0d).
+- The trajectory file is an **untracked, append-only artefact** (like the autoresearch ledger): it must
+  never be a reason for the git tree to be dirty, and it must never be deleted as "cleanup" (the
+  never-delete-on-failure lifecycle from the vision's skill design).
+- This makes the self-improvement pillar **measurable before it is clever**: the first milestone is
+  "N runs' trajectories are on disk, each with an outcome and a redaction record", not "a skill was
+  extracted".
+
+A caution that the project has already paid for: **an observability-driven loop inherits every metric
+mistake into its training data.** The laya lesson (a metric that swallowed the exit code and produced a
+70× fake win) is the exact failure mode for a corpus that later teaches a model. Every measure and
+outcome field introduced for this must therefore have a negative case in its tests: *it must not move
+when the thing did not happen, and a failed run must never record a success.*
