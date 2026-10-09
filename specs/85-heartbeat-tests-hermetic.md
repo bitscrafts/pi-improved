@@ -23,10 +23,10 @@ R4. If fresh-gate then names ANY other failing test, do NOT fix it in this spec:
     spec's scope is the two named tests plus any scratch-path literal in that same file.
 
 ## Exit Criteria
-- [ ] `[ "$(grep -c 'crates/pii-server/_tmp\|/_tmp' crates/pii-server/src/engine/conn_heartbeat_tests.rs)" = 0 ]` (no absolute/pre-existing-dir literal; `tmp_root`-style helpers that CREATE the dir are fine and must be shown in the report)
-- [ ] `cargo test -p pii-server heartbeat 2>&1 | grep -c 'test result: ok' | grep -qv '^0$'` and the run shows 7 tests passing
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` exits 0 with `fresh-gate: PASS`
-- [ ] `cargo clippy -p pii-server --all-targets -- -D warnings` exits 0 and `cargo fmt --all --check` exits 0
+- [x] no pre-existing-dir literal: the file now does `create_dir_all(CARGO_MANIFEST_DIR/_tmp)` then `tempdir_in(root)` (verified in the diff; a first attempt used `.tempdir()` and was corrected — the project rule is tests under `_tmp/`, never `/tmp`)
+- [x] `cargo test -p pii-server heartbeat` → **7 passed / 0 failed** (verified by the orchestrator)
+- [ ] **NOT MET — and it found the THIRD instance of the class.** `fresh-gate --worktree` still fails, now naming `heal::tests::attempt_ring_caps_and_counts` (panic `NotFound … /crates/pii-store/_tmp/heal-ring-piHjtg`): `crates/pii-store/src/heal.rs` has the same non-hermetic shape. Also recorded: the earlier "pii-tools failed" observation was the DISK-FULL condition and is gone now. Follow-up: spec 86.
+- [x] `cargo clippy -p pii-server --all-targets -- -D warnings` exits 0 and `cargo fmt --all --check` exits 0 (verified by the orchestrator)
 - [ ] the report lists every scratch path the file uses and how each is created
 
 ## Guardrails
@@ -34,3 +34,13 @@ R4. If fresh-gate then names ANY other failing test, do NOT fix it in this spec:
 - Do NOT weaken the heartbeat assertions or the light-method control.
 - Do NOT `rm -rf` anything; scratch under `/projects/_tmp/` only.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-09)
+- The fix is on-convention and minimal: `create_dir_all(CARGO_MANIFEST_DIR/_tmp)` + `tempdir_in(root)`
+  (the worker's first attempt, `.tempdir()`, was corrected by the resume brief).
+- `cargo test -p pii-server heartbeat` → 7 passed; clippy + fmt clean.
+- **The class is bigger than spec 84 first showed.** `fresh-gate --worktree` is the tool working as
+  intended: it named the two heartbeat tests (now fixed), and on the next run named a THIRD instance
+  in `crates/pii-store/src/heal.rs` (`attempt_ring_caps_and_counts`, writing `crates/pii-store/_tmp/
+  heal-ring-*`). Each instance is a test that depends on a directory only a developer tree has.
+  The remaining work is spec 86: fix what the tool names, iterating until it prints `fresh-gate: PASS`.

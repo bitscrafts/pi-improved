@@ -70,9 +70,11 @@ async fn send_line<W: tokio::io::AsyncWrite + Unpin>(
 
 /// Returns the worst observed tick lateness while `method` is served.
 async fn max_tick_delay(method: &str) -> Duration {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp");
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
     let dir = tempfile::Builder::new()
         .prefix("heartbeat-")
-        .tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"))
+        .tempdir_in(root)
         .expect("tempdir");
     let engine = engine_in(dir.path());
     let (client, server) = tokio::io::duplex(64 * 1024);
