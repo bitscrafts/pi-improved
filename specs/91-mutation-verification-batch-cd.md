@@ -52,3 +52,36 @@ R5 (spec 82, store errors): `grep -c 'PiiError::Internal(' crates/pii-store/src/
 - Scratch under `/projects/_tmp/` only (the disk floor is enforced; one fresh-gate export ≈ 8G — delete
   your own scratch when done).
 - Do NOT commit; leave the tree exactly as you found it.
+
+## Result (2026-10-09) — the gap 045 could not close is now measured
+Mutation log: `/projects/_tmp/spec91/MUTATION-LOG.md` (copy committed to `_docs/06-research/046-`).
+Tree left 0 dirty (verification-only respected). Both gates green.
+
+**Guards with teeth (RED under mutation):** spec 77's flush test (drain-before-Ok → red, `left 0 right 3`);
+spec 78's register-order (moved back before recovery → TWO tests red, including the no-run-registered
+assertion); spec 79's rescan (removed from the `Lagged` arm → red) — and the log settles the reviewer's
+doubt: **the lag is genuine** (5000 broadcasts into the real 4096-slot bus before the loop's first
+`recv`, so tokio itself returns `RecvError::Lagged`), not a synthetic injection; spec 80's six methods,
+one mutant per run, each → exactly one red heartbeat test with the control green; spec 82's `open` site
+(swapped args → red).
+
+**Findings — mutants that stayed GREEN (each becomes its own candidate):**
+1. `runs.rs:~152-170` — a graph body that is unreadable/missing/unparsable falling back to an unlimited
+   budget is undetected: there is no `get_graph` fault seam, and `resume_fail_closed_on_graph_lookup_fault`
+   faults `get_run` (the header step) while asserting only `res.is_err()`.
+2. `runs.rs:~167` — a resume that ignores the recovered limits (budget forced to `u64::MAX`) is undetected:
+   `seed_real_run` (runs.rs:568) seeds limits that are already all `u64::MAX`.
+3. `daemon/mod.rs:215` — `reactive_loop` never calling `lag::recover_finished` on a `Lagged` is undetected
+   (the test at lag.rs:222 calls the helper directly). This is the wiring gap spec 88 admitted.
+4. `pii-store/src/lib.rs:96,103,113,357` — swapping `op`/`resource` in a `store_op(…)` call site is
+   undetected anywhere (workspace-wide for :357).
+5. `pii-store/src/lib.rs:645` — `open_failure_renders_structured_store_op` pins only the prefix
+   `store op open on `, not the resource or the detail (it catches :91 only because the op sits in the prefix).
+6. **Observation, unmeasured** — `run_helpers.rs:125` discards the `Err` from `apply_completion` in
+   replay; the "activation outcome irrelevant" justification may not hold for the loop-budget Err path,
+   where the live run turns the error into a failure and replay does not. Needs a measurement, not a patch.
+
+**Static checks confirmed:** `PiiError::Internal(` in `pii-store/src/lib.rs` = 0; `let_underscore_must_use`
+is `#![warn]` at `pii-graph/src/lib.rs:12` (the gate's clippy `-D warnings` makes it an error) and **no
+crate-level allow exists outside pii-graph**; the 3 item-level allows are each justified (String `write!`;
+std-mpsc `send` whose receiver is dropped by design; replay `apply_completion` — see finding 6).
