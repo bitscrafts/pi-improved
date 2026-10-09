@@ -10,7 +10,8 @@ gate exists to prevent — and disposable worktrees are exactly how the coding h
 Measured on today's HEAD: in a `git archive` export, `cargo test -p pii-memory` is RED.
 
 ## Requirements
-R1. A new xtask subcommand, e.g. `cargo xtask fresh-gate`, that:
+R1. A new xtask subcommand, e.g. `cargo xtask fresh-gate`, that (with `--worktree` overlaying the
+    current working tree, and an optional `--overlay src=dest` for a single file):
     a. exports the CURRENT tree with `git archive HEAD` (or `git stash create`-free equivalent
        — it must not touch the working tree) into a unique dir under `/projects/_tmp/fresh-gate-<pid>/`,
     b. overlays the WORKING TREE's uncommitted changes when `--worktree` is passed (so it can
@@ -25,7 +26,14 @@ R3. A test/exit criterion proving it FAILS on the pre-83 tree and PASSES after 8
 
 ## Exit Criteria
 - [ ] `cargo run -q -p xtask -- fresh-gate --help 2>&1 | grep -q 'fresh'` exits 0 (subcommand exists)
-- [ ] On the CURRENT tree (spec 83 NOT yet applied): `cargo run -q -p xtask -- fresh-gate` exits NON-ZERO and its output names at least one of `degrades_honestly_without_embedder`, `graph_lane_recalls_doc_via_shared_concept`, `memory_hit_carries_doc_text` — record this output in the report as the red proof
+- [ ] RED PROOF (spec 83 has ALREADY landed in HEAD, so the red must be produced, not found):
+      make a scratch copy of `crates/pii-memory/tests/lanes.rs` with the three tests reverted to
+      hardcoded `_tmp/phase3` paths (pre-83 shape), run
+      `cargo run -q -p xtask -- fresh-gate --overlay <dir>/lanes.rs=crates/pii-memory/tests/lanes.rs`
+      (or the equivalent the command offers) and show it exits NON-ZERO naming at least one of
+      `degrades_honestly_without_embedder`, `graph_lane_recalls_doc_via_shared_concept`,
+      `memory_hit_carries_doc_text`. Record verbatim in the report. If the command offers no overlay,
+      use `--worktree` against a scratch checkout whose lanes.rs is the pre-83 copy.
 - [ ] With spec 83 applied to the same export (`--worktree`), the same command exits 0
 - [ ] `cargo test -p xtask` exits 0 and `cargo clippy --workspace --all-targets -- -D warnings` exits 0
 - [ ] `cargo run -q -p xtask -- lint-files` exits 0 with no new warning
