@@ -2,115 +2,83 @@
 
 **Project**: /projects/pi-improved
 **Phase**: P0/P1, observability — user directive (2026-10-09): *"observability is the basis of the self
-improvement loop pilar"*. Rationale: `_docs/06-research/053-…md` §8. This spec extends the contract
-with CORRELATION and adds the durable trajectory sink; it does not build skill extraction.
+improvement loop pilar"*. Rationale: `_docs/06-research/053-…md` §8. This spec extends the contract with
+CORRELATION and adds the durable trajectory sink; it does NOT build skill extraction.
 
 ## Context
 Pillar 4 (`001-pii-vision.md`) is skills + procedural templates + trajectory logging for later
 fine-tuning, with `outcome.verifier`, `user_signal`, `escalation` and mandatory `redaction` — and it is
-UNBUILT (052 §5.1). Every element of it is an observation, so the cheapest route is to make the
-existing observability stream *sufficient* as a trajectory corpus. Spec 97 landed the contract
+UNBUILT (052 §5.1). Every element of it is an observation, so the cheapest route is to make the existing
+observability stream *sufficient* as a trajectory corpus. Spec 97 landed the contract
 (`Event { subsystem, level, kind, fields, span }`) but **without run/session correlation**, which a
 trajectory requires.
 
+Already landed by the earlier parts of this lane (do NOT redo; use it): the contract crate `pii-observe`
+(97), the failing gate step `lint-observability` with a **complete** name registry (98, R1e), health
+identity + `pii health --json` (99), the adoption sweep — fifteen crates emit, each with a named-event
+test (100, 101), and the **bounded** exemption registry + per-file print budget (102). So: a new
+`pub const` in `names.rs` MUST be listed in `ALL` or the gate goes red, and a new raw print MUST fit the
+file's budget or the gate goes red. Work with that, not around it.
+
 ## Requirements
-R1. **Extend `pii-observe`** with correlation and outcome (additive, serde-stable):
+R1. **Extend `pii-observe`** with correlation, outcome and redaction (additive, serde-stable):
     - `Event` gains `run: Option<RunId>`, `session: Option<SessionId>` (string newtypes), keeping `span`.
-    - An explicit outcome type mirroring the engine's terminal: `Outcome { Verdict, reason, detail }`
+      Old payloads must still deserialize (a test pins a pre-103 JSON line).
+    - An explicit outcome type mirroring the engine's terminal: `Outcome { verdict, reason, detail }`
       with `Verdict { Success, Failure, Cancelled, Suspended }`, carried by a dedicated event kind
       (`run.outcome`) — the record must carry the terminal **verbatim**, not a re-derived summary.
     - `Redaction` — a policy trait (`fn redact(&self, field: &str, value: &str) -> Redaction`) plus a
-      `Redaction::Keep | Drop | Replace(String)` result and a `NoRedaction` default.
-R2. **The trajectory sink** (`pii-observe` types; the file-writing implementation may live in
-    `pii-core`/`pii-server` where the runtime lives — say which you chose and why):
-    - append-only, one JSON object per line, one file per run at a **caller-supplied root**
-      (`<root>/trajectories/<run_id>.jsonl`), created on first event of that run;
+      `Redaction::{Keep, Drop, Replace(String)}` result and a `NoRedaction` default.
+    - Every new metric/event name goes in `names.rs` **and** in `ALL` (the lint enforces completeness).
+R2. **The trajectory sink** (types in `pii-observe`; say where you put the file-writing implementation and
+    why):
+    - append-only, one JSON object per line, one file per run at a caller-supplied root
+      (`<root>/trajectories/<run_id>.jsonl`), created on the first event of that run;
     - takes an `Arc<dyn Redaction>` and applies it to every field **at the sink** (never at the call
       site) — including `fields` keys and the outcome detail;
-    - never deletes or truncates a trajectory; a write failure is reported as an observability event
-      (`PersistError`-style) and never panics or aborts the run;
+    - never deletes, truncates or rewrites a trajectory; a write failure is reported as an observability
+      event and never panics or aborts the run;
     - bounded: a per-run cap (bytes or events) with a `trajectory.truncated` event when hit, so a
       runaway run cannot fill the disk.
 R3. **Wire it** so a real run produces a trajectory today: `pii -p` and `pii graph run` (and the daemon's
-    run engine) attach the sink, honouring an env/config switch
-    (`PII_TRAJECTORY_DIR`, default OFF so existing behaviour and tests are unchanged unless opted in),
-    and the daemon's config `[core]` gains an optional `trajectory_dir`.
+    run engine) attach the sink, honouring `PII_TRAJECTORY_DIR` (default OFF) plus an optional
+    `trajectory_dir` in the daemon config. Existing behaviour and tests must be byte-identical when unset.
 R4. **Prove it end-to-end, with the numbers**: run a real
     `pii -p "…" --model ollama:<a small local model>` with `PII_TRAJECTORY_DIR` set, and paste:
-    - the resulting file path and line count;
+    - the resulting file path and `wc -l`;
     - the `run.outcome` line verbatim;
-    - the line count WITH and WITHOUT redaction exercised (a test that redacts a field, showing the
-      sink dropped/replaced it while the original event was unaffected);
-    - your test must also assert a FAILED run records `Verdict::Failure` — **a failed run must never
-      record success.**
-R5. **A negative case per new measure (mandatory)**: for the outcome event and the truncation event,
-    a test that shows the event does NOT appear when the thing did not happen (a successful run emits no
-    failure outcome; a short run emits no truncation).
-R6. **BOUND THE EXEMPTION MECHANISM (orchestrator finding, 2026-10-09):** today an exemption is a
-    comment inside the crate's own source (`const EXEMPT_MARK: &str = "// observability: none"`, parsed by
-    `xtask/src/lint_observability.rs`), so any run can exempt any crate by writing one line — spec 98's
-    lint went green exactly that way for 19 crates. Move the exemption set OUT of the crate sources into
-    a checked-in registry `xtask/observability-exemptions.txt`, one `<crate>  # reason` per line, and
-    change the lint to read it. It must then:
-    - fail when a crate is exempt in the registry but ALSO carries a real seam (a dead exemption must not
-      linger) and when a crate has neither a seam nor a registry entry (unchanged R1a/R1b);
-    - report the registry size in its summary line, so an added exemption is a visible, reviewable diff
-      in ONE file rather than a line hidden in a crate;
-    - keep the sanctioned set minimal and named: `pii-abi`, `pii-proto`, `pii-uds`, `pii-observe` (pure
-      types / the contract itself). Any entry beyond that set is a finding, not a pass.
-    Remove the in-source `// observability: none` lines from every crate as part of this.
-R7. **AN ADEQUACY FLOOR, not just presence:** for every crate that is NOT exempt, add ONE test that
-    asserts a specific event or measure from that crate is emitted with the expected name (use
-    `pii_observe::names` consts, not literals) — e.g. `pii-store` asserting a persist-error event,
-    `pii-net` an egress denial, `pii-tools` a deny-list hit. The report must include a table
-    `crate → test name → the name asserted`, and the tests must actually run (paste the run). A seam that
-    nothing ever exercises is the same defect class this repo keeps finding: the check must be able to
-    fail.
-R6b — **FIX THE ALLOWLIST KEYING (orchestrator-measured churn):** the print allowlist is keyed
-    `file:line`, so ANY edit above a listed print invalidates the entry. Measured: spec 99 shifted 12
-    lines in `pii-cli/src/main.rs` and the allowlist diff was 16 lines for **142 entries before and
-    142 after** — pure churn, zero information. Re-key it as a **per-file budget**:
-    `path  # reason  # N` (N = how many raw prints that file may still contain), and fail when a file
-    contains MORE prints than its budget. Consequences: line shifts cost nothing, adding a print to an
-    allowlisted file still fails, and the file shrinks toward zero as the sweep converts sites.
-    Do NOT switch to an inline `// obs-allow` marker at the print site — that reintroduces the
-    self-granted-exemption problem R6 exists to remove.
-R9. **MAKE THE SEAM STRUCTURALLY COMPULSORY where the language allows it** (user question, 2026-10-09:
-    *"there is nothing like a java interface that all crates must implement?"* — correct, and neither
-    Rust nor Java can express "every package implements X"; a trait binds a TYPE, not a crate). So:
-    - **Constructor injection**: for every crate whose subsystem the engine constructs, put the observer
-      in the constructor (`Store::open(path, obs)`, `NetService::new(cfg, obs)`, …) so a caller cannot
-      build the subsystem without a seam. Where a crate has no constructor (free functions, consts),
-      say so in the report instead of inventing one.
-    - **A named registry pinned by a test**: the daemon's health aggregator must register its
-      subsystems and a test must assert the registered set **by name** (e.g.
-      `["store","memory","net","worker","channels","graph"]`), holding them as `&dyn pii_observe::Health`.
-      Consequence: a crate that drops its `Health` impl fails to compile the aggregator, and a subsystem
-      that is added but not registered fails that test — enforcement by type + test, not only by lint.
-    - Mutation control: removing one registration must turn that test RED (paste it).
-R8. Do NOT build skill extraction, distillation, or any learning loop in this spec — this spec ends at
-    "trajectories are on disk, correlated, redacted, with verbatim outcomes". Any temptation to infer
-    from them belongs to a later spec. `specs/` stays read-only for you.
+    - the line count WITH and WITHOUT redaction exercised (a test that redacts a field, showing the sink
+      dropped/replaced it while the original event was unaffected);
+    - a test asserting a FAILED run records `Verdict::Failure` — **a failed run must never record
+      success** (the laya lesson: a metric that swallowed an exit code produced a 70× fake win).
+R5. **A negative case per new measure (mandatory)**: for the outcome event and the truncation event, a
+    test showing the event does NOT appear when the thing did not happen (a successful run emits no
+    failure outcome; a short run emits no truncation; the sink OFF writes nothing).
+R6. Do NOT build skill extraction, distillation, or any learning loop in this spec — this spec ends at
+    "trajectories are on disk, correlated, redacted, with verbatim outcomes". Inferring from them is a
+    later spec.
 
 ## Exit Criteria
-- [ ] **the placeholder debt is GONE**: `grep -rc 'pending the spec 100 adoption sweep' crates/ | grep -v ':0'` is empty, and `cargo run -q -p xtask -- lint-observability` reports an exempt-crate count equal to the sanctioned set only (`pii-abi`, `pii-proto`, `pii-uds`, `pii-observe` — each with the reason for being exempt, or a real seam if it emits)
-- [ ] **every other crate has a real seam**: the lint reports 0 crates exempt outside the sanctioned set in `xtask/observability-exemptions.txt`, i.e. R1b passes on actual `pii_observe::` use; `grep -rn '// observability: none' crates/` is EMPTY (the mechanism moved out of the sources)
-- [ ] **the exemption is bounded**: with a 5th crate added to the registry, the lint exits non-zero (control, pasted); with a listed crate given a real seam, the lint exits non-zero as a dead exemption (control, pasted)
-- [ ] **the adequacy floor**: one passing test per non-exempt crate asserting a named event/measure from that crate, with the `crate → test → name` table in the report
-- [ ] **the seam is compulsory by type/registration** (R9): the aggregator's registered subsystem set is asserted by name in a test, and removing one registration turns that test RED (paste both runs); every crate the engine constructs takes its observer in the constructor (list them, or state which have no constructor)
-- [ ] the raw-print allowlist (now a per-file budget, R6b) shrank: report the total budget before/after and every remaining entry's reason (0 is the goal; a named few is acceptable if each is justified), and show that a 13th print added to an allowlisted file FAILS the lint (control, pasted)
-- [ ] `cargo test -p pii-observe` exits 0, including: serde round-trip of the extended `Event`, the redaction matrix (Keep/Drop/Replace), the truncation cap, and the "failed run records Failure" case
-- [ ] an end-to-end run with `PII_TRAJECTORY_DIR` set produces `<root>/trajectories/<run_id>.jsonl`; paste the path, `wc -l`, and the `run.outcome` line
-- [ ] a run WITHOUT the env var produces no trajectory file (and no behaviour change to stdout ndjson)
-- [ ] with redaction configured, a chosen field is absent/replaced in the trajectory while the same field is intact in the stdout stream (paste both)
-- [ ] `cargo test --workspace --lib --bins --tests` exits 0; `bash quality-gate.sh` exits 0 with `PASS: lint-observability`; `cargo run -q -p xtask -- fresh-gate --worktree` prints `fresh-gate: PASS`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` exit 0; `lint-files` clean
+- [ ] `cargo test -p pii-observe` exits 0, including: serde round-trip of the extended `Event`, a
+      **pre-103 payload still deserializes**, the redaction matrix (Keep/Drop/Replace), the truncation
+      cap, and the "failed run records Failure" case
+- [ ] an end-to-end run with `PII_TRAJECTORY_DIR` set produces `<root>/trajectories/<run_id>.jsonl`; paste
+      the path, `wc -l`, and the `run.outcome` line
+- [ ] a run WITHOUT the env var produces no trajectory file and the stdout ndjson stream is unchanged
+      (paste both)
+- [ ] with redaction configured, the chosen field is absent/replaced in the trajectory while the same
+      field is intact in the stdout stream (paste both)
+- [ ] the negative cases (R5) are pasted: no failure outcome on a successful run, no truncation on a
+      short run, nothing written with the sink off
+- [ ] `bash quality-gate.sh` exits 0 with `PASS: lint-observability`; `cargo run -q -p xtask -- fresh-gate
+      --worktree` prints `fresh-gate: PASS`
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` exit 0
 - [ ] the report lists every file changed and names the exact env var and config key that enable the sink
 
 ## Guardrails
 - REDACTION AT THE SINK, never at the call site. A policy that can be forgotten is not a policy.
 - The trajectory root must default OFF; no existing test may start writing files.
-- Never delete, truncate or rewrite a trajectory file — append only, and report failures as events.
+- Never delete, truncate or rewrite a trajectory file — append only; report failures as events.
 - Do NOT put secret material into the contract types, and do NOT log env values or tokens.
 - Do NOT change the wire types in `pii-proto` in this spec.
 - Do NOT edit any file under `specs/`.
