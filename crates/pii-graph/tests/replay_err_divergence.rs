@@ -1,7 +1,7 @@
 //! Spec 93 measurement (spec 91 finding 6): does `replay` discarding
 //! `apply_completion`'s `Err` (loop budget exceeded) change the resumed run
-//! versus the live run? Answer: yes when the budget-exhausting execution is
-//! not followed by a loop re-entry (see `replay_loses_activation_on_loop_budget_err`).
+//! versus the live run? Answer: yes before spec 94, when the budget-exhausting execution is
+//! not followed by a loop re-entry (see `replay_matches_live_on_loop_budget_err`, fixed by spec 94).
 
 #![allow(
     clippy::unwrap_used,
@@ -134,24 +134,15 @@ fn replay_matches_live_when_budget_err_is_followed_by_reentry() {
     assert_eq!(live, replayed);
 }
 
-/// DEFECT RECORD (spec 93, finding 6): pins CURRENT behaviour, not desired.
+/// Spec 94: replay applies the same failure handling as `dispatch::apply`.
 ///
 /// `loop_budget = 1`: `fix` finishes once and `apply_completion` returns
 /// `Err("loop_budget exceeded")` BEFORE firing `fix`'s outbound edges. Live,
-/// `dispatch::apply` recovers by `apply_failed_or_cancelled` (fix->gate
-/// edge `Dead`), `st.failed.insert(fix)` and `failure = Some(..)`, so the
-/// run ends `loop_budget exceeded for node 'fix'`. Replay discards the `Err`:
-/// `fix` has a `NodeFinished` (so `NodeFailed` recovery is excluded and none
-/// is journaled anyway), the fix->gate edge stays `Pending` and `failure`
-/// stays `None`, so the resumed run ends `no progress: node 'gate' never
-/// became ready`.
-///
-/// Counter-example (live): fix->gate `Dead`, fix in `failed`, failure =
-/// "`loop_budget` exceeded for node 'fix'". Replayed: fix->gate `Pending`, fix
-/// not in `failed`, failure `None`. A fix spec must make `replay` apply the
-/// same failure handling as `dispatch::apply` on the `Err`.
+/// `dispatch::apply` marks the fix->gate edge `Dead`, inserts `fix` into
+/// `failed` and sets `failure`. Replay does the same on the `Err`, so the
+/// resumed run ends in the identical terminal.
 #[test]
-fn replay_loses_activation_on_loop_budget_err() {
+fn replay_matches_live_on_loop_budget_err() {
     let (live, replayed) = live_then_replayed(&verify_fix_spec(1));
     assert_eq!(
         live,
@@ -159,10 +150,5 @@ fn replay_loses_activation_on_loop_budget_err() {
             error: "loop_budget exceeded for node 'fix'".into()
         }
     );
-    assert_eq!(
-        replayed,
-        Terminal::Failure {
-            error: "no progress: node 'gate' never became ready".into()
-        }
-    );
+    assert_eq!(live, replayed);
 }

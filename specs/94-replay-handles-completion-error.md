@@ -54,3 +54,21 @@ R4. Re-run the measurement: the report must show the SAME experiment (`fix(loop_
 - Do NOT weaken the control test, and do NOT remove the `Err` handling from `dispatch::apply`.
 - Scratch under `/projects/_tmp/`; delete your own exports (one fresh-gate export is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result (2026-10-09) — the divergence is gone, and the test now pins the fix
+- `replay` mirrors `dispatch::apply` on `Err`: `apply_failed_or_cancelled` + `failed.insert` + `failure = Some(e)`
+  + skip the completion bookkeeping; the `let _ =` and its `#[allow]` are gone.
+- R2 answered by CHANGING the order: replay now records on the blackboard BEFORE `apply_completion`, as the
+  live path does (harmless on the success path — `apply_completion` never reads the blackboard).
+- Beyond the spec, flagged by the worker: the `Err` path still calls `suspended.remove(node)`, as replay's
+  other failure branches do; the live path has no equivalent because a node that just finished is not
+  suspended. Kept and recorded.
+- **REMEASURE** (`_tmp/spec94/REMEASURE.md`): before — live `loop_budget exceeded for node 'fix'`,
+  replayed `no progress: node 'gate' never became ready`; after — both `Failure { error: "loop_budget
+  exceeded for node 'fix'" }`.
+- **Reverse mutation reproduced by the ORCHESTRATOR**: restoring HEAD's discard turns
+  `replay_matches_live_on_loop_budget_err` RED with exactly
+  `left: loop_budget exceeded … / right: no progress: node 'gate' never became ready`, while the control
+  stays green. So the rewritten test pins the fix rather than describing it.
+- `sched/dispatch.rs` unchanged (live path untouched); only the two files above moved.
+- Both gates green: `quality-gate.sh` ALL PASS · `fresh-gate --worktree` PASS.

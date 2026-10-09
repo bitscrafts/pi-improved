@@ -119,12 +119,19 @@ pub(crate) fn replay(
             RunEvent::NodeFinished {
                 node, port, value, ..
             } => {
-                // Replay of an already-journaled completion: the activation
-                // outcome is irrelevant, only the state mutation matters.
-
-                #[allow(clippy::let_underscore_must_use)] // replay: activation outcome irrelevant
-                let _ = crate::sched::state::apply_completion(spec, st, node, port, value);
+                // Mirror `dispatch::apply`: record on the blackboard BEFORE
+                // `apply_completion`, and treat its `Err` (loop-budget
+                // violation) as the terminal node failure the live path made.
                 bb.write().record(node.as_str(), value.clone());
+                if let Err(e) = crate::sched::state::apply_completion(spec, st, node, port, value) {
+                    crate::sched::state::apply_failed_or_cancelled(spec, st, node);
+                    st.failed.insert(node.clone());
+                    if failure.is_none() {
+                        *failure = Some(e);
+                    }
+                    suspended.remove(node);
+                    continue;
+                }
                 fin.push(FinishedNode {
                     node: node.clone(),
                     port: port.clone(),
