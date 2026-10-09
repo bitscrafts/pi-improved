@@ -65,6 +65,9 @@ pub struct Store {
     /// When set, [`Store::get_run`] fails with a synthetic error
     /// (test instrumentation; resume fail-closed tests).
     fail_get_run_for_test: std::sync::atomic::AtomicBool,
+    /// When set, [`Store::get_graph`] fails with a synthetic error
+    /// (test instrumentation; resume fail-closed tests).
+    fail_get_graph_for_test: std::sync::atomic::AtomicBool,
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
@@ -150,6 +153,7 @@ impl Store {
             fail_append_events_for_test: AtomicU64::new(0),
             fail_read_journal_for_test: std::sync::atomic::AtomicBool::new(false),
             fail_get_run_for_test: std::sync::atomic::AtomicBool::new(false),
+            fail_get_graph_for_test: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -239,6 +243,9 @@ impl Store {
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb failure.
     pub fn get_graph(&self, sha_or_hash: &str) -> Result<Option<Vec<u8>>, PiiError> {
+        if let Some(e) = self.injected_get_graph_error() {
+            return Err(e);
+        }
         let read = self
             .db
             .begin_read()
@@ -643,5 +650,49 @@ mod tests {
         assert!(matches!(err, pii_abi::PiiError::StoreOp { .. }));
         let msg = err.to_string();
         assert!(msg.starts_with("store op open on "), "{msg}");
+        // The resource at this site is the FULL database path (not a table
+        // name): `Store::open` has only the path to name the thing it failed
+        // to open.
+        assert!(
+            msg.starts_with(&format!("store op open on {}: ", dir.display())),
+            "{msg}"
+        );
+        assert!(
+            msg.ends_with(": I/O error: Is a directory (os error 21)"),
+            "{msg}"
+        );
+    }
+
+    /// Spec 92 R4: creates a database whose table `name` already exists with
+    /// a DIFFERENT type, so `Store::open` fails at that table's `open_table`.
+    fn open_with_mismatched_table(tag: &str, name: &'static str) -> String {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{tag}-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let db = redb::Database::create(&path).unwrap();
+            let write = db.begin_write().unwrap();
+            let wrong: redb::TableDefinition<'_, u8, u8> = redb::TableDefinition::new(name);
+            write.open_table(wrong).unwrap();
+            write.commit().unwrap();
+        }
+        let Err(err) = Store::open(&path) else {
+            panic!("opening a store with a mistyped `{name}` table must fail");
+        };
+        err.to_string()
+    }
+
+    /// Pins the FULL message (op, resource, detail) at table-open sites so a
+    /// swapped op/resource pair at any of them fails.
+    #[test]
+    fn open_table_failures_render_op_resource_and_detail() {
+        for name in ["meta", "graph_body", "run"] {
+            let msg = open_with_mismatched_table(&format!("mismatch-{name}"), name);
+            assert_eq!(
+                msg,
+                format!("store op open on {name}: {name} is of type Table<u8, u8>")
+            );
+        }
     }
 }

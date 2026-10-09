@@ -44,3 +44,24 @@ R5 (finding 5 — prefix-only assertion): `open_failure_renders_structured_store
 - Do NOT re-litigate spec 91's already-RED rows; they are proven.
 - Scratch under `/projects/_tmp/`; delete your own exports (one ≈ 8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result (2026-10-09) — 4 of 5 findings closed, and the 5th is honestly residual
+Mutation log: `/projects/_tmp/spec92/MUTATION-LOG.md`. Tree had 0 changes under `specs/`; both gates green.
+
+**CLOSED (each mutant re-applied → RED, restored → green):**
+- finding 1 — new `get_graph` fault seam + `resume_fail_closed_on_graph_body_fault` and
+  `resume_fail_closed_on_graph_body_unparsable` (the fault is now named for what it covers).
+- finding 2 — `seed_real_run` seeds FINITE limits and `resume_carries_recovered_finite_limits` asserts the
+  resumed run enforces them (mutant: budget forced to `u64::MAX` → RED).
+- finding 3 — the wiring gap spec 88 admitted is now pinned: `reactive_loop_lag_rearms_cron_chain_for_lost_run_finished`
+  drives the REAL loop. **Orchestrator reproduced the teeth**: deleting `lag::recover_finished(&engine, &ctx);`
+  from the `Lagged` arm turns it RED with `lost RunFinished must be recovered by the loop's Lagged arm`.
+- finding 4 (partial: `:113` open/graph_body site) — `open_table_failures_render_op_resource_and_detail`.
+- finding 5 — the prefix assertion now pins the resource: `starts_with("store op open on <dir>: ")`.
+
+**STILL GREEN — residual, with the reason stated (worker followed the guardrail instead of bending a test):**
+- `pii-store/src/lib.rs:96` (`begin_write`/`db`), `:103` (`read`/`run_counter`), `:357` (`commit`/`events`):
+  catching an op/resource swap there requires an INDUCED redb failure (a `begin_write` / table-`get` /
+  `commit` error), and there is no test-only way to induce one today. Reported rather than worked around.
+  Closing these needs a store-level fault seam for redb itself, which is a production-testability change —
+  its own spec if wanted. **Register row: pii R5b-residual.**

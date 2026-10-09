@@ -563,13 +563,25 @@ mod tests {
     /// `graph` names it, and a journal `Started` event — enough for
     /// `spawn_resume` to get past the header/graph/budget recovery.
     fn seed_real_run(engine: &crate::Engine, run: &pii_abi::RunId) {
+        seed_run_with_graph(engine, run, &graph_json(1_000_000));
+    }
+
+    /// Graph body with FINITE limits (spec 92 R2): never `u64::MAX`, so a
+    /// resume that ignores the recovered limits is distinguishable.
+    fn graph_json(max_tokens: u64) -> Vec<u8> {
+        let mut spec = pii_graph::load_toml(
+            "name = \"resume-probe\"\nentry = \"step\"\ncaps = []\n\n[[node]]\nid = \"step\"\nkind = \"transform\"\nvalue = \"ok\"\n",
+        )
+        .unwrap();
+        spec.limits.max_tokens = max_tokens;
+        spec.limits.max_tool_calls = 50;
+        spec.limits.max_micro_usd = 5_000_000;
+        serde_json::to_vec(&spec).unwrap()
+    }
+
+    fn seed_run_with_graph(engine: &crate::Engine, run: &pii_abi::RunId, graph_body: &[u8]) {
         use pii_abi::{RunEvent, RunHeader, RunStatus};
-        let graph_hash = engine
-            .store
-            .put_graph(
-                br#"{"name":"resume-probe","caps":0,"nodes":[],"edges":[],"entry":"n0","limits":{"max_steps":1000,"max_wall_ms":600000,"max_tokens":18446744073709551615,"max_micro_usd":18446744073709551615,"max_tool_calls":18446744073709551615,"max_parallel":0}}"#,
-            )
-            .unwrap();
+        let graph_hash = engine.store.put_graph(graph_body).unwrap();
         let input_hash = engine
             .store
             .put_graph(br#"{"prompt":"resume probe"}"#)
@@ -616,15 +628,76 @@ mod tests {
         );
     }
 
-    /// Spec 78 R2: a failed graph/run lookup must fail the resume, never
-    /// fall back to an unlimited budget.
+    /// Spec 78 R2 / spec 92 R1: a `get_run` (header) fault must fail the
+    /// resume, never fall back to an unlimited budget.
     #[tokio::test(flavor = "current_thread")]
-    async fn resume_fail_closed_on_graph_lookup_fault() {
-        let (_dir, engine) = fault_engine("resume-fail-graph-");
-        let run = pii_abi::RunId::from("r-fault-graph");
+    async fn resume_fail_closed_on_run_header_fault() {
+        let (_dir, engine) = fault_engine("resume-fail-header-");
+        let run = pii_abi::RunId::from("r-fault-header");
         engine.store.set_fail_get_run_for_test(true);
         let res = super::spawn_resume(std::sync::Arc::clone(&engine), run, None);
-        assert!(res.is_err(), "graph-lookup fault must fail the resume");
+        assert!(res.is_err(), "run-header fault must fail the resume");
         assert!(engine.runs.lock().is_empty());
+    }
+
+    /// Spec 92 R1: the GRAPH BODY step. An unreadable body must refuse the
+    /// resume (distinct from the header fault above) and register no run.
+    #[tokio::test(flavor = "current_thread")]
+    async fn resume_fail_closed_on_graph_body_fault() {
+        let (_dir, engine) = fault_engine("resume-fail-body-");
+        let run = pii_abi::RunId::from("r-fault-body");
+        seed_real_run(&engine, &run);
+        engine.store.set_fail_get_graph_for_test(true);
+        let err = super::spawn_resume(std::sync::Arc::clone(&engine), run, None)
+            .expect_err("unreadable graph body must refuse the resume");
+        assert!(
+            err.to_string().contains("refused (graph unreadable)")
+                && err.to_string().contains("injected get_graph fault"),
+            "{err}"
+        );
+        assert!(engine.runs.lock().is_empty());
+    }
+
+    /// Spec 92 R1: an unparsable graph body refuses the resume.
+    #[tokio::test(flavor = "current_thread")]
+    async fn resume_fail_closed_on_graph_body_unparsable() {
+        let (_dir, engine) = fault_engine("resume-fail-parse-");
+        let run = pii_abi::RunId::from("r-fault-parse");
+        seed_run_with_graph(&engine, &run, b"this is not a graph");
+        let err = super::spawn_resume(std::sync::Arc::clone(&engine), run, None)
+            .expect_err("unparsable graph body must refuse the resume");
+        assert!(
+            err.to_string().contains("refused (graph unparsable)"),
+            "{err}"
+        );
+        assert!(engine.runs.lock().is_empty());
+    }
+
+    /// Spec 92 R2: the resumed run must carry the RECOVERED limits. The graph
+    /// declares `max_tokens: 0`; the engine fails a run whose token budget is
+    /// exhausted before dispatching anything, so a resume that forced
+    /// `u64::MAX` would NOT fail with this error.
+    #[tokio::test(flavor = "current_thread")]
+    async fn resume_carries_recovered_finite_limits() {
+        let (_dir, engine) = fault_engine("resume-limits-");
+        let run = pii_abi::RunId::from("r-limits");
+        seed_run_with_graph(&engine, &run, &graph_json(0));
+        super::spawn_resume(std::sync::Arc::clone(&engine), run.clone(), None).unwrap();
+        let mut found = false;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            let journal = engine.store.read_journal(&run).unwrap();
+            found = journal
+                .iter()
+                .any(|(_, e)| format!("{e:?}").contains("budget exhausted: Tokens"));
+            if found {
+                break;
+            }
+        }
+        assert!(
+            found,
+            "resumed run must enforce the recovered max_tokens=0: {:?}",
+            engine.store.read_journal(&run).unwrap()
+        );
     }
 }

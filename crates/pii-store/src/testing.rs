@@ -47,6 +47,12 @@ impl Store {
         self.fail_get_run_for_test.store(fail, Ordering::Relaxed);
     }
 
+    /// **Test instrumentation only.** While set, [`Store::get_graph`] fails
+    /// with a synthetic [`crate::PiiError::Internal`].
+    pub fn set_fail_get_graph_for_test(&self, fail: bool) {
+        self.fail_get_graph_for_test.store(fail, Ordering::Relaxed);
+    }
+
     /// The synthetic error [`Store::append_events`] returns while the counter is
     /// armed (each call decrements it).
     pub(crate) fn injected_append_events_error(&self) -> Option<PiiError> {
@@ -67,6 +73,16 @@ impl Store {
         if self.fail_get_run_for_test.load(Ordering::Relaxed) {
             return Some(PiiError::Internal(String::from(
                 "store: injected get_run fault",
+            )));
+        }
+        None
+    }
+
+    /// The synthetic error [`Store::get_graph`] returns while armed.
+    pub(crate) fn injected_get_graph_error(&self) -> Option<PiiError> {
+        if self.fail_get_graph_for_test.load(Ordering::Relaxed) {
+            return Some(PiiError::Internal(String::from(
+                "store: injected get_graph fault",
             )));
         }
         None

@@ -229,4 +229,85 @@ mod tests {
         assert_eq!(runs.len(), 1, "next firing must have started: {runs:?}");
         assert!(runs.values().all(|n| n == "job"));
     }
+
+    /// Spec 92 R3: the REAL `reactive_loop` must call `recover_finished` on a
+    /// `Lagged` receive (the test above calls the helper directly, so it
+    /// cannot pin the wiring). The bus is flooded past capacity before the
+    /// loop's first read, so tokio itself reports the lag.
+    #[tokio::test]
+    async fn reactive_loop_lag_rearms_cron_chain_for_lost_run_finished() {
+        let tmp = scratch("lag-loop-cron-");
+        let dir = tmp.path().to_path_buf();
+        std::fs::write(
+            dir.join("tick.toml"),
+            "name = \"tick\"\nentry = \"step\"\ncaps = []\n\n[[node]]\nid = \"step\"\nkind = \"transform\"\nvalue = \"ok\"\n",
+        )
+        .unwrap();
+        let engine = engine_in(&dir);
+        let mut h = header("r-cron-old", RunStatus::Succeeded);
+        engine
+            .store
+            .append_event(
+                &mut h,
+                &RunEvent::Finished {
+                    terminal: Terminal::Success {
+                        output: serde_json::json!("ok"),
+                    },
+                    output_hash: String::new(),
+                },
+            )
+            .unwrap();
+        let ctx = test_ctx(&dir);
+        ctx.cron.lock().insert(
+            String::from("job"),
+            CronEntry {
+                name: String::from("job"),
+                graph: String::from("tick"),
+                schedule: String::from("* * * * *"),
+                input: serde_json::json!({}),
+            },
+        );
+        ctx.cron_runs
+            .lock()
+            .insert(String::from("r-cron-old"), String::from("job"));
+        let wheel = Arc::new(TimerWheel::open(&dir.join("timer.redb")).unwrap());
+        let scheduler = Scheduler::new(
+            Arc::clone(&engine),
+            Arc::clone(&wheel),
+            Arc::new(FixedClock::new()),
+        );
+
+        let rx = engine.bus.subscribe();
+        for i in 0..5_000u64 {
+            engine.bus.broadcast(Event::Lagged {
+                sub_id: String::from("burst"),
+                dropped: i,
+            });
+        }
+        let handle = tokio::spawn(super::super::reactive_loop(
+            Arc::clone(&engine),
+            Arc::clone(&ctx),
+            scheduler,
+            rx,
+        ));
+
+        let mut runs = ctx.cron_runs.lock().clone();
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            runs = ctx.cron_runs.lock().clone();
+            if !runs.contains_key("r-cron-old") {
+                break;
+            }
+        }
+        handle.abort();
+        assert!(
+            !runs.contains_key("r-cron-old"),
+            "lost RunFinished must be recovered by the loop's Lagged arm: {runs:?}"
+        );
+        assert_eq!(
+            runs.len(),
+            1,
+            "next cron firing must have started: {runs:?}"
+        );
+    }
 }
