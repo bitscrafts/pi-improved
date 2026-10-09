@@ -64,3 +64,34 @@ R7. **A real deploy artefact**: a `Dockerfile` **and/or** a systemd unit that bu
 - Secrets (tokens, keys) never go into the config sample, the log file, or the health output.
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+**The static claim is now TRUE, and only where it is true.** The musl target installed, and the release
+build produced a **4,596,744-byte static-pie binary**. `_docs/01-overview/001-pii-vision.md` was corrected:
+the headline now reads "a single Rust binary (`pii`; statically linked when built for
+`x86_64-unknown-linux-musl`)", with a status block stating that the DEFAULT build is dynamically linked —
+and that `pii-web`, `pii-mcp` and `pii-evolve` were NOT measured. That last sentence is the honesty the
+old claim lacked.
+
+**Reproduced by the orchestrator (my runs):**
+```
+file target/.../musl/release/pii → ELF 64-bit LSB pie executable, x86-64, static-pie linked, stripped
+ldd  → "statically linked"
+pii daemon --help → rc=0, real flags listed;  --bogus → rc=2, "unknown flag"
+health with NO daemon        → rc=2     health against a LIVE daemon → rc=0
+   live: {"path":"…/data/store.redb","bytes":1056768,"runs":0}
+kill -9 → restart same cmd → rc=0, store intact (same path, same bytes)
+rotation (my own focused check): 5 daemon starts with --log-rotate-bytes 120 --log-keep-files 2
+   → exactly pii.log 125B, pii.log.1 195B, pii.log.2 125B  (bounded at keep+1)
+daemons left running → 0
+systemd-analyze verify deploy/pii.service → rc=0
+```
+Gates: `quality-gate.sh` ALL PASS (incl. `PASS: lint-observability`) · `fresh-gate --worktree` PASS.
+
+**Limits the worker stated, kept here:** the Dockerfile is UNTESTED (no Docker on this host); the systemd
+unit passed `systemd-analyze verify` but was never run as a service; there is no RED-first evidence for the
+CLI flag-parsing and config-key tests (code written before them). Scratch left: `/projects/_tmp/musl-target`
+(313M, the musl target dir — reusable, left in place deliberately) and `/projects/_tmp/p104`.
+Also recorded from the worker's report: the daemon does NOT create the store's parent directory (the unit
+and the Dockerfile do), and a `kill -9` leaves no `daemon.stopped` line — a log ending on `daemon.started`
+means the daemon died hard. Both are in the sample config's comments.

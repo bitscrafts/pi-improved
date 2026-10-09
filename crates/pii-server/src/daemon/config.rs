@@ -53,7 +53,21 @@ pub struct CoreSection {
     /// `<root>/trajectories/<run_id>.jsonl`. Overridden by
     /// `$PII_TRAJECTORY_DIR`. Absent = trajectories OFF.
     pub trajectory_dir: Option<String>,
+    /// Daemon log file (spec 104): contract events as JSON lines. Overridden
+    /// by `--log-file`. Absent = no log file.
+    pub log_file: Option<String>,
+    /// Rotate the log file once it would exceed this many bytes. Overridden
+    /// by `--log-rotate-bytes`. Absent = [`DEFAULT_LOG_ROTATE_BYTES`].
+    pub log_rotate_bytes: Option<u64>,
+    /// Rotated log files kept besides the live one. Overridden by
+    /// `--log-keep-files`. Absent = [`DEFAULT_LOG_KEEP_FILES`].
+    pub log_keep_files: Option<usize>,
 }
+
+/// Default size at which the log file rotates (10 MiB).
+pub const DEFAULT_LOG_ROTATE_BYTES: u64 = 10 * 1024 * 1024;
+/// Default number of rotated log files kept.
+pub const DEFAULT_LOG_KEEP_FILES: usize = 5;
 
 impl CoreSection {
     /// Resolves the effective `session_runs_cap` (D3/D6): the configured
@@ -352,6 +366,28 @@ mod tests {
         let on = Config::parse("[core]\ntrajectory_dir = \"/var/pii\"\n").unwrap();
         assert_eq!(on.core.trajectory_dir.as_deref(), Some("/var/pii"));
         assert_eq!(Config::parse("").unwrap().core.trajectory_dir, None);
+    }
+
+    #[test]
+    fn the_checked_in_production_sample_parses() {
+        let raw = include_str!("../../../../examples/pii.production.toml");
+        let cfg = Config::parse(raw).unwrap();
+        assert!(cfg.core.model.is_some());
+        assert!(cfg.core.log_file.is_some());
+        assert_eq!(cfg.core.log_keep_files, Some(5));
+    }
+
+    #[test]
+    fn log_keys_parse_and_default_to_off() {
+        let on = Config::parse(
+            "[core]\nlog_file = \"/var/log/pii.log\"\nlog_rotate_bytes = 4096\nlog_keep_files = 2\n",
+        )
+        .unwrap();
+        assert_eq!(on.core.log_file.as_deref(), Some("/var/log/pii.log"));
+        assert_eq!(on.core.log_rotate_bytes, Some(4096));
+        assert_eq!(on.core.log_keep_files, Some(2));
+        let off = Config::parse("").unwrap();
+        assert_eq!(off.core.log_file, None);
     }
 
     #[test]

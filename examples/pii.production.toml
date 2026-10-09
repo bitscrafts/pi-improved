@@ -1,0 +1,89 @@
+# Pii production config sample (spec 104). Copy to /etc/pii/pii.toml and edit.
+#
+# Every key the daemon reads is listed. The file is strict: an unknown key is a
+# load error, so a typo can never silently become "no setting".
+#
+# REQUIRED to start the daemon:  a model, from [core].model or $PII_MODEL.
+# EVERYTHING ELSE is defaulted (default stated per key). Nothing here is a
+# secret: tokens and API keys are read from the environment only
+# (PII_DISCORD_TOKEN, OLLAMA_API_KEY) and must never be written to this file.
+#
+# Not config keys (command-line flags of `pii daemon`, see `pii daemon --help`):
+#   --store <path>      store file          (default <runtime_dir>/store.redb)
+#   --workspace <dir>   workspace scope     (default: the working directory)
+#   --sandbox <p>       off | workspace     (default off; "workspace" confines
+#                       fs access to the workspace + store dir + runtime dir)
+#   --config <path>     this file           (default $PII_CONFIG, else ~/.pii/pii.toml)
+# The mounts the daemon ends up with are reported by `pii health --json`.
+
+[core]
+# REQUIRED unless $PII_MODEL is set. Model spec, e.g. "ollama:granite4.2:3b".
+model = "ollama:granite4.2:3b"
+
+# Default: $PII_RUNTIME_DIR, else a per-user dir. Holds control.sock, graphs/,
+# crashes/. Must be writable by the daemon user.
+runtime_dir = "/run/pii"
+
+# Default: $OLLAMA_HOST, else http://127.0.0.1:11434.
+ollama_host = "http://127.0.0.1:11434"
+
+# Default: built-in cap. Max runs remembered per session in memory.
+# session_runs_cap = 256
+
+# Default: OFF (key absent, $PII_TRAJECTORY_DIR unset). When set, each run
+# appends to <dir>/trajectories/<run_id>.jsonl.
+# trajectory_dir = "/var/lib/pii/trajectory"
+
+# Default: OFF (key absent). Daemon events (start/stop, startup failures,
+# refused peers, store write errors) as JSON lines, one per event, each with a
+# ts_ms stamp. The parent directory is created if missing. A kill -9 leaves no
+# daemon.stopped line: a log that ends on a daemon.started means a hard death.
+log_file = "/var/log/pii/pii.log"
+
+# Default: 10485760 (10 MiB). The file is rotated before a line would push it
+# past this size: pii.log -> pii.log.1 -> pii.log.2 ... 0 = never rotate.
+log_rotate_bytes = 10485760
+
+# Default: 5. Rotated files kept besides the live one, so disk use is bounded
+# by about (log_keep_files + 1) * log_rotate_bytes. 0 = discard on rotation.
+log_keep_files = 5
+
+# [net]: egress policy. Default: no grants (nothing may leave the host).
+[net]
+# host:port patterns every principal may reach.
+grants = ["127.0.0.1:11434"]
+# Allow loopback/private/link-local destinations. Default false.
+allow_private = true
+
+# [memory]: Default path = <runtime_dir>/memory.redb.
+[memory]
+path = ""
+
+# [[worker]]: supervised child processes. Default: none. Repeat the table.
+# [[worker]]
+# name = "w1"                  # required: grant/rpc key
+# program = "/usr/local/bin/pii" # required: program to spawn
+# args = ["worker-exec"]       # default []
+# env = []                     # default []; pairs, never secrets
+# max_in_flight = 0            # default 0 = built-in cap
+
+# [[channel]]: inbound message sources. Default: none. Repeat the table.
+# [[channel]]
+# name = "inbox"               # required
+# kind = "cli"                 # required: "cli" or "discord"
+# graph = "assistant"          # required: graph run per inbound message
+# poll_interval_ms = 500       # default 500
+# inbox = "/var/lib/pii/inbox.txt"   # "cli" kind only
+# outbox = "/var/lib/pii/outbox.txt" # "cli" kind only
+
+# [[cron]]: timer-driven graphs. Default: none. Repeat the table.
+# [[cron]]
+# name = "nightly"             # required
+# graph = "consolidate"        # required; its entry must be a timer node
+# schedule = "0 3 * * *"       # default ""; display-only mirror for cron.list
+# input = {}                   # default null; merged under the run input
+
+# [evolve.routing]: step -> model. Default: empty. Steps: localize, patch,
+# review, research, orchestrator.
+# [evolve.routing]
+# patch = "ollama:granite4.2:3b"

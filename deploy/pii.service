@@ -1,0 +1,46 @@
+# systemd unit for the pii daemon (spec 104).
+#
+# Install (as root), from a checkout, with the static musl binary built by
+#   cargo build --release --target x86_64-unknown-linux-musl -p pii-cli
+#
+#   install -m 0755 target/x86_64-unknown-linux-musl/release/pii /usr/local/bin/pii
+#   install -d /etc/pii && install -m 0644 examples/pii.production.toml /etc/pii/pii.toml
+#   install -m 0644 deploy/pii.service /etc/systemd/system/pii.service
+#   systemctl daemon-reload && systemctl enable --now pii
+#
+# Probe:   PII_RUNTIME_DIR=/run/pii pii health --json   (non-zero = not running)
+# Why did it die:  journalctl -u pii   and   tail /var/log/pii/pii.log
+[Unit]
+Description=Pii daemon
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+# Directories are created, owned by the service user and survive restarts:
+#   /var/lib/pii (store), /run/pii (runtime dir, control.sock), /var/log/pii (log file)
+StateDirectory=pii
+RuntimeDirectory=pii
+LogsDirectory=pii
+Environment=PII_RUNTIME_DIR=/run/pii
+Environment=PII_CONFIG=/etc/pii/pii.toml
+Environment=PII_MODEL=ollama:granite4.2:3b
+WorkingDirectory=/var/lib/pii
+ExecStart=/usr/local/bin/pii daemon --foreground \
+    --store /var/lib/pii/store.redb \
+    --workspace /var/lib/pii \
+    --log-file /var/log/pii/pii.log \
+    --log-rotate-bytes 10485760 --log-keep-files 5
+# A kill -9 or a crash is restarted; the store is a transactional redb file
+# and the daemon reconciles interrupted runs on boot.
+Restart=always
+RestartSec=2
+# The daemon exits 0 within 2 s of SIGTERM.
+TimeoutStopSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

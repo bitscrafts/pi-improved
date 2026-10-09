@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 
 mod event;
+mod filelog;
 mod health;
 mod measure;
 pub mod names;
@@ -27,6 +28,7 @@ mod redaction;
 mod trajectory;
 
 pub use event::{Event, Fields, Level, OwnedEvent, RunId, SessionId, SpanId};
+pub use filelog::FileLog;
 pub use health::{Health, State, SubsystemHealth};
 pub use measure::Measure;
 pub use observer::{

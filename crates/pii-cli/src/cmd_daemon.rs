@@ -1,68 +1,42 @@
 //! `pii daemon` — binds the UDS control socket, starts the daemon
 //! subsystems, and serves connections (F2.8/F2.9, F5.1-F5.5).
 
-use crate::cli_util::fail;
+use crate::cli_util::{CliObserver, fail, fail_to};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
+use pii_observe::{Event, FileLog, Level, Observer, names};
 use pii_server::daemon::{Daemon, ShutdownSignal, config::Config};
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 use tokio::net::UnixListener;
 
-/// `pii daemon [--config P] [--sandbox off|workspace] [--workspace D] [--store S]`.
+/// `pii daemon [--config P] [--sandbox off|workspace] [--workspace D] [--store S]
+/// [--log-file F] [--log-rotate-bytes N] [--log-keep-files N] [--help]`.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 #[allow(clippy::too_many_lines)] // reason: flag parsing + sandbox + config
 // resolution is one cohesive startup sequence (pre-existing pattern in this
 // file); splitting it would scatter the ordering invariants across helpers.
 pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
-    let mut workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut sandbox = SandboxProfileName::Off;
-    let mut store: Option<PathBuf> = None;
-    let mut config: Option<PathBuf> = None;
-    while let Some(flag) = args.next() {
-        let flag = flag.to_str().unwrap_or_default().to_owned();
-        match flag.as_str() {
-            "--workspace" => {
-                if let Some(v) = args.next().and_then(|a| a.into_string().ok()) {
-                    workspace = PathBuf::from(v);
-                }
-            }
-            "--store" => {
-                store = args
-                    .next()
-                    .and_then(|a| a.into_string().ok())
-                    .map(PathBuf::from);
-            }
-            "--config" => {
-                config = args
-                    .next()
-                    .and_then(|a| a.into_string().ok())
-                    .map(PathBuf::from);
-            }
-            "--sandbox" => {
-                let Some(v) = args.next().and_then(|a| a.into_string().ok()) else {
-                    fail("daemon", "--sandbox needs a value");
-                    return ExitCode::from(2);
-                };
-                match pii_tools::sandbox::parse_profile(&v) {
-                    Ok(p) => sandbox = p,
-                    Err(e) => {
-                        fail("daemon", &e);
-                        return ExitCode::from(2);
-                    }
-                }
-            }
-            // P4.5 (spec 18 R1): explicit no-op — the daemon is already
-            // foreground. The flag documents the supervisor contract and
-            // future-proofs a daemonize path; it does not change behavior.
-            "--foreground" => {}
-            other => {
-                fail("daemon", format!("unknown flag '{other}'"));
-                return ExitCode::from(2);
-            }
+    let flags = match parse_flags(args) {
+        Ok(f) => f,
+        Err(Parse::Help) => {
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), HELP.as_bytes());
+            return ExitCode::SUCCESS;
         }
-    }
+        Err(Parse::Usage(msg)) => {
+            fail("daemon", &msg);
+            return ExitCode::from(2);
+        }
+    };
+    let DaemonFlags {
+        workspace,
+        sandbox,
+        store,
+        config,
+        log,
+    } = flags;
     // Resolve the runtime dir and store path BEFORE applying the sandbox so
     // the store/runtime dirs can be granted read-write (F17, opus review):
     // a sandboxed daemon must be able to open its own database.
@@ -111,6 +85,8 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         Config::default()
     };
 
+    let log = open_log(&log, &cfg);
+
     // NET-cap wiring and the "no model configured" error both need the
     // resolved model before the engine is built (2026-09-05: `[core].model`
     // in the same config file is now a valid third source, after
@@ -118,10 +94,17 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // precedence order this restores parity with `pii -p`/`pii tui`).
     let model = cfg.resolve_model(None);
     let Some(model) = model else {
+        // Keep the historical text on stderr; the log gets the same failure.
         eprintln!("no model configured (set PII_MODEL, or [core].model in the config file)");
+        fail_to(
+            &*log,
+            "daemon",
+            "no model configured (set PII_MODEL, or [core].model in the config file)",
+        );
         return ExitCode::from(5);
     };
 
+    let model_for_log = model.clone();
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         // RSS-gate fix (2026-09-05): every run.start/resume spawns a fresh
@@ -164,7 +147,15 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         config_path,
         cfg,
         model,
+        model_for_log,
+        log.clone(),
     ));
+    log.event(&daemon_event(
+        Level::Info,
+        names::DAEMON_STOPPED,
+        code_reason(code),
+    ));
+    log.flush();
     shutdown_runtime(rt, SHUTDOWN_DRAIN_BOUND, |m| {
         #[allow(clippy::print_stderr)]
         {
@@ -172,6 +163,161 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         }
     });
     code
+}
+
+/// `pii daemon --help` text: every real flag, then the config/env surface.
+const HELP: &str = "\
+pii daemon - run the control daemon in the foreground
+
+USAGE: pii daemon [FLAGS]
+
+FLAGS:
+  --store <path>             redb store file (default: <runtime dir>/store.redb)
+  --config <path>            config TOML (default: $PII_CONFIG, else ~/.pii/pii.toml)
+  --workspace <dir>          workspace root the sandbox and tools are scoped to (default: cwd)
+  --sandbox <off|workspace>  sandbox profile (default: off; exit 4 if it cannot be enforced)
+  --log-file <path>          append daemon events as JSON lines to <path> (default: off)
+  --log-rotate-bytes <n>     rotate the log file past <n> bytes (default: 10485760)
+  --log-keep-files <n>       rotated log files to keep besides the live one (default: 5)
+  --foreground               accepted for supervisors; the daemon never forks
+  --help                     print this help and exit 0
+
+The runtime directory comes from $PII_RUNTIME_DIR, else [core].runtime_dir.
+Each --log-* flag overrides the matching [core] key (log_file, log_rotate_bytes,
+log_keep_files). Run trajectories are controlled by [core].trajectory_dir or
+$PII_TRAJECTORY_DIR (default: off). See examples/pii.production.toml.
+";
+
+/// Daemon log settings from the command line; `None` falls through to `[core]`.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct LogFlags {
+    file: Option<PathBuf>,
+    rotate_bytes: Option<u64>,
+    keep_files: Option<usize>,
+}
+
+/// The parsed `pii daemon` command line.
+#[derive(Debug)]
+struct DaemonFlags {
+    workspace: PathBuf,
+    sandbox: SandboxProfileName,
+    store: Option<PathBuf>,
+    config: Option<PathBuf>,
+    log: LogFlags,
+}
+
+/// Why parsing stopped without producing [`DaemonFlags`].
+#[derive(Debug, PartialEq, Eq)]
+enum Parse {
+    Help,
+    Usage(String),
+}
+
+/// A value-taking flag's value, or a usage error naming the flag.
+fn flag_value(
+    args: &mut dyn Iterator<Item = std::ffi::OsString>,
+    flag: &str,
+) -> Result<String, Parse> {
+    args.next()
+        .and_then(|a| a.into_string().ok())
+        .ok_or_else(|| Parse::Usage(format!("{flag} needs a value")))
+}
+
+/// Parses a numeric flag value.
+fn flag_number<T: std::str::FromStr>(
+    args: &mut dyn Iterator<Item = std::ffi::OsString>,
+    flag: &str,
+) -> Result<T, Parse> {
+    let v = flag_value(args, flag)?;
+    v.parse()
+        .map_err(|_| Parse::Usage(format!("{flag} needs a non-negative integer, got '{v}'")))
+}
+
+fn parse_flags(args: &mut dyn Iterator<Item = std::ffi::OsString>) -> Result<DaemonFlags, Parse> {
+    let mut f = DaemonFlags {
+        workspace: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        sandbox: SandboxProfileName::Off,
+        store: None,
+        config: None,
+        log: LogFlags::default(),
+    };
+    while let Some(flag) = args.next() {
+        let flag = flag.to_str().unwrap_or_default().to_owned();
+        match flag.as_str() {
+            "--help" | "-h" => return Err(Parse::Help),
+            "--workspace" => f.workspace = PathBuf::from(flag_value(args, "--workspace")?),
+            "--store" => f.store = Some(PathBuf::from(flag_value(args, "--store")?)),
+            "--config" => f.config = Some(PathBuf::from(flag_value(args, "--config")?)),
+            "--sandbox" => {
+                let v = flag_value(args, "--sandbox")?;
+                f.sandbox = pii_tools::sandbox::parse_profile(&v)
+                    .map_err(|e| Parse::Usage(e.to_string()))?;
+            }
+            "--log-file" => f.log.file = Some(PathBuf::from(flag_value(args, "--log-file")?)),
+            "--log-rotate-bytes" => {
+                f.log.rotate_bytes = Some(flag_number(args, "--log-rotate-bytes")?);
+            }
+            "--log-keep-files" => f.log.keep_files = Some(flag_number(args, "--log-keep-files")?),
+            // P4.5 (spec 18 R1): explicit no-op — the daemon is already
+            // foreground. The flag documents the supervisor contract and
+            // future-proofs a daemonize path; it does not change behavior.
+            "--foreground" => {}
+            other => return Err(Parse::Usage(format!("unknown flag '{other}'"))),
+        }
+    }
+    Ok(f)
+}
+
+/// Forwards each event to stderr (the historical `error:` line) and the log.
+struct Tee(Arc<dyn Observer>);
+
+impl Observer for Tee {
+    fn event(&self, e: &Event) {
+        CliObserver.event(e);
+        self.0.event(e);
+    }
+    fn flush(&self) {
+        self.0.flush();
+    }
+}
+
+/// The observer the daemon reports through: the rotating log file when one is
+/// configured (flag > `[core]` > off), else a no-op. A file that cannot be
+/// written is reported once on stderr and never stops the daemon.
+fn open_log(flags: &LogFlags, cfg: &Config) -> Arc<dyn Observer> {
+    use pii_server::daemon::config::{DEFAULT_LOG_KEEP_FILES, DEFAULT_LOG_ROTATE_BYTES};
+    let Some(path) = flags
+        .file
+        .clone()
+        .or_else(|| cfg.core.log_file.as_deref().map(PathBuf::from))
+        .filter(|p| !p.as_os_str().is_empty())
+    else {
+        return Arc::new(pii_observe::NullObserver);
+    };
+    let rotate = flags
+        .rotate_bytes
+        .or(cfg.core.log_rotate_bytes)
+        .unwrap_or(DEFAULT_LOG_ROTATE_BYTES);
+    let keep = flags
+        .keep_files
+        .or(cfg.core.log_keep_files)
+        .unwrap_or(DEFAULT_LOG_KEEP_FILES);
+    Arc::new(FileLog::new(path, rotate, keep).with_reporter(Arc::new(CliObserver)))
+}
+
+/// The `daemon.stopped` reason for a finished `run_daemon`.
+fn code_reason(code: ExitCode) -> &'static str {
+    if code == ExitCode::SUCCESS {
+        "signal"
+    } else if code == ExitCode::from(130) {
+        "forced"
+    } else {
+        "startup_failed"
+    }
+}
+
+fn daemon_event(level: Level, kind: &'static str, reason: &'static str) -> Event {
+    Event::new("daemon", level, kind).field("reason", reason)
 }
 
 /// How long shutdown waits for in-flight `spawn_blocking` work (heavy RPC:
@@ -215,11 +361,16 @@ async fn run_daemon(
     config_path: PathBuf,
     cfg: Config,
     model: String,
+    model_for_log: String,
+    log: Arc<dyn Observer>,
 ) -> ExitCode {
+    let fail = |stage: &'static str, m: String| {
+        fail_to(&Tee(Arc::clone(&log)), stage, &m);
+    };
     let sock_path = match pii_server::engine::uds::prepare_socket(&runtime_dir) {
         Ok(p) => p,
         Err(e) => {
-            fail("daemon", &e);
+            fail("daemon", e.to_string());
             return ExitCode::from(2);
         }
     };
@@ -236,7 +387,7 @@ async fn run_daemon(
     let engine = match Engine::new(engine_cfg) {
         Ok(e) => e,
         Err(e) => {
-            fail("daemon", &e);
+            fail("daemon", e.to_string());
             return ExitCode::from(2);
         }
     };
@@ -250,22 +401,23 @@ async fn run_daemon(
     // permanent zombies in `run.list --status running`.
     engine.seed_sessions_from_store();
     engine.reconcile_boot();
+    engine.attach_observer(Arc::new(pii_core::ContractObserver::new(Arc::clone(&log))));
 
     // PII_TEST_CLOCK_MS (test-only): when set, the daemon uses a FixedClock
     // starting at that epoch so scripts can drive timers deterministically.
-    let clock: std::sync::Arc<dyn pii_core::Clock> =
+    let clock: Arc<dyn pii_core::Clock> =
         match pii_core::env_var("PII_TEST_CLOCK_MS").and_then(|v| v.parse().ok()) {
             Some(start_ms) => {
                 let fc = pii_core::FixedClock::new();
                 fc.advance(start_ms);
-                std::sync::Arc::new(fc)
+                Arc::new(fc)
             }
-            None => std::sync::Arc::new(pii_core::SystemClock),
+            None => Arc::new(pii_core::SystemClock),
         };
     let daemon = match Daemon::build(engine.clone(), &cfg, &runtime_dir, config_path, clock) {
         Ok(d) => d,
         Err(e) => {
-            fail("daemon", &e);
+            fail("daemon", e.to_string());
             return ExitCode::from(2);
         }
     };
@@ -295,14 +447,23 @@ async fn run_daemon(
         }
     }
 
+    log.event(
+        &Event::new("daemon", Level::Info, names::DAEMON_STARTED)
+            .field("socket", sock_path.display().to_string())
+            .field("model", model_for_log)
+            .field("pid", u64::from(std::process::id())),
+    );
+
     let daemon_uid = self_uid();
     let accept_engine = engine.clone();
+    let accept_log = Arc::clone(&log);
     let accept = tokio::spawn(async move {
         loop {
             let Ok((stream, _addr)) = listener.accept().await else {
                 continue;
             };
-            let engine = std::sync::Arc::clone(&accept_engine);
+            let engine = Arc::clone(&accept_engine);
+            let accept_log = Arc::clone(&accept_log);
             tokio::spawn(async move {
                 // F9 (opus review): peercred must be readable; an unreadable
                 // credential is a refusal, never a fail-open grant.
@@ -318,6 +479,10 @@ async fn run_daemon(
                     {
                         eprintln!("refused uid {uid}: {}", e.message);
                     }
+                    accept_log.event(
+                        &Event::new("daemon", Level::Warn, names::DAEMON_PEER_REFUSED)
+                            .field("uid", u64::from(uid)),
+                    );
                     let _ = write_101(stream).await;
                     return;
                 }
@@ -408,6 +573,68 @@ mod tests {
     use std::process::ExitCode;
 
     use super::parse_uid_from_status;
+
+    fn parse(argv: &[&str]) -> Result<super::DaemonFlags, super::Parse> {
+        let mut it = argv.iter().map(std::ffi::OsString::from);
+        super::parse_flags(&mut it)
+    }
+
+    #[test]
+    fn help_is_not_an_error_and_lists_every_flag() {
+        assert!(matches!(parse(&["--help"]), Err(super::Parse::Help)));
+        for flag in [
+            "--store",
+            "--config",
+            "--workspace",
+            "--sandbox",
+            "--log-file",
+            "--log-rotate-bytes",
+            "--log-keep-files",
+            "--foreground",
+            "--help",
+        ] {
+            assert!(super::HELP.contains(flag), "HELP lacks {flag}");
+        }
+    }
+
+    #[test]
+    fn unknown_flags_and_bad_values_are_refused() {
+        assert!(matches!(
+            parse(&["--bogus"]),
+            Err(super::Parse::Usage(m)) if m.contains("unknown flag '--bogus'")
+        ));
+        assert!(matches!(
+            parse(&["--log-file"]),
+            Err(super::Parse::Usage(_))
+        ));
+        assert!(matches!(
+            parse(&["--log-rotate-bytes", "lots"]),
+            Err(super::Parse::Usage(_))
+        ));
+        assert!(matches!(
+            parse(&["--sandbox", "nope"]),
+            Err(super::Parse::Usage(_))
+        ));
+    }
+
+    #[test]
+    fn log_flags_parse() {
+        let f = parse(&[
+            "--log-file",
+            "/l/pii.log",
+            "--log-rotate-bytes",
+            "512",
+            "--log-keep-files",
+            "3",
+            "--store",
+            "/s.redb",
+        ])
+        .unwrap();
+        assert_eq!(f.log.file, Some(std::path::PathBuf::from("/l/pii.log")));
+        assert_eq!(f.log.rotate_bytes, Some(512));
+        assert_eq!(f.log.keep_files, Some(3));
+        assert_eq!(f.store, Some(std::path::PathBuf::from("/s.redb")));
+    }
 
     /// The bootstrap failure cases in [`super::cmd_daemon`]/[`super::run_daemon`]
     /// each return a literal exit code. The runtime-dependent command paths

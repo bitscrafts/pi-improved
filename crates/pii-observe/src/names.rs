@@ -76,6 +76,14 @@ pub const RUN_OUTCOME: &str = "run.outcome";
 pub const TRAJECTORY_TRUNCATED: &str = "trajectory.truncated";
 /// Event: writing a trajectory failed (the run is not aborted).
 pub const TRAJECTORY_WRITE_FAILED: &str = "trajectory.write.failed";
+/// Event: the daemon finished starting and is serving.
+pub const DAEMON_STARTED: &str = "daemon.started";
+/// Event: the daemon is shutting down (`reason`: signal or forced).
+pub const DAEMON_STOPPED: &str = "daemon.stopped";
+/// Event: a connecting peer was refused (uid mismatch or unreadable credential).
+pub const DAEMON_PEER_REFUSED: &str = "daemon.peer.refused";
+/// Event: writing the daemon log file failed (the daemon keeps running).
+pub const LOG_WRITE_FAILED: &str = "log.write.failed";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -115,6 +123,10 @@ pub const ALL: &[&str] = &[
     RUN_OUTCOME,
     TRAJECTORY_TRUNCATED,
     TRAJECTORY_WRITE_FAILED,
+    DAEMON_STARTED,
+    DAEMON_STOPPED,
+    DAEMON_PEER_REFUSED,
+    LOG_WRITE_FAILED,
 ];
 
 #[cfg(test)]

@@ -1,9 +1,20 @@
 # Pii — Vision & Architecture Overview
 
-**Pii** ("Pi Improved") is a single static Rust binary that unifies a terminal-native
+**Pii** ("Pi Improved") is a single Rust binary (`pii`; statically linked when built for
+`x86_64-unknown-linux-musl`, see below) that unifies a terminal-native
 AI coding agent, a personal assistant daemon, a reactive IoT/automation engine, and a
 self-improving cognitive layer. It aims to replace Claude Code, Home Assistant, and a
 messaging gateway with one performant, local-first, modular system.
+
+> **Static-linking status (spec 104, measured 2026-10-09).** The default
+> `cargo build` produces a *dynamically* linked glibc binary (libgcc_s, libm,
+> libc). The "static" claim holds for the musl release build:
+> `cargo build --release --target x86_64-unknown-linux-musl -p pii-cli` gives
+> `ELF 64-bit LSB pie executable, x86-64 ... static-pie linked, stripped`
+> (4.4 MB) and `ldd` answers `statically linked`. Only `pii` (the `pii-cli`
+> crate) was built and checked that way; `pii-web`, `pii-mcp` and `pii-evolve`
+> are separate binaries that were not part of that measurement. Deploy
+> artefacts: `deploy/Dockerfile`, `deploy/pii.service`.
 
 ## The Four Pillars
 
