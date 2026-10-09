@@ -638,3 +638,27 @@ gate — candidate 5), N7 (`rt.shutdown_timeout`), N8 (the false `doctest = fals
 - Remaining open: laya lane (policy-file loader, SPEC-E worker-lane wiring, `autoresearch/gate-lat2`
   merge) and the pre-existing big `_tmp` items awaiting a decision.
 
+## 2026-10-09 — the 045 work-through as a table (specs 83-96, all landed)
+One line per spec: what it closed, the commit, and where the evidence lives. Read this before
+re-opening anything from the re-review.
+
+| spec | finding it closed | commit | evidence |
+|---|---|---|---|
+| 83 | N1 class #1 — `pii-memory` `lanes` tests non-hermetic | `ee38646` | 3 FAILED → 8 passed in a fresh export (orchestrator) |
+| 84 | the tool — `cargo xtask fresh-gate` (exports HEAD, runs the gate inside) | `ff9a664` | its first green run found instance #2 |
+| 85 | N1 class #2 — `conn_heartbeat_tests` | (in `5376dfa`) | 7 passed; convention corrected to `_tmp` + `create_dir_all` |
+| 86 | tool hygiene + N1 class #3 — retention of ONE export, `FRESH_GATE_MIN_FREE_MB`, sweep | `5376dfa` | refusal control 0.2 s; 21 `pii-tools` tests + 3 `spec72` export-only failures |
+| 87 | N2 — reachability is stateful (lexer + `cfg(test)` gate) | `b0b46d2` | mutation: disabling the gate turns 3 tests RED |
+| 88 | N3 — lag recovery idempotent for approvals; lost `RunFinished` recovered | `1985745` | mutation: pre-fix store behaviour → RED `left:1 right:0` |
+| 89 | N4 — the gate compiles `-p pii-model --features llamacpp` | `71009f2` | injected E0308 fails the step by name |
+| 90 | N8 — the `doctest = false` comments stop overclaiming | `312a868` | 0 "can never pass"; 17 sites state the true effect |
+| 91 | candidate 6 — mutation-verified the batch C/D guards | `a2e66f8` | `_docs/06-research/046-…md` (5 GREEN mutants filed) |
+| 92 | closed 4 of those 5 mutants | `3d64163` | `_docs/06-research/047-…md`; 3 redb-fault sites residual |
+| 93 | finding 6 MEASURED — replay drops a state-changing error | `0940a13` | `_docs/06-research/048-…md` (live vs replayed terminals) |
+| 94 | finding 6 FIXED — replay mirrors `dispatch::apply` on `Err` | `dc55096` | reverse mutation turns the pinning test RED |
+| 95 | N7 — bounded shutdown; 11 inline handlers measured, ONE moved | `a17c545` | `_docs/06-research/050-…md`; mutation: unbounded drop → 3.0 s |
+| 96 | the N1 class killed at the ROOT — `tmp_scratch` + `lint-scratch` gate step | `f3d039a` | `_docs/06-research/051-…md`; 18 bare sites → 0 |
+
+Gate manual written this day: `_docs/02-guides/quality-gate-and-fresh-tree.md` (the eight steps, the
+two-tree model, the `tmp_scratch` rule).
+

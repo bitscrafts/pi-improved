@@ -36,11 +36,18 @@ pidag sdd specs/01-xxx.md --run --concurrency N
 - **2 parallel workers:** `--concurrency 2`. Pidag's `PiBackend` sizes a client pool to
   concurrency; per-node session dirs (`_tmp/.pidag-worker-sessions/<node_id>/`) isolate
   parallel workers.
-- **TDD enforced by pidag:** the `quality-gate` step runs `cargo fmt/check/clippy/test`
-  and the `validate-iter{n}` step runs the spec's exit criteria. The SDD loop implements →
+- **TDD enforced by pidag:** the `quality-gate` step runs the repo gate and the
+  `validate-iter{n}` step runs the spec's exit criteria. The SDD loop implements →
   quality-gates → validates → re-implements up to `max_iterations` (`.pidag/config.toml`
   `[sdd]`, currently 2: run 1 free model, run 2 escalates to a paid model, then STOPS —
   no further auto-escalation).
+- **The gate has two trees and eight reported steps** — `bash quality-gate.sh` runs a `build`
+  prerequisite plus eight checks (fmt · clippy · clippy `llamacpp` · test lib/bins/tests ·
+  test doc · `lint-files` · `lint-scratch` · `reachability-check`); the CI-model variant
+  `cargo run -q -p xtask -- fresh-gate [--worktree] [--overlay src=dest]` exports HEAD
+  with `git archive` and runs the gate in a throwaway directory. When they disagree,
+  **believe `fresh-gate`**: a gate can be green in this tree and red in a clean clone.
+  Full manual: `_docs/02-guides/quality-gate-and-fresh-tree.md`.
 
 ## Repos
 
@@ -64,7 +71,11 @@ pidag sdd specs/01-xxx.md --run --concurrency N
   no per-crate override exists today (`Cargo.toml:56`). Earlier research docs
   planned an unsafe carve-out for `pii-hw`/`pii-memory`; `pii-hw` was never built
   and `pii-memory` ships with the same forbid as every other crate.
-- Tests under `_tmp/`, never `/tmp`.
+- Tests under `_tmp/`, never `/tmp` — and a test must CREATE the scratch it uses:
+  `pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "prefix-")`, or an explicit
+  `create_dir_all` in crates that do not depend on `pii-store`. A bare
+  `tempdir_in(.../_tmp...)` fails `lint-scratch` (a gate step) — this class cost four
+  separate fixes because leftover state made the repo gate look green.
 - **Memory + HANDOFF are mandatory:** after any commit, update `HANDOFF.md` and store an
   agent-memory insight (topic `pii`).
 - No AI-assistant mentions in commit messages. No `rm -rf`.
