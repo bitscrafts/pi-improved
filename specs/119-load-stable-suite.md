@@ -54,3 +54,23 @@ R6. **Write the rule where it will load again** — a `DO-NOT-REPEAT` §1 row: *
 - No test may depend on a `/projects/_tmp/` path existing, on wall-clock resolution, or on another test having run
   first.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon or broker left running. Do NOT commit.
+
+## Orchestrator's own reproduction attempt (2026-10-10) — honest result: NOT reproduced in the dev tree
+Before dispatching this spec I ran the gate's own command under load myself
+(`/projects/_tmp/hunt-flakes.sh`: `cargo test --workspace`, 24 CPU hogs on 32 cores, 3 rounds):
+```
+=== ROUND 1 rc=0   ROUND 2 rc=0   ROUND 3 rc=0   (zero failures, no FAILED lines)
+```
+So the failure is **not** reproducible in the warm dev tree with this load. It appeared twice inside **fresh-gate
+exports** — a cold target, HEAD+overlay, running beside compile load, i.e. a different condition — and on a
+**different test each time**. Two consequences for this spec:
+1. **The dev tree is not the repro environment.** Any harness you build must be able to run the gate's condition
+   (a fresh export under load), or it will report the 0-of-3 that I just got and wrongly conclude there is nothing
+   to fix. Prefer `cargo xtask fresh-gate` itself, repeated, as the outer loop, and say in the report which
+   environment each round ran in.
+2. **Record what is NOT reproduced.** "0 failures in N rounds in environment X" is a legitimate, required line —
+   it must not be quietly dropped, and it must not be upgraded into "fixed" without the export evidence.
+3. The worker's observed evidence is the starting point, not a guess: run 1 failed
+   `resume_never_reinvokes_completed_node`; run 2 failed `diamond_race_cancels_loser` and
+   `diamond_race_cancels_multi_node_arm`; all pass alone.
+
