@@ -92,3 +92,43 @@ had assumed `llamacpp:` was already an HTTP provider. It is not. This revision s
   transport and say so.
 - **Do not widen anything** (dependencies, allowlists, budgets). If it seems necessary, stop and report.
 - Do **not** edit `specs/`, do **not** commit — leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-10)
+
+**My controls:**
+- `cargo test -p pii-server --lib` → **107 passed, 1 ignored** · `--test failover_graph` → **3** ·
+  `--test model_tiers` → **10** · `-p pii-model` → **21** · `-p pii-model --features llamacpp` → **8 ignored**
+  (the live/model-download tests, which cannot run here).
+- **MUTATION of my choosing, on the property that matters:** ignoring the configured host
+  (`observed_provider.rs`, `egress_host_with(model, llama_host)` → `None`) reddens
+  `a_llamacpp_server_model_resolves_to_the_configured_host` with
+  `left: Some("127.0.0.1")` vs `right: Some("10.10.10.217")` — i.e. the egress scope really is derived from
+  `[llama] host`, not from a default. Restored byte-identical → 3 pass.
+- **The refusal, live:** `PII_MODEL=ollama:x ./target/debug/pii -p hi` →
+  `error: invalid: ollama: is retired (spec 129) — serve the model with llama.cpp and use
+  llamacpp-server:<model> with [llama] host; llamacpp:<path> is the separate in-process GGUF loader`
+  — counted, no fallback.
+- `deps-check`, `net-check`, `doc-drift-check`, `lint-observability` → rc 0 each.
+
+**The concrete dependency the user suspected, now moved:** `examples/pii.production.toml` teaches
+`model = "llamacpp-server:granite-4.2-3b"` with `[llama] host = "http://10.10.10.217:8082/v1"` and a comment
+naming the pi/Laguna quadlet that serves `granite-4.2-3b` + `laguna-xs-2.1`. The remaining `ollama` strings in
+`crates/` are the refusal, its tests and the comments explaining the retirement.
+
+**Accepted deviations:** the two Ollama wire-body contract tests and `tests/ollama_http.rs` were removed with
+the provider (their claim died with it; the files are moved aside in `_tmp/spec129-trash-*`, not destroyed);
+the 450-line file rule forced `observed_provider.rs` and `local_model_tests.rs` to be split out as new files
+(new files with a stated reason, not raised budgets); `EngineConfig` gained `llama_host`, so ~47 construction
+literals in tests gained `llama_host: None` — mechanical, and the tests they belong to were re-run green;
+`resolve_with_transport` gained the same argument, which keeps xtask's reachability needle valid without
+editing xtask.
+
+**One operational consequence, fixed by the orchestrator:** the agent's own `~/.pii/pii.toml` still carried
+`model = "ollama:granite4.2:3b"` and `ollama_host = ...`, so the daemon now refuses to start — updated to the
+llama.cpp server lane ([llama] host = 10.10.10.217:8082), with a dated backup kept beside it.
+
+**And the flake that failed spec 128's fresh-gate is fixed in the same road** (commit after this one):
+`a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert` polled a terminal run status with a
+2 s ceiling and panicked; it passes alone and fails under the full parallel suite. Bound raised to 60 s with
+the assumption written down.
+
