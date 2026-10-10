@@ -127,3 +127,8 @@ the red evidence), plain `fresh-gate` was not run by it (I run it on the commit)
 the `limit_hit` extractor is tested on synthetic fixtures only because no real trajectory carries a limit event,
 and the thresholds are untuned on production data.
 
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD)
+`fresh-gate` (exactly HEAD `0311f88`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0, 14 steps — the run
+includes my learn-area fix, so the daemon side of this feature is verified with the counters rendering.
+**123: 12/12** (the two the worker could not do — a live daemon and the plain fresh tree — were both done here).
+
