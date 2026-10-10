@@ -25,8 +25,12 @@ post is keyed as its own session (`chat_type="thread"`), so replies in a post do
 `chat` (default) · `task` · `spec` · `status` · `alert` · `done` — one tag per post is enough to triage from a
 phone. Discord allows 20 tags per forum and 20 characters per name.
 
-**The bot cannot create tags** (`PATCH /channels/<forum>` with `available_tags` returns `50013 Missing
-Permissions`) — the set is a human action in the app, or the bot needs **Manage Channels** on that channel.
+Tag ids (created 2026-10-10, so tooling can reference them without a lookup): `chat`=1558593520950976588 · `task`=1558593520950976589 · `spec`=1558593520950976590 · `status`=1558593520950976591 · `alert`=1558593520963690607 · `done`=1558593520963690608.
+
+**Proven the same day:** a post created with `applied_tags=[chat]` is accepted (thread `1558593612856557598`, since removed) — so a tagged-post path works; only the adapter does not use it yet.
+
+**The bot could not create tags on the first attempt** (`PATCH /channels/<forum>` with `available_tags` returns `50013 Missing
+Permissions`) — it succeeded later the same day once **Manage Channels** was granted on the forum, so the set is either a human action in the app or a permission the bot needs.
 
 ## The constraint that bites
 
