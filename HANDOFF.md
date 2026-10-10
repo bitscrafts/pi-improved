@@ -899,4 +899,11 @@ worker is building), and the guarded scripts stay for the exports *this session*
 - **Next**: 113 SOP engine → 114 tiers → 115/116 (Stage A2) → Stage B (MQTT, HAL, WASM) → Stage C → Stage D.
 - **Disk**: `cargo clean` only, never delete the pre-existing `_tmp` items (owner rule).
 - **Owner decisions**: no Docker (systemd on lnx); all pillars implemented in order; `pii-http-fetch` dormant.
+## 2026-10-10 late - MILESTONE: vision plan 111-127 complete
 
+Specs 111-127 of the `057` plan are implemented in order and each closed on its own commit with a plain
+`fresh-gate` (14 steps, ALL PASS) plus a mutation per safeguard: providers, channels (incl. Discord + MQTT),
+SOP engine, model tiers, the load/cost defect fixes, HAL, WASM, the closed self-improvement loop
+(propose -> verify -> promote -> measure -> auto-revert), entities/relationships and memory tiering.
+Open items and the Discord surface state are in `/projects/docs/05-operations/RESUME-REGISTER.md`.
+Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
