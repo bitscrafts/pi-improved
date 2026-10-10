@@ -114,6 +114,7 @@ async fn run_tui(
             sandbox,
             graph_dir: store_dir.join("graphs"),
             route_policy: std::collections::BTreeMap::new(),
+            tiers: Vec::new(),
             session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         };
         let engine = match Engine::new(cfg) {

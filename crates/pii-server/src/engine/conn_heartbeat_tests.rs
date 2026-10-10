@@ -50,6 +50,7 @@ fn engine_in(dir: &std::path::Path) -> Arc<Engine> {
         ),
         sandbox: pii_tools::sandbox::SandboxProfileName::Off,
         route_policy: std::collections::BTreeMap::new(),
+        tiers: Vec::new(),
         session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
         graph_dir: dir.join("graphs"),
     })

@@ -13,6 +13,7 @@
 pub mod daemon;
 pub mod engine;
 pub mod node_kinds;
+pub mod tiers;
 
 pub use engine::registry::{lint_registry, lint_registry_with_log, registry};
 
@@ -52,6 +53,8 @@ pub struct EngineConfig {
     pub graph_dir: PathBuf,
     /// `[evolve.routing]` step -> model policy (spec 28). Empty = no routing.
     pub route_policy: BTreeMap<String, String>,
+    /// `[[model_tier]]` table (spec 114). Empty = no tiers.
+    pub tiers: Vec<daemon::config::ModelTierSection>,
     /// Max runs retained per session in the in-memory `session_runs` index
     /// (D3/D6, 026 report 5.0.4 config key) — oldest run ids are evicted
     /// (LRU by insertion order) once a session's run list exceeds this so
@@ -91,6 +94,8 @@ pub struct Engine {
     pub reg: NodeRegistry,
     /// The model provider.
     pub provider: Arc<dyn ModelProvider>,
+    /// The model tiers (spec 114), each with its own provider.
+    pub tiers: Arc<tiers::TierTable>,
     /// Tools available to sessions.
     pub tools: ToolSet,
     /// Event bus.
@@ -232,6 +237,23 @@ impl Engine {
             pii_worker::Supervisor,
         >::new()));
         let (provider, ollama_net_host) = observed_provider(&cfg.model, &log)?;
+        let tiers = Arc::new(tiers::TierTable::build(
+            &cfg.tiers,
+            |spec| observed_provider(spec, &log).map(|(p, _)| p),
+            |tier, model, why| {
+                pii_observe::Observer::event(
+                    &*log,
+                    &pii_observe::Event::new(
+                        "model",
+                        pii_observe::Level::Error,
+                        pii_observe::names::MODEL_TIER_UNAVAILABLE,
+                    )
+                    .field("tier", tier)
+                    .field("model", model)
+                    .field("error", why),
+                );
+            },
+        ));
         let bus = Bus::new();
         let spawn_engine: node_kinds::nodes::spawn::SpawnEngineHandle =
             Arc::new(parking_lot::Mutex::new(None));
@@ -246,6 +268,7 @@ impl Engine {
             cfg.route_policy.clone(),
             Arc::clone(&spawn_engine),
             log.clone(),
+            Arc::clone(&tiers),
         );
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
@@ -257,6 +280,7 @@ impl Engine {
             workers,
             reg,
             provider,
+            tiers,
             tools,
             bus,
             ollama_net_host,

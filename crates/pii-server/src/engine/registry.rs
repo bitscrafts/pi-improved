@@ -33,6 +33,7 @@ pub fn registry(
     route_policy: BTreeMap<String, String>,
     spawn_engine: nodes::spawn::SpawnEngineHandle,
     log: Arc<dyn pii_observe::Observer>,
+    tiers: Arc<crate::tiers::TierTable>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
@@ -41,6 +42,7 @@ pub fn registry(
         live: Some(live),
         memory: Some(Arc::clone(&memory)),
         route_policy,
+        tiers: Some(tiers),
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(cfg.workspace.clone()),
@@ -110,6 +112,7 @@ pub fn lint_registry_with_log(
         live: None,
         memory: None,
         route_policy: BTreeMap::new(),
+        tiers: None,
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),

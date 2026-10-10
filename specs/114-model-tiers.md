@@ -57,3 +57,36 @@ R7. **Docs**: `_docs/0X-guides/model-tiers.md` (the keys, the precedence, the to
   the one place is the only place: grep-based criterion is acceptable if it names the file).
 - Scratch under `/projects/_tmp/`; keep it small, delete your own, no daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-10) — plus a flaky test root-caused and fixed
+**The feature verified:** `cargo test -p pii-server --test model_tiers` → **10 passed**; my mutation
+**`Ctx::tool` stops denying** (replace the denial with `Ok(())`) → `tool_outside_the_tier_is_denied_by_the_capability_layer_with_an_event` **FAILS**; restored → 10 pass. The gate really is in `Ctx::tool`
+(`pii-core/src/ctx.rs:211`, before any dispatch) and `CapSet.tools` only ever intersects — the tier's tool list
+is an attenuation, not a filter applied after the fact.
+**Accepted deviation:** the worker kept the EXISTING precedence (`--model` > `$PII_MODEL` > config) rather than
+the order my spec wrote from memory, and documented it. Preserving a documented rule over a spec sentence is the
+right call; the spec sentence was the error.
+
+### The flake the report waved away: root-caused, fixed, and proven
+`crates/pii-graph/tests/resume.rs::resume_never_reinvokes_completed_node` failed once inside fresh-gate and the
+report called it "timing-flaky under load; I did not investigate it". A check nobody can trust is worse than no
+check, so it was investigated. Measured facts, in order:
+1. **My first hypothesis was wrong.** "Wait for `b`'s `NodeStarted` in the JOURNAL instead of sleeping 300 ms" —
+   the test then failed at *`b must have exactly one NodeInterrupted`*, and a journal dump explained why: the
+   journal is **write-behind**, and one flush carried `NodeStarted(b)` AND `NodeFinished(b)` of the same tick
+   together at 6.1 s. So polling the journal for "b started" can only return AFTER b finished; the cancel lands
+   too late and the run completes.
+2. **The honest signal is `a`'s own side effect in the log**, which the emit node writes immediately. The fix
+   waits for that (bounded, 15 s deadline, 5 ms poll) and then cancels — inside b's 6-second wait at any load.
+3. **Stability**: 24 runs of that test under **16 CPU hogs** → **0 failures** (`/projects/_tmp/verify-resume-flake-fix.sh`,
+   re-runnable).
+4. **Teeth**: my first teeth-mutation (making `replay`'s `finished` set empty) left the test **GREEN** — a green
+   mutant is a claim about the EDIT, and the edit was not at the effective site. The mutation at the PRIMARY site
+   (make `replay` a no-op, so the resumed run learns nothing) goes **RED** with the exact evidence:
+   `a must NOT be re-run: "a\na\nc\n" left: 2 right: 1`. Restored → 3 pass, source byte-identical.
+
+### Lesson recorded (`docs/01-overview/DO-NOT-REPEAT.md`)
+**Before polling a store from a test, read its flush semantics.** `NodeStarted` and `NodeFinished` can arrive in
+the SAME flush, so "the journal shows X" is not "the engine has done X" — and a test that waits on the journal
+measures the flusher, not the engine. Wait on the node's own side effect.
+

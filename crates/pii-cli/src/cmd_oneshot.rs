@@ -177,6 +177,7 @@ async fn run_over_loopback(
         sandbox: a.sandbox,
         graph_dir: store_dir.join("graphs"),
         route_policy: std::collections::BTreeMap::new(),
+        tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
     };
     let engine = Engine::new(cfg).map_err(|e| e.to_string())?;

@@ -70,6 +70,7 @@ fn fail_port_outcome_is_journaled() {
     registry.register(Arc::new(pii_server::node_kinds::agent::AgentFactory {
         provider: Arc::new(ContextOverflowProvider),
         route_policy: std::collections::BTreeMap::new(),
+        tiers: None,
         workspace: dir.clone(),
         live: None,
         memory: None,

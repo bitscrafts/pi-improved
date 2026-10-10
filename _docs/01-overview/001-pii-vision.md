@@ -23,7 +23,8 @@ messaging gateway with one performant, local-first, modular system.
 2. **Assistant/gateway** (from `zeroclaw`) — channels (measured: 5 kinds — `cli`, `discord`, `telegram`, `matrix` (unencrypted rooms), and `webhook`, the vendor-free inbound/outbound HTTP channel; "30+" was the zeroclaw figure, not ours — the rest are written against the documented trait, see `_docs/02-guides/writing-a-channel.md`), LLM providers (measured: 5 kinds — `ollama`, `openai` (OpenAI-compatible, base URL configurable, so any vendor of that shape), `anthropic`, `gemini`, and in-process `llamacpp` behind a feature; `scripted` is a test fixture, not a provider; the "~20" was the zeroclaw figure, not ours), tools,
    SOP engine (built, spec 113: a declarative `[[step]]` file that compiles into a graph and runs through the existing journal/resume/approval machinery — `pii sop {compile|lint|show|run|resume}`, see `_docs/02-guides/writing-an-sop.md`; `act`/`check`/`approve`/`notify` steps only, no branching), WASM plugin host, hardware HAL.
 3. **Cognitive memory + model tiering** (from `yantrikclaw`) — entities/relationships,
-   tier-aware tool selection for model sizes 0.5B→100B+.
+   tier-aware tool selection for model sizes 0.5B→100B+ — **built (spec 114)**: `[[model_tier]]` names a
+   provider + tool allowlist, enforced by the capability layer; see `02-guides/model-tiers.md`.
 4. **Self-improvement loop** (from `hermes-agent`) — skill extraction, procedural
    templates, trajectory logging for future fine-tuning of a local ~9B model.
 

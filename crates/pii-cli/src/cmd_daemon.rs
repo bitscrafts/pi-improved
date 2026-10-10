@@ -358,6 +358,7 @@ async fn run_daemon(
         sandbox,
         graph_dir: runtime_dir.join("graphs"),
         route_policy: cfg.evolve.routing.clone(),
+        tiers: cfg.model_tier.clone(),
         session_runs_cap: cfg.core.session_runs_cap(),
     };
     let engine = match Engine::new(engine_cfg) {

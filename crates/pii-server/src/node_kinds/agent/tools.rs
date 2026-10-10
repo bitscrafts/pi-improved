@@ -121,6 +121,8 @@ impl AgentNode {
         ctx: &Ctx,
         call: &pii_model::ToolCall,
     ) -> Result<serde_json::Value, PiiError> {
+        // Spec 114: the capability layer decides first, whatever the prompt asked.
+        ctx.tool(&call.name)?;
         let Some(tool) = self.toolset.get(&call.name) else {
             return Err(PiiError::NotFound(format!("tool '{}'", call.name)));
         };

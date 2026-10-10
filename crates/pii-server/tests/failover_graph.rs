@@ -126,6 +126,7 @@ fn run_ladder(dir_name: &str, provider: Arc<LadderProvider>) -> (Terminal, Vec<(
     registry.register(Arc::new(pii_server::node_kinds::agent::AgentFactory {
         provider,
         route_policy: std::collections::BTreeMap::new(),
+        tiers: None,
         workspace: dir.clone(),
         live: None,
         memory: None,

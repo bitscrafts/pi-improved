@@ -44,10 +44,29 @@ fn memory_lines(
     }
 }
 
+impl AgentNode {
+    /// Spec 114: a tier's tool list attenuates the node's `Ctx` itself, so the
+    /// capability layer (`Ctx::tool`) refuses anything outside it. The resolved
+    /// tier + model are recorded on the run's observer.
+    fn tiered_ctx(&self, ctx: &Ctx) -> Ctx {
+        let Some(t) = &self.tier else {
+            return ctx.clone();
+        };
+        ctx.observer().event(&pii_core::ObsEvent::TierResolved {
+            tier: t.name.clone(),
+            model: t.model.clone(),
+        });
+        t.tools
+            .as_ref()
+            .map_or_else(|| ctx.clone(), |tools| ctx.with_tools(tools))
+    }
+}
+
 impl GraphNode for AgentNode {
     #[allow(clippy::too_many_lines)] // reason: the turn loop is one cohesive
     // state machine; splitting it would scatter the compaction/timeout logic
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
+        let ctx = &self.tiered_ctx(ctx);
         // R3 (spec 28): journal + broadcast the routing decision so
         // `pii graph trace` shows which model each step used. The resolved
         // model is `self.model` (routed or explicit); unrouted nodes emit
@@ -97,8 +116,24 @@ impl GraphNode for AgentNode {
                     .clone()
                     .unwrap_or_else(|| String::from("default")),
                 messages: messages.clone(),
-                tools: self.toolset.specs(),
-                max_tokens: 4096,
+                // Only advertise what the gate would allow; `Ctx::tool` is the
+                // enforcement either way.
+                tools: self
+                    .toolset
+                    .specs()
+                    .into_iter()
+                    .filter(|t| {
+                        ctx.caps()
+                            .tools
+                            .as_ref()
+                            .is_none_or(|a| a.contains(&t.name))
+                    })
+                    .collect(),
+                max_tokens: self
+                    .tier
+                    .as_ref()
+                    .and_then(|t| t.max_tokens)
+                    .map_or(4096, |m| m.min(4096)),
                 temperature: 0.0,
                 num_ctx: 0,
             };

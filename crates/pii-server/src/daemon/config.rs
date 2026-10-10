@@ -112,6 +112,23 @@ pub struct WorkerSection {
     pub max_in_flight: u32,
 }
 
+/// `[[model_tier]]` (spec 114): a named model class a graph node can ask for.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ModelTierSection {
+    /// Tier name, referenced by a node's `tier` key. Unique.
+    pub name: String,
+    /// Provider spec (`scripted:<path>`, `ollama:<m>`, `openai:<m>`, ...).
+    pub model: String,
+    /// Tools a run on this tier may call. Absent = unrestricted. When set it
+    /// is enforced by the capability layer, not by the prompt.
+    #[serde(default)]
+    pub tools: Option<Vec<String>>,
+    /// Upper bound on `max_tokens` per model request on this tier.
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
+}
+
 /// `[[channel]]` (F5.2).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -244,6 +261,8 @@ pub struct Config {
     /// `[evolve]` (spec 28).
     #[serde(default)]
     pub evolve: EvolveSection,
+    /// `[[model_tier]]` (spec 114).
+    pub model_tier: Vec<ModelTierSection>,
 }
 
 impl Config {
@@ -263,7 +282,29 @@ impl Config {
     /// # Errors
     /// [`PiiError::Invalid`] on a parse failure (including any unknown key).
     pub fn parse(raw: &str) -> Result<Self, PiiError> {
-        toml::from_str(raw).map_err(|e| PiiError::Invalid(format!("config: {e}")))
+        let cfg: Self =
+            toml::from_str(raw).map_err(|e| PiiError::Invalid(format!("config: {e}")))?;
+        cfg.validate_tiers()?;
+        Ok(cfg)
+    }
+
+    /// A tier needs a non-empty, unique name and a model (spec 114 R1).
+    fn validate_tiers(&self) -> Result<(), PiiError> {
+        let mut seen = std::collections::BTreeSet::new();
+        for t in &self.model_tier {
+            if t.name.is_empty() || t.model.is_empty() {
+                return Err(PiiError::Invalid(String::from(
+                    "config: [[model_tier]] needs a non-empty name and model",
+                )));
+            }
+            if !seen.insert(t.name.as_str()) {
+                return Err(PiiError::Invalid(format!(
+                    "config: duplicate [[model_tier]] name '{}'",
+                    t.name
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// The default config path: `<runtime_dir>/pii.toml` when present, else
@@ -320,9 +361,14 @@ impl Config {
     /// configured" error).
     #[must_use]
     pub fn resolve_model(&self, explicit: Option<String>) -> Option<String> {
-        explicit
-            .or_else(|| pii_core::env_var("PII_MODEL"))
-            .or_else(|| self.core.model.clone())
+        crate::tiers::precedence(
+            None,
+            None,
+            explicit,
+            pii_core::env_var("PII_MODEL"),
+            self.core.model.clone(),
+        )
+        .map(|(_, m)| m)
     }
 
     /// Resolves the effective runtime dir (2026-09-05): `$PII_RUNTIME_DIR`

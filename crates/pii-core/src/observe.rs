@@ -37,6 +37,14 @@ pub enum ObsEvent {
         /// The matched bash deny-list entry.
         deny_entry: Option<String>,
     },
+    /// The model tier an agent node resolved to (spec 114): the run's record of
+    /// which tier and which model spec it used.
+    TierResolved {
+        /// The tier name.
+        tier: String,
+        /// The tier's model spec.
+        model: String,
+    },
     /// The memory search an agent turn runs to inject context failed (spec 109
     /// R4). The turn continues without memory; this is how the failure stays
     /// visible. Never carries the query text.
@@ -218,6 +226,11 @@ impl Observer for ContractObserver {
                     );
                 }
             }
+            ObsEvent::TierResolved { tier, model } => self.0.event(
+                &Event::new("model", Level::Info, names::MODEL_TIER_RESOLVED)
+                    .field("tier", tier.as_str())
+                    .field("model", model.as_str()),
+            ),
             ObsEvent::PersistError { context, message } => self.0.event(
                 &Event::new("store", Level::Error, names::STORE_PERSIST_ERROR)
                     .field("context", context.as_str())
@@ -292,7 +305,9 @@ impl Observer for ToolCallObserver {
     fn event(&self, e: &ObsEvent) {
         if matches!(
             e,
-            ObsEvent::ToolCall { .. } | ObsEvent::MemorySearchFailed { .. }
+            ObsEvent::ToolCall { .. }
+                | ObsEvent::MemorySearchFailed { .. }
+                | ObsEvent::TierResolved { .. }
         ) {
             ContractObserver::new(Arc::clone(&self.0)).event(e);
         }
@@ -468,6 +483,26 @@ mod tests {
         assert_eq!(
             ev[0].fields.get("error").and_then(|v| v.as_str()),
             Some("index gone")
+        );
+    }
+
+    #[test]
+    fn run_tap_forwards_the_resolved_tier_as_model_tier_resolved() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let o = super::ToolCallObserver::new(rec.clone());
+        o.event(&ObsEvent::TierResolved {
+            tier: "fast".into(),
+            model: "scripted:a.json".into(),
+        });
+        let ev = rec.events_named(pii_observe::names::MODEL_TIER_RESOLVED);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(
+            ev[0].fields.get("tier").and_then(|v| v.as_str()),
+            Some("fast")
+        );
+        assert_eq!(
+            ev[0].fields.get("model").and_then(|v| v.as_str()),
+            Some("scripted:a.json")
         );
     }
 

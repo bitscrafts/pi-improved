@@ -43,6 +43,16 @@ pub struct AgentNode {
     /// Global memory store (spec 09 v2, P4.3): `Some` when the graph opts in
     /// via `memory = { enabled = true }`; `None` = no memory behavior.
     pub(crate) memory: Option<Arc<pii_store::MemStore>>,
+    /// The tier this node runs on, if it names one (spec 114).
+    pub(crate) tier: Option<TierBinding>,
+}
+
+/// What a node keeps of its tier (spec 114).
+pub(crate) struct TierBinding {
+    pub(crate) name: String,
+    pub(crate) model: String,
+    pub(crate) tools: Option<Vec<String>>,
+    pub(crate) max_tokens: Option<u32>,
 }
 
 /// Factory registered into the engine's registry.
@@ -58,6 +68,9 @@ pub struct AgentFactory {
     pub live: Option<tokio::sync::broadcast::Sender<pii_proto::run::SeqEvent>>,
     /// Global memory store (spec 09 v2, P4.3).
     pub memory: Option<Arc<pii_store::MemStore>>,
+    /// The `[[model_tier]]` table (spec 114). `None` only in the lint
+    /// registry, which has no config: a `tier` key is then not checked.
+    pub tiers: Option<Arc<crate::tiers::TierTable>>,
 }
 
 /// Resolves an agent node's model (spec 28 R2/R4).
@@ -127,6 +140,44 @@ pub(super) fn route_provider_failure(e: &PiiError) -> Outcome {
     }
 }
 
+impl AgentFactory {
+    /// Applies the node-level precedence (spec 114 R2: the node's `model`
+    /// beats its `tier`, which beats the run's default provider). A named
+    /// tier must exist and be available — there is no fallback to another
+    /// tier or to the default provider (R3). Its tool list and limits bind
+    /// even when the node's own `model` wins the model choice.
+    #[allow(clippy::type_complexity)] // reason: one private triple, used once
+    fn bind_tier(
+        &self,
+        name: Option<&str>,
+        node_model: Option<String>,
+    ) -> Result<(Option<TierBinding>, Arc<dyn ModelProvider>, Option<String>), PiiError> {
+        let Some(name) = name else {
+            return Ok((None, self.provider.clone(), node_model));
+        };
+        let Some(table) = &self.tiers else {
+            return Ok((None, self.provider.clone(), node_model));
+        };
+        let tier = table.get(name)?;
+        let provider = tier.provider()?;
+        let (level, model) =
+            crate::tiers::precedence(node_model, Some(tier.model.clone()), None, None, None)
+                .ok_or_else(|| PiiError::Internal(String::from("tier model vanished")))?;
+        let provider = if level == crate::tiers::Level::NodeTier {
+            provider
+        } else {
+            self.provider.clone()
+        };
+        let binding = TierBinding {
+            name: tier.name.clone(),
+            model: tier.model.clone(),
+            tools: tier.tools.clone(),
+            max_tokens: tier.max_tokens,
+        };
+        Ok((Some(binding), provider, Some(model)))
+    }
+}
+
 impl pii_graph::node::NodeFactory for AgentFactory {
     fn kind(&self) -> &'static str {
         "agent"
@@ -186,7 +237,11 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             .get("route_step")
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned);
+        let node_model = resolve_model(cfg, &self.route_policy)?;
+        let tier_name = cfg.get("tier").and_then(serde_json::Value::as_str);
+        let (tier, provider, model) = self.bind_tier(tier_name, node_model)?;
         Ok(Box::new(AgentNode {
+            tier,
             route_step,
             system,
             max_turns: cfg
@@ -194,8 +249,8 @@ impl pii_graph::node::NodeFactory for AgentFactory {
                 .and_then(serde_json::Value::as_u64)
                 .and_then(|v| u32::try_from(v).ok())
                 .unwrap_or(24),
-            model: resolve_model(cfg, &self.route_policy)?,
-            provider: self.provider.clone(),
+            model,
+            provider,
             toolset,
             workspace: self.workspace.clone(),
             live: self.live.clone(),

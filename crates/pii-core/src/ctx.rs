@@ -202,6 +202,46 @@ impl Ctx {
         }
     }
 
+    /// The tool gate (spec 114): a context whose `tools` allowlist is set
+    /// refuses any tool outside it, with a denial event.
+    ///
+    /// # Errors
+    /// Returns [`PiiError::Denied`] (`tool:<name>`) when the allowlist is set
+    /// and does not contain `name`.
+    pub fn tool(&self, name: &str) -> Result<(), PiiError> {
+        match &self.inner.caps.tools {
+            Some(allowed) if !allowed.iter().any(|t| t == name) => {
+                Err(self.deny(&format!("tool:{name}")))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Attenuation by tool name: the same context with its tool allowlist
+    /// intersected with `names`. Never widens; every other capability, the
+    /// budget, cancel token and principal are shared unchanged.
+    #[must_use]
+    pub fn with_tools(&self, names: &[String]) -> Self {
+        let narrow = CapSet {
+            tools: Some(names.to_vec()),
+            ..self.inner.caps.as_ref().clone()
+        };
+        Self {
+            inner: Arc::new(CtxInner {
+                cancel: self.inner.cancel.clone(),
+                started: self.inner.started,
+                deadline: self.inner.deadline,
+                deadline_ms: self.inner.deadline_ms,
+                clock: Arc::clone(&self.inner.clock),
+                budget: Arc::clone(&self.inner.budget),
+                caps: Arc::new(self.inner.caps.intersect(&narrow)),
+                principal: self.inner.principal.clone(),
+                trace: self.inner.trace.clone(),
+                obs: Arc::clone(&self.inner.obs),
+            }),
+        }
+    }
+
     /// Attenuation only: caps = self ∩ narrow; budget CARVED from self (never
     /// duplicated); cancel is a child token; principal is replaced; span
     /// increments.
@@ -408,6 +448,39 @@ mod tests {
                 span: 0,
             },
         )
+    }
+
+    #[test]
+    fn ctx_tool_gate_denies_outside_scope_with_event() {
+        let obs = Arc::new(RecordingObserver::new());
+        let base = Ctx::with_observer(
+            caps(CapKind::FS_READ),
+            Budget::unlimited(),
+            obs.clone(),
+            TraceCtx {
+                run: pii_abi::RunId::from("t"),
+                span: 0,
+            },
+        );
+        // Unrestricted until a tier narrows it.
+        assert!(base.tool("bash").is_ok());
+        let tiered = base.with_tools(&[String::from("fs_read")]);
+        assert!(tiered.tool("fs_read").is_ok(), "inside the list is allowed");
+        let err = tiered.tool("bash").unwrap_err();
+        assert!(matches!(err, PiiError::Denied(_)), "got {err:?}");
+        assert!(
+            obs.events().iter().any(|e| matches!(
+                e,
+                crate::observe::ObsEvent::Denial { cap, .. } if cap == "tool:bash"
+            )),
+            "a denial event names the tool"
+        );
+        // Attenuation is monotonic: a second narrowing can never re-widen.
+        let narrower = tiered.with_tools(&[String::from("fs_read"), String::from("bash")]);
+        assert!(narrower.tool("bash").is_err(), "cannot widen");
+        assert!(narrower.tool("fs_read").is_ok());
+        // The parent is untouched.
+        assert!(base.tool("bash").is_ok());
     }
 
     #[test]

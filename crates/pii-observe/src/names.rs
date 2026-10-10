@@ -32,6 +32,10 @@ pub const DAEMON_SANDBOX_IN_FORCE: &str = "daemon.sandbox.in_force";
 pub const TOOLS_DENY_LIST_HIT: &str = "tools.deny_list.hit";
 /// Event: the provider and model a request resolved to.
 pub const MODEL_PROVIDER_IN_FORCE: &str = "model.provider.in_force";
+/// Event: the model tier and model spec an agent node resolved to (spec 114).
+pub const MODEL_TIER_RESOLVED: &str = "model.tier.resolved";
+/// Event: a configured model tier's provider could not be built; runs naming it refuse (spec 114).
+pub const MODEL_TIER_UNAVAILABLE: &str = "model.tier.unavailable";
 /// Measure: model request latency.
 pub const MODEL_REQUEST_LATENCY: &str = "model.request.latency";
 /// Event: a model provider returned an error.
@@ -160,6 +164,8 @@ pub const ALL: &[&str] = &[
     TOOLS_DENY_LIST_HIT,
     DAEMON_SANDBOX_IN_FORCE,
     MODEL_PROVIDER_IN_FORCE,
+    MODEL_TIER_RESOLVED,
+    MODEL_TIER_UNAVAILABLE,
     MODEL_REQUEST_LATENCY,
     MODEL_PROVIDER_ERROR,
     MODEL_PROVIDER_AUTH_FAILED,

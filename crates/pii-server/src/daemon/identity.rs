@@ -19,7 +19,14 @@ use crate::Engine;
 /// The subsystem groups `sys.status` aggregates, in report order. A group
 /// with no live members (no daemon, no workers configured) is still
 /// registered; `registry_is_pinned_by_name` fails if one is dropped.
-const GROUPS: [&str; 5] = ["store", "memory", "net", "worker", "channels"];
+const GROUPS: [&str; 6] = [
+    "store",
+    "memory",
+    "net",
+    "worker",
+    "channels",
+    "model_tiers",
+];
 
 /// Every health-reporting subsystem the daemon aggregates, as
 /// `&dyn Health` under its group name.
@@ -53,6 +60,7 @@ impl<'a> Registry<'a> {
                     .flat_map(|m| m.values().map(|c| c as &dyn Health))
                     .collect(),
             ),
+            (GROUPS[5], engine.tiers.health_members().collect()),
         ])
     }
 
@@ -264,6 +272,7 @@ mod tests {
                 ),
                 sandbox,
                 route_policy: BTreeMap::new(),
+                tiers: Vec::new(),
                 session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
                 graph_dir: dir.path().join("graphs"),
             })
@@ -301,6 +310,7 @@ mod tests {
             ),
             sandbox: SandboxProfileName::Off,
             route_policy: BTreeMap::new(),
+            tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
             graph_dir: dir.path().join("graphs"),
         })
@@ -308,7 +318,14 @@ mod tests {
         let registry = Registry::build(&engine, None, None, None);
         assert_eq!(
             registry.group_names(),
-            ["store", "memory", "net", "worker", "channels"]
+            [
+                "store",
+                "memory",
+                "net",
+                "worker",
+                "channels",
+                "model_tiers"
+            ]
         );
         let names: Vec<_> = registry.reports().into_iter().map(|h| h.name).collect();
         assert_eq!(
@@ -331,6 +348,7 @@ mod tests {
             ),
             sandbox: SandboxProfileName::Off,
             route_policy: BTreeMap::new(),
+            tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
             graph_dir: dir.path().join("graphs"),
         })

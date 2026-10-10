@@ -368,6 +368,7 @@ mod tests {
             model: format!("scripted:{}", fixtures_hello.display()),
             sandbox: pii_tools::sandbox::SandboxProfileName::Off,
             route_policy: std::collections::BTreeMap::new(),
+            tiers: Vec::new(),
             session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
             graph_dir: dir.path().join("graphs"),
         })

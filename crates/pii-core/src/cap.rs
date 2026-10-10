@@ -180,6 +180,9 @@ pub struct CapSet {
     pub proc_argv0: ArgvScope,
     /// Allowed secret key prefixes.
     pub secrets: SecretScope,
+    /// Tool names this context may call (exact match). `None` = unrestricted;
+    /// `Some` is an allowlist that only ever shrinks (spec 114).
+    pub tools: Option<Vec<String>>,
 }
 
 impl Default for CapSet {
@@ -192,6 +195,7 @@ impl Default for CapSet {
             net_hosts: HostScope::default(),
             proc_argv0: ArgvScope::default(),
             secrets: SecretScope::default(),
+            tools: None,
         }
     }
 }
@@ -214,6 +218,10 @@ impl CapSet {
             net_hosts: self.net_hosts.intersect(&other.net_hosts),
             proc_argv0: self.proc_argv0.intersect(&other.proc_argv0),
             secrets: self.secrets.intersect(&other.secrets),
+            tools: match (&self.tools, &other.tools) {
+                (None, t) | (t, None) => t.clone(),
+                (Some(a), Some(b)) => Some(a.iter().filter(|n| b.contains(n)).cloned().collect()),
+            },
         }
     }
 

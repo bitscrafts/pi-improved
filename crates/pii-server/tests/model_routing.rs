@@ -76,6 +76,7 @@ fn route_step_resolves_model() {
         live: None,
         memory: None,
         route_policy: policy.clone(),
+        tiers: None,
     };
     let node = factory
         .build(&serde_json::json!({
@@ -120,6 +121,7 @@ async fn route_decision_is_journaled() {
         sandbox: SandboxProfileName::Off,
         graph_dir: dir.join("graphs"),
         route_policy: std::iter::once(("patch".to_owned(), "modelX".to_owned())).collect(),
+        tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
     })
     .expect("engine");
@@ -134,6 +136,7 @@ async fn route_decision_is_journaled() {
         engine.cfg.route_policy.clone(),
         Arc::new(parking_lot::Mutex::new(None)),
         Arc::new(pii_observe::NullObserver),
+        Arc::clone(&engine.tiers),
     );
     // Subscribe to the engine's REAL bus before running (F21 pattern).
     let mut live = engine.bus.subscribe();
@@ -179,6 +182,7 @@ fn engine_cfg_of(engine: &Arc<pii_server::Engine>) -> pii_server::EngineConfig {
         sandbox: engine.cfg.sandbox,
         graph_dir: engine.cfg.graph_dir.clone(),
         route_policy: engine.cfg.route_policy.clone(),
+        tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
     }
 }

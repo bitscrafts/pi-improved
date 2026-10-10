@@ -49,6 +49,7 @@ impl ModelProvider for RecordingProvider {
 
 fn test_node(provider: Arc<RecordingProvider>) -> AgentNode {
     AgentNode {
+        tier: None,
         system: String::from("You are pii."),
         route_step: None,
         max_turns: 4,
@@ -76,6 +77,7 @@ fn agent_factory_ports_include_fail() {
             seen: Mutex::new(Vec::new()),
         }),
         route_policy: std::collections::BTreeMap::new(),
+        tiers: None,
         workspace: std::path::PathBuf::from("."),
         live: None,
         memory: None,
@@ -127,6 +129,7 @@ fn provider_failure_with_context_overflow_routes_to_fail() {
         message: String::from("llamacpp: prompt too long"),
     });
     let node = AgentNode {
+        tier: None,
         system: String::from("You are pii."),
         route_step: None,
         max_turns: 4,
@@ -168,6 +171,7 @@ fn provider_failure_5xx_routes_to_fail_after_retry_exhausted() {
     });
     assert!(err.is_retryable(), "503 must be retryable per spec-39");
     let node = AgentNode {
+        tier: None,
         system: String::from("You are pii."),
         route_step: None,
         max_turns: 4,
@@ -202,6 +206,7 @@ fn provider_failure_5xx_routes_to_fail_after_retry_exhausted() {
 #[test]
 fn non_provider_error_still_routes_to_err() {
     let node = AgentNode {
+        tier: None,
         system: String::from("You are pii."),
         route_step: None,
         max_turns: 4,
@@ -488,6 +493,7 @@ fn agent_emits_assistant_delta() {
 
     let (tx, mut rx) = tokio::sync::broadcast::channel::<SeqEvent>(16);
     let node = AgentNode {
+        tier: None,
         system: String::from("You are pii."),
         route_step: None,
         max_turns: 4,
@@ -567,6 +573,7 @@ fn agent_streaming_uses_session_from_input() {
 
     let (tx, mut rx) = tokio::sync::broadcast::channel::<SeqEvent>(16);
     let node = AgentNode {
+        tier: None,
         system: String::from("You are pii."),
         route_step: None,
         max_turns: 4,
@@ -709,6 +716,7 @@ fn memorize_marker_is_written_and_stripped() {
     let _ = std::fs::remove_file(db);
     let store = Arc::new(MemStore::open(std::path::Path::new(db)).unwrap());
     let node = AgentNode {
+        tier: None,
         system: String::from("You are pii."),
         route_step: None,
         max_turns: 4,

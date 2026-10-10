@@ -526,6 +526,7 @@ mod tests {
             sandbox: pii_tools::sandbox::SandboxProfileName::Off,
             graph_dir: dir.clone(),
             route_policy: std::collections::BTreeMap::new(),
+            tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
         })
         .unwrap();
