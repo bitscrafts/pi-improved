@@ -100,3 +100,10 @@ refuse while a daemon holds the stores; five mutations (provenance, id derivatio
 capability) each red then restored; `quality-gate.sh` ALL PASS; `--worktree` fresh-gate PASS (which the worker
 correctly labels as *not* a substitute for the plain form on the commit).
 
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD)
+`fresh-gate` (exactly HEAD `3f3364c`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0, 14 steps — the
+criterion the worker could not run (it tests the committed HEAD, and a worker may not commit). **126: 8/8**, with
+the one worker-report assumption (`--worktree` fresh-gate PASS is not a substitute for the plain form on the
+commit) now settled by the plain run. Disk before the run: `cargo clean` removed 78.7 GiB (113,267 files) →
+98 GB free, so the gate never competed for space.
+
