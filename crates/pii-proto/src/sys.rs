@@ -172,6 +172,9 @@ pub struct Counts {
     /// MQTT messages published (spec 117).
     #[serde(default)]
     pub mqtt_published: u64,
+    /// Worker requests refused or cancelled around a drain/reload (spec 120).
+    #[serde(default)]
+    pub worker_requests_refused: u64,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).

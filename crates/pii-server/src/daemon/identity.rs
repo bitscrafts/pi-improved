@@ -116,6 +116,15 @@ fn add_channel_counters(counts: &mut Counts, channels: Option<&BTreeMap<String, 
     }
 }
 
+/// Worker requests refused or cancelled around a drain/reload, summed (spec 120).
+fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> u64 {
+    workers
+        .into_iter()
+        .flat_map(BTreeMap::values)
+        .map(pii_worker::Supervisor::refused_count)
+        .sum()
+}
+
 /// Fills the identity fields of `out` from `engine` (and `ctx` when a daemon
 /// is attached). The pre-existing fields are left untouched.
 pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResult) {
@@ -182,6 +191,7 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
         add_channel_counters(&mut counts, channels.as_deref());
+        counts.worker_requests_refused = refused_total(workers.as_deref());
         out.mounts.extend(daemon_mounts(ctx));
         out.config = ConfigIdentity {
             path: ctx.config_path.display().to_string(),

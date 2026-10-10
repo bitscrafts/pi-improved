@@ -2,13 +2,14 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
 use pii_abi::PiiError;
 use pii_core::Ctx;
+use pii_observe::{Event, Level, Observed, names};
 
 use crate::frame::WorkerFrame;
 use crate::spec::{ReloadReport, WorkerState};
@@ -32,8 +33,12 @@ impl Supervisor {
         args: serde_json::Value,
         timeout_ms: u64,
     ) -> Result<serde_json::Value, PiiError> {
-        let state = self.inner.state.lock().state;
-        match state {
+        // The state decision and the request's registration are ONE critical
+        // section (spec 120): a reload that marks Draining afterwards sees this
+        // request in `slots` and waits for it; one that marked Draining first is
+        // seen here, and the request is queued. No third outcome exists.
+        let mut sh = self.inner.state.lock();
+        match sh.state {
             WorkerState::Failed => {
                 return Err(PiiError::Denied(format!(
                     "worker '{}' is failed",
@@ -41,10 +46,15 @@ impl Supervisor {
                 )));
             }
             WorkerState::Draining | WorkerState::Restarting => {
-                // Queue (bounded 256); a full queue is retryable (F3.6).
+                // Queue (bounded 256); a full queue is retryable (F3.6). Pushed
+                // under the state lock so a reload flushing the queue after it
+                // flips to Ready cannot miss this entry.
                 let (tx, rx) = channel();
                 let mut q = self.inner.queue.lock();
                 if q.len() >= MAX_QUEUE {
+                    drop(q);
+                    drop(sh);
+                    self.note_refused(op, "queue_full");
                     return Err(PiiError::Unavailable(format!(
                         "worker '{}' reload queue full",
                         self.inner.spec.name
@@ -56,15 +66,32 @@ impl Supervisor {
                     tx,
                 });
                 drop(q);
+                drop(sh);
                 return rx
                     .recv_timeout(Duration::from_millis(timeout_ms.max(30_000)))
                     .map_err(|_| {
+                        self.note_refused(op, "queue_timeout");
                         PiiError::Unavailable(format!("worker '{op}' queued too long"))
                     })?;
             }
             WorkerState::Starting | WorkerState::Ready => {}
         }
-        self.invoke_now(op, &args, timeout_ms)
+        let (id, rx) = self.register_locked(&mut sh);
+        drop(sh);
+        self.seam_invoke_gap();
+        self.send_and_wait(id, &rx, op, args, timeout_ms)
+    }
+
+    /// Allocates an id and registers its reply slot while the caller holds the state lock.
+    fn register_locked(
+        &self,
+        sh: &mut crate::supervisor::WorkerShared,
+    ) -> (u64, Receiver<Result<serde_json::Value, PiiError>>) {
+        let (tx, rx) = channel();
+        let id = sh.next_id;
+        sh.next_id += 1;
+        self.inner.slots.lock().insert(id, Slot { tx });
+        (id, rx)
     }
 
     pub(crate) fn invoke_now(
@@ -73,19 +100,30 @@ impl Supervisor {
         args: &serde_json::Value,
         timeout_ms: u64,
     ) -> Result<serde_json::Value, PiiError> {
-        let (tx, rx) = channel();
-        let id = {
+        let (id, rx) = {
             let mut sh = self.inner.state.lock();
-            let id = sh.next_id;
-            sh.next_id += 1;
-            id
+            self.register_locked(&mut sh)
         };
-        self.inner.slots.lock().insert(id, Slot { tx });
-        self.send(WorkerFrame::Req {
+        self.send_and_wait(id, &rx, op, args.clone(), timeout_ms)
+    }
+
+    fn send_and_wait(
+        &self,
+        id: u64,
+        rx: &Receiver<Result<serde_json::Value, PiiError>>,
+        op: &str,
+        args: serde_json::Value,
+        timeout_ms: u64,
+    ) -> Result<serde_json::Value, PiiError> {
+        if let Err(e) = self.send(WorkerFrame::Req {
             id,
             op: String::from(op),
-            args: args.clone(),
-        })?;
+            args,
+        }) {
+            // Never leave a slot behind: a reload would wait on it.
+            self.inner.slots.lock().remove(&id);
+            return Err(e);
+        }
         let Ok(r) = rx.recv_timeout(Duration::from_millis(timeout_ms.max(1))) else {
             self.inner.slots.lock().remove(&id);
             return Err(PiiError::Unavailable(format!(
@@ -113,13 +151,19 @@ impl Supervisor {
         }
     }
 
-    pub(crate) fn death(&self, code: Option<i32>) {
+    /// `reporter_pid` is the child whose reader saw EOF: a report from a child
+    /// that is no longer the current one (its replacement is already up) is
+    /// stale and must not be taken for a death of the replacement (spec 120 R6).
+    pub(crate) fn death(&self, reporter_pid: u32, code: Option<i32>) {
         // Destructure a snapshot, then release the state lock before any
         // blocking child teardown: `kill()` waits for the process to die,
         // and `invoke()` must observe a post-death state (Restarting) and
         // queue or fail WITHOUT waiting for that teardown.
         let (pid, in_flight, ids, capped) = {
             let mut sh = self.inner.state.lock();
+            if sh.pid != reporter_pid {
+                return;
+            }
             if sh.state == WorkerState::Draining {
                 sh.child = None; // a reload in progress owns the respawn
                 return;
@@ -218,14 +262,16 @@ impl Supervisor {
     /// # Errors
     /// [`PiiError::Unavailable`] when the fresh child never says hello.
     pub fn reload(&self, ctx: &Ctx) -> Result<ReloadReport, PiiError> {
+        // Mark Draining and count in-flight in one critical section: the count is
+        // exactly the set of requests `invoke` registered before the flip.
         let (old_pid, in_flight) = {
-            let sh = self.inner.state.lock();
+            let mut sh = self.inner.state.lock();
+            sh.state = WorkerState::Draining;
             (
                 sh.pid,
-                u32::try_from(self.inner.slots.lock().len()).unwrap_or(0),
+                u32::try_from(self.inner.slots.lock().len()).unwrap_or(u32::MAX),
             )
         };
-        self.inner.state.lock().state = WorkerState::Draining;
         self.note_state(WorkerState::Draining);
 
         // (2) wait for in-flight to reach zero, deadline 5 s.
@@ -233,8 +279,6 @@ impl Supervisor {
         while !self.inner.slots.lock().is_empty() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(5));
         }
-        let drained_in_flight = u32::try_from(self.inner.slots.lock().len()).unwrap_or(0);
-        let _ = drained_in_flight;
 
         // (3) shutdown, wait ≤1 s, else kill. The child is parked in
         // `stale_child` and torn down AFTER the state lock is released —
@@ -262,6 +306,12 @@ impl Supervisor {
             let _ = c.kill();
         }
 
+        // Anything still pending at the deadline will never be answered by the
+        // child just shut down: fail it NOW with a named error and event rather
+        // than leave its caller to wait out its own timeout.
+        let aborted = self.abort_pending();
+        self.seam_reload_gap();
+
         // (4)+(5) spawn the CURRENT program path and say hello.
         *self.inner.ctx.lock() = Some(ctx.clone());
         self.spawn_and_hello(ctx)?;
@@ -271,12 +321,37 @@ impl Supervisor {
         self.inner.state.lock().state = WorkerState::Ready;
         self.note_state(WorkerState::Ready);
         let drained = self.drain_queue();
+        self.emit(
+            &Event::new("worker", Level::Info, names::WORKER_RELOAD_COMPLETED)
+                .field("worker", self.inner.spec.name.as_str())
+                .field("old_pid", old_pid)
+                .field("new_pid", new_pid)
+                .field("in_flight_at_start", in_flight)
+                .field("queued_flushed", drained)
+                .field("aborted", aborted),
+        );
         Ok(ReloadReport {
             old_pid,
             new_pid,
             drained,
             in_flight_at_start: in_flight,
+            aborted,
         })
+    }
+
+    /// Fails every still-registered request with a named error; returns how many.
+    fn abort_pending(&self) -> u32 {
+        let pending: Vec<Slot> = std::mem::take(&mut *self.inner.slots.lock())
+            .into_values()
+            .collect();
+        for slot in &pending {
+            self.note_refused("-", "reload_deadline");
+            let _ = slot.tx.send(Err(PiiError::Unavailable(format!(
+                "ReloadAborted: worker '{}' did not answer within the {RELOAD_DRAIN_DEADLINE_MS}ms drain deadline",
+                self.inner.spec.name
+            ))));
+        }
+        u32::try_from(pending.len()).unwrap_or(u32::MAX)
     }
 }
 
@@ -351,3 +426,254 @@ impl Supervisor {
 }
 
 const _: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use std::sync::Arc;
+    use std::sync::mpsc;
+
+    use parking_lot::Mutex as StdMutex;
+    use std::time::Duration;
+
+    use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx};
+
+    use crate::{Supervisor, WorkerEvent, WorkerSpec, WorkerState};
+
+    fn pii_bin() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("target/debug/pii")
+    }
+
+    fn ctx() -> Ctx {
+        let mut caps = CapSet::empty();
+        caps.kinds = CapKind::SPAWN | CapKind::PROC;
+        caps.proc_argv0 = ArgvScope::new(vec![pii_bin().to_string_lossy().into_owned()]);
+        Ctx::root(caps, Budget::unlimited())
+    }
+
+    fn spec() -> WorkerSpec {
+        WorkerSpec {
+            name: "w".into(),
+            program: pii_bin(),
+            args: ["worker-exec", "--name", "w", "--tag", "a"]
+                .map(String::from)
+                .to_vec(),
+            env: Vec::new(),
+            max_in_flight: 0,
+            ready_timeout_ms: 5_000,
+            restart_backoff_ms: 50,
+            restart_window_ms: 60_000,
+            max_restarts_in_window: 5,
+        }
+    }
+
+    /// One-shot rendezvous: the hook announces it arrived, then parks until released.
+    fn parked_hook() -> (
+        Arc<dyn Fn() + Send + Sync>,
+        mpsc::Receiver<()>,
+        mpsc::Sender<()>,
+    ) {
+        let (arrived_tx, arrived_rx) = mpsc::channel();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        let go_rx = StdMutex::new(go_rx);
+        let first = std::sync::atomic::AtomicBool::new(true);
+        let hook = Arc::new(move || {
+            if first.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                let _ = arrived_tx.send(());
+                let _ = go_rx.lock().recv();
+            }
+        });
+        (hook, arrived_rx, go_tx)
+    }
+
+    /// Spec 120 R1: an `invoke` that decided "Ready" and is then overtaken by a
+    /// whole reload (draining seen empty, old child shut down) must not be lost.
+    #[test]
+    fn invoke_overtaken_by_a_reload_is_not_dropped() {
+        let ctx = ctx();
+        let sup = Supervisor::new(spec());
+        sup.start(&ctx).unwrap();
+
+        let (invoke_hook, invoke_at_gap, invoke_go) = parked_hook();
+        let (reload_hook, reload_at_gap, reload_go) = parked_hook();
+        *sup.inner.seams.invoke_gap.lock() = Some(invoke_hook);
+        *sup.inner.seams.reload_gap.lock() = Some(reload_hook);
+
+        let a = {
+            let (sup, ctx) = (sup.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                sup.invoke(&ctx, "echo", serde_json::json!({"v": 1}), 10_000)
+            })
+        };
+        invoke_at_gap.recv_timeout(Duration::from_secs(10)).unwrap();
+        let b = {
+            let (sup, ctx) = (sup.clone(), ctx);
+            std::thread::spawn(move || sup.reload(&ctx))
+        };
+        // An invoke that registered atomically with its state decision already holds a
+        // slot, so the reload must wait for it and never reaches its gap until released.
+        if sup.slot_count() == 0 {
+            reload_at_gap.recv_timeout(Duration::from_secs(10)).unwrap();
+        }
+        invoke_go.send(()).unwrap();
+        let r = a.join().unwrap();
+        reload_go.send(()).unwrap();
+        b.join().unwrap().unwrap();
+        assert!(r.is_ok(), "invoke lost across a reload: {r:?}");
+    }
+
+    /// Spec 120 R6: the OLD child's reader reporting EOF after the reload finished
+    /// must not be mistaken for a death of the NEW child.
+    #[test]
+    fn stale_reader_eof_after_reload_does_not_kill_the_new_worker() {
+        let ctx = ctx();
+        let sup = Supervisor::new(spec());
+        sup.start(&ctx).unwrap();
+        let old_pid = sup.info().pid;
+
+        let (eof_tx, eof_rx) = mpsc::channel();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        let (done_tx, done_rx) = mpsc::channel();
+        let go_rx = StdMutex::new(go_rx);
+        let seen = std::sync::atomic::AtomicBool::new(false);
+        *sup.inner.seams.reader_eof.lock() = Some(Arc::new(move |after| {
+            if after {
+                let _ = done_tx.send(());
+            } else if !seen.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                let _ = eof_tx.send(());
+                let _ = go_rx.lock().recv();
+            }
+        }));
+
+        let b = {
+            let (sup, ctx) = (sup.clone(), ctx.clone());
+            std::thread::spawn(move || sup.reload(&ctx))
+        };
+        // The old reader sees EOF as soon as the old child exits, then parks.
+        eof_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // Let the reload finish completely while the old reader is parked.
+        b.join().unwrap().unwrap();
+        let new_pid = sup.info().pid;
+        assert_ne!(new_pid, old_pid);
+        // Now the stale reader reports.
+        go_tx.send(()).unwrap();
+        done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+
+        let died: Vec<WorkerEvent> = sup
+            .events()
+            .into_iter()
+            .filter(|e| matches!(e, WorkerEvent::Died { .. }))
+            .collect();
+        assert!(died.is_empty(), "stale EOF recorded a death: {died:?}");
+        let info = sup.info();
+        assert_eq!(info.state, WorkerState::Ready);
+        assert_eq!(info.pid, new_pid);
+        sup.invoke(&ctx, "echo", serde_json::json!({"v": 1}), 10_000)
+            .unwrap();
+    }
+
+    /// Spec 120 R5: a full drain queue refuses with a named error, an event, and a count.
+    #[test]
+    fn a_refused_request_emits_its_event_and_moves_the_counter() {
+        use pii_observe::{Recorder, names};
+        let rec = Arc::new(Recorder::new());
+        let sup = Supervisor::new(spec());
+        sup.set_observer(rec.clone());
+        sup.inner.state.lock().state = WorkerState::Draining;
+        for _ in 0..super::MAX_QUEUE {
+            let (tx, _rx) = mpsc::channel();
+            sup.inner.queue.lock().push(super::Queued {
+                op: "echo".into(),
+                args: serde_json::Value::Null,
+                tx,
+            });
+        }
+        assert_eq!(sup.refused_count(), 0);
+        let r = sup.invoke(&ctx(), "echo", serde_json::json!({}), 100);
+        assert!(r.unwrap_err().to_string().contains("reload queue full"));
+        assert_eq!(sup.refused_count(), 1);
+        let ev = rec.events_named(names::WORKER_REQUEST_REFUSED);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].fields.get("reason"), Some(&"queue_full".into()));
+        assert!(names::ALL.contains(&names::WORKER_REQUEST_REFUSED));
+        assert!(names::ALL.contains(&names::WORKER_RELOAD_COMPLETED));
+        assert!(names::ALL.contains(&names::METRIC_WORKER_REQUESTS_REFUSED_TOTAL));
+    }
+
+    /// Spec 120 R3: what is still pending at the drain deadline is failed with a
+    /// named error and counted, never left to vanish.
+    #[test]
+    fn pending_at_the_deadline_is_aborted_with_a_named_error() {
+        use pii_observe::{Recorder, names};
+        let rec = Arc::new(Recorder::new());
+        let sup = Supervisor::new(spec());
+        sup.set_observer(rec.clone());
+        let (tx, rx) = mpsc::channel();
+        sup.inner.slots.lock().insert(7, super::Slot { tx });
+        assert_eq!(sup.abort_pending(), 1);
+        let err = rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap_err();
+        assert!(err.to_string().contains("ReloadAborted"), "{err}");
+        assert_eq!(sup.slot_count(), 0);
+        assert_eq!(sup.refused_count(), 1);
+        let ev = rec.events_named(names::WORKER_REQUEST_REFUSED);
+        assert_eq!(ev[0].fields.get("reason"), Some(&"reload_deadline".into()));
+    }
+
+    /// Spec 120 R5: a completed reload reports how many requests it drained, and
+    /// "nothing was in flight" reads differently from "one was waited for".
+    #[test]
+    fn a_reload_reports_what_it_drained() {
+        use pii_observe::{Recorder, names};
+        let ctx = ctx();
+        let rec = Arc::new(Recorder::new());
+        let sup = Supervisor::new(spec());
+        sup.set_observer(rec.clone());
+        sup.start(&ctx).unwrap();
+
+        // Quiet reload: nothing in flight.
+        let quiet = sup.reload(&ctx).unwrap();
+        assert_eq!((quiet.in_flight_at_start, quiet.aborted), (0, 0));
+
+        // Busy reload: one request registered and parked before the reload starts.
+        let (hook, at_gap, go) = parked_hook();
+        *sup.inner.seams.invoke_gap.lock() = Some(hook);
+        let a = {
+            let (sup, ctx) = (sup.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                sup.invoke(&ctx, "echo", serde_json::json!({"v": 1}), 10_000)
+            })
+        };
+        at_gap.recv_timeout(Duration::from_secs(10)).unwrap();
+        let b = {
+            let sup = sup.clone();
+            std::thread::spawn(move || sup.reload(&ctx))
+        };
+        while sup.info().state != WorkerState::Draining {
+            std::thread::yield_now();
+        }
+        go.send(()).unwrap();
+        a.join().unwrap().unwrap();
+        let busy = b.join().unwrap().unwrap();
+        assert_eq!((busy.in_flight_at_start, busy.aborted), (1, 0));
+
+        let ev = rec.events_named(names::WORKER_RELOAD_COMPLETED);
+        assert_eq!(ev.len(), 2);
+        assert_eq!(ev[0].fields.get("in_flight_at_start"), Some(&0.into()));
+        assert_eq!(ev[1].fields.get("in_flight_at_start"), Some(&1.into()));
+        assert_eq!(ev[1].fields.get("aborted"), Some(&0.into()));
+    }
+}

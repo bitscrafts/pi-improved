@@ -88,6 +88,8 @@ pub struct ReloadReport {
     pub new_pid: u32,
     /// Queued requests drained after the swap.
     pub drained: u32,
-    /// In-flight count when the reload started.
+    /// In-flight count when the reload started (they were waited for, not dropped).
     pub in_flight_at_start: u32,
+    /// In-flight requests still pending at the drain deadline, cancelled with a named error.
+    pub aborted: u32,
 }

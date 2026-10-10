@@ -25,6 +25,27 @@ impl Supervisor {
         let _ = self.inner.observer.set(observer);
     }
 
+    /// Counts and reports a request refused or cancelled around a drain/reload.
+    pub(crate) fn note_refused(&self, op: &str, reason: &'static str) {
+        self.inner
+            .refused
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(
+            &Event::new("worker", Level::Warn, names::WORKER_REQUEST_REFUSED)
+                .field("worker", self.inner.spec.name.as_str())
+                .field("op", op)
+                .field("reason", reason),
+        );
+    }
+
+    /// Requests refused or cancelled around a drain/reload since start.
+    #[must_use]
+    pub fn refused_count(&self) -> u64 {
+        self.inner
+            .refused
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Reports that the worker entered `to`.
     pub(crate) fn note_state(&self, to: WorkerState) {
         let level = if to == WorkerState::Failed {

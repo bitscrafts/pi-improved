@@ -72,3 +72,39 @@ R7. **Docs**: the runbook gains the reload semantics in one short section — wh
 Two consequences this spec already encodes: R1 demands a **deterministic seam** because probabilistic repros
 disagree by two orders of magnitude between invocations (0/10, 6/25, 2/15), and any harness must run the test the
 way the GATE runs it.
+
+## Orchestrator verification (2026-10-10) — and the last duration assumption in the suite is gone
+**My controls:**
+- `cargo test -p pii-worker --lib` → **8 passed** (includes the two deterministic seam tests); `--test supervisor` →
+  **10 passed**.
+- **Load stability, mine**: the existing `reload_drops_no_requests` unchanged, **10 runs at `taskset -c 0-3` with 16
+  hogs → 0 failures** (the worker reports 30 of 30; I verified 10 of the 30).
+- The deterministic repro is the seam, not the probabilistic load: `invoke_overtaken_by_a_reload_is_not_dropped` was
+  red with `Err(Unavailable("worker writer closed"))` and `stale_reader_eof_after_reload_does_not_kill_the_new_worker`
+  with `[Died{..}, Died{..}]` before the fix, green after — 5 of 5 each.
+
+**The fix is the strong form of R3**: state decision and slot registration happen under ONE lock, so a reload that
+sets Draining counts the request in the same step; a request that arrives after sees Draining and is queued. Two
+smaller leaks went with it: a failed `send` no longer leaves its slot behind (which used to make a reload wait on
+it), and requests still pending at the 5 s drain deadline are failed with `ReloadAborted` plus a refusal event
+rather than hanging until their own timeout. **No latency added** — the lock is held for a map insert only, and the
+send happens after it is released (the guardrail asked for exactly that number, and it is zero).
+
+**R6 found a SECOND real defect**: the old worker's reader could report EOF *after* the reload completed, and `death`
+took that for a death of the NEW worker — killing and restarting it (hence the two `Died` events in the failing
+repro). The reader now passes its pid and `death` ignores a report from a pid that is no longer current. That is the
+kind of thing the load test was hiding all along: a lost request AND a spurious restart.
+
+**And the worker's own gate run surfaced the last one**: its first `coverage-floor` run failed on a
+`pii-graph diamond` test — the same load-sensitive family spec 119 attacked — so the remaining duration assumption is
+now gone too, fixed by the orchestrator in `crates/pii-graph/tests/diamond.rs`: the claim *"the run ended before the
+loser's 5000 ms timer"* is a fact about the **engine's own clock** (`at_ms` from the winner's `NodeFinished`), not
+about this machine's load. The generous `wall_ms < 60_000` stays only as a hang guard.
+**Control**: making `cancel_losers` a no-op reddens BOTH race tests at exactly the new assertion
+(`diamond.rs:289` and `:320`), and the run takes 10.4 s instead of 0.35 s — the engine really did wait for the
+timers; restored → 5 passed.
+
+**Carried limitation (the worker's, kept):** the pre-fix failure rate under load was not re-measured by the worker —
+the red evidence is the deterministic seam, which is stronger. And a queued request whose caller has already timed
+out still runs on the new worker with nobody listening: left alone as out of scope, and worth its own line later.
+

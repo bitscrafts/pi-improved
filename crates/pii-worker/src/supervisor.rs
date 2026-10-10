@@ -104,6 +104,11 @@ pub(crate) struct Inner {
     pub stale_child: Mutex<Option<ChildProc>>,
     /// Set once by [`Supervisor::set_observer`].
     pub observer: std::sync::OnceLock<Arc<dyn pii_observe::Observer>>,
+    /// Requests refused or cancelled around a drain/reload (spec 120).
+    pub refused: std::sync::atomic::AtomicU64,
+    /// Test hooks that force an interleaving (spec 120).
+    #[cfg(test)]
+    pub seams: crate::seams::Seams,
 }
 
 impl WorkerShared {
@@ -148,6 +153,9 @@ impl Supervisor {
                 events: Mutex::new(Vec::new()),
                 stale_child: Mutex::new(None),
                 observer: std::sync::OnceLock::new(),
+                refused: std::sync::atomic::AtomicU64::new(0),
+                #[cfg(test)]
+                seams: crate::seams::Seams::default(),
             }),
         }
     }
@@ -246,13 +254,15 @@ impl Supervisor {
                         line.clear();
                         match r.read_until(b'\n', &mut line) {
                             Ok(0) | Err(_) => {
-                                reader_sup.death(None);
+                                reader_sup.seam_reader_eof(false);
+                                reader_sup.death(pid, None);
+                                reader_sup.seam_reader_eof(true);
                                 return;
                             }
                             Ok(_) => {}
                         }
                         if line.len() > crate::frame::MAX_FRAME {
-                            reader_sup.death(None);
+                            reader_sup.death(pid, None);
                             return;
                         }
                         let s = String::from_utf8_lossy(&line);

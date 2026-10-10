@@ -114,6 +114,10 @@ fn render(v: &serde_json::Value) -> String {
             names::METRIC_MQTT_PUBLISHED_TOTAL,
             num(v, "/counts/mqtt_published"),
         ),
+        (
+            names::METRIC_WORKER_REQUESTS_REFUSED_TOTAL,
+            num(v, "/counts/worker_requests_refused"),
+        ),
         (names::METRIC_PROCESS_RSS_KB, num(v, "/rss_kb")),
         (
             names::METRIC_RSS_BYTES_PER_RUN,

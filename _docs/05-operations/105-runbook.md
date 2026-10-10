@@ -43,6 +43,7 @@ stamped too but is not listed in the payload.
     pii_store_bytes_per_run            gauge    main-store bytes / runs: the growth rate as one number
     pii_store_bytes{store="main"}      gauge    file size, one line per store
     pii_store_format_version{store=…}  gauge    persisted format version, one line per store
+    pii_worker_requests_refused_total  counter  worker requests refused/cancelled around a reload
     pii_run_latency_count{outcome=…}   counter  runs recorded, per outcome (succeeded|failed|suspended|refused)
     pii_run_latency_ms{outcome=…,quantile="0.5|0.95|0.99|1"}  gauge  run lifecycle (accepted -> terminal), ms
 
@@ -256,6 +257,25 @@ broker or a tunnel. Health: `channel.<name>` is `Degraded` with the reason while
 unreachable; retries back off 500 ms → 30 s (`reconnect_*_ms`). `pii metrics` shows
 `pii_mqtt_received_total`, `pii_mqtt_dropped_total`, `pii_mqtt_published_total`. See
 `_docs/02-guides/mqtt.md`.
+
+## Worker reload: what happens to a request that arrives during one (spec 120)
+
+A reload (`worker.reload`) never silently loses a request. A request is decided in one step:
+
+- **Arrived before the reload began** (already in flight): the reload waits for it, up to 5 s, then the
+  old worker is shut down. Anything still unanswered at the deadline is cancelled with
+  `ReloadAborted: ...` and the event `worker.request.refused` (`reason=reload_deadline`).
+- **Arrived while the worker is draining or restarting**: queued (bounded at 256) and run on the new
+  worker once it says hello, in arrival order. A full queue is refused with `reload queue full` and the
+  event `worker.request.refused` (`reason=queue_full`); one that waits past its timeout, `queue_timeout`.
+
+Every refusal increments `pii_worker_requests_refused_total` (`pii metrics`). A finished reload emits
+`worker.reload.completed` with `in_flight_at_start` (requests waited for), `queued_flushed` (queued
+requests run afterwards) and `aborted` (cancelled at the deadline): `0/0/0` is "a reload happened and
+nothing was in flight"; a non-zero `aborted` is "the reload cost requests", and each has its own
+`worker.request.refused` line. A worker that dies on its own is a different path: its in-flight
+requests fail with `WorkerDied` and `worker_died` is recorded; a late exit report from a worker that
+a reload already replaced is ignored (it is not a death of the new worker).
 
 ## Logs
 

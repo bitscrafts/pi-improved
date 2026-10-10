@@ -52,6 +52,12 @@ pub const MODEL_PROVIDER_EGRESS_DENIED: &str = "model.provider.egress_denied";
 pub const MODEL_PROVIDER_STREAM_DELTA: &str = "model.provider.stream_delta";
 /// Event: a supervised worker changed state.
 pub const WORKER_STATE_CHANGED: &str = "worker.state.changed";
+/// Event: a request to a worker was refused or cancelled around a drain/reload, with a named error
+/// to its caller (`worker`, `op`, `reason`: `queue_full` | `queue_timeout` | `reload_deadline`).
+pub const WORKER_REQUEST_REFUSED: &str = "worker.request.refused";
+/// Event: a worker reload finished (`worker`, `old_pid`, `new_pid`, `in_flight_at_start`,
+/// `queued_flushed`, `aborted`); `0`/`0`/`0` means nothing was in flight.
+pub const WORKER_RELOAD_COMPLETED: &str = "worker.reload.completed";
 /// Event: a memory search completed.
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.
@@ -187,6 +193,9 @@ pub const METRIC_MQTT_DROPPED_TOTAL: &str = "pii_mqtt_dropped_total";
 /// Metric (counter): MQTT messages published since the daemon started.
 pub const METRIC_MQTT_PUBLISHED_TOTAL: &str = "pii_mqtt_published_total";
 
+/// Metric (counter): worker requests refused or cancelled around a drain/reload (spec 120).
+pub const METRIC_WORKER_REQUESTS_REFUSED_TOTAL: &str = "pii_worker_requests_refused_total";
+
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
     GRAPH_NODE_DEAD,
@@ -213,6 +222,8 @@ pub const ALL: &[&str] = &[
     MODEL_PROVIDER_EGRESS_DENIED,
     MODEL_PROVIDER_STREAM_DELTA,
     WORKER_STATE_CHANGED,
+    WORKER_REQUEST_REFUSED,
+    WORKER_RELOAD_COMPLETED,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,
     CLI_FAILURE,
@@ -277,6 +288,7 @@ pub const ALL: &[&str] = &[
     METRIC_MQTT_RECEIVED_TOTAL,
     METRIC_MQTT_DROPPED_TOTAL,
     METRIC_MQTT_PUBLISHED_TOTAL,
+    METRIC_WORKER_REQUESTS_REFUSED_TOTAL,
 ];
 
 #[cfg(test)]
