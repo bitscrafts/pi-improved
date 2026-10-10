@@ -12,4 +12,5 @@ pub mod memory;
 pub mod mqtt;
 pub mod sop;
 pub mod spawn;
+pub mod wasm;
 pub mod worker;

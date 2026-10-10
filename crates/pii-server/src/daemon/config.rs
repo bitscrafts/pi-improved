@@ -295,6 +295,37 @@ pub struct HalSection {
     pub chip: Option<String>,
 }
 
+/// `[wasm]` (spec 122): where plugin modules may be loaded from and the limits
+/// every call runs under. Absent = the plugin host is off, and a `wasm` node
+/// fails the run.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WasmSection {
+    /// The only directory modules may be loaded from.
+    pub dir: String,
+    /// Wall-clock budget per call, in milliseconds (a node may only lower it).
+    #[serde(default = "default_wasm_timeout_ms")]
+    pub timeout_ms: u64,
+    /// Memory ceiling per instance, in MiB.
+    #[serde(default = "default_wasm_memory_mib")]
+    pub max_memory_mib: usize,
+    /// Fuel a node gets with `fuel = true`; also the most it may ask for.
+    #[serde(default = "default_wasm_fuel")]
+    pub fuel: u64,
+}
+
+const fn default_wasm_timeout_ms() -> u64 {
+    1000
+}
+
+const fn default_wasm_memory_mib() -> usize {
+    16
+}
+
+const fn default_wasm_fuel() -> u64 {
+    pii_wasm::DEFAULT_FUEL
+}
+
 /// The known routing steps (spec 28 R1): the evolve pipeline's fixed roles.
 pub(crate) const KNOWN_STEPS: &[&str] =
     &["localize", "patch", "review", "research", "orchestrator"];
@@ -373,6 +404,8 @@ pub struct Config {
     pub mqtt: Vec<MqttSection>,
     /// `[hal]` (spec 121); `None` = the HAL is off.
     pub hal: Option<HalSection>,
+    /// `[wasm]` (spec 122); `None` = the plugin host is off.
+    pub wasm: Option<WasmSection>,
     /// `[memory]`.
     pub memory: MemorySection,
     /// `[[cron]]`.

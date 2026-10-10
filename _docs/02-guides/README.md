@@ -6,5 +6,6 @@ How-to guides: the pidag way of work, feature gating, the MCP bridge, local llam
 - `writing-a-channel.md` — the `Channel` trait contract, config section, events, and a copyable adapter skeleton (spec 112).
 - `writing-an-sop.md` — the SOP file format, the compilation rule, precondition semantics, the approval flow, and the worked example (spec 113).
 - `model-tiers.md` — `[[model_tier]]` keys, the model precedence, the capability-layer tool gate, and the no-downgrade rule (spec 114).
+- `wasm-plugins.md` — the plugin ABI, the four runtime-enforced limits and their defaults, the `[wasm]` keys, what a plugin can and cannot do, how to build one, and what a wasm sandbox is not (spec 122).
 - `hardware-hal.md` — the HAL traits, the pin/bus capability scope, the `[hal]` keys, the simulated backend, and the real backend's UNVERIFIED status with what would verify it (spec 121).
 - `mqtt.md` — `[[mqtt]]` keys, the payload mapping, the `mqtt` publish node, backoff, the plaintext-credentials rule (spec 117).

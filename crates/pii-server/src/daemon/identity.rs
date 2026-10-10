@@ -19,7 +19,7 @@ use crate::Engine;
 /// The subsystem groups `sys.status` aggregates, in report order. A group
 /// with no live members (no daemon, no workers configured) is still
 /// registered; `registry_is_pinned_by_name` fails if one is dropped.
-const GROUPS: [&str; 7] = [
+const GROUPS: [&str; 8] = [
     "store",
     "memory",
     "net",
@@ -27,6 +27,7 @@ const GROUPS: [&str; 7] = [
     "channels",
     "model_tiers",
     "hal",
+    "wasm",
 ];
 
 /// Every health-reporting subsystem the daemon aggregates, as
@@ -40,6 +41,7 @@ impl<'a> Registry<'a> {
         workers: Option<&'a BTreeMap<String, pii_worker::Supervisor>>,
         channels: Option<&'a BTreeMap<String, ChannelRuntime>>,
         hal: Option<&'a pii_hal::Hal>,
+        wasm: Option<&'a pii_wasm::WasmHost>,
     ) -> Self {
         Self(vec![
             (GROUPS[0], vec![&*engine.store as &dyn Health]),
@@ -66,6 +68,10 @@ impl<'a> Registry<'a> {
             (
                 GROUPS[6],
                 hal.map(|h| h as &dyn Health).into_iter().collect(),
+            ),
+            (
+                GROUPS[7],
+                wasm.map(|w| w as &dyn Health).into_iter().collect(),
             ),
         ])
     }
@@ -142,6 +148,37 @@ fn add_hal_counters(counts: &mut Counts, hal: Option<&pii_hal::Hal>) {
     counts.hal_refusals = c.refusals;
 }
 
+/// The HAL's and the plugin host's counters (specs 121, 122).
+fn add_device_counters(
+    counts: &mut Counts,
+    hal: Option<&pii_hal::Hal>,
+    wasm: Option<&pii_wasm::WasmHost>,
+) {
+    add_hal_counters(counts, hal);
+    add_wasm_counters(counts, wasm);
+}
+
+/// The plugin host's call counts by outcome and its refusals (spec 122).
+/// Absent (host off) leaves them empty, so `pii metrics` prints no WASM lines.
+fn add_wasm_counters(counts: &mut Counts, wasm: Option<&pii_wasm::WasmHost>) {
+    let Some(wasm) = wasm else {
+        return;
+    };
+    let c = wasm.counts();
+    counts.wasm_calls = [
+        ("ok", c.ok),
+        ("trap", c.trap),
+        ("timeout", c.timeout),
+        ("fuel", c.fuel),
+        ("memory", c.memory),
+        ("invalid", c.invalid),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect();
+    counts.wasm_refusals = c.refusals;
+}
+
 /// Worker requests refused or cancelled around a drain/reload, summed (spec 120).
 fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> u64 {
     workers
@@ -213,14 +250,16 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     let workers = ctx.map(|c| c.workers.lock());
     let channels = ctx.map(|c| c.channels.lock());
     let hal = engine.hal.get();
+    let wasm = engine.wasm.get();
     let registry = Registry::build(
         engine,
         ctx.map(|c| &*c.net),
         workers.as_deref(),
         channels.as_deref(),
         hal.as_deref(),
+        wasm.as_deref(),
     );
-    add_hal_counters(&mut counts, hal.as_deref());
+    add_device_counters(&mut counts, hal.as_deref(), wasm.as_deref());
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
         add_channel_counters(&mut counts, channels.as_deref());
@@ -433,7 +472,7 @@ mod tests {
             graph_dir: dir.path().join("graphs"),
         })
         .unwrap();
-        let registry = Registry::build(&engine, None, None, None, None);
+        let registry = Registry::build(&engine, None, None, None, None, None);
         assert_eq!(
             registry.group_names(),
             [
@@ -443,7 +482,8 @@ mod tests {
                 "worker",
                 "channels",
                 "model_tiers",
-                "hal"
+                "hal",
+                "wasm"
             ]
         );
         let names: Vec<_> = registry.reports().into_iter().map(|h| h.name).collect();

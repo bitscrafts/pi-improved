@@ -21,7 +21,7 @@ messaging gateway with one performant, local-first, modular system.
 1. **Coding agent core** (from `pi_agent_rust`) — sub-100ms cold start, structured
    concurrency, capability-gated `Ctx`, JSONL sessions, bash mediation.
 2. **Assistant/gateway** (from `zeroclaw`) — channels (measured: 5 kinds — `cli`, `discord`, `telegram`, `matrix` (unencrypted rooms), and `webhook`, the vendor-free inbound/outbound HTTP channel; "30+" was the zeroclaw figure, not ours — the rest are written against the documented trait, see `_docs/02-guides/writing-a-channel.md`), LLM providers (measured: 5 kinds — `ollama`, `openai` (OpenAI-compatible, base URL configurable, so any vendor of that shape), `anthropic`, `gemini`, and in-process `llamacpp` behind a feature; `scripted` is a test fixture, not a provider; the "~20" was the zeroclaw figure, not ours), tools,
-   SOP engine (built, spec 113: a declarative `[[step]]` file that compiles into a graph and runs through the existing journal/resume/approval machinery — `pii sop {compile|lint|show|run|resume}`, see `_docs/02-guides/writing-an-sop.md`; `act`/`check`/`approve`/`notify` steps only, no branching), WASM plugin host, hardware HAL (built, spec 121: `pii-hal` — GPIO/I2C/SPI behind a claim + pin/bus capability scope; **verified only on the simulated backend**, the real `hal-gpiod` GPIO backend is compiled by the gate and never run on hardware; see `_docs/02-guides/hardware-hal.md`).
+   SOP engine (built, spec 113: a declarative `[[step]]` file that compiles into a graph and runs through the existing journal/resume/approval machinery — `pii sop {compile|lint|show|run|resume}`, see `_docs/02-guides/writing-an-sop.md`; `act`/`check`/`approve`/`notify` steps only, no branching), WASM plugin host (built, spec 122: `pii-wasm` — `wasm` graph nodes running untrusted core-wasm modules under epoch, fuel and memory limits with no WASI and no imports; **not fuzzed**; see `_docs/02-guides/wasm-plugins.md`), hardware HAL (built, spec 121: `pii-hal` — GPIO/I2C/SPI behind a claim + pin/bus capability scope; **verified only on the simulated backend**, the real `hal-gpiod` GPIO backend is compiled by the gate and never run on hardware; see `_docs/02-guides/hardware-hal.md`).
 3. **Cognitive memory + model tiering** (from `yantrikclaw`) — entities/relationships,
    tier-aware tool selection for model sizes 0.5B→100B+ — **built (spec 114)**: `[[model_tier]]` names a
    provider + tool allowlist, enforced by the capability layer; see `02-guides/model-tiers.md`.
@@ -42,8 +42,9 @@ messaging gateway with one performant, local-first, modular system.
   Landlock / WASI).
 - **redb persistence** (single-writer MVCC ACID, pure Rust, no C dep for static
   musl). Consequence: the daemon owns the DB; UDS control channel needed in Phase 2.
-- **WASM plugins** via `wasmtime 47.x` + WASI 0.2 component model. Epoch interruption
-  primary, fuel opt-in, pooling allocation. Core daemons (MQTT, MCP) stay native.
+- **WASM plugins** via `wasmtime 48.0.5`, **core modules with no WASI and no imports** (built, spec 122;
+  the WASI 0.2 component model was the plan and is not what shipped). Epoch interruption
+  primary, fuel opt-in, per-instance memory cap; the pooling allocator is not used. Core daemons (MQTT, MCP) stay native.
 - **Worker IPC designed from scratch** (no reference does this): SOCK_STREAM UDS +
   newline-delimited JSON-RPC 2.0, optional SCM_RIGHTS fd handoff, hot reload via
   atomic rename. Worker isolation is opt-in per subgraph, not the default.
@@ -70,12 +71,12 @@ messaging gateway with one performant, local-first, modular system.
 | 1 | Core engine (Ctx, graph, journal, resume, cold start) | 3–4 wk |
 | 2 | Coding harness (tools, sandbox, verify-fix) | 3–4 wk |
 | 3 | Assistant/gateway (daemon, UDS, channels) | 3–4 wk |
-| 4 | IoT/reactive (MQTT **done, no TLS**; hardware HAL **done on the simulated backend, real GPIO backend compiled but never run on hardware**; WASM plugins absent) | 2–3 wk |
+| 4 | IoT/reactive (MQTT **done, no TLS**; hardware HAL **done on the simulated backend, real GPIO backend compiled but never run on hardware**; WASM plugin host **done, offline-tested, not fuzzed**) | 2–3 wk |
 | 5 | Self-improvement (skills, distillation, trajectories) | 3–4 wk |
 
 **Phase 4 status (spec 117, 2026-10-10).** MQTT exists: `[[mqtt]]` subscribes a broker to a
 graph and the `mqtt` node publishes ([guide](../02-guides/mqtt.md)) — plain TCP only, **no
-TLS**, MQTT 3.1.1, clean sessions. **Hardware HAL (spec 121, 2026-10-10):** `pii-hal` gives GPIO/I2C/SPI behind a claim and a pin/bus scope ([guide](../02-guides/hardware-hal.md)); it is *exercised only on the simulated backend* — the real GPIO backend (`hal-gpiod`) compiles in the gate but has never run on hardware. **Still absent:** WASM plugins.
+TLS**, MQTT 3.1.1, clean sessions. **Hardware HAL (spec 121, 2026-10-10):** `pii-hal` gives GPIO/I2C/SPI behind a claim and a pin/bus scope ([guide](../02-guides/hardware-hal.md)); it is *exercised only on the simulated backend* — the real GPIO backend (`hal-gpiod`) compiles in the gate but has never run on hardware. **WASM plugin host (spec 122, 2026-10-10):** `pii-wasm` runs third-party `wasm` nodes without rebuilding `pii` ([guide](../02-guides/wasm-plugins.md)) — core modules only, no WASI, limits enforced by the runtime; tested offline against hand-written fixtures and **never fuzzed**. **Phase 4 has nothing left marked absent.**
 
 See [06-research/001-pii-architecture-plan.md](../06-research/002-pii-architecture-plan-pass2.md)
 for the full plan.

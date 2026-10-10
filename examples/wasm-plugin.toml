@@ -1,0 +1,14 @@
+# Spec 122 R7: run a WASM plugin as a graph node. The daemon config needs
+#   [wasm]
+#   dir = "/path/to/plugins"      # wrap.wasm lives here (built from examples/wasm/wrap.wat)
+# and nothing else: a plugin gets no capabilities, so the graph declares none.
+# The node's output is the JSON the module returned: {"got": <the run input>}.
+name = "wasm-plugin"
+entry = "wrap"
+
+[[node]]
+id = "wrap"
+kind = "wasm"
+module = "wrap.wasm"
+fuel = true          # meter against the host's default fuel ceiling
+timeout_ms = 500     # may only lower the host's wall-clock budget

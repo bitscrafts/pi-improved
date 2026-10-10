@@ -105,6 +105,31 @@ fn render_hal(v: &serde_json::Value, out: &mut String) {
     }
 }
 
+/// WASM plugin call counters (spec 122): one line per outcome, then the
+/// refusals. Emitted only when a `[wasm]` host is configured (the outcome map
+/// is then non-empty), so a daemon with the host off prints no WASM lines.
+fn render_wasm(v: &serde_json::Value, out: &mut String) {
+    let Some(calls) = v.pointer("/counts/wasm_calls").and_then(|o| o.as_object()) else {
+        return;
+    };
+    for (outcome, n) in calls {
+        let _ = writeln!(
+            out,
+            "{}{{outcome=\"{outcome}\"}} {}",
+            names::METRIC_WASM_CALLS_TOTAL,
+            n.as_u64().unwrap_or(0)
+        );
+    }
+    if !calls.is_empty() {
+        let _ = writeln!(
+            out,
+            "{} {}",
+            names::METRIC_WASM_REFUSALS_TOTAL,
+            num(v, "/counts/wasm_refusals")
+        );
+    }
+}
+
 /// Renders a `sys.status` payload as metric lines.
 fn render(v: &serde_json::Value) -> String {
     let mut out = String::new();
@@ -154,6 +179,7 @@ fn render(v: &serde_json::Value) -> String {
     }
     render_latency(v, &mut out);
     render_hal(v, &mut out);
+    render_wasm(v, &mut out);
     for st in v
         .pointer("/stores")
         .and_then(|s| s.as_array())
@@ -266,6 +292,28 @@ mod tests {
         assert!(
             !off.contains("pii_hal"),
             "HAL off prints no HAL lines: {off}"
+        );
+    }
+
+    /// Spec 122 R5: WASM counters appear by outcome with the refusals, and not
+    /// at all when the host is off.
+    #[test]
+    fn render_carries_wasm_calls_by_outcome_and_refusals_only_when_configured() {
+        let on = render(&serde_json::json!({
+            "counts": {"wasm_calls": {"ok": 5, "timeout": 1, "trap": 2}, "wasm_refusals": 3}
+        }));
+        for line in [
+            "pii_wasm_calls_total{outcome=\"ok\"} 5",
+            "pii_wasm_calls_total{outcome=\"timeout\"} 1",
+            "pii_wasm_calls_total{outcome=\"trap\"} 2",
+            "pii_wasm_refusals_total 3",
+        ] {
+            assert!(on.lines().any(|l| l == line), "missing {line}\n{on}");
+        }
+        let off = render(&serde_json::json!({"counts": {"wasm_calls": {}, "wasm_refusals": 0}}));
+        assert!(
+            !off.contains("pii_wasm"),
+            "host off prints no WASM lines: {off}"
         );
     }
 

@@ -96,6 +96,10 @@ pub struct Engine {
     /// The hardware HAL slot (spec 121): empty unless `[hal]` is configured;
     /// `Daemon::build` fills it and the `hal` node's factory holds the same Arc.
     pub hal: Arc<pii_hal::HalHub>,
+    /// The WASM plugin host slot (spec 122): empty unless `[wasm]` is
+    /// configured; `Daemon::build` fills it and the `wasm` node's factory holds
+    /// the same Arc.
+    pub wasm: Arc<pii_wasm::WasmHub>,
     /// Node registry (built-ins + `agent`).
     pub reg: NodeRegistry,
     /// The model provider.
@@ -292,6 +296,11 @@ impl Engine {
             hub: Arc::clone(&hal),
             log: log.clone(),
         }));
+        let wasm = Arc::new(pii_wasm::WasmHub::default());
+        reg.register(Arc::new(node_kinds::nodes::wasm::WasmFactory {
+            hub: Arc::clone(&wasm),
+            log: log.clone(),
+        }));
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
             cfg,
@@ -302,6 +311,7 @@ impl Engine {
             workers,
             mqtt,
             hal,
+            wasm,
             reg,
             provider,
             tiers,

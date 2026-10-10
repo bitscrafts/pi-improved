@@ -157,6 +157,11 @@ pub(crate) fn check_all(metadata: &Value) -> Result<(), Vec<String>> {
     // rmcp's reqwest 0.13 requirement so core crates don't drag in a
     // conflicting HTTP stack.
     check_confined(metadata, "rmcp", &["pii-mcp"], &mut violations);
+    // Spec 122 R1: wasmtime — untrusted-code execution — lives in exactly one
+    // crate, pii-wasm. This is the stated allowance for the new dependency: it
+    // adds a confinement rule; FORBIDDEN_TRANSITIVE and SINGLE_VERSION are
+    // untouched, so pii-abi/pii-proto stay runtime-free and one version stays one.
+    check_confined(metadata, "wasmtime", &["pii-wasm"], &mut violations);
     if violations.is_empty() {
         Ok(())
     } else {

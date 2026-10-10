@@ -11,7 +11,7 @@ use pii_channels::{Channel, matrix, secret, telegram};
 use pii_core::HttpTransport;
 use pii_net::listen::{HttpHandler, ListenSpec, Protocol};
 
-use super::config::{ChannelSection, HalSection, MqttSection};
+use super::config::{ChannelSection, HalSection, MqttSection, WasmSection};
 
 /// Default webhook bind: loopback only.
 const DEFAULT_BIND: &str = "127.0.0.1:8787";
@@ -113,6 +113,15 @@ pub(super) fn mqtt(
     pii_channels::mqtt::MqttChannel::start(cfg, Arc::clone(log))
 }
 
+/// Fills the HAL and plugin-host slots from `[hal]` and `[wasm]`.
+pub(super) fn install_devices(
+    engine: &crate::Engine,
+    cfg: &super::config::Config,
+) -> Result<(), PiiError> {
+    install_hal(engine, cfg)?;
+    install_wasm(engine, cfg)
+}
+
 /// Builds the `[hal]` backend, when configured, into the engine's HAL slot.
 /// No `[hal]` section leaves the slot empty: the HAL stays off.
 pub(super) fn install_hal(
@@ -151,4 +160,28 @@ pub(super) fn hal(
         }
     };
     Ok(pii_hal::Hal::new(backend, scope, Some(Arc::clone(log))))
+}
+
+/// Builds the `[wasm]` host, when configured, into the engine's plugin slot.
+/// No `[wasm]` section leaves the slot empty: the plugin host stays off.
+pub(super) fn install_wasm(
+    engine: &crate::Engine,
+    cfg: &super::config::Config,
+) -> Result<(), PiiError> {
+    if let Some(w) = &cfg.wasm {
+        engine.wasm.set(Arc::new(wasm(w, &engine.log())?));
+    }
+    Ok(())
+}
+
+/// Config -> [`pii_wasm::WasmHost`] (spec 122).
+pub(super) fn wasm(
+    w: &WasmSection,
+    log: &Arc<dyn pii_observe::Observer>,
+) -> Result<pii_wasm::WasmHost, PiiError> {
+    let mut cfg = pii_wasm::WasmConfig::new(&w.dir);
+    cfg.timeout = std::time::Duration::from_millis(w.timeout_ms);
+    cfg.max_memory = w.max_memory_mib.saturating_mul(1024 * 1024);
+    cfg.fuel = w.fuel;
+    pii_wasm::WasmHost::new(cfg, Some(Arc::clone(log)))
 }

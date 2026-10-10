@@ -171,6 +171,23 @@ pub const HAL_TRANSACTION: &str = "hal.transaction";
 /// Event: a HAL operation was refused or failed (`op`, the target fields, `reason`: `unclaimed`, `out_of_scope`, `already_claimed`, `wrong_direction`, `no_backend` or `backend`; `error`).
 pub const HAL_ERROR: &str = "hal.error";
 
+/// Event: a wasm module was read and compiled (`module`, `entry`, `bytes`).
+pub const WASM_LOAD: &str = "wasm.load";
+/// Event: a wasm module was instantiated with its limits (`module`, `entry`, `memory_limit`, `timeout_ms`, `fuel`).
+pub const WASM_INSTANTIATE: &str = "wasm.instantiate";
+/// Event: a wasm call returned a valid JSON value (`module`, `entry`, `elapsed_ms`, `out_bytes`).
+pub const WASM_CALL: &str = "wasm.call";
+/// Event: a wasm call trapped (`module`, `entry`, `trap`, `backtrace`).
+pub const WASM_TRAP: &str = "wasm.trap";
+/// Event: a wasm call hit its wall-clock epoch deadline (`module`, `entry`, `elapsed_ms`, `budget_ms`).
+pub const WASM_TIMEOUT: &str = "wasm.timeout";
+/// Event: a wasm call ran out of fuel (`module`, `entry`, `fuel`).
+pub const WASM_FUEL_EXHAUSTED: &str = "wasm.fuel_exhausted";
+/// Event: a wasm instance was refused memory beyond its limit (`module`, `entry`, `memory_limit`).
+pub const WASM_MEMORY_LIMIT: &str = "wasm.memory_limit";
+/// Event: a wasm module or call was refused before running (`module`, `entry`, `reason`: `not_configured`, `out_of_scope`, `unreadable`, `too_large`, `imports`, `bad_module`, `bad_abi` or `invalid_output`; `error`).
+pub const WASM_REFUSAL: &str = "wasm.refusal";
+
 /// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
 pub const METRIC_RUNS: &str = "pii_runs";
 /// Metric (gauge): sessions in the main store.
@@ -213,6 +230,11 @@ pub const METRIC_WORKER_REQUESTS_REFUSED_TOTAL: &str = "pii_worker_requests_refu
 pub const METRIC_HAL_OPS_TOTAL: &str = "pii_hal_ops_total";
 /// Metric (counter): HAL operations refused by the claim or scope rules since the daemon started (spec 121).
 pub const METRIC_HAL_REFUSALS_TOTAL: &str = "pii_hal_refusals_total";
+
+/// Metric (counter, label `outcome`): wasm calls by outcome since the daemon started (spec 122).
+pub const METRIC_WASM_CALLS_TOTAL: &str = "pii_wasm_calls_total";
+/// Metric (counter): wasm modules or calls refused before running (spec 122).
+pub const METRIC_WASM_REFUSALS_TOTAL: &str = "pii_wasm_refusals_total";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -295,6 +317,14 @@ pub const ALL: &[&str] = &[
     HAL_WRITE,
     HAL_TRANSACTION,
     HAL_ERROR,
+    WASM_LOAD,
+    WASM_INSTANTIATE,
+    WASM_CALL,
+    WASM_TRAP,
+    WASM_TIMEOUT,
+    WASM_FUEL_EXHAUSTED,
+    WASM_MEMORY_LIMIT,
+    WASM_REFUSAL,
     METRIC_RUNS,
     METRIC_SESSIONS,
     METRIC_APPROVALS_PENDING,
@@ -315,6 +345,8 @@ pub const ALL: &[&str] = &[
     METRIC_WORKER_REQUESTS_REFUSED_TOTAL,
     METRIC_HAL_OPS_TOTAL,
     METRIC_HAL_REFUSALS_TOTAL,
+    METRIC_WASM_CALLS_TOTAL,
+    METRIC_WASM_REFUSALS_TOTAL,
 ];
 
 #[cfg(test)]

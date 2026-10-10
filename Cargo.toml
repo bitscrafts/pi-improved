@@ -22,6 +22,7 @@ members = [
     "crates/pii-evolve",
     "crates/pii-http-fetch",
     "crates/pii-hal",
+    "crates/pii-wasm",
     "xtask",
 ]
 

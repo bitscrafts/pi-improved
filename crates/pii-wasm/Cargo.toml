@@ -1,0 +1,28 @@
+[package]
+name = "pii-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WASM plugin host: untrusted third-party nodes behind epoch, fuel and memory limits with no ambient authority (spec 122)"
+
+[dependencies]
+pii-abi = { path = "../pii-abi" }
+pii-observe = { path = "../pii-observe" }
+dunce = { workspace = true }
+parking_lot = { workspace = true }
+serde_json = { workspace = true }
+# The one wasm runtime in the tree, confined to this crate (xtask deps-check).
+# Interpreter-free JIT build: no WASI, no component model, no async, no cache.
+wasmtime = { version = "48", default-features = false, features = ["runtime", "cranelift", "std", "backtrace"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+wat = "1"
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

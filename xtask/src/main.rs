@@ -388,6 +388,34 @@ fn deps_check_rejects_rustls() {
         "rustls confinement violation: {errs:?}"
     );
 }
+/// Spec 122 R1: wasmtime is a `pii-wasm`-only dependency.
+#[cfg(test)]
+#[test]
+fn deps_check_rejects_wasmtime_outside_pii_wasm() {
+    #![allow(clippy::panic)] // reason: test asserts a violation exists
+    let m = deps::tests::clean_metadata();
+    let with_wt = deps::tests::push_package(
+        m,
+        serde_json::json!({"id":"wt","name":"wasmtime","version":"48.0.5",
+               "dependencies":[]}),
+        serde_json::json!([]),
+    );
+    let m2 = deps::tests::push_package(
+        with_wt,
+        serde_json::json!({"id":"srv","name":"pii-server","version":"1.0.0",
+               "dependencies":[{"name":"wasmtime","kind":null}]}),
+        serde_json::json!([{"pkg":"wt"}]),
+    );
+    let errs = match deps::check_all(&m2) {
+        Ok(v) => panic!("pii-server -> wasmtime must be rejected, got ok: {v:?}"),
+        Err(e) => e,
+    };
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("pii-server") && e.contains("wasmtime")),
+        "wasmtime confinement violation: {errs:?}"
+    );
+}
 /// F4.16/exit-criterion test (top-level so `-- --exact` matches the bare path).
 #[cfg(test)]
 #[test]

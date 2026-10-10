@@ -17,6 +17,7 @@ pii-proto = { path = "../pii-proto" }
 pii-model = { path = "../pii-model" }
 pii-memory = { path = "../pii-memory" }
 pii-hal = { path = "../pii-hal" }
+pii-wasm = { path = "../pii-wasm" }
 pii-tools = { path = "../pii-tools" }
 pii-net = { path = "../pii-net" }
 pii-worker = { path = "../pii-worker" }
@@ -37,6 +38,7 @@ hal-gpiod = ["pii-hal/hal-gpiod"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
+wat = "1"
 pii-proto = { path = "../pii-proto", features = ["client"] }
 pii-net = { path = "../pii-net", features = ["testing"] }
 

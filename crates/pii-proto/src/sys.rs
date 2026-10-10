@@ -182,6 +182,13 @@ pub struct Counts {
     /// HAL operations refused by the claim or scope rules (spec 121).
     #[serde(default)]
     pub hal_refusals: u64,
+    /// WASM plugin calls by outcome (`ok`, `trap`, `timeout`, `fuel`, `memory`,
+    /// `invalid`); empty when no `[wasm]` is configured (spec 122).
+    #[serde(default)]
+    pub wasm_calls: BTreeMap<String, u64>,
+    /// WASM modules or calls refused before running (spec 122).
+    #[serde(default)]
+    pub wasm_refusals: u64,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).
