@@ -56,6 +56,59 @@ overrides the key):
 Rotation: `pii.log` -> `pii.log.1` -> `pii.log.2` ... A log that ends on
 `daemon.started` with no `daemon.stopped` means the daemon died hard (kill -9).
 
+## Confinement, audit trail and secrets (spec 107)
+
+**Default: confined.** `pii daemon` applies the `workspace` Landlock profile unless told
+otherwise. `--sandbox off` is the explicit opt-out: the daemon then starts, prints
+`warning: daemon is running UNCONFINED (--sandbox off)` on stderr, and logs a `warn`
+`daemon.sandbox.in_force` event (`enforced=false`). If confinement cannot be enforced
+the default start FAILS with exit 4 (it does not fall back to unconfined).
+Why this default: confinement exists and is measured working; an unconfined default made
+"safe" and "absent" indistinguishable to the operator.
+
+**The exact grant** (one text, quoted by `pii health` mounts[workspace].policy, the
+startup event, and this page; pinned by `crates/pii-cli/tests/sandbox_grant.rs`):
+
+- WRITES are allowed only under the workspace, the store dir, the runtime dir, the log
+  file's directory, the trajectory directory, `$TMPDIR` and `/dev/{null,zero,urandom,tty}`.
+  Everything else is denied (`Permission denied`; an existing file outside is left intact).
+- READS are NOT confined: read-only access to `/` is granted, so `/etc`, `/home` and every
+  other path the daemon user can read stays readable. That is deliberate (DNS, CA bundles,
+  shared libraries, the config file); narrowing reads is not done today.
+- The child processes a run spawns inherit the same grant.
+
+**Audit trail.** Denials that pass through pii (bash deny list, bash cwd scope, fscap
+`fs_read`/`fs_write`, the http allowlist, any tool returning Denied) are written as
+`core.cap.denied` events to `<store dir>/audit.log` (e.g. `/var/lib/pii/audit.log`), always on,
+together with `daemon.sandbox.in_force` and `daemon.peer.refused`. Rotation is the log's:
+`audit.log` -> `audit.log.1` ... `.5`, rotated at `log_rotate_bytes` (default 10 MiB),
+`log_keep_files` kept. Example line from a real run:
+
+    {"fields":{"cap":"tool:bash: command matches deny list ('sudo')","principal":"node:t@run:r000000000001"},"kind":"core.cap.denied","level":"warn","subsystem":"core","ts_ms":1791589942416}
+
+**Limit, stated plainly: a kernel-level denial inside a CHILD process (a raw
+`echo > /outside` run by bash) is invisible to pii.** Landlock refuses the write inside the
+child; the child sees `Permission denied`, and pii only sees the exit status. Nothing in
+`audit.log` records it.
+
+**Secrets.** Decision: secrets are delivered by environment variable only
+(`PII_DISCORD_TOKEN`, `OLLAMA_API_KEY`, ...) and are never written to the config file
+(the config loader is strict and the shipped sample says so). No keyring or secret file is
+read by pii today. Compensating controls: (1) keep them in a root-owned mode-0600
+`EnvironmentFile=` (see `deploy/pii.service`), which systemd reads before dropping to the
+service user; (2) every sink that records run output — the log file, `audit.log`, the
+trajectory files, the `pii -p --json` / `pii graph run` ndjson streams — replaces the value of
+any environment variable whose name contains `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`,
+`API_KEY`, `APIKEY`, `PRIVATE_KEY`, `CREDENTIAL` or ends in `_KEY` (values of 8+ bytes) with
+`[REDACTED]` (test: `crates/pii-cli/tests/canary_secrets.rs`). It matches the exact value: a
+secret that is transformed (hashed, split, re-encoded) before it is echoed is not caught.
+`PII_TRAJECTORY_REDACT=a,b` additionally drops whole named fields from trajectories.
+The client event stream a connected UI receives is not scrubbed.
+
+**seccomp:** not implemented — there is no syscall filter, only Landlock filesystem
+confinement, so Landlock's coverage must not be read as syscall-level parity (a cheap real
+filter would need an allowlist built from a traced run of the daemon plus its tools; not built).
+
 ## Back up and restore
 
 Offline: stop the daemon first. A backup opens each store with redb's exclusive

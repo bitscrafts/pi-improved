@@ -30,6 +30,7 @@ pub struct FileLog {
     rotate_bytes: u64,
     keep: usize,
     reporter: Arc<dyn Observer>,
+    scrubber: crate::SecretScrubber,
     state: std::sync::Mutex<State>,
 }
 
@@ -54,6 +55,7 @@ impl FileLog {
             rotate_bytes,
             keep,
             reporter: Arc::new(NullObserver),
+            scrubber: crate::SecretScrubber::default(),
             state: std::sync::Mutex::new(State {
                 file: None,
                 bytes: 0,
@@ -66,6 +68,13 @@ impl FileLog {
     #[must_use]
     pub fn with_reporter(mut self, reporter: Arc<dyn Observer>) -> Self {
         self.reporter = reporter;
+        self
+    }
+
+    /// Replaces known secret values in every line before it is written.
+    #[must_use]
+    pub fn with_scrubber(mut self, scrubber: crate::SecretScrubber) -> Self {
+        self.scrubber = scrubber;
         self
     }
 
@@ -164,7 +173,7 @@ impl FileLog {
 impl Observer for FileLog {
     fn event(&self, e: &Event) {
         let Some(line) = Self::line(e) else { return };
-        if let Err(err) = self.write(&line) {
+        if let Err(err) = self.write(&self.scrubber.scrub(&line)) {
             self.report_once(&err.to_string());
         }
     }
@@ -208,6 +217,25 @@ mod tests {
         assert_eq!(first.pointer("/kind"), Some(&Value::from("daemon.started")));
         assert_eq!(second.pointer("/fields/i"), Some(&Value::from(2)));
         assert!(first.pointer("/ts_ms").and_then(Value::as_u64).unwrap() > 0);
+    }
+
+    #[test]
+    fn a_scrubbed_secret_never_reaches_the_file() {
+        let t = tempfile::tempdir().unwrap();
+        let canary = format!("cnry-{}-{}", std::process::id(), line!());
+        let scrub = crate::SecretScrubber::from_vars([("X_API_TOKEN".to_owned(), canary.clone())]);
+        let log = FileLog::new(t.path().join("pii.log"), 0, 1).with_scrubber(scrub);
+        let leaking = Event::new("daemon", Level::Error, names::DAEMON_STARTED)
+            .field("error", format!("provider said: bad key {canary}"));
+        log.event(&leaking);
+        let text = std::fs::read_to_string(t.path().join("pii.log")).unwrap();
+        assert_eq!(text.matches(&canary).count(), 0, "{text}");
+        assert!(text.contains("[REDACTED]"), "{text}");
+        // Control: without a scrubber the same event does carry the canary.
+        let bare = FileLog::new(t.path().join("bare.log"), 0, 1);
+        bare.event(&leaking);
+        let text = std::fs::read_to_string(t.path().join("bare.log")).unwrap();
+        assert_eq!(text.matches(&canary).count(), 1, "{text}");
     }
 
     #[test]

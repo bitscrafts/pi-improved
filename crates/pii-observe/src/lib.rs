@@ -17,6 +17,7 @@
 
 #![forbid(unsafe_code)]
 
+mod audit;
 mod event;
 mod filelog;
 mod health;
@@ -25,8 +26,10 @@ pub mod names;
 mod observer;
 mod outcome;
 mod redaction;
+mod secrets;
 mod trajectory;
 
+pub use audit::{AUDIT_KINDS, AuditFilter, Fanout};
 pub use event::{Event, Fields, Level, OwnedEvent, RunId, SessionId, SpanId};
 pub use filelog::FileLog;
 pub use health::{Health, State, SubsystemHealth};
@@ -35,5 +38,6 @@ pub use observer::{
     NoopObserver, NullObserver, Observable, Observed, Observer, Recorder, StderrObserver,
 };
 pub use outcome::{Outcome, Verdict};
-pub use redaction::{DropFields, NoRedaction, Redaction, RedactionPolicy};
+pub use redaction::{DropFields, NoRedaction, Redaction, RedactionPolicy, ScrubbingPolicy};
+pub use secrets::{REDACTED, SecretScrubber, is_secret_name};
 pub use trajectory::{TrajectoryCaps, TrajectorySink};

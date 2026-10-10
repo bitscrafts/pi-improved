@@ -212,9 +212,9 @@ fn root_ctx_in(
     let obs: Arc<dyn pii_core::Observer> = match pii_core::trajectory_sink(None) {
         Some(sink) => Arc::new(pii_core::MultiObserver::new(vec![
             Arc::new(pii_core::TrajectoryBridge::new(sink, &run, None)),
-            Arc::new(NdjsonObserver),
+            Arc::new(NdjsonObserver::from_env()),
         ])),
-        None => Arc::new(NdjsonObserver),
+        None => Arc::new(NdjsonObserver::from_env()),
     };
     Ctx::with_observer(
         caps,

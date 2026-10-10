@@ -31,6 +31,25 @@ pub fn profile_name(p: SandboxProfileName) -> &'static str {
     }
 }
 
+/// The grant a profile puts in force, in words — the ONE text `pii health`,
+/// the startup event and the runbook all quote, pinned by the behaviour tests
+/// in `pii-cli/tests/sandbox_grant.rs`.
+#[must_use]
+pub fn grant_policy(p: SandboxProfileName) -> &'static str {
+    match p {
+        SandboxProfileName::Off => {
+            "sandbox=off: NO filesystem confinement in force (explicit opt-out); \
+             the daemon can read and write anything its user can"
+        }
+        SandboxProfileName::Workspace => {
+            "sandbox=workspace (landlock): WRITES confined to the workspace, store dir, \
+             runtime dir, $TMPDIR and /dev/{null,zero,urandom,tty}; READS are NOT confined \
+             (read-only access to / is granted, so /etc, /home and every other readable \
+             path stay readable)"
+        }
+    }
+}
+
 /// Parses a profile name from the CLI.
 ///
 /// # Errors
@@ -133,7 +152,17 @@ fn rw_paths(workspace: &Path, extra_rw: &[PathBuf]) -> Vec<(PathBuf, bool)> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::{SandboxProfileName, parse_profile, profile_name};
+    use super::{SandboxProfileName, grant_policy, parse_profile, profile_name};
+
+    #[test]
+    fn grant_policy_states_the_real_read_and_write_rule() {
+        let ws = grant_policy(SandboxProfileName::Workspace);
+        assert!(ws.contains("WRITES confined"), "{ws}");
+        assert!(ws.contains("READS are NOT confined"), "{ws}");
+        let off = grant_policy(SandboxProfileName::Off);
+        assert!(off.contains("NO filesystem confinement"), "{off}");
+        assert_ne!(ws, off);
+    }
 
     #[test]
     fn profile_names_roundtrip() {

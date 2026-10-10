@@ -67,6 +67,36 @@ impl RedactionPolicy for DropFields {
     }
 }
 
+/// Wraps a policy and additionally replaces any known secret value found in a
+/// kept field (the inner policy's `Drop`/`Replace` decisions win).
+pub struct ScrubbingPolicy {
+    inner: std::sync::Arc<dyn RedactionPolicy>,
+    scrubber: crate::SecretScrubber,
+}
+
+impl ScrubbingPolicy {
+    /// Applies `inner`, then `scrubber` to what `inner` keeps.
+    #[must_use]
+    pub fn new(
+        inner: std::sync::Arc<dyn RedactionPolicy>,
+        scrubber: crate::SecretScrubber,
+    ) -> Self {
+        Self { inner, scrubber }
+    }
+}
+
+impl RedactionPolicy for ScrubbingPolicy {
+    fn redact(&self, field: &str, value: &str) -> Redaction {
+        match self.inner.redact(field, value) {
+            Redaction::Keep => match self.scrubber.scrub(value) {
+                std::borrow::Cow::Borrowed(_) => Redaction::Keep,
+                std::borrow::Cow::Owned(s) => Redaction::Replace(s),
+            },
+            other => other,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

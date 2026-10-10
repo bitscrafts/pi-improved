@@ -25,18 +25,29 @@ fn metric_line(m: &Metric) -> String {
 
 /// Observer that streams the run as ndjson lines on stdout.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
-pub(crate) struct NdjsonObserver;
+pub(crate) struct NdjsonObserver(pub(crate) pii_observe::SecretScrubber);
+
+impl NdjsonObserver {
+    /// An observer scrubbing the process environment's secret values.
+    pub(crate) fn from_env() -> Self {
+        Self(pii_core::secret_scrubber())
+    }
+}
 
 impl Observer for NdjsonObserver {
     fn event(&self, e: &ObsEvent) {
         if let ObsEvent::Journal { seq, event } = e {
-            println!("{}", journal_line(*seq, &serde_json::to_string(event)));
+            println!(
+                "{}",
+                self.0
+                    .scrub(&journal_line(*seq, &serde_json::to_string(event)))
+            );
         }
     }
 
     fn metric(&self, m: &Metric) {
         // `Metric` is not `serde::Serialize`; render the F5.5 shape by hand.
-        println!("{}", metric_line(m));
+        println!("{}", self.0.scrub(&metric_line(m)));
     }
 
     fn flush(&self) {}
@@ -129,6 +140,6 @@ mod tests {
     fn observer_ignores_non_journal_events() {
         // Compile-shape check: the observer trait impl exists and `flush` is
         // a no-op on the unit struct.
-        NdjsonObserver.flush();
+        NdjsonObserver::from_env().flush();
     }
 }

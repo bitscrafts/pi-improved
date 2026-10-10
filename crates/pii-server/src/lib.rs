@@ -130,6 +130,7 @@ pub struct Engine {
     obs: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
     /// Trajectory sink (spec 103); `None` (default) records nothing.
     trajectory: parking_lot::Mutex<Option<Arc<pii_observe::TrajectorySink>>>,
+    audit: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
 }
 
 /// A conversation session.
@@ -245,6 +246,7 @@ impl Engine {
             daemon_ctx: parking_lot::Mutex::new(None),
             obs: parking_lot::Mutex::new(None),
             trajectory: parking_lot::Mutex::new(None),
+            audit: parking_lot::Mutex::new(None),
         }))
     }
 
@@ -275,6 +277,18 @@ impl Engine {
     /// writes its journal and verbatim outcome to it. Default is no sink.
     pub fn attach_trajectory(&self, sink: Arc<pii_observe::TrajectorySink>) {
         *self.trajectory.lock() = Some(sink);
+    }
+
+    /// Attaches the audit observer (spec 107 R3): every run's denial events
+    /// (capability, tool deny-list, scope) reach it, in addition to the run's
+    /// own bus and trajectory observers. Default is none.
+    pub fn attach_audit(&self, obs: Arc<dyn pii_core::Observer>) {
+        *self.audit.lock() = Some(obs);
+    }
+
+    /// The audit observer, if one is attached.
+    pub(crate) fn audit_observer(&self) -> Option<Arc<dyn pii_core::Observer>> {
+        self.audit.lock().clone()
     }
 
     /// The per-run observer feeding the trajectory sink, if one is attached.

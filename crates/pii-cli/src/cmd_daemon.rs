@@ -2,11 +2,12 @@
 //! subsystems, and serves connections (F2.8/F2.9, F5.1-F5.5).
 
 use crate::cli_util::{CliObserver, fail, fail_to};
+use crate::daemon_log::{LogFlags, open_log, sandbox_event, writable_dirs};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use pii_observe::{Event, FileLog, Level, Observer, names};
+use pii_observe::{Event, Level, Observer, names};
 use pii_server::daemon::{Daemon, ShutdownSignal, config::Config};
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
@@ -59,20 +60,6 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         .or_else(|| pii_core::env_var("PII_CONFIG").map(PathBuf::from))
         .unwrap_or_else(Config::default_path);
 
-    // Sandbox enforcement is verified BEFORE the model lookup: a requested
-    // profile that cannot be positively enforced must exit 4 regardless of
-    // whether a model is configured (F3.10, part-2 EC6).
-    if !matches!(sandbox, SandboxProfileName::Off)
-        && let Err(e) = pii_tools::sandbox::apply_workspace(
-            &workspace,
-            &[store_parent, runtime_dir.clone()],
-            std::path::Path::new("/etc"),
-        )
-    {
-        eprintln!("{e}");
-        return ExitCode::from(4);
-    }
-
     let cfg = if config_path.exists() {
         match Config::load(&config_path) {
             Ok(c) => c,
@@ -85,7 +72,26 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         Config::default()
     };
 
-    let log = open_log(&log, &cfg);
+    // Sandbox enforcement is verified BEFORE the model lookup: a requested
+    // profile that cannot be positively enforced must exit 4 regardless of
+    // whether a model is configured (F3.10, part-2 EC6). The config is read
+    // first (reads are never confined) so the dirs the daemon writes to —
+    // the log file's and the trajectory sink's — can be granted read-write.
+    if !matches!(sandbox, SandboxProfileName::Off) {
+        let mut extra_rw = vec![store_parent.clone(), runtime_dir.clone()];
+        extra_rw.extend(writable_dirs(&log, &cfg));
+        if let Err(e) =
+            pii_tools::sandbox::apply_workspace(&workspace, &extra_rw, std::path::Path::new("/etc"))
+        {
+            eprintln!("{e}");
+            return ExitCode::from(4);
+        }
+    }
+
+    let log = open_log(&log, &cfg, &store_parent);
+    // The profile in force is stated at every start — an unconfined daemon is
+    // reported loudly (stderr + log + audit trail), never silently.
+    Tee(Arc::clone(&log)).event(&sandbox_event(sandbox));
 
     // NET-cap wiring and the "no model configured" error both need the
     // resolved model before the engine is built (2026-09-05: `[core].model`
@@ -175,8 +181,10 @@ FLAGS:
   --store <path>             redb store file (default: <runtime dir>/store.redb)
   --config <path>            config TOML (default: $PII_CONFIG, else ~/.pii/pii.toml)
   --workspace <dir>          workspace root the sandbox and tools are scoped to (default: cwd)
-  --sandbox <off|workspace>  sandbox profile (default: off; exit 4 if it cannot be enforced)
+  --sandbox <off|workspace>  sandbox profile (default: workspace; exit 4 if it cannot be enforced;
+                             'off' is the explicit opt-out and runs UNCONFINED)
   --log-file <path>          append daemon events as JSON lines to <path> (default: off)
+                             (denials always go to <store dir>/audit.log, rotated like the log)
   --log-rotate-bytes <n>     rotate the log file past <n> bytes (default: 10485760)
   --log-keep-files <n>       rotated log files to keep besides the live one (default: 5)
   --foreground               accepted for supervisors; the daemon never forks
@@ -187,14 +195,6 @@ Each --log-* flag overrides the matching [core] key (log_file, log_rotate_bytes,
 log_keep_files). Run trajectories are controlled by [core].trajectory_dir or
 $PII_TRAJECTORY_DIR (default: off). See examples/pii.production.toml.
 ";
-
-/// Daemon log settings from the command line; `None` falls through to `[core]`.
-#[derive(Debug, Default, PartialEq, Eq)]
-struct LogFlags {
-    file: Option<PathBuf>,
-    rotate_bytes: Option<u64>,
-    keep_files: Option<usize>,
-}
 
 /// The parsed `pii daemon` command line.
 #[derive(Debug)]
@@ -236,7 +236,7 @@ fn flag_number<T: std::str::FromStr>(
 fn parse_flags(args: &mut dyn Iterator<Item = std::ffi::OsString>) -> Result<DaemonFlags, Parse> {
     let mut f = DaemonFlags {
         workspace: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-        sandbox: SandboxProfileName::Off,
+        sandbox: SandboxProfileName::Workspace,
         store: None,
         config: None,
         log: LogFlags::default(),
@@ -279,30 +279,6 @@ impl Observer for Tee {
     fn flush(&self) {
         self.0.flush();
     }
-}
-
-/// The observer the daemon reports through: the rotating log file when one is
-/// configured (flag > `[core]` > off), else a no-op. A file that cannot be
-/// written is reported once on stderr and never stops the daemon.
-fn open_log(flags: &LogFlags, cfg: &Config) -> Arc<dyn Observer> {
-    use pii_server::daemon::config::{DEFAULT_LOG_KEEP_FILES, DEFAULT_LOG_ROTATE_BYTES};
-    let Some(path) = flags
-        .file
-        .clone()
-        .or_else(|| cfg.core.log_file.as_deref().map(PathBuf::from))
-        .filter(|p| !p.as_os_str().is_empty())
-    else {
-        return Arc::new(pii_observe::NullObserver);
-    };
-    let rotate = flags
-        .rotate_bytes
-        .or(cfg.core.log_rotate_bytes)
-        .unwrap_or(DEFAULT_LOG_ROTATE_BYTES);
-    let keep = flags
-        .keep_files
-        .or(cfg.core.log_keep_files)
-        .unwrap_or(DEFAULT_LOG_KEEP_FILES);
-    Arc::new(FileLog::new(path, rotate, keep).with_reporter(Arc::new(CliObserver)))
 }
 
 /// The `daemon.stopped` reason for a finished `run_daemon`.
@@ -402,6 +378,8 @@ async fn run_daemon(
     engine.seed_sessions_from_store();
     engine.reconcile_boot();
     engine.attach_observer(Arc::new(pii_core::ContractObserver::new(Arc::clone(&log))));
+    // Spec 107 R3: denials inside runs reach the log and the audit trail.
+    engine.attach_audit(Arc::new(pii_core::DenialObserver::new(Arc::clone(&log))));
 
     // PII_TEST_CLOCK_MS (test-only): when set, the daemon uses a FixedClock
     // starting at that epoch so scripts can drive timers deterministically.
@@ -577,6 +555,14 @@ mod tests {
     fn parse(argv: &[&str]) -> Result<super::DaemonFlags, super::Parse> {
         let mut it = argv.iter().map(std::ffi::OsString::from);
         super::parse_flags(&mut it)
+    }
+
+    /// Spec 107 R1: the safe profile is the default; `off` must be asked for.
+    #[test]
+    fn sandbox_defaults_to_workspace_and_off_is_explicit() {
+        use pii_tools::sandbox::SandboxProfileName as P;
+        assert_eq!(parse(&[]).unwrap().sandbox, P::Workspace);
+        assert_eq!(parse(&["--sandbox", "off"]).unwrap().sandbox, P::Off);
     }
 
     #[test]

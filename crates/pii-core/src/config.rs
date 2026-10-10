@@ -11,6 +11,18 @@ pub fn env_var(name: &str) -> Option<String> {
     std::env::var_os(name).and_then(|v| v.into_string().ok())
 }
 
+/// A scrubber over the secret-named variables of this process's environment.
+///
+/// Names are matched by [`pii_observe::is_secret_name`]; every sink that
+/// records run output builds its scrubber from this.
+#[must_use]
+pub fn secret_scrubber() -> pii_observe::SecretScrubber {
+    pii_observe::SecretScrubber::from_vars(
+        std::env::vars_os()
+            .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?))),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

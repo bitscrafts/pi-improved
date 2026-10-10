@@ -26,6 +26,8 @@ pub const NET_DIAL_FAILED: &str = "net.dial.failed";
 pub const NET_ACCEPT_FAILED: &str = "net.accept.failed";
 /// Event: a tool was invoked (tool name and outcome).
 pub const TOOLS_CALL: &str = "tools.call";
+/// Event: the sandbox profile in force at daemon start (profile, grant, enforced).
+pub const DAEMON_SANDBOX_IN_FORCE: &str = "daemon.sandbox.in_force";
 /// Event: a bash command matched the deny list.
 pub const TOOLS_DENY_LIST_HIT: &str = "tools.deny_list.hit";
 /// Event: the provider and model a request resolved to.
@@ -118,6 +120,7 @@ pub const ALL: &[&str] = &[
     NET_ACCEPT_FAILED,
     TOOLS_CALL,
     TOOLS_DENY_LIST_HIT,
+    DAEMON_SANDBOX_IN_FORCE,
     MODEL_PROVIDER_IN_FORCE,
     MODEL_REQUEST_LATENCY,
     MODEL_PROVIDER_ERROR,

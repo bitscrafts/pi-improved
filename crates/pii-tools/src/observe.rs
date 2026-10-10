@@ -29,8 +29,24 @@ impl ToolSet {
     /// Reports one finished invocation of tool `name`: a [`names::TOOLS_CALL`]
     /// event with the tool name and outcome (`ok` / `denied` / `error`), plus
     /// a [`names::TOOLS_DENY_LIST_HIT`] event when a bash command matched the
-    /// deny list. Never alters `result`; arguments and output are not logged.
-    pub fn observe_call(&self, name: &str, args: &Value, result: &Result<Value, PiiError>) {
+    /// deny list. A `Denied` result is also reported as a
+    /// [`pii_core::ObsEvent::Denial`] on `ctx`'s observer. Never alters
+    /// `result`; arguments and output are not logged.
+    pub fn observe_call(
+        &self,
+        ctx: &pii_core::Ctx,
+        name: &str,
+        args: &Value,
+        result: &Result<Value, PiiError>,
+    ) {
+        // A tool-level denial (deny list, cwd scope, http allowlist, ...) is
+        // reported to the run's observer so it can reach the audit trail.
+        if let Err(PiiError::Denied(why)) = result {
+            ctx.observer().event(&pii_core::ObsEvent::Denial {
+                principal: ctx.principal_str(),
+                cap: format!("tool:{name}: {why}"),
+            });
+        }
         let outcome = match result {
             Ok(_) => "ok",
             Err(PiiError::Denied(_)) => "denied",
@@ -77,7 +93,16 @@ mod tests {
         let set = ToolSet::builtin(std::path::PathBuf::from(".")).with_observer(rec.clone());
         let args = json!({"command": "sudo ls"});
         let denied = Err(PiiError::Denied("deny list".into()));
-        set.observe_call("bash", &args, &denied);
+        let ctx = pii_core::Ctx::with_observer(
+            pii_core::CapSet::default(),
+            pii_core::Budget::unlimited(),
+            Arc::new(pii_core::NullObserver),
+            pii_core::TraceCtx {
+                run: pii_abi::RunId::from("r1"),
+                span: 0,
+            },
+        );
+        set.observe_call(&ctx, "bash", &args, &denied);
         let calls = rec.events_named(names::TOOLS_CALL);
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].fields.get("tool"), Some(&json!("bash")));
@@ -85,7 +110,7 @@ mod tests {
         let hits = rec.events_named(names::TOOLS_DENY_LIST_HIT);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].fields.get("entry"), Some(&json!("sudo")));
-        set.observe_call("bash", &json!({"command": "ls"}), &Ok(json!({})));
+        set.observe_call(&ctx, "bash", &json!({"command": "ls"}), &Ok(json!({})));
         assert_eq!(rec.events_named(names::TOOLS_DENY_LIST_HIT).len(), 1);
         assert_eq!(rec.events_named(names::TOOLS_CALL).len(), 2);
     }

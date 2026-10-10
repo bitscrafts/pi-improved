@@ -11,7 +11,6 @@ use pii_observe::{Health, SubsystemHealth};
 use pii_proto::sys::{
     BuildIdentity, ConfigIdentity, Counts, MountStatus, StatusResult, StoreStatus, SubsystemStatus,
 };
-use pii_tools::sandbox::SandboxProfileName;
 use sha2::{Digest, Sha256};
 
 use super::status::{ChannelRuntime, DaemonContext};
@@ -185,10 +184,7 @@ fn aux_store(name: &str, path: &Path, format_version: Option<u64>) -> StoreStatu
 }
 
 fn workspace_mount(engine: &Engine) -> MountStatus {
-    let policy = match engine.cfg.sandbox {
-        SandboxProfileName::Off => "sandbox=off: no filesystem confinement applied",
-        SandboxProfileName::Workspace => "sandbox=workspace: read-write granted by landlock",
-    };
+    let policy = pii_tools::sandbox::grant_policy(engine.cfg.sandbox);
     MountStatus {
         name: "workspace".into(),
         root: shown(&engine.cfg.workspace),
@@ -237,6 +233,45 @@ mod tests {
 
     use super::*;
     use crate::EngineConfig;
+    use pii_tools::sandbox::SandboxProfileName;
+
+    /// Spec 107 R1/R2: the workspace mount quotes the profile's real grant —
+    /// reads included — and a different profile gives a different text.
+    #[test]
+    fn workspace_mount_states_the_profile_in_force() {
+        let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "mount-").unwrap();
+        let mk = |sandbox| {
+            Engine::new(EngineConfig {
+                workspace: dir.path().to_path_buf(),
+                store_path: dir.path().join(format!("{sandbox:?}.redb")),
+                model: format!(
+                    "scripted:{}/../../fixtures/phase2/hello.json",
+                    env!("CARGO_MANIFEST_DIR")
+                ),
+                sandbox,
+                route_policy: BTreeMap::new(),
+                session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+                graph_dir: dir.path().join("graphs"),
+            })
+            .unwrap()
+        };
+        let ws = workspace_mount(&mk(SandboxProfileName::Workspace));
+        let off = workspace_mount(&mk(SandboxProfileName::Off));
+        assert_eq!(
+            ws.policy,
+            pii_tools::sandbox::grant_policy(SandboxProfileName::Workspace)
+        );
+        assert!(
+            ws.policy.contains("READS are NOT confined"),
+            "{}",
+            ws.policy
+        );
+        assert!(
+            off.policy.contains("NO filesystem confinement"),
+            "{}",
+            off.policy
+        );
+    }
 
     /// The aggregator's registered set, pinned by NAME (spec 100 R2): dropping
     /// or renaming a registration changes this list and fails the test.

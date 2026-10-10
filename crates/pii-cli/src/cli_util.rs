@@ -20,6 +20,16 @@ impl Observer for CliObserver {
             // reason: nowhere to report a failed stderr write.
             let _ = writeln!(std::io::stderr(), "error: {m}");
         }
+        // Spec 107 R1: an unconfined daemon is never silent.
+        if e.kind == names::DAEMON_SANDBOX_IN_FORCE
+            && e.fields.get("enforced") == Some(&serde_json::Value::Bool(false))
+        {
+            // reason: nowhere to report a failed stderr write.
+            let _ = writeln!(
+                std::io::stderr(),
+                "warning: daemon is running UNCONFINED (--sandbox off): no filesystem confinement in force"
+            );
+        }
     }
 }
 

@@ -204,6 +204,34 @@ impl Observer for ContractObserver {
     }
 }
 
+/// Forwards ONLY capability/tool denials to a contract observer.
+///
+/// [`ContractObserver`] also forwards metrics; the audit trail wants the
+/// denials alone, so it cannot be flooded by per-tick graph metrics.
+pub struct DenialObserver(Arc<dyn pii_observe::Observer>);
+
+impl DenialObserver {
+    /// Forwards denials to `inner`.
+    #[must_use]
+    pub fn new(inner: Arc<dyn pii_observe::Observer>) -> Self {
+        Self(inner)
+    }
+}
+
+impl Observer for DenialObserver {
+    fn event(&self, e: &ObsEvent) {
+        if matches!(e, ObsEvent::Denial { .. }) {
+            ContractObserver::new(Arc::clone(&self.0)).event(e);
+        }
+    }
+
+    fn metric(&self, _m: &Metric) {}
+
+    fn flush(&self) {
+        self.0.flush();
+    }
+}
+
 /// Environment variable that turns the trajectory sink on (a directory).
 pub const TRAJECTORY_DIR_ENV: &str = "PII_TRAJECTORY_DIR";
 /// Environment variable listing field names the sink drops (comma-separated).
@@ -226,6 +254,9 @@ pub fn trajectory_sink(config_dir: Option<&str>) -> Option<Arc<pii_observe::Traj
             || Arc::new(pii_observe::NoRedaction) as Arc<dyn pii_observe::RedactionPolicy>,
             |p| Arc::new(p),
         );
+    let policy: Arc<dyn pii_observe::RedactionPolicy> = Arc::new(
+        pii_observe::ScrubbingPolicy::new(policy, crate::secret_scrubber()),
+    );
     Some(Arc::new(
         pii_observe::TrajectorySink::new(dir, policy)
             .with_reporter(Arc::new(pii_observe::StderrObserver)),
@@ -340,8 +371,29 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        ContractObserver, Metric, ObsEvent, Observer, RecordingObserver, TrajectoryBridge,
+        ContractObserver, DenialObserver, Metric, ObsEvent, Observer, RecordingObserver,
+        TrajectoryBridge,
     };
+
+    #[test]
+    fn denial_observer_forwards_denials_and_nothing_else() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let o = DenialObserver::new(rec.clone());
+        o.event(&ObsEvent::Denial {
+            principal: "p".into(),
+            cap: "fs_write".into(),
+        });
+        o.event(&ObsEvent::PersistError {
+            context: "c".into(),
+            message: "m".into(),
+        });
+        o.metric(&Metric {
+            name: "graph.batch.width".into(),
+            value: 2,
+        });
+        let kinds: Vec<_> = rec.events().into_iter().map(|e| e.kind).collect();
+        assert_eq!(kinds, [pii_observe::names::CORE_CAP_DENIED]);
+    }
 
     #[test]
     fn recording_observer_reports_max_metric() {

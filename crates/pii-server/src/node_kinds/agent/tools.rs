@@ -112,7 +112,7 @@ impl AgentNode {
     ) -> Result<serde_json::Value, PiiError> {
         let result = self.call_tool_bounded_inner(ctx, call);
         self.toolset
-            .observe_call(&call.name, &call.arguments, &result);
+            .observe_call(ctx, &call.name, &call.arguments, &result);
         result
     }
 

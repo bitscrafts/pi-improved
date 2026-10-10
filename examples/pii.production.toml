@@ -11,8 +11,9 @@
 # Not config keys (command-line flags of `pii daemon`, see `pii daemon --help`):
 #   --store <path>      store file          (default <runtime_dir>/store.redb)
 #   --workspace <dir>   workspace scope     (default: the working directory)
-#   --sandbox <p>       off | workspace     (default off; "workspace" confines
-#                       fs access to the workspace + store dir + runtime dir)
+#   --sandbox <p>       off | workspace     (default workspace: WRITES confined to the
+#                       workspace + store dir + runtime dir + log/trajectory dirs, reads
+#                       NOT confined; "off" is the explicit, loudly-reported opt-out)
 #   --config <path>     this file           (default $PII_CONFIG, else ~/.pii/pii.toml)
 # The mounts the daemon ends up with are reported by `pii health --json`.
 

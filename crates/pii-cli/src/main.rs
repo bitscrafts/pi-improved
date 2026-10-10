@@ -20,6 +20,7 @@ mod cmd_sys;
 mod cmd_trace;
 mod cmd_tui;
 mod cmd_worker_exec;
+mod daemon_log;
 mod ndjson;
 
 use crate::cli_util::fail;

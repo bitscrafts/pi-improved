@@ -25,6 +25,10 @@ LogsDirectory=pii
 Environment=PII_RUNTIME_DIR=/run/pii
 Environment=PII_CONFIG=/etc/pii/pii.toml
 Environment=PII_MODEL=ollama:granite4.2:3b
+# Secrets (PII_DISCORD_TOKEN, OLLAMA_API_KEY, ...) live ONLY here: a root-owned file,
+#   install -m 0600 -o root -g root /dev/null /etc/pii/pii.env
+# systemd reads it as root before dropping to the service user (the leading '-' makes it optional).
+EnvironmentFile=-/etc/pii/pii.env
 WorkingDirectory=/var/lib/pii
 ExecStart=/usr/local/bin/pii daemon --foreground \
     --store /var/lib/pii/store.redb \

@@ -73,3 +73,38 @@ R6. **seccomp: state its absence honestly** (and do not claim parity with Landlo
 - Emit through `pii-observe`; no new raw prints beyond the file's budget.
 - Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G). Do not leave a daemon running.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09)
+**Landed.** The daemon now defaults to `workspace`; `--sandbox off` is an explicit opt-out that warns;
+denials go to an audit log; a canary test guards the log/ndjson/trajectory paths; env-only secrets are
+accepted WITH compensating controls; seccomp's absence is stated.
+
+**Reproduced by the orchestrator (my own runs):**
+```
+A. default start (no flag)   → pii health --json: sandbox_profile = workspace
+   mount policy (verbatim): "sandbox=workspace (landlock): WRITES confined to the workspace, store dir,
+   runtime dir, $TMPDIR and /dev/{null,zero,urandom,tty}; READS are NOT confined (read-only access to / is
+   granted, so /etc, /home and every other readable path stay readable)"   ← the honest grant, in the operator's face
+B. --sandbox off             → stderr carries "UNCONFINED" (1 occurrence); health: sandbox_profile = off
+C. audit trail               → <runtime>/audit.log exists and records BOTH starts:
+   {"kind":"daemon.sandbox.in_force","enforced":true,"profile":"workspace","grant":"…"}         level info
+   {"kind":"daemon.sandbox.in_force","enforced":false,"profile":"off","grant":"… explicit opt-out"} level WARN
+   ← an unconfined start is now a warn-level audit record, not silence
+D. tests (my run): canary_secrets 3 passed · sandbox_grant 4 passed · daemon_default_sandbox 4 passed
+   gates: quality-gate.sh ALL PASS · fresh-gate PASS · clippy -D warnings · fmt --check
+```
+**Worker's own RED-first evidence (its report):** the canary leaked 4× into ndjson before the fix; the
+default start exited 5 instead of 4; a tool denial emitted no event. Two mutation controls on R2 (a wider
+write grant → the deny test RED; a narrower read grant → the read test RED), and it fixed a VACUOUS test of
+its own (the deny test passed when the sandbox failed to launch; it now requires an in-workspace write in
+the same run) — exactly the discipline this repo requires.
+
+**Honest limits and residuals, kept here:**
+1. **`pii -p` (one-shot) still defaults to `off`** — asymmetric with the daemon; the worker deliberately did
+   not touch it. It is a real inconsistency: the interactive path is the unconfined one. Next spec item.
+2. The **scrubber** replaces values of env vars whose names look secret (exact value match, 8+ bytes) — a
+   TRANSFORMED secret is not caught, and the **client event stream to connected UIs is not scrubbed**.
+3. **Bash deny-list events are still not emitted** as `tools.*` events; only `core.cap.denied` appears.
+4. A **kernel-level denial inside a child process remains invisible** to pii (stated verbatim in the runbook).
+5. **seccomp is not implemented**, and env-only secrets remain accepted with a systemd
+   `EnvironmentFile=-/etc/pii/pii.env` (0600, root-owned) + the scrubber as compensating controls.

@@ -235,10 +235,14 @@ fn with_trajectory(
     session: Option<&str>,
     bridge: BridgeObserver,
 ) -> Arc<dyn pii_core::Observer> {
-    match engine.trajectory_observer(run_id, session) {
-        Some(t) => Arc::new(pii_core::MultiObserver::new(vec![t, Arc::new(bridge)])),
-        None => Arc::new(bridge),
+    let mut all: Vec<Arc<dyn pii_core::Observer>> = Vec::new();
+    all.extend(engine.trajectory_observer(run_id, session));
+    all.extend(engine.audit_observer());
+    if all.is_empty() {
+        return Arc::new(bridge);
     }
+    all.push(Arc::new(bridge));
+    Arc::new(pii_core::MultiObserver::new(all))
 }
 
 /// Recovers a run's declared `scope_root` from its journal (spec 20 R1).
@@ -358,6 +362,46 @@ mod tests {
     use pii_core::Ctx;
     use std::path::PathBuf;
     use tempfile::Builder;
+
+    /// Spec 107 R3: a denial raised inside a run reaches the engine's audit
+    /// observer; with none attached the run observer is just the bus bridge.
+    #[test]
+    fn a_run_denial_reaches_the_attached_audit_observer() {
+        use pii_core::{ObsEvent, RecordingObserver};
+        use std::sync::Arc;
+        let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "audit-").unwrap();
+        let engine = crate::Engine::new(crate::EngineConfig {
+            workspace: dir.path().to_path_buf(),
+            store_path: dir.path().join("store.redb"),
+            model: format!(
+                "scripted:{}/../../fixtures/phase2/hello.json",
+                env!("CARGO_MANIFEST_DIR")
+            ),
+            sandbox: pii_tools::sandbox::SandboxProfileName::Off,
+            route_policy: std::collections::BTreeMap::new(),
+            session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            graph_dir: dir.path().join("graphs"),
+        })
+        .unwrap();
+        let run = pii_abi::RunId::from("r1");
+        let bridge = || crate::engine::bus::BridgeObserver {
+            run_id: run.clone(),
+            tx: engine.bus.subscribe_tx(),
+        };
+        let denial = ObsEvent::Denial {
+            principal: "p".into(),
+            cap: "fs_write".into(),
+        };
+        // Control: nothing attached, nothing recorded anywhere.
+        let rec = Arc::new(RecordingObserver::new());
+        super::with_trajectory(&engine, &run, None, bridge()).event(&denial);
+        assert!(rec.events().is_empty());
+        engine.attach_audit(rec.clone());
+        super::with_trajectory(&engine, &run, None, bridge()).event(&denial);
+        assert!(
+            matches!(rec.events().as_slice(), [ObsEvent::Denial { cap, .. }] if cap == "fs_write")
+        );
+    }
 
     fn ctx_for(caps: pii_core::CapSet) -> Ctx {
         Ctx::with_observer(

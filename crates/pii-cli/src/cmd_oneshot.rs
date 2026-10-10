@@ -282,14 +282,15 @@ where
 }
 
 fn render_event(ev: &Event, json: bool) {
+    let scrubber = pii_core::secret_scrubber();
     if json {
         if let Ok(line) = serde_json::to_string(ev) {
-            println!("{line}");
+            println!("{}", scrubber.scrub(&line));
         }
         return;
     }
     if let Some(line) = human_line(ev) {
-        println!("{line}");
+        println!("{}", scrubber.scrub(&line));
     }
 }
 
