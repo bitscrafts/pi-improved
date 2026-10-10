@@ -91,3 +91,7 @@ returning `Unavailable`.
 `pii metrics`/`pii health` through a live daemon the worker could not check — **I did check those two, above**, which
 closes that gap and leaves the hardware ones open and honestly labelled.
 
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD, 14 steps)
+`fresh-gate` (exactly HEAD `ffc186d`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0, with the new
+`clippy (hal-gpiod)` step included — so the real backend is compiled in the gate and cannot rot. **121: 9/9.**
+
