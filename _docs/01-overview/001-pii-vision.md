@@ -20,7 +20,7 @@ messaging gateway with one performant, local-first, modular system.
 
 1. **Coding agent core** (from `pi_agent_rust`) — sub-100ms cold start, structured
    concurrency, capability-gated `Ctx`, JSONL sessions, bash mediation.
-2. **Assistant/gateway** (from `zeroclaw`) — 30+ channels, ~20 LLM providers, tools,
+2. **Assistant/gateway** (from `zeroclaw`) — 30+ channels, LLM providers (measured: 5 kinds — `ollama`, `openai` (OpenAI-compatible, base URL configurable, so any vendor of that shape), `anthropic`, `gemini`, and in-process `llamacpp` behind a feature; `scripted` is a test fixture, not a provider; the "~20" was the zeroclaw figure, not ours), tools,
    SOP engine, WASM plugin host, hardware HAL.
 3. **Cognitive memory + model tiering** (from `yantrikclaw`) — entities/relationships,
    tier-aware tool selection for model sizes 0.5B→100B+.

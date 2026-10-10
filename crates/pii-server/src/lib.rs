@@ -176,19 +176,10 @@ fn observed_provider(
     // provider does not bypass the egress chokepoint `cargo xtask
     // net-check` enforces. `scripted:` specs (the common case in
     // tests) never touch this — `resolve_with_transport` only builds
-    // the transport lazily, inside the `ollama:` branch.
+    // the transport lazily, inside the networked-kind branch
+    // (`ollama:`, `openai:`, `anthropic:`, `gemini:` — spec 111).
     let mut ollama_net_host: Option<String> = None;
-    let provider = if model.starts_with("ollama:") {
-        let ollama_host = pii_core::env_var("OLLAMA_HOST")
-            .unwrap_or_else(|| String::from(pii_model::ollama::DEFAULT_OLLAMA_HOST));
-        let host_only = ollama_host
-            .trim_start_matches("http://")
-            .trim_start_matches("https://")
-            .split(':')
-            .next()
-            .unwrap_or("127.0.0.1")
-            .to_owned();
-        ollama_net_host = Some(host_only.clone());
+    let provider = if let Some(host_only) = pii_model::egress_host(model) {
         let mut grants = pii_net::grant::StaticGrants::default();
         grants.insert(
             "*",
@@ -201,7 +192,14 @@ fn observed_provider(
             clock: Arc::new(pii_net::SystemClock),
         });
         net.set_observer(log.clone());
-        pii_model::resolve_with_transport(model, Arc::new(net))?
+        ollama_net_host = Some(host_only);
+        // `ollama:` reports through `ObservedProvider` alone; the hosted kinds
+        // also own named `model.provider.*` events and need the observer.
+        if model.starts_with("ollama:") {
+            pii_model::resolve_with_transport(model, Arc::new(net))?
+        } else {
+            pii_model::resolve_with_observer(model, Arc::new(net), log.clone())?
+        }
     } else {
         pii_model::provider_from_spec(model)?
     };

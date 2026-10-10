@@ -72,3 +72,29 @@ R7. **A config sample** for each kind in `examples/` (or the existing production
 - Scratch under `/projects/_tmp/`; the volume is tight (19G free) — keep it small and delete your own.
   No daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-10) — one real gap found and closed
+**My controls:**
+- `cargo test -p pii-model` → 20 unit + 5 `ollama_http` + 19 `provider_kinds` pass, 3 `live_smoke` ignored ✓
+  (so the gate never touches the network).
+- **The engine's grant is per host, so the allowlist applies end to end**: `crates/pii-server/src/lib.rs:182-201`
+  takes `pii_model::egress_host(model)` and asks for `http:<host_only>` before `resolve_with_observer`.
+- **What `provider_from_spec` says for a networked kind**: `Err("<kind>: needs a transport — call
+  <kind>::provider_from_env or resolve_with_transport")`, and the unknown-kind error lists all six kinds ✓.
+
+**THE GAP (found by my mutation, not by the report): the three auth/version headers were asserted by
+PRESENCE only.** Renaming the pinned `anthropic-version` from `2023-06-01` to `2023-01-01` left all 19 tests
+GREEN — the report's request-shape table claimed that header as evidence, but nothing checked its value, and
+the same weakness covered `Authorization` (scheme + key) and `x-goog-api-key`. A protocol version or an auth
+scheme can be wrong and every test still passes: exactly "a check that passes while the live path is broken".
+**Fixed by the orchestrator** in `crates/pii-model/tests/provider_kinds.rs`: the mock gained a case-insensitive
+`header(name)` accessor and the three tests now assert VALUES — the pinned version against the literal, the
+`Bearer <key>` scheme, and the gemini key header. Controls re-run: renaming the version → `left: Some("2023-01-01")`
+vs `right: Some("2023-06-01")` FAILS; `Bearer`→`Basic` → FAILS; restored → 19 pass.
+
+**Honest limits carried:** `anthropic`/`gemini` streaming is refused with a clear error rather than implemented;
+`live_smoke` is `#[ignore]`d and unrun (no network/key here — three vendor APIs are therefore verified only
+against a mock, and that must be said, not implied); the report's claim that the first gate run failed on
+`reachability-check` is a tool-seed coupling, not a product defect (the engine now calls
+`resolve_with_observer` for hosted kinds while the xtask seed still watches `resolve_with_transport`).
+

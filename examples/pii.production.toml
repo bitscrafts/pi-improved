@@ -28,6 +28,22 @@ runtime_dir = "/run/pii"
 # Default: $OLLAMA_HOST, else http://127.0.0.1:11434.
 ollama_host = "http://127.0.0.1:11434"
 
+# Hosted model kinds (spec 111): set `model` above to one of
+#   "openai:<model>"     OpenAI-compatible; works for any vendor with that shape
+#   "anthropic:<model>"  Anthropic Messages API
+#   "gemini:<model>"     Gemini generateContent
+# Configured ONLY through the environment, never this file. A key must never be
+# logged: put it in the daemon's environment (a secrets manager or systemd
+# EnvironmentFile), and it is scrubbed from provider errors and events.
+#   OPENAI_BASE_URL     default https://api.openai.com/v1  (point at any compatible server)
+#   OPENAI_API_KEY      optional (local servers take none); sent as `Authorization: Bearer`
+#   ANTHROPIC_BASE_URL  default https://api.anthropic.com
+#   ANTHROPIC_API_KEY   required; sent as `x-api-key`
+#   GEMINI_BASE_URL     default https://generativelanguage.googleapis.com
+#   GEMINI_API_KEY      required; sent as the `x-goog-api-key` header (never the URL)
+# Egress is governed: the daemon grants `http:<host>` for the host of the
+# configured base URL only; any other host is denied and reported.
+
 # Default: built-in cap. Max runs remembered per session in memory.
 # session_runs_cap = 256
 

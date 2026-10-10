@@ -36,6 +36,16 @@ pub const MODEL_PROVIDER_IN_FORCE: &str = "model.provider.in_force";
 pub const MODEL_REQUEST_LATENCY: &str = "model.request.latency";
 /// Event: a model provider returned an error.
 pub const MODEL_PROVIDER_ERROR: &str = "model.provider.error";
+/// Event: a hosted provider rejected the credential (401/403); names the host, never the key.
+pub const MODEL_PROVIDER_AUTH_FAILED: &str = "model.provider.auth_failed";
+/// Event: a hosted provider rate-limited the request (429).
+pub const MODEL_PROVIDER_RATE_LIMITED: &str = "model.provider.rate_limited";
+/// Event: a hosted provider answered 2xx with a body that does not parse.
+pub const MODEL_PROVIDER_BAD_BODY: &str = "model.provider.bad_body";
+/// Event: the egress allowlist refused a provider's host.
+pub const MODEL_PROVIDER_EGRESS_DENIED: &str = "model.provider.egress_denied";
+/// Event: one partial-token delta from a streaming provider.
+pub const MODEL_PROVIDER_STREAM_DELTA: &str = "model.provider.stream_delta";
 /// Event: a supervised worker changed state.
 pub const WORKER_STATE_CHANGED: &str = "worker.state.changed";
 /// Event: a memory search completed.
@@ -135,6 +145,11 @@ pub const ALL: &[&str] = &[
     MODEL_PROVIDER_IN_FORCE,
     MODEL_REQUEST_LATENCY,
     MODEL_PROVIDER_ERROR,
+    MODEL_PROVIDER_AUTH_FAILED,
+    MODEL_PROVIDER_RATE_LIMITED,
+    MODEL_PROVIDER_BAD_BODY,
+    MODEL_PROVIDER_EGRESS_DENIED,
+    MODEL_PROVIDER_STREAM_DELTA,
     WORKER_STATE_CHANGED,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,

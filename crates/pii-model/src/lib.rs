@@ -211,6 +211,15 @@ impl ModelProvider for ScriptedProvider {
 pub mod ollama;
 pub use ollama::OllamaProvider;
 
+mod wire;
+
+pub mod anthropic;
+pub mod gemini;
+pub mod openai;
+pub use anthropic::AnthropicProvider;
+pub use gemini::GeminiProvider;
+pub use openai::OpenAiProvider;
+
 #[cfg(feature = "llamacpp")]
 pub mod llamacpp;
 #[cfg(feature = "llamacpp")]
@@ -253,10 +262,33 @@ pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError
         "ollama" => Err(PiiError::Invalid(String::from(
             "ollama: needs a transport — call ollama::provider_from_env or resolve_with_transport",
         ))),
+        "openai" | "anthropic" | "gemini" => Err(PiiError::Invalid(format!(
+            "{kind}: needs a transport — call {kind}::provider_from_env or resolve_with_transport"
+        ))),
         other => Err(PiiError::Invalid(format!(
-            "unknown model spec kind '{other}' (scripted:<path> and ollama:<model> are supported)"
+            "unknown model spec kind '{other}' (supported: scripted:<path>, ollama:<model>, \
+             openai:<model>, anthropic:<model>, gemini:<model>, llamacpp:<model>)"
         ))),
     }
+}
+
+/// The egress host a spec's provider will dial, or `None` for a local spec.
+///
+/// This is what the `http:<host>` grant is keyed on. `scripted:`, `llamacpp:`
+/// and unknown specs need no network. Derived from the same env var the provider reads for
+/// its base URL, falling back to the same default. Only the host: never a
+/// port, userinfo, path or key.
+#[must_use]
+pub fn egress_host(spec: &str) -> Option<String> {
+    let (base_var, default) = match spec.split_once(':')?.0 {
+        "ollama" => ("OLLAMA_HOST", ollama::DEFAULT_OLLAMA_HOST),
+        "openai" => ("OPENAI_BASE_URL", openai::DEFAULT_OPENAI_BASE_URL),
+        "anthropic" => ("ANTHROPIC_BASE_URL", anthropic::DEFAULT_ANTHROPIC_BASE_URL),
+        "gemini" => ("GEMINI_BASE_URL", gemini::DEFAULT_GEMINI_BASE_URL),
+        _ => return None,
+    };
+    let base = pii_core::env_var(base_var).unwrap_or_else(|| default.to_owned());
+    Some(wire::host_of(&base))
 }
 
 /// Resolves any supported model spec.
@@ -272,10 +304,38 @@ pub fn resolve_with_transport(
     spec: &str,
     transport: Arc<dyn pii_core::HttpTransport>,
 ) -> Result<Arc<dyn ModelProvider>, PiiError> {
-    if spec.starts_with("ollama:") {
-        return ollama::provider_from_env(spec, transport);
+    resolve(spec, transport, None)
+}
+
+/// [`resolve_with_transport`] plus an observer for the hosted kinds.
+///
+/// `openai:`, `anthropic:` and `gemini:` providers get `observer`, so their
+/// named `model.provider.*` events (auth failure, rate limit, bad body, egress denial, stream delta)
+/// reach it.
+///
+/// # Errors
+/// As [`resolve_with_transport`].
+pub fn resolve_with_observer(
+    spec: &str,
+    transport: Arc<dyn pii_core::HttpTransport>,
+    observer: Arc<dyn pii_observe::Observer>,
+) -> Result<Arc<dyn ModelProvider>, PiiError> {
+    resolve(spec, transport, Some(observer))
+}
+
+fn resolve(
+    spec: &str,
+    transport: Arc<dyn pii_core::HttpTransport>,
+    observer: Option<Arc<dyn pii_observe::Observer>>,
+) -> Result<Arc<dyn ModelProvider>, PiiError> {
+    let env = &pii_core::env_var;
+    match spec.split_once(':').map(|(k, _)| k) {
+        Some("ollama") => ollama::provider_from_env(spec, transport),
+        Some("openai") => openai::provider_from_lookup(spec, transport, env, observer),
+        Some("anthropic") => anthropic::provider_from_lookup(spec, transport, env, observer),
+        Some("gemini") => gemini::provider_from_lookup(spec, transport, env, observer),
+        _ => provider_from_spec(spec),
     }
-    provider_from_spec(spec)
 }
 
 #[cfg(test)]
