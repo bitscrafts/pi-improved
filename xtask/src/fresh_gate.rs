@@ -80,9 +80,15 @@ pub fn safe_to_remove(base: &Path, dir: &Path) -> bool {
         && dir.parent() == Some(base)
 }
 
-/// Minimum free MB at the export base: `FRESH_GATE_MIN_FREE_MB`, default 2048.
+/// Minimum free MB at the export base: `FRESH_GATE_MIN_FREE_MB`, default 12 288 (12 GiB).
+///
+/// Spec 110 (F7) measured why 2 048 was wrong: a gate run that MEASURES coverage builds an
+/// instrumented tree inside the export (~7.8 GiB) on top of the plain one, so a coverage-measuring
+/// export needs **>= 11.4 GiB** free — with 11 GB free it drove the volume to ZERO for ~3 minutes and
+/// left an 11.4 GB failed export behind. The default now refuses before that can happen. The export
+/// also skips the coverage step by default (`run_gate`), so the coverage build is not paid twice.
 pub fn min_free_mb(env: Option<&str>) -> u64 {
-    env.and_then(|v| v.trim().parse().ok()).unwrap_or(2048)
+    env.and_then(|v| v.trim().parse().ok()).unwrap_or(12_288)
 }
 
 /// Available MB from `df -Pm <path>` output (4th column of the data row).
@@ -169,10 +175,26 @@ fn overlay_worktree(root: &Path, dir: &Path) -> Result<(), String> {
 
 /// Runs the gate in `dir`, streaming output while capturing it.
 fn run_gate(dir: &Path) -> Result<(bool, String), String> {
+    // The export's job is the hermetic-tree model, not a second measurement of the coverage floor the
+    // repo gate already enforces — and that measurement costs ~7.8 GiB (spec 110 R5/F7). So the export
+    // skips it BY DEFAULT and says so out loud; `FRESH_GATE_COVERAGE=1` measures it inside the export too.
+    let covev = if std::env::var("FRESH_GATE_COVERAGE").ok().as_deref() == Some("1") {
+        println!(
+            "fresh-gate: MEASURING coverage inside the export (FRESH_GATE_COVERAGE=1; needs >= 11.4 GiB free)"
+        );
+        "0"
+    } else {
+        println!(
+            "fresh-gate: the export skips the coverage step (it re-measures a floor the repo gate enforces \
+             and needs ~7.8 GiB); set FRESH_GATE_COVERAGE=1 to measure it here too"
+        );
+        "1"
+    };
     let mut child = Command::new("bash")
         .args(["-c", "bash quality-gate.sh 2>&1"])
         .current_dir(dir)
         .env("CARGO_TARGET_DIR", dir.join("target"))
+        .env("QG_SKIP_COVERAGE", covev)
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| format!("gate: {e}"))?;
@@ -285,9 +307,9 @@ mod tests {
 
     #[test]
     fn min_free_default_and_override() {
-        assert_eq!(min_free_mb(None), 2048);
+        assert_eq!(min_free_mb(None), 12_288);
         assert_eq!(min_free_mb(Some("999999")), 999_999);
-        assert_eq!(min_free_mb(Some("junk")), 2048);
+        assert_eq!(min_free_mb(Some("junk")), 12_288);
     }
 
     #[test]

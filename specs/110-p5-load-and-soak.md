@@ -68,3 +68,35 @@ R6. **Limits, stated plainly.** Single host, scripted model, no network variance
 - Take the numbers from the artefact the user would use (`pii metrics`, `pii health --json`, the log lines),
   not from a re-enactment.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result (2026-10-10) — first measurements; report `_docs/06-research/056-load-and-soak-2026-10-10.md`
+**The numbers (the worker's, with its own sources named per row; I re-read the report and verified the artefact
+exists and is coherent — the 33-minute soak is NOT re-run, and that limit is stated):**
+- **Load (8 conns, 300 s)**: 12 452 runs, 0 failed, **41.5 runs/s**; run lifecycle p50 188.5 / p95 276 / p99 326 ms;
+  `run.start` p50 48.1 ms; daemon CPU 0.96 core; ~45 runs/s is the ceiling (4 conns gives the same throughput —
+  concurrency 8 only queues).
+- **Instrumentation bill (A/B, 3 rounds, order rotated)**: trajectory ON = **+2.35 ms/run CPU (+10.6%)** and
+  +4 072 B/run written (visible in CPU and bytes, NOT in latency/throughput); log file ON = below resolution
+  except its own ~300 B/run; observer vs `NullObserver` = **not measurable: no switch exists** (filed, not faked).
+- **Soak (32.67 min, 85 018 runs, 0 failed)**: RSS 60.5 → 86.4 MB, **no plateau: +152 KB per 1 000 runs
+  (~155 B/run)**, threads/fds flat; store 1.06 MB → 216.6 MB (2.5 KB/run, never shrinks); trajectory 196 MB in
+  85 019 files; logs rotated twice (bounded).
+- **The user's own path**: one-shot p50 **83.16 s**, of which **the model is 99.9%** (startup→first event 43 ms,
+  tools 21 ms total). 052's 5.5 s figure was one turn on an idle host; the RATIO is the stable result.
+- **The gate's ratchet**: coverage ON = 169 s and **+7.84 GB** per run; `QG_SKIP_COVERAGE=1` = 92 s and ~0.
+- **Eight findings filed, none fixed** (as the spec required): F1 `run.get` NotFound for in-flight runs
+  (128 054 such polls for 12 452 runs — a client cannot tell "not yet" from "unknown id"), F2 the RSS growth,
+  F3 ~50x write amplification, F4 trajectory has NO aggregate cap/retention, F5 the store never shrinks,
+  F6 `pii metrics` has no latency histogram and no RSS, F7 fresh-gate's 2 048 MB guard is far below the
+  >= 11.4 GB a coverage-measuring export needs, F8 no `NullObserver`/audit-off switch.
+
+**F7 FIXED IN THE TOOL BY THE ORCHESTRATOR** (`xtask/src/fresh_gate.rs`, after the report landed): the export
+now skips the coverage step **by default and says so loudly** (`FRESH_GATE_COVERAGE=1` measures it there too),
+and the free-space default is `12_288 MB` (was `2_048`). Reason: measured — a coverage-measuring export needs
+>= 11.4 GB and with 11 GB free it drove the volume to zero for ~3 minutes. Unit test updated
+(`min_free_mb(None) == 12_288`); 85 xtask tests pass.
+
+**Findings become specs**: F1/F4/F5/F6 → **115** (operator surfaces under load), F2/F3/F8 → **116** (the cost
+findings); both are Stage A2 of `057`, before the vision stages, because a surface that lies or grows without
+bound makes every later measurement untrustworthy.
+
