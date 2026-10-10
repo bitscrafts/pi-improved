@@ -43,6 +43,21 @@ stamped too but is not listed in the payload.
 
 The contract exposes no latency histogram through `sys.status`, so none is emitted.
 
+### Graph metrics: the journal is the surface (spec 109 R3)
+
+`graph.node.dead`, `graph.join.unsatisfiable` and `graph.batch.width` are NOT daemon-log
+lines and NOT `pii metrics` lines: they fire per tick, so logging them would flood the log.
+The run journal records the same facts, and `pii graph trace` reads it
+(`DB` = the store file, `RUN` = the run id):
+
+    pii graph trace RUN --db DB --max-batch-width          # largest graph.batch.width of the run
+    pii graph trace RUN --db DB | grep '"NodeDead"'        # one line per graph.node.dead
+    pii graph trace RUN --db DB | grep 'never be satisfied'  # the Finished event of an unsatisfiable join (graph.join.unsatisfiable);
+                                                           # `--terminal` alone prints just `failure`
+
+`crates/pii-graph/tests/journal_is_the_metric_surface.rs` pins that the journal and the metric
+stream agree, so these queries are a faithful substitute for a live metric.
+
 ## Logs
 
 The daemon writes events as JSON lines (one per event, `ts_ms` stamped) to a

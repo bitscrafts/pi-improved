@@ -86,8 +86,18 @@ echo "==> cargo llvm-cov (coverage floor, spec 108)"
 # Needs cargo-llvm-cov + the rustup llvm-tools component; their absence is a
 # FAIL, not a skip. Own target dir (target/llvm-cov-target) so instrumented
 # artifacts never touch the plain build.
+#
+# QG_SKIP_COVERAGE=1 skips ONLY this step, and says so LOUDLY. It exists for one
+# measured reason: the instrumented build is ~18G, so a fresh-gate export (which
+# already re-runs the whole suite in a clean tree) cannot fit it on a volume with
+# under ~25G free — the export's job is the hermetic-tree model, not a second
+# measurement of a floor the repo gate already enforces. It is NEVER implied:
+# unset means the floor is measured, exactly as before.
 COV_JSON=target/coverage-summary.json
-if cargo llvm-cov --workspace --lib --bins --tests --json --summary-only --output-path "$COV_JSON" >/dev/null \
+if [ "${QG_SKIP_COVERAGE:-0}" = "1" ]; then
+    echo "SKIPPED: coverage-floor (QG_SKIP_COVERAGE=1 — the floor was NOT measured in this run;"
+    echo "         the repo gate enforces it by default and this line is the record that it was skipped)"
+elif cargo llvm-cov --workspace --lib --bins --tests --json --summary-only --output-path "$COV_JSON" >/dev/null \
     && cargo run -q -p xtask -- coverage-floor "$COV_JSON"; then
     echo "PASS: coverage-floor"
 else

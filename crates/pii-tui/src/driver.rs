@@ -47,12 +47,35 @@ where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
     W: tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    run_tui_at("tui peer", r, w, observer).await
+}
+
+/// [`run_tui_observed`], naming the `endpoint` in handshake errors and events
+/// (spec 109 R7).
+///
+/// # Errors
+/// Returns [`TuiError`] on protocol or transport failure.
+pub async fn run_tui_at<R, W>(
+    endpoint: &str,
+    r: R,
+    w: W,
+    observer: &dyn Observer,
+) -> Result<(), TuiError>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let client_info = PeerInfo {
         name: "pii-tui".into(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         build: "debug".into(),
     };
-    let (client, _hello) = pii_proto::client::Client::connect(r, w, client_info)
+    let opts = pii_proto::client::ConnectOptions {
+        endpoint,
+        bound: pii_proto::client::DEFAULT_CONNECT_TIMEOUT,
+        observer,
+    };
+    let (client, _hello) = pii_proto::client::Client::connect_with(r, w, client_info, &opts)
         .await
         .map_err(|e| TuiError::Client(e.to_string()))
         .inspect_err(|e| observe::failure(observer, "attach", e))?;

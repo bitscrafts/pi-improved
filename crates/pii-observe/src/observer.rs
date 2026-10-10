@@ -1,6 +1,6 @@
 //! The observer trait and its no-op helpers.
 
-use crate::{Event, Measure};
+use crate::{Event, Level, Measure};
 
 /// Receives events and measures. All methods default to no-ops;
 /// [`NullObserver`] is the canonical no-op.
@@ -28,6 +28,8 @@ impl Observer for NullObserver {}
 #[derive(Default)]
 pub struct SwitchObserver {
     target: std::sync::RwLock<Option<std::sync::Arc<dyn Observer>>>,
+    /// Events and measures that arrived while no target was attached.
+    dropped: std::sync::atomic::AtomicU64,
 }
 
 impl SwitchObserver {
@@ -37,10 +39,19 @@ impl SwitchObserver {
         Self::default()
     }
 
-    /// Attaches `target`; later calls replace it.
+    /// Attaches `target`; later calls replace it. When anything was dropped
+    /// while unattached, the new target is told how much
+    /// ([`crate::names::OBSERVE_EVENTS_DROPPED`], field `count`; spec 109 R2).
     pub fn attach(&self, target: std::sync::Arc<dyn Observer>) {
         if let Ok(mut g) = self.target.write() {
             *g = Some(target);
+        }
+        let count = self.dropped.swap(0, std::sync::atomic::Ordering::Relaxed);
+        if count > 0 {
+            self.event(
+                &Event::new("observe", Level::Warn, crate::names::OBSERVE_EVENTS_DROPPED)
+                    .field("count", count),
+            );
         }
     }
 
@@ -48,14 +59,21 @@ impl SwitchObserver {
         let g = self.target.read().ok()?;
         g.as_deref().map(f)
     }
+
+    fn forward_or_count(&self, f: impl FnOnce(&dyn Observer)) {
+        if self.with(f).is_none() {
+            self.dropped
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
 }
 
 impl Observer for SwitchObserver {
     fn event(&self, e: &Event) {
-        self.with(|o| o.event(e));
+        self.forward_or_count(|o| o.event(e));
     }
     fn measure(&self, m: &Measure) {
-        self.with(|o| o.measure(m));
+        self.forward_or_count(|o| o.measure(m));
     }
     fn flush(&self) {
         self.with(|o| o.flush());
@@ -167,7 +185,12 @@ impl<T: Observable + ?Sized> Observed for T {}
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -203,7 +226,12 @@ mod tests {
         sw.attach(rec.clone());
         sw.event(&e);
         sw.measure(&Measure::Counter(1));
-        assert_eq!(rec.events().len(), 1, "only the post-attach event arrives");
+        assert_eq!(
+            rec.events_named(names::GRAPH_NODE_DEAD).len(),
+            1,
+            "only the post-attach event arrives"
+        );
+        assert_eq!(rec.events_named(names::OBSERVE_EVENTS_DROPPED).len(), 1);
         assert_eq!(rec.measures().len(), 1);
     }
 
@@ -233,5 +261,32 @@ mod tests {
         without.record(&m);
         NullObserver.event(&e);
         NullObserver.flush();
+    }
+
+    #[test]
+    fn events_dropped_before_attach_are_counted_and_reported_once() {
+        let sw = SwitchObserver::new();
+        sw.event(&Event::new("t", Level::Info, names::TOOLS_CALL));
+        sw.event(&Event::new("t", Level::Info, names::TOOLS_CALL));
+        sw.measure(&Measure::Counter(1));
+        let rec = std::sync::Arc::new(Recorder::new());
+        sw.attach(rec.clone());
+        let ev = rec.events_named(names::OBSERVE_EVENTS_DROPPED);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].fields.get("count"), Some(&serde_json::json!(3)));
+        // Nothing dropped since: a re-attach reports nothing more.
+        let again = std::sync::Arc::new(Recorder::new());
+        sw.attach(again.clone());
+        assert!(again.events_named(names::OBSERVE_EVENTS_DROPPED).is_empty());
+    }
+
+    #[test]
+    fn attaching_with_nothing_dropped_reports_nothing() {
+        let sw = SwitchObserver::new();
+        let rec = std::sync::Arc::new(Recorder::new());
+        sw.attach(rec.clone());
+        sw.event(&Event::new("t", Level::Info, names::TOOLS_CALL));
+        assert!(rec.events_named(names::OBSERVE_EVENTS_DROPPED).is_empty());
+        assert_eq!(rec.events_named(names::TOOLS_CALL).len(), 1);
     }
 }

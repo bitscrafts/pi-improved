@@ -2,7 +2,7 @@
 //! `approve`, `cron`. Each connects to the daemon's UDS control socket,
 //! calls one method, prints the JSON result, and exits.
 
-use crate::cli_util::fail;
+use crate::cli_util::{CliObserver, connect_bound, fail};
 use std::process::ExitCode;
 
 use pii_proto::client::Client;
@@ -26,11 +26,17 @@ async fn call_async(
     let runtime_dir = pii_uds::runtime_dir("default")
         .ok_or_else(|| String::from("no usable runtime dir (set PII_RUNTIME_DIR)"))?;
     let sock = runtime_dir.join("control.sock");
-    let stream = pii_uds::client_connect(&sock)
+    let stream = pii_uds::client_connect_observed(&sock, &CliObserver)
         .await
         .map_err(|e| e.to_string())?;
     let (r, w) = tokio::io::split(stream);
-    let (client, _hello) = Client::connect(r, w, client_info())
+    let endpoint = sock.display().to_string();
+    let opts = pii_proto::client::ConnectOptions {
+        endpoint: &endpoint,
+        bound: connect_bound(),
+        observer: &CliObserver,
+    };
+    let (client, _hello) = Client::connect_with(r, w, client_info(), &opts)
         .await
         .map_err(|e| e.to_string())?;
     let result = client

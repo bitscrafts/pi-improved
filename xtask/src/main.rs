@@ -25,6 +25,7 @@ pub mod heal_collect;
 mod heal_prune;
 pub mod heal_seed;
 mod lint_files;
+mod lint_obs_io;
 mod lint_observability;
 mod lint_scratch;
 mod memory_eval;

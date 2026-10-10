@@ -142,10 +142,19 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         };
     }
     let reports = registry.reports();
+    watch_health(engine, &reports);
     drop(registry);
     drop((workers, channels));
     out.counts = counts;
     out.subsystems = reports.into_iter().map(wire).collect();
+}
+
+/// Tells the engine's log about every subsystem whose state changed since the
+/// previous poll (`health.state.changed`, spec 109 R2).
+fn watch_health(engine: &Engine, reports: &[SubsystemHealth]) {
+    for h in reports {
+        engine.health_watch.note(h, &*engine.log);
+    }
 }
 
 fn wire(h: SubsystemHealth) -> SubsystemStatus {
@@ -229,7 +238,12 @@ fn hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
 
     use super::*;
     use crate::EngineConfig;
@@ -302,5 +316,33 @@ mod tests {
             ["store", "memory"],
             "bare engine reports store+memory"
         );
+    }
+
+    /// Spec 109 R2: a polled state change reaches the engine's log, once.
+    #[test]
+    fn a_polled_state_change_reaches_the_engine_log() {
+        let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "hwatch-").unwrap();
+        let engine = Engine::new(EngineConfig {
+            workspace: dir.path().to_path_buf(),
+            store_path: dir.path().join("store.redb"),
+            model: format!(
+                "scripted:{}/../../fixtures/phase2/hello.json",
+                env!("CARGO_MANIFEST_DIR")
+            ),
+            sandbox: SandboxProfileName::Off,
+            route_policy: BTreeMap::new(),
+            session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            graph_dir: dir.path().join("graphs"),
+        })
+        .unwrap();
+        let rec = std::sync::Arc::new(pii_observe::Recorder::new());
+        engine.attach_log(rec.clone());
+        let mut h = SubsystemHealth::ok("store");
+        watch_health(&engine, std::slice::from_ref(&h));
+        h.state = pii_observe::State::Down;
+        watch_health(&engine, std::slice::from_ref(&h));
+        let ev = rec.events_named(pii_observe::names::HEALTH_STATE_CHANGED);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].fields.get("to"), Some(&serde_json::json!("down")));
     }
 }

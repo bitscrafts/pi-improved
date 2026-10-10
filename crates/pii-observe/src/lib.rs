@@ -32,7 +32,7 @@ mod trajectory;
 pub use audit::{AUDIT_KINDS, AuditFilter, Fanout};
 pub use event::{Event, Fields, Level, OwnedEvent, RunId, SessionId, SpanId};
 pub use filelog::FileLog;
-pub use health::{Health, State, SubsystemHealth};
+pub use health::{Health, HealthWatch, State, SubsystemHealth};
 pub use measure::Measure;
 pub use observer::{
     NoopObserver, NullObserver, Observable, Observed, Observer, Recorder, StderrObserver,

@@ -87,6 +87,17 @@ pub const DAEMON_PEER_REFUSED: &str = "daemon.peer.refused";
 /// Event: writing the daemon log file failed (the daemon keeps running).
 pub const LOG_WRITE_FAILED: &str = "log.write.failed";
 
+/// Event: the peer did not answer the hello within the handshake bound (`endpoint`, `bound_ms`).
+pub const PROTO_HANDSHAKE_TIMEOUT: &str = "proto.handshake.timeout";
+/// Event: the peer hung up before answering the hello (`endpoint`).
+pub const PROTO_HANDSHAKE_CLOSED: &str = "proto.handshake.closed";
+/// Event: the peer speaks another protocol version (`endpoint`, `got`, `want`).
+pub const PROTO_HANDSHAKE_SKEW: &str = "proto.handshake.skew";
+/// Event: the handshake failed for another reason (`endpoint`, `error`).
+pub const PROTO_HANDSHAKE_FAILED: &str = "proto.handshake.failed";
+/// Event: the client could not connect to a daemon socket (`endpoint`, `error`).
+pub const UDS_CONNECT_FAILED: &str = "uds.connect.failed";
+
 /// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
 pub const METRIC_RUNS: &str = "pii_runs";
 /// Metric (gauge): sessions in the main store.
@@ -149,6 +160,11 @@ pub const ALL: &[&str] = &[
     DAEMON_STOPPED,
     DAEMON_PEER_REFUSED,
     LOG_WRITE_FAILED,
+    PROTO_HANDSHAKE_TIMEOUT,
+    PROTO_HANDSHAKE_CLOSED,
+    PROTO_HANDSHAKE_SKEW,
+    PROTO_HANDSHAKE_FAILED,
+    UDS_CONNECT_FAILED,
     METRIC_RUNS,
     METRIC_SESSIONS,
     METRIC_APPROVALS_PENDING,

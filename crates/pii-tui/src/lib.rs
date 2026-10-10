@@ -10,6 +10,6 @@ mod observe;
 pub mod render;
 mod state;
 
-pub use driver::{run_tui, run_tui_observed};
+pub use driver::{run_tui, run_tui_at, run_tui_observed};
 pub use render::render;
 pub use state::{AppState, ConnStatus, LogLine, TuiError};

@@ -1,4 +1,2 @@
-pii-abi  # kernel ABI: traits and types only, nothing to observe
-pii-proto  # wire types and consts only, nothing to observe
-pii-uds  # path helpers only, nothing to observe
+pii-abi  # kernel ABI: traits and types only, no I/O (spec 109 R8 verified: no tokio/std::net/std::io/std::process import)
 pii-observe  # this is the contract crate itself

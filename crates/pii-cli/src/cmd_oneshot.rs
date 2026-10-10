@@ -5,7 +5,7 @@
 //! **The daemon is never auto-started.** One dispatch path either way —
 //! `serve_connection` is identical for both (F5.6/F5.8).
 
-use crate::cli_util::fail;
+use crate::cli_util::{CliObserver, connect_bound, fail};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -127,27 +127,9 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
     rt.block_on(run_oneshot(a, model))
 }
 
-/// Applies the sandbox profile (exit 4 when it cannot be enforced). The
-/// trajectory root (spec 103) is written by the run, so it is granted
-/// read-write; it must exist before the grant.
+/// Applies the sandbox profile (exit 4 when it cannot be enforced).
 fn apply_sandbox(a: &OneshotArgs) -> Result<(), ExitCode> {
-    if matches!(a.sandbox, SandboxProfileName::Off) {
-        return Ok(());
-    }
-    let extra_rw: Vec<PathBuf> = pii_core::env_var(pii_core::TRAJECTORY_DIR_ENV)
-        .filter(|d| !d.is_empty())
-        .map(PathBuf::from)
-        .inspect(|d| {
-            // reason: best-effort; a dir that cannot be made is not granted.
-            let _ = std::fs::create_dir_all(d);
-        })
-        .into_iter()
-        .collect();
-    pii_tools::sandbox::apply_workspace(&a.workspace, &extra_rw, std::path::Path::new("/etc"))
-        .map_err(|e| {
-            eprintln!("{e}");
-            ExitCode::from(4)
-        })
+    crate::cli_util::apply_sandbox_profile(a.sandbox, &a.workspace)
 }
 
 async fn run_oneshot(a: OneshotArgs, model: String) -> ExitCode {
@@ -204,7 +186,7 @@ async fn run_over_loopback(
     }
     let stream = pii_server::engine::loopback::spawn_loopback(engine);
     let (r, w) = tokio::io::split(stream);
-    drive_session(r, w, client_info.clone(), a, model).await
+    drive_session("loopback", r, w, client_info.clone(), a, model).await
 }
 
 async fn run_over_uds(
@@ -215,14 +197,23 @@ async fn run_over_uds(
 ) -> Result<ExitCode, String> {
     // Socket opening is centralized in pii-server::uds (net-check allowlist);
     // the CLI only consumes the already-open stream.
-    let stream = pii_uds::client_connect(sock)
+    let stream = pii_uds::client_connect_observed(sock, &CliObserver)
         .await
         .map_err(|e| e.to_string())?;
     let (r, w) = tokio::io::split(stream);
-    drive_session(r, w, client_info.clone(), a, model).await
+    drive_session(
+        &sock.display().to_string(),
+        r,
+        w,
+        client_info.clone(),
+        a,
+        model,
+    )
+    .await
 }
 
 async fn drive_session<R, W>(
+    endpoint: &str,
     r: R,
     w: W,
     client_info: PeerInfo,
@@ -233,7 +224,12 @@ where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
     W: tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    let (client, _hello) = pii_proto::client::Client::connect(r, w, client_info)
+    let opts = pii_proto::client::ConnectOptions {
+        endpoint,
+        bound: connect_bound(),
+        observer: &CliObserver,
+    };
+    let (client, _hello) = pii_proto::client::Client::connect_with(r, w, client_info, &opts)
         .await
         .map_err(|e| e.to_string())?;
     let mut events = client.events();

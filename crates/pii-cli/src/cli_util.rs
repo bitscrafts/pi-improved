@@ -6,6 +6,59 @@ use std::process::ExitCode;
 use pii_observe::{Event, Level, Observer, names};
 use pii_store::Store;
 
+/// The transport-failure events the CLI shows on stderr (spec 109 R7).
+const TRANSPORT_FAILURES: &[&str] = &[
+    names::PROTO_HANDSHAKE_TIMEOUT,
+    names::PROTO_HANDSHAKE_CLOSED,
+    names::PROTO_HANDSHAKE_SKEW,
+    names::PROTO_HANDSHAKE_FAILED,
+    names::UDS_CONNECT_FAILED,
+];
+
+/// The handshake bound: `$PII_CONNECT_TIMEOUT_MS` (milliseconds) when set and
+/// valid, else [`pii_proto::client::DEFAULT_CONNECT_TIMEOUT`] (spec 109 R1).
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn connect_bound() -> std::time::Duration {
+    pii_core::env_var("PII_CONNECT_TIMEOUT_MS")
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(
+            pii_proto::client::DEFAULT_CONNECT_TIMEOUT,
+            std::time::Duration::from_millis,
+        )
+}
+
+/// Applies the sandbox profile (exit 4 when it cannot be enforced). The
+/// trajectory root (spec 103) is written by the run, so it is granted
+/// read-write; it must exist before the grant. Shared by `pii -p` and
+/// `pii tui` (spec 109 R5) so both confine alike.
+///
+/// # Errors
+/// The exit code to return when confinement cannot be applied.
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn apply_sandbox_profile(
+    profile: pii_tools::sandbox::SandboxProfileName,
+    workspace: &Path,
+) -> Result<(), ExitCode> {
+    if matches!(profile, pii_tools::sandbox::SandboxProfileName::Off) {
+        return Ok(());
+    }
+    let extra_rw: Vec<std::path::PathBuf> = pii_core::env_var(pii_core::TRAJECTORY_DIR_ENV)
+        .filter(|d| !d.is_empty())
+        .map(std::path::PathBuf::from)
+        .inspect(|d| {
+            // reason: best-effort; a dir that cannot be made is not granted.
+            let _ = std::fs::create_dir_all(d);
+        })
+        .into_iter()
+        .collect();
+    pii_tools::sandbox::apply_workspace(workspace, &extra_rw, Path::new("/etc")).map_err(|e| {
+        use std::io::Write as _;
+        // reason: nowhere to report a failed stderr write.
+        let _ = writeln!(std::io::stderr(), "{e}");
+        ExitCode::from(4)
+    })
+}
+
 /// The CLI's observer: renders each [`names::CLI_FAILURE`] as the historical
 /// `error: <message>` line on stderr, so operator-visible text is unchanged.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
@@ -19,6 +72,16 @@ impl Observer for CliObserver {
         {
             // reason: nowhere to report a failed stderr write.
             let _ = writeln!(std::io::stderr(), "error: {m}");
+        }
+        // Spec 109 R7: a transport failure names its endpoint and bound on the
+        // terminal, not only in a log.
+        if TRANSPORT_FAILURES.contains(&e.kind) {
+            // reason: nowhere to report a failed stderr write.
+            let _ = writeln!(
+                std::io::stderr(),
+                "{}",
+                pii_observe::StderrObserver::render(e)
+            );
         }
         // Spec 107 R1: an unconfined daemon is never silent.
         if e.kind == names::DAEMON_SANDBOX_IN_FORCE

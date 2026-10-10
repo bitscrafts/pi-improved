@@ -37,6 +37,13 @@ pub enum ObsEvent {
         /// The matched bash deny-list entry.
         deny_entry: Option<String>,
     },
+    /// The memory search an agent turn runs to inject context failed (spec 109
+    /// R4). The turn continues without memory; this is how the failure stays
+    /// visible. Never carries the query text.
+    MemorySearchFailed {
+        /// The error text.
+        error: String,
+    },
     /// A durable-store write failed outside the run journal (D3/D6, 026
     /// report 5.0.4) — e.g. a session append/snapshot. The Phase-1
     /// journaler has its own `Result` return for callers that check it
@@ -216,6 +223,12 @@ impl Observer for ContractObserver {
                     .field("context", context.as_str())
                     .field("message", message.as_str()),
             ),
+            ObsEvent::MemorySearchFailed { error } => self.0.event(
+                &Event::new("memory", Level::Error, names::MEMORY_SEARCH)
+                    .field("outcome", "error")
+                    .field("error", error.as_str())
+                    .field("where", "agent_turn"),
+            ),
             ObsEvent::Run(_) | ObsEvent::Journal { .. } => {}
         }
     }
@@ -264,7 +277,7 @@ impl Observer for DenialObserver {
 /// Forwards ONLY tool-call events to a contract observer (spec 108).
 ///
 /// The daemon log wants `tools.call` / `tools.deny_list.hit` for every call
-/// but not the per-tick graph metrics [`ContractObserver`] also carries.
+/// (and a failed agent-turn memory search) but not the per-tick graph metrics [`ContractObserver`] also carries.
 pub struct ToolCallObserver(Arc<dyn pii_observe::Observer>);
 
 impl ToolCallObserver {
@@ -277,7 +290,10 @@ impl ToolCallObserver {
 
 impl Observer for ToolCallObserver {
     fn event(&self, e: &ObsEvent) {
-        if matches!(e, ObsEvent::ToolCall { .. }) {
+        if matches!(
+            e,
+            ObsEvent::ToolCall { .. } | ObsEvent::MemorySearchFailed { .. }
+        ) {
             ContractObserver::new(Arc::clone(&self.0)).event(e);
         }
     }
@@ -431,6 +447,29 @@ mod tests {
         ContractObserver, DenialObserver, Metric, ObsEvent, Observer, RecordingObserver,
         TrajectoryBridge,
     };
+
+    #[test]
+    fn run_tap_forwards_a_failed_memory_search_as_memory_search_error() {
+        let rec = Arc::new(pii_observe::Recorder::new());
+        let o = super::ToolCallObserver::new(rec.clone());
+        o.event(&ObsEvent::MemorySearchFailed {
+            error: "index gone".into(),
+        });
+        o.event(&ObsEvent::PersistError {
+            context: "c".into(),
+            message: "m".into(),
+        });
+        let ev = rec.events_named(pii_observe::names::MEMORY_SEARCH);
+        assert_eq!(ev.len(), 1, "only the memory failure passes the tap");
+        assert_eq!(
+            ev[0].fields.get("outcome").and_then(|v| v.as_str()),
+            Some("error")
+        );
+        assert_eq!(
+            ev[0].fields.get("error").and_then(|v| v.as_str()),
+            Some("index gone")
+        );
+    }
 
     #[test]
     fn denial_observer_forwards_denials_and_nothing_else() {

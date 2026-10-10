@@ -94,3 +94,54 @@ R8. **Tighten the exemption rule so "nothing to observe" is mechanically decidab
 - Scratch under `/projects/_tmp/`; the disk is at ~97% used, so keep exports small and delete your own.
   Do not leave a daemon running.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-10)
+**Landed (worker's report + my own reproduction).** The hang is closed with numbers, the dead names are
+live, the audit's verdict is implemented (the sanctioned set went 4 -> 2), and the transport failures are
+visible with the endpoint named.
+
+**Reproduced by me:**
+```
+R8 registry   xtask/observability-exemptions.txt now holds EXACTLY TWO entries:
+              pii-abi  # …no I/O (spec 109 R8 verified: no tokio/std::net/std::io/std::process import)
+              pii-observe  # this is the contract crate itself
+              lint-observability: 199 files, 95 raw prints on a budget of 96, registry size 2, 0 findings
+R8 mutation   appending `use std::process::Command as _;` to the EXEMPT pii-abi → 1 finding, verbatim:
+              "crates/pii-abi/src/lib.rs:28: crate pii-abi is exempt but pii-abi/src/lib.rs imports I/O
+               (tokio / std::net / std::io / std::process) — a module with I/O cannot be covered by a
+               crate-wide exemption; emit through pii-observe, or add a module-scoped entry
+               `pii-abi:lib  # reason` for a dormant module"      ← the near-miss control bites
+              restored → 0 findings, and the types-only crate is still accepted (the other half of the control)
+R7 user-visible  `PII_RUNTIME_DIR=<empty dir> pii run ls` (no daemon) now prints, fast:
+              uds: uds.connect.failed {"endpoint":"…/control.sock","error":"No such file or directory (os error 2)"}
+              error: internal: connect …/control.sock: No such file or directory (os error 2)
+              ← named, bounded, no hang, endpoint in the message
+R1 numbers    worker's, with its own RED first: before the fix, a silent peer AND a close-without-answer peer
+              both hung (exit 124 under `timeout 10`); after, the closed case returns in 580µs and the
+              silent case errors at 301.9ms against a 300ms bound. `Client::connect_with(…, ConnectOptions
+              {endpoint, bound, observer})`, default 5s, `PII_CONNECT_TIMEOUT_MS` override.
+              Mutation controls: removing the timeout, and removing the closed-flag check, each make the
+              tests hang/fail. pii-proto suite: 7 + 12 tests pass on my run.
+R2 dead names both EMITTED, neither deleted: health.state.changed (a subsystem state differing from the
+              previous sys.status poll) and observe.events.dropped (a log attached after drops).
+R3 metrics    "the journal is the surface" — the runbook carries the `pii graph trace` queries, and a test
+              pins that the journal and the metric stream agree (changing the dead-node count fails it).
+R4 memory     a failed search emits `memory.search` with outcome=error and the turn continues.
+R5 fetch/TUI  pii-http-fetch stays UNWIRED on purpose (the crate already uses the seam, so an exemption would
+              be false; a test fails if any crate starts depending on it) — giving the agent outbound HTTP is
+              a security decision for the owner. `pii tui` now defaults to `workspace` with the same exit 4.
+```
+
+**Disk, and the tool fix I made (orchestrator, `quality-gate.sh`):** the worker's fresh-gate run hit
+"No space left on device" with 12G free and removed only its own export. Root cause: the coverage step builds
+an ~18G instrumented tree, so a fresh-gate export needs ~25G. Fix: **`QG_SKIP_COVERAGE=1`** skips ONLY that
+step **loudly** (`SKIPPED: coverage-floor (QG_SKIP_COVERAGE=1 — the floor was NOT measured in this run…)`),
+for the export only, because the export's job is the hermetic-tree model, not a second measurement of a floor
+the repo gate already enforces; unset means measured, exactly as before, and there is no silent path.
+
+**Honest limits kept:** `send_line` still returns its error to the caller (unchanged); `soak`, `evolve`,
+`web`, `tools/memory` use the observer-less (now bounded) `connect`; the `sys.status → watch_health` call
+site has no mutation control (no health state can be flipped without heavy setup); R4's test uses a synthetic
+search error; the R8 rule catches I/O by import, so a crate reaching a socket only through another crate is
+not caught.
+

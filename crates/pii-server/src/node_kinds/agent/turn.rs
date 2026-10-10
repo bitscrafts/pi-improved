@@ -16,6 +16,34 @@ use crate::node_kinds::agent::memorize::{history_messages, split_memorize};
 use crate::node_kinds::agent::route_provider_failure;
 use crate::node_kinds::compaction;
 
+/// The "Relevant memory" system text for a search result. A FAILED search is
+/// not swallowed: it is reported through the run's observer (spec 109 R4) and
+/// the turn goes on without memory, which is optional context.
+fn memory_lines(
+    ctx: &Ctx,
+    found: Result<pii_memory::search::MemorySearchResult, PiiError>,
+) -> Option<String> {
+    match found {
+        Ok(result) if !result.hits.is_empty() => {
+            let mut lines = String::from("Relevant memory:\n");
+            for h in result.hits.iter().take(6) {
+                lines.push_str("- ");
+                lines.push_str(&h.text);
+                lines.push('\n');
+            }
+            Some(lines)
+        }
+        Ok(_) => None,
+        Err(e) => {
+            ctx.observer()
+                .event(&pii_core::ObsEvent::MemorySearchFailed {
+                    error: e.to_string(),
+                });
+            None
+        }
+    }
+}
+
 impl GraphNode for AgentNode {
     #[allow(clippy::too_many_lines)] // reason: the turn loop is one cohesive
     // state machine; splitting it would scatter the compaction/timeout logic
@@ -45,15 +73,7 @@ impl GraphNode for AgentNode {
                 Arc::clone(store),
                 Some(Arc::new(pii_memory::embed::TrigramEmbedder)),
             );
-            if let Ok(result) = searcher.search(ctx, &user_text, 6)
-                && !result.hits.is_empty()
-            {
-                let mut lines = String::from("Relevant memory:\n");
-                for h in result.hits.iter().take(6) {
-                    lines.push_str("- ");
-                    lines.push_str(&h.text);
-                    lines.push('\n');
-                }
+            if let Some(lines) = memory_lines(ctx, searcher.search(ctx, &user_text, 6)) {
                 messages.insert(1, ChatMessage::new(Role::System, lines));
             }
         }
@@ -230,5 +250,58 @@ impl GraphNode for AgentNode {
             port: PortName::from("budget"),
             value: serde_json::json!({"error": "max_turns exceeded", "turns": self.max_turns}),
         })
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::sync::Arc;
+
+    use pii_abi::PiiError;
+    use pii_core::{Budget, CapSet, Ctx, ObsEvent, Observer, RecordingObserver, TraceCtx};
+
+    use super::memory_lines;
+
+    fn ctx_with(obs: &Arc<RecordingObserver>) -> Ctx {
+        Ctx::with_observer(
+            CapSet::empty(),
+            Budget::unlimited(),
+            Arc::clone(obs) as Arc<dyn Observer>,
+            TraceCtx {
+                run: "r1".into(),
+                span: 0,
+            },
+        )
+    }
+
+    /// Spec 109 R4: a failed agent-turn memory search is reported, and the
+    /// turn gets no memory text (it is not failed).
+    #[test]
+    fn a_failed_memory_search_is_reported_not_swallowed() {
+        let obs = Arc::new(RecordingObserver::new());
+        let got = memory_lines(
+            &ctx_with(&obs),
+            Err(PiiError::Internal("index gone".into())),
+        );
+        assert!(got.is_none());
+        let evs = obs.events();
+        assert!(
+            evs.iter().any(|e| matches!(e, ObsEvent::MemorySearchFailed { error } if error.contains("index gone"))),
+            "{evs:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_result_reports_nothing() {
+        let obs = Arc::new(RecordingObserver::new());
+        let empty = pii_memory::search::MemorySearchResult {
+            hits: Vec::new(),
+            degraded: false,
+            lanes: Vec::new(),
+        };
+        assert!(memory_lines(&ctx_with(&obs), Ok(empty)).is_none());
+        assert!(obs.events().is_empty());
     }
 }

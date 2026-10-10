@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Pii wire protocol: JSON-RPC 2.0 envelopes, methods, and events"
 
 [dependencies]
+pii-observe = { path = "../pii-observe" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
@@ -25,3 +26,6 @@ workspace = true
 # target dirs; it is not a gate workaround.
 [lib]
 doctest = false
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "io-util", "time"] }

@@ -15,6 +15,7 @@
 use std::path::PathBuf;
 
 use pii_abi::PiiError;
+use pii_observe::{Event, Level, NullObserver, Observer, names};
 
 /// Resolves the runtime dir (F2.8, extended 2026-09-05).
 ///
@@ -82,21 +83,58 @@ fn rustix_uid() -> u32 {
     0
 }
 
-/// Client-side UDS connect: the ONE `UnixStream::connect` site outside the
-/// daemon bind (spec F2.13 allowlist keeps this file as a sanctioned
-/// transport file).
+/// Client-side UDS connect.
+///
+/// The ONE `UnixStream::connect` site outside the daemon bind (spec F2.13
+/// allowlist keeps this file as a sanctioned transport file). Reports to nobody; see [`client_connect_observed`].
 ///
 /// # Errors
 /// [`PiiError::Internal`] on connect failure.
 pub async fn client_connect(sock: &std::path::Path) -> Result<tokio::net::UnixStream, PiiError> {
-    tokio::net::UnixStream::connect(sock)
-        .await
-        .map_err(|e| PiiError::Internal(format!("connect {}: {e}", sock.display())))
+    client_connect_observed(sock, &NullObserver).await
+}
+
+/// [`client_connect`], emitting [`names::UDS_CONNECT_FAILED`] (`endpoint`,
+/// `error`) to `observer` when the socket cannot be reached (spec 109 R7).
+///
+/// # Errors
+/// [`PiiError::Internal`] on connect failure.
+pub async fn client_connect_observed(
+    sock: &std::path::Path,
+    observer: &dyn Observer,
+) -> Result<tokio::net::UnixStream, PiiError> {
+    tokio::net::UnixStream::connect(sock).await.map_err(|e| {
+        observer.event(
+            &Event::new("uds", Level::Error, names::UDS_CONNECT_FAILED)
+                .field("endpoint", sock.display().to_string())
+                .field("error", e.to_string()),
+        );
+        PiiError::Internal(format!("connect {}: {e}", sock.display()))
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    #[tokio::test]
+    async fn connect_failure_is_emitted_with_the_endpoint() {
+        let rec = pii_observe::Recorder::new();
+        let sock = std::env::temp_dir().join("pii-uds-no-such-socket-109");
+        let err = super::client_connect_observed(&sock, &rec).await.err();
+        assert!(err.is_some(), "connecting to a missing socket must fail");
+        let ev = rec.events_named(pii_observe::names::UDS_CONNECT_FAILED);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(
+            ev[0].fields.get("endpoint").and_then(|v| v.as_str()),
+            Some(sock.display().to_string().as_str())
+        );
+    }
 
     #[test]
     fn config_runtime_dir_reads_core_section() {

@@ -10,8 +10,12 @@ description = "Client-side UDS transport helpers: runtime-dir resolution and soc
 [dependencies]
 pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
+pii-observe = { path = "../pii-observe" }
 toml = { workspace = true }
 tokio = { workspace = true, features = ["net", "io-util", "rt"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

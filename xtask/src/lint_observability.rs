@@ -15,12 +15,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::lint_obs_io::{io_finding, io_imports, module_of};
+
 const CRATES: &str = "crates";
 const ALLOWLIST: &str = "xtask/observability-allowlist.txt";
 const NAMES: &str = "crates/pii-observe/src/names.rs";
 const EXEMPTIONS: &str = "xtask/observability-exemptions.txt";
 /// The only crates that may be exempt; a registry entry outside this set is a finding.
-const SANCTIONED: &[&str] = &["pii-abi", "pii-proto", "pii-uds", "pii-observe"];
+///
+/// Spec 109 R8 shrank it from four: `pii-proto` (the async handshake client) and
+/// `pii-uds` (the one client `UnixStream::connect`) own I/O failures and now emit
+/// through the contract. `pii-abi` has no I/O; `pii-observe` IS the contract.
+const SANCTIONED: &[&str] = &["pii-abi", "pii-observe"];
 
 /// The contract crate itself: never required to depend on itself.
 const CONTRACT_CRATE: &str = "pii-observe";
@@ -123,7 +129,7 @@ fn parse_exemptions(text: &str) -> Result<Vec<(String, String)>, Vec<String>> {
         let (name, reason) = (name.trim(), reason.trim());
         if reason.is_empty() {
             errs.push(format!("{EXEMPTIONS}:{at}: `{name}` has no `# reason`"));
-        } else if !SANCTIONED.contains(&name) {
+        } else if !SANCTIONED.contains(&name.split_once(':').map_or(name, |(c, _)| c)) {
             errs.push(format!(
                 "{EXEMPTIONS}:{at}: `{name}` is not in the sanctioned exemption set ({})",
                 SANCTIONED.join(", ")
@@ -219,6 +225,8 @@ struct Tally {
     sites: usize,
     budget_total: usize,
     registry_size: usize,
+    /// Module-scoped exemptions (`crate:module`) that covered a real I/O module.
+    used_modules: BTreeSet<String>,
 }
 
 fn read_budgets(root: &Path, t: &mut Tally) -> BTreeMap<String, usize> {
@@ -279,6 +287,7 @@ fn scan(root: &Path) -> Tally {
         sites: 0,
         budget_total: 0,
         registry_size: 0,
+        used_modules: BTreeSet::new(),
     };
     let budgets = read_budgets(root, &mut t);
     t.budget_total = budgets.values().sum();
@@ -309,13 +318,26 @@ fn scan(root: &Path) -> Tally {
             continue; // stray empty directory tree: nothing to check
         }
         let reason = exempt_reason(&registry, &name);
-        scan_crate(root, &dir, &name, &budgets, reason.as_deref(), &mut t);
+        scan_crate(
+            root,
+            &dir,
+            &name,
+            &budgets,
+            reason.as_deref(),
+            &registry,
+            &mut t,
+        );
         scanned.insert(name);
     }
     for (c, _) in &registry {
-        if !scanned.contains(c) {
+        let krate = c.split_once(':').map_or(c.as_str(), |(k, _)| k);
+        if !scanned.contains(krate) {
             t.findings.push(format!(
                 "{EXEMPTIONS}:1: exempt crate `{c}` not found under {CRATES}/"
+            ));
+        } else if c.contains(':') && !t.used_modules.contains(c) {
+            t.findings.push(format!(
+                "{EXEMPTIONS}:1: module entry `{c}` covers no module that imports I/O — remove it"
             ));
         }
     }
@@ -328,12 +350,35 @@ fn scan(root: &Path) -> Tally {
     t
 }
 
+/// R8: an exempt crate's module that imports I/O is a finding unless a
+/// module-scoped registry entry covers it.
+fn check_io_module(
+    name: &str,
+    shown: &str,
+    src: &str,
+    registry: &[(String, String)],
+    t: &mut Tally,
+) {
+    let Some(line) = io_imports(src).first().copied() else {
+        return;
+    };
+    let rel = shown.replace(&format!("{CRATES}/{name}/src/"), "");
+    let module = module_of(&rel);
+    let entry = format!("{name}:{module}");
+    if registry.iter().any(|(c, _)| *c == entry) {
+        t.used_modules.insert(entry);
+    } else {
+        t.findings.push(io_finding(name, &module, line));
+    }
+}
+
 fn scan_crate(
     root: &Path,
     dir: &Path,
     name: &str,
     budgets: &BTreeMap<String, usize>,
     exempt: Option<&str>,
+    registry: &[(String, String)],
     t: &mut Tally,
 ) {
     let rel = format!("{CRATES}/{name}");
@@ -370,6 +415,9 @@ fn scan_crate(
                 continue;
             }
         };
+        if exempt.is_some() && name != CONTRACT_CRATE {
+            check_io_module(name, &shown, &src, registry, t);
+        }
         uses |= uses_contract(&src);
         seam |= has_seam(&src);
         let sites = print_sites(&src);
@@ -542,11 +590,14 @@ mod tests {
         // A crate outside the sanctioned set is never exempt without a registry entry.
         assert!(exempt_reason(&[], "pii-core").is_none());
         // A registry entry wins over the fallback, so the reason stays honest.
-        let reg = vec![(String::from("pii-uds"), String::from("path helpers only"))];
+        let reg = vec![(String::from("pii-abi"), String::from("types only"))];
         assert_eq!(
-            exempt_reason(&reg, "pii-uds").as_deref(),
-            Some("path helpers only")
+            exempt_reason(&reg, "pii-abi").as_deref(),
+            Some("types only")
         );
+        // pii-proto and pii-uds own I/O and are no longer sanctioned (spec 109 R8).
+        assert!(exempt_reason(&[], "pii-proto").is_none());
+        assert!(exempt_reason(&[], "pii-uds").is_none());
     }
 
     #[test]
@@ -580,5 +631,79 @@ mod tests {
             "the contract crate must never be asked to depend on itself: {:?}",
             t.findings
         );
+    }
+
+    /// Builds a scratch workspace holding one crate `pii-abi` with `lib_rs`, and `exemptions`.
+    fn io_tree(tag: &str, lib_rs: &str, exemptions: &str) -> PathBuf {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp").join(tag);
+        assert!(fs::create_dir_all(root.join("crates/pii-abi/src")).is_ok());
+        assert!(fs::create_dir_all(root.join("xtask")).is_ok());
+        let w = |p: &str, c: &str| assert!(fs::write(root.join(p), c).is_ok(), "write {p}");
+        w(
+            "crates/pii-abi/Cargo.toml",
+            "[package]\nname = \"pii-abi\"\n",
+        );
+        w("crates/pii-abi/src/lib.rs", lib_rs);
+        w("xtask/observability-exemptions.txt", exemptions);
+        root
+    }
+
+    fn io_findings(t: &Tally) -> Vec<&String> {
+        t.findings
+            .iter()
+            .filter(|f| f.contains("imports I/O") || f.contains("module entry"))
+            .collect()
+    }
+
+    #[test]
+    fn exempt_types_only_crate_is_accepted_near_miss() {
+        let root = io_tree(
+            "io-near-miss",
+            "pub struct A;\npub const B: u8 = 1;\n",
+            "pii-abi  # types only\n",
+        );
+        assert!(io_findings(&scan(&root)).is_empty());
+    }
+
+    #[test]
+    fn exempt_crate_importing_tokio_turns_the_lint_red() {
+        let root = io_tree(
+            "io-red",
+            "use tokio::net::UnixStream;\npub struct A;\n",
+            "pii-abi  # types only\n",
+        );
+        let t = scan(&root);
+        let f = io_findings(&t);
+        assert_eq!(f.len(), 1, "{:?}", t.findings);
+        assert!(
+            f[0].contains("pii-abi") && f[0].contains("lib.rs:1"),
+            "{}",
+            f[0]
+        );
+    }
+
+    #[test]
+    fn module_scoped_entry_covers_a_dormant_io_module_and_stale_ones_are_flagged() {
+        let covered = io_tree(
+            "io-module-ok",
+            "use std::io::Write;\n",
+            "pii-abi  # types\npii-abi:lib  # dormant: sink trait, never driven here\n",
+        );
+        assert!(io_findings(&scan(&covered)).is_empty());
+        let stale = io_tree(
+            "io-module-stale",
+            "pub struct A;\n",
+            "pii-abi  # types\npii-abi:lib  # nothing dormant here\n",
+        );
+        let t = scan(&stale);
+        let f = io_findings(&t);
+        assert_eq!(f.len(), 1, "{:?}", t.findings);
+        assert!(f[0].contains("pii-abi:lib"));
+    }
+
+    #[test]
+    fn module_entry_for_an_unsanctioned_crate_is_rejected() {
+        assert!(parse_exemptions("pii-proto:client  # no\n").is_err());
+        assert!(parse_exemptions("pii-abi:lib  # ok\n").is_ok());
     }
 }

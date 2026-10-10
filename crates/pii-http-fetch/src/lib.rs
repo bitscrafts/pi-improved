@@ -7,6 +7,11 @@
 //! chokepoint is ever touched. Every accepted fetch and every refusal is
 //! appended to a deterministic audit log (`FEED: <event> <detail>` lines),
 //! replayable from inputs alone.
+//!
+//! **Dormant by decision (spec 109 R5):** no crate depends on this one, so no
+//! shipped `ToolSet` can reach it and its `fetch.*` events cannot fire. Wiring
+//! outbound HTTP into the agent is an owner-level security decision;
+//! `tests/dormant.rs` pins that nothing wires it by accident.
 
 pub mod audit;
 pub mod fetch;

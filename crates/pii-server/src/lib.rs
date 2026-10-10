@@ -135,6 +135,9 @@ pub struct Engine {
     /// model provider and the network service at construction; unattached
     /// (drops everything) until [`Engine::attach_log`].
     log: Arc<pii_observe::SwitchObserver>,
+    /// Last-seen state per subsystem, so `sys.status` polls report transitions
+    /// as `health.state.changed` (spec 109 R2).
+    health_watch: pii_observe::HealthWatch,
 }
 
 /// A conversation session.
@@ -269,6 +272,7 @@ impl Engine {
             trajectory: parking_lot::Mutex::new(None),
             audit: parking_lot::Mutex::new(None),
             log,
+            health_watch: pii_observe::HealthWatch::new(),
         }))
     }
 

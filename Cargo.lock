@@ -1805,6 +1805,7 @@ dependencies = [
 name = "pii-proto"
 version = "0.1.0"
 dependencies = [
+ "pii-observe",
  "schemars",
  "serde",
  "serde_json",
@@ -1890,6 +1891,7 @@ version = "0.1.0"
 dependencies = [
  "pii-abi",
  "pii-core",
+ "pii-observe",
  "tokio",
  "toml",
 ]
