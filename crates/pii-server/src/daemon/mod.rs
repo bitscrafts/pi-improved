@@ -59,29 +59,9 @@ impl Daemon {
             grants: Arc::new(grants),
             clock: Arc::clone(&clock),
         }));
+        net.set_observer(engine.log());
 
-        // Populate the engine-owned worker pool (F3.7 worker node + M3's
-        // non-test caller for Supervisor::invoke). The node factory holds
-        // the same Arc, so workers configured here are reachable from graphs.
-        let workers = Arc::clone(&engine.workers);
-        for w in &cfg.worker {
-            let spec = pii_worker::WorkerSpec {
-                name: w.name.clone(),
-                program: PathBuf::from(&w.program),
-                args: w.args.clone(),
-                env: w.env.clone(),
-                max_in_flight: w.max_in_flight,
-                ready_timeout_ms: 0,
-                restart_backoff_ms: 0,
-                restart_window_ms: 0,
-                max_restarts_in_window: 0,
-            };
-            let sup = pii_worker::Supervisor::new(spec);
-            // Best-effort: a worker that fails to start is visible as
-            // `Failed` on `worker.list`, not a fatal daemon-start error.
-            let _ = sup.start(&spawn_ctx());
-            workers.lock().insert(w.name.clone(), sup);
-        }
+        let workers = start_workers(&engine, cfg);
 
         let mut channels = BTreeMap::new();
         for c in &cfg.channel {
@@ -89,6 +69,7 @@ impl Daemon {
                 c,
                 Arc::clone(&net) as Arc<dyn pii_core::HttpTransport>,
                 runtime_dir,
+                engine.log(),
             )?;
             channels.insert(
                 c.name.clone(),
@@ -238,7 +219,53 @@ fn resolve_channels_scope(runtime_dir: &Path) -> Result<PathBuf, PiiError> {
     Ok(channels_scope)
 }
 
+/// Populates the engine-owned worker pool from `[[worker]]` config, each
+/// supervisor reporting to the engine's log (spec 108).
+fn start_workers(
+    engine: &Arc<Engine>,
+    cfg: &config::Config,
+) -> Arc<Mutex<BTreeMap<String, pii_worker::Supervisor>>> {
+    // Populate the engine-owned worker pool (F3.7 worker node + M3's
+    // non-test caller for Supervisor::invoke). The node factory holds
+    // the same Arc, so workers configured here are reachable from graphs.
+    let workers = Arc::clone(&engine.workers);
+    for w in &cfg.worker {
+        let spec = pii_worker::WorkerSpec {
+            name: w.name.clone(),
+            program: PathBuf::from(&w.program),
+            args: w.args.clone(),
+            env: w.env.clone(),
+            max_in_flight: w.max_in_flight,
+            ready_timeout_ms: 0,
+            restart_backoff_ms: 0,
+            restart_window_ms: 0,
+            max_restarts_in_window: 0,
+        };
+        let sup = pii_worker::Supervisor::new(spec);
+        sup.set_observer(engine.log());
+        // Best-effort: a worker that fails to start is visible as
+        // `Failed` on `worker.list`, not a fatal daemon-start error.
+        let _ = sup.start(&spawn_ctx());
+        workers.lock().insert(w.name.clone(), sup);
+    }
+    workers
+}
+
+/// Builds the configured channel, wrapped so its poll/send outcomes report to
+/// `log` (spec 108).
 fn build_channel(
+    c: &config::ChannelSection,
+    transport: Arc<dyn pii_core::HttpTransport>,
+    runtime_dir: &Path,
+    log: Arc<dyn pii_observe::Observer>,
+) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
+    let inner = build_raw_channel(c, transport, runtime_dir)?;
+    Ok(Arc::new(pii_channels::observe::ObservedChannel::new(
+        inner, log,
+    )))
+}
+
+fn build_raw_channel(
     c: &config::ChannelSection,
     transport: Arc<dyn pii_core::HttpTransport>,
     runtime_dir: &Path,

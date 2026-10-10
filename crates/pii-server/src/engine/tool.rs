@@ -184,4 +184,104 @@ mod tests {
             .any(|e| matches!(e, ObsEvent::Denial { .. }));
         assert!(!denied);
     }
+
+    /// Spec 108 R4: through the daemon's wiring (a tool set with NO observer,
+    /// the run's observer a `ContractObserver` over the log) a bash deny-list
+    /// hit emits `tools.deny_list.hit` and the call emits `tools.call`.
+    #[test]
+    fn a_deny_list_hit_reaches_the_log_as_tools_events() {
+        let log = Arc::new(pii_observe::Recorder::new());
+        let ctx = daemon_ctx(&log, CapSet::default());
+        run_bash("sudo ls", &ctx);
+        let hits = log.events_named(pii_observe::names::TOOLS_DENY_LIST_HIT);
+        assert_eq!(hits.len(), 1, "{:?}", log.events());
+        assert_eq!(
+            hits[0].fields.get("entry"),
+            Some(&serde_json::json!("sudo"))
+        );
+        let calls = log.events_named(pii_observe::names::TOOLS_CALL);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].fields.get("outcome"),
+            Some(&serde_json::json!("denied"))
+        );
+    }
+
+    /// Near-miss control: an allowed command logs `tools.call` (ok) and no hit.
+    #[test]
+    fn an_allowed_command_logs_a_call_and_no_deny_list_hit() {
+        let log = Arc::new(pii_observe::Recorder::new());
+        let caps = CapSet {
+            kinds: pii_core::CapKind::PROC,
+            proc_argv0: pii_core::ArgvScope::new(vec![String::from("/bin/sh")]),
+            ..CapSet::default()
+        };
+        let ctx = daemon_ctx(&log, caps);
+        run_bash("true", &ctx);
+        assert!(
+            log.events_named(pii_observe::names::TOOLS_DENY_LIST_HIT)
+                .is_empty()
+        );
+        let calls = log.events_named(pii_observe::names::TOOLS_CALL);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].fields.get("outcome"),
+            Some(&serde_json::json!("ok"))
+        );
+    }
+
+    /// `ToolCallObserver` (the run chain's log tap) forwards tool calls and
+    /// nothing else: a plain denial is not a tool call.
+    #[test]
+    fn the_tool_call_tap_forwards_calls_and_ignores_other_events() {
+        let log = Arc::new(pii_observe::Recorder::new());
+        let tap = pii_core::ToolCallObserver::new(log.clone());
+        pii_core::Observer::event(
+            &tap,
+            &ObsEvent::Denial {
+                principal: "p".into(),
+                cap: "c".into(),
+            },
+        );
+        assert!(log.events().is_empty());
+        let ctx = Ctx::with_observer(
+            CapSet::default(),
+            Budget::unlimited(),
+            Arc::new(tap),
+            trace(),
+        );
+        run_bash("sudo ls", &ctx);
+        assert_eq!(
+            log.events_named(pii_observe::names::TOOLS_DENY_LIST_HIT)
+                .len(),
+            1
+        );
+    }
+
+    fn trace() -> TraceCtx {
+        TraceCtx {
+            run: pii_abi::RunId::from("r1"),
+            span: 0,
+        }
+    }
+
+    fn daemon_ctx(log: &Arc<pii_observe::Recorder>, caps: CapSet) -> Ctx {
+        let obs = Arc::new(pii_core::ContractObserver::new(log.clone()));
+        Ctx::with_observer(caps, Budget::unlimited(), obs, trace())
+    }
+
+    fn run_bash(command: &str, ctx: &Ctx) {
+        let factory = ToolFactory {
+            toolset: ToolSet::builtin(std::path::PathBuf::from(".")),
+        };
+        let node = factory
+            .build(&serde_json::json!({"tool": "bash", "args": {"command": command}}))
+            .unwrap();
+        let input = NodeInput {
+            input: serde_json::json!({}),
+            payload: serde_json::json!({}),
+            nodes: serde_json::json!({}),
+        };
+        node.run(ctx, &input).unwrap();
+    }
 }

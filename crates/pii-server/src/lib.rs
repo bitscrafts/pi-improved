@@ -131,6 +131,10 @@ pub struct Engine {
     /// Trajectory sink (spec 103); `None` (default) records nothing.
     trajectory: parking_lot::Mutex<Option<Arc<pii_observe::TrajectorySink>>>,
     audit: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
+    /// The contract-observer switch (spec 108): handed to the store, the
+    /// model provider and the network service at construction; unattached
+    /// (drops everything) until [`Engine::attach_log`].
+    log: Arc<pii_observe::SwitchObserver>,
 }
 
 /// A conversation session.
@@ -152,6 +156,57 @@ pub struct Session {
     pub run_id: Option<String>,
 }
 
+/// Resolves the model provider for `model` and wraps it so every request
+/// reports to `log` (spec 108). Returns the provider and, for an `ollama:`
+/// spec, the host its transport was scoped to.
+fn observed_provider(
+    model: &str,
+    log: &Arc<pii_observe::SwitchObserver>,
+) -> Result<(Arc<dyn ModelProvider>, Option<String>), PiiError> {
+    // B1 (opus review): `PII_MODEL=ollama:<model>` now actually
+    // constructs a live provider instead of failing `provider_from_spec`
+    // (whose only working arm was `scripted:`). The transport is a
+    // dedicated `pii-net::NetService`, scoped by a single grant for
+    // exactly the configured Ollama host (loopback by default) — this
+    // is the ONE place besides the daemon's own `[net]` config that
+    // opens a `NetService`, and it exists specifically so the model
+    // provider does not bypass the egress chokepoint `cargo xtask
+    // net-check` enforces. `scripted:` specs (the common case in
+    // tests) never touch this — `resolve_with_transport` only builds
+    // the transport lazily, inside the `ollama:` branch.
+    let mut ollama_net_host: Option<String> = None;
+    let provider = if model.starts_with("ollama:") {
+        let ollama_host = pii_core::env_var("OLLAMA_HOST")
+            .unwrap_or_else(|| String::from(pii_model::ollama::DEFAULT_OLLAMA_HOST));
+        let host_only = ollama_host
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(':')
+            .next()
+            .unwrap_or("127.0.0.1")
+            .to_owned();
+        ollama_net_host = Some(host_only.clone());
+        let mut grants = pii_net::grant::StaticGrants::default();
+        grants.insert(
+            "*",
+            &format!("http:{host_only}"),
+            pii_net::grant::NetGrant::open_local(),
+        );
+        let net = pii_net::NetService::new(pii_net::NetConfig {
+            resolver: Arc::new(pii_net::SystemResolver),
+            grants: Arc::new(grants),
+            clock: Arc::new(pii_net::SystemClock),
+        });
+        net.set_observer(log.clone());
+        pii_model::resolve_with_transport(model, Arc::new(net))?
+    } else {
+        pii_model::provider_from_spec(model)?
+    };
+    let provider: Arc<dyn ModelProvider> =
+        Arc::new(pii_model::ObservedProvider::new(provider, log.clone()));
+    Ok((provider, ollama_net_host))
+}
+
 impl Engine {
     /// Builds an engine (opening the store eagerly).
     ///
@@ -159,6 +214,8 @@ impl Engine {
     /// Store open failure or unknown model spec.
     pub fn new(cfg: EngineConfig) -> Result<Arc<Self>, PiiError> {
         let store = Arc::new(pii_store::Store::open(&cfg.store_path)?);
+        let log = Arc::new(pii_observe::SwitchObserver::new());
+        store.set_observer(log.clone());
         let sibling = |name: &str| -> PathBuf {
             cfg.store_path
                 .parent()
@@ -173,44 +230,7 @@ impl Engine {
             String,
             pii_worker::Supervisor,
         >::new()));
-        // B1 (opus review): `PII_MODEL=ollama:<model>` now actually
-        // constructs a live provider instead of failing `provider_from_spec`
-        // (whose only working arm was `scripted:`). The transport is a
-        // dedicated `pii-net::NetService`, scoped by a single grant for
-        // exactly the configured Ollama host (loopback by default) — this
-        // is the ONE place besides the daemon's own `[net]` config that
-        // opens a `NetService`, and it exists specifically so the model
-        // provider does not bypass the egress chokepoint `cargo xtask
-        // net-check` enforces. `scripted:` specs (the common case in
-        // tests) never touch this — `resolve_with_transport` only builds
-        // the transport lazily, inside the `ollama:` branch.
-        let mut ollama_net_host: Option<String> = None;
-        let provider = if cfg.model.starts_with("ollama:") {
-            let ollama_host = pii_core::env_var("OLLAMA_HOST")
-                .unwrap_or_else(|| String::from(pii_model::ollama::DEFAULT_OLLAMA_HOST));
-            let host_only = ollama_host
-                .trim_start_matches("http://")
-                .trim_start_matches("https://")
-                .split(':')
-                .next()
-                .unwrap_or("127.0.0.1")
-                .to_owned();
-            ollama_net_host = Some(host_only.clone());
-            let mut grants = pii_net::grant::StaticGrants::default();
-            grants.insert(
-                "*",
-                &format!("http:{host_only}"),
-                pii_net::grant::NetGrant::open_local(),
-            );
-            let net = pii_net::NetService::new(pii_net::NetConfig {
-                resolver: Arc::new(pii_net::SystemResolver),
-                grants: Arc::new(grants),
-                clock: Arc::new(pii_net::SystemClock),
-            });
-            pii_model::resolve_with_transport(&cfg.model, Arc::new(net))?
-        } else {
-            pii_model::provider_from_spec(&cfg.model)?
-        };
+        let (provider, ollama_net_host) = observed_provider(&cfg.model, &log)?;
         let bus = Bus::new();
         let spawn_engine: node_kinds::nodes::spawn::SpawnEngineHandle =
             Arc::new(parking_lot::Mutex::new(None));
@@ -224,6 +244,7 @@ impl Engine {
             Arc::clone(&workers),
             cfg.route_policy.clone(),
             Arc::clone(&spawn_engine),
+            log.clone(),
         );
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
@@ -247,6 +268,7 @@ impl Engine {
             obs: parking_lot::Mutex::new(None),
             trajectory: parking_lot::Mutex::new(None),
             audit: parking_lot::Mutex::new(None),
+            log,
         }))
     }
 
@@ -277,6 +299,20 @@ impl Engine {
     /// writes its journal and verbatim outcome to it. Default is no sink.
     pub fn attach_trajectory(&self, sink: Arc<pii_observe::TrajectorySink>) {
         *self.trajectory.lock() = Some(sink);
+    }
+
+    /// Attaches the contract observer (the daemon log) that the store, the
+    /// model provider, the network service, workers and channels report to
+    /// (spec 108). Until called, those subsystems' events are dropped.
+    pub fn attach_log(&self, obs: Arc<dyn pii_observe::Observer>) {
+        self.log.attach(obs);
+    }
+
+    /// The late-bound contract observer, for subsystems built after the
+    /// engine (the daemon's workers, channels and network service).
+    #[must_use]
+    pub fn log(&self) -> Arc<dyn pii_observe::Observer> {
+        self.log.clone()
     }
 
     /// Attaches the audit observer (spec 107 R3): every run's denial events

@@ -66,3 +66,50 @@ R5. **A mutation control for anything you add** (this repo's standing rule): for
 - Scratch under `/projects/_tmp/`; delete your own exports (a coverage run can be large; one fresh-gate
   export is ~8G). Do not leave a daemon running.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Result + orchestrator verification (2026-10-09/10)
+**Coverage was measured for the first time, and it is ENFORCED.** Report:
+`_docs/06-research/054-coverage-and-adequacy-2026-10-10.md` (the worker put the table there because
+`specs/` is read-only for it — correct call).
+
+**Reproduced by me:**
+```
+target/coverage-summary.json → lines 21737 / 28234 = 76.99%   (cargo-llvm-cov 0.9.1)
+coverage-floor control:  --floor 74.0 → rc=0   --floor 78 → rc=1   --floor 90 → rc=1   ← it can fail
+quality-gate.sh step:    "coverage-floor: total 77.01% >= floor 74.00%  ·  PASS: coverage-floor"
+the gate MEASURES each run (it invokes cargo llvm-cov, own target dir) — the floor is not read from a file
+MUTATION (mine): removing the run-chain tool tap (runs.rs:242) → log_wiring's
+  `a_deny_list_hit_in_a_run_reaches_the_log` FAILED at log_wiring.rs:215; restored → green
+R4 tests: oneshot_default_sandbox 3 passed · log_wiring 7 passed · suite total 765 passed, 0 failed
+```
+**The adequacy review found the real gap — and it was the one that mattered:** most observability seams
+FIRED IN UNIT TESTS BUT WERE NEVER ATTACHED IN THE DAEMON, so in production nothing was written. Now wired
+(stores, model provider, network, workers, channels, every tool call + bash deny-list hit, memory search +
+consolidate, TUI failures), each with a mutation control.
+
+**Declared open, with reasons (NOT closed):**
+1. **`pii_proto::client::Client::connect` HANGS FOREVER if the peer closes the socket without answering the
+   hello** — found by accident, not fixed. A hang has no error, no exit code and no log. **This is the
+   subject of spec 109** (reproduce, bound the handshake, report).
+2. Graph metrics still don't reach the log (flooding risk; the journal records them) → spec 109 R3.
+3. The memory search inside an agent turn stays unobserved and swallows its error → spec 109 R4.
+4. `HEALTH_STATE_CHANGED` and `OBSERVE_EVENTS_DROPPED` are registered and emitted NOWHERE — dead names in
+   the vocabulary → spec 109 R2.
+5. `pii-http-fetch` has no dependents; `pii tui` still defaults to the `off` sandbox → spec 109 R5.
+
+**Trade-off to state plainly:** the gate now runs an instrumented build (~7.2G of `target/llvm-cov-target`
+and minutes per run), and `fresh-gate` pays it again in the export. Accepted: an unenforced number is
+decoration, and the disk guard still refuses below `FRESH_GATE_MIN_FREE_MB`.
+
+## PAUSE NOTE (2026-10-10, user paused the session)
+Committed with ONE criterion open, stated honestly: **`fresh-gate --worktree` was started twice and stopped
+both times by the orchestrator to protect the disk** (it now pays the instrumented coverage build inside the
+export — measured 18G in ~5 minutes, which took `/projects` to 99% with 9.5G free). The REPO gate is green
+(`quality-gate.sh` ALL PASS, including `PASS: coverage-floor` at 77.01% >= 74.00%) and every other criterion
+was reproduced by the orchestrator. **Resume with:**
+```
+cd /projects/pi-improved && FRESH_GATE_MIN_FREE_MB=6000 cargo run -q -p xtask -- fresh-gate --worktree
+```
+(afterwards: `df -h /projects`; if it failed, the export is kept under `/projects/_tmp/fresh-gate-<pid>` and
+is 18G — remove it to reclaim space before re-running).
+

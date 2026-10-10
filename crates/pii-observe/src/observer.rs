@@ -19,6 +19,49 @@ pub struct NullObserver;
 
 impl Observer for NullObserver {}
 
+/// An observer whose target is attached after construction (spec 108).
+///
+/// Subsystems that are built before the daemon's log exists (the engine opens
+/// its store, provider and network service in `Engine::new`) are handed one
+/// of these; until [`SwitchObserver::attach`] is called it drops everything,
+/// afterwards it forwards to the attached observer.
+#[derive(Default)]
+pub struct SwitchObserver {
+    target: std::sync::RwLock<Option<std::sync::Arc<dyn Observer>>>,
+}
+
+impl SwitchObserver {
+    /// An unattached switch (drops everything).
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Attaches `target`; later calls replace it.
+    pub fn attach(&self, target: std::sync::Arc<dyn Observer>) {
+        if let Ok(mut g) = self.target.write() {
+            *g = Some(target);
+        }
+    }
+
+    fn with<R>(&self, f: impl FnOnce(&dyn Observer) -> R) -> Option<R> {
+        let g = self.target.read().ok()?;
+        g.as_deref().map(f)
+    }
+}
+
+impl Observer for SwitchObserver {
+    fn event(&self, e: &Event) {
+        self.with(|o| o.event(e));
+    }
+    fn measure(&self, m: &Measure) {
+        self.with(|o| o.measure(m));
+    }
+    fn flush(&self) {
+        self.with(|o| o.flush());
+    }
+}
+
 /// Alias-style helper kept for ergonomic naming at call sites.
 pub type NoopObserver = NullObserver;
 
@@ -149,6 +192,19 @@ mod tests {
         fn observer(&self) -> Option<&dyn Observer> {
             self.0.as_ref().map(|c| c as &dyn Observer)
         }
+    }
+
+    #[test]
+    fn switch_drops_until_attached_then_forwards() {
+        let sw = SwitchObserver::new();
+        let rec = std::sync::Arc::new(Recorder::new());
+        let e = Event::new("graph", Level::Info, names::GRAPH_NODE_DEAD);
+        sw.event(&e);
+        sw.attach(rec.clone());
+        sw.event(&e);
+        sw.measure(&Measure::Counter(1));
+        assert_eq!(rec.events().len(), 1, "only the post-attach event arrives");
+        assert_eq!(rec.measures().len(), 1);
     }
 
     #[test]

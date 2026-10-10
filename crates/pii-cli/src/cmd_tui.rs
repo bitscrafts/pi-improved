@@ -3,6 +3,7 @@
 //! socket). The daemon is never auto-started.
 
 use crate::cli_util::fail;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -55,6 +56,9 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
         Some(path) => Some(PathBuf::from(path)),
     };
 
+    // Spec 108: the TUI owns the terminal, so its failure events are held
+    // and written to stderr only after it has restored the terminal.
+    let rec = std::sync::Arc::new(pii_observe::Recorder::new());
     let result = if let Some(sock) = socket {
         // Socket opening is centralized in pii-server::uds (net-check
         // allowlist); the TUI only consumes the already-open stream.
@@ -66,7 +70,7 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
             }
         };
         let (r, w) = tokio::io::split(stream);
-        pii_tui::run_tui(r, w).await
+        pii_tui::run_tui_observed(r, w, rec.as_ref()).await
     } else {
         let store_dir = workspace.join(".pii");
         let _ = std::fs::create_dir_all(&store_dir);
@@ -94,9 +98,14 @@ async fn run_tui(connect: Option<String>, workspace: PathBuf) -> ExitCode {
         };
         let stream = pii_server::engine::loopback::spawn_loopback(engine);
         let (r, w) = tokio::io::split(stream);
-        pii_tui::run_tui(r, w).await
+        pii_tui::run_tui_observed(r, w, rec.as_ref()).await
     };
 
+    for e in rec.events() {
+        let fields = serde_json::to_string(&e.fields).unwrap_or_default();
+        // reason: nowhere to report a failed stderr write.
+        let _ = writeln!(std::io::stderr(), "{}: {} {fields}", e.subsystem, e.kind);
+    }
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

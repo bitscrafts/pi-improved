@@ -80,6 +80,21 @@ else
     status=1
 fi
 
+echo "==> cargo llvm-cov (coverage floor, spec 108)"
+# Spec 108 R2: line coverage of the lib/bins/tests scopes (no doctests: those
+# need nightly) must stay at or above the floor pinned in coverage-floor.txt.
+# Needs cargo-llvm-cov + the rustup llvm-tools component; their absence is a
+# FAIL, not a skip. Own target dir (target/llvm-cov-target) so instrumented
+# artifacts never touch the plain build.
+COV_JSON=target/coverage-summary.json
+if cargo llvm-cov --workspace --lib --bins --tests --json --summary-only --output-path "$COV_JSON" >/dev/null \
+    && cargo run -q -p xtask -- coverage-floor "$COV_JSON"; then
+    echo "PASS: coverage-floor"
+else
+    echo "FAIL: coverage-floor"
+    status=1
+fi
+
 echo "==> cargo run -q -p xtask -- lint-files"
 # 450-effective-line file gate (spec 67, Fix 1): pure text scan, no
 # target-dir isolation needed. Also enforced here so pidag runs whose

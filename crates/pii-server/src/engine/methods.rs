@@ -228,7 +228,8 @@ pub(crate) fn memory_search(engine: &Arc<Engine>, req: &Request) -> Response {
             .unwrap_or(6),
     )
     .unwrap_or(6);
-    let searcher = MemorySearcher::new(Arc::clone(&engine.memory), Some(Arc::new(TrigramEmbedder)));
+    let searcher = MemorySearcher::new(Arc::clone(&engine.memory), Some(Arc::new(TrigramEmbedder)))
+        .with_observer(engine.log());
     let rctx = pii_core::Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited());
     match searcher.search(&rctx, q, k) {
         Ok(r) => {

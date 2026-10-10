@@ -55,17 +55,26 @@ impl ToolSet {
         let Some(tool) = self.get(name) else {
             return;
         };
+        let deny_entry = (tool.name() == "bash")
+            .then(|| {
+                args.get("command")
+                    .and_then(Value::as_str)
+                    .and_then(crate::bash::deny_list_hit)
+            })
+            .flatten();
+        // The run's observer carries the event to the daemon log (the
+        // daemon's tool sets have no observer of their own).
+        ctx.observer().event(&pii_core::ObsEvent::ToolCall {
+            tool: tool.name().to_owned(),
+            outcome: outcome.to_owned(),
+            deny_entry: deny_entry.map(str::to_owned),
+        });
         self.emit(
             &Event::new("tools", Level::Info, names::TOOLS_CALL)
                 .field("tool", tool.name())
                 .field("outcome", outcome),
         );
-        if tool.name() == "bash"
-            && let Some(hit) = args
-                .get("command")
-                .and_then(Value::as_str)
-                .and_then(crate::bash::deny_list_hit)
-        {
+        if let Some(hit) = deny_entry {
             self.emit(
                 &Event::new("tools", Level::Warn, names::TOOLS_DENY_LIST_HIT).field("entry", hit),
             );

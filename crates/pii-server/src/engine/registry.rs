@@ -32,6 +32,7 @@ pub fn registry(
     workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
     route_policy: BTreeMap<String, String>,
     spawn_engine: nodes::spawn::SpawnEngineHandle,
+    log: Arc<dyn pii_observe::Observer>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(agent::AgentFactory {
@@ -52,7 +53,10 @@ pub fn registry(
         }),
     }));
     reg.register(Arc::new(nodes::heal::HealRecordFactory { heals }));
-    reg.register(Arc::new(nodes::memory::MemoryFactory { store: memory }));
+    reg.register(Arc::new(nodes::memory::MemoryFactory {
+        store: memory,
+        log,
+    }));
     reg.register(Arc::new(nodes::crash::DebugCrashFactory));
     reg.register(Arc::new(nodes::worker::WorkerFactory { pool: workers }));
     reg.register(Arc::new(nodes::spawn::SpawnFactory {
@@ -116,6 +120,7 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
     match pii_store::MemStore::open(&runtime_dir.join("lint-memory.redb")) {
         Ok(memory) => reg.register(Arc::new(nodes::memory::MemoryFactory {
             store: Arc::new(memory),
+            log: Arc::new(pii_observe::NullObserver),
         })),
         Err(e) => {
             #[allow(clippy::print_stderr)]

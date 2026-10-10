@@ -1,0 +1,5 @@
+# Spec 108 R2: workspace line-coverage floor (percent), enforced by quality-gate.sh.
+# Measured 2026-10-10: 77.02% (21741/28229 lines), cargo-llvm-cov 0.9.1,
+# `cargo llvm-cov --workspace --lib --bins --tests` (unit + integration; no doctests).
+# Raise it when coverage rises; never lower it to make a run green.
+74.0

@@ -42,6 +42,7 @@ struct OneshotArgs {
 
 /// `pii -p "<prompt>" [--json] [--model M] [--graph G] [--workspace D]
 /// [--sandbox off|workspace] [--connect auto|loopback|<socket>]` (F5.5).
+/// The sandbox defaults to `workspace` (spec 108 R4).
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCode {
     let mut a = OneshotArgs {
@@ -53,7 +54,9 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
         model: None,
         graph: None,
         workspace: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-        sandbox: SandboxProfileName::Off,
+        // Spec 108 R4: confined by default, like the daemon (spec 107 R1);
+        // `--sandbox off` is the explicit opt-out.
+        sandbox: SandboxProfileName::Workspace,
         connect: None,
         input: serde_json::Value::Null,
     };
@@ -107,12 +110,8 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
     // runtime so every worker thread inherits the Landlock domain. Applying
     // it inside block_on only restricts the calling thread, leaving the
     // spawn_blocking threads that actually run tools unrestricted.
-    if !matches!(a.sandbox, SandboxProfileName::Off)
-        && let Err(e) =
-            pii_tools::sandbox::apply_workspace(&a.workspace, &[], std::path::Path::new("/etc"))
-    {
-        eprintln!("{e}");
-        return ExitCode::from(4);
+    if let Err(code) = apply_sandbox(&a) {
+        return code;
     }
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
@@ -126,6 +125,29 @@ pub(crate) fn cmd_oneshot(prompt: String, args: &mut std::env::ArgsOs) -> ExitCo
         }
     };
     rt.block_on(run_oneshot(a, model))
+}
+
+/// Applies the sandbox profile (exit 4 when it cannot be enforced). The
+/// trajectory root (spec 103) is written by the run, so it is granted
+/// read-write; it must exist before the grant.
+fn apply_sandbox(a: &OneshotArgs) -> Result<(), ExitCode> {
+    if matches!(a.sandbox, SandboxProfileName::Off) {
+        return Ok(());
+    }
+    let extra_rw: Vec<PathBuf> = pii_core::env_var(pii_core::TRAJECTORY_DIR_ENV)
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .inspect(|d| {
+            // reason: best-effort; a dir that cannot be made is not granted.
+            let _ = std::fs::create_dir_all(d);
+        })
+        .into_iter()
+        .collect();
+    pii_tools::sandbox::apply_workspace(&a.workspace, &extra_rw, std::path::Path::new("/etc"))
+        .map_err(|e| {
+            eprintln!("{e}");
+            ExitCode::from(4)
+        })
 }
 
 async fn run_oneshot(a: OneshotArgs, model: String) -> ExitCode {

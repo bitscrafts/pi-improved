@@ -36,6 +36,7 @@ pub use health::{Health, State, SubsystemHealth};
 pub use measure::Measure;
 pub use observer::{
     NoopObserver, NullObserver, Observable, Observed, Observer, Recorder, StderrObserver,
+    SwitchObserver,
 };
 pub use outcome::{Outcome, Verdict};
 pub use redaction::{DropFields, NoRedaction, Redaction, RedactionPolicy, ScrubbingPolicy};

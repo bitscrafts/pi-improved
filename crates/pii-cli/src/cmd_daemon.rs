@@ -378,6 +378,9 @@ async fn run_daemon(
     engine.seed_sessions_from_store();
     engine.reconcile_boot();
     engine.attach_observer(Arc::new(pii_core::ContractObserver::new(Arc::clone(&log))));
+    // Spec 108: the store, provider, network, workers and channels report to
+    // the same log.
+    engine.attach_log(Arc::clone(&log));
     // Spec 107 R3: denials inside runs reach the log and the audit trail.
     engine.attach_audit(Arc::new(pii_core::DenialObserver::new(Arc::clone(&log))));
 

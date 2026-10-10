@@ -25,6 +25,18 @@ pub enum ObsEvent {
         /// The capability that was denied.
         cap: String,
     },
+    /// A tool call finished (spec 108): reported by `ToolSet::observe_call`
+    /// through the run's observer so the daemon, whose tool sets carry no
+    /// observer of their own, still logs it. `deny_entry` names the bash
+    /// deny-list entry the command matched, if any.
+    ToolCall {
+        /// The tool name.
+        tool: String,
+        /// `ok` / `denied` / `error`.
+        outcome: String,
+        /// The matched bash deny-list entry.
+        deny_entry: Option<String>,
+    },
     /// A durable-store write failed outside the run journal (D3/D6, 026
     /// report 5.0.4) — e.g. a session append/snapshot. The Phase-1
     /// journaler has its own `Result` return for callers that check it
@@ -182,6 +194,23 @@ impl Observer for ContractObserver {
                     .field("principal", principal.as_str())
                     .field("cap", cap.as_str()),
             ),
+            ObsEvent::ToolCall {
+                tool,
+                outcome,
+                deny_entry,
+            } => {
+                self.0.event(
+                    &Event::new("tools", Level::Info, names::TOOLS_CALL)
+                        .field("tool", tool.as_str())
+                        .field("outcome", outcome.as_str()),
+                );
+                if let Some(entry) = deny_entry {
+                    self.0.event(
+                        &Event::new("tools", Level::Warn, names::TOOLS_DENY_LIST_HIT)
+                            .field("entry", entry.as_str()),
+                    );
+                }
+            }
             ObsEvent::PersistError { context, message } => self.0.event(
                 &Event::new("store", Level::Error, names::STORE_PERSIST_ERROR)
                     .field("context", context.as_str())
@@ -221,6 +250,34 @@ impl DenialObserver {
 impl Observer for DenialObserver {
     fn event(&self, e: &ObsEvent) {
         if matches!(e, ObsEvent::Denial { .. }) {
+            ContractObserver::new(Arc::clone(&self.0)).event(e);
+        }
+    }
+
+    fn metric(&self, _m: &Metric) {}
+
+    fn flush(&self) {
+        self.0.flush();
+    }
+}
+
+/// Forwards ONLY tool-call events to a contract observer (spec 108).
+///
+/// The daemon log wants `tools.call` / `tools.deny_list.hit` for every call
+/// but not the per-tick graph metrics [`ContractObserver`] also carries.
+pub struct ToolCallObserver(Arc<dyn pii_observe::Observer>);
+
+impl ToolCallObserver {
+    /// Forwards tool calls to `inner`.
+    #[must_use]
+    pub fn new(inner: Arc<dyn pii_observe::Observer>) -> Self {
+        Self(inner)
+    }
+}
+
+impl Observer for ToolCallObserver {
+    fn event(&self, e: &ObsEvent) {
+        if matches!(e, ObsEvent::ToolCall { .. }) {
             ContractObserver::new(Arc::clone(&self.0)).event(e);
         }
     }

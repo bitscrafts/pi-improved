@@ -238,9 +238,8 @@ fn with_trajectory(
     let mut all: Vec<Arc<dyn pii_core::Observer>> = Vec::new();
     all.extend(engine.trajectory_observer(run_id, session));
     all.extend(engine.audit_observer());
-    if all.is_empty() {
-        return Arc::new(bridge);
-    }
+    // Spec 108: every tool call (and bash deny-list hit) reaches the log.
+    all.push(Arc::new(pii_core::ToolCallObserver::new(engine.log())));
     all.push(Arc::new(bridge));
     Arc::new(pii_core::MultiObserver::new(all))
 }
