@@ -79,7 +79,7 @@ limit (`resets 4:50pm UTC`) before reporting — **its work was already complete
 --workspace` clean). The one-shot cron scheduled for reset+5min then **failed at step zero** with
 `RuntimeError: Non-streaming API call timed out after 90s with no response` (the cron agent runs on the session's
 own model/provider — a lesson about parking long orchestrations in a cron job, not a quota problem), so the resume
-was run here: `ALLOW_DIFFY`— no: `ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh 126 --resume 93d67ee4-…`, which
+was run here: `ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh 126 --resume 93d67ee4-…`, which
 confirmed the existing tree rather than re-deriving it (1 turn).
 
 **My controls:**
