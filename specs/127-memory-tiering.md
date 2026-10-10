@@ -97,4 +97,10 @@ map, so dropping it from the sort key would not fail a test — an untested tie-
 at the byte budget; no clock-goes-backwards test; no concurrent archive-while-writing stress; archiving near the
 64 MiB read bound unexercised; and the tier-transition counters are **sweep-based**, so a change is counted at the
 next read or status poll rather than at the instant the threshold passes.
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD)
+`fresh-gate` (plain, on 38c5921, 55G free): `quality-gate: ALL PASS` · `fresh-gate: PASS` · 14 steps — the
+criterion the worker could not run (it needs a commit, and workers do not commit).
 
+With 127 closed, **specs 111-127 of `057` are complete**: every pillar of this vision is implemented in the
+order the user set, each with its refusals proven by mutation, its limits written down, and the things this
+container cannot test named rather than glossed. `001` carries the status line per pillar.
