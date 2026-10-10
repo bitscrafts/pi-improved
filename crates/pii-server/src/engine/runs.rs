@@ -372,7 +372,9 @@ fn run_caps(
     caps.kinds = pii_core::CapKind::FS_READ
         | pii_core::CapKind::FS_WRITE
         | pii_core::CapKind::PROC
-        | pii_core::CapKind::SPAWN;
+        | pii_core::CapKind::SPAWN
+        | pii_core::CapKind::MEMORY_READ
+        | pii_core::CapKind::MEMORY_WRITE;
     if net_host.is_some() {
         caps.kinds |= pii_core::CapKind::NET;
     }

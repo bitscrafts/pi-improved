@@ -5,6 +5,7 @@
 //! that `pii-graph` itself must not know about.
 
 pub mod crash;
+pub mod entity;
 pub mod gate;
 pub mod hal;
 pub mod heal;

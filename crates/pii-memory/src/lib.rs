@@ -7,6 +7,7 @@ pub mod consolidate;
 pub mod decay;
 pub mod doc;
 pub mod embed;
+pub mod entity;
 pub mod graph_lane;
 mod observe;
 pub mod quant;

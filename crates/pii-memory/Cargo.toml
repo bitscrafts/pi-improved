@@ -12,6 +12,7 @@ pii-abi = { path = "../pii-abi" }
 pii-core = { path = "../pii-core" }
 pii-observe = { path = "../pii-observe" }
 pii-store = { path = "../pii-store" }
+blake3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }

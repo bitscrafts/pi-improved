@@ -36,6 +36,8 @@ const GROUPS: [&str; 9] = [
 struct Registry<'a>(Vec<(&'static str, Vec<&'a dyn Health>)>);
 
 impl<'a> Registry<'a> {
+    // reason: one optional member source per group; a struct would only rename the list.
+    #[allow(clippy::too_many_arguments)]
     fn build(
         engine: &'a Engine,
         net: Option<&'a pii_net::NetService>,
@@ -44,10 +46,16 @@ impl<'a> Registry<'a> {
         hal: Option<&'a pii_hal::Hal>,
         wasm: Option<&'a pii_wasm::WasmHost>,
         learn: Option<&'a pii_learn::LearnHealth>,
+        entities: Option<&'a pii_memory::entity::EntityHealth>,
     ) -> Self {
         Self(vec![
             (GROUPS[0], vec![&*engine.store as &dyn Health]),
-            (GROUPS[1], vec![&*engine.memory as &dyn Health]),
+            (
+                GROUPS[1],
+                std::iter::once(&*engine.memory as &dyn Health)
+                    .chain(entities.map(|e| e as &dyn Health))
+                    .collect(),
+            ),
             (
                 GROUPS[2],
                 net.map(|n| n as &dyn Health).into_iter().collect(),
@@ -213,6 +221,23 @@ fn add_promotion_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHe
     }
 }
 
+/// The entity store's sizes and counters (spec 126); left empty until the graph has been used.
+fn add_entity_counters(counts: &mut Counts, entities: Option<&pii_memory::entity::EntityHealth>) {
+    let Some(c) = entities.and_then(pii_memory::entity::EntityHealth::counts) else {
+        return;
+    };
+    counts.memory_entities = c.entities;
+    counts.memory_relationships = c.relationships;
+    counts.memory_writes = [
+        ("entity".to_owned(), c.entities_written),
+        ("relationship".to_owned(), c.relationships_written),
+    ]
+    .into_iter()
+    .collect();
+    counts.memory_write_refusals = c.write_refusals;
+    counts.memory_query_refusals = c.query_refusals;
+}
+
 /// Worker requests refused or cancelled around a drain/reload, summed (spec 120).
 fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> u64 {
     workers
@@ -294,6 +319,15 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     // `learn_candidates`/`learn_refusals` could only ever read zero (measured: scan into the runtime dir, daemon
     // answers "no scan yet"). The daemon's own runtime dir is the same value the CLI default resolves to.
     let learn = ctx.map(|c| pii_learn::LearnHealth::new(c.runtime_dir.clone()));
+    let entities = ctx.map(|c| {
+        pii_memory::entity::EntityHealth::new(
+            c.runtime_dir.clone(),
+            engine
+                .entities
+                .get()
+                .map_or_else(pii_memory::entity::GraphConfig::default, |s| *s.config()),
+        )
+    });
     let registry = Registry::build(
         engine,
         ctx.map(|c| &*c.net),
@@ -302,7 +336,9 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         hal.as_deref(),
         wasm.as_deref(),
         learn.as_ref(),
+        entities.as_ref(),
     );
+    add_entity_counters(&mut counts, entities.as_ref());
     add_learn_counters(&mut counts, learn.as_ref());
     add_verdict_counters(&mut counts, learn.as_ref());
     add_promotion_counters(&mut counts, learn.as_ref());
@@ -519,7 +555,7 @@ mod tests {
             graph_dir: dir.path().join("graphs"),
         })
         .unwrap();
-        let registry = Registry::build(&engine, None, None, None, None, None, None);
+        let registry = Registry::build(&engine, None, None, None, None, None, None, None);
         assert_eq!(
             registry.group_names(),
             [

@@ -202,6 +202,21 @@ pub struct Counts {
     /// Promotions by state (`active`, `reverted`, `expired`, `auto_reverted`) and `refused`; empty until one exists (spec 125).
     #[serde(default)]
     pub learn_promotions: BTreeMap<String, u64>,
+    /// Entities in the memory graph (spec 126).
+    #[serde(default)]
+    pub memory_entities: u64,
+    /// Relationships in the memory graph (spec 126).
+    #[serde(default)]
+    pub memory_relationships: u64,
+    /// Memory graph writes that changed it, by `entity`/`relationship`; empty until the graph has been used (spec 126).
+    #[serde(default)]
+    pub memory_writes: BTreeMap<String, u64>,
+    /// Memory graph writes refused, by reason (spec 126).
+    #[serde(default)]
+    pub memory_write_refusals: BTreeMap<String, u64>,
+    /// Memory graph queries refused, by reason (spec 126).
+    #[serde(default)]
+    pub memory_query_refusals: BTreeMap<String, u64>,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).

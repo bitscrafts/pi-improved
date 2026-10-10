@@ -62,6 +62,14 @@ pub const WORKER_RELOAD_COMPLETED: &str = "worker.reload.completed";
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.
 pub const MEMORY_CONSOLIDATE: &str = "memory.consolidate";
+/// Event: an entity was created or merged (`id`, `kind`, `outcome`: `created`, `merged` or `unchanged`; `provenance`).
+pub const MEMORY_ENTITY_WRITTEN: &str = "memory.entity_written";
+/// Event: a relationship was created or merged (`id`, `kind`, `from`, `to`, `outcome`, `provenance`).
+pub const MEMORY_RELATIONSHIP_WRITTEN: &str = "memory.relationship_written";
+/// Event: an entity or relationship write was refused (`what`: `entity` or `relationship`; `reason`: `no_provenance`, `bad_provenance`, `invalid`, `too_large`, `entity_cap`, `relationship_cap`, `provenance_cap` or `unknown_entity`).
+pub const MEMORY_WRITE_REFUSED: &str = "memory.write_refused";
+/// Event: an entity query was refused (`op`: `get`, `by_kind`, `by_name` or `neighbours`; `reason`: `bad_query`, `bad_depth`, `depth_cap`, `result_cap` or `unknown_entity`).
+pub const MEMORY_QUERY_REFUSED: &str = "memory.query_refused";
 /// Event: an operator-facing CLI failure (startup, daemon connect, graph error).
 pub const CLI_FAILURE: &str = "cli.failure";
 /// Event: a channel poll failed.
@@ -272,6 +280,17 @@ pub const METRIC_LEARN_VERDICTS: &str = "pii_learn_verdicts";
 /// Metric (gauge, label `state`): promotions by state, plus `refused` (spec 125).
 pub const METRIC_LEARN_PROMOTIONS: &str = "pii_learn_promotions";
 
+/// Metric (gauge): entities in the memory graph (spec 126).
+pub const METRIC_MEMORY_ENTITIES: &str = "pii_memory_entities";
+/// Metric (gauge): relationships in the memory graph (spec 126).
+pub const METRIC_MEMORY_RELATIONSHIPS: &str = "pii_memory_relationships";
+/// Metric (counter, label `kind`): entity and relationship writes that changed the graph (spec 126).
+pub const METRIC_MEMORY_WRITES_TOTAL: &str = "pii_memory_writes_total";
+/// Metric (counter, label `reason`): memory graph writes refused (spec 126).
+pub const METRIC_MEMORY_WRITE_REFUSALS_TOTAL: &str = "pii_memory_write_refusals_total";
+/// Metric (counter, label `reason`): memory graph queries refused (spec 126).
+pub const METRIC_MEMORY_QUERY_REFUSALS_TOTAL: &str = "pii_memory_query_refusals_total";
+
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
     GRAPH_NODE_DEAD,
@@ -302,6 +321,10 @@ pub const ALL: &[&str] = &[
     WORKER_RELOAD_COMPLETED,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,
+    MEMORY_ENTITY_WRITTEN,
+    MEMORY_RELATIONSHIP_WRITTEN,
+    MEMORY_WRITE_REFUSED,
+    MEMORY_QUERY_REFUSED,
     CLI_FAILURE,
     CHANNEL_POLL_FAILED,
     CHANNEL_SEND_FAILED,
@@ -398,6 +421,11 @@ pub const ALL: &[&str] = &[
     METRIC_LEARN_REFUSALS_TOTAL,
     METRIC_LEARN_VERDICTS,
     METRIC_LEARN_PROMOTIONS,
+    METRIC_MEMORY_ENTITIES,
+    METRIC_MEMORY_RELATIONSHIPS,
+    METRIC_MEMORY_WRITES_TOTAL,
+    METRIC_MEMORY_WRITE_REFUSALS_TOTAL,
+    METRIC_MEMORY_QUERY_REFUSALS_TOTAL,
 ];
 
 #[cfg(test)]

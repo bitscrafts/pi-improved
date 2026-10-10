@@ -113,13 +113,29 @@ pub(super) fn mqtt(
     pii_channels::mqtt::MqttChannel::start(cfg, Arc::clone(log))
 }
 
-/// Fills the HAL and plugin-host slots from `[hal]` and `[wasm]`.
+/// Fills the HAL, plugin-host and entity-store slots from `[hal]`, `[wasm]` and `[memory_graph]`.
 pub(super) fn install_devices(
     engine: &crate::Engine,
     cfg: &super::config::Config,
+    runtime_dir: &std::path::Path,
 ) -> Result<(), PiiError> {
     install_hal(engine, cfg)?;
-    install_wasm(engine, cfg)
+    install_wasm(engine, cfg)?;
+    install_entities(engine, cfg, runtime_dir)
+}
+
+/// Installs the entity store (spec 126) under the daemon's runtime dir, reporting to the
+/// engine's log. Always installed: `[memory_graph]` only tunes its bounds.
+pub(super) fn install_entities(
+    engine: &crate::Engine,
+    cfg: &super::config::Config,
+    runtime_dir: &std::path::Path,
+) -> Result<(), PiiError> {
+    let store = pii_memory::entity::EntityStore::open(runtime_dir, cfg.memory_graph.graph_config())
+        .map_err(|e| PiiError::Internal(e.to_string()))?
+        .with_observer(engine.log());
+    engine.entities.set(Arc::new(store));
+    Ok(())
 }
 
 /// Builds the `[hal]` backend, when configured, into the engine's HAL slot.

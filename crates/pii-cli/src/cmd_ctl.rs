@@ -160,8 +160,13 @@ pub(crate) fn cmd_memory(args: &mut std::env::ArgsOs) -> ExitCode {
             )
         }
         Some("consolidate") => print_result(Method::MemoryConsolidate, serde_json::json!({})),
+        Some(sub @ ("entity" | "link" | "neighbours" | "compact")) => {
+            crate::cmd_entity::cmd_entity(sub, args)
+        }
         _ => {
-            eprintln!("usage: pii memory {{search|put|consolidate}} ...");
+            eprintln!(
+                "usage: pii memory {{search|put|consolidate|entity|link|neighbours|compact}} ..."
+            );
             ExitCode::from(2)
         }
     }

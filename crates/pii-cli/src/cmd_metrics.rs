@@ -195,6 +195,63 @@ fn render_learn(v: &serde_json::Value, out: &mut String) {
     }
 }
 
+/// The memory graph's gauges and counters (spec 126). Emitted only once the graph has been
+/// used (the writes map is then non-empty), so a fresh daemon prints no entity lines.
+fn render_memory_graph(v: &serde_json::Value, out: &mut String) {
+    let Some(writes) = v
+        .pointer("/counts/memory_writes")
+        .and_then(|o| o.as_object())
+    else {
+        return;
+    };
+    if writes.is_empty() {
+        return;
+    }
+    let _ = writeln!(
+        out,
+        "{} {}",
+        names::METRIC_MEMORY_ENTITIES,
+        num(v, "/counts/memory_entities")
+    );
+    let _ = writeln!(
+        out,
+        "{} {}",
+        names::METRIC_MEMORY_RELATIONSHIPS,
+        num(v, "/counts/memory_relationships")
+    );
+    for (kind, n) in writes {
+        let _ = writeln!(
+            out,
+            "{}{{kind=\"{kind}\"}} {}",
+            names::METRIC_MEMORY_WRITES_TOTAL,
+            n.as_u64().unwrap_or(0)
+        );
+    }
+    for (ptr, metric) in [
+        (
+            "/counts/memory_write_refusals",
+            names::METRIC_MEMORY_WRITE_REFUSALS_TOTAL,
+        ),
+        (
+            "/counts/memory_query_refusals",
+            names::METRIC_MEMORY_QUERY_REFUSALS_TOTAL,
+        ),
+    ] {
+        for (reason, n) in v
+            .pointer(ptr)
+            .and_then(|o| o.as_object())
+            .into_iter()
+            .flatten()
+        {
+            let _ = writeln!(
+                out,
+                "{metric}{{reason=\"{reason}\"}} {}",
+                n.as_u64().unwrap_or(0)
+            );
+        }
+    }
+}
+
 /// Renders a `sys.status` payload as metric lines.
 fn render(v: &serde_json::Value) -> String {
     let mut out = String::new();
@@ -246,6 +303,7 @@ fn render(v: &serde_json::Value) -> String {
     render_hal(v, &mut out);
     render_wasm(v, &mut out);
     render_learn(v, &mut out);
+    render_memory_graph(v, &mut out);
     for st in v
         .pointer("/stores")
         .and_then(|s| s.as_array())
@@ -439,6 +497,29 @@ mod tests {
         }
         let off = render(&serde_json::json!({"counts": {"learn_verdicts": {}}}));
         assert!(!off.contains("pii_learn_verdicts"), "{off}");
+    }
+
+    /// Spec 126 R8: the memory graph's counters render once it has been used, not before.
+    #[test]
+    fn render_carries_memory_graph_counters_only_once_used() {
+        let on = render(&serde_json::json!({
+            "counts": {"memory_entities": 2, "memory_relationships": 1,
+                       "memory_writes": {"entity": 3, "relationship": 1},
+                       "memory_write_refusals": {"no_provenance": 4},
+                       "memory_query_refusals": {"result_cap": 1}}
+        }));
+        for line in [
+            "pii_memory_entities 2",
+            "pii_memory_relationships 1",
+            "pii_memory_writes_total{kind=\"entity\"} 3",
+            "pii_memory_writes_total{kind=\"relationship\"} 1",
+            "pii_memory_write_refusals_total{reason=\"no_provenance\"} 4",
+            "pii_memory_query_refusals_total{reason=\"result_cap\"} 1",
+        ] {
+            assert!(on.lines().any(|l| l == line), "missing {line}\n{on}");
+        }
+        let off = render(&serde_json::json!({"counts": {"memory_writes": {}}}));
+        assert!(!off.contains("pii_memory_entities"), "{off}");
     }
 
     #[test]

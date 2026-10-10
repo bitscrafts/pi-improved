@@ -1,0 +1,23 @@
+# Spec 126: a later run reads the fact back. `by_name` finds the board by its exact name,
+# `neighbours` walks one link from it (the run input carries its id, as `entity_id`). The graph must hold
+# `memory_read`.
+name = "memory-recall"
+entry = "find"
+caps = ["memory_read"]
+
+[[node]]
+id = "find"
+kind = "recall"
+op = "by_name"
+name = "esp32-board"
+
+[[node]]
+id = "around"
+kind = "recall"
+op = "neighbours"
+entity_id = "$.input.id"
+
+[[edge]]
+from = "find"
+port = "ok"
+to = "around"

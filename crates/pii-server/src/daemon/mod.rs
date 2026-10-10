@@ -123,7 +123,7 @@ impl Daemon {
             );
         }
 
-        adapters::install_devices(&engine, cfg)?;
+        adapters::install_devices(&engine, cfg, runtime_dir)?;
 
         let mut cron = BTreeMap::new();
         for c in &cfg.cron {

@@ -70,6 +70,19 @@ pub fn registry(
     reg
 }
 
+/// Registers `remember`/`recall` over a fresh, empty hub and returns it (spec 126). The daemon
+/// fills the hub; a lint registry never does, because lint never executes a node.
+pub fn register_entity_nodes(reg: &mut NodeRegistry) -> Arc<pii_memory::entity::EntityHub> {
+    let hub = Arc::new(pii_memory::entity::EntityHub::default());
+    reg.register(Arc::new(nodes::entity::RememberFactory {
+        hub: Arc::clone(&hub),
+    }));
+    reg.register(Arc::new(nodes::entity::RecallFactory {
+        hub: Arc::clone(&hub),
+    }));
+    hub
+}
+
 /// A registry for static linting only.
 ///
 /// Registers `agent`/`tool`/`gate`/`memory` so `pii graph lint` accepts
@@ -110,6 +123,7 @@ pub fn lint_registry_with_log(
         hub: Arc::new(pii_wasm::WasmHub::default()),
         log: Arc::clone(&log),
     }));
+    drop(register_entity_nodes(&mut reg));
     reg.register(Arc::new(nodes::sop::SopFactory { log }));
     reg.register(Arc::new(nodes::worker::WorkerFactory {
         pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<

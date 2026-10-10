@@ -369,6 +369,44 @@ pub struct MemorySection {
     pub path: String,
 }
 
+/// `[memory_graph]` (spec 126): the bounds on the entity and relationship store.
+/// Absent = the defaults, which are [`pii_memory::entity::GraphConfig::default`].
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields, default)]
+pub struct MemoryGraphSection {
+    /// Most entities (default 10000); the next new one is refused as `entity_cap`.
+    pub max_entities: Option<usize>,
+    /// Most relationships (default 50000); the next new one is refused as `relationship_cap`.
+    pub max_relationships: Option<usize>,
+    /// Most provenance sources per record (default 32); one more is refused as `provenance_cap`.
+    pub max_provenance: Option<usize>,
+    /// Most attributes per record (default 32).
+    pub max_attributes: Option<usize>,
+    /// Deepest neighbour walk (default 3).
+    pub max_depth: Option<u32>,
+    /// Neighbour depth when a call names none (default 1).
+    pub default_depth: Option<u32>,
+    /// Most results a query may return (default 200); more is refused as `result_cap`.
+    pub max_results: Option<usize>,
+}
+
+impl MemoryGraphSection {
+    /// The effective bounds: the defaults with this section's keys applied.
+    #[must_use]
+    pub fn graph_config(&self) -> pii_memory::entity::GraphConfig {
+        let d = pii_memory::entity::GraphConfig::default();
+        pii_memory::entity::GraphConfig {
+            max_entities: self.max_entities.unwrap_or(d.max_entities),
+            max_relationships: self.max_relationships.unwrap_or(d.max_relationships),
+            max_provenance: self.max_provenance.unwrap_or(d.max_provenance),
+            max_attributes: self.max_attributes.unwrap_or(d.max_attributes),
+            max_depth: self.max_depth.unwrap_or(d.max_depth),
+            default_depth: self.default_depth.unwrap_or(d.default_depth),
+            max_results: self.max_results.unwrap_or(d.max_results),
+        }
+    }
+}
+
 /// `[[cron]]` (F5.2/F5.8).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -408,6 +446,8 @@ pub struct Config {
     pub wasm: Option<WasmSection>,
     /// `[memory]`.
     pub memory: MemorySection,
+    /// `[memory_graph]` (spec 126).
+    pub memory_graph: MemoryGraphSection,
     /// `[[cron]]`.
     pub cron: Vec<CronSection>,
     /// `[evolve]` (spec 28).

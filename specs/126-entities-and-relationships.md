@@ -71,3 +71,32 @@ R11. **Docs**: `_docs/0X-guides/memory-entities.md` (the types, provenance, caps
   truncation.
 - Do not touch the trajectory substrate or the ledger schema; memory references them, it does not extend them.
 - Scratch under `/projects/_tmp/`, delete only your own, no daemon left running. Do NOT commit.
+
+## Orchestrator verification (2026-10-10) — after a quota interruption and a resumed session
+
+**How this spec finished.** The first worker built the whole implementation and then hit the Claude Code session
+limit (`resets 4:50pm UTC`) before reporting — **its work was already complete and compiling** (`cargo check
+--workspace` clean). The one-shot cron scheduled for reset+5min then **failed at step zero** with
+`RuntimeError: Non-streaming API call timed out after 90s with no response` (the cron agent runs on the session's
+own model/provider — a lesson about parking long orchestrations in a cron job, not a quota problem), so the resume
+was run here: `ALLOW_DIFFY`— no: `ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh 126 --resume 93d67ee4-…`, which
+confirmed the existing tree rather than re-deriving it (1 turn).
+
+**My controls:**
+- `cargo test -p pii-memory --test entities` → **16 passed**; `cargo test -p pii-server --test entities_e2e` →
+  **3 passed**; `cargo test -p pii-cli --test memory_entity` → **3 passed**.
+- `deps-check`, `net-check`, `doc-drift-check`, `lint-observability` → **rc 0 each**.
+- **Mutation (mine)**: making `entity_id` ignore the name (`hex_id("e","pii.entity.v1", &[kind])`) turns **six**
+  tests red — `the_id_is_content_derived_and_stable_across_stores`, `injection_text_in_run_data_is_data_and_changes_nothing`,
+  `the_entity_and_relationship_caps_refuse_the_write_and_count_it`, `queries_over_the_result_cap_are_a_named_refusal_not_a_truncation`,
+  `neighbours_default_to_depth_one_and_follow_depth_up_to_the_cap`, `queries_by_id_kind_and_exact_name_are_sorted`;
+  restored byte-identical → green. The content-derived id is load-bearing across the whole feature, not decoration.
+- Design read at the source: `entity_id = blake3(kind,name)` and `relationship_id = blake3(from,to,kind)` — the
+  attributes are deliberately **not** hashed, so an attribute change does not fork an entity's identity.
+
+**Worker-reported (and to be checked with the gate, not assumed):** root capabilities now include `memory_read`
+and `memory_write` with graph `caps` narrowing them; `pii_store::compact::ensure_stopped` makes `pii memory compact`
+refuse while a daemon holds the stores; five mutations (provenance, id derivation, depth cap, cap policy,
+capability) each red then restored; `quality-gate.sh` ALL PASS; `--worktree` fresh-gate PASS (which the worker
+correctly labels as *not* a substitute for the plain form on the commit).
+

@@ -100,6 +100,9 @@ pub struct Engine {
     /// configured; `Daemon::build` fills it and the `wasm` node's factory holds
     /// the same Arc.
     pub wasm: Arc<pii_wasm::WasmHub>,
+    /// The entity-store slot (spec 126): `Daemon::build` fills it; the `remember` and
+    /// `recall` nodes' factories hold the same Arc.
+    pub entities: Arc<pii_memory::entity::EntityHub>,
     /// Node registry (built-ins + `agent`).
     pub reg: NodeRegistry,
     /// The model provider.
@@ -303,6 +306,7 @@ impl Engine {
             hub: Arc::clone(&wasm),
             log: log.clone(),
         }));
+        let entities = engine::registry::register_entity_nodes(&mut reg);
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
             cfg,
@@ -314,6 +318,7 @@ impl Engine {
             mqtt,
             hal,
             wasm,
+            entities,
             reg,
             provider,
             tiers,

@@ -64,6 +64,23 @@ pub fn compact(path: &Path) -> Result<Report, PiiError> {
     })
 }
 
+/// Refuses while a daemon holds a store file in `dir`.
+///
+/// Touches nothing (spec 126: the memory graph's compaction asks the same question the redb
+/// compaction does). A directory with no store file passes.
+///
+/// # Errors
+/// [`PiiError::Invalid`] naming the held file.
+pub fn ensure_stopped(dir: &Path) -> Result<(), PiiError> {
+    for n in crate::backup::STORE_FILES {
+        let p = dir.join(n);
+        if p.is_file() {
+            drop(crate::backup::lock(&p)?);
+        }
+    }
+    Ok(())
+}
+
 /// Compacts every store file in `dir` (the names of
 /// [`crate::backup::STORE_FILES`] that exist). Refuses up front, touching
 /// nothing, if ANY of them is held open.

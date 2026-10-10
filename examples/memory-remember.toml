@@ -1,0 +1,40 @@
+# Spec 126: a run writes a fact. Two entities and the relationship between them are
+# recorded from the run's input; the run's own id is added to every provenance.
+# The graph must hold `memory_write`. The note is DATA: whatever it says, it is stored verbatim
+# as an attribute and nothing reads it as an instruction.
+name = "memory-remember"
+entry = "board"
+caps = ["memory_write"]
+
+[[node]]
+id = "board"
+kind = "remember"
+op = "entity"
+entity_kind = "device"
+name = "esp32-board"
+attributes = { note = "$.input.note" }
+
+[[node]]
+id = "office"
+kind = "remember"
+op = "entity"
+entity_kind = "room"
+name = "office"
+
+[[node]]
+id = "placed"
+kind = "remember"
+op = "relationship"
+from = { kind = "device", name = "esp32-board" }
+to = { kind = "room", name = "office" }
+rel_kind = "located_in"
+
+[[edge]]
+from = "board"
+port = "ok"
+to = "office"
+
+[[edge]]
+from = "office"
+port = "ok"
+to = "placed"

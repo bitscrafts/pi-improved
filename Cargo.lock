@@ -1965,6 +1965,7 @@ dependencies = [
  "pii-core",
  "pii-graph",
  "pii-learn",
+ "pii-memory",
  "pii-observe",
  "pii-proto",
  "pii-server",
@@ -2078,6 +2079,7 @@ dependencies = [
 name = "pii-memory"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "parking_lot",
  "pii-abi",
  "pii-core",
