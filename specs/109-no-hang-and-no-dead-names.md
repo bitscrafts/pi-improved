@@ -145,3 +145,14 @@ site has no mutation control (no health state can be flipped without heavy setup
 search error; the R8 rule catches I/O by import, so a crate reaching a socket only through another crate is
 not caught.
 
+### The last criterion CLOSED (2026-10-10, orchestrator run)
+```
+QG_SKIP_COVERAGE=1 FRESH_GATE_MIN_FREE_MB=6000 cargo run -q -p xtask -- fresh-gate --worktree
+  … PASS: reachability-check · quality-gate: ALL PASS · fresh-gate: PASS   FG-RC=0
+  df after: 594G 549G 19G free
+```
+It failed for the worker only because the export needed ~25G (the coverage step builds an ~18G instrumented
+tree) and the volume had 12G. With `QG_SKIP_COVERAGE=1` — the loud, export-only skip described above — it
+passes, and the coverage floor is still enforced by the repo gate on every other run (measured there:
+77.66%, floor 74.0).
+
