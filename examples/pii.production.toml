@@ -69,6 +69,13 @@ log_rotate_bytes = 10485760
 # by about (log_keep_files + 1) * log_rotate_bytes. 0 = discard on rotation.
 log_keep_files = 5
 
+# Measurement switches (spec 116). Both default to "on" and must stay on in
+# production: "off" for observer drops tool-call/store/provider logging,
+# "off" for audit stops recording denials in audit.log. Each announces itself
+# loudly at start. See the runbook ("Measurement switches").
+# observer = "on"
+# audit = "on"
+
 # [net]: egress policy. Default: no grants (nothing may leave the host).
 [net]
 # host:port patterns every principal may reach.

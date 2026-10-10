@@ -96,3 +96,9 @@ RED-before-GREEN was observed only for the trajectory leak and the body dedup; t
 live above 4 000 runs; `cmd_daemon.rs` now sits exactly at the 450-line limit; scratch left at
 `/projects/_tmp/leak-bisect` (~1 GB) per the no-delete rule.
 
+**One unreported change, recorded here rather than glossed:** the commit also adds a `parking_lot` edge to
+`pii-store` (`run_ids: parking_lot::Mutex<(u64, u64)>`, `lib.rs:50`) — the mutex guarding the batched run-id
+reservation. `parking_lot` is already a workspace dependency used by six other crates, so it is a new EDGE and not
+a new external crate, and it is justified by the fix; but the report did not mention it, and a dependency change
+that nobody states is exactly what this lane asks to be stated. Accepted with the note.
+
