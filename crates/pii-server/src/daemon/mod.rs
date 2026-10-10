@@ -681,6 +681,10 @@ mod tests {
             .unwrap();
             id
         };
+        // Condition wait, not a sleep. Assumption: a spawned run reaches a terminal status, and
+        // under the full parallel workspace suite (and under coverage instrumentation) that can take
+        // seconds — the old 2 s bound panicked here as "run {id} never finished" in a fresh-gate run
+        // (2026-10-10, spec 119's class: a timing-sensitive test that does not state its bound).
         let finished = |id: &RunId| {
             for _ in 0..6000 {
                 if let Ok(Some(h)) = engine.store.get_run(id)
