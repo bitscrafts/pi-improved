@@ -19,6 +19,26 @@
 The directive keeps **one** local kind: llama.cpp. This spec retires the ollama kind — without losing the
 *behaviour* that made it valuable (a live local provider may talk to exactly one configured host).
 
+
+## The concrete dependency (measured 2026-10-10, after the user asked *"algo dependendo do ollama... granite ou laguna?"*)
+
+They were right, and it is **granite**:
+
+- `examples/pii.production.toml:22` — the production example config **requires**
+  `model = "ollama:granite4.2:3b"` (the file's own header says a model is REQUIRED to start the daemon), so
+  anyone deploying from that example is pointing at the **local ollama** on `127.0.0.1:11434`.
+- The same model is **already served by llama.cpp**: the pi/Laguna quadlet
+  (`~/.config/containers/systemd/llamacpp-laguna.container`, `localhost/llamacpp-laguna:local`) serves
+  `laguna-xs-2.1` **and `granite-4.2-3b`** on `http://10.10.10.217:8082/v1`, and `/root/.pi/agent/models.json`
+  declares exactly that under its `llamacpp` provider. amem's own controlled lab measured why:
+  *llama.cpp 12.11 tok/s vs ollama 5.61 tok/s — 2.16× faster for the same model* (key
+  `hermes-lnx-optimization/validation/llamacpp-vs-ollama`), which is where the "always serve the local GGUF
+  via llama.cpp, never via ollama" rule comes from.
+
+So the retirement target is explicit: `ollama:granite4.2:3b` in the production example becomes the llama.cpp
+lane (`llamacpp:granite-4.2-3b` against the configured `10.10.10.217:8082` host), and the example's comment must
+stop teaching an ollama model spec.
+
 ## Requirements
 
 - **R1 — `ollama:` is refused, loudly, with a pointer.** After this spec, a model string beginning `ollama:`
