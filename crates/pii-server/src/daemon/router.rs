@@ -300,6 +300,7 @@ mod tests {
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            llama_host: None,
         })
         .expect("engine");
         let ctx = router_ctx(Arc::new(SlowChannel { name: "slow" }));

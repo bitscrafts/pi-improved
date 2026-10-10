@@ -137,7 +137,7 @@ max_tokens = 512
 
 [[model_tier]]
 name = "big"
-model = "ollama:big:70b"
+model = "llamacpp-server:big-70b"
 "#,
     )
     .unwrap();

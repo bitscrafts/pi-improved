@@ -123,6 +123,7 @@ async fn route_decision_is_journaled() {
         route_policy: std::iter::once(("patch".to_owned(), "modelX".to_owned())).collect(),
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
+        llama_host: None,
     })
     .expect("engine");
     let _reg = pii_server::engine::registry::registry(
@@ -184,6 +185,7 @@ fn engine_cfg_of(engine: &Arc<pii_server::Engine>) -> pii_server::EngineConfig {
         route_policy: engine.cfg.route_policy.clone(),
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
+        llama_host: None,
     }
 }
 

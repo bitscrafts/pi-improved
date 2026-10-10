@@ -51,7 +51,7 @@ pub fn spawn_run(
         run_caps(
             &engine.cfg.workspace,
             scope_root.as_deref(),
-            engine.ollama_net_host.as_deref(),
+            engine.local_net_host.as_deref(),
         ),
         pii_core::Budget::new(
             spec.limits.max_tokens,
@@ -268,7 +268,7 @@ pub fn spawn_resume(
         run_caps(
             &engine.cfg.workspace,
             scope_root.as_deref(),
-            engine.ollama_net_host.as_deref(),
+            engine.local_net_host.as_deref(),
         ),
         pii_core::Budget::new(max_tokens, max_tool_calls, max_micro_usd, max_wall_ms),
         with_trajectory(&engine, &run_id, None, bridge),
@@ -357,7 +357,7 @@ fn stored_run_scope_root(
 /// `scope_root` alone when one is given (S1.2 heal confinement) — and the
 /// `bash` tool's `/bin/sh` argv0 granted (F1, opus review). `net_host`
 /// (2026-09-05 follow-up to B1) grants exactly `CapKind::NET` scoped to
-/// that one host when the engine is running a live `ollama:` provider —
+/// that one host when the engine is running a live networked provider —
 /// without this, `dial()`'s `ctx.net()` gate denies every agent-node model
 /// call before it reaches the (correctly configured) `NetService`/
 /// `StaticGrants` chokepoint, since a run's OWN caps never carried `NET`
@@ -461,6 +461,7 @@ mod tests {
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            llama_host: None,
             graph_dir: dir.path().join("graphs"),
         })
         .unwrap();
@@ -688,6 +689,7 @@ mod tests {
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            llama_host: None,
         })
         .unwrap();
         (dir, engine)

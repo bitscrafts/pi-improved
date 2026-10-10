@@ -183,7 +183,7 @@ fn retry_same_reason_retries_primary_then_succeeds() {
     let err = PiiError::Provider(ProviderFailure {
         status: Some(503),
         origin: Origin::Provider,
-        provider: String::from("ollama"),
+        provider: String::from("llamacpp-server"),
         message: String::from("server overloaded"),
     });
     assert!(err.is_retryable(), "503 is retryable at the classify layer");
@@ -225,7 +225,7 @@ fn next_provider_reason_advances_to_secondary_without_retry() {
     let err = PiiError::Provider(ProviderFailure {
         status: Some(401),
         origin: Origin::Provider,
-        provider: String::from("ollama"),
+        provider: String::from("llamacpp-server"),
         message: String::from("invalid api key"),
     });
     assert!(!err.is_retryable(), "401 must not be retryable");

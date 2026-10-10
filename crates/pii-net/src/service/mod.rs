@@ -302,7 +302,7 @@ mod streaming_tests {
         handle.join().unwrap();
         // R3: `on_chunk` is BYTE-level — it receives dechunked bytes that may
         // still split a JSON line across two reads (the downstream consumer,
-        // ollama's `drain_lines`, reassembles with a residual buffer). So the
+        // the OpenAI provider's SSE reader, reassembles with a residual buffer). So the
         // contract here is: no hex-size lines leak through, and the
         // CONCATENATED dechunked body is byte-identical to the buffered parse.
         for l in lines.lock().iter() {

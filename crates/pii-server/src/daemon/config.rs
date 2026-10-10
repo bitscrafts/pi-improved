@@ -4,7 +4,7 @@
 //! **Complete env surface for this phase** (N10, every read goes through
 //! [`pii_core::env_var`]): `PII_CONFIG`, `PII_RUNTIME_DIR`, `PII_MODEL`,
 //! `PII_MEMORY_PATH`, `PII_DISCORD_TOKEN`, `PII_DISCORD_CHANNEL_ID`,
-//! `PII_DISCORD_API_BASE`, `OLLAMA_HOST`, `OLLAMA_API_KEY`.
+//! `PII_DISCORD_API_BASE`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`.
 //!
 //! **Persistent `[core]` settings (2026-09-05 follow-up).** Before this,
 //! EVERY setting above was env-var-only — nothing survived a fresh shell
@@ -35,15 +35,12 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(deny_unknown_fields, default)]
 pub struct CoreSection {
-    /// Default model spec (e.g. `"ollama:granite4.2:3b"`, `"scripted:"`).
+    /// Default model spec (e.g. `"llamacpp-server:granite-4.2-3b"`, `"scripted:"`).
     /// Overridden by `--model` (oneshot) or `$PII_MODEL`, in that order.
     pub model: Option<String>,
     /// Default runtime dir (holds `control.sock`, `graphs/`). Overridden
     /// by `$PII_RUNTIME_DIR`.
     pub runtime_dir: Option<String>,
-    /// Default Ollama host, e.g. `"http://127.0.0.1:11434"`. Overridden
-    /// by `$OLLAMA_HOST`.
-    pub ollama_host: Option<String>,
     /// Max runs retained per session in the in-memory `session_runs` index
     /// (D3/D6, 026 report 5.0.4): oldest run ids are evicted (LRU) once a
     /// session's run count exceeds this. `None` (absent key) falls back to
@@ -74,6 +71,17 @@ pub struct CoreSection {
     /// `"on"` (default) or `"off"` (spec 116, measurement only): `off` stops
     /// the audit feed. Overridden by `--audit`.
     pub audit: Option<String>,
+}
+
+/// `[llama]` (spec 129): where the `llamacpp-server:<model>` kind dials.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
+pub struct LlamaSection {
+    /// Base URL of the llama.cpp server's OpenAI-compatible API, e.g.
+    /// `"http://10.10.10.217:8082/v1"`. Absent = loopback
+    /// (`http://127.0.0.1:8080/v1`). The local provider's `NetService` is
+    /// scoped to exactly this host.
+    pub host: Option<String>,
 }
 
 /// Default size at which the log file rotates (10 MiB).
@@ -142,7 +150,7 @@ pub struct WorkerSection {
 pub struct ModelTierSection {
     /// Tier name, referenced by a node's `tier` key. Unique.
     pub name: String,
-    /// Provider spec (`scripted:<path>`, `ollama:<m>`, `openai:<m>`, ...).
+    /// Provider spec (`scripted:<path>`, `llamacpp-server:<m>`, `openai:<m>`, ...).
     pub model: String,
     /// Tools a run on this tier may call. Absent = unrestricted. When set it
     /// is enforced by the capability layer, not by the prompt.
@@ -444,6 +452,8 @@ pub struct CronSection {
 pub struct Config {
     /// `[core]`.
     pub core: CoreSection,
+    /// `[llama]` (spec 129).
+    pub llama: LlamaSection,
     /// `[net]`.
     pub net: NetSection,
     /// `[[worker]]`.
@@ -486,6 +496,19 @@ impl Config {
     /// # Errors
     /// [`PiiError::Invalid`] on a parse failure (including any unknown key).
     pub fn parse(raw: &str) -> Result<Self, PiiError> {
+        // The ollama provider was retired (spec 129): its host key is refused
+        // by name rather than as a generic unknown field.
+        let probe: Option<toml::Value> = toml::from_str(raw).ok();
+        if probe
+            .as_ref()
+            .and_then(|v| v.get("core"))
+            .and_then(|c| c.get("ollama_host"))
+            .is_some()
+        {
+            return Err(PiiError::Invalid(String::from(
+                "config: [core].ollama_host is retired (spec 129) — set `[llama] host` for the llama.cpp server instead",
+            )));
+        }
         let cfg: Self =
             toml::from_str(raw).map_err(|e| PiiError::Invalid(format!("config: {e}")))?;
         cfg.validate_tiers()?;
@@ -758,17 +781,36 @@ schedule = "*/15 * * * *"
 
         let raw = r#"
 [core]
-model = "ollama:granite4.2:3b"
+model = "llamacpp-server:granite-4.2-3b"
 runtime_dir = "/root/.pii/runtime"
-ollama_host = "http://127.0.0.1:11434"
+
+[llama]
+host = "http://10.10.10.217:8082/v1"
 "#;
         let cfg = Config::parse(raw).unwrap();
-        assert_eq!(cfg.core.model.as_deref(), Some("ollama:granite4.2:3b"));
+        assert_eq!(
+            cfg.core.model.as_deref(),
+            Some("llamacpp-server:granite-4.2-3b")
+        );
         assert_eq!(cfg.core.runtime_dir.as_deref(), Some("/root/.pii/runtime"));
         assert_eq!(
-            cfg.core.ollama_host.as_deref(),
-            Some("http://127.0.0.1:11434")
+            cfg.llama.host.as_deref(),
+            Some("http://10.10.10.217:8082/v1")
         );
+        assert_eq!(
+            empty.llama.host, None,
+            "default is loopback, applied downstream"
+        );
+    }
+
+    /// Spec 129: the retired key is refused loudly, naming `[llama] host`.
+    #[test]
+    fn a_config_with_the_retired_ollama_host_key_is_refused() {
+        let err = Config::parse("[core]\nollama_host = \"http://127.0.0.1:11434\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("[llama] host"), "{err}");
+        assert!(err.contains("ollama_host"), "{err}");
     }
 
     #[test]
@@ -783,8 +825,9 @@ ollama_host = "http://127.0.0.1:11434"
         );
         // An explicit value always wins over the config.
         assert_eq!(
-            cfg.resolve_model(Some(String::from("ollama:x"))).as_deref(),
-            Some("ollama:x")
+            cfg.resolve_model(Some(String::from("scripted:x")))
+                .as_deref(),
+            Some("scripted:x")
         );
     }
 

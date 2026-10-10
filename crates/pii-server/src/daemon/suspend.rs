@@ -148,6 +148,7 @@ mod tests {
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            llama_host: None,
         })
         .unwrap();
         let seen = Arc::new(Seen::default());

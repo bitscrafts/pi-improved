@@ -13,7 +13,7 @@ kind = "agent"
 # kind's `required_caps()` (fs_read/fs_write/proc) when unset, which never
 # includes net — so a graph declaring `net` at the top level alone still
 # can't reach it; the node itself must ALSO opt in explicitly. This is the
-# live-model form: a live `ollama:` provider needs this node to dial out.
+# live-model form: a live `llamacpp-server:` provider needs this node to dial out.
 caps = ["fs_read", "fs_write", "proc", "net"]
 memory = { enabled = true, top_k = 6 }
 tools = ["fs_read"]

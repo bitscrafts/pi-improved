@@ -305,7 +305,7 @@ mod tests {
         let payload = serde_json::json!({
             "status": 503,
             "reason": "overloaded",
-            "provider": "ollama"
+            "provider": "llamacpp-server"
         });
         let j = journal(vec![finished("n", "fail", payload.clone())]);
         // Byte-identical to the stored value, not reformatted.

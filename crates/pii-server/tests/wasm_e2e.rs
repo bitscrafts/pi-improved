@@ -77,6 +77,7 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Daemon>, Arc<Recorder>) {
         route_policy: std::collections::BTreeMap::new(),
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
+        llama_host: None,
         graph_dir: dir.join("graphs"),
     })
     .expect("engine");
@@ -274,6 +275,7 @@ fn a_wasm_dir_that_does_not_exist_is_refused_at_daemon_build() {
         route_policy: std::collections::BTreeMap::new(),
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
+        llama_host: None,
         graph_dir: dir.path().join("graphs"),
     })
     .unwrap();

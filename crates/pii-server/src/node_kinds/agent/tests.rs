@@ -166,7 +166,7 @@ fn provider_failure_5xx_routes_to_fail_after_retry_exhausted() {
     let err = PiiError::Provider(ProviderFailure {
         status: Some(503),
         origin: Origin::Provider,
-        provider: String::from("ollama"),
+        provider: String::from("llamacpp-server"),
         message: String::from("upstream unavailable"),
     });
     assert!(err.is_retryable(), "503 must be retryable per spec-39");

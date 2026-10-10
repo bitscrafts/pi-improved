@@ -17,7 +17,7 @@ use pii_abi::{
 use pii_core::{Ctx, HttpTransport};
 use pii_observe::{Event, Level, Observable, Observed, Observer, names};
 
-/// Per-request wall-clock budget, as for the Ollama provider.
+/// Per-request wall-clock budget, as for every HTTP provider.
 const TIMEOUT_MS: u64 = 120_000;
 /// Provider error bodies are cut to this many characters before they travel.
 const MAX_BODY_CHARS: usize = 512;

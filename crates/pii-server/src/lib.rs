@@ -15,6 +15,9 @@ pub mod engine;
 pub mod node_kinds;
 pub mod tiers;
 
+pub mod observed_provider;
+use observed_provider::observed_provider;
+
 pub use engine::registry::{lint_registry, lint_registry_with_log, registry};
 
 /// Default cap on `session_runs` entries retained per session (D3/D6, 026
@@ -64,6 +67,9 @@ pub struct EngineConfig {
     /// [`DEFAULT_SESSION_RUNS_CAP`] explicitly since `EngineConfig`
     /// deliberately has no `Default`.
     pub session_runs_cap: usize,
+    /// `[llama] host` (spec 129): base URL of the llama.cpp server a
+    /// `llamacpp-server:` model dials. `None` = loopback default.
+    pub llama_host: Option<String>,
 }
 
 /// An executing or completed run.
@@ -115,8 +121,9 @@ pub struct Engine {
     pub tools: ToolSet,
     /// Event bus.
     pub bus: Arc<Bus>,
-    /// The Ollama host a live `ollama:` provider's `NetService` was scoped
-    /// to (F1/B1 follow-up, 2026-09-05) — `None` for `scripted:`. `runs.rs`
+    /// The host a live local (`llamacpp-server:`) or hosted provider's
+    /// `NetService` was scoped to (F1/B1 follow-up, 2026-09-05; renamed from
+    /// the retired ollama path, spec 129) — `None` for `scripted:`. `runs.rs`
     /// uses this to grant a run's `CapSet` exactly the `NET` capability
     /// (and only that host) an `agent` node needs to actually reach the
     /// model: `Engine::new` wired the transport's own egress grant
@@ -125,7 +132,7 @@ pub struct Engine {
     /// before it reached the (correctly configured) transport. This field
     /// closes that gap without widening any run's `NET` scope beyond the
     /// single host the daemon was actually configured to call.
-    pub ollama_net_host: Option<String>,
+    pub local_net_host: Option<String>,
     /// Server start time.
     pub started_at: Instant,
     pub(crate) sessions: parking_lot::Mutex<BTreeMap<String, Session>>,
@@ -187,55 +194,6 @@ pub struct Session {
     pub run_id: Option<String>,
 }
 
-/// Resolves the model provider for `model` and wraps it so every request
-/// reports to `log` (spec 108). Returns the provider and, for an `ollama:`
-/// spec, the host its transport was scoped to.
-fn observed_provider(
-    model: &str,
-    log: &Arc<pii_observe::SwitchObserver>,
-) -> Result<(Arc<dyn ModelProvider>, Option<String>), PiiError> {
-    // B1 (opus review): `PII_MODEL=ollama:<model>` now actually
-    // constructs a live provider instead of failing `provider_from_spec`
-    // (whose only working arm was `scripted:`). The transport is a
-    // dedicated `pii-net::NetService`, scoped by a single grant for
-    // exactly the configured Ollama host (loopback by default) — this
-    // is the ONE place besides the daemon's own `[net]` config that
-    // opens a `NetService`, and it exists specifically so the model
-    // provider does not bypass the egress chokepoint `cargo xtask
-    // net-check` enforces. `scripted:` specs (the common case in
-    // tests) never touch this — `resolve_with_transport` only builds
-    // the transport lazily, inside the networked-kind branch
-    // (`ollama:`, `openai:`, `anthropic:`, `gemini:` — spec 111).
-    let mut ollama_net_host: Option<String> = None;
-    let provider = if let Some(host_only) = pii_model::egress_host(model) {
-        let mut grants = pii_net::grant::StaticGrants::default();
-        grants.insert(
-            "*",
-            &format!("http:{host_only}"),
-            pii_net::grant::NetGrant::open_local(),
-        );
-        let net = pii_net::NetService::new(pii_net::NetConfig {
-            resolver: Arc::new(pii_net::SystemResolver),
-            grants: Arc::new(grants),
-            clock: Arc::new(pii_net::SystemClock),
-        });
-        net.set_observer(log.clone());
-        ollama_net_host = Some(host_only);
-        // `ollama:` reports through `ObservedProvider` alone; the hosted kinds
-        // also own named `model.provider.*` events and need the observer.
-        if model.starts_with("ollama:") {
-            pii_model::resolve_with_transport(model, Arc::new(net))?
-        } else {
-            pii_model::resolve_with_observer(model, Arc::new(net), log.clone())?
-        }
-    } else {
-        pii_model::provider_from_spec(model)?
-    };
-    let provider: Arc<dyn ModelProvider> =
-        Arc::new(pii_model::ObservedProvider::new(provider, log.clone()));
-    Ok((provider, ollama_net_host))
-}
-
 impl Engine {
     /// Builds an engine (opening the store eagerly).
     ///
@@ -260,10 +218,11 @@ impl Engine {
             String,
             pii_worker::Supervisor,
         >::new()));
-        let (provider, ollama_net_host) = observed_provider(&cfg.model, &log)?;
+        let (provider, local_net_host) =
+            observed_provider(&cfg.model, &log, cfg.llama_host.as_deref())?;
         let tiers = Arc::new(tiers::TierTable::build(
             &cfg.tiers,
-            |spec| observed_provider(spec, &log).map(|(p, _)| p),
+            |spec| observed_provider(spec, &log, cfg.llama_host.as_deref()).map(|(p, _)| p),
             |tier, model, why| {
                 pii_observe::Observer::event(
                     &*log,
@@ -328,7 +287,7 @@ impl Engine {
             tiers,
             tools,
             bus,
-            ollama_net_host,
+            local_net_host,
             started_at: Instant::now(),
             sessions: parking_lot::Mutex::new(BTreeMap::new()),
             runs: parking_lot::Mutex::new(BTreeMap::new()),
@@ -696,3 +655,6 @@ fn merge_history(
         None => serde_json::json!({ "history": history_json }),
     }
 }
+
+#[cfg(test)]
+mod local_model_tests;

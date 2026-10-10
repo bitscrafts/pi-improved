@@ -1,7 +1,7 @@
 # Pii daemon image (spec 104). Build from the repository root:
 #   docker build -f deploy/Dockerfile -t pii .
 # Run (store, runtime dir and log live on the /data volume):
-#   docker run -d --name pii -v pii-data:/data -e PII_MODEL=ollama:granite4.2:3b pii
+#   docker run -d --name pii -v pii-data:/data -e PII_MODEL=llamacpp-server:granite-4.2-3b pii
 # Probe (non-zero when the daemon is not answering):
 #   docker exec pii pii health --json
 # The build produces a statically linked musl binary, so the runtime image needs

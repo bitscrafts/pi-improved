@@ -374,9 +374,7 @@ async fn run_daemon(
     log: Arc<dyn Observer>,
     switches: Switches,
 ) -> ExitCode {
-    let fail = |stage: &'static str, m: String| {
-        fail_to(&Tee(Arc::clone(&log)), stage, &m);
-    };
+    let fail = |stage: &'static str, m: String| fail_to(&Tee(Arc::clone(&log)), stage, &m);
     let sock_path = match pii_server::engine::uds::prepare_socket(&runtime_dir) {
         Ok(p) => p,
         Err(e) => {
@@ -394,6 +392,7 @@ async fn run_daemon(
         route_policy: cfg.evolve.routing.clone(),
         tiers: cfg.model_tier.clone(),
         session_runs_cap: cfg.core.session_runs_cap(),
+        llama_host: cfg.llama.host.clone(),
     };
     let engine = match Engine::new(engine_cfg) {
         Ok(e) => e,

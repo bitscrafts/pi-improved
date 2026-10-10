@@ -370,6 +370,7 @@ mod tests {
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
             session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
+            llama_host: None,
             graph_dir: dir.path().join("graphs"),
         })
         .expect("engine");

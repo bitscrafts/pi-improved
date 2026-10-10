@@ -118,7 +118,7 @@ pub enum Origin {
 /// A [`classify`]-ready provider failure.
 ///
 /// Every field is `pub` (a data carrier, unlike [`FailoverReason`]); `provider`
-/// is the provider's `name()` string (`"ollama"`, `"llamacpp"`), not a label.
+/// is the provider's `name()` string (`"llamacpp-server"`, `"llamacpp"`), not a label.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ProviderFailure {
     /// The HTTP status the provider returned, when the transport is HTTP.
@@ -390,7 +390,7 @@ mod tests {
         ProviderFailure {
             status,
             origin,
-            provider: String::from("ollama"),
+            provider: String::from("llamacpp-server"),
             message: String::from(message),
         }
     }

@@ -26,7 +26,7 @@ fn live(spec: &str) -> String {
         grants: Arc::new(grants),
         clock: Arc::new(pii_net::SystemClock),
     });
-    let provider = pii_model::resolve_with_transport(spec, Arc::new(net)).unwrap();
+    let provider = pii_model::resolve_with_transport(spec, Arc::new(net), None).unwrap();
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::NET;
     let req = ChatRequest {

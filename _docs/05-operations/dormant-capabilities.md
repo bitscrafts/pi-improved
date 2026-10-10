@@ -44,7 +44,7 @@ it does not exist yet and belongs to the roadmap (`_docs/06-research/052-…md` 
 |---|---|---|
 | WASM host (`wasmtime`), MQTT/HAL/GPIO/SOP nodes | **absent** | pillar 2 (assistant/gateway + IoT/automation), vision `001` |
 | channels beyond `cli` and `discord` | **absent** (2 exist) | pillar 2 |
-| provider kinds beyond `scripted`/`ollama`/`llamacpp` | **absent** (llamacpp off by default) | pillar 2 |
+| provider kinds beyond `scripted`/`llamacpp-server`/`llamacpp` | **absent** (llamacpp off by default) | pillar 2 |
 | entity/relationship memory model, tiering | **absent** | pillar 3 |
 | skill extraction, procedural templates, verifier-gated promotion | **absent** (the trajectory substrate landed as spec 103) | pillar 4 |
 | `seccomp` syscall filter | **absent, documented** | runbook (spec 107 R6) |

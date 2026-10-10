@@ -7,11 +7,11 @@ A graph node asks for one with `tier = "<name>"`; the engine builds one provider
 
 ```toml
 [core]
-model = "ollama:granite4.2:3b"        # the run's default
+model = "llamacpp-server:granite-4.2-3b"  # the run's default
 
 [[model_tier]]
 name       = "fast"
-model      = "ollama:qwen2.5:0.5b"    # any provider spec: scripted:, ollama:, openai:, anthropic:, gemini:
+model      = "llamacpp-server:qwen2.5-0.5b"  # any provider spec: scripted:, llamacpp-server:, openai:, anthropic:, gemini:
 tools      = ["fs_read", "grep"]      # optional: the ONLY tools this tier may call
 max_tokens = 512                      # optional: caps max_tokens per request on this tier
 

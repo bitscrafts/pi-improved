@@ -327,7 +327,7 @@ child; the child sees `Permission denied`, and pii only sees the exit status. No
 `audit.log` records it.
 
 **Secrets.** Decision: secrets are delivered by environment variable only
-(`PII_DISCORD_TOKEN`, `OLLAMA_API_KEY`, ...) and are never written to the config file
+(`PII_DISCORD_TOKEN`, `OPENAI_API_KEY`, ...) and are never written to the config file
 (the config loader is strict and the shipped sample says so). No keyring or secret file is
 read by pii today. Compensating controls: (1) keep them in a root-owned mode-0600
 `EnvironmentFile=` (see `deploy/pii.service`), which systemd reads before dropping to the

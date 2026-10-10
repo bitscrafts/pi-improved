@@ -1,7 +1,7 @@
 //! In-process LLM support via `llama-cpp-2` (spec 35, research doc 015).
 //!
 //! [`LlamaCppProvider`] embeds a GGUF model (e.g. Granite 4.2) directly in the
-//! Pii process — no external `llama-server`/Ollama, no `NET` capability. The
+//! Pii process — no external `llama-server`, no `NET` capability. The
 //! model load is a pure `fs_read` on the GGUF path (R5).
 //!
 //! `ModelProvider` is sync on purpose (`GraphNode::run` is sync, runs on a
@@ -252,7 +252,7 @@ pub mod granite {
 ///
 /// `PII_LLAMACPP_NUM_CTX` (default [`DEFAULT_NUM_CTX`]) and
 /// `PII_LLAMACPP_THREADS` (default: all cores, `-1`) come via
-/// `pii_core::env_var`. No transport needed (unlike `ollama:`).
+/// `pii_core::env_var`. No transport needed (unlike `llamacpp-server:`).
 ///
 /// # Errors
 /// [`PiiError::Invalid`] for an empty path or a missing/unloadable model file.
@@ -280,7 +280,7 @@ pub fn provider_from_env(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError>
             )?))
         }
         other => Err(PiiError::Invalid(format!(
-            "unknown model spec kind '{other}' (scripted:<path>, ollama:<model>, llamacpp:<path> are supported)"
+            "unknown model spec kind '{other}' (scripted:<path>, llamacpp:<path> are supported)"
         ))),
     }
 }

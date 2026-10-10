@@ -90,8 +90,8 @@ pub struct ChatRequest {
     pub max_tokens: u32,
     /// Sampling temperature.
     pub temperature: f32,
-    /// Context window (`num_ctx`); `0` means "provider default"
-    /// ([`crate::ollama::DEFAULT_NUM_CTX`] for Ollama).
+    /// Context window (`num_ctx`); `0` means "provider default". Providers
+    /// whose wire has no such knob (the OpenAI-compatible kinds) ignore it.
     pub num_ctx: u32,
 }
 
@@ -208,13 +208,11 @@ impl ModelProvider for ScriptedProvider {
     }
 }
 
-pub mod ollama;
-pub use ollama::OllamaProvider;
-
 mod wire;
 
 pub mod anthropic;
 pub mod gemini;
+pub mod llamacpp_server;
 pub mod openai;
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
@@ -232,21 +230,16 @@ pub use observed::ObservedProvider;
 
 /// Resolves a model spec: `scripted:<path>` needs no transport.
 ///
-/// `ollama:` (B1, opus review) is now wired through
-/// [`ollama::provider_from_env`], which was correct and complete but had
-/// zero non-test call sites — every green exit criterion touching an
-/// `agent` node was satisfied by a hand-written fixture, never a live LLM
-/// turn. This entry point still cannot construct an `ollama:` provider
-/// itself (it has no `HttpTransport` — the real transport is `pii-net`'s
-/// `NetService`, constructed by the caller with its egress policy already
-/// wired), so a caller that wants `ollama:` must call
-/// [`ollama::provider_from_env`] directly with its own transport, or use
-/// [`resolve_with_transport`], which does both in one call for callers
-/// that don't care about the distinction.
+/// The networked kinds (`llamacpp-server:`, `openai:`, `anthropic:`,
+/// `gemini:`) cannot be built here: they need an `HttpTransport` (the real one
+/// is `pii-net`'s `NetService`, constructed by the caller with its egress
+/// policy already wired), so use [`resolve_with_transport`] or
+/// [`resolve_with_observer`]. `ollama:` was retired (spec 129) and is refused
+/// by name.
 ///
 /// # Errors
-/// [`PiiError::Invalid`] for an unknown spec, a fixture failure, or an
-/// `ollama:` spec (which needs a transport — see above).
+/// [`PiiError::Invalid`] for an unknown spec, a fixture failure, a networked
+/// spec (needs a transport), or a retired `ollama:` spec.
 pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError> {
     let Some((kind, rest)) = spec.split_once(':') else {
         return Err(PiiError::Invalid(format!("unknown model spec '{spec}'")));
@@ -259,17 +252,24 @@ pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError
         "llamacpp" => Err(PiiError::Invalid(String::from(
             "llamacpp: support not compiled in — rebuild pii-model with feature `llamacpp`",
         ))),
-        "ollama" => Err(PiiError::Invalid(String::from(
-            "ollama: needs a transport — call ollama::provider_from_env or resolve_with_transport",
-        ))),
-        "openai" | "anthropic" | "gemini" => Err(PiiError::Invalid(format!(
+        "ollama" => Err(ollama_retired()),
+        "llamacpp-server" | "openai" | "anthropic" | "gemini" => Err(PiiError::Invalid(format!(
             "{kind}: needs a transport — call {kind}::provider_from_env or resolve_with_transport"
         ))),
         other => Err(PiiError::Invalid(format!(
-            "unknown model spec kind '{other}' (supported: scripted:<path>, ollama:<model>, \
-             openai:<model>, anthropic:<model>, gemini:<model>, llamacpp:<model>)"
+            "unknown model spec kind '{other}' (supported: scripted:<path>, llamacpp-server:<model>, \
+             openai:<model>, anthropic:<model>, gemini:<model>, llamacpp:<path>)"
         ))),
     }
+}
+
+/// The refusal for the retired `ollama:` kind (spec 129): the local model kind
+/// is `llamacpp-server:<model>` (an HTTP llama.cpp server), never ollama.
+fn ollama_retired() -> PiiError {
+    PiiError::Invalid(String::from(
+        "ollama: is retired (spec 129) — serve the model with llama.cpp and use \
+         llamacpp-server:<model> with `[llama] host`; llamacpp:<path> is the separate in-process GGUF loader",
+    ))
 }
 
 /// The egress host a spec's provider will dial, or `None` for a local spec.
@@ -277,11 +277,23 @@ pub fn provider_from_spec(spec: &str) -> Result<Arc<dyn ModelProvider>, PiiError
 /// This is what the `http:<host>` grant is keyed on. `scripted:`, `llamacpp:`
 /// and unknown specs need no network. Derived from the same env var the provider reads for
 /// its base URL, falling back to the same default. Only the host: never a
-/// port, userinfo, path or key.
+/// port, userinfo, path or key. A `llamacpp-server:` spec uses the default
+/// loopback host; use [`egress_host_with`] to supply the configured one.
 #[must_use]
 pub fn egress_host(spec: &str) -> Option<String> {
+    egress_host_with(spec, None)
+}
+
+/// [`egress_host`] with the configured `[llama] host` for `llamacpp-server:`
+/// specs (`None` = [`llamacpp_server::DEFAULT_LLAMA_HOST`]).
+#[must_use]
+pub fn egress_host_with(spec: &str, llama_host: Option<&str>) -> Option<String> {
     let (base_var, default) = match spec.split_once(':')?.0 {
-        "ollama" => ("OLLAMA_HOST", ollama::DEFAULT_OLLAMA_HOST),
+        "llamacpp-server" => {
+            return Some(wire::host_of(
+                llama_host.unwrap_or(llamacpp_server::DEFAULT_LLAMA_HOST),
+            ));
+        }
         "openai" => ("OPENAI_BASE_URL", openai::DEFAULT_OPENAI_BASE_URL),
         "anthropic" => ("ANTHROPIC_BASE_URL", anthropic::DEFAULT_ANTHROPIC_BASE_URL),
         "gemini" => ("GEMINI_BASE_URL", gemini::DEFAULT_GEMINI_BASE_URL),
@@ -293,23 +305,26 @@ pub fn egress_host(spec: &str) -> Option<String> {
 
 /// Resolves any supported model spec.
 ///
-/// Constructs an `ollama:` provider through `transport` when the spec
-/// calls for one (B1, opus review). This is the entry point a real caller
-/// (the daemon, `pii -p`) should use instead of [`provider_from_spec`]
-/// alone, since it is the one place that can actually honour `ollama:`.
+/// Constructs a networked provider through `transport` when the spec calls
+/// for one. This is the entry point a real caller (the daemon, `pii -p`)
+/// should use instead of [`provider_from_spec`] alone.
+///
+/// `llama_host` is the configured `[llama] host` for `llamacpp-server:` specs
+/// (`None` = loopback default).
 ///
 /// # Errors
 /// [`PiiError::Invalid`] for an unknown spec or a fixture/env failure.
 pub fn resolve_with_transport(
     spec: &str,
     transport: Arc<dyn pii_core::HttpTransport>,
+    llama_host: Option<&str>,
 ) -> Result<Arc<dyn ModelProvider>, PiiError> {
-    resolve(spec, transport, None)
+    resolve(spec, transport, None, llama_host)
 }
 
-/// [`resolve_with_transport`] plus an observer for the hosted kinds.
+/// [`resolve_with_transport`] plus an observer for the networked kinds.
 ///
-/// `openai:`, `anthropic:` and `gemini:` providers get `observer`, so their
+/// `llamacpp-server:`, `openai:`, `anthropic:` and `gemini:` providers get `observer`, so their
 /// named `model.provider.*` events (auth failure, rate limit, bad body, egress denial, stream delta)
 /// reach it.
 ///
@@ -320,17 +335,19 @@ pub fn resolve_with_observer(
     transport: Arc<dyn pii_core::HttpTransport>,
     observer: Arc<dyn pii_observe::Observer>,
 ) -> Result<Arc<dyn ModelProvider>, PiiError> {
-    resolve(spec, transport, Some(observer))
+    resolve(spec, transport, Some(observer), None)
 }
 
 fn resolve(
     spec: &str,
     transport: Arc<dyn pii_core::HttpTransport>,
     observer: Option<Arc<dyn pii_observe::Observer>>,
+    llama_host: Option<&str>,
 ) -> Result<Arc<dyn ModelProvider>, PiiError> {
     let env = &pii_core::env_var;
     match spec.split_once(':').map(|(k, _)| k) {
-        Some("ollama") => ollama::provider_from_env(spec, transport),
+        Some("ollama") => Err(ollama_retired()),
+        Some("llamacpp-server") => llamacpp_server::provider(spec, transport, llama_host, observer),
         Some("openai") => openai::provider_from_lookup(spec, transport, env, observer),
         Some("anthropic") => anthropic::provider_from_lookup(spec, transport, env, observer),
         Some("gemini") => gemini::provider_from_lookup(spec, transport, env, observer),
@@ -384,25 +401,16 @@ mod tests {
         assert!(provider_from_spec("bogus:x").is_err());
     }
 
-    /// B1 (opus review): `provider_from_spec("ollama:...")` must give a
-    /// clear, distinguishable error (not the old generic "unknown model
-    /// spec kind") — proving the dispatch actually recognizes `ollama:`
-    /// now, even though this entry point (by design, no transport) cannot
-    /// construct the provider itself. `resolve_with_transport` is the one
-    /// that does, and is exercised by `pii-server`'s own tests where a
-    /// transport is available.
+    /// Spec 129: `ollama:` is refused by name, pointing at `llamacpp-server:`,
+    /// and a truly unknown kind still gets the generic message.
     #[test]
-    fn provider_from_spec_dispatches_ollama() {
-        let err = match provider_from_spec("ollama:qwen3") {
-            Ok(_) => panic!("ollama: must fail without a transport"),
+    fn an_ollama_model_is_refused_pointing_at_llamacpp_server() {
+        let err = match provider_from_spec("ollama:granite4.2:3b") {
+            Ok(_) => panic!("ollama: must be refused"),
             Err(e) => e.to_string(),
         };
-        assert!(
-            err.contains("ollama:") && err.contains("transport"),
-            "expected an ollama-specific 'needs a transport' error, got: {err}"
-        );
-        // A truly unknown kind still gets the generic message, proving the
-        // ollama arm is a distinct branch, not a fallthrough.
+        assert!(err.contains("llamacpp-server:"), "got: {err}");
+        assert!(err.contains("retired"), "got: {err}");
         let unknown = match provider_from_spec("bogus:x") {
             Ok(_) => panic!("bogus: must fail"),
             Err(e) => e.to_string(),
@@ -452,45 +460,15 @@ mod tests {
     }
 }
 
-// F2 (4.1a TDD contract): the request body must forward sampling options and
-// the context window, and must keep non-streaming. `build_request` is private,
-// so the contract is verified through a scripted transport that records the
-// last body to `_tmp` (per-test files — tests run in parallel).
 #[cfg(test)]
 mod contract {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     #![allow(clippy::indexing_slicing)] // reason: json pointer-style asserts on test bodies
 
-    use super::{ChatMessage, ChatRequest, OllamaProvider, Role, ScriptedProvider};
+    use super::{ChatMessage, ChatRequest, Role, ScriptedProvider};
     use crate::ModelProvider as _;
-    use pii_abi::PiiError;
     use pii_core::{Budget, CapSet, Ctx};
     use std::path::PathBuf;
-    use std::sync::Arc;
-
-    /// Per-test scratch file (N8: artifacts under _tmp). Tests run in parallel,
-    /// so a shared path would race one assertion against another test's body.
-    struct RecordingTransport {
-        path: PathBuf,
-    }
-    impl pii_core::HttpTransport for RecordingTransport {
-        fn request(
-            &self,
-            _ctx: &Ctx,
-            req: &pii_abi::HttpRequest,
-        ) -> Result<pii_abi::HttpResponse, PiiError> {
-            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
-            std::fs::write(&self.path, serde_json::to_vec(&body).unwrap()).unwrap();
-            Ok(pii_abi::HttpResponse {
-                status: 200,
-                headers: Vec::new(),
-                body: serde_json::to_vec(&serde_json::json!({
-                    "message": {"role": "assistant", "content": "ok"}
-                }))
-                .unwrap(),
-            })
-        }
-    }
 
     fn contract_tmp_root() -> PathBuf {
         let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
@@ -498,71 +476,6 @@ mod contract {
         root
     }
 
-    fn provider_for_contract(path: &std::path::Path) -> OllamaProvider {
-        OllamaProvider::new(
-            Arc::new(RecordingTransport {
-                path: path.to_path_buf(),
-            }),
-            "http://fake.local:1",
-            "m".into(),
-            None,
-        )
-    }
-
-    fn last_body(path: &str) -> serde_json::Value {
-        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
-    }
-
-    #[test]
-    fn ollama_request_forwards_provider_options() {
-        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
-        let req = ChatRequest {
-            model: "m".into(),
-            messages: vec![ChatMessage::new(Role::User, "hi")],
-            tools: Vec::new(),
-            max_tokens: 2048,
-            temperature: 0.7,
-            num_ctx: 16_384,
-        };
-        let _ =
-            provider_for_contract(&contract_tmp_root().join("ollama-last-request-forwards.json"))
-                .chat(&ctx, &req)
-                .unwrap();
-        let body = last_body(
-            &contract_tmp_root()
-                .join("ollama-last-request-forwards.json")
-                .to_string_lossy(),
-        );
-        assert_eq!(body["stream"], serde_json::json!(false));
-        // The wire carries f32; JSON numbers widen 0.7f32 to 0.699999988079071.
-        let got = body["options"]["temperature"].as_f64().unwrap();
-        assert!((got - 0.7).abs() < 1e-6, "temperature {got} != 0.7");
-        assert_eq!(body["options"]["num_predict"], serde_json::json!(2048));
-        assert_eq!(body["options"]["num_ctx"], serde_json::json!(16_384));
-    }
-
-    #[test]
-    fn ollama_request_defaults_num_ctx() {
-        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
-        let req = ChatRequest {
-            model: "m".into(),
-            messages: vec![ChatMessage::new(Role::User, "hi")],
-            tools: Vec::new(),
-            max_tokens: 100,
-            temperature: 0.0,
-            num_ctx: 0,
-        };
-        let _ =
-            provider_for_contract(&contract_tmp_root().join("ollama-last-request-defaults.json"))
-                .chat(&ctx, &req)
-                .unwrap();
-        let body = last_body(
-            &contract_tmp_root()
-                .join("ollama-last-request-defaults.json")
-                .to_string_lossy(),
-        );
-        assert_eq!(body["options"]["num_ctx"], serde_json::json!(8192));
-    }
     /// R4 (spec 15): the scripted provider's streaming path hands the full
     /// turn text to `on_delta` exactly once, and the buffered `chat` contract
     /// is unchanged (G7).

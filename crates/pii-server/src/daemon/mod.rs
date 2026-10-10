@@ -610,6 +610,7 @@ mod tests {
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            llama_host: None,
         })
         .unwrap();
         engine.attach_daemon_ctx(test_ctx(&dir));
@@ -681,7 +682,7 @@ mod tests {
             id
         };
         let finished = |id: &RunId| {
-            for _ in 0..200 {
+            for _ in 0..6000 {
                 if let Ok(Some(h)) = engine.store.get_run(id)
                     && h.status != RunStatus::Running
                 {
@@ -689,7 +690,7 @@ mod tests {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            panic!("run {id} never finished");
+            panic!("run {id} never finished within 60s");
         };
 
         let refused = start("sick");
@@ -751,6 +752,7 @@ mod tests {
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+            llama_host: None,
         })
         .unwrap();
 

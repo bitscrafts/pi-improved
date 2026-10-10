@@ -6,7 +6,7 @@
 # REQUIRED to start the daemon:  a model, from [core].model or $PII_MODEL.
 # EVERYTHING ELSE is defaulted (default stated per key). Nothing here is a
 # secret: tokens and API keys are read from the environment only
-# (PII_DISCORD_TOKEN, OLLAMA_API_KEY) and must never be written to this file.
+# (PII_DISCORD_TOKEN, ...) and must never be written to this file.
 #
 # Not config keys (command-line flags of `pii daemon`, see `pii daemon --help`):
 #   --store <path>      store file          (default <runtime_dir>/store.redb)
@@ -18,15 +18,16 @@
 # The mounts the daemon ends up with are reported by `pii health --json`.
 
 [core]
-# REQUIRED unless $PII_MODEL is set. Model spec, e.g. "ollama:granite4.2:3b".
-model = "ollama:granite4.2:3b"
+# REQUIRED unless $PII_MODEL is set. Model spec. The local kind is
+# "llamacpp-server:<model>" (spec 129): an HTTP llama.cpp server, host from
+# [llama] below. granite-4.2-3b is served by the pi/Laguna quadlet
+# (granite-4.2-3b + laguna-xs-2.1) at 10.10.10.217:8082. The in-process GGUF
+# loader is the separate "llamacpp:<path>". "ollama:" is retired and refused.
+model = "llamacpp-server:granite-4.2-3b"
 
 # Default: $PII_RUNTIME_DIR, else a per-user dir. Holds control.sock, graphs/,
 # crashes/. Must be writable by the daemon user.
 runtime_dir = "/run/pii"
-
-# Default: $OLLAMA_HOST, else http://127.0.0.1:11434.
-ollama_host = "http://127.0.0.1:11434"
 
 # Hosted model kinds (spec 111): set `model` above to one of
 #   "openai:<model>"     OpenAI-compatible; works for any vendor with that shape
@@ -75,6 +76,12 @@ log_keep_files = 5
 # loudly at start. See the runbook ("Measurement switches").
 # observer = "on"
 # audit = "on"
+
+# [llama]: where "llamacpp-server:" models dial (spec 129). Default (key absent):
+# loopback, http://127.0.0.1:8080/v1. The local provider's egress is scoped to
+# exactly this host. (The retired [core].ollama_host key is refused by name.)
+[llama]
+host = "http://10.10.10.217:8082/v1"
 
 # [net]: egress policy. Default: no grants (nothing may leave the host).
 [net]
@@ -133,4 +140,4 @@ path = ""
 # [evolve.routing]: step -> model. Default: empty. Steps: localize, patch,
 # review, research, orchestrator.
 # [evolve.routing]
-# patch = "ollama:granite4.2:3b"
+# patch = "llamacpp-server:granite-4.2-3b"

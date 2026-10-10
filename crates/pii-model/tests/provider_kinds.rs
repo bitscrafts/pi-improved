@@ -490,7 +490,7 @@ fn unknown_kind_message_lists_every_supported_kind() {
         .to_string();
     for k in [
         "scripted",
-        "ollama",
+        "llamacpp-server",
         "openai",
         "anthropic",
         "gemini",
@@ -529,7 +529,7 @@ fn resolve_with_transport_reaches_every_new_kind() {
     );
     // The public dispatcher recognises the kinds (never "unknown model spec kind").
     for spec in ["openai:m", "anthropic:m", "gemini:m"] {
-        if let Err(e) = pii_model::resolve_with_transport(spec, t.clone()) {
+        if let Err(e) = pii_model::resolve_with_transport(spec, t.clone(), None) {
             assert!(
                 !e.to_string().contains("unknown model spec kind"),
                 "{spec}: {e}"
@@ -598,8 +598,74 @@ fn egress_host_is_only_defined_for_networked_kinds() {
     assert_eq!(pii_model::egress_host("scripted:/x"), None);
     assert_eq!(pii_model::egress_host("llamacpp:m"), None);
     assert_eq!(pii_model::egress_host("nonsense"), None);
-    for spec in ["ollama:m", "openai:m", "anthropic:m", "gemini:m"] {
+    for spec in ["llamacpp-server:m", "openai:m", "anthropic:m", "gemini:m"] {
         let h = pii_model::egress_host(spec).expect(spec);
         assert!(!h.is_empty() && !h.contains(['/', ':', '@']), "{spec}: {h}");
     }
+}
+
+/// Spec 129: `llamacpp-server:<model>` is an HTTP kind — the request goes to the
+/// configured `[llama] host` (offline: a mock transport, the real server is not
+/// reachable from CI), and the scoped egress host is that host only.
+#[test]
+fn a_llamacpp_server_model_resolves_to_the_configured_host() {
+    let host = "http://10.10.10.217:8082/v1";
+    let m = Mock::new(200, r#"{"choices":[{"message":{"content":"x"}}]}"#);
+    let p = pii_model::llamacpp_server::provider(
+        "llamacpp-server:granite-4.2-3b",
+        m.clone(),
+        Some(host),
+        None,
+    )
+    .unwrap();
+    p.chat(&ctx(), &req()).unwrap();
+    let seen = m.first();
+    assert_eq!(seen.url, "http://10.10.10.217:8082/v1/chat/completions");
+    assert!(
+        !seen
+            .headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("authorization")),
+        "a local server takes no key"
+    );
+    assert_eq!(
+        pii_model::egress_host_with("llamacpp-server:granite-4.2-3b", Some(host)).as_deref(),
+        Some("10.10.10.217")
+    );
+    // No configured host: loopback, never an external default.
+    assert_eq!(
+        pii_model::egress_host("llamacpp-server:m").as_deref(),
+        Some("127.0.0.1")
+    );
+    // The dispatcher recognises the kind and passes the host through.
+    let m2 = Mock::new(200, r#"{"choices":[{"message":{"content":"x"}}]}"#);
+    let p2 =
+        pii_model::resolve_with_transport("llamacpp-server:granite-4.2-3b", m2.clone(), Some(host))
+            .unwrap();
+    p2.chat(&ctx(), &req()).unwrap();
+    assert_eq!(
+        m2.first().url,
+        "http://10.10.10.217:8082/v1/chat/completions"
+    );
+}
+
+/// Spec 129: the in-process GGUF kind is untouched — no host, no transport, and
+/// its refusal never confuses it with the server kind.
+#[test]
+fn the_in_process_gguf_kind_is_unchanged() {
+    assert_eq!(pii_model::egress_host("llamacpp:/m/model.gguf"), None);
+    assert_eq!(
+        pii_model::egress_host_with("llamacpp:/m/model.gguf", Some("http://h:1/v1")),
+        None
+    );
+    let e = pii_model::llamacpp_server::provider(
+        "llamacpp:/m/model.gguf",
+        Mock::new(200, "{}"),
+        None,
+        None,
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(e.contains("llamacpp-server:"), "{e}");
 }

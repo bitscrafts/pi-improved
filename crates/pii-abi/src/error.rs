@@ -133,7 +133,7 @@ mod tests {
             PiiError::Provider(ProviderFailure {
                 status: Some(500),
                 origin: Origin::Provider,
-                provider: String::from("ollama"),
+                provider: String::from("llamacpp-server"),
                 message: String::new(),
             }),
         ];
@@ -239,7 +239,7 @@ mod tests {
         ProviderFailure {
             status,
             origin: Origin::Provider,
-            provider: String::from("ollama"),
+            provider: String::from("llamacpp-server"),
             message: String::from(message),
         }
     }

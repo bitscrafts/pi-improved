@@ -179,6 +179,9 @@ async fn run_over_loopback(
         route_policy: std::collections::BTreeMap::new(),
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
+        llama_host: pii_server::daemon::config::Config::load_from_default_path()
+            .ok()
+            .and_then(|c| c.llama.host),
     };
     let engine = Engine::new(cfg).map_err(|e| e.to_string())?;
     // Spec 103: trajectory OFF unless $PII_TRAJECTORY_DIR is set.

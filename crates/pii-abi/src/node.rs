@@ -32,7 +32,7 @@ pub struct FailurePayload {
     /// The classified reason as its `Debug`/`serde` tag — reuses
     /// `FailoverReason`'s own derive, not a re-stringified copy.
     pub reason: FailoverReason,
-    /// `ProviderFailure::provider` (e.g. `"ollama"`, `"llamacpp"`), passed
+    /// `ProviderFailure::provider` (e.g. `"llamacpp-server"`, `"llamacpp"`), passed
     /// through unchanged.
     pub provider: String,
 }
@@ -125,7 +125,7 @@ mod tests {
         let original = FailurePayload {
             status: Some(429),
             reason,
-            provider: String::from("ollama"),
+            provider: String::from("llamacpp-server"),
         };
         let json = serde_json::to_string(&original).unwrap();
         let parsed: FailurePayload = serde_json::from_str(&json).unwrap();

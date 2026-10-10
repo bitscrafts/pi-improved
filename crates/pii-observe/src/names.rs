@@ -36,6 +36,8 @@ pub const MODEL_PROVIDER_IN_FORCE: &str = "model.provider.in_force";
 pub const MODEL_TIER_RESOLVED: &str = "model.tier.resolved";
 /// Event: a configured model tier's provider could not be built; runs naming it refuse (spec 114).
 pub const MODEL_TIER_UNAVAILABLE: &str = "model.tier.unavailable";
+/// Event: a retired `ollama:` model spec was refused (spec 129).
+pub const MODEL_OLLAMA_REFUSED: &str = "model.ollama.refused";
 /// Measure: model request latency.
 pub const MODEL_REQUEST_LATENCY: &str = "model.request.latency";
 /// Event: a model provider returned an error.
@@ -333,6 +335,7 @@ pub const ALL: &[&str] = &[
     MODEL_PROVIDER_IN_FORCE,
     MODEL_TIER_RESOLVED,
     MODEL_TIER_UNAVAILABLE,
+    MODEL_OLLAMA_REFUSED,
     MODEL_REQUEST_LATENCY,
     MODEL_PROVIDER_ERROR,
     MODEL_PROVIDER_AUTH_FAILED,

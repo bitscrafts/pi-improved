@@ -44,7 +44,7 @@ Gate **surfaces with risk or optional deps**; never gate the **engine substrate*
 | `memory` | pii-memory (global store + embedder) | store-lean deployments | candidate |
 | `sandbox` | Landlock OS confinement | skip where Landlock absent (some containers) | candidate |
 | `github` | future `pr`/issue capability for evolve/heal | opt-in network+token surface | future |
-| `provider-*` | per-model-backend (gemini/anthropic/ollama/…) | carry only the providers you need | candidate |
+| `provider-*` | per-model-backend (gemini/anthropic/llamacpp-server/…) | carry only the providers you need | candidate |
 
 ## The strongest argument
 
