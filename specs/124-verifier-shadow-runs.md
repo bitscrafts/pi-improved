@@ -96,3 +96,7 @@ input's **hash**, so the failure *class* is compared and not the cause — a gra
 input can reproduce, or fail to, for a different reason. A run that hits the wall-clock bound is **abandoned, not
 killed**. The timeout path is covered only by a `shadow_run_ms=1` test, not against a genuinely long graph.
 
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD)
+`fresh-gate` (exactly HEAD `b7b4ddb`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0, 14 steps.
+**124: 9/9.**
+
