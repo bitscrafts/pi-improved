@@ -98,3 +98,9 @@ against a mock, and that must be said, not implied); the report's claim that the
 `reachability-check` is a tool-seed coupling, not a product defect (the engine now calls
 `resolve_with_observer` for hosted kinds while the xtask seed still watches `resolve_with_transport`).
 
+### The tenth criterion CLOSED (2026-10-10, orchestrator)
+`fresh-gate --worktree` on 111's committed HEAD (`1c97da4`): `quality-gate: ALL PASS` and `fresh-gate: PASS`
+(exit 0), 82G free. It ran **without** the coverage build — the export's default skip — which is the F7 fix
+from spec 110 doing its job: the export is now a hermetic-tree check that fits in the disk, and
+`FRESH_GATE_COVERAGE=1` is the explicit way to pay for measuring coverage inside it too. **111: 10/10.**
+
