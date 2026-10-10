@@ -50,28 +50,34 @@ grows without bound is not usable**
 |---|---|---|---|
 | 118 | **the three ungated repo checks become gate steps**: `deps-check` (the five dependency invariants — it caught spec 109's contract dep on `pii-proto`), `net-check` (it currently produces a FALSE POSITIVE on a doc comment that merely mentions `UnixStream::connect`), `doc-drift-check` (it flags a real, trivial drift: `HANDOFF.md` names `_tmp/sidecar.log`) | a check that runs nowhere enforces nothing; the owner's standing preference is mandatory enforcement over an advisory observer, and one of these three already earned its place by catching a real invariant break | the false positive is fixed with a control both ways, all three run as gate steps with PASS/FAIL lines and fail-closed semantics, each has a violation→red control, and the guide lists the steps and the five dependency invariants |
 
+**Stage A4 — make a red mean something (spec 119), before anything else lands on the gate**
+
+| # | spec | why | done when |
+|---|---|---|---|
+| 119 | **the load-stable suite**: inside `fresh-gate`, `cargo test --workspace` failed on DIFFERENT tests on consecutive runs (`resume_never_reinvokes_completed_node`, then `diamond_race_cancels_loser` + `diamond_race_cancels_multi_node_arm`), each passing when run alone and in the dev tree | a check that reports failures nobody can trust erodes the whole gate: the next person sees red, reruns, and moves on. Spec 118 could not close its fresh-gate criterion because of it, and the resume test had already been "fixed" once and failed again — so this is a CLASS, not a test | a committed harness runs `cargo test --workspace` under a stated load for N rounds and prints per-test failure counts; every timing-sensitive test names its assumption in one line and is fixed with the honest form (bounded condition wait / injected clock / serialised resource); each fix has a mutation that turns it red; >=10 rounds at load with zero failures pasted |
+
 **Stage B — IoT/reactive (vision phase 4), honestly bounded by what this host can prove**
 
 | # | spec | why | done when |
 |---|---|---|---|
 | 117 | **MQTT node(s)**: subscribe/publish as graph nodes (native client, not WASM) | the reactive pillar's front door; testable against a local broker | a graph subscribes to a topic and fires a run; a publish is observable; a broker outage degrades loudly, not silently |
-| 119 | **hardware HAL**: an abstraction with a SIMULATED backend first, so the contract is testable here, plus one real backend behind a feature | no hardware in this container — the contract must be provable without it | the HAL trait + simulated backend + tests; the real backend feature-gated and documented as unverified on this host |
-| 120 | **WASM plugin host**: `wasmtime` + WASI component model, epoch interruption, fuel opt-in, pooling allocator | the vision's plugin surface; enables third-party nodes without rebuilding | a trivial WASM node runs under the host's limits; an infinite loop is interrupted by epoch; a plugin without fuel is bounded |
+| 120 | **hardware HAL**: an abstraction with a SIMULATED backend first, so the contract is testable here, plus one real backend behind a feature | no hardware in this container — the contract must be provable without it | the HAL trait + simulated backend + tests; the real backend feature-gated and documented as unverified on this host |
+| 121 | **WASM plugin host**: `wasmtime` + WASI component model, epoch interruption, fuel opt-in, pooling allocator | the vision's plugin surface; enables third-party nodes without rebuilding | a trivial WASM node runs under the host's limits; an infinite loop is interrupted by epoch; a plugin without fuel is bounded |
 
 **Stage C — self-improvement (vision phase 5), on the substrate that already exists**
 
 | # | spec | why | done when |
 |---|---|---|---|
-| 121 | **extraction**: turn trajectories (spec 103) into candidate skills/procedures, with the corpus-quality guards (no fake wins — the laya lesson) | the substrate records; this is what reads it | a real trajectory set yields ≥1 candidate, each citing its source runs; a failed run can never produce a success claim |
-| 122 | **verifier + shadow runs**: `outcome.verifier` as a programmatic pass/fail, and shadow-run agreement before any promotion | a skill that is not verified is a liability, and promotion without agreement is how bad procedural memory spreads | a candidate is accepted only on verifier pass + shadow agreement; both negatives (no verifier, disagreement) refuse |
-| 123 | **promotion + lifecycle**: `Skill.graph` zero-token promotion, progressive disclosure, never-delete lifecycle | the vision's mechanism, gated by 119 | a promoted skill is selectable without spending tokens; deleting is never destructive; the lifecycle is exercised end to end |
+| 122 | **extraction**: turn trajectories (spec 103) into candidate skills/procedures, with the corpus-quality guards (no fake wins — the laya lesson) | the substrate records; this is what reads it | a real trajectory set yields ≥1 candidate, each citing its source runs; a failed run can never produce a success claim |
+| 123 | **verifier + shadow runs**: `outcome.verifier` as a programmatic pass/fail, and shadow-run agreement before any promotion | a skill that is not verified is a liability, and promotion without agreement is how bad procedural memory spreads | a candidate is accepted only on verifier pass + shadow agreement; both negatives (no verifier, disagreement) refuse |
+| 124 | **promotion + lifecycle**: `Skill.graph` zero-token promotion, progressive disclosure, never-delete lifecycle | the vision's mechanism, gated by 119 | a promoted skill is selectable without spending tokens; deleting is never destructive; the lifecycle is exercised end to end |
 
 **Stage D — pillar 3 completion**
 
 | # | spec | why | done when |
 |---|---|---|---|
-| 124 | **entities/relationships**: an entity model over the existing memory stores, with extraction from documents and a graph view | the vision's cognitive-memory pillar names it explicitly | entities and relationships persist, are searchable, and survive consolidation; a document yields entities with provenance |
-| 125 | **memory tiering**: tier-aware retention/recall (hot/warm/cold) on top of decay + consolidation | the vision pairs tiering with model tiers | a tier policy is configurable and observable; a recall across tiers is measured |
+| 125 | **entities/relationships**: an entity model over the existing memory stores, with extraction from documents and a graph view | the vision's cognitive-memory pillar names it explicitly | entities and relationships persist, are searchable, and survive consolidation; a document yields entities with provenance |
+| 126 | **memory tiering**: tier-aware retention/recall (hot/warm/cold) on top of decay + consolidation | the vision pairs tiering with model tiers | a tier policy is configurable and observable; a recall across tiers is measured |
 
 ## Rules this order inherits (they are not optional here)
 
