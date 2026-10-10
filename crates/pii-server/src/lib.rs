@@ -145,6 +145,8 @@ pub struct Engine {
     obs: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
     /// Trajectory sink (spec 103); `None` (default) records nothing.
     trajectory: parking_lot::Mutex<Option<Arc<pii_observe::TrajectorySink>>>,
+    /// The trajectory root the promotion lifecycle measures outcomes against (spec 125).
+    learn_traj_root: parking_lot::Mutex<Option<PathBuf>>,
     audit: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
     /// Spec 116 (measurement only): when set, runs carry no tool-call observer.
     observers_detached: std::sync::atomic::AtomicBool,
@@ -327,6 +329,7 @@ impl Engine {
             daemon_ctx: parking_lot::Mutex::new(None),
             obs: parking_lot::Mutex::new(None),
             trajectory: parking_lot::Mutex::new(None),
+            learn_traj_root: parking_lot::Mutex::new(None),
             audit: parking_lot::Mutex::new(None),
             log,
             health_watch: pii_observe::HealthWatch::new(),
@@ -362,6 +365,18 @@ impl Engine {
     /// writes its journal and verbatim outcome to it. Default is no sink.
     pub fn attach_trajectory(&self, sink: Arc<pii_observe::TrajectorySink>) {
         *self.trajectory.lock() = Some(sink);
+    }
+
+    /// Records the trajectory root the promotion lifecycle reads to measure a
+    /// promotion's outcome (spec 125). Without one, windows measure zero runs.
+    pub fn attach_learn_traj_root(&self, root: PathBuf) {
+        *self.learn_traj_root.lock() = Some(root);
+    }
+
+    /// The root recorded by [`Engine::attach_learn_traj_root`].
+    #[must_use]
+    pub fn learn_traj_root(&self) -> Option<PathBuf> {
+        self.learn_traj_root.lock().clone()
     }
 
     /// Attaches the contract observer (the daemon log) that the store, the

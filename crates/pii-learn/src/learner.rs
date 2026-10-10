@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use pii_core::Clock as _;
 use pii_observe::{Event, Health, Level, Observer, State, SubsystemHealth, names};
 
 use crate::candidate::Kind;
@@ -123,9 +124,35 @@ impl LearnHealth {
     }
 }
 
+impl LearnHealth {
+    /// Promotion counts by state plus `refused` (spec 125); all keys present.
+    #[must_use]
+    pub fn promotions(&self) -> BTreeMap<String, u64> {
+        crate::promote::promotion_counts(&self.dir)
+    }
+}
+
 impl Health for LearnHealth {
     fn health(&self) -> SubsystemHealth {
         let mut h = SubsystemHealth::ok(SUBSYSTEM);
+        let now = pii_core::SystemClock.now_ms() / 1000;
+        let active: Vec<String> = crate::promote::list_promotions(&self.dir)
+            .into_iter()
+            .filter(|p| p.in_effect(now))
+            .map(|p| {
+                format!(
+                    "{} {} {} until {}",
+                    p.id,
+                    p.kind.as_str(),
+                    p.graph,
+                    p.expires_secs
+                )
+            })
+            .collect();
+        if !active.is_empty() {
+            h.identity
+                .insert("active_promotions".into(), active.join("; "));
+        }
         if let Some(v) = self.verification() {
             let n = |k: &str| v.verdicts.get(k).copied().unwrap_or(0);
             h.identity.insert(

@@ -199,6 +199,9 @@ pub struct Counts {
     /// Verdicts of the last `pii learn verify` pass by verdict; empty before any (spec 124).
     #[serde(default)]
     pub learn_verdicts: BTreeMap<String, u64>,
+    /// Promotions by state (`active`, `reverted`, `expired`, `auto_reverted`) and `refused`; empty until one exists (spec 125).
+    #[serde(default)]
+    pub learn_promotions: BTreeMap<String, u64>,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).

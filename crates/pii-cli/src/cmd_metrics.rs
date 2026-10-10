@@ -148,10 +148,29 @@ fn render_verdicts(v: &serde_json::Value, out: &mut String) {
     }
 }
 
+/// Promotions by state and refusals (spec 125); nothing until one exists.
+fn render_promotions(v: &serde_json::Value, out: &mut String) {
+    let Some(ps) = v
+        .pointer("/counts/learn_promotions")
+        .and_then(|o| o.as_object())
+    else {
+        return;
+    };
+    for (state, n) in ps {
+        let _ = writeln!(
+            out,
+            "{}{{state=\"{state}\"}} {}",
+            names::METRIC_LEARN_PROMOTIONS,
+            n.as_u64().unwrap_or(0)
+        );
+    }
+}
+
 /// Candidate lessons by kind and the refusals (spec 123). Emitted only once a
 /// `pii learn scan` has left a status (the kinds map is then non-empty).
 fn render_learn(v: &serde_json::Value, out: &mut String) {
     render_verdicts(v, out);
+    render_promotions(v, out);
     let Some(kinds) = v
         .pointer("/counts/learn_candidates")
         .and_then(|o| o.as_object())
@@ -384,6 +403,24 @@ mod tests {
             !off.contains("pii_learn"),
             "no scan prints no learn lines: {off}"
         );
+    }
+
+    /// Spec 125 R7: promotion counters render in the same place, after a
+    /// promotion exists and not before.
+    #[test]
+    fn render_carries_learn_promotions_only_once_one_exists() {
+        let on = render(&serde_json::json!({
+            "counts": {"learn_promotions": {"active": 1, "reverted": 0, "refused": 2}}
+        }));
+        for line in [
+            "pii_learn_promotions{state=\"active\"} 1",
+            "pii_learn_promotions{state=\"reverted\"} 0",
+            "pii_learn_promotions{state=\"refused\"} 2",
+        ] {
+            assert!(on.lines().any(|l| l == line), "missing {line}\n{on}");
+        }
+        let off = render(&serde_json::json!({"counts": {"learn_promotions": {}}}));
+        assert!(!off.contains("pii_learn_promotions"), "{off}");
     }
 
     /// Spec 124 R7: verdict gauges render in the same place as the extraction

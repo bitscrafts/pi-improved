@@ -1,11 +1,11 @@
-# The learning loop, stages 1-2: extraction (spec 123) and verification (spec 124)
+# The learning loop: extraction (123), verification (124), promotion and lifecycle (125)
 
 > **What this is, stated plainly.** Extraction reads the trajectory files the daemon
 > already writes and **proposes** *candidate lessons*, each citing the runs and files that
 > justify it. It is deterministic and offline: **no model call, no network**. It does
 > **not act** — no config change, no threshold move, no code mutation comes out of a
-> candidate. Stage 124 (verifier) and 125 (promotion) do not exist yet; until they do,
-> a candidate is a note for a human.
+> candidate. Stage 124 verifies; stage 125 (below) is the only stage that acts, and the
+> only thing it can do is **stop a broken graph from being started**.
 
 The crate is `pii-learn`. It is its own crate because it needs only `pii-observe` (the
 trajectory format and the event names), which keeps it off the engine's dependency path;
@@ -167,6 +167,92 @@ numbers, and the reason and bound where relevant). `pii metrics` shows
 `pii_learn_verdicts{verdict=...}` for the last pass, next to the extraction counters, and
 the `learn` health entry reports `last_verification`.
 
+## Stage 3: promotion and lifecycle (spec 125)
+
+The loop closes here: **propose → verify → promote → measure → revert.** This is the only
+place in `pii` where a learned conclusion changes behaviour by itself, so every rule below
+exists to make that safe.
+
+```
+pii learn promote <candidate-id> --metric graph_failed_runs --window-secs N
+                  [--kind quarantine_graph] [--ttl-secs N] [--actor NAME] [--dir D]
+pii learn promotions [--sweep [--traj <root>]] [--dir D]
+pii learn revert <promotion-id> [--actor NAME] [--dir D]
+pii learn ledger [--tail N] [--dir D]
+```
+
+Every command that writes prints the ledger id (`L<n>`) of the record it wrote.
+
+**The whitelist has exactly one kind: `quarantine_graph`.** Applying it makes the engine
+refuse to start that graph with the reason `learn: graph <name> is quarantined by promotion
+<id>` (the run is journaled as a failed start and a `run.start.refused` event carries the
+text), until the promotion is reverted or expires. Why one kind: it is visible, reversible
+and measurable, and a loop that may only *stop* something is the smallest action that is
+still an action. **Adding a second kind requires its own spec.** The code makes that one
+addition: `PromotionKind` is an enum, and every function that depends on the kind is a
+`match` on it, so a new variant does not compile until it has a target, a rollback and an
+effect, and its tests are written. There is no string dispatch.
+
+**The rules, in the order they are checked:**
+
+1. *Only `confirmed` verdicts.* The verdict is **re-read from `<dir>/learn/verdicts/`** at
+   promotion time, never passed in. No verdict, `refuted` and `inconclusive` are each
+   refused with that reason, counted, and change nothing.
+2. *Measurable or refused.* A promotion must declare its metric (`graph_failed_runs`) and a
+   window (`--window-secs`, > 0). Without them it is refused at apply time: an unmeasured
+   change is a guess wearing a promotion's clothes.
+3. *The ledger first.* A record (promotion id, kind, graph, candidate id and verdict, the
+   evidence, the named actor, the state transition) is appended to
+   `<dir>/learn/ledger.jsonl` **before** the promotion exists. If the ledger cannot be
+   written, nothing is applied.
+4. *Rollback is stored, not planned.* The previous state is written into the promotion
+   record at apply time. A promotion without rollback data is never in effect and is never
+   applied.
+5. *TTL.* A promotion lasts `--ttl-secs` (default **86400**, 24 h). After that the graph is
+   usable again immediately (the engine's check compares the clock); the daemon's sweep then
+   records it as `expired`.
+6. *Outcome and automatic reversal.* When the window closes the daemon evaluates the
+   metric: failed runs of that graph in the window **after** the promotion vs. the window of
+   the same length **before** it, read from the trajectories by file modification time. If
+   `after < before` the promotion is kept (ledger `outcome_kept`); otherwise it is
+   **reverted automatically** (`auto_reverted`), with both numbers in the ledger and the
+   `learn.promotion_reverted` event. Note what this does and does not prove: after a
+   quarantine the graph does not run, so `after` is 0 by construction; the test with teeth is
+   `before` — a promotion on a graph that was not failing in the preceding window (0 → 0) is
+   not an improvement and is taken back, and a quarantine that did not take effect shows as
+   `after >= before`.
+7. *Refusals by construction (R6).* A promotion may not touch secrets, the observability
+   contract, the gate, capability scopes, or any file outside its own store area. The
+   mechanism is two things: the whitelist (any other kind is refused by name:
+   `learn: promotion kind edit_config is not whitelisted (only quarantine_graph)`), and a
+   scope check on **every** write (`write_scoped`): a path outside `<dir>/learn/`, one with a
+   `..` below it, or a symlink is refused, e.g. `learn: promotion write outside its own store
+   area refused: <path>`. Both are tested.
+
+**States.** `active`, `reverted` (by a person), `expired` (TTL), `auto_reverted` (window).
+`pii learn promotions` shows each with its verdict, metric, before/after and the decision in
+words. Only one promotion may be in effect per kind and graph.
+
+**Who advances it.** The daemon runs a sweep every 5 s (expire, evaluate, auto-revert) and
+the engine checks the quarantine before every graph start. `pii learn promotions --sweep`
+runs the same pass once without a daemon. The CLI writes the same files, so a promotion made
+while the daemon is up takes effect on the next run start.
+
+**Observability.** Events `learn.promotion_applied`, `learn.promotion_reverted` (manual and
+automatic; `state` says which, `before`/`after` when measured), `learn.promotion_expired`,
+`learn.promotion_refused` (`reason`), all in `names::ALL`. `pii metrics` shows
+`pii_learn_promotions{state=...}` (`active`, `reverted`, `expired`, `auto_reverted`,
+`refused`) and the `learn` health entry lists `active_promotions`.
+
+**The ledger.** There is no `pii ledger` command and no shared decision ledger a CLI can
+write: the heal-attempt store is a redb file the daemon holds open. Promotions therefore use
+an append-only JSONL ledger in the learn area (`pii learn ledger`), one line per decision,
+refusals included.
+
+**Honest scope.** The loop's only action today is **stopping a broken graph**. It does not
+edit code, config or thresholds, and it cannot widen anything. A resumed (suspended) run of a
+quarantined graph is not refused; only starts are.
+
 ## What was not verified
 
 * Verification reproduces a *failure* claim by re-running the graph with an empty capability
@@ -174,6 +260,10 @@ the `learn` health entry reports `last_verification`.
   or external state may come back `refuted` or confirmed for a different reason than the
   original. The failure class is compared, not the cause.
 * A timed-out shadow run is abandoned, not killed.
+* Promotion (125): the outcome metric is failed trajectories by file mtime, so a deployment
+  with trajectories off measures 0 → 0 and every promotion is reverted at its window (the
+  safe direction). The sweep interval (5 s) is a constant, not a config key. A CLI revert
+  racing the daemon's sweep on the same promotion is last-writer-wins on one JSON file.
 * The daemon never verifies; it only reads the verdict status. Its counters were checked
   against a live daemon once, by hand, not by an automated test.
 

@@ -58,6 +58,9 @@ pub struct RunSummary {
     pub dur_ms: u64,
     /// The file's size in bytes.
     pub bytes: u64,
+    /// When the file was last written, epoch seconds (0 if unknown): the run's
+    /// end time, which the promotion outcome window (spec 125) is measured in.
+    pub mtime_secs: u64,
 }
 
 /// What a scan read and what it set aside, with a reason for each.
@@ -315,7 +318,12 @@ fn read_one(
     let (summary, bad) = summarise(&text, &token(stem), &rel, n);
     stats.corrupt_lines += bad;
     match summary {
-        Some(s) => {
+        Some(mut s) => {
+            s.mtime_secs = fs::metadata(path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_secs());
             stats.files_scanned += 1;
             runs.push(s);
         }

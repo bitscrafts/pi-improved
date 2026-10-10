@@ -89,20 +89,23 @@ pub fn spawn_run(
         // The Phase-1 `run` journals every event (bridge → bus) and writes
         // the terminal to the journal; nothing else writes redb.
         let mut refused = false;
-        let terminal =
-            match pii_graph::run::run(&engine.store, &spec, &engine.reg, &ctx, &run_id, input) {
-                Ok(t) => Some(t),
-                Err(e) => {
-                    // No tracing dep wired yet (Phase-2-scale addition); stderr is the
-                    // only channel for a run failure that predates journal write.
-                    #[allow(clippy::print_stderr)]
-                    {
-                        eprintln!("pii: run {run_id} failed: {e}");
-                    }
-                    refused = refuse_start(&engine, &run_id, &spec.name, &e);
-                    None
+        let started = quarantine_of(&engine, &spec.name).map_or_else(
+            || pii_graph::run::run(&engine.store, &spec, &engine.reg, &ctx, &run_id, input),
+            |reason| Err(PiiError::Denied(reason)),
+        );
+        let terminal = match started {
+            Ok(t) => Some(t),
+            Err(e) => {
+                // No tracing dep wired yet (Phase-2-scale addition); stderr is the
+                // only channel for a run failure that predates journal write.
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!("pii: run {run_id} failed: {e}");
                 }
-            };
+                refused = refuse_start(&engine, &run_id, &spec.name, &e);
+                None
+            }
+        };
         engine
             .latency
             .record(outcome_word(terminal.as_ref(), refused), accepted.elapsed());
@@ -123,6 +126,19 @@ pub fn spawn_run(
         engine.unregister_run(&run_id.to_string());
     });
     Ok(())
+}
+
+/// Spec 125 R1: the named reason when a promotion in effect quarantines `graph`.
+/// Read-only: expiry and outcome are advanced by the daemon's sweep, not here.
+fn quarantine_of(engine: &Engine, graph: &str) -> Option<String> {
+    let ctx = engine.daemon_ctx()?;
+    pii_learn::quarantine_reason(&ctx.runtime_dir, graph, learn_now_secs())
+}
+
+/// Wall-clock epoch seconds, for the promotion lifecycle (spec 125).
+pub fn learn_now_secs() -> u64 {
+    use pii_core::Clock as _;
+    pii_core::SystemClock.now_ms() / 1000
 }
 
 /// The latency-histogram outcome for a run's end (spec 115 R4).

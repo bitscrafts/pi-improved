@@ -202,6 +202,17 @@ fn add_verdict_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHeal
     }
 }
 
+/// Promotions by state and refusals (spec 125); left empty until any exist, so
+/// a daemon that never promoted prints no promotion lines.
+fn add_promotion_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHealth>) {
+    if let Some(l) = learn {
+        let p = l.promotions();
+        if p.values().any(|n| *n > 0) {
+            counts.learn_promotions = p;
+        }
+    }
+}
+
 /// Worker requests refused or cancelled around a drain/reload, summed (spec 120).
 fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> u64 {
     workers
@@ -294,6 +305,7 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     );
     add_learn_counters(&mut counts, learn.as_ref());
     add_verdict_counters(&mut counts, learn.as_ref());
+    add_promotion_counters(&mut counts, learn.as_ref());
     add_device_counters(&mut counts, hal.as_deref(), wasm.as_deref());
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;

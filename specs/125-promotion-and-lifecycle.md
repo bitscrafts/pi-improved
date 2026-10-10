@@ -72,3 +72,41 @@ R9. **Docs**: extend `learning-loop.md` with the promotion stage: the whitelist 
 - Never apply an action whose effect cannot be measured, and never report an outcome you did not compute.
 - Do not add a second promotion kind. Do not edit `specs/`. Do not commit.
 - Scratch under `/projects/_tmp/`, delete only your own, no daemon left running.
+
+## Orchestrator verification (2026-10-10)
+
+**My controls:**
+- `cargo test -p pii-learn --test promote` → **17 passed**; `cargo test -p pii-server --lib a_quarantined_graph`
+  → **1 passed**.
+- **Mutation (mine)**: making the engine ignore the quarantine (`quarantine_of` returning `None`, `runs.rs:133-136`)
+  turns `daemon::tests::a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert` **red**; restored
+  byte-identical → passes. The quarantine is enforced by the engine, not merely recorded.
+- **I re-ran the worker's end-to-end script myself** (`/projects/_tmp/e2e125/run.sh`) and the whole loop reproduced
+  on my run: `L1 refused (unmeasurable)` → `L2 applied` → `L3 reverted` → `L4 applied (6 s window)` →
+  **`L5 auto_reverted` by the daemon with `actor=daemon before=Some(0) after=Some(0)`**, and the counters after
+  `active 0 · auto_reverted 1 · refused 1 · reverted 1`. Earlier in the same run the daemon's log shows the
+  engine's refusal with the named reason:
+  `run.start.refused {"error":"capability denied: learn: graph denied-emit is quarantined by promotion p-…"}`.
+  So propose → verify → promote → measure → revert is verified end to end by me, not only by the worker's capture.
+
+**The R3 deviation, judged rather than waved through.** R3 asked for the *existing* decision ledger; the worker
+found the CLI **cannot** write it (it is a redb the daemon holds open, and there is no `pii ledger` command) and
+used an append-only `learn/ledger.jsonl` behind `pii learn ledger`. **Accepted**: the promotion trail is
+append-only, carries the actor (`e2e:operator`, `daemon`) and the before/after numbers, and is the single trail for
+promotions — the intent of R3 (an action cannot be applied without a record) is met. **Filed as a follow-up**: the
+decision ledger and the promotion ledger are two trails today and should be unified (RESUME-REGISTER).
+
+**The sharpest thing the worker did** was attack its own weak metric: a quarantine drives the graph's failures to
+zero *by construction*, so "did the metric improve" is near-vacuous. It added the two checks that are not vacuous —
+a promotion on a graph with no failures in the preceding window (0 → 0) must be **auto-reverted**, and a quarantine
+that fails to take effect must show `after >= before` — and documented the weakness in the guide instead of hiding
+it. It also found a real bug in its own scope check (it rejected any store path spelled with `..`), fixed it and
+added the regression test.
+
+**Kept honest:** implementation was written before its tests (**no RED observed before GREEN**; the six mutations,
+each pasted red — verdict check, rollback, TTL, outcome always "improved", ledger skip, scope bypass — are the
+failing evidence); a **resumed** run of a quarantined graph is not refused (only starts are); a CLI revert racing
+the daemon sweep is last-writer-wins on one JSON file; with trajectories off every promotion measures 0 → 0 and is
+reverted, which is the safe direction; and the "kept" outcome (`before=4 after=0`) is covered by a unit test but not
+in the final captured E2E.
+

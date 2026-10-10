@@ -204,6 +204,15 @@ pub const LEARN_CANDIDATE_REFUTED: &str = "learn.candidate_refuted";
 /// Event: a candidate could not be decided (`candidate`, `reason`, `bound`, `elapsed_ms`).
 pub const LEARN_CANDIDATE_INCONCLUSIVE: &str = "learn.candidate_inconclusive";
 
+/// Event: a promotion took effect (`promotion`, `kind`, `graph`, `metric`, `window_secs`, `ttl_secs`, `ledger`).
+pub const LEARN_PROMOTION_APPLIED: &str = "learn.promotion_applied";
+/// Event: a promotion was taken back, by a person or automatically (`promotion`, `kind`, `graph`, `metric`, `state`, `ledger`, and `before`/`after` when measured).
+pub const LEARN_PROMOTION_REVERTED: &str = "learn.promotion_reverted";
+/// Event: a promotion lapsed at its TTL (`promotion`, `kind`, `graph`, `metric`, `state`, `ledger`).
+pub const LEARN_PROMOTION_EXPIRED: &str = "learn.promotion_expired";
+/// Event: a promotion was refused, nothing changed (`candidate`, `kind`, `graph`, `reason`, `actor`).
+pub const LEARN_PROMOTION_REFUSED: &str = "learn.promotion_refused";
+
 /// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
 pub const METRIC_RUNS: &str = "pii_runs";
 /// Metric (gauge): sessions in the main store.
@@ -259,6 +268,9 @@ pub const METRIC_LEARN_REFUSALS_TOTAL: &str = "pii_learn_refusals_total";
 
 /// Metric (gauge, label `verdict`): verdicts of the last verification pass (spec 124).
 pub const METRIC_LEARN_VERDICTS: &str = "pii_learn_verdicts";
+
+/// Metric (gauge, label `state`): promotions by state, plus `refused` (spec 125).
+pub const METRIC_LEARN_PROMOTIONS: &str = "pii_learn_promotions";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -356,6 +368,10 @@ pub const ALL: &[&str] = &[
     LEARN_CANDIDATE_CONFIRMED,
     LEARN_CANDIDATE_REFUTED,
     LEARN_CANDIDATE_INCONCLUSIVE,
+    LEARN_PROMOTION_APPLIED,
+    LEARN_PROMOTION_REVERTED,
+    LEARN_PROMOTION_EXPIRED,
+    LEARN_PROMOTION_REFUSED,
     METRIC_RUNS,
     METRIC_SESSIONS,
     METRIC_APPROVALS_PENDING,
@@ -381,6 +397,7 @@ pub const ALL: &[&str] = &[
     METRIC_LEARN_CANDIDATES,
     METRIC_LEARN_REFUSALS_TOTAL,
     METRIC_LEARN_VERDICTS,
+    METRIC_LEARN_PROMOTIONS,
 ];
 
 #[cfg(test)]

@@ -28,6 +28,33 @@ use pii_proto::event::{Event, WireTerminal};
 use crate::Engine;
 use status::{ChannelRuntime, CronEntry, DaemonContext};
 
+/// How often the daemon advances the promotion lifecycle (spec 125).
+const PROMOTION_SWEEP_SECS: u64 = 5;
+
+/// Attaches the daemon context to `engine`, and (spec 125) records the
+/// trajectory root the promotion lifecycle measures outcomes against.
+fn attach_ctx(engine: &Engine, ctx: &Arc<DaemonContext>, cfg: &config::Config) {
+    engine.attach_daemon_ctx(Arc::clone(ctx));
+    if let Some(root) = pii_core::env_var(pii_core::TRAJECTORY_DIR_ENV)
+        .or_else(|| cfg.core.trajectory_dir.clone())
+        .filter(|d| !d.is_empty())
+    {
+        engine.attach_learn_traj_root(PathBuf::from(root));
+    }
+}
+
+/// One lifecycle pass over the promotions under `dir`. The trajectories are
+/// scanned only when an outcome window has actually closed.
+fn promotion_sweep(engine: &Engine, dir: &Path) {
+    let root = engine.learn_traj_root();
+    let promoter = pii_learn::Promoter::new(dir, pii_learn::PromoteConfig::default(), engine.log());
+    promoter.sweep(crate::engine::runs::learn_now_secs(), || {
+        root.and_then(|r| pii_learn::scan(&r, &pii_learn::LearnConfig::default()).ok())
+            .map(|(runs, _)| runs)
+            .unwrap_or_default()
+    });
+}
+
 /// Owns everything `pii daemon` starts on top of a bare [`Engine`] (F5.1).
 pub struct Daemon {
     /// The shared engine.
@@ -138,7 +165,7 @@ impl Daemon {
             channels_scope,
             runtime_dir: runtime_dir.to_path_buf(),
         });
-        engine.attach_daemon_ctx(Arc::clone(&ctx));
+        attach_ctx(&engine, &ctx, cfg);
         // Spec 32 R1: give the `spawn` node the engine handle it needs to
         // launch child runs (the registry was built inside `Engine::new`,
         // before the Arc existed).
@@ -186,7 +213,25 @@ impl Daemon {
         let mut handles = vec![tokio::spawn(Arc::clone(&self.scheduler).run())];
         handles.extend(router::spawn_all(&self.engine, &self.ctx));
         handles.push(self.spawn_reactive_loop());
+        handles.push(self.spawn_promotion_loop());
         handles
+    }
+
+    /// Spec 125 R4/R5: every [`PROMOTION_SWEEP_SECS`] lapse promotions past
+    /// their TTL and evaluate those whose window has closed (reverting any that
+    /// did not improve their metric). The blocking work runs off the runtime.
+    fn spawn_promotion_loop(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let engine = Arc::clone(&self.engine);
+        let dir = self.ctx.runtime_dir.clone();
+        tokio::spawn(async move {
+            let mut tick =
+                tokio::time::interval(std::time::Duration::from_secs(PROMOTION_SWEEP_SECS));
+            loop {
+                tick.tick().await;
+                let (e, d) = (Arc::clone(&engine), dir.clone());
+                let _ = tokio::task::spawn_blocking(move || promotion_sweep(&e, &d)).await;
+            }
+        })
     }
 
     fn spawn_reactive_loop(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
@@ -523,6 +568,152 @@ mod tests {
             channels_scope: dir.join("channels"),
             runtime_dir: dir.to_path_buf(),
         })
+    }
+
+    /// Spec 125 R1: a graph quarantined by a promotion in effect is refused by
+    /// the engine with the named reason; an unrelated graph still runs, and the
+    /// same graph runs again once the promotion is reverted.
+    // reason: one fixture-then-assert scenario; splitting it would hide the order.
+    #[allow(clippy::too_many_lines)]
+    #[tokio::test]
+    async fn a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert() {
+        use pii_learn::{
+            Candidate, Evidence, Kind, PromoteConfig, PromoteRequest, Promoter, Verdict,
+            VerdictRecord, put_verdict, store,
+        };
+        let tmp_root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp"));
+        std::fs::create_dir_all(tmp_root).unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("quarantine-")
+            .tempdir_in(tmp_root)
+            .unwrap();
+        let dir = tmp.path().to_path_buf();
+        let fixture = dir.join("fixture.json");
+        std::fs::write(&fixture, r#"{"turns":[]}"#).unwrap();
+        let engine = Engine::new(EngineConfig {
+            workspace: dir.clone(),
+            store_path: dir.join("store.redb"),
+            model: format!("scripted:{}", fixture.display()),
+            sandbox: pii_tools::sandbox::SandboxProfileName::Off,
+            graph_dir: dir.clone(),
+            route_policy: std::collections::BTreeMap::new(),
+            tiers: Vec::new(),
+            session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+        })
+        .unwrap();
+        engine.attach_daemon_ctx(test_ctx(&dir));
+        let rec = Arc::new(pii_observe::Recorder::new());
+        engine.attach_log(rec.clone());
+
+        let c = Candidate::new(
+            Kind::StuckLoop,
+            String::from("graph sick failed in all 3 runs"),
+            String::from("stuck_loop:sick:n:other"),
+            Evidence {
+                runs: vec![String::from("r1")],
+                paths: vec![String::from("trajectories/r1.jsonl")],
+                counts: std::collections::BTreeMap::from([(String::from("runs"), 3)]),
+            },
+        )
+        .unwrap();
+        store::put_candidates(&dir, std::slice::from_ref(&c)).unwrap();
+        put_verdict(
+            &dir,
+            &VerdictRecord {
+                candidate: c.id.clone(),
+                verdict: Verdict::Confirmed,
+                reason: None,
+                detail: String::new(),
+                shadow: String::new(),
+                shadow_runs: Vec::new(),
+                numbers: std::collections::BTreeMap::new(),
+                evidence_used: Vec::new(),
+                missing: Vec::new(),
+                bound: None,
+                elapsed_ms: 0,
+            },
+        )
+        .unwrap();
+        let promoter = Promoter::new(&dir, PromoteConfig::default(), rec.clone());
+        let now = crate::engine::runs::learn_now_secs();
+        let promo = promoter
+            .promote(
+                &PromoteRequest {
+                    candidate: c.id,
+                    kind: String::from("quarantine_graph"),
+                    actor: String::from("test"),
+                    metric: Some(String::from("graph_failed_runs")),
+                    window_secs: Some(3_600),
+                    ttl_secs: None,
+                },
+                now,
+            )
+            .unwrap();
+
+        let graph = |name: &str| {
+            pii_graph::toml_load::load_toml(&format!(
+                "name = \"{name}\"\nentry = \"a\"\ncaps = []\n[[node]]\nid = \"a\"\nkind = \"transform\"\nexpr = \"$.input\"\n"
+            ))
+            .unwrap()
+        };
+        let start = |name: &str| {
+            let id = engine.store.next_run_id().unwrap();
+            crate::engine::runs::spawn_run(
+                Arc::clone(&engine),
+                graph(name),
+                id.clone(),
+                String::new(),
+                String::from("s"),
+                None,
+            )
+            .unwrap();
+            id
+        };
+        let finished = |id: &RunId| {
+            for _ in 0..200 {
+                if let Ok(Some(h)) = engine.store.get_run(id)
+                    && h.status != RunStatus::Running
+                {
+                    return h;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            panic!("run {id} never finished");
+        };
+
+        let refused = start("sick");
+        assert_eq!(finished(&refused).status, RunStatus::Failed);
+        let want = format!("learn: graph sick is quarantined by promotion {}", promo.id);
+        let ev = rec.events();
+        let e = ev
+            .iter()
+            .find(|e| e.kind == pii_observe::names::RUN_START_REFUSED)
+            .expect("run.start.refused");
+        assert!(
+            e.fields
+                .get("error")
+                .is_some_and(|v| v.to_string().contains(&want)),
+            "{e:?}"
+        );
+
+        assert_ne!(
+            finished(&start("healthy")).status,
+            RunStatus::Failed,
+            "an unrelated graph is untouched"
+        );
+
+        promoter.revert(&promo.id, "test", now + 1).unwrap();
+        assert_ne!(
+            finished(&start("sick")).status,
+            RunStatus::Failed,
+            "the reverted graph runs again"
+        );
+        assert_eq!(
+            ev.iter()
+                .filter(|e| e.kind == pii_observe::names::RUN_START_REFUSED)
+                .count(),
+            1
+        );
     }
 
     /// Spec 79 (D6): a lagged receiver must not lose the `RunSuspended` it
