@@ -254,10 +254,47 @@ pub fn run(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
     let (steps, tests) = summarize(&output);
+    // A failing gate must leave its evidence where it can be read. Until 2026-10-10 the gate reported
+    // only the failing test NAMES, so an intermittent test cost a reproduction hunt (four clean
+    // full-suite rounds, two failures) before anyone could see the panic message. The capture is the
+    // only place that message exists; write it and echo the failing block.
+    let log = dir.join("gate-output.log");
+    let _ = std::fs::write(&log, &output);
+    let report = failure_report(&output);
+    if !report.is_empty() {
+        println!("--- failing test output (also in {})", log.display());
+        println!("{report}");
+    }
     Err(format!(
-        "fresh-gate FAILED; failed steps: {steps:?}; failing tests: {tests:?}; export kept at {}",
+        "fresh-gate FAILED; failed steps: {steps:?}; failing tests: {tests:?}; full output at {}; export kept at {}",
+        log.display(),
         dir.display()
     ))
+}
+
+/// The part of a gate run's output that says *why* a test failed: the `failures:` block (test names
+/// plus their `panicked at` text), or the `---- <test> stdout ----` sections. Bounded, and empty when
+/// the run failed without naming a test (a build error, a lint).
+pub fn failure_report(output: &str) -> String {
+    const MAX: usize = 60;
+    let lines: Vec<&str> = output.lines().collect();
+    let start = lines
+        .iter()
+        .position(|l| {
+            l.trim_start().starts_with("failures:")
+                || (l.starts_with("---- ") && l.ends_with(" stdout ----"))
+        })
+        .or_else(|| lines.iter().position(|l| l.contains("panicked at")));
+    let Some(start) = start else {
+        return String::new();
+    };
+    lines
+        .iter()
+        .skip(start)
+        .take(MAX)
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -267,6 +304,22 @@ mod tests {
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn failure_report_shows_the_panic_and_stays_empty_without_one() {
+        let out = "PASS: fmt\ntest a::b ... ok\ntest lanes::x ... FAILED\n\nfailures:\n\n---- lanes::x stdout ----\nthread 'lanes::x' panicked at crates/pii-server/src/daemon/mod.rs:1:1:\nrun r1 never finished\n";
+        let r = failure_report(out);
+        assert!(
+            r.contains("---- lanes::x stdout ----"),
+            "names the test: {r}"
+        );
+        assert!(r.contains("never finished"), "carries the panic text: {r}");
+        // control: a run that failed without a test failure (build or lint) yields nothing to echo
+        assert_eq!(
+            failure_report("PASS: fmt\nerror: could not compile `xtask`\n"),
+            ""
+        );
     }
 
     #[test]
