@@ -77,6 +77,25 @@ impl Daemon {
             );
         }
 
+        for m in &cfg.mqtt {
+            if channels.contains_key(&m.name) {
+                return Err(PiiError::Invalid(format!(
+                    "mqtt '{}': name already used by another channel",
+                    m.name
+                )));
+            }
+            let conn = adapters::mqtt(m, &engine.log())?;
+            engine.mqtt.insert(Arc::clone(&conn));
+            channels.insert(
+                m.name.clone(),
+                ChannelRuntime {
+                    channel: conn,
+                    poll_interval_ms: m.poll_interval_ms,
+                    graph: m.graph.clone(),
+                },
+            );
+        }
+
         let mut cron = BTreeMap::new();
         for c in &cfg.cron {
             cron.insert(

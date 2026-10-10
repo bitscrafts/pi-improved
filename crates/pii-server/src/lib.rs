@@ -90,6 +90,9 @@ pub struct Engine {
     /// Shared supervisor pool (F3.7): filled by `Daemon::build` from
     /// `[[worker]]` config; the `worker` node's factory holds the same Arc.
     pub workers: Arc<parking_lot::Mutex<BTreeMap<String, pii_worker::Supervisor>>>,
+    /// The MQTT connections (spec 117): filled by `Daemon::build` from
+    /// `[[mqtt]]`; the `mqtt` node's factory holds the same Arc.
+    pub mqtt: Arc<pii_channels::mqtt::MqttHub>,
     /// Node registry (built-ins + `agent`).
     pub reg: NodeRegistry,
     /// The model provider.
@@ -224,6 +227,7 @@ impl Engine {
     ///
     /// # Errors
     /// Store open failure or unknown model spec.
+    #[allow(clippy::too_many_lines)] // reason: one linear wiring of the engine's shared resources
     pub fn new(cfg: EngineConfig) -> Result<Arc<Self>, PiiError> {
         let store = Arc::new(pii_store::Store::open(&cfg.store_path)?);
         let log = Arc::new(pii_observe::SwitchObserver::new());
@@ -263,7 +267,8 @@ impl Engine {
         let bus = Bus::new();
         let spawn_engine: node_kinds::nodes::spawn::SpawnEngineHandle =
             Arc::new(parking_lot::Mutex::new(None));
-        let reg = registry(
+        let mqtt = Arc::new(pii_channels::mqtt::MqttHub::default());
+        let mut reg = registry(
             &cfg,
             provider.clone(),
             bus.subscribe_tx(),
@@ -276,6 +281,9 @@ impl Engine {
             log.clone(),
             Arc::clone(&tiers),
         );
+        reg.register(Arc::new(node_kinds::nodes::mqtt::MqttFactory {
+            hub: Arc::clone(&mqtt),
+        }));
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
             cfg,
@@ -284,6 +292,7 @@ impl Engine {
             heals,
             memory,
             workers,
+            mqtt,
             reg,
             provider,
             tiers,

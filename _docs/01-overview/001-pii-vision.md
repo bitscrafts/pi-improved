@@ -70,8 +70,12 @@ messaging gateway with one performant, local-first, modular system.
 | 1 | Core engine (Ctx, graph, journal, resume, cold start) | 3–4 wk |
 | 2 | Coding harness (tools, sandbox, verify-fix) | 3–4 wk |
 | 3 | Assistant/gateway (daemon, UDS, channels) | 3–4 wk |
-| 4 | IoT/reactive (MQTT, hardware, WASM plugins) | 2–3 wk |
+| 4 | IoT/reactive (MQTT **done, no TLS**; hardware and WASM plugins absent) | 2–3 wk |
 | 5 | Self-improvement (skills, distillation, trajectories) | 3–4 wk |
+
+**Phase 4 status (spec 117, 2026-10-10).** MQTT exists: `[[mqtt]]` subscribes a broker to a
+graph and the `mqtt` node publishes ([guide](../02-guides/mqtt.md)) — plain TCP only, **no
+TLS**, MQTT 3.1.1, clean sessions. **Still absent:** the hardware HAL and WASM plugins.
 
 See [06-research/001-pii-architecture-plan.md](../06-research/002-pii-architecture-plan-pass2.md)
 for the full plan.

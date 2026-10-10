@@ -14,6 +14,10 @@ pii-observe = { path = "../pii-observe" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }
+# MQTT 3.1.1 client (spec 117). default-features = false: no TLS, so rustls stays
+# confined to pii-net (deps-check). Plain TCP only; see the mqtt module docs.
+rumqttc = { version = "0.25.1", default-features = false }
+tokio = { workspace = true, features = ["rt", "time"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

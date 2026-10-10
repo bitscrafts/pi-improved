@@ -11,7 +11,7 @@ use pii_channels::{Channel, matrix, secret, telegram};
 use pii_core::HttpTransport;
 use pii_net::listen::{HttpHandler, ListenSpec, Protocol};
 
-use super::config::ChannelSection;
+use super::config::{ChannelSection, MqttSection};
 
 /// Default webhook bind: loopback only.
 const DEFAULT_BIND: &str = "127.0.0.1:8787";
@@ -91,4 +91,24 @@ pub(super) fn webhook(
         Arc::new(Handler(Arc::clone(&ch))),
     )?;
     Ok(ch)
+}
+
+/// Builds and starts an MQTT connection (spec 117). Credentials come from env
+/// or a 0600 file ([`secret::resolve`]); a refused config (plaintext
+/// credentials to a remote broker, `mqtts://`) is an `Err` that names no secret.
+pub(super) fn mqtt(
+    m: &MqttSection,
+    log: &Arc<dyn pii_observe::Observer>,
+) -> Result<Arc<pii_channels::mqtt::MqttChannel>, PiiError> {
+    let mut cfg = pii_channels::mqtt::MqttConfig::new(&m.name, &m.url);
+    cfg.client_id.clone_from(&m.client_id);
+    cfg.topics.clone_from(&m.topics);
+    cfg.qos = m.qos;
+    cfg.username = secret::resolve(m.username_env.as_deref(), m.username_file.as_deref())?;
+    cfg.password = secret::resolve(m.password_env.as_deref(), m.password_file.as_deref())?;
+    cfg.allow_plaintext_credentials = m.allow_plaintext_credentials;
+    cfg.reconnect_min_ms = m.reconnect_min_ms;
+    cfg.reconnect_max_ms = m.reconnect_max_ms;
+    cfg.queue_cap = m.queue_cap;
+    pii_channels::mqtt::MqttChannel::start(cfg, Arc::clone(log))
 }

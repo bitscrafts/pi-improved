@@ -72,6 +72,19 @@ pub const CHANNEL_EGRESS_DENIED: &str = "channel.egress.denied";
 pub const CHANNEL_MISCONFIGURED: &str = "channel.misconfigured";
 /// Measure: messages polled but not yet acknowledged past the cursor.
 pub const CHANNEL_CURSOR_LAG: &str = "channel.cursor.lag";
+/// Event: an MQTT channel connected to its broker (`channel`, `broker`).
+pub const MQTT_CONNECTED: &str = "mqtt.connected";
+/// Event: an MQTT channel lost or failed to reach its broker (`channel`, `broker`, `error`, `attempt`, `retry_in_ms`).
+pub const MQTT_CONNECTION_LOST: &str = "mqtt.connection.lost";
+/// Event: an MQTT message was accepted into the inbound queue (`channel`, `topic`, `bytes`).
+pub const MQTT_MESSAGE_RECEIVED: &str = "mqtt.message.received";
+/// Event: an MQTT message was dropped and counted (`channel`, `topic`, `reason`).
+pub const MQTT_MESSAGE_DROPPED: &str = "mqtt.message.dropped";
+/// Event: an MQTT message was written to the broker connection (`channel`, `topic`, `qos`, `retain`, `bytes`).
+pub const MQTT_PUBLISHED: &str = "mqtt.published";
+/// Event: credentials are being sent over plaintext to a non-loopback broker because the config opted in (`channel`, `broker`).
+pub const MQTT_PLAINTEXT_CREDENTIALS: &str = "mqtt.plaintext_credentials";
+
 /// Event: a TUI render or attach failure.
 pub const TUI_FAILURE: &str = "tui.failure";
 /// Event: a reattach resumed after a gap in the stream.
@@ -167,6 +180,12 @@ pub const METRIC_RUN_LATENCY_MS: &str = "pii_run_latency_ms";
 pub const METRIC_RUN_LATENCY_COUNT: &str = "pii_run_latency_count";
 /// Metric (gauge): daemon uptime in milliseconds.
 pub const METRIC_UPTIME_MS: &str = "pii_uptime_ms";
+/// Metric (counter): MQTT messages accepted from brokers since the daemon started.
+pub const METRIC_MQTT_RECEIVED_TOTAL: &str = "pii_mqtt_received_total";
+/// Metric (counter): MQTT messages dropped (queue full, not UTF-8) since the daemon started.
+pub const METRIC_MQTT_DROPPED_TOTAL: &str = "pii_mqtt_dropped_total";
+/// Metric (counter): MQTT messages published since the daemon started.
+pub const METRIC_MQTT_PUBLISHED_TOTAL: &str = "pii_mqtt_published_total";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -203,6 +222,12 @@ pub const ALL: &[&str] = &[
     CHANNEL_EGRESS_DENIED,
     CHANNEL_MISCONFIGURED,
     CHANNEL_CURSOR_LAG,
+    MQTT_CONNECTED,
+    MQTT_CONNECTION_LOST,
+    MQTT_MESSAGE_RECEIVED,
+    MQTT_MESSAGE_DROPPED,
+    MQTT_PUBLISHED,
+    MQTT_PLAINTEXT_CREDENTIALS,
     TUI_FAILURE,
     TUI_REATTACH_GAP,
     WEB_REQUEST_FAILED,
@@ -249,6 +274,9 @@ pub const ALL: &[&str] = &[
     METRIC_RUN_LATENCY_MS,
     METRIC_RUN_LATENCY_COUNT,
     METRIC_UPTIME_MS,
+    METRIC_MQTT_RECEIVED_TOTAL,
+    METRIC_MQTT_DROPPED_TOTAL,
+    METRIC_MQTT_PUBLISHED_TOTAL,
 ];
 
 #[cfg(test)]

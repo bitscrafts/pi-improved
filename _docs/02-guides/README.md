@@ -6,3 +6,4 @@ How-to guides: the pidag way of work, feature gating, the MCP bridge, local llam
 - `writing-a-channel.md` — the `Channel` trait contract, config section, events, and a copyable adapter skeleton (spec 112).
 - `writing-an-sop.md` — the SOP file format, the compilation rule, precondition semantics, the approval flow, and the worked example (spec 113).
 - `model-tiers.md` — `[[model_tier]]` keys, the model precedence, the capability-layer tool gate, and the no-downgrade rule (spec 114).
+- `mqtt.md` — `[[mqtt]]` keys, the payload mapping, the `mqtt` publish node, backoff, the plaintext-credentials rule (spec 117).

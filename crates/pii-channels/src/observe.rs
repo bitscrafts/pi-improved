@@ -63,6 +63,10 @@ impl Channel for ObservedChannel {
         self.inner.health_issue()
     }
 
+    fn counters(&self) -> Option<crate::ChannelCounters> {
+        self.inner.counters()
+    }
+
     fn poll(&self, ctx: &Ctx, cursor: Option<u64>) -> Result<Vec<Incoming>, PiiError> {
         let result = self.inner.poll(ctx, cursor);
         match &result {

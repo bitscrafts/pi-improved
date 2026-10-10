@@ -104,6 +104,25 @@ path = ""
 # inbox = "/var/lib/pii/inbox.txt"   # "cli" kind only
 # outbox = "/var/lib/pii/outbox.txt" # "cli" kind only
 
+# [[mqtt]]: one MQTT broker connection (spec 117; guide: _docs/02-guides/mqtt.md).
+# Subscribes to topics and runs `graph` per message; `mqtt` nodes publish through it.
+# Plain TCP only (no TLS): credentials to a non-loopback broker are refused unless
+# allow_plaintext_credentials = true. Default: none. Repeat the table.
+# [[mqtt]]
+# name = "plant"               # required
+# url = "mqtt://127.0.0.1:1883" # required; "mqtts://" is refused
+# graph = "sensor-reading"     # required: graph run per inbound message
+# topics = ["sensors/#"]       # default []; empty = publish-only
+# qos = 1                      # default 0; subscription QoS
+# # client_id = "pii-kitchen"  # default unique per instance
+# # username_env = "PII_MQTT_USER"        # credentials: env var or 0600 file,
+# # password_file = "/etc/pii/mqtt.pw"    # never a config value
+# # allow_plaintext_credentials = false   # default false
+# reconnect_min_ms = 500       # default 500; doubles per failure
+# reconnect_max_ms = 30000     # default 30000; the backoff ceiling
+# queue_cap = 1024             # default 1024; beyond it messages are dropped and counted
+# poll_interval_ms = 100       # default 100
+
 # [[cron]]: timer-driven graphs. Default: none. Repeat the table.
 # [[cron]]
 # name = "nightly"             # required

@@ -39,6 +39,10 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-cli/src/cmd_daemon.rs",
     // P4.6 (spec 19): pii-web binds a loopback TCP listener for the viewer.
     "crates/pii-web/src/main.rs",
+    // Spec 117: the in-process loopback MQTT broker the tests bring with them
+    // (no system broker exists on the CI host); it binds 127.0.0.1 only and
+    // is `#[path]`-included by pii-server's MQTT end-to-end test.
+    "crates/pii-channels/tests/mqtt_broker/mod.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

@@ -101,9 +101,12 @@ fn poll_once(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, name: &str) {
         return;
     };
     for msg in incoming {
-        let input = serde_json::json!({
+        let mut input = serde_json::json!({
             "text": msg.text, "chat": msg.chat, "channel": msg.channel, "user": msg.user,
         });
+        if channel.kind() == "mqtt" {
+            add_mqtt_fields(&mut input, &msg);
+        }
         let Ok(run_id) = engine.start_run(&graph, &input) else {
             continue;
         };
@@ -117,6 +120,16 @@ fn poll_once(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, name: &str) {
             run_id: run_id.to_string(),
         });
     }
+}
+
+/// The MQTT mapping (spec 117 R1a): `topic` is the message topic and `payload`
+/// is the payload parsed as JSON when it is valid JSON, else the text itself;
+/// `text` keeps the raw payload either way.
+fn add_mqtt_fields(input: &mut serde_json::Value, msg: &pii_channels::Incoming) {
+    let payload = serde_json::from_str::<serde_json::Value>(&msg.text)
+        .unwrap_or_else(|_| serde_json::Value::String(msg.text.clone()));
+    input["topic"] = serde_json::Value::String(msg.chat.clone());
+    input["payload"] = payload;
 }
 
 /// Sends the reply for a finished channel run (F6.5): `Success` sends the

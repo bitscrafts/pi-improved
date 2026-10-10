@@ -64,3 +64,35 @@ R7. **Docs**: `_docs/0X-guides/` a guide for the node (config keys, payload mapp
 - No unbounded queues or hot reconnect loops; every bound gets a named event when it is hit.
 - Do not add a dependency for the HAL of a second purpose — this spec is MQTT only.
 - Scratch under `/projects/_tmp/`, delete your own, no broker or daemon left running. Do NOT commit.
+
+## Orchestrator verification + a cross-invariant conflict found and fixed (2026-10-10)
+**My controls (three mutations, each restored):**
+- **The credential refusal bites**: disabling it (`if false && has_creds && !is_loopback(&host) && !allow_plaintext…`)
+  → `credentials_to_a_plaintext_non_loopback_broker_are_refused_unless_opted_in` **FAILS**; restored → 12 pass.
+- **The backoff bound bites, with the number**: making `backoff_ms` return 0 → both
+  `backoff_doubles_to_a_ceiling_and_never_overflows` and `broker_down_is_degraded_with_reason_event_and_bounded_attempts`
+  FAIL, the latter printing **`bounded exponential backoff: 5435 attempts in 500ms`** — the hot retry loop the
+  requirement exists to prevent, caught with its rate. Restored → 12 pass.
+- Tests I ran: `pii-channels --test mqtt` **12 pass**; `pii-server --test mqtt_e2e` **5 pass**.
+- No stash was left behind by the worker's `git stash` (checked `git stash list`: empty; the 27 dirty paths are all
+  its work).
+
+**A REAL CONFLICT between two project invariants, found by an ungated check.** `cargo xtask deps-check` failed:
+`pii-proto: direct dependency 'pii-observe' is not in the allowlist`. That is not the worker's fault — it is
+**spec 109's payoff colliding with the repo's own invariant 2** (`xtask/src/deps.rs:18-24`: "`pii-proto`'s direct
+non-optional deps must be exactly serde/serde_json/schemars/thiserror"). Spec 109 R7/R8 made the handshake client
+emit, which added the contract as a hard dependency of the wire crate.
+**Fixed by the orchestrator in three lines, preserving BOTH intents**: `pii-observe` becomes an **optional** dep of
+`pii-proto` and joins the existing `client` feature (`client = ["dep:tokio", "dep:pii-observe"]`). The default build
+stays serde-only (the invariant's actual purpose — the wire types pull no runtime), the client still emits, and
+every consumer already enables `client` (`pii-cli`, `pii-evolve`, `pii-server`, `pii-tools`, `pii-tui`, `pii-web`).
+Verified: **`deps-check` rc=0**, workspace `cargo check` clean, `lint-observability` → `registry size 2, 0 findings`,
+`fmt --check` clean.
+
+**Two more ungated checks fail on the untouched tree — one of them a false positive:**
+- `net-check` reports `xtask/src/lint_observability.rs:27 — UnixStream::connect`: line 27 is a **DOC COMMENT**
+  describing R8's exemption shrink. The check scans source text without excluding comments, so it flags its own
+  documentation. A check that reports a violation that does not exist is the §1 class, and it must be fixed before
+  that check could ever be promoted to a gate step.
+- `doc-drift-check` reports `_tmp/sidecar.log` (named in `HANDOFF.md`) does not exist — real but trivial drift.
+

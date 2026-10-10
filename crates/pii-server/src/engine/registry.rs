@@ -99,6 +99,9 @@ pub fn lint_registry_with_log(
     log: Arc<dyn pii_observe::Observer>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
+    reg.register(Arc::new(nodes::mqtt::MqttFactory {
+        hub: Arc::new(pii_channels::mqtt::MqttHub::default()),
+    }));
     reg.register(Arc::new(nodes::sop::SopFactory { log }));
     reg.register(Arc::new(nodes::worker::WorkerFactory {
         pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<

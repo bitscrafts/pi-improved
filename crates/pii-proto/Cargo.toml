@@ -8,7 +8,10 @@ repository.workspace = true
 description = "Pii wire protocol: JSON-RPC 2.0 envelopes, methods, and events"
 
 [dependencies]
-pii-observe = { path = "../pii-observe" }
+# Optional: the transport CLIENT emits through the contract (spec 109 R7/R8). The default build is
+# the wire types only, and invariant 2 (xtask deps-check) says its direct deps stay serde-only — so this
+# rides the same `client` feature that already carries tokio.
+pii-observe = { path = "../pii-observe", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
@@ -17,7 +20,7 @@ tokio = { workspace = true, optional = true, features = ["io-util", "sync", "tim
 
 [features]
 default = []
-client = ["dep:tokio"]
+client = ["dep:tokio", "dep:pii-observe"]
 
 [lints]
 workspace = true

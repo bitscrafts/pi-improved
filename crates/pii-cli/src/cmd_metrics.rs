@@ -102,6 +102,18 @@ fn render(v: &serde_json::Value) -> String {
         (names::METRIC_MEMORY_DOCS, num(v, "/counts/memory_docs")),
         (names::METRIC_CRON_ENTRIES, num(v, "/counts/cron_entries")),
         (names::METRIC_UPTIME_MS, num(v, "/uptime_ms")),
+        (
+            names::METRIC_MQTT_RECEIVED_TOTAL,
+            num(v, "/counts/mqtt_received"),
+        ),
+        (
+            names::METRIC_MQTT_DROPPED_TOTAL,
+            num(v, "/counts/mqtt_dropped"),
+        ),
+        (
+            names::METRIC_MQTT_PUBLISHED_TOTAL,
+            num(v, "/counts/mqtt_published"),
+        ),
         (names::METRIC_PROCESS_RSS_KB, num(v, "/rss_kb")),
         (
             names::METRIC_RSS_BYTES_PER_RUN,

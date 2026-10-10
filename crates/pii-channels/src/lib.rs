@@ -12,6 +12,7 @@
 pub mod cli;
 pub mod discord;
 pub mod matrix;
+pub mod mqtt;
 pub mod observe;
 pub mod secret;
 pub mod telegram;
@@ -33,6 +34,17 @@ pub struct Incoming {
     pub text: String,
     /// Monotonic cursor for this message (channel-defined ordering).
     pub cursor: u64,
+}
+
+/// Message counters a channel may expose (`pii metrics`, spec 117 R6).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ChannelCounters {
+    /// Messages accepted from the remote side.
+    pub received: u64,
+    /// Messages dropped and counted (queue full, malformed, ...).
+    pub dropped: u64,
+    /// Messages handed to the remote side.
+    pub published: u64,
 }
 
 /// A pollable, reply-capable channel (F6.2). The trait is the extension point
@@ -59,6 +71,10 @@ pub trait Channel: Send + Sync {
     /// rejected, ...), or `None` when healthy. A `Some` is reported as
     /// `Degraded` by the daemon's health (spec 112 R6). Never contains a secret.
     fn health_issue(&self) -> Option<String> {
+        None
+    }
+    /// Message counters, for channels that keep them (`None` = none kept).
+    fn counters(&self) -> Option<ChannelCounters> {
         None
     }
 }

@@ -245,6 +245,18 @@ Measured:
 So on a store that has only grown with runs, expect the tail slack back and nothing more; real
 reclamation of run history would need a retention policy for runs, which does not exist.
 
+## MQTT broker (spec 117)
+
+The daemon needs **no broker of its own and ships none**: `[[mqtt]]` points at one you run
+(e.g. `mosquitto`, which this host does not have). Set `url = "mqtt://<host>:1883"`, `topics`,
+and `graph`; credentials via `password_env`/`password_file` (0600). The client is `rumqttc` 0.25
+(`default-features = false`: plain TCP, **no TLS**), so a remote broker with credentials needs
+`allow_plaintext_credentials = true` (clear text on the wire) — otherwise use a loopback
+broker or a tunnel. Health: `channel.<name>` is `Degraded` with the reason while the broker is
+unreachable; retries back off 500 ms → 30 s (`reconnect_*_ms`). `pii metrics` shows
+`pii_mqtt_received_total`, `pii_mqtt_dropped_total`, `pii_mqtt_published_total`. See
+`_docs/02-guides/mqtt.md`.
+
 ## Logs
 
 The daemon writes events as JSON lines (one per event, `ts_ms` stamped) to a

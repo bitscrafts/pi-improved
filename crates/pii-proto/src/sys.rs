@@ -163,6 +163,15 @@ pub struct Counts {
     pub cron_entries: u64,
     /// Memory documents.
     pub memory_docs: u64,
+    /// MQTT messages accepted from brokers (spec 117).
+    #[serde(default)]
+    pub mqtt_received: u64,
+    /// MQTT messages dropped and counted (spec 117).
+    #[serde(default)]
+    pub mqtt_dropped: u64,
+    /// MQTT messages published (spec 117).
+    #[serde(default)]
+    pub mqtt_published: u64,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).

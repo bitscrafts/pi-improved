@@ -105,6 +105,17 @@ fn rss_gauge(engine: &Engine, runs: u64, rss_kb: u64) -> u64 {
     engine.rss_trend.bytes_per_run(runs, rss_kb)
 }
 
+/// Sums the message counters of every channel that keeps them (spec 117).
+fn add_channel_counters(counts: &mut Counts, channels: Option<&BTreeMap<String, ChannelRuntime>>) {
+    for c in channels.into_iter().flat_map(BTreeMap::values) {
+        if let Some(n) = c.channel.counters() {
+            counts.mqtt_received += n.received;
+            counts.mqtt_dropped += n.dropped;
+            counts.mqtt_published += n.published;
+        }
+    }
+}
+
 /// Fills the identity fields of `out` from `engine` (and `ctx` when a daemon
 /// is attached). The pre-existing fields are left untouched.
 pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResult) {
@@ -170,6 +181,7 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     );
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
+        add_channel_counters(&mut counts, channels.as_deref());
         out.mounts.extend(daemon_mounts(ctx));
         out.config = ConfigIdentity {
             path: ctx.config_path.display().to_string(),

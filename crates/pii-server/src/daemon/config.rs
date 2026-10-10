@@ -204,6 +204,76 @@ const fn default_poll_ms() -> u64 {
     500
 }
 
+const fn default_mqtt_poll_ms() -> u64 {
+    100
+}
+
+/// `[[mqtt]]` (spec 117): one broker connection.
+///
+/// It subscribes to `topics` and starts `graph` per message (input
+/// `{topic, payload, text, channel}`), and is the target of `mqtt` publish
+/// nodes naming it as `broker`. Credentials are
+/// never config values: `*_env` names an environment variable, `*_file` a 0600
+/// file.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MqttSection {
+    /// Connection name (also its health subsystem, `channel.<name>`).
+    pub name: String,
+    /// `mqtt://host[:port]`; `mqtts://` is refused (no TLS in this build).
+    pub url: String,
+    /// Graph run per inbound message.
+    pub graph: String,
+    /// Topic filters to subscribe to; empty = publish-only.
+    #[serde(default)]
+    pub topics: Vec<String>,
+    /// Subscription `QoS` (0..=2).
+    #[serde(default)]
+    pub qos: u8,
+    /// MQTT client id; default is unique per daemon instance.
+    #[serde(default)]
+    pub client_id: Option<String>,
+    /// Env var holding the broker user name.
+    #[serde(default)]
+    pub username_env: Option<String>,
+    /// 0600 file holding the broker user name.
+    #[serde(default)]
+    pub username_file: Option<String>,
+    /// Env var holding the broker password.
+    #[serde(default)]
+    pub password_env: Option<String>,
+    /// 0600 file holding the broker password.
+    #[serde(default)]
+    pub password_file: Option<String>,
+    /// Accept sending credentials in clear text to a non-loopback broker.
+    #[serde(default)]
+    pub allow_plaintext_credentials: bool,
+    /// First reconnect delay in ms (doubles up to `reconnect_max_ms`).
+    #[serde(default = "default_reconnect_min")]
+    pub reconnect_min_ms: u64,
+    /// Reconnect delay ceiling in ms.
+    #[serde(default = "default_reconnect_max")]
+    pub reconnect_max_ms: u64,
+    /// Bound on the inbound queue (messages beyond it are dropped and counted).
+    #[serde(default = "default_queue_cap")]
+    pub queue_cap: usize,
+    /// How often the router drains the inbound queue, in ms.
+    #[serde(default = "default_mqtt_poll_ms")]
+    pub poll_interval_ms: u64,
+}
+
+const fn default_reconnect_min() -> u64 {
+    pii_channels::mqtt::DEFAULT_RECONNECT_MIN_MS
+}
+
+const fn default_reconnect_max() -> u64 {
+    pii_channels::mqtt::DEFAULT_RECONNECT_MAX_MS
+}
+
+const fn default_queue_cap() -> usize {
+    pii_channels::mqtt::DEFAULT_QUEUE_CAP
+}
+
 /// The known routing steps (spec 28 R1): the evolve pipeline's fixed roles.
 pub(crate) const KNOWN_STEPS: &[&str] =
     &["localize", "patch", "review", "research", "orchestrator"];
@@ -278,6 +348,8 @@ pub struct Config {
     pub worker: Vec<WorkerSection>,
     /// `[[channel]]`.
     pub channel: Vec<ChannelSection>,
+    /// `[[mqtt]]` (spec 117).
+    pub mqtt: Vec<MqttSection>,
     /// `[memory]`.
     pub memory: MemorySection,
     /// `[[cron]]`.
@@ -459,6 +531,23 @@ mod tests {
 
     /// Spec 115 R2: the retention keys parse, default to a real bound, and a
     /// zero never means "unbounded".
+    #[test]
+    fn mqtt_section_parses_and_refuses_a_credential_value() {
+        let c = Config::parse(
+            "[[mqtt]]\nname = \"p\"\nurl = \"mqtt://127.0.0.1\"\ngraph = \"g\"\n\
+             topics = [\"a/#\"]\npassword_env = \"X\"\n",
+        )
+        .unwrap();
+        let m = c.mqtt.first().unwrap();
+        assert_eq!((m.qos, m.queue_cap, m.reconnect_max_ms), (0, 1024, 30_000));
+        assert!(!m.allow_plaintext_credentials);
+        assert!(
+            Config::parse("[[mqtt]]\nname=\"p\"\nurl=\"u\"\ngraph=\"g\"\npassword=\"x\"\n")
+                .is_err(),
+            "a password value is not a config key"
+        );
+    }
+
     #[test]
     fn trajectory_retention_keys_parse_and_zero_is_not_unbounded() {
         let c = Config::parse("[core]\ntrajectory_max_bytes = 1000\ntrajectory_max_files = 7\n")
