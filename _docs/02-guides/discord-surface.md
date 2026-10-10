@@ -32,7 +32,21 @@ Tag ids (created 2026-10-10, so tooling can reference them without a lookup): `c
 **The bot could not create tags on the first attempt** (`PATCH /channels/<forum>` with `available_tags` returns `50013 Missing
 Permissions`) — it succeeded later the same day once **Manage Channels** was granted on the forum, so the set is either a human action in the app or a permission the bot needs.
 
-## The constraint that bites
+## The constraint, and how it was lifted (2026-10-10)
+
+The adapter used to create forum posts **without `applied_tags`**, so a forum with **"Require tag"** enabled rejected
+every delivery. That is now fixed in the adapter: before creating a post it reads the channel, picks a tag by name
+and sends `applied_tags`, and it *infers* the tag from the message — `alert` when the text looks like a failure
+(`⚠` / "failed" / "error"), `status` for a "Cronjob Response"/digest, otherwise the default `chat`
+(`DISCORD_FORUM_TAG` overrides the default name; a rename falls back to the channel's first tag rather than failing).
+Both creation paths are covered: the discord.py `_send_to_forum` and the standalone HTTP path the cron delivery uses.
+
+**Verified on the real gateway tick** (not the manual `cronjob run` path, which executes inside the long-lived
+calling session): a scheduled delivery at 21:57:00 reported `last_status: ok` with no delivery error, and the post
+it created carries a tag — thread `1558599256539930697`, `applied_tags: ["1558593520950976591"]` = **`status`**,
+inferred from the "Cronjob Response: …" content. So **"Require tag" is now safe**, and Hermes posts label themselves.
+
+## The constraint that used to bite
 
 The adapter creates forum posts **without `applied_tags`**, so a forum with **"Require tag"** enabled would
 reject every Hermes delivery. Leave tags optional until either the tags are applied by the adapter or the
