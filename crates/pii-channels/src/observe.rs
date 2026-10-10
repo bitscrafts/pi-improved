@@ -24,6 +24,20 @@ impl ObservedChannel {
     }
 
     fn failure(&self, kind: &'static str, e: &PiiError) {
+        let specific = if crate::is_auth_rejected(e) {
+            Some(names::CHANNEL_AUTH_REJECTED)
+        } else if matches!(e, PiiError::Denied(_)) {
+            Some(names::CHANNEL_EGRESS_DENIED)
+        } else {
+            None
+        };
+        if let Some(name) = specific {
+            self.report(name, e);
+        }
+        self.report(kind, e);
+    }
+
+    fn report(&self, kind: &'static str, e: &PiiError) {
         self.observer.event(
             &Event::new("channel", Level::Warn, kind)
                 .field("channel", self.inner.name())
@@ -45,6 +59,10 @@ impl Channel for ObservedChannel {
     /// Polls the inner channel. A failure is [`names::CHANNEL_POLL_FAILED`];
     /// a success records the cursor lag ([`names::CHANNEL_CURSOR_LAG`]): the
     /// number of messages that were waiting past `cursor`.
+    fn health_issue(&self) -> Option<String> {
+        self.inner.health_issue()
+    }
+
     fn poll(&self, ctx: &Ctx, cursor: Option<u64>) -> Result<Vec<Incoming>, PiiError> {
         let result = self.inner.poll(ctx, cursor);
         match &result {

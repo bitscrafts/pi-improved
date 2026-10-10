@@ -58,6 +58,14 @@ pub const CLI_FAILURE: &str = "cli.failure";
 pub const CHANNEL_POLL_FAILED: &str = "channel.poll.failed";
 /// Event: a channel send failed.
 pub const CHANNEL_SEND_FAILED: &str = "channel.send.failed";
+/// Event: a channel rejected a credential (an inbound request without the
+/// shared secret, or an upstream API answering 401/403).
+pub const CHANNEL_AUTH_REJECTED: &str = "channel.auth.rejected";
+/// Event: a channel's outbound call was refused by the egress policy.
+pub const CHANNEL_EGRESS_DENIED: &str = "channel.egress.denied";
+/// Event: a channel was built misconfigured (e.g. a missing token); it polls
+/// nothing and reports `Degraded`.
+pub const CHANNEL_MISCONFIGURED: &str = "channel.misconfigured";
 /// Measure: messages polled but not yet acknowledged past the cursor.
 pub const CHANNEL_CURSOR_LAG: &str = "channel.cursor.lag";
 /// Event: a TUI render or attach failure.
@@ -156,6 +164,9 @@ pub const ALL: &[&str] = &[
     CLI_FAILURE,
     CHANNEL_POLL_FAILED,
     CHANNEL_SEND_FAILED,
+    CHANNEL_AUTH_REJECTED,
+    CHANNEL_EGRESS_DENIED,
+    CHANNEL_MISCONFIGURED,
     CHANNEL_CURSOR_LAG,
     TUI_FAILURE,
     TUI_REATTACH_GAP,

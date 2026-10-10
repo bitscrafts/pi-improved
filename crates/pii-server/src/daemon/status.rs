@@ -77,6 +77,10 @@ impl pii_observe::Health for ChannelRuntime {
         h.identity
             .insert("poll_interval_ms".into(), self.poll_interval_ms.to_string());
         h.identity.insert("graph".into(), self.graph.clone());
+        if let Some(issue) = self.channel.health_issue() {
+            h.state = pii_observe::State::Degraded;
+            h.detail = Some(issue);
+        }
         h
     }
 }

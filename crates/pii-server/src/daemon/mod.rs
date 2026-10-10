@@ -3,6 +3,7 @@
 //! `pii daemon` builds one [`Daemon`] and calls [`Daemon::spawn_background`],
 //! then races [`ShutdownSignal`] against its own accept loop.
 
+mod adapters;
 pub mod approvals;
 pub mod config;
 pub mod identity;
@@ -65,12 +66,7 @@ impl Daemon {
 
         let mut channels = BTreeMap::new();
         for c in &cfg.channel {
-            let channel = build_channel(
-                c,
-                Arc::clone(&net) as Arc<dyn pii_core::HttpTransport>,
-                runtime_dir,
-                engine.log(),
-            )?;
+            let channel = build_channel(c, &net, runtime_dir, engine.log())?;
             channels.insert(
                 c.name.clone(),
                 ChannelRuntime {
@@ -255,11 +251,24 @@ fn start_workers(
 /// `log` (spec 108).
 fn build_channel(
     c: &config::ChannelSection,
-    transport: Arc<dyn pii_core::HttpTransport>,
+    net: &Arc<pii_net::NetService>,
     runtime_dir: &Path,
     log: Arc<dyn pii_observe::Observer>,
 ) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
-    let inner = build_raw_channel(c, transport, runtime_dir)?;
+    let inner = build_raw_channel(c, net, runtime_dir, &log)?;
+    // Spec 112 R5: a channel that cannot work says so at startup, by name.
+    if let Some(issue) = inner.health_issue() {
+        log.event(
+            &pii_observe::Event::new(
+                "channel",
+                pii_observe::Level::Warn,
+                pii_observe::names::CHANNEL_MISCONFIGURED,
+            )
+            .field("channel", c.name.as_str())
+            .field("kind", c.kind.as_str())
+            .field("issue", issue),
+        );
+    }
     Ok(Arc::new(pii_channels::observe::ObservedChannel::new(
         inner, log,
     )))
@@ -267,10 +276,15 @@ fn build_channel(
 
 fn build_raw_channel(
     c: &config::ChannelSection,
-    transport: Arc<dyn pii_core::HttpTransport>,
+    net: &Arc<pii_net::NetService>,
     runtime_dir: &Path,
+    log: &Arc<dyn pii_observe::Observer>,
 ) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
+    let transport = Arc::clone(net) as Arc<dyn pii_core::HttpTransport>;
     match c.kind.as_str() {
+        "telegram" => adapters::telegram(c, transport),
+        "matrix" => adapters::matrix(c, transport),
+        "webhook" => adapters::webhook(c, net, transport, log),
         "discord" => Ok(Arc::new(pii_channels::discord::DiscordChannel::from_env(
             &c.name, transport,
         )?)),

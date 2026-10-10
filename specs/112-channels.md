@@ -72,3 +72,30 @@ R7. **`001-pii-vision.md`'s channel claim becomes a number**: update the line to
 - Never log a token or a full URL that carries one.
 - Scratch under `/projects/_tmp/`; keep it small (volume tight), delete your own, no daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-10)
+**My controls (not the worker's word):**
+- `cargo test -p pii-channels --test adapters` → **13 passed**; `cargo test -p pii-server --test channel_adapters`
+  → **4 passed** — both offline, no network touched.
+- **The security seam verified at the source, not from the report**: `webhook.rs:88-102` `authorized()` has all
+  five arms (match → Ok, wrong → Err, missing → Err, loopback-and-no-secret → Ok by design, non-loopback-and-no-
+  secret → Err) and `same()` (line 161) is a real **length-independent-time** compare (XOR-accumulate over
+  `max(len)` with the length difference folded in — not `==` in disguise).
+- **Default bind confirmed**: `DEFAULT_BIND = "127.0.0.1:8787"` (`crates/pii-server/src/daemon/adapters.rs:17`),
+  matching the config doc at `daemon/config.rs:147`.
+- **MUTATION (the one that matters for a security claim)**: replacing `same()`'s body with `true` →
+  `non_loopback_bind_refuses_without_the_secret_and_accepts_with_it` **FAILS**; restored → 4 pass. The refusal
+  is not decorative.
+- **Credential handling verified**: `secret.rs` refuses a secret FILE whose mode is not 0600 (`mode & 0o077 != 0`
+  → `Invalid`), which is the property that makes "file" a safe alternative to an env var.
+
+**Honest limits carried forward (from the worker's report, kept verbatim in substance):** Matrix handles
+unencrypted rooms only (encrypted events are dropped, documented); the opaque `next_batch` token lives in
+memory while the trait cursor is `origin_server_ts`; and **any `PiiError::Denied` from a channel is reported as
+`channel.egress.denied`**, so a `Denied` from the CLI channel's file scope would be mislabelled the same way —
+a naming imprecision, filed rather than smoothed.
+
+**Note on the worker's `fresh-gate: PASS`**: fresh-gate exports **HEAD**, and the worker could not commit, so its
+run verified 111's tree, not 112's. I ran it again on 112's committed HEAD (below) — that is the check that
+counts.
+
