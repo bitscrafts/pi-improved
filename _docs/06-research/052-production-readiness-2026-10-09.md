@@ -347,3 +347,15 @@ confinement**, with `off` as a working control. What is actually missing is narr
    trail is partial by construction and must say so.
 4. **seccomp is genuinely absent**, and secrets remain env-vars-only.
 
+---
+
+## P4 DECIDED (owner, 2026-10-10): **BUILD — all pillars implemented, in order**
+Verbatim: *"the direction is what it was, we proceed in order. all must be implemented!"* So this document's P4
+option "re-scope the vision" is REJECTED: `001-pii-vision.md` stands, and the remaining vision work is
+sequenced in **`_docs/06-research/057-vision-implementation-plan-2026-10-10.md`** as specs 111-122 (gateway
+completion -> IoT/reactive -> self-improvement -> pillar 3), one spec per run, orchestrator-verified, gated.
+Two consequences worth stating here: (a) the "30+ channels / ~20 providers / WASM host / hardware HAL"
+claims in `001` are now COMMITMENTS on a plan rather than stale promises, and each stage updates `001`'s
+status lines as it lands; (b) the production-readiness axis of this doc (P0-P3, P5) is closed except P5,
+which was running when this was written.
+

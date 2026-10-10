@@ -42,7 +42,8 @@ messaging gateway with one performant, local-first, modular system.
 - `04-development/` — developer docs / analysis  *(section not created in this project)*
 - [05-operations/](05-operations/) — operational docs, including incident records
   - [`033-spec65-guardrail-violation-doc-format.md`](05-operations/033-spec65-guardrail-violation-doc-format.md) — spec-65 guardrail violation: the worker changed the doc storage format (resolved)
-  - [`105-runbook.md`](05-operations/105-runbook.md) — operator runbook: start/stop, health, metrics, logs, backup/restore, upgrade, wedged daemon
+  - [`105-runbook.md`](05-operations/105-runbook.md)
+  - [`dormant-capabilities.md`](05-operations/dormant-capabilities.md) — capabilities that exist but are deliberately not wired, each with its reason and the CHECK that keeps it dormant (`pii-http-fetch` first, per the owner decision of 2026-10-10) — operator runbook: start/stop, health, metrics, logs, backup/restore, upgrade, wedged daemon
 - [06-research/](06-research/) — research write-ups (numbered)
   - **Start with [`06-research/000-TOPIC-MAP.md`](06-research/000-TOPIC-MAP.md)** — the SSOT topic map for the research tree (canonical / evidence / superseded, per subject). It replaces the per-file list formerly kept here.
   - [`06-research/000-CANDIDATES-INDEX.md`](06-research/000-CANDIDATES-INDEX.md) — the ten "researched, not scheduled" candidates
@@ -57,6 +58,7 @@ messaging gateway with one performant, local-first, modular system.
     [`050`](06-research/050-inline-methods-measured-2026-10-09.md) measured all 11 inline RPC handlers ·
     [`051`](06-research/051-scratch-helper-and-sweep-2026-10-09.md) killed the non-hermetic-test class at the root
   - [`06-research/053-observability-contract-and-enforcement-2026-10-09.md`](06-research/053-observability-contract-and-enforcement-2026-10-09.md) — **observability: the contract, the enforcement, and what landed** (2026-10-09): the measured adoption picture (13 crates with zero, 139 raw prints, health with no identity), the `pii-observe` decision and its rationale, the rules the gate now enforces, and the outcome table for specs 97-106 with its honest limits
+  - [`06-research/057-vision-implementation-plan-2026-10-10.md`](06-research/057-vision-implementation-plan-2026-10-10.md) — **the direction is the vision**: the measured state of every pillar, and the ORDER that implements all of them as specs 111-122 (gateway completion, then IoT/reactive, then self-improvement, then pillar 3), with the rules each stage inherits
   - [`06-research/055-exemption-audit-2026-10-10.md`](06-research/055-exemption-audit-2026-10-10.md) — **the exemption audit** (2026-10-10): measured crate by crate; of the four sanctioned exemptions, one is permanent (`pii-observe`) and one honest (`pii-abi`, no I/O), while `pii-proto` (a real async transport, and the module that can hang) and `pii-uds` (the one `UnixStream::connect` site outside the daemon) were exempted at the wrong granularity — with the mechanical rule that makes "nothing to observe" decidable
   - [`06-research/052-production-readiness-2026-10-09.md`](06-research/052-production-readiness-2026-10-09.md) — **honest production-readiness assessment + the road to production** (2026-10-09): what works (proven end-to-end), quality measured, the specification-vs-reality table per pillar and phase, every stale doc claim, the readiness gaps by axis, and a phased P0-P5 plan with measurable exit criteria
 - [99-archive/](99-archive/) — deprecated / historical

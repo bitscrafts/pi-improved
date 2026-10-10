@@ -874,3 +874,14 @@ re-introducing a socket import into an exempt crate goes RED. Spec 109 also gain
 failures (endpoint, the bound that expired, the skew) as named events and surface them in the CLI/TUI error
 path.
 
+## 2026-10-10 — DIRECTION: the vision stands, all pillars must be implemented (owner)
+*"the direction is what it was, we proceed in order. all must be implemented!"* — so P4 is BUILD. Two docs
+record it: `_docs/06-research/057-vision-implementation-plan-2026-10-10.md` (the measured state of each pillar
++ the order: specs 111 providers, 112 channels, 113 SOP, 114 tiering, 115 MQTT, 116 HAL, 117 WASM,
+118 extraction, 119 verifier+shadow runs, 120 promotion, 121 entities, 122 memory tiering) and
+`_docs/05-operations/dormant-capabilities.md` (what exists but is deliberately unwired, each with the check
+behind it — `pii-http-fetch` first, per the owner: *"document it and leave it dormant for now"*).
+**Disk policy (owner, verbatim): *"no deletion but cargo use!!! only cargo clean"*** — the pre-existing `_tmp`
+items are NOT to be removed by hand; space is freed with `cargo clean` (measured before/after, run when no
+worker is building), and the guarded scripts stay for the exports *this session* creates.
+
