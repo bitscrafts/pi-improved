@@ -100,3 +100,9 @@ Honest limits kept: latency covers `spawn_run` only (suspends/resumes are not re
 accepted` returns empty because accepted runs are not stored; live run data is **not** reclaimable and no
 retention policy exists for it — the runbook says so.
 
+### The fresh-gate criterion CLOSED (2026-10-10, plain form, on 115's own HEAD)
+`fresh-gate` (no `--worktree`, i.e. exactly HEAD `ea96f89`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0,
+70G free — and it ran **while spec 116's worker was already editing the tree**, which is safe precisely because the
+plain form exports HEAD only. That is the corrected rule in action: plain form verifies a commit and is immune to a
+concurrent writer; `--worktree` is not. **115: 8/8.**
+
