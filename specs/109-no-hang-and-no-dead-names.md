@@ -43,6 +43,26 @@ R5. **`pii-http-fetch` and the `pii tui` sandbox**: for the fetch crate, either 
     TUI, decide the sandbox default and make it consistent with the daemon (a test).
 R6. **Every new assertion needs a mutation control** (paste one per requirement, or state why none exists).
 
+R7. **Make the transport failures VISIBLE (the payoff of `_docs/06-research/055-exemption-audit-2026-10-10.md`).**
+    The audit found that two exempt crates own real I/O — `pii-proto`'s `client.rs` (the handshake, the
+    `hello` skew, `send_line`) and `pii-uds`'s `client_connect` (*"the ONE `UnixStream::connect` site outside
+    the daemon"*) — so the failures a user meets first are unobservable AND `ClientError` has no consumer
+    that reports it. Requirement: emit those failures through `pii-observe` (endpoint, the bound that
+    expired, the skew detail) as NAMED events registered in `names.rs`/`ALL`, and surface them where a user
+    sees them (the CLI/TUI error path), not only in a log.
+R8. **Tighten the exemption rule so "nothing to observe" is mechanically decidable.** A crate-wide exemption
+    is INVALID if any module of that crate imports `tokio`, `std::net`, `std::io` or `std::process`: such a
+    module owns failures. The lint must (a) scan the exempt crate's `src/**/*.rs` for those imports, (b) fail
+    the gate naming the crate and the module, (c) accept a module-scoped entry (`<crate>:<module>  # reason`)
+    for the dormant part with a reason, and (d) keep the existing sanctioned-set and dead-exemption rules.
+    Expected effect from the audit: the sanctioned set shrinks to `pii-observe` (permanent: it is the
+    contract) and `pii-abi` (no I/O — verified: 9 modules of types/traits plus pure classifiers), while
+    `pii-proto` and `pii-uds` stop being exempt at crate level. If you disagree with a verdict, say so with
+    evidence instead of keeping the entry.
+    **Near-miss control (mandatory):** an exempt crate with only types/consts and none of those imports must
+    still be ACCEPTED (that is `pii-abi`), and re-introducing e.g. `use tokio::net::UnixStream;` into an
+    exempt crate must turn the lint RED. Paste both.
+
 ## Exit Criteria
 - [ ] the hang is reproduced BEFORE the fix (paste the timeout evidence) and the failing connect now returns
       within its bound with a clear error (paste both)
@@ -51,6 +71,11 @@ R6. **Every new assertion needs a mutation control** (paste one per requirement,
       `grep -rn` showing no code path emits it, or the test showing it does)
 - [ ] the graph metrics have a bounded, documented surface (paste the query or the metrics output)
 - [ ] the agent-turn memory search reports its failure (paste the test), or the report justifies silence
+- [ ] R7: the transport failures are emitted as NAMED events (paste the event line with the endpoint and
+      the bound) and surfaced in the CLI/TUI error path; the audit's verdicts (095 doc) are honoured or
+      contested with evidence
+- [ ] R8: the lint fails on a crate-wide exemption covering a module with I/O (paste), accepts the
+      types-only crate (paste the near-miss), and the exemption registry reflects the new set
 - [ ] `pii-http-fetch` and the TUI sandbox are decided and tested; if the sanctioned set changed, the reason
       is in the report (and the registry's four-entry rule was updated deliberately, not quietly)
 - [ ] `bash quality-gate.sh` exits 0 with `PASS: lint-observability` and `PASS: coverage-floor`;

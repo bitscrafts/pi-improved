@@ -847,3 +847,30 @@ diagnosis above was possible while blocked.
    `laya-sidecar.service` and/or a startup probe that reports the outage instead of waiting to be discovered.
    (`systemctl --user` does not work in this container as-is: no `DBUS_SESSION_BUS_ADDRESS`.)
 
+## 2026-10-10 — exemption audit + the deployment decision (owner)
+**Deployment decision, recorded:** *"no need to use docker right now (it will run directly on the lnx
+server)"* — so the deployment path is the **systemd unit on lnx** (`deploy/pii.service` +
+`examples/pii.production.toml` + `_docs/05-operations/105-runbook.md`). The untested `Dockerfile` is no
+longer a readiness caveat; it stays in the tree as a spare. **Consequence for the roadmap: P0 no longer has
+an open item, and the next work is product usability, not packaging ceremony.**
+
+**The exemption audit (`_docs/06-research/055-exemption-audit-2026-10-10.md`) — the finding:**
+the lint's four sanctioned exemptions were granted at CRATE granularity, but the honest unit is the MODULE.
+Measured: `pii-observe` is permanent (it IS the contract), `pii-abi` is honest (1,387 lines; 9 modules of
+types/traits plus PURE classifiers — no I/O, no state, no async), but
+- **`pii-proto` (1,556 lines) owns a real async transport** (`client.rs`: `connect` performing `sys.hello`,
+  `call`, `send_line`, a tokio broadcast, serde framing, `ClientError::Io`) — and it is the module that can
+  **hang forever** (spec 109 D1);
+- **`pii-uds` (120 lines) is not path helpers alone**: `client_connect` is documented in its own header as
+  *"the ONE `UnixStream::connect` site outside the daemon"*.
+Neither crate may emit today (a crate-wide exemption forbids it), and `ClientError` has NO consumer that
+reports it — so the surface a user meets first (the client that cannot connect) is invisible.
+
+**The rule that makes "nothing to observe" decidable** (now requirement R8 of spec 109): an exemption is
+INVALID if any module of that crate imports `tokio`, `std::net`, `std::io` or `std::process`; the lint must
+fail naming crate and module, accept a module-scoped entry for the dormant part, and keep the sanctioned-set
+and dead-exemption rules — with the near-miss control that a types-only crate is still accepted and
+re-introducing a socket import into an exempt crate goes RED. Spec 109 also gains **R7**: emit the transport
+failures (endpoint, the bound that expired, the skew) as named events and surface them in the CLI/TUI error
+path.
+
