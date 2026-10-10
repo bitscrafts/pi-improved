@@ -110,3 +110,9 @@ the daemon sweep is last-writer-wins on one JSON file; with trajectories off eve
 reverted, which is the safe direction; and the "kept" outcome (`before=4 after=0`) is covered by a unit test but not
 in the final captured E2E.
 
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD)
+`fresh-gate` (exactly HEAD `8a9c8da`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0, 14 steps — the
+criterion the worker could not run (it tests the committed HEAD and workers may not commit). **125: 9/9.** With
+this, **Stage C is complete**: the loop `propose → verify → promote → measure → revert` exists and I exercised it
+end to end.
+
