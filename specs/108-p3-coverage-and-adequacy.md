@@ -113,3 +113,14 @@ cd /projects/pi-improved && FRESH_GATE_MIN_FREE_MB=6000 cargo run -q -p xtask --
 (afterwards: `df -h /projects`; if it failed, the export is kept under `/projects/_tmp/fresh-gate-<pid>` and
 is 18G — remove it to reclaim space before re-running).
 
+### The open criterion is now CLOSED (2026-10-10, orchestrator run)
+```
+cargo run -q -p xtask -- fresh-gate --worktree   (FRESH_GATE_MIN_FREE_MB=6000)
+  … PASS: reachability-check · quality-gate: ALL PASS · fresh-gate: PASS   FG-RC=0
+  df after: 594G 541G 28G free (96%)
+```
+So spec 108 is complete: the repo gate AND the CI-model fresh-tree gate are both green, including the new
+`PASS: coverage-floor` step measured inside the export. The disk guard was raised to 6G for the run because
+the instrumented coverage build inside the export is ~18G; it passed with 28G free and the export was
+reclaimed by the tool.
+
