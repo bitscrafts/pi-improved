@@ -150,8 +150,16 @@ impl Channel for DiscordChannel {
         };
         let resp = self.transport.request(ctx, &req)?;
         if !resp.is_success() {
+            // Spec 128 R1c: Discord says *why* in the body (`50013 Missing Permissions`);
+            // a bare status would swallow it. Bounded, and the token scrubbed.
+            let body = String::from_utf8_lossy(&resp.body);
+            let why: String = crate::scrub(body.trim(), &self.token)
+                .chars()
+                .take(300)
+                .collect();
+            let sep = if why.is_empty() { "" } else { ": " };
             return Err(PiiError::Unavailable(format!(
-                "discord: send status {}",
+                "discord: send status {}{sep}{why}",
                 resp.status
             )));
         }
@@ -190,11 +198,14 @@ mod tests {
             }
         }
         fn status(status: u16) -> Self {
+            Self::status_body(status, Vec::new())
+        }
+        fn status_body(status: u16, body: Vec<u8>) -> Self {
             Self {
                 resp: Ok(HttpResponse {
                     status,
                     headers: Vec::new(),
-                    body: Vec::new(),
+                    body,
                 }),
                 last: Mutex::new(None),
             }
@@ -292,5 +303,25 @@ mod tests {
             ch.send(&ctx(), "ch1", "hello"),
             Err(PiiError::Unavailable(_))
         ));
+    }
+
+    #[test]
+    fn send_refusal_keeps_the_provider_reason_bounded_and_scrubbed() {
+        let body = br#"{"message": "Missing Permissions", "code": 50013}"#.to_vec();
+        let ch = channel(FakeTransport::status_body(403, body));
+        let Err(PiiError::Unavailable(m)) = ch.send(&ctx(), "ch1", "hello") else {
+            panic!("expected Unavailable")
+        };
+        assert!(
+            m.contains("403") && m.contains("50013") && m.contains("Missing Permissions"),
+            "{m}"
+        );
+        let long = format!("tok {}", "y".repeat(2000)).into_bytes();
+        let ch = channel(FakeTransport::status_body(500, long));
+        let Err(PiiError::Unavailable(m)) = ch.send(&ctx(), "ch1", "hello") else {
+            panic!("expected Unavailable")
+        };
+        assert!(!m.contains("tok y"), "token scrubbed: {m}");
+        assert!(m.len() < 400, "bounded: {}", m.len());
     }
 }

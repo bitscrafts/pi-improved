@@ -49,7 +49,7 @@ pub fn spawn_all(
         .collect()
 }
 
-fn channel_ctx(channels_scope: &std::path::Path, name: &str) -> Ctx {
+pub(crate) fn channel_ctx(channels_scope: &std::path::Path, name: &str) -> Ctx {
     // The channel needs NET (Discord) AND FS (the cli channel's inbox/
     // outbox files are read/written through Ctx::fs). Capability denial is
     // enforced by Ctx::fs/ctx.net; the router grants both.

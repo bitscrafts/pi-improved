@@ -94,6 +94,10 @@ pub const CHANNEL_EGRESS_DENIED: &str = "channel.egress.denied";
 pub const CHANNEL_MISCONFIGURED: &str = "channel.misconfigured";
 /// Measure: messages polled but not yet acknowledged past the cursor.
 pub const CHANNEL_CURSOR_LAG: &str = "channel.cursor.lag";
+/// Event: a `post` node delivered a message into a channel (`channel`, `destination`, `bytes`; spec 128).
+pub const CHANNEL_POSTED: &str = "channel.posted";
+/// Event: a `post` node was refused or failed (`channel`, `reason`; spec 128).
+pub const CHANNEL_POST_REFUSED: &str = "channel.post_refused";
 /// Event: an MQTT channel connected to its broker (`channel`, `broker`).
 pub const MQTT_CONNECTED: &str = "mqtt.connected";
 /// Event: an MQTT channel lost or failed to reach its broker (`channel`, `broker`, `error`, `attempt`, `retry_in_ms`).
@@ -267,6 +271,11 @@ pub const METRIC_MQTT_PUBLISHED_TOTAL: &str = "pii_mqtt_published_total";
 /// Metric (counter): worker requests refused or cancelled around a drain/reload (spec 120).
 pub const METRIC_WORKER_REQUESTS_REFUSED_TOTAL: &str = "pii_worker_requests_refused_total";
 
+/// Metric (counter): messages the `post` node delivered into channels since the daemon started (spec 128).
+pub const METRIC_CHANNEL_POSTS_TOTAL: &str = "pii_channel_posts_total";
+/// Metric (counter): `post` node calls refused or failed since the daemon started (spec 128).
+pub const METRIC_CHANNEL_POST_REFUSALS_TOTAL: &str = "pii_channel_post_refusals_total";
+
 /// Metric (counter, label `kind`): HAL operations that succeeded since the daemon started (spec 121).
 pub const METRIC_HAL_OPS_TOTAL: &str = "pii_hal_ops_total";
 /// Metric (counter): HAL operations refused by the claim or scope rules since the daemon started (spec 121).
@@ -351,6 +360,8 @@ pub const ALL: &[&str] = &[
     CHANNEL_EGRESS_DENIED,
     CHANNEL_MISCONFIGURED,
     CHANNEL_CURSOR_LAG,
+    CHANNEL_POSTED,
+    CHANNEL_POST_REFUSED,
     MQTT_CONNECTED,
     MQTT_CONNECTION_LOST,
     MQTT_MESSAGE_RECEIVED,
@@ -432,6 +443,8 @@ pub const ALL: &[&str] = &[
     METRIC_MQTT_DROPPED_TOTAL,
     METRIC_MQTT_PUBLISHED_TOTAL,
     METRIC_WORKER_REQUESTS_REFUSED_TOTAL,
+    METRIC_CHANNEL_POSTS_TOTAL,
+    METRIC_CHANNEL_POST_REFUSALS_TOTAL,
     METRIC_HAL_OPS_TOTAL,
     METRIC_HAL_REFUSALS_TOTAL,
     METRIC_WASM_CALLS_TOTAL,

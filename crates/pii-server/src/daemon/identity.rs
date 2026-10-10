@@ -346,6 +346,9 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     add_verdict_counters(&mut counts, learn.as_ref());
     add_promotion_counters(&mut counts, learn.as_ref());
     add_device_counters(&mut counts, hal.as_deref(), wasm.as_deref());
+    let posts = engine.channel_hub.counts();
+    counts.channel_posts = posts.posted;
+    counts.channel_post_refusals = posts.refused;
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
         add_channel_counters(&mut counts, channels.as_deref());

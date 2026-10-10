@@ -93,6 +93,8 @@ pub struct Engine {
     /// The MQTT connections (spec 117): filled by `Daemon::build` from
     /// `[[mqtt]]`; the `mqtt` node's factory holds the same Arc.
     pub mqtt: Arc<pii_channels::mqtt::MqttHub>,
+    /// The configured channels (spec 128): `Daemon::build` fills it; the `post` node shares it.
+    pub channel_hub: Arc<pii_channels::post::ChannelHub>,
     /// The hardware HAL slot (spec 121): empty unless `[hal]` is configured;
     /// `Daemon::build` fills it and the `hal` node's factory holds the same Arc.
     pub hal: Arc<pii_hal::HalHub>,
@@ -296,6 +298,7 @@ impl Engine {
         reg.register(Arc::new(node_kinds::nodes::mqtt::MqttFactory {
             hub: Arc::clone(&mqtt),
         }));
+        let channel_hub = engine::registry::register_post_node(&mut reg, log.clone());
         let hal = Arc::new(pii_hal::HalHub::default());
         reg.register(Arc::new(node_kinds::nodes::hal::HalFactory {
             hub: Arc::clone(&hal),
@@ -316,6 +319,7 @@ impl Engine {
             memory,
             workers,
             mqtt,
+            channel_hub,
             hal,
             wasm,
             entities,

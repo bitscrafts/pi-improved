@@ -93,7 +93,7 @@ impl Daemon {
 
         let mut channels = BTreeMap::new();
         for c in &cfg.channel {
-            let channel = build_channel(c, &net, runtime_dir, engine.log())?;
+            let channel = build_channel(c, &net, runtime_dir, &engine)?;
             channels.insert(
                 c.name.clone(),
                 ChannelRuntime {
@@ -319,8 +319,9 @@ fn build_channel(
     c: &config::ChannelSection,
     net: &Arc<pii_net::NetService>,
     runtime_dir: &Path,
-    log: Arc<dyn pii_observe::Observer>,
+    engine: &Engine,
 ) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
+    let log = engine.log();
     let inner = build_raw_channel(c, net, runtime_dir, &log)?;
     // Spec 112 R5: a channel that cannot work says so at startup, by name.
     if let Some(issue) = inner.health_issue() {
@@ -335,9 +336,14 @@ fn build_channel(
             .field("issue", issue),
         );
     }
-    Ok(Arc::new(pii_channels::observe::ObservedChannel::new(
-        inner, log,
-    )))
+    let channel: Arc<dyn pii_channels::Channel> =
+        Arc::new(pii_channels::observe::ObservedChannel::new(inner, log));
+    // Spec 128: the `post` node reaches the channel through the hub, with the router's own context.
+    engine.channel_hub.insert(
+        Arc::clone(&channel),
+        router::channel_ctx(&resolve_channels_scope(runtime_dir)?, &c.name),
+    );
+    Ok(channel)
 }
 
 fn build_raw_channel(
@@ -454,6 +460,11 @@ fn on_finished(
             WireTerminal::Failure { error } => format!("error: {error}"),
             WireTerminal::Suspended { .. } => return,
         };
+        // Spec 128: a graph that already answered through a `post` node ends with `text = ""`;
+        // an empty reply is never sent (Discord refuses empty content, and it would be noise).
+        if text.is_empty() {
+            return;
+        }
         router::reply(ctx, &channel, &chat, &text);
     }
 }

@@ -11,3 +11,4 @@ How-to guides: the pidag way of work, feature gating, the MCP bridge, local llam
 - `hardware-hal.md` — the HAL traits, the pin/bus capability scope, the `[hal]` keys, the simulated backend, and the real backend's UNVERIFIED status with what would verify it (spec 121).
 - `mqtt.md` — `[[mqtt]]` keys, the payload mapping, the `mqtt` publish node, backoff, the plaintext-credentials rule (spec 117).
 - `memory-entities.md` — typed entities and relationships with provenance: ids, merge, the integrity rule, caps and the refuse-never-evict policy, bounded queries, the `pii memory` entity commands, the `remember`/`recall` nodes and their capabilities (spec 126).
+- `discord-graphs.md` — the `post` egress node (capability, idempotence key, bounds, what may be posted), the `classify` node, `graphs/discord-triage.toml` and `graphs/discord-digest.toml`, and the human tag step (spec 128).

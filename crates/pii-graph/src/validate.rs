@@ -383,6 +383,7 @@ fn missing(kinds: CapKind) -> String {
         (CapKind::MEMORY_WRITE, "memory_write"),
         (CapKind::SPAWN, "spawn"),
         (CapKind::MEMORY_READ, "memory_read"),
+        (CapKind::POST, "post"),
     ] {
         if kinds.contains(bit) {
             names.push(name);

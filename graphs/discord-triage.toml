@@ -1,0 +1,50 @@
+# Spec 128 R3a: triage a Discord message with rules, no model. The channel ingress starts this
+# graph per message (input: text, chat, user, channel); `classify` sorts the text into
+# question | status | spec | alert | done (anything else is `chat`); `reply` posts the class back
+# into the SAME thread (`to = $.input.chat`); `done` records the outcome and ends with text = ""
+# so the router's automatic reply stays silent (the post node already answered).
+#
+# Needs: a `[[channel]]` named "discord" (kind = "discord") with `graph = "discord-triage"`;
+# the graph and the post node both hold the `post` capability. Posting twice for one run is
+# prevented by `key` (a retried step posts nothing). Never put a secret in `template`.
+name = "discord-triage"
+entry = "classify"
+caps = ["post"]
+
+[[node]]
+id = "classify"
+kind = "classify"
+on = "$.input.text"
+default = "chat"
+rules = [
+  { class = "alert", prefix = ["[alert]", "alert:"], any = ["outage", "is down", "on fire", "!!"] },
+  { class = "done", prefix = ["[done]", "done:"], any = ["finished", "merged", "shipped"] },
+  { class = "spec", prefix = ["[spec]", "spec:", "spec "] },
+  { class = "status", prefix = ["[status]", "status"], any = ["progress", "how far"] },
+  { class = "question", prefix = ["[question]"], suffix = ["?"] },
+]
+
+[[node]]
+id = "reply"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.chat"
+template = "[${payload.class}] ${payload.text}"
+key = "triage-${run}"
+timeout_ms = 5000
+
+[[node]]
+id = "done"
+kind = "transform"
+value = { text = "", outcome = "triaged" }
+
+[[edge]]
+from = "classify"
+port = "ok"
+to = "reply"
+
+[[edge]]
+from = "reply"
+port = "ok"
+to = "done"

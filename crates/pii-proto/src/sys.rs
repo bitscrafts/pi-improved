@@ -175,6 +175,12 @@ pub struct Counts {
     /// Worker requests refused or cancelled around a drain/reload (spec 120).
     #[serde(default)]
     pub worker_requests_refused: u64,
+    /// Messages the `post` node delivered into channels (spec 128).
+    #[serde(default)]
+    pub channel_posts: u64,
+    /// `post` node calls refused or failed (spec 128).
+    #[serde(default)]
+    pub channel_post_refusals: u64,
     /// Successful HAL operations by kind (`claim`, `release`, `read`, `write`,
     /// `transaction`); empty when no `[hal]` is configured (spec 121).
     #[serde(default)]

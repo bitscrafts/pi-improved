@@ -63,6 +63,7 @@ pub fn registry(
         log,
     }));
     reg.register(Arc::new(nodes::crash::DebugCrashFactory));
+    reg.register(Arc::new(nodes::classify::ClassifyFactory));
     reg.register(Arc::new(nodes::worker::WorkerFactory { pool: workers }));
     reg.register(Arc::new(nodes::spawn::SpawnFactory {
         engine: spawn_engine,
@@ -81,6 +82,31 @@ pub fn register_entity_nodes(reg: &mut NodeRegistry) -> Arc<pii_memory::entity::
         hub: Arc::clone(&hub),
     }));
     hub
+}
+
+/// Registers `post` over a fresh hub and returns it (spec 128); the daemon fills the hub.
+pub fn register_post_node(
+    reg: &mut NodeRegistry,
+    log: Arc<dyn pii_observe::Observer>,
+) -> Arc<pii_channels::post::ChannelHub> {
+    let hub = Arc::new(pii_channels::post::ChannelHub::default());
+    reg.register(Arc::new(nodes::post::PostFactory {
+        hub: Arc::clone(&hub),
+        log,
+    }));
+    hub
+}
+
+/// The channel-facing kinds for the lint registry: empty hubs, because lint never runs a node.
+fn register_lint_channel_kinds(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe::Observer>) {
+    reg.register(Arc::new(nodes::mqtt::MqttFactory {
+        hub: Arc::new(pii_channels::mqtt::MqttHub::default()),
+    }));
+    reg.register(Arc::new(nodes::classify::ClassifyFactory));
+    reg.register(Arc::new(nodes::post::PostFactory {
+        hub: Arc::new(pii_channels::post::ChannelHub::default()),
+        log: Arc::clone(log),
+    }));
 }
 
 /// A registry for static linting only.
@@ -112,9 +138,7 @@ pub fn lint_registry_with_log(
     log: Arc<dyn pii_observe::Observer>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(nodes::mqtt::MqttFactory {
-        hub: Arc::new(pii_channels::mqtt::MqttHub::default()),
-    }));
+    register_lint_channel_kinds(&mut reg, &log);
     reg.register(Arc::new(nodes::hal::HalFactory {
         hub: Arc::new(pii_hal::HalHub::default()),
         log: Arc::clone(&log),

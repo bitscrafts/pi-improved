@@ -313,6 +313,14 @@ fn render(v: &serde_json::Value) -> String {
             num(v, "/counts/mqtt_published"),
         ),
         (
+            names::METRIC_CHANNEL_POSTS_TOTAL,
+            num(v, "/counts/channel_posts"),
+        ),
+        (
+            names::METRIC_CHANNEL_POST_REFUSALS_TOTAL,
+            num(v, "/counts/channel_post_refusals"),
+        ),
+        (
             names::METRIC_WORKER_REQUESTS_REFUSED_TOTAL,
             num(v, "/counts/worker_requests_refused"),
         ),
@@ -553,6 +561,20 @@ mod tests {
         }
         let off = render(&serde_json::json!({"counts": {"memory_writes": {}}}));
         assert!(!off.contains("pii_memory_entities"), "{off}");
+    }
+
+    /// Spec 128 R6: the post counters are printed from `sys.status` counts.
+    #[test]
+    fn render_carries_the_channel_post_counters() {
+        let text = render(&serde_json::json!({
+            "counts": {"channel_posts": 3, "channel_post_refusals": 1}
+        }));
+        for line in [
+            "pii_channel_posts_total 3",
+            "pii_channel_post_refusals_total 1",
+        ] {
+            assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
+        }
     }
 
     #[test]

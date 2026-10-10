@@ -29,6 +29,8 @@ bitflags! {
         const SPAWN = 128;
         /// Read from the agent's memory.
         const MEMORY_READ = 256;
+        /// Post a message into a configured channel (spec 128).
+        const POST = 512;
     }
 }
 
@@ -48,6 +50,7 @@ impl CapKind {
             "memory_write" => Ok(Self::MEMORY_WRITE),
             "spawn" => Ok(Self::SPAWN),
             "memory_read" => Ok(Self::MEMORY_READ),
+            "post" => Ok(Self::POST),
             other => Err(PiiError::Invalid(format!(
                 "unknown capability kind '{other}'"
             ))),

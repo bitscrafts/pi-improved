@@ -78,3 +78,36 @@ R7. **Docs**: a section in the memory/channel guide (or a new `_docs/0X-guides/d
 - Do not create forum tags from code; that is the human step in R4.
 - Do not edit `specs/` except the verification section your orchestrator adds. Do not commit.
 - Scratch under `/projects/_tmp/`, delete only your own, no daemon left running.
+
+## Orchestrator verification (2026-10-10)
+
+**My controls:**
+- `cargo test -p pii-channels --lib post` → **8 passed** · `-p pii-server --lib post` → **8 passed** ·
+  `--test post_e2e` → **5 passed, 1 ignored** (the ignored one is the live-Discord post, which needs a token).
+- **MUTATION of my choosing, on the property that protects the user's phone:** releasing the idempotence key on
+  a **timeout** (`crates/pii-channels/src/post.rs`, the timeout arm) reddens
+  `a_timeout_is_bounded_and_keeps_the_key_because_the_send_may_still_land` with
+  `left: Err(Timeout { after_ms: 100 })` vs `right: Ok(Duplicate)` — i.e. the retry posts a second time.
+  Restored byte-identical → 8 pass.
+- **LIVE end-to-end through a real daemon** (the part the worker could not run: it may not start background
+  processes): a scratch workspace with one `post` node, a `[[channel]]` of kind `cli`, then
+  `pii run start post-cli` →
+  `{"run_id":"r000000000001"}` · the channel's outbox really contains
+  `{"text":"hello from the post node","to":"out"}` · `pii metrics` renders **`pii_channel_posts_total 1`** and
+  `pii_channel_post_refusals_total 0` · the daemon log carries `channel.posted`.
+- The same live run also demonstrated the **fail-closed** direction twice, unprompted: a graph without
+  `fs_write` → `channel.post_refused: capability denied: fs_write`; an outbox outside the channel's scope
+  (`<runtime_dir>/channels/<name>`) → refused. Both are counted, not silent.
+- The four repo checks: `deps-check`, `net-check`, `doc-drift-check`, `lint-observability` → rc 0 each.
+
+**Worker's own deviations, accepted after checking:** the `post` capability is the coarse bit, not
+`channel:<name>` (per-channel scope needs a `CapSet` field — filed as a follow-up); `to` must be an existing
+thread/text channel, so a graph cannot open a new forum post (that remains the Hermes adapter's job); the
+digest's inputs are limited to what a node can read today (`recall by_kind`), stated in its header comment.
+The router's new "never send an empty reply" rule (`daemon/mod.rs:463`) is correct and documented in place:
+a graph that already answered through `post` ends with `text = ""`, and Discord refuses empty content.
+
+**Honest limits:** the classify node the worker added (outside the spec, because no node could route on
+keywords) is deterministic rules only — no model; the live Discord path is `#[ignore]`d; `sys.status` counters
+were verified in-process by the worker and by me through the CLI against a real daemon.
+

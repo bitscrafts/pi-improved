@@ -1,0 +1,73 @@
+# Spec 128 R3b: gather what the memory graph knows and post a digest into a Discord thread.
+#
+# INPUTS (stated, not implied): two `recall` reads of the entity store (spec 126) —
+# entities of kind "device" and of kind "lesson", ranked so tiers apply (spec 127). The run
+# input carries the destination: `{ "to": "<thread id inside the forum>" }`.
+# NOT inputs: `pii learn list` candidates, memory tier counts and recent run outcomes have no
+# graph node today (they are daemon status, read through `pii learn list` / `pii metrics`);
+# adding a node for them is a separate spec, not smuggled in here.
+#
+# `to` must be a THREAD (or text channel) id: `Channel::send` posts a message into an existing
+# channel/thread; creating a new forum post is the Hermes adapter's job, not this node's.
+# Needs a `[[channel]]` named "discord" (kind = "discord"); the graph needs `memory_read` + `post`.
+# To run it daily, put a `timer` node with a cron expression in front (F5.8) and carry `to`
+# in the `[[cron]]` section's `input`. Never put a secret in `template`: it is posted verbatim.
+name = "discord-digest"
+entry = "devices"
+caps = ["memory_read", "post"]
+
+[[node]]
+id = "devices"
+kind = "recall"
+op = "by_kind"
+entity_kind = "device"
+rank = true
+limit = 50
+
+[[node]]
+id = "lessons"
+kind = "recall"
+op = "by_kind"
+entity_kind = "lesson"
+rank = true
+limit = 50
+
+[[node]]
+id = "digest"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.to"
+template = "pii digest: ${nodes.devices.count} device(s) known, ${nodes.lessons.count} lesson(s) remembered. (inputs: recall by_kind device, lesson)"
+key = "digest-${run}"
+timeout_ms = 5000
+
+[[node]]
+id = "refused_devices"
+kind = "transform"
+value = { text = "", outcome = "digest input refused: devices" }
+
+[[node]]
+id = "refused_lessons"
+kind = "transform"
+value = { text = "", outcome = "digest input refused: lessons" }
+
+[[edge]]
+from = "devices"
+port = "ok"
+to = "lessons"
+
+[[edge]]
+from = "lessons"
+port = "ok"
+to = "digest"
+
+[[edge]]
+from = "devices"
+port = "err"
+to = "refused_devices"
+
+[[edge]]
+from = "lessons"
+port = "err"
+to = "refused_lessons"

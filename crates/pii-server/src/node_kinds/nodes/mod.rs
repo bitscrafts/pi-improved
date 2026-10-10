@@ -4,6 +4,7 @@
 //! need a resource the engine owns (the approval table, the memory store)
 //! that `pii-graph` itself must not know about.
 
+pub mod classify;
 pub mod crash;
 pub mod entity;
 pub mod gate;
@@ -11,6 +12,7 @@ pub mod hal;
 pub mod heal;
 pub mod memory;
 pub mod mqtt;
+pub mod post;
 pub mod sop;
 pub mod spawn;
 pub mod wasm;
