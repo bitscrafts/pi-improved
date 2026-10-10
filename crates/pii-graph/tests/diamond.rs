@@ -281,7 +281,7 @@ fn diamond_race_cancels_loser() {
     );
     let use_fin = finished(&out.journal, "use");
     assert_eq!(use_fin.len(), 1, "use finished exactly once");
-    let (_, _, value) = &use_fin[0];
+    let (use_at_ms, _, value) = &use_fin[0];
     let obj = value
         .as_object()
         .unwrap_or_else(|| panic!("use value must be an object: {value}"));
@@ -295,9 +295,17 @@ fn diamond_race_cancels_loser() {
         "slow must have a NodeCancelled event"
     );
     assert!(!has_failed(&out.journal, "slow"), "slow must NOT be failed");
+    // The claim is "the run ended before the loser's 5000 ms timer", which is a fact about the ENGINE's clock,
+    // not about this machine's load. `at_ms` is the engine's own time, so this cannot flake; a wall-clock bound
+    // here was the one remaining duration assumption in this file and it did flake inside a coverage run
+    // (measured 2026-10-10). The generous wall bound is kept only as a hang guard.
     assert!(
-        out.wall_ms < 2000,
-        "wall {}ms must be < 2000ms although slow.timer_ms == 5000",
+        *use_at_ms < 5000,
+        "the winner finished at {use_at_ms} ms of engine time; slow.timer_ms == 5000, so it cannot have awaited it"
+    );
+    assert!(
+        out.wall_ms < 60_000,
+        "the run must not hang the suite: wall {}ms",
         out.wall_ms
     );
 }
@@ -316,6 +324,7 @@ fn diamond_race_cancels_multi_node_arm() {
     );
     let use_fin = finished(&out.journal, "use");
     assert_eq!(use_fin.len(), 1, "use finished exactly once");
+    let use_at_ms = use_fin[0].0; // the engine's own logical time of the winner's finish
     // slowA was running when fast won -> it is cancelled (not failed).
     assert!(
         has_cancelled(&out.journal, "slowA"),
@@ -336,9 +345,14 @@ fn diamond_race_cancels_multi_node_arm() {
         "slowB must NOT be failed"
     );
     // The run must end well before the 5000 ms loser timers expire.
+    // Same as Test D: the engine's own clock, not this machine's.
     assert!(
-        out.wall_ms < 2000,
-        "wall {}ms must be < 2000ms although slowA/slowB timer_ms == 5000",
+        use_at_ms < 5000,
+        "the winner finished at {use_at_ms} ms of engine time; the loser arm's timer_ms == 5000"
+    );
+    assert!(
+        out.wall_ms < 60_000,
+        "the run must not hang the suite: wall {}ms",
         out.wall_ms
     );
 }
