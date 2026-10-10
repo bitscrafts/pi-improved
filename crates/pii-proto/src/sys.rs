@@ -196,6 +196,9 @@ pub struct Counts {
     /// Candidates refused for missing evidence, across every scan (spec 123).
     #[serde(default)]
     pub learn_refusals: u64,
+    /// Verdicts of the last `pii learn verify` pass by verdict; empty before any (spec 124).
+    #[serde(default)]
+    pub learn_verdicts: BTreeMap<String, u64>,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).

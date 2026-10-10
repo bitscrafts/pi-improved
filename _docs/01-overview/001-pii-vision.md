@@ -26,7 +26,7 @@ messaging gateway with one performant, local-first, modular system.
    tier-aware tool selection for model sizes 0.5B→100B+ — **built (spec 114)**: `[[model_tier]]` names a
    provider + tool allowlist, enforced by the capability layer; see `02-guides/model-tiers.md`.
 4. **Self-improvement loop** (from `hermes-agent`) — skill extraction, procedural
-   templates, trajectory logging for future fine-tuning of a local ~9B model. **Status (spec 123):** trajectories are logged (spec 103); **extraction is built** — `pii-learn`, `pii learn {scan|list|show}`: deterministic, offline candidate lessons, each citing its evidence, which only *propose* ([guide](../02-guides/learning-loop.md)). **Still absent:** the verifier (stage 124) and promotion (stage 125) — nothing yet acts on a candidate, and there is no fine-tuning.
+   templates, trajectory logging for future fine-tuning of a local ~9B model. **Status (spec 124):** trajectories are logged (spec 103); **extraction is built** (spec 123) — `pii-learn`, `pii learn {scan|list|show}`: deterministic, offline candidate lessons, each citing its evidence, which only *propose*; **verification is built** (spec 124) — `pii learn verify`: a candidate must survive an isolated shadow run of the real engine and ends `confirmed`, `refuted` or `inconclusive` ([guide](../02-guides/learning-loop.md)). **Still absent:** promotion (stage 125) — nothing yet acts on a verdict, and there is no fine-tuning.
 
 ## Key Architectural Decisions (from opus research)
 

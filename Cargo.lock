@@ -2051,7 +2051,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "dunce",
+ "pii-core",
+ "pii-graph",
  "pii-observe",
+ "pii-store",
  "serde",
  "serde_json",
  "tempfile",

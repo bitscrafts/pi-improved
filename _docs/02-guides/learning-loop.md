@@ -1,4 +1,4 @@
-# The learning loop, stage 1: extraction (spec 123)
+# The learning loop, stages 1-2: extraction (spec 123) and verification (spec 124)
 
 > **What this is, stated plainly.** Extraction reads the trajectory files the daemon
 > already writes and **proposes** *candidate lessons*, each citing the runs and files that
@@ -102,7 +102,82 @@ Events: `learn.candidates_extracted` (counts by kind), `learn.candidate_refused`
 to stderr by `pii learn scan`. `pii metrics` shows `pii_learn_candidates{kind=…}` and
 `pii_learn_refusals_total` once a scan has run. `pii health` lists the `learn` subsystem.
 
+## Stage 2: verification (spec 124)
+
+Extraction proposes; the verifier decides whether a proposal is **true**. `pii learn verify
+<id>` or `pii learn verify --all` re-executes the graph a candidate is about with the REAL
+engine, in a throwaway **shadow session**, and judges only from that run's own numbers. No
+model is involved. Nothing acts on a verdict yet: stage 125 (promotion) is absent, and the
+verifier changes no config, threshold or graph.
+
+```sh
+pii learn verify --all --traj <root> [--graphs <dir>] [--max-runs 5] [--run-ms 30000] \
+    [--input '<json>'] [--scratch <dir>] [--protect <path>]...
+```
+
+**Isolation.** Each candidate gets a fresh directory under `--scratch` (default: the system
+temp dir) holding its own store (`shadow.redb`), its own trajectory area and nothing else.
+The run has an empty capability set, so it cannot write the configured workspace. The
+verifier never opens the production store at all. If the scratch dir overlaps the learn
+dir, the trajectory root, the graph dir or any `--protect` path, isolation cannot be
+guaranteed and the verdict is `inconclusive (isolation)`; there is no best-effort run. The
+shadow directory is removed when the verification ends. The test
+`the_verifier_leaves_production_state_byte_identical` snapshots the production store (key
+count and bytes, read from a copy because opening a redb file rewrites it), a workspace,
+the graph dir and the trajectory root before and after a full pass, and asserts equality.
+
+**How a claim is judged.** The candidate must be a `repeated_failure` or `stuck_loop` (the
+claims a re-run can test; `limit_hit` and `cost_outlier` are `inconclusive (not_testable)`).
+The graph is found from the cited trajectories and looked up by name among `<graphs>/*.toml`.
+It is run as many times as the claim's own `threshold` (3 by default). The shadow
+trajectories are then read by the **same extractor** that proposed the claim: the claim is
+confirmed iff the same `dedupe_key` comes out again. Input is not stored in a trajectory
+(only its hash), so every shadow run gets `--input` (default `null`); a graph whose failure
+depends on its input needs it supplied, or the honest result is `refuted`.
+
+**Three verdicts.**
+
+* `confirmed`: the claim reproduced, with the shadow run's numbers (`shadow_runs`,
+  `shadow_failed`, `threshold`).
+* `refuted`: it did not reproduce. This is a **successful** verification: the verifier
+  did its job and the lesson was false. A verifier that could only confirm would be no
+  verifier, so the tests hand-write a false claim (diamond "fails" three times; it never
+  does) and require `refuted`.
+* `inconclusive` with a reason: `evidence_missing`, `evidence_unreadable`, `run_cap`,
+  `timeout`, `not_testable`, `graph_unavailable`, `isolation`, `engine_error`.
+
+**Absence of evidence is not evidence of absence.** If a cited trajectory no longer exists
+(spec 115 retention pruned it) the verdict is `inconclusive (evidence_missing)`, naming the
+missing paths. It is never `refuted` and never `confirmed`.
+
+**Budgets** (both configurable): `max_shadow_runs = 5` per candidate (a claim whose
+threshold needs more is `inconclusive (run_cap)` with `bound = max_shadow_runs=N`, before
+anything runs) and `shadow_run_ms = 30000` per run (`inconclusive (timeout)` with the bound
+and the elapsed time). A timed-out run's thread cannot be killed; it is abandoned and keeps
+writing only inside its own shadow directory.
+
+**Records.** Only verdicts are written: `<dir>/learn/verdicts/<candidate id>.json` (the
+evidence used, missing paths, shadow session `s-<id>` and run ids, numbers, bound, elapsed)
+and `<dir>/learn/verify_status.json`. A batch is recorded per candidate; nothing is
+averaged. `pii learn show <id>` prints the verdict when one exists.
+
+**Observability.** Events `learn.verification_started`, `learn.candidate_confirmed`,
+`learn.candidate_refuted`, `learn.candidate_inconclusive` (each with the candidate id, the
+numbers, and the reason and bound where relevant). `pii metrics` shows
+`pii_learn_verdicts{verdict=...}` for the last pass, next to the extraction counters, and
+the `learn` health entry reports `last_verification`.
+
 ## What was not verified
+
+* Verification reproduces a *failure* claim by re-running the graph with an empty capability
+  set and the supplied input; a graph that fails only under the original input, capabilities
+  or external state may come back `refuted` or confirmed for a different reason than the
+  original. The failure class is compared, not the cause.
+* A timed-out shadow run is abandoned, not killed.
+* The daemon never verifies; it only reads the verdict status. Its counters were checked
+  against a live daemon once, by hand, not by an automated test.
+
+## Stage 1 caveats (spec 123)
 
 * No real trajectory this repo had contained a failure or a limit event, so a scan of the
   existing soak/gate trajectories yields zero candidates (correct, and verified). The real

@@ -130,9 +130,28 @@ fn render_wasm(v: &serde_json::Value, out: &mut String) {
     }
 }
 
+/// Verdicts of the last verification pass (spec 124); nothing before a pass.
+fn render_verdicts(v: &serde_json::Value, out: &mut String) {
+    let Some(vs) = v
+        .pointer("/counts/learn_verdicts")
+        .and_then(|o| o.as_object())
+    else {
+        return;
+    };
+    for (verdict, n) in vs {
+        let _ = writeln!(
+            out,
+            "{}{{verdict=\"{verdict}\"}} {}",
+            names::METRIC_LEARN_VERDICTS,
+            n.as_u64().unwrap_or(0)
+        );
+    }
+}
+
 /// Candidate lessons by kind and the refusals (spec 123). Emitted only once a
 /// `pii learn scan` has left a status (the kinds map is then non-empty).
 fn render_learn(v: &serde_json::Value, out: &mut String) {
+    render_verdicts(v, out);
     let Some(kinds) = v
         .pointer("/counts/learn_candidates")
         .and_then(|o| o.as_object())
@@ -365,6 +384,24 @@ mod tests {
             !off.contains("pii_learn"),
             "no scan prints no learn lines: {off}"
         );
+    }
+
+    /// Spec 124 R7: verdict gauges render in the same place as the extraction
+    /// counters, after a pass and not before.
+    #[test]
+    fn render_carries_learn_verdicts_only_after_a_pass() {
+        let on = render(&serde_json::json!({
+            "counts": {"learn_verdicts": {"confirmed": 1, "refuted": 2, "inconclusive": 0}}
+        }));
+        for line in [
+            "pii_learn_verdicts{verdict=\"confirmed\"} 1",
+            "pii_learn_verdicts{verdict=\"refuted\"} 2",
+            "pii_learn_verdicts{verdict=\"inconclusive\"} 0",
+        ] {
+            assert!(on.lines().any(|l| l == line), "missing {line}\n{on}");
+        }
+        let off = render(&serde_json::json!({"counts": {"learn_verdicts": {}}}));
+        assert!(!off.contains("pii_learn_verdicts"), "{off}");
     }
 
     #[test]

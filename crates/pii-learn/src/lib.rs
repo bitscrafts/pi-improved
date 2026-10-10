@@ -16,6 +16,8 @@ mod extract;
 mod learner;
 mod scan;
 pub mod store;
+mod verdict;
+mod verify;
 
 pub use candidate::{Candidate, Evidence, Kind, Refusal, is_valid_id};
 pub use config::{LearnConfig, MAX_EVIDENCE_RUNS};
@@ -23,3 +25,8 @@ pub use extract::{Extraction, extract_all};
 pub use learner::{LearnHealth, Learner};
 pub use scan::{RunSummary, ScanError, ScanStats, classify, scan, token};
 pub use store::{LearnStatus, StoreError};
+pub use verdict::{
+    Reason, Verdict, VerdictRecord, VerifyStatus, get_verdict, put_verdict, read_verify_status,
+    write_verify_status,
+};
+pub use verify::{DEFAULT_MAX_SHADOW_RUNS, DEFAULT_SHADOW_RUN_MS, Verifier, VerifyConfig};

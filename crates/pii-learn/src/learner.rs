@@ -115,9 +115,31 @@ impl LearnHealth {
     }
 }
 
+impl LearnHealth {
+    /// The last verification pass, if any (what `pii metrics` reads).
+    #[must_use]
+    pub fn verification(&self) -> Option<crate::verdict::VerifyStatus> {
+        crate::verdict::read_verify_status(&self.dir)
+    }
+}
+
 impl Health for LearnHealth {
     fn health(&self) -> SubsystemHealth {
         let mut h = SubsystemHealth::ok(SUBSYSTEM);
+        if let Some(v) = self.verification() {
+            let n = |k: &str| v.verdicts.get(k).copied().unwrap_or(0);
+            h.identity.insert(
+                "last_verification".into(),
+                format!(
+                    "at {} candidates {} confirmed {} refuted {} inconclusive {}",
+                    v.at_secs,
+                    v.candidates,
+                    n("confirmed"),
+                    n("refuted"),
+                    n("inconclusive")
+                ),
+            );
+        }
         match store::read_status(&self.dir) {
             Ok(None) => h.detail = Some(String::from("no scan yet (pii learn scan)")),
             Err(e) => {

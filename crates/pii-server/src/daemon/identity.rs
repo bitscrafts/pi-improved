@@ -195,6 +195,13 @@ fn add_learn_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHealth
     counts.learn_refusals = s.refused_total;
 }
 
+/// The last verification pass's verdict counts (spec 124); empty before any pass.
+fn add_verdict_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHealth>) {
+    if let Some(v) = learn.and_then(pii_learn::LearnHealth::verification) {
+        counts.learn_verdicts = v.verdicts;
+    }
+}
+
 /// Worker requests refused or cancelled around a drain/reload, summed (spec 120).
 fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> u64 {
     workers
@@ -286,6 +293,7 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         learn.as_ref(),
     );
     add_learn_counters(&mut counts, learn.as_ref());
+    add_verdict_counters(&mut counts, learn.as_ref());
     add_device_counters(&mut counts, hal.as_deref(), wasm.as_deref());
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;

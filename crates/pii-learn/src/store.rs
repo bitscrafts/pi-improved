@@ -44,7 +44,7 @@ impl std::fmt::Display for StoreError {
 
 impl std::error::Error for StoreError {}
 
-fn area(dir: &Path) -> PathBuf {
+pub(crate) fn area(dir: &Path) -> PathBuf {
     dir.join("learn")
 }
 
@@ -53,7 +53,7 @@ fn candidates_dir(dir: &Path) -> PathBuf {
 }
 
 /// Writes `bytes` to `path` through a sibling temp file and a rename.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, bytes).map_err(|e| StoreError(format!("write {}: {e}", tmp.display())))?;
     fs::rename(&tmp, path).map_err(|e| StoreError(format!("rename {}: {e}", path.display())))
@@ -74,7 +74,7 @@ pub fn put_candidates(dir: &Path, candidates: &[Candidate]) -> Result<usize, Sto
 }
 
 /// Reads one regular, bounded file; a symlink or an oversize file is `None`.
-fn read_small(path: &Path) -> Option<Vec<u8>> {
+pub(crate) fn read_small(path: &Path) -> Option<Vec<u8>> {
     let meta = fs::symlink_metadata(path).ok()?;
     if !meta.is_file() || meta.len() > MAX_CANDIDATE_BYTES {
         return None;

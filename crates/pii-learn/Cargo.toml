@@ -5,16 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Learning loop, stage 1: deterministic offline extraction of cited candidate lessons from the trajectory substrate (spec 123)"
+description = "Learning loop, stages 1-2: deterministic offline extraction of cited candidate lessons (spec 123) and their verification by isolated shadow runs (spec 124)"
 
 [dependencies]
+pii-core = { path = "../pii-core" }
+pii-graph = { path = "../pii-graph" }
 pii-observe = { path = "../pii-observe" }
+pii-store = { path = "../pii-store" }
 blake3 = { workspace = true }
 dunce = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-[dev-dependencies]
 tempfile = { workspace = true }
 
 [lints]

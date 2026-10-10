@@ -195,6 +195,15 @@ pub const LEARN_CANDIDATE_REFUSED: &str = "learn.candidate_refused";
 /// Event: an extraction scan finished (`files_scanned`, `files_seen`, `bytes_read`, `corrupt_lines`, `duration_ms`).
 pub const LEARN_SCAN_COMPLETED: &str = "learn.scan_completed";
 
+/// Event: a shadow-run verification of one candidate began (`candidate`, `kind`).
+pub const LEARN_VERIFICATION_STARTED: &str = "learn.verification_started";
+/// Event: a candidate's claim reproduced in an isolated shadow run (`candidate`, `shadow`, `shadow_runs`, `shadow_failed`).
+pub const LEARN_CANDIDATE_CONFIRMED: &str = "learn.candidate_confirmed";
+/// Event: a candidate's claim did NOT reproduce - a successful verification (`candidate`, `shadow`, `shadow_runs`, `shadow_failed`).
+pub const LEARN_CANDIDATE_REFUTED: &str = "learn.candidate_refuted";
+/// Event: a candidate could not be decided (`candidate`, `reason`, `bound`, `elapsed_ms`).
+pub const LEARN_CANDIDATE_INCONCLUSIVE: &str = "learn.candidate_inconclusive";
+
 /// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
 pub const METRIC_RUNS: &str = "pii_runs";
 /// Metric (gauge): sessions in the main store.
@@ -247,6 +256,9 @@ pub const METRIC_WASM_REFUSALS_TOTAL: &str = "pii_wasm_refusals_total";
 pub const METRIC_LEARN_CANDIDATES: &str = "pii_learn_candidates";
 /// Metric (counter): candidates refused for missing evidence, across every scan (spec 123).
 pub const METRIC_LEARN_REFUSALS_TOTAL: &str = "pii_learn_refusals_total";
+
+/// Metric (gauge, label `verdict`): verdicts of the last verification pass (spec 124).
+pub const METRIC_LEARN_VERDICTS: &str = "pii_learn_verdicts";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -340,6 +352,10 @@ pub const ALL: &[&str] = &[
     LEARN_CANDIDATES_EXTRACTED,
     LEARN_CANDIDATE_REFUSED,
     LEARN_SCAN_COMPLETED,
+    LEARN_VERIFICATION_STARTED,
+    LEARN_CANDIDATE_CONFIRMED,
+    LEARN_CANDIDATE_REFUTED,
+    LEARN_CANDIDATE_INCONCLUSIVE,
     METRIC_RUNS,
     METRIC_SESSIONS,
     METRIC_APPROVALS_PENDING,
@@ -364,6 +380,7 @@ pub const ALL: &[&str] = &[
     METRIC_WASM_REFUSALS_TOTAL,
     METRIC_LEARN_CANDIDATES,
     METRIC_LEARN_REFUSALS_TOTAL,
+    METRIC_LEARN_VERDICTS,
 ];
 
 #[cfg(test)]

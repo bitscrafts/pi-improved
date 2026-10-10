@@ -66,3 +66,33 @@ R9. **Docs**: extend `_docs/0X-guides/learning-loop.md` with the verification st
 - No model in the loop for the verdict: the verdict comes from an executed run's own numbers.
 - Do not promote anything. If you find yourself editing a config or a default to make a verdict possible, stop.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+
+## Orchestrator verification (2026-10-10)
+**My controls:**
+- `cargo test -p pii-learn --test verify` → **10 passed**.
+- **Mutation (mine)**: bypassing the isolation refusal (`if false && overlaps(&scratch, &p)` at `verify.rs:371`) turns
+  `a_scratch_dir_inside_protected_state_is_refused_not_run_best_effort` **red**; restored byte-identical → 10 pass.
+- **Isolation, read at the artefact — and my first attempt at it was vacuous.** I ran `verify --all` against a
+  daemon-made production store and compared `stat` before/after: identical. Then I noticed the command had
+  **errored** (`no trajectory root (use --traj …)`) — so nothing had run and the "pass" proved nothing. Re-run with
+  `--traj`: a **real** pass produced verdicts and the store was still `bytes=1056768 mtime=1791641216` before and
+  after. The lesson is row 1.29's: a check must prove the thing happened, not merely not-fail.
+- **End to end, and the honest failure mode**: with the repo's own `graphs/` dir the two candidates from spec 123
+  come back `inconclusive (graph_unavailable)` — *"no graph named unsatisfiable in graphs"* — because the fixture
+  graph that produced them is not a real graph. That is the correct verdict, not a failure: the verifier refuses
+  with a precise reason instead of manufacturing a confirmation. (With the graph available, the worker saw both
+  **confirmed** at 3/3 shadow runs.)
+- **The counters render** (the integration I had to fix on spec 123): through a live daemon,
+  `pii_learn_verdicts{verdict="inconclusive"} 2`, `{verdict="confirmed"} 0`, `{verdict="refuted"} 0`, and health
+  reports `last_verification: at … candidates 2 confirmed 0 refuted 0 inconclusive 2`.
+
+**Design confirmed at the source:** a candidate is confirmed only if the **same `dedupe_key` re-emerges** from a
+shadow run of the real engine; `limit_hit` and `cost_outlier` are `inconclusive (not_testable)`; the scratch dir is
+canonicalised and refused if it overlaps the learn root, the trajectory root, the graph dir or a `--protect` path
+(**no best-effort run**); budgets `max_shadow_runs=5`, `shadow_run_ms=30000`.
+
+**Kept honest:** a shadow run uses an empty capability set and `--input null` because a trajectory stores only the
+input's **hash**, so the failure *class* is compared and not the cause — a graph that fails only under its original
+input can reproduce, or fail to, for a different reason. A run that hits the wall-clock bound is **abandoned, not
+killed**. The timeout path is covered only by a `shadow_run_ms=1` test, not against a genuinely long graph.
+
