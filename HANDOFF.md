@@ -885,3 +885,18 @@ behind it — `pii-http-fetch` first, per the owner: *"document it and leave it 
 items are NOT to be removed by hand; space is freed with `cargo clean` (measured before/after, run when no
 worker is building), and the guarded scripts stay for the exports *this session* creates.
 
+## 2026-10-10 — the vision order resumed (specs 110-112 landed, 113-116 ready)
+- **110 P5** (`62a0df0`): the first measurements — 41.5 runs/s at 8 concurrent / 0 failures; the trajectory sink
+  costs +10.6% CPU and 4 KB/run; a 32.7-minute soak (85 018 runs) shows **RSS growth ~155 B/run with no plateau**;
+  the one-shot path is 99.9% model time (p50 83 s); the coverage ratchet costs +77 s and +7.84 GB per gate run.
+  **Eight findings filed, none fixed**; F7 (fresh-gate's 2 GB guard vs the >= 11.4 GB an instrumented export
+  needs) fixed in the tool by the orchestrator: the export skips coverage by default, loudly.
+- **111 providers** (`1c97da4`): OpenAI-compatible (configurable base URL) + anthropic + gemini on the existing
+  `HttpTransport`, so `http:<host>` governs them. My mutation found the auth/version headers were asserted by
+  PRESENCE only — now by VALUE, with controls.
+- **112 channels** (`28f8ff8`): webhook (loopback default, timing-safe secret on a wider bind), telegram, matrix;
+  `health_issue()` makes a misconfigured channel `Degraded`; credentials from an env var or a 0600 file.
+- **Next**: 113 SOP engine → 114 tiers → 115/116 (Stage A2) → Stage B (MQTT, HAL, WASM) → Stage C → Stage D.
+- **Disk**: `cargo clean` only, never delete the pre-existing `_tmp` items (owner rule).
+- **Owner decisions**: no Docker (systemd on lnx); all pillars implemented in order; `pii-http-fetch` dormant.
+
