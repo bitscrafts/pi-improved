@@ -80,3 +80,10 @@ failed **different** tests — first `resume_never_reinvokes_completed_node`, th
 checks, and this lane treats a check that reports failures nobody can trust as a defect. Filed as **spec 119**
 (Stage A4) with the repro harness I have running: `cargo test --workspace` (what the gate runs) under CPU pressure.
 
+### The fresh-gate criterion CLOSED (2026-10-10, plain form, on 118's own HEAD)
+`fresh-gate` (exactly HEAD `55db4f5`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0 — and the run shows
+the three new steps reporting (`==> cargo run -q -p xtask -- doc-drift-check` / `PASS: doc-drift-check`).
+**118: 8/8.** (The load-sensitive tests did not manifest in this run; the tally that matters is now: 2 flaky
+failures in ~10 export runs, i.e. roughly a **20% false-red rate** on the gate — which is why spec 119 is worth
+doing before more features land.)
+
