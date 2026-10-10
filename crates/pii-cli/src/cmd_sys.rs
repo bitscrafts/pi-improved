@@ -1,7 +1,8 @@
-//! `pii sys status|reload` and `pii run ls|start` (F7.1 helpers): thin
+//! `pii sys status|reload` and `pii run ls|start|get` (F7.1 helpers): thin
 //! protocol calls, reused by the phase-3 scripts (crash/shutdown/cron).
 
 use crate::cli_util::fail;
+use std::io::Write as _;
 use std::process::ExitCode;
 
 use pii_proto::method::Method;
@@ -21,14 +22,17 @@ pub(crate) fn cmd_sys(args: &mut std::env::ArgsOs) -> ExitCode {
     }
 }
 
-/// `pii run ls [--status S] [--graph G] | start <graph> [--input J]`.
+/// `pii run ls [--status S] [--graph G] | start <graph> [--input J] | get <run_id>`.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn cmd_run_ctl(args: &mut std::env::ArgsOs) -> ExitCode {
     match next_str(args).as_deref() {
         Some("ls") => run_ls(args),
         Some("start") => run_start(args),
+        Some("get") => run_get(args),
         _ => {
-            eprintln!("usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]}}");
+            eprintln!(
+                "usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]|get <run_id>}}"
+            );
             ExitCode::from(2)
         }
     }
@@ -97,6 +101,38 @@ fn run_ls(args: &mut std::env::ArgsOs) -> ExitCode {
     }
 }
 
+/// What `pii run get` says about a `run.get` answer (spec 115 R1): a run the
+/// daemon holds but has not journalled yet is "accepted", a daemon that has
+/// never heard of the id is "unknown" — the two must not read alike.
+fn run_get_line(id: &str, answer: &Result<serde_json::Value, String>) -> String {
+    match answer {
+        Ok(v) if v.get("status").and_then(serde_json::Value::as_str) == Some("accepted") => {
+            format!(
+                "run '{id}' is accepted and in flight; its journal has not materialised yet, poll again"
+            )
+        }
+        Ok(v) => v.to_string(),
+        Err(e) if e.contains("not found") => {
+            format!("run '{id}' is unknown to this daemon (not in flight, not stored)")
+        }
+        Err(e) => e.clone(),
+    }
+}
+
+fn run_get(args: &mut std::env::ArgsOs) -> ExitCode {
+    let Some(id) = next_str(args) else {
+        let _ = writeln!(std::io::stderr(), "usage: pii run get <run_id>");
+        return ExitCode::from(2);
+    };
+    let answer = run_call(Method::RunGet, serde_json::json!({"run_id": id}));
+    let _ = writeln!(std::io::stdout(), "{}", run_get_line(&id, &answer));
+    if answer.is_ok() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(2)
+    }
+}
+
 fn run_start(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(graph) = next_str(args) else {
         eprintln!("usage: pii run start <graph> [--input J]");
@@ -122,7 +158,19 @@ mod tests {
 
     use std::ffi::OsString;
 
-    use super::parse_ls_flags;
+    use super::{parse_ls_flags, run_get_line};
+
+    /// Spec 115 R1: in-flight and unknown never read alike.
+    #[test]
+    fn run_get_wording_separates_accepted_from_unknown() {
+        let accepted = run_get_line("r1", &Ok(serde_json::json!({"status": "accepted"})));
+        assert!(accepted.contains("accepted and in flight"), "{accepted}");
+        let unknown = run_get_line("r1", &Err("not found: run 'r1'".to_owned()));
+        assert!(unknown.contains("unknown to this daemon"), "{unknown}");
+        assert_ne!(accepted, unknown);
+        let done = run_get_line("r1", &Ok(serde_json::json!({"status": "succeeded"})));
+        assert!(done.contains("succeeded"));
+    }
 
     fn os_args(argv: &[&str]) -> std::vec::IntoIter<OsString> {
         argv.iter()

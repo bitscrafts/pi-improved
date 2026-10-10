@@ -155,13 +155,21 @@ async fn run_one(client: &Client, graph: &str) -> bool {
         return false;
     };
     for _ in 0..600 {
-        if let Ok(h) = client
+        match client
             .call(Method::RunGet, serde_json::json!({"run_id": run_id}))
             .await
-            && let Some(status) = h.get("status").and_then(|v| v.as_str())
-            && let Some(outcome) = soak_status(status)
         {
-            return outcome;
+            Ok(h) => {
+                if let Some(status) = h.get("status").and_then(|v| v.as_str())
+                    && let Some(outcome) = soak_status(status)
+                {
+                    return outcome;
+                }
+            }
+            // Spec 115: an id `run.start` just returned is either accepted
+            // (answers) or terminal; NotFound for it is a defect, not "not yet".
+            Err(e) if format!("{e:?}").contains("not found") => return false,
+            Err(_) => {}
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

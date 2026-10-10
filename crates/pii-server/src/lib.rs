@@ -143,6 +143,8 @@ pub struct Engine {
     /// Last-seen state per subsystem, so `sys.status` polls report transitions
     /// as `health.state.changed` (spec 109 R2).
     health_watch: pii_observe::HealthWatch,
+    /// Run-lifecycle latency by outcome (spec 115 R4), recorded in-process.
+    pub(crate) latency: pii_observe::RunLatency,
 }
 
 /// A conversation session.
@@ -295,6 +297,7 @@ impl Engine {
             audit: parking_lot::Mutex::new(None),
             log,
             health_watch: pii_observe::HealthWatch::new(),
+            latency: pii_observe::RunLatency::default(),
         }))
     }
 

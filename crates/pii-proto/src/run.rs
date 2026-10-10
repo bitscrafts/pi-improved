@@ -9,6 +9,10 @@ use crate::event::Event;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WireRunStatus {
+    /// Handed an id and held by the broker, but its journal has not
+    /// materialised yet (spec 115). Only `run.get` answers this; it is never
+    /// stored and `run.list` cannot filter on it.
+    Accepted,
     /// Executing.
     Running,
     /// Awaiting resume.

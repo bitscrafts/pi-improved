@@ -268,6 +268,8 @@ fn run_list(
     ];
     let wanted: Vec<pii_abi::RunStatus> = match params.status {
         None => all.to_vec(),
+        // `accepted` is a transient broker state with no stored runs behind it.
+        Some(WireRunStatus::Accepted) => Vec::new(),
         Some(WireRunStatus::Running) => vec![pii_abi::RunStatus::Running],
         Some(WireRunStatus::Suspended) => vec![pii_abi::RunStatus::Suspended],
         Some(WireRunStatus::Succeeded) => vec![pii_abi::RunStatus::Succeeded],
@@ -304,10 +306,23 @@ fn graph_lint_dispatch(
 
 /// Reads a run header as a wire header (F6: `run.get`/`run.list`).
 fn run_header(engine: &Arc<Engine>, run_id: &RunId) -> Result<WireRunHeader, PiiError> {
-    let header = engine
-        .store
-        .get_run(run_id)?
-        .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}'")))?;
+    // Spec 115 R1: ask the broker FIRST. A run is registered before its id is
+    // handed out and unregistered only after its terminal is journalled, so
+    // "registered but no header yet" is exactly "accepted, not yet
+    // materialised" — and checking in this order cannot race into NotFound.
+    let in_flight = engine.runs.lock().contains_key(run_id.as_str());
+    let Some(header) = engine.store.get_run(run_id)? else {
+        if in_flight {
+            return Ok(WireRunHeader {
+                run_id: run_id.to_string(),
+                graph: String::new(),
+                status: WireRunStatus::Accepted,
+                seq: 0,
+                dur_ms: 0,
+            });
+        }
+        return Err(PiiError::NotFound(format!("run '{run_id}'")));
+    };
     Ok(WireRunHeader {
         run_id: header.run.to_string(),
         graph: header.graph.clone(),

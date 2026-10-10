@@ -77,9 +77,31 @@ impl<'a> Registry<'a> {
     }
 }
 
+/// The standing store note (spec 115 R3c). Matches what `pii store compact` does.
+pub const STORE_NEVER_SHRINKS: &str = "the main store never shrinks on its own: runs and journal events are never deleted and redb returns only free space at the end of the file; watch pii_store_bytes_per_run, and reclaim interior free pages offline with `pii store compact` (daemon stopped)";
+
+/// Run-lifecycle latency and the standing store note (spec 115 R3c/R4).
+fn attach_latency(engine: &Engine, out: &mut StatusResult) {
+    out.latency = engine
+        .latency
+        .snapshot()
+        .into_iter()
+        .map(|(outcome, p)| pii_proto::sys::LatencyStatus {
+            outcome: outcome.to_owned(),
+            count: p.count,
+            p50_ms: p.p50_ms,
+            p95_ms: p.p95_ms,
+            p99_ms: p.p99_ms,
+            max_ms: p.max_ms,
+        })
+        .collect();
+    out.notes.push(STORE_NEVER_SHRINKS.to_owned());
+}
+
 /// Fills the identity fields of `out` from `engine` (and `ctx` when a daemon
 /// is attached). The pre-existing fields are left untouched.
 pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResult) {
+    attach_latency(engine, out);
     let info = engine.store.info().ok();
     let mut counts = Counts {
         memory_docs: out.memory.docs,

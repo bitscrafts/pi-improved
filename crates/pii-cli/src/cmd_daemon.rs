@@ -370,7 +370,11 @@ async fn run_daemon(
     };
     // Spec 103: trajectories are OFF unless $PII_TRAJECTORY_DIR or
     // `[core] trajectory_dir` is set.
-    if let Some(sink) = pii_core::trajectory_sink(cfg.core.trajectory_dir.as_deref()) {
+    if let Some(sink) = pii_core::trajectory_sink_with(
+        cfg.core.trajectory_dir.as_deref(),
+        cfg.core.trajectory_retention(),
+        Arc::clone(&log),
+    ) {
         engine.attach_trajectory(sink);
     }
     // P4.2 (spec 16): a daemon restart must not be amnesia — re-seed sessions

@@ -100,6 +100,12 @@ pub const RUN_OUTCOME: &str = "run.outcome";
 pub const TRAJECTORY_TRUNCATED: &str = "trajectory.truncated";
 /// Event: writing a trajectory failed (the run is not aborted).
 pub const TRAJECTORY_WRITE_FAILED: &str = "trajectory.write.failed";
+/// Event: the retention policy pruned old trajectories (`files`, `bytes`, `remaining_files`, `remaining_bytes`).
+pub const TRAJECTORY_PRUNED: &str = "trajectory.pruned";
+/// Event: the retention policy cannot be met because only in-flight runs remain (`files`, `bytes`).
+pub const TRAJECTORY_OVER_BUDGET: &str = "trajectory.over_budget";
+/// Event: a run's start was refused after its id was handed out; the run is failed, not lost (`run`, `error`).
+pub const RUN_START_REFUSED: &str = "run.start.refused";
 /// Event: the daemon finished starting and is serving.
 pub const DAEMON_STARTED: &str = "daemon.started";
 /// Event: the daemon is shutting down (`reason`: signal or forced).
@@ -145,6 +151,14 @@ pub const METRIC_CRON_ENTRIES: &str = "pii_cron_entries";
 pub const METRIC_STORE_BYTES: &str = "pii_store_bytes";
 /// Metric (gauge, label `store`): persisted format version of a store.
 pub const METRIC_STORE_FORMAT_VERSION: &str = "pii_store_format_version";
+/// Metric (gauge): process resident set size in KiB (`sys.status` `rss_kb`).
+pub const METRIC_PROCESS_RSS_KB: &str = "pii_process_rss_kb";
+/// Metric (gauge): main-store bytes divided by runs (0 with no runs); the growth rate as one number.
+pub const METRIC_STORE_BYTES_PER_RUN: &str = "pii_store_bytes_per_run";
+/// Metric (gauge, labels `outcome`, `quantile`): run-lifecycle latency in ms from the bounded histogram (upper bucket bound).
+pub const METRIC_RUN_LATENCY_MS: &str = "pii_run_latency_ms";
+/// Metric (counter, label `outcome`): runs recorded in the latency histogram.
+pub const METRIC_RUN_LATENCY_COUNT: &str = "pii_run_latency_count";
 /// Metric (gauge): daemon uptime in milliseconds.
 pub const METRIC_UPTIME_MS: &str = "pii_uptime_ms";
 
@@ -197,6 +211,9 @@ pub const ALL: &[&str] = &[
     RUN_OUTCOME,
     TRAJECTORY_TRUNCATED,
     TRAJECTORY_WRITE_FAILED,
+    TRAJECTORY_PRUNED,
+    TRAJECTORY_OVER_BUDGET,
+    RUN_START_REFUSED,
     DAEMON_STARTED,
     DAEMON_STOPPED,
     DAEMON_PEER_REFUSED,
@@ -218,6 +235,10 @@ pub const ALL: &[&str] = &[
     METRIC_CRON_ENTRIES,
     METRIC_STORE_BYTES,
     METRIC_STORE_FORMAT_VERSION,
+    METRIC_PROCESS_RSS_KB,
+    METRIC_STORE_BYTES_PER_RUN,
+    METRIC_RUN_LATENCY_MS,
+    METRIC_RUN_LATENCY_COUNT,
     METRIC_UPTIME_MS,
 ];
 

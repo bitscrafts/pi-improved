@@ -66,7 +66,7 @@ fn now_ms() -> u64 {
 }
 
 /// Opens `path` as redb (taking its exclusive lock).
-fn lock(path: &Path) -> Result<redb::Database, PiiError> {
+pub(crate) fn lock(path: &Path) -> Result<redb::Database, PiiError> {
     redb::Database::open(path).map_err(|e| {
         PiiError::Invalid(format!(
             "store '{}' cannot be opened exclusively ({e}); stop the daemon first",

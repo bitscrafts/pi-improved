@@ -4,11 +4,14 @@
 //! The sink is an [`Observer`]; it only records events carrying a run id.
 //! Redaction is applied here, to a copy of every event, so the original
 //! event (and every other observer's view of it) is untouched. The sink never
-//! deletes, truncates or rewrites a file, and a write failure is reported as
+//! truncates or rewrites a file; the only thing it deletes is the OLDEST
+//! finished trajectories when an aggregate [`Retention`] bound is exceeded
+//! (spec 115, never a run still open, always reported as
+//! [`names::TRAJECTORY_PRUNED`]). A write failure is reported as
 //! a [`names::TRAJECTORY_WRITE_FAILED`] event to the reporter observer — it
 //! never panics and never aborts the run.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -16,6 +19,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use crate::retention::{Index, Retention};
 use crate::{Event, Level, NullObserver, Observer, Redaction, RedactionPolicy, RunId, names};
 
 /// Per-run bounds on a trajectory file.
@@ -56,6 +60,8 @@ pub struct TrajectorySink {
     caps: TrajectoryCaps,
     reporter: Arc<dyn Observer>,
     runs: std::sync::Mutex<BTreeMap<String, RunFile>>,
+    retention: Retention,
+    index: std::sync::Mutex<Index>,
 }
 
 impl std::fmt::Debug for TrajectorySink {
@@ -80,7 +86,16 @@ impl TrajectorySink {
             caps: TrajectoryCaps::default(),
             reporter: Arc::new(NullObserver),
             runs: std::sync::Mutex::default(),
+            retention: Retention::default(),
+            index: std::sync::Mutex::default(),
         }
+    }
+
+    /// Bounds the whole trajectory directory (spec 115). Default: unbounded.
+    #[must_use]
+    pub fn with_retention(mut self, retention: Retention) -> Self {
+        self.retention = retention;
+        self
     }
 
     /// Overrides the per-run caps.
@@ -146,10 +161,18 @@ impl TrajectorySink {
         }
         let path = self.path_for(&run);
         if st.file.is_none() {
+            if let Ok(mut idx) = self.index.lock() {
+                idx.ensure_scanned(&self.root.join("trajectories"));
+            }
             match Self::open(&path) {
                 Ok(f) => {
                     st.bytes = f.metadata().map_or(0, |m| m.len());
                     st.file = Some(f);
+                    if let (Ok(mut idx), Some(name)) =
+                        (self.index.lock(), path.file_name().and_then(|f| f.to_str()))
+                    {
+                        idx.created(name, st.bytes);
+                    }
                 }
                 Err(err) => {
                     if !st.failure_reported {
@@ -180,6 +203,11 @@ impl TrajectorySink {
             Ok(()) => {
                 st.events += 1;
                 st.bytes += line.len() as u64;
+                // A finished run's handle is released so its file can be pruned.
+                if is_outcome {
+                    st.file = None;
+                }
+                self.account(&runs, &path, line.len() as u64);
             }
             Err(err) => {
                 if !st.failure_reported {
@@ -188,6 +216,31 @@ impl TrajectorySink {
                 }
             }
         }
+    }
+
+    /// Books `n` appended bytes against the retention index and enforces the
+    /// policy. Runs with an open handle are in flight and are never pruned.
+    fn account(&self, runs: &BTreeMap<String, RunFile>, path: &Path, n: u64) {
+        let Some(name) = path.file_name().and_then(|f| f.to_str()) else {
+            return;
+        };
+        let Ok(mut idx) = self.index.lock() else {
+            return;
+        };
+        idx.wrote(name, n);
+        let mut open: HashSet<String> = runs
+            .iter()
+            .filter(|(_, st)| st.file.is_some())
+            .map(|(id, _)| format!("{}.jsonl", sanitize(id)))
+            .collect();
+        // The run being written right now is current even if it just finished.
+        open.insert(name.to_owned());
+        idx.enforce(
+            &self.root.join("trajectories"),
+            &self.retention,
+            &open,
+            self.reporter.as_ref(),
+        );
     }
 
     fn mark_truncated(&self, st: &mut RunFile, run: &RunId) {
@@ -545,5 +598,84 @@ mod tests {
         let sink = TrajectorySink::new(d.path(), Arc::new(NoRedaction));
         let p = sink.path_for(&RunId("../../etc/x".into()));
         assert_eq!(p.parent().unwrap(), d.path().join("trajectories"));
+    }
+
+    fn run_ev(run: &str, i: u64) -> Event {
+        Event::new("graph", Level::Info, "run.journal")
+            .field("i", i)
+            .field("pad", "x".repeat(40))
+            .in_run(RunId(run.into()))
+    }
+
+    fn count(d: &Path) -> usize {
+        std::fs::read_dir(d.join("trajectories")).unwrap().count()
+    }
+
+    /// Spec 115 R2: with a tiny budget the directory is pruned oldest-first
+    /// instead of growing, the prune is an event, and the run that is still
+    /// open is never pruned.
+    #[test]
+    fn a_tiny_file_budget_prunes_oldest_first_and_keeps_the_open_run() {
+        let d = tempfile::tempdir().unwrap();
+        let rep = Arc::new(Recorder::new());
+        let sink = TrajectorySink::new(d.path(), Arc::new(NoRedaction))
+            .with_retention(Retention {
+                max_bytes: None,
+                max_files: Some(5),
+            })
+            .with_reporter(rep.clone());
+        for n in 0..40 {
+            let run = format!("r{n:03}");
+            for i in 0..3 {
+                sink.event(&run_ev(&run, i));
+                assert!(count(d.path()) <= 5, "dir grew past the budget at {run}");
+            }
+            sink.event(&Event::new("graph", Level::Info, names::RUN_OUTCOME).in_run(RunId(run)));
+        }
+        assert!(!rep.events_named(names::TRAJECTORY_PRUNED).is_empty());
+        // The newest run is intact: all 3 journal lines and its outcome.
+        let newest = std::fs::read_to_string(d.path().join("trajectories/r039.jsonl")).unwrap();
+        assert_eq!(newest.lines().count(), 4);
+        // The oldest are gone, and what remains is the newest tail.
+        assert!(!d.path().join("trajectories/r000.jsonl").exists());
+    }
+
+    /// Spec 115 R2: a byte budget smaller than one open run is reported once
+    /// as over-budget and NOTHING of the open run is dropped.
+    #[test]
+    fn an_open_run_larger_than_the_budget_is_reported_not_dropped() {
+        let d = tempfile::tempdir().unwrap();
+        let rep = Arc::new(Recorder::new());
+        let sink = TrajectorySink::new(d.path(), Arc::new(NoRedaction))
+            .with_retention(Retention {
+                max_bytes: Some(100),
+                max_files: None,
+            })
+            .with_reporter(rep.clone());
+        for i in 0..10 {
+            sink.event(&run_ev("only", i));
+        }
+        let l = std::fs::read_to_string(d.path().join("trajectories/only.jsonl")).unwrap();
+        assert_eq!(l.lines().count(), 10, "the open run must be intact");
+        assert_eq!(rep.events_named(names::TRAJECTORY_OVER_BUDGET).len(), 1);
+    }
+
+    /// Spec 115 R2: the index is seeded from files already on disk (a daemon
+    /// restart must not forget what the last one wrote).
+    #[test]
+    fn existing_files_count_against_the_budget_after_a_restart() {
+        let d = tempfile::tempdir().unwrap();
+        let tdir = d.path().join("trajectories");
+        std::fs::create_dir_all(&tdir).unwrap();
+        for n in 0..8 {
+            std::fs::write(tdir.join(format!("old{n}.jsonl")), b"{}\n").unwrap();
+        }
+        let sink = TrajectorySink::new(d.path(), Arc::new(NoRedaction)).with_retention(Retention {
+            max_bytes: None,
+            max_files: Some(4),
+        });
+        sink.event(&run_ev("fresh", 0));
+        assert!(count(d.path()) <= 4);
+        assert!(tdir.join("fresh.jsonl").exists());
     }
 }

@@ -336,6 +336,275 @@
       "type": "object"
     },
     {
+      "description": "A run suspended (gate/timer) and awaits a resume key.",
+      "properties": {
+        "key": {
+          "description": "The resume key.",
+          "type": "string"
+        },
+        "kind": {
+          "const": "run_suspended",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Human-readable reason.",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Run id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "key",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A suspended run was resumed.",
+      "properties": {
+        "key": {
+          "description": "The resume key used.",
+          "type": "string"
+        },
+        "kind": {
+          "const": "run_resumed",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Run id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "key"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A gate requested an approval decision.",
+      "properties": {
+        "approval_id": {
+          "description": "Approval id.",
+          "type": "string"
+        },
+        "kind": {
+          "const": "approval_requested",
+          "type": "string"
+        },
+        "policy": {
+          "description": "Policy name.",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Prompt for the approver.",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Run id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "approval_id",
+        "run_id",
+        "policy",
+        "prompt"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "An approval decision was recorded.",
+      "properties": {
+        "allow": {
+          "description": "`true` = allow, `false` = deny.",
+          "type": "boolean"
+        },
+        "approval_id": {
+          "description": "Approval id.",
+          "type": "string"
+        },
+        "kind": {
+          "const": "approval_resolved",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "approval_id",
+        "allow"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A worker died (supervisor event).",
+      "properties": {
+        "kind": {
+          "const": "worker_died",
+          "type": "string"
+        },
+        "pid": {
+          "description": "Dead pid.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "worker": {
+          "description": "Worker name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "worker",
+        "pid"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A worker was respawned.",
+      "properties": {
+        "kind": {
+          "const": "worker_restarted",
+          "type": "string"
+        },
+        "pid": {
+          "description": "Fresh pid.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "took_ms": {
+          "description": "Death-to-hello milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "worker": {
+          "description": "Worker name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "worker",
+        "pid",
+        "took_ms"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A channel message produced a run.",
+      "properties": {
+        "channel": {
+          "description": "Channel name.",
+          "type": "string"
+        },
+        "chat": {
+          "description": "Chat id.",
+          "type": "string"
+        },
+        "kind": {
+          "const": "channel_message",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Run id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "channel",
+        "chat",
+        "run_id"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Memory search degraded (vector lane down).",
+      "properties": {
+        "kind": {
+          "const": "memory_degraded",
+          "type": "string"
+        },
+        "lanes": {
+          "description": "The lanes that still ran.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "description": "Why the lane was skipped.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "lanes",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A model-routing decision: which step resolved to which model\n(spec 28 R3 — the journal is the audit trail).",
+      "properties": {
+        "kind": {
+          "const": "route_decision",
+          "type": "string"
+        },
+        "model": {
+          "description": "The resolved model spec.",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Run id.",
+          "type": "string"
+        },
+        "step": {
+          "description": "The logical step name (e.g. `patch`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "step",
+        "model"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A `spawn` node launched a child run (spec 32 R1).",
+      "properties": {
+        "child_run": {
+          "description": "The child run id.",
+          "type": "string"
+        },
+        "kind": {
+          "const": "run_spawned",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "The parent run id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "child_run"
+      ],
+      "type": "object"
+    },
+    {
       "description": "A subscriber fell behind and events were dropped (never silent).",
       "properties": {
         "dropped": {

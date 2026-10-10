@@ -38,10 +38,47 @@ stamped too but is not listed in the payload.
     pii_memory_docs                    gauge    memory documents
     pii_cron_entries                   gauge    configured cron entries
     pii_uptime_ms                      gauge    daemon uptime
+    pii_process_rss_kb                 gauge    daemon resident set size (VmRSS, KiB)
+    pii_store_bytes_per_run            gauge    main-store bytes / runs: the growth rate as one number
     pii_store_bytes{store="main"}      gauge    file size, one line per store
     pii_store_format_version{store=…}  gauge    persisted format version, one line per store
+    pii_run_latency_count{outcome=…}   counter  runs recorded, per outcome (succeeded|failed|suspended|refused)
+    pii_run_latency_ms{outcome=…,quantile="0.5|0.95|0.99|1"}  gauge  run lifecycle (accepted -> terminal), ms
 
-The contract exposes no latency histogram through `sys.status`, so none is emitted.
+Quantile lines appear only for an outcome that has samples. `quantile="1"` is the exact maximum.
+`pii metrics` also prints `# NOTE …` lines (the store note below).
+
+### Loaded-system numbers: what the percentiles mean (spec 115 R4)
+
+The latency numbers come from a bounded in-process histogram (150 fixed buckets, ratio 1.1, no
+dependency, no lock, constant memory). **Resolution:** a percentile is the upper bound of the bucket
+holding that rank, capped at the largest value seen — it is never under-reported and over-reported
+by at most 10% (+1 ms at the low end). Durations are whole milliseconds, rounded up (a 0.2 ms run
+reads 1 ms). **What it cannot see:** a run longer than about 24 minutes lands in the last bucket
+(only `quantile="1"` is true for it); the histogram starts at daemon start and is not reset; a
+percentile over fewer than ~100 runs is an order statistic, not a tail estimate; **a run that
+suspends is recorded as `suspended` at the moment it suspends, not when it finally finishes**
+(`run.resume` lifecycles are not in the histogram).
+
+Checked against an outside measurement of the same workload (real daemon, UDS, 400 runs, 4
+connections, scripted model, debug build, shared host): client wall clock from the `run.start`
+reply to the terminal seen by `run.get` (5 ms poll), vs `pii metrics`:
+
+    quantile   client (outside)   pii metrics   delta
+    p50        74.2 ms            73 ms         1.2
+    p95        117.5 ms           118 ms        0.5
+    p99        130.7 ms           130 ms        0.7
+    max        144.2 ms           144 ms        0.2
+
+RSS, same two runs: `/proc/<pid>/status` VmRSS read just after vs `rss_kb` from `sys.status`:
+26 560 vs 26 328 kB (0.9%) and 26 232 vs 26 192 kB (0.15%); RSS tolerance used: 2%.
+
+**Tolerance used: |difference| <= 10% of the value + 10 ms** (the 10% is the histogram's own
+resolution; the 10 ms is one 5 ms poll interval plus scheduler jitter on a loaded host). A second
+run under heavier host load differed by up to 8.1 ms at p95 (143 vs 151 ms), inside that bound.
+The client interval starts AFTER the `run.start` reply, so it is always a sub-interval of the
+server's accepted -> terminal interval; measured from before `run.start` the client reads ~30 ms
+higher (that is the `run.start` RPC itself, which the server histogram does not include).
 
 ### Graph metrics: the journal is the surface (spec 109 R3)
 
@@ -57,6 +94,67 @@ The run journal records the same facts, and `pii graph trace` reads it
 
 `crates/pii-graph/tests/journal_is_the_metric_surface.rs` pins that the journal and the metric
 stream agree, so these queries are a faithful substitute for a live metric.
+
+## Polling a run: `accepted` vs unknown (spec 115 R1)
+
+`run.start` returns the id before the run executes. `run.get <id>` (and `pii run get <id>`) answers:
+
+| Answer | Meaning |
+|---|---|
+| `status: accepted` | the daemon holds the run, its journal has not materialised yet — poll again |
+| `running` / `suspended` / `succeeded` / `failed` | the stored state |
+| `not found` ("unknown to this daemon") | the id was never issued, or the daemon restarted and lost an accepted-but-never-journalled run |
+
+A start the run's own validation refuses (for example V2: a node needs a capability the graph does
+not grant) still returns an id; that id goes to `failed` with the reason in `run.trace`, a
+`run.start.refused` event is logged, and the latency histogram counts it under `refused`. It never
+polls `not found` forever. Measured: 400 runs polled to terminal produced 4 173 `accepted` answers
+and 0 `not found` (the 056 baseline was 10.3 `not found` per run).
+
+## Trajectory retention (spec 115 R2)
+
+Trajectories are off unless `trajectory_dir` is set. The directory is bounded in aggregate, oldest
+finished run first, on top of the per-run caps (10 000 events / 16 MiB):
+
+    [core]
+    trajectory_max_bytes = 536870912   # default 512 MiB total
+    trajectory_max_files = 50000       # default 50 000 files
+
+A `0` means "use the default", never "unbounded". When a bound is exceeded the sink deletes oldest
+finished trajectories down to 90% of the bound and logs `trajectory.pruned`
+(`files`, `bytes`, `remaining_files`, `remaining_bytes`). A run that is still open is never pruned;
+if only open runs remain and the bound is still exceeded the sink logs `trajectory.over_budget`
+once per episode and keeps writing — the current run is never dropped silently. The index is built
+by one scan of the directory the first time a file is created after a restart, so existing files
+count. Measured (400 runs, `trajectory_max_files = 20`): 19 files / 43 548 B afterwards vs 400 files
+/ 916 800 B with the bound out of the way; newest trajectory ends in its `run.outcome` line;
+`trajectory.pruned` logged 127 times at that tiny budget (one per ~3 runs; at the default 50 000 it
+fires once per ~5 000 runs).
+
+Growth expectation (056, debug build, scripted model): a run leaves ~2.3 KB of trajectory and ~2.5 KB
+in the main store. At the measured ceiling of ~45 runs/s that is ~390 MB and ~160k files per hour
+of trajectory (now capped by the bound above) and ~400 MB per hour in the store (NOT capped).
+
+## The store never shrinks on its own (spec 115 R3)
+
+`pii metrics` and `pii health --json` (`notes[]`) say it in one line: **the main store never shrinks
+on its own.** Runs and journal events are never deleted, and redb only returns free space at the END
+of the file. Watch `pii_store_bytes_per_run` (bytes / runs) and `pii_store_bytes`: the trend of
+those two is the whole signal. Plan the disk for ~2.5 KB per run (056: 1.06 MB -> 216.6 MB over
+85 018 runs).
+
+`pii store compact [--dir D]` is real but narrow. Stop the daemon first (it refuses while the stores
+are held). It runs redb's in-place compaction on each store file and prints the MEASURED size
+before and after. It reclaims free pages sitting inside the file (deleted sessions, slack from
+preallocation); it cannot shrink data that is still live, and runs/journal events are always live.
+Measured:
+
+    fragmented store (20 sessions x 400 KB, every other one deleted):  13 111 296 -> 6 623 232 bytes
+    store after 400 runs through a daemon (live data):  store.redb 1 048 576 -> 786 432 (allocation slack)
+    idle auxiliary stores (memory/approval/heal/channel/timer):  1 056 768 -> 36 864 each
+
+So on a store that has only grown with runs, expect the tail slack back and nothing more; real
+reclamation of run history would need a retention policy for runs, which does not exist.
 
 ## Logs
 

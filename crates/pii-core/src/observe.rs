@@ -333,6 +333,28 @@ pub const TRAJECTORY_REDACT_ENV: &str = "PII_TRAJECTORY_REDACT";
 /// sink drops. Write failures are reported to stderr.
 #[must_use]
 pub fn trajectory_sink(config_dir: Option<&str>) -> Option<Arc<pii_observe::TrajectorySink>> {
+    trajectory_sink_with(
+        config_dir,
+        DEFAULT_TRAJECTORY_RETENTION,
+        Arc::new(pii_observe::StderrObserver),
+    )
+}
+
+/// Default aggregate bound on the trajectory directory (spec 115): 512 MiB
+/// and 50 000 files, whichever is hit first.
+pub const DEFAULT_TRAJECTORY_RETENTION: pii_observe::Retention = pii_observe::Retention {
+    max_bytes: Some(512 * 1024 * 1024),
+    max_files: Some(50_000),
+};
+
+/// [`trajectory_sink`] with an explicit retention policy and the observer its
+/// prune/truncate/write-failure events go to (the daemon passes its log).
+#[must_use]
+pub fn trajectory_sink_with(
+    config_dir: Option<&str>,
+    retention: pii_observe::Retention,
+    reporter: Arc<dyn pii_observe::Observer>,
+) -> Option<Arc<pii_observe::TrajectorySink>> {
     let dir = crate::env_var(TRAJECTORY_DIR_ENV)
         .filter(|d| !d.is_empty())
         .or_else(|| config_dir.filter(|d| !d.is_empty()).map(str::to_owned))?;
@@ -347,7 +369,8 @@ pub fn trajectory_sink(config_dir: Option<&str>) -> Option<Arc<pii_observe::Traj
     );
     Some(Arc::new(
         pii_observe::TrajectorySink::new(dir, policy)
-            .with_reporter(Arc::new(pii_observe::StderrObserver)),
+            .with_retention(retention)
+            .with_reporter(reporter),
     ))
 }
 

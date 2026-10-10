@@ -50,6 +50,10 @@ ollama_host = "http://127.0.0.1:11434"
 # Default: OFF (key absent, $PII_TRAJECTORY_DIR unset). When set, each run
 # appends to <dir>/trajectories/<run_id>.jsonl.
 # trajectory_dir = "/var/lib/pii/trajectory"
+# Aggregate bound on that directory (spec 115); oldest finished runs are pruned
+# past either one and `trajectory.pruned` is logged. 0 = use the default.
+# trajectory_max_bytes = 536870912   # default 512 MiB
+# trajectory_max_files = 50000       # default 50000
 
 # Default: OFF (key absent). Daemon events (start/stop, startup failures,
 # refused peers, store write errors) as JSON lines, one per event, each with a

@@ -178,6 +178,25 @@ pub struct SubsystemStatus {
     pub identity: BTreeMap<String, String>,
 }
 
+/// Run-lifecycle latency for one outcome, from a bounded in-process histogram
+/// (spec 115 R4). Percentiles are bucket upper bounds; see
+/// `pii_observe::LATENCY_RESOLUTION` for exactly what that means.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LatencyStatus {
+    /// `succeeded`, `failed`, `suspended` or `refused`.
+    pub outcome: String,
+    /// Runs recorded with this outcome since the daemon started.
+    pub count: u64,
+    /// 50th percentile, ms.
+    pub p50_ms: u64,
+    /// 95th percentile, ms.
+    pub p95_ms: u64,
+    /// 99th percentile, ms.
+    pub p99_ms: u64,
+    /// Largest observed, ms (exact).
+    pub max_ms: u64,
+}
+
 /// `sys.status` result.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StatusResult {
@@ -219,4 +238,10 @@ pub struct StatusResult {
     /// Per-subsystem health reports (spec 99 R5).
     #[serde(default)]
     pub subsystems: Vec<SubsystemStatus>,
+    /// Run-lifecycle latency by outcome (spec 115). Additive.
+    #[serde(default)]
+    pub latency: Vec<LatencyStatus>,
+    /// Standing operator notes (spec 115), e.g. that the store never shrinks.
+    #[serde(default)]
+    pub notes: Vec<String>,
 }

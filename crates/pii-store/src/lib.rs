@@ -12,6 +12,7 @@ pub mod approval;
 pub mod backup;
 pub mod channel;
 mod codec;
+pub mod compact;
 pub mod heal;
 mod identity;
 pub mod mem;

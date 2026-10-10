@@ -21,11 +21,13 @@ mod audit;
 mod event;
 mod filelog;
 mod health;
+mod latency;
 mod measure;
 pub mod names;
 mod observer;
 mod outcome;
 mod redaction;
+mod retention;
 mod secrets;
 mod trajectory;
 
@@ -33,6 +35,7 @@ pub use audit::{AUDIT_KINDS, AuditFilter, Fanout};
 pub use event::{Event, Fields, Level, OwnedEvent, RunId, SessionId, SpanId};
 pub use filelog::FileLog;
 pub use health::{Health, HealthWatch, State, SubsystemHealth};
+pub use latency::{Histogram, LATENCY_RESOLUTION, Percentiles, RUN_OUTCOMES, RunLatency};
 pub use measure::Measure;
 pub use observer::{
     NoopObserver, NullObserver, Observable, Observed, Observer, Recorder, StderrObserver,
@@ -40,5 +43,6 @@ pub use observer::{
 };
 pub use outcome::{Outcome, Verdict};
 pub use redaction::{DropFields, NoRedaction, Redaction, RedactionPolicy, ScrubbingPolicy};
+pub use retention::Retention;
 pub use secrets::{REDACTED, SecretScrubber, is_secret_name};
 pub use trajectory::{TrajectoryCaps, TrajectorySink};

@@ -66,3 +66,37 @@ R6. **Docs**: the runbook gains the retention policy, the growth expectation wit
 - Do not raise any cap to make a test pass; a cap that has to move is a finding.
 - Do not add a dependency for latency/RSS measurement; the counters are in-process.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+
+## Orchestrator verification (2026-10-10) — the four defects, verified against the artefact
+**F1 (the one that mattered) — read at the source, then mutated.** `engine/dispatch.rs:308-325`
+(`run_header`) asks the BROKER first (`engine.runs.lock().contains_key(run_id)`) and only then the store, so
+"registered, no header yet" is *accepted* and never races into NotFound. My mutation — disabling the in-flight
+branch (`if false && in_flight`) — turns
+`an_in_flight_run_is_accepted_and_an_unknown_id_is_not_found` **RED** (`run_get_states.rs:98`); restored → 2 pass.
+**F4/F5/F6 — my own live daemon, not the report's word:**
+```
+pii_process_rss_kb 20708                                    ← RSS exposed
+pii_store_bytes_per_run 0                                   ← growth is a number an operator can watch
+# pii_run_latency_ms: percentiles are the upper bound of a 10%-wide bucket (never under-reported,
+  at most 10% + 1 ms over), whole ms rounded up, durations past ~24 min saturate; max is exact
+                                                            ← the resolution is stated, as the spec required
+# NOTE the main store never shrinks on its own: ... reclaim interior free pages offline with `pii store compact`
+sys status notes[] carries the SAME line                  ← one fact, two surfaces, no drift
+RSS: metrics=21132 kB vs /proc=21136 kB                    ← 0.02% apart; the stated tolerance is 2%
+daemons-left=0
+```
+**F5b — `pii store compact` is real, and it refuses when it must** (mine, on a fresh daemon):
+```
+daemon running:  error: invalid: store '…/store.redb' cannot be opened exclusively
+                 (Database already open. Cannot acquire lock.); stop the daemon first
+daemon stopped:  compacted store.redb 1056768 -> 36864 bytes   (×4: store, memory, approval, heal)
+after:           all four stores at 36864 bytes            ← 1 056 768 → 36 864, no fake vacuum
+```
+**Tests**: `run_get_states` 2 pass · `status_latency` 1 pass · `store_compact` 2 pass.
+
+**Notes worth keeping:** the schema files were regenerated (`pii-proto/schema/{run,event}.json`) because
+`WireRunStatus` gained `Accepted` — a wire change, justified by the new state and reported rather than slipped in.
+Honest limits kept: latency covers `spawn_run` only (suspends/resumes are not recorded); `run.list --status
+accepted` returns empty because accepted runs are not stored; live run data is **not** reclaimable and no
+retention policy exists for it — the runbook says so.
+

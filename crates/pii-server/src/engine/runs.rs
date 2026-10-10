@@ -66,6 +66,8 @@ pub fn spawn_run(
         },
         cancel,
     );
+    // Spec 115 R4: the lifecycle clock starts when the run is accepted.
+    let accepted = std::time::Instant::now();
     tokio::task::spawn_blocking(move || {
         // F5: merge any extra graph input (test_command/workspace) into the
         // run input so verify-fix graphs receive their params.
@@ -86,6 +88,7 @@ pub fn spawn_run(
         let heal_input = input.clone();
         // The Phase-1 `run` journals every event (bridge → bus) and writes
         // the terminal to the journal; nothing else writes redb.
+        let mut refused = false;
         let terminal =
             match pii_graph::run::run(&engine.store, &spec, &engine.reg, &ctx, &run_id, input) {
                 Ok(t) => Some(t),
@@ -96,9 +99,13 @@ pub fn spawn_run(
                     {
                         eprintln!("pii: run {run_id} failed: {e}");
                     }
+                    refused = refuse_start(&engine, &run_id, &spec.name, &e);
                     None
                 }
             };
+        engine
+            .latency
+            .record(outcome_word(terminal.as_ref(), refused), accepted.elapsed());
         crate::node_kinds::nodes::heal::record_loop_budget_escalation(
             &engine.heals,
             &spec.name,
@@ -116,6 +123,59 @@ pub fn spawn_run(
         engine.unregister_run(&run_id.to_string());
     });
     Ok(())
+}
+
+/// The latency-histogram outcome for a run's end (spec 115 R4).
+fn outcome_word(terminal: Option<&pii_abi::Terminal>, refused: bool) -> &'static str {
+    match terminal {
+        Some(pii_abi::Terminal::Success { .. }) => "succeeded",
+        Some(pii_abi::Terminal::Suspended { .. }) => "suspended",
+        None if refused => "refused",
+        _ => "failed",
+    }
+}
+
+/// Spec 115 R1: a run refused before its first journal write (validation,
+/// node build, store put) has already handed its id to the caller, who polls
+/// `run.get` on it. Journal a terminal `Failed` carrying the reason so the id
+/// resolves instead of answering `NotFound` forever, tell the bus subscribers,
+/// and emit [`pii_observe::names::RUN_START_REFUSED`]. A run that DID start
+/// (header present) is left to the engine's own terminal handling.
+fn refuse_start(engine: &Engine, run_id: &RunId, graph: &str, err: &PiiError) -> bool {
+    if !matches!(engine.store.get_run(run_id), Ok(None)) {
+        return false;
+    }
+    let terminal = pii_abi::Terminal::Failure {
+        error: err.to_string(),
+    };
+    let mut header = pii_abi::RunHeader {
+        run: run_id.clone(),
+        graph: graph.to_owned(),
+        status: pii_abi::RunStatus::Failed,
+        seq: 0,
+        dur_ms: 0,
+    };
+    let finished = pii_abi::RunEvent::Finished {
+        terminal,
+        output_hash: String::new(),
+    };
+    if let Err(e) = engine.store.append_event(&mut header, &finished) {
+        engine.report_unhandled("run.start.refused", &e.to_string());
+    } else if let Some(ev) = crate::engine::bus::map_event(run_id, &finished) {
+        engine.bus.broadcast(ev);
+    }
+    engine.log().event(
+        &pii_observe::Event::new(
+            "engine",
+            pii_observe::Level::Error,
+            pii_observe::names::RUN_START_REFUSED,
+        )
+        .field("run", run_id.as_str())
+        .field("graph", graph)
+        .field("error", err.to_string())
+        .in_run(pii_observe::RunId(run_id.to_string())),
+    );
+    true
 }
 
 /// Continues a suspended run (F5.5/F5.9/F5.10: timer fire, approval resolve).

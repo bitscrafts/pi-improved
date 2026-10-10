@@ -53,6 +53,12 @@ pub struct CoreSection {
     /// `<root>/trajectories/<run_id>.jsonl`. Overridden by
     /// `$PII_TRAJECTORY_DIR`. Absent = trajectories OFF.
     pub trajectory_dir: Option<String>,
+    /// Aggregate byte bound on the trajectory directory (spec 115); oldest
+    /// finished runs are pruned past it. Absent = 512 MiB.
+    pub trajectory_max_bytes: Option<u64>,
+    /// Aggregate file-count bound on the trajectory directory (spec 115).
+    /// Absent = 50 000.
+    pub trajectory_max_files: Option<usize>,
     /// Daemon log file (spec 104): contract events as JSON lines. Overridden
     /// by `--log-file`. Absent = no log file.
     pub log_file: Option<String>,
@@ -70,6 +76,18 @@ pub const DEFAULT_LOG_ROTATE_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_LOG_KEEP_FILES: usize = 5;
 
 impl CoreSection {
+    /// The effective trajectory retention policy (spec 115): configured
+    /// bounds, else the defaults. A `0` is read as "unset" (the default),
+    /// never as "unbounded": the directory is always bounded.
+    #[must_use]
+    pub fn trajectory_retention(&self) -> pii_observe::Retention {
+        let d = pii_core::DEFAULT_TRAJECTORY_RETENTION;
+        pii_observe::Retention {
+            max_bytes: self.trajectory_max_bytes.filter(|n| *n > 0).or(d.max_bytes),
+            max_files: self.trajectory_max_files.filter(|n| *n > 0).or(d.max_files),
+        }
+    }
+
     /// Resolves the effective `session_runs_cap` (D3/D6): the configured
     /// value if present, else [`crate::DEFAULT_SESSION_RUNS_CAP`].
     #[must_use]
@@ -432,6 +450,24 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::Config;
+
+    /// Spec 115 R2: the retention keys parse, default to a real bound, and a
+    /// zero never means "unbounded".
+    #[test]
+    fn trajectory_retention_keys_parse_and_zero_is_not_unbounded() {
+        let c = Config::parse("[core]\ntrajectory_max_bytes = 1000\ntrajectory_max_files = 7\n")
+            .unwrap();
+        let r = c.core.trajectory_retention();
+        assert_eq!((r.max_bytes, r.max_files), (Some(1000), Some(7)));
+        let d = Config::parse("").unwrap().core.trajectory_retention();
+        assert_eq!(d, pii_core::DEFAULT_TRAJECTORY_RETENTION);
+        let z =
+            Config::parse("[core]\ntrajectory_max_bytes = 0\ntrajectory_max_files = 0\n").unwrap();
+        assert_eq!(
+            z.core.trajectory_retention(),
+            pii_core::DEFAULT_TRAJECTORY_RETENTION
+        );
+    }
 
     #[test]
     fn trajectory_dir_parses_and_defaults_to_off() {

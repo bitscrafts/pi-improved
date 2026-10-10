@@ -31,9 +31,9 @@ pub use ctx::Ctx;
 pub use fscap::FsCap;
 pub use net::HttpTransport;
 pub use observe::{
-    ContractObserver, DenialObserver, Metric, MultiObserver, NullObserver, ObsEvent, Observer,
-    RecordingObserver, TRAJECTORY_DIR_ENV, TRAJECTORY_REDACT_ENV, ToolCallObserver,
-    TrajectoryBridge, trajectory_sink,
+    ContractObserver, DEFAULT_TRAJECTORY_RETENTION, DenialObserver, Metric, MultiObserver,
+    NullObserver, ObsEvent, Observer, RecordingObserver, TRAJECTORY_DIR_ENV, TRAJECTORY_REDACT_ENV,
+    ToolCallObserver, TrajectoryBridge, trajectory_sink, trajectory_sink_with,
 };
 pub use pii_abi::{CapKind, PiiError};
 /// The dependency-free observability contract (spec 97); the legacy
