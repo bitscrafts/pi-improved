@@ -95,3 +95,8 @@ file cap rather than by the timeout; **no module cache (recompiled per call, cos
 states that the sandbox protects the host from the module, not from a bug in wasmtime. The worker also flagged the
 one mutation it did **not** write (the trap backtrace) rather than implying coverage.
 
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD — the criterion the worker could not run)
+With the disk recovered (95 GB free) the run the worker correctly refused to attempt now happened:
+`fresh-gate` (exactly HEAD `967dd39`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0, 14 steps.
+**122: 9/9.**
+
