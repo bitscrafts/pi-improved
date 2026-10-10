@@ -6,6 +6,7 @@
 
 pub mod crash;
 pub mod gate;
+pub mod hal;
 pub mod heal;
 pub mod memory;
 pub mod mqtt;

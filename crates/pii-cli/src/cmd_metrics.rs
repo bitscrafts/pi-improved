@@ -80,6 +80,31 @@ fn render_latency(v: &serde_json::Value, out: &mut String) {
     }
 }
 
+/// HAL operation counters (spec 121): one line per kind, then the refusals.
+/// Emitted only when a `[hal]` backend is configured (the kinds map is then
+/// non-empty), so a daemon with the HAL off prints no HAL lines at all.
+fn render_hal(v: &serde_json::Value, out: &mut String) {
+    let Some(ops) = v.pointer("/counts/hal_ops").and_then(|o| o.as_object()) else {
+        return;
+    };
+    for (kind, n) in ops {
+        let _ = writeln!(
+            out,
+            "{}{{kind=\"{kind}\"}} {}",
+            names::METRIC_HAL_OPS_TOTAL,
+            n.as_u64().unwrap_or(0)
+        );
+    }
+    if !ops.is_empty() {
+        let _ = writeln!(
+            out,
+            "{} {}",
+            names::METRIC_HAL_REFUSALS_TOTAL,
+            num(v, "/counts/hal_refusals")
+        );
+    }
+}
+
 /// Renders a `sys.status` payload as metric lines.
 fn render(v: &serde_json::Value) -> String {
     let mut out = String::new();
@@ -128,6 +153,7 @@ fn render(v: &serde_json::Value) -> String {
         let _ = writeln!(out, "{name} {value}");
     }
     render_latency(v, &mut out);
+    render_hal(v, &mut out);
     for st in v
         .pointer("/stores")
         .and_then(|s| s.as_array())
@@ -219,6 +245,28 @@ mod tests {
         // No samples, no invented quantiles.
         assert!(!text.contains("outcome=\"refused\",quantile"), "{text}");
         assert!(text.contains("pii_run_latency_count{outcome=\"refused\"} 0"));
+    }
+
+    /// Spec 121 R5: HAL counters appear by kind with the refusals, and not at
+    /// all when the HAL is off.
+    #[test]
+    fn render_carries_hal_ops_by_kind_and_refusals_only_when_configured() {
+        let on = render(&serde_json::json!({
+            "counts": {"hal_ops": {"claim": 1, "read": 2, "write": 3}, "hal_refusals": 4}
+        }));
+        for line in [
+            "pii_hal_ops_total{kind=\"claim\"} 1",
+            "pii_hal_ops_total{kind=\"read\"} 2",
+            "pii_hal_ops_total{kind=\"write\"} 3",
+            "pii_hal_refusals_total 4",
+        ] {
+            assert!(on.lines().any(|l| l == line), "missing {line}\n{on}");
+        }
+        let off = render(&serde_json::json!({"counts": {"hal_ops": {}, "hal_refusals": 0}}));
+        assert!(
+            !off.contains("pii_hal"),
+            "HAL off prints no HAL lines: {off}"
+        );
     }
 
     #[test]

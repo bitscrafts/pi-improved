@@ -158,6 +158,19 @@ pub const SOP_STEP_FAILED: &str = "sop.step.failed";
 /// Event: an SOP approval step is waiting on a human (`sop`, `step`, `kind`, `approval`).
 pub const SOP_STEP_AWAITING_APPROVAL: &str = "sop.step.awaiting_approval";
 
+/// Event: a HAL pin or bus was claimed (`kind`: `gpio`, `i2c` or `spi`; `pin`, or `bus`+`addr`, or `bus`; `dir` for a pin).
+pub const HAL_CLAIM: &str = "hal.claim";
+/// Event: a HAL pin or bus was released (same target fields as the claim).
+pub const HAL_RELEASE: &str = "hal.release";
+/// Event: a claimed pin was read (`pin`, `level`).
+pub const HAL_READ: &str = "hal.read";
+/// Event: a claimed pin was written (`pin`, `level`).
+pub const HAL_WRITE: &str = "hal.write";
+/// Event: an I2C transaction or SPI transfer completed (`kind`, `bus`, `addr` for I2C, `write_len`, `read_len`).
+pub const HAL_TRANSACTION: &str = "hal.transaction";
+/// Event: a HAL operation was refused or failed (`op`, the target fields, `reason`: `unclaimed`, `out_of_scope`, `already_claimed`, `wrong_direction`, `no_backend` or `backend`; `error`).
+pub const HAL_ERROR: &str = "hal.error";
+
 /// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
 pub const METRIC_RUNS: &str = "pii_runs";
 /// Metric (gauge): sessions in the main store.
@@ -195,6 +208,11 @@ pub const METRIC_MQTT_PUBLISHED_TOTAL: &str = "pii_mqtt_published_total";
 
 /// Metric (counter): worker requests refused or cancelled around a drain/reload (spec 120).
 pub const METRIC_WORKER_REQUESTS_REFUSED_TOTAL: &str = "pii_worker_requests_refused_total";
+
+/// Metric (counter, label `kind`): HAL operations that succeeded since the daemon started (spec 121).
+pub const METRIC_HAL_OPS_TOTAL: &str = "pii_hal_ops_total";
+/// Metric (counter): HAL operations refused by the claim or scope rules since the daemon started (spec 121).
+pub const METRIC_HAL_REFUSALS_TOTAL: &str = "pii_hal_refusals_total";
 
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
@@ -271,6 +289,12 @@ pub const ALL: &[&str] = &[
     SOP_STEP_FINISHED,
     SOP_STEP_FAILED,
     SOP_STEP_AWAITING_APPROVAL,
+    HAL_CLAIM,
+    HAL_RELEASE,
+    HAL_READ,
+    HAL_WRITE,
+    HAL_TRANSACTION,
+    HAL_ERROR,
     METRIC_RUNS,
     METRIC_SESSIONS,
     METRIC_APPROVALS_PENDING,
@@ -289,6 +313,8 @@ pub const ALL: &[&str] = &[
     METRIC_MQTT_DROPPED_TOTAL,
     METRIC_MQTT_PUBLISHED_TOTAL,
     METRIC_WORKER_REQUESTS_REFUSED_TOTAL,
+    METRIC_HAL_OPS_TOTAL,
+    METRIC_HAL_REFUSALS_TOTAL,
 ];
 
 #[cfg(test)]

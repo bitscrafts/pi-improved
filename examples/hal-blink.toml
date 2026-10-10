@@ -1,0 +1,72 @@
+# Spec 121 R7: blink a LED on the HAL — claim the pin as an output, drive it
+# high, read the state back, drive it low, read it back, release it.
+# Needs a [hal] section in the daemon config (`backend = "sim"` runs it on the
+# simulated board; nothing here has been run against real hardware) with pin 17
+# in `pins`, and the graph must hold the `hw` capability.
+name = "hal-blink"
+entry = "claim"
+caps = ["hw"]
+
+[[node]]
+id = "claim"
+kind = "hal"
+op = "claim"
+pin = 17
+dir = "out"
+
+[[node]]
+id = "on"
+kind = "hal"
+op = "write"
+pin = 17
+level = "high"
+
+[[node]]
+id = "seen_on"
+kind = "hal"
+op = "read"
+pin = 17
+
+[[node]]
+id = "off"
+kind = "hal"
+op = "write"
+pin = 17
+level = "low"
+
+[[node]]
+id = "seen_off"
+kind = "hal"
+op = "read"
+pin = 17
+
+[[node]]
+id = "release"
+kind = "hal"
+op = "release"
+pin = 17
+
+[[edge]]
+from = "claim"
+port = "ok"
+to = "on"
+
+[[edge]]
+from = "on"
+port = "ok"
+to = "seen_on"
+
+[[edge]]
+from = "seen_on"
+port = "ok"
+to = "off"
+
+[[edge]]
+from = "off"
+port = "ok"
+to = "seen_off"
+
+[[edge]]
+from = "seen_off"
+port = "ok"
+to = "release"

@@ -30,5 +30,9 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-
 [dev-dependencies]
 tempfile = { workspace = true }
 
+[features]
+# The real GPIO backend (spec 121): compiled by the gate, never run on this host.
+hal-gpiod = ["pii-server/hal-gpiod"]
+
 [lints]
 workspace = true

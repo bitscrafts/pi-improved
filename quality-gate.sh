@@ -46,6 +46,17 @@ else
     status=1
 fi
 
+echo "==> cargo clippy -p pii-hal --features hal-gpiod --all-targets -- -D warnings"
+# Spec 121 (R6): the real GPIO backend is behind `hal-gpiod`, off in every other
+# step. It is compiled and linted here so it cannot rot; it is NEVER run (no
+# /dev/gpiochip* on this host). Own target dir: the feature changes unification hashes.
+if CARGO_TARGET_DIR=target/hal-gate cargo clippy -p pii-hal --features hal-gpiod --all-targets -- -D warnings; then
+    echo "PASS: clippy (hal-gpiod)"
+else
+    echo "FAIL: clippy (hal-gpiod)"
+    status=1
+fi
+
 echo "==> cargo test --workspace"
 # pii-worker's supervisor integration tests spawn the real `pii` binary at
 # target/debug/pii (a fixed path, not a `CARGO_BIN_EXE_pii` env lookup), so

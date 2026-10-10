@@ -61,3 +61,33 @@ R8. **Docs**: `_docs/0X-guides/hardware-hal.md` (the traits, the capability scop
 - Do not add a heavy runtime dependency for the simulated path; the real backend's dependency must be optional and
   feature-gated, with the crates and versions stated.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+
+## Orchestrator verification (2026-10-10) — including the gap the worker said it could not close
+**My controls:**
+- `cargo test -p pii-hal` → **18 passed**; `cargo test -p pii-server --test hal_e2e` → **6 passed**;
+  `cargo clippy -q -p pii-hal --features hal-gpiod --all-targets -- -D warnings` → **rc 0** (the real backend is
+  compiled, so it cannot rot, and it was never run).
+- **Mutation (mine)**: disabling the unclaimed-pin check (`if true { return Ok(()); }`) turns **four** tests red —
+  `an_unclaimed_pin_is_refused_for_write_and_read`, `counters_count_operations_by_kind_and_refusals_actually_move`,
+  `every_refusal_emits_an_error_event_with_a_reason`, `i2c_refuses_unclaimed_and_out_of_scope_addresses`; restored →
+  18 pass. The refusals are load-bearing, not decoration.
+- **The live surfaces the worker could not check** (`/projects/_tmp/verify121-live.sh`, my own daemon with
+  `[hal] backend = "sim"`, `pins = [17]`):
+  ```
+  pii health --json   →  "name":"hal" … "state":"ok"
+  pii metrics         →  pii_hal_ops_total{kind="claim|read|release|transaction|write"} and pii_hal_refusals_total
+  ```
+- **The offline CLI is daemon-only for the HAL, and says so**: `pii graph run examples/hal-blink.toml --db …`
+  fails the `claim` node with `capability denied: hal: not configured (the HAL is off unless the daemon config has
+  a [hal] section)` and the run ends `Failure`. That is R4d working through a second path — no silent no-op, no
+  pretend success — and it is a semantic worth knowing: HAL graphs run through the daemon.
+
+**Deviations accepted:** the gate now has **14** steps (the worker added `clippy (hal-gpiod)` so the real backend is
+compiled in the gate, which R6 asked for) and the gate manual was updated; a double claim is **refused**, not
+idempotent, and a test covers it. `gpiocdev 0.8` is the real backend's optional dependency: GPIO only, with I2C/SPI
+returning `Unavailable`.
+
+**Not verified, kept verbatim:** no real hardware (GPIO/I2C/SPI); the `gpiod` backend was neither run nor loaded;
+`pii metrics`/`pii health` through a live daemon the worker could not check — **I did check those two, above**, which
+closes that gap and leaves the hardware ones open and honestly labelled.
+

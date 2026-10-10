@@ -274,6 +274,27 @@ const fn default_queue_cap() -> usize {
     pii_channels::mqtt::DEFAULT_QUEUE_CAP
 }
 
+/// `[hal]` (spec 121): the hardware backend and the pins/buses a graph may
+/// claim. Absent = the HAL is off, and a `hal` node fails the run.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HalSection {
+    /// `sim` (in-memory, deterministic) or `gpiod` (real; needs the `hal-gpiod` build feature).
+    pub backend: String,
+    /// GPIO lines a graph may claim.
+    #[serde(default)]
+    pub pins: Vec<u32>,
+    /// I2C addresses a graph may claim, as `bus:addr` (`1:0x48`).
+    #[serde(default)]
+    pub i2c: Vec<String>,
+    /// SPI buses a graph may claim.
+    #[serde(default)]
+    pub spi: Vec<u8>,
+    /// `gpiod` only: the GPIO character device (default `/dev/gpiochip0`).
+    #[serde(default)]
+    pub chip: Option<String>,
+}
+
 /// The known routing steps (spec 28 R1): the evolve pipeline's fixed roles.
 pub(crate) const KNOWN_STEPS: &[&str] =
     &["localize", "patch", "review", "research", "orchestrator"];
@@ -350,6 +371,8 @@ pub struct Config {
     pub channel: Vec<ChannelSection>,
     /// `[[mqtt]]` (spec 117).
     pub mqtt: Vec<MqttSection>,
+    /// `[hal]` (spec 121); `None` = the HAL is off.
+    pub hal: Option<HalSection>,
     /// `[memory]`.
     pub memory: MemorySection,
     /// `[[cron]]`.

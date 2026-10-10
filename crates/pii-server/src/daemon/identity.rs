@@ -19,13 +19,14 @@ use crate::Engine;
 /// The subsystem groups `sys.status` aggregates, in report order. A group
 /// with no live members (no daemon, no workers configured) is still
 /// registered; `registry_is_pinned_by_name` fails if one is dropped.
-const GROUPS: [&str; 6] = [
+const GROUPS: [&str; 7] = [
     "store",
     "memory",
     "net",
     "worker",
     "channels",
     "model_tiers",
+    "hal",
 ];
 
 /// Every health-reporting subsystem the daemon aggregates, as
@@ -38,6 +39,7 @@ impl<'a> Registry<'a> {
         net: Option<&'a pii_net::NetService>,
         workers: Option<&'a BTreeMap<String, pii_worker::Supervisor>>,
         channels: Option<&'a BTreeMap<String, ChannelRuntime>>,
+        hal: Option<&'a pii_hal::Hal>,
     ) -> Self {
         Self(vec![
             (GROUPS[0], vec![&*engine.store as &dyn Health]),
@@ -61,6 +63,10 @@ impl<'a> Registry<'a> {
                     .collect(),
             ),
             (GROUPS[5], engine.tiers.health_members().collect()),
+            (
+                GROUPS[6],
+                hal.map(|h| h as &dyn Health).into_iter().collect(),
+            ),
         ])
     }
 
@@ -116,6 +122,26 @@ fn add_channel_counters(counts: &mut Counts, channels: Option<&BTreeMap<String, 
     }
 }
 
+/// The HAL's operation counts by kind and its refusals (spec 121). Absent
+/// (HAL off) leaves them empty, so `pii metrics` prints no HAL lines.
+fn add_hal_counters(counts: &mut Counts, hal: Option<&pii_hal::Hal>) {
+    let Some(hal) = hal else {
+        return;
+    };
+    let c = hal.counts();
+    counts.hal_ops = [
+        ("claim", c.claim),
+        ("release", c.release),
+        ("read", c.read),
+        ("write", c.write),
+        ("transaction", c.transaction),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect();
+    counts.hal_refusals = c.refusals;
+}
+
 /// Worker requests refused or cancelled around a drain/reload, summed (spec 120).
 fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> u64 {
     workers
@@ -123,6 +149,14 @@ fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> 
         .flat_map(BTreeMap::values)
         .map(pii_worker::Supervisor::refused_count)
         .sum()
+}
+
+fn build_identity() -> BuildIdentity {
+    BuildIdentity {
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        revision: env!("PII_GIT_REV").to_owned(),
+        target: env!("PII_TARGET").to_owned(),
+    }
 }
 
 /// Fills the identity fields of `out` from `engine` (and `ctx` when a daemon
@@ -175,19 +209,18 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         }
     }
     out.mounts.push(workspace_mount(engine));
-    out.build = BuildIdentity {
-        version: env!("CARGO_PKG_VERSION").to_owned(),
-        revision: env!("PII_GIT_REV").to_owned(),
-        target: env!("PII_TARGET").to_owned(),
-    };
+    out.build = build_identity();
     let workers = ctx.map(|c| c.workers.lock());
     let channels = ctx.map(|c| c.channels.lock());
+    let hal = engine.hal.get();
     let registry = Registry::build(
         engine,
         ctx.map(|c| &*c.net),
         workers.as_deref(),
         channels.as_deref(),
+        hal.as_deref(),
     );
+    add_hal_counters(&mut counts, hal.as_deref());
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
         add_channel_counters(&mut counts, channels.as_deref());
@@ -400,7 +433,7 @@ mod tests {
             graph_dir: dir.path().join("graphs"),
         })
         .unwrap();
-        let registry = Registry::build(&engine, None, None, None);
+        let registry = Registry::build(&engine, None, None, None, None);
         assert_eq!(
             registry.group_names(),
             [
@@ -409,7 +442,8 @@ mod tests {
                 "net",
                 "worker",
                 "channels",
-                "model_tiers"
+                "model_tiers",
+                "hal"
             ]
         );
         let names: Vec<_> = registry.reports().into_iter().map(|h| h.name).collect();

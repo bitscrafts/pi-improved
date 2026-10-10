@@ -93,6 +93,9 @@ pub struct Engine {
     /// The MQTT connections (spec 117): filled by `Daemon::build` from
     /// `[[mqtt]]`; the `mqtt` node's factory holds the same Arc.
     pub mqtt: Arc<pii_channels::mqtt::MqttHub>,
+    /// The hardware HAL slot (spec 121): empty unless `[hal]` is configured;
+    /// `Daemon::build` fills it and the `hal` node's factory holds the same Arc.
+    pub hal: Arc<pii_hal::HalHub>,
     /// Node registry (built-ins + `agent`).
     pub reg: NodeRegistry,
     /// The model provider.
@@ -284,6 +287,11 @@ impl Engine {
         reg.register(Arc::new(node_kinds::nodes::mqtt::MqttFactory {
             hub: Arc::clone(&mqtt),
         }));
+        let hal = Arc::new(pii_hal::HalHub::default());
+        reg.register(Arc::new(node_kinds::nodes::hal::HalFactory {
+            hub: Arc::clone(&hal),
+            log: log.clone(),
+        }));
         let tools = ToolSet::builtin(cfg.workspace.clone());
         Ok(Arc::new(Self {
             cfg,
@@ -293,6 +301,7 @@ impl Engine {
             memory,
             workers,
             mqtt,
+            hal,
             reg,
             provider,
             tiers,

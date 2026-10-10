@@ -96,6 +96,8 @@ impl Daemon {
             );
         }
 
+        adapters::install_hal(&engine, cfg)?;
+
         let mut cron = BTreeMap::new();
         for c in &cfg.cron {
             cron.insert(

@@ -1,4 +1,4 @@
-# The quality gate: thirteen steps, two trees, and one rule about scratch
+# The quality gate: fourteen steps, two trees, and one rule about scratch
 
 **Audience**: anyone (human or agent) changing this repo, and especially anyone who will
 claim "the gate is green". This is the operating manual for `quality-gate.sh`, for the
@@ -10,13 +10,14 @@ explains *why* each step exists and what it cannot see. When they disagree, the 
 
 ---
 
-## 1. The thirteen steps (and one prerequisite)
+## 1. The fourteen steps (and one prerequisite)
 
 | step | what it runs | why it exists |
 |---|---|---|
 | `fmt` | `cargo fmt --all --check` | zero-tolerance formatting |
 | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` in its **own** `CARGO_TARGET_DIR` | links every target; isolated so its `--all-targets` rlibs cannot poison the doctest step (F-01/E0463) |
 | `clippy (llamacpp)` | `cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings`, own target dir | spec 89/N4: `llamacpp` is off in every other step, so without this the in-process llama provider and the tests carrying `required-features = ["llamacpp"]` would be compiled by **no** gate step |
+| `clippy (hal-gpiod)` | `cargo clippy -p pii-hal --features hal-gpiod --all-targets -- -D warnings`, own target dir | spec 121/R6: the real GPIO backend is behind a feature that is off everywhere else; this compiles and lints it so it cannot rot. It is **never run** — no `/dev/gpiochip*` on this host |
 | `build` | `cargo build --workspace` | `pii-worker`'s supervisor tests spawn the real `pii` binary at a fixed `target/debug/pii` path |
 | `test (lib/bins/tests)` | `cargo test --workspace --lib --bins --tests` | the suite proper |
 | `test (doc)` | `cargo test --workspace --doc` | doc examples; run separately because doctests build libs *without* `cfg(test)` |

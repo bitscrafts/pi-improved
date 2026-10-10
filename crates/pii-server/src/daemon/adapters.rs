@@ -11,7 +11,7 @@ use pii_channels::{Channel, matrix, secret, telegram};
 use pii_core::HttpTransport;
 use pii_net::listen::{HttpHandler, ListenSpec, Protocol};
 
-use super::config::{ChannelSection, MqttSection};
+use super::config::{ChannelSection, HalSection, MqttSection};
 
 /// Default webhook bind: loopback only.
 const DEFAULT_BIND: &str = "127.0.0.1:8787";
@@ -111,4 +111,44 @@ pub(super) fn mqtt(
     cfg.reconnect_max_ms = m.reconnect_max_ms;
     cfg.queue_cap = m.queue_cap;
     pii_channels::mqtt::MqttChannel::start(cfg, Arc::clone(log))
+}
+
+/// Builds the `[hal]` backend, when configured, into the engine's HAL slot.
+/// No `[hal]` section leaves the slot empty: the HAL stays off.
+pub(super) fn install_hal(
+    engine: &crate::Engine,
+    cfg: &super::config::Config,
+) -> Result<(), PiiError> {
+    if let Some(h) = &cfg.hal {
+        engine.hal.set(Arc::new(hal(h, &engine.log())?));
+    }
+    Ok(())
+}
+
+/// Config -> [`pii_hal::Hal`] (spec 121). `sim` is the in-memory board;
+/// `gpiod` needs the `hal-gpiod` build feature and a real chip.
+pub(super) fn hal(
+    h: &HalSection,
+    log: &Arc<dyn pii_observe::Observer>,
+) -> Result<pii_hal::Hal, PiiError> {
+    let scope = pii_hal::HalScope::from_config(&h.pins, &h.i2c, &h.spi)?;
+    let backend: Arc<dyn pii_hal::HalBackend> = match h.backend.as_str() {
+        "sim" => Arc::new(pii_hal::SimBackend::standard()),
+        #[cfg(feature = "hal-gpiod")]
+        "gpiod" => Arc::new(pii_hal::GpiodBackend::open(
+            h.chip.as_deref().unwrap_or("/dev/gpiochip0"),
+        )?),
+        #[cfg(not(feature = "hal-gpiod"))]
+        "gpiod" => {
+            return Err(PiiError::Invalid(String::from(
+                "hal: backend 'gpiod' needs a build with the hal-gpiod feature",
+            )));
+        }
+        other => {
+            return Err(PiiError::Invalid(format!(
+                "hal: unknown backend '{other}' (known: sim, gpiod)"
+            )));
+        }
+    };
+    Ok(pii_hal::Hal::new(backend, scope, Some(Arc::clone(log))))
 }

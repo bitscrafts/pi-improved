@@ -102,6 +102,10 @@ pub fn lint_registry_with_log(
     reg.register(Arc::new(nodes::mqtt::MqttFactory {
         hub: Arc::new(pii_channels::mqtt::MqttHub::default()),
     }));
+    reg.register(Arc::new(nodes::hal::HalFactory {
+        hub: Arc::new(pii_hal::HalHub::default()),
+        log: Arc::clone(&log),
+    }));
     reg.register(Arc::new(nodes::sop::SopFactory { log }));
     reg.register(Arc::new(nodes::worker::WorkerFactory {
         pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<

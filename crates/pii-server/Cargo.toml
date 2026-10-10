@@ -16,6 +16,7 @@ pii-graph = { path = "../pii-graph" }
 pii-proto = { path = "../pii-proto" }
 pii-model = { path = "../pii-model" }
 pii-memory = { path = "../pii-memory" }
+pii-hal = { path = "../pii-hal" }
 pii-tools = { path = "../pii-tools" }
 pii-net = { path = "../pii-net" }
 pii-worker = { path = "../pii-worker" }
@@ -31,6 +32,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-
 
 [features]
 testkit = []
+# The real GPIO backend (spec 121): compiled by the gate, never run on this host.
+hal-gpiod = ["pii-hal/hal-gpiod"]
 
 [dev-dependencies]
 tempfile = { workspace = true }

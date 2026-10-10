@@ -175,6 +175,13 @@ pub struct Counts {
     /// Worker requests refused or cancelled around a drain/reload (spec 120).
     #[serde(default)]
     pub worker_requests_refused: u64,
+    /// Successful HAL operations by kind (`claim`, `release`, `read`, `write`,
+    /// `transaction`); empty when no `[hal]` is configured (spec 121).
+    #[serde(default)]
+    pub hal_ops: BTreeMap<String, u64>,
+    /// HAL operations refused by the claim or scope rules (spec 121).
+    #[serde(default)]
+    pub hal_refusals: u64,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).
