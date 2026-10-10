@@ -66,3 +66,32 @@ R8. **Honest statement of what a WASM sandbox is not**: it is a security boundar
 - A malicious module must never take the daemon down: no `unwrap` on a guest-controlled value, no panic on a trap.
 - Do not add a second wasm runtime; one version, one crate.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+
+## Orchestrator verification (2026-10-10)
+**First, the disk.** The worker stopped at 8/9 because `/projects` had 5.4 GB free and `fresh-gate` would have
+risked filling it — the correct call, and the reason criterion 9 was not run. `cargo clean` afterwards removed
+**193,279 files / 100.2 GiB** (the target was 93 GB with the wasmtime stack) → 5.5 GB free became **99 GB**.
+
+**My controls:**
+- `cargo test -p pii-wasm` → **18 passed**; `cargo test -p pii-server --test wasm_e2e` → **5 passed**;
+  `deps-check`, `net-check`, `doc-drift-check`, `lint-observability` → **rc 0 each**.
+- **Mutation (mine), on an axis the worker's seven did not cover directly** — the directory scope, at
+  `host.rs:263` (`if canon.starts_with(&self.dir)`): making that check `if true` turns **two** tests red —
+  `a_module_outside_the_configured_dir_is_refused` and `a_symlink_inside_the_dir_pointing_outside_is_refused`;
+  restored → 18 pass. The symlink case is the one that catches a naive prefix check, and it is covered.
+
+**Design confirmed at the source:** the instance has **no imports at all** (so there is nothing to preopen and a
+module importing `path_open` is refused before it runs); the guest's returned `(ptr, len)` is bounds-checked
+against its own memory; `wasmtime = "48.0.5"` is confined to `pii-wasm` and `deps.rs` gained a **narrowing**
+(`check_confined(…, "wasmtime", &["pii-wasm"])`) with its own test red-before/green-after, not a widened rule.
+
+**Corrections the worker made to the docs:** `001`'s phase-4 line now reads *"WASM plugin host **done,
+offline-tested, not fuzzed**"*, and line 45 — which still described wasmtime 47 with the WASI component model —
+was corrected to what shipped: wasmtime 48 core modules, **no WASI**.
+
+**Not verified, kept verbatim:** nothing fuzzed; malformed binaries beyond one garbage file; concurrent hostile
+calls; no real toolchain-produced plugin; release `panic = "abort"` unexamined; compilation bounded by an 8 MiB
+file cap rather than by the timeout; **no module cache (recompiled per call, cost unmeasured)**; and the guide
+states that the sandbox protects the host from the module, not from a bug in wasmtime. The worker also flagged the
+one mutation it did **not** write (the trap backtrace) rather than implying coverage.
+
