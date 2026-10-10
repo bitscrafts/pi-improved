@@ -94,3 +94,28 @@ Written 2026-10-09 after the 045 re-review arc (specs 83-96). The step table mat
 enforcement lints:
 `_docs/06-research/046-mutation-verification-batch-cd-2026-10-09.md`,
 `051-scratch-helper-and-sweep-2026-10-09.md`, `050-inline-methods-measured-2026-10-09.md`.
+
+## The two modes, measured (2026-10-10)
+
+`cargo xtask fresh-gate` builds a temp export and runs the whole gate inside it. `xtask/src/fresh_gate.rs`
+makes the export in two steps, and knowing which one you asked for decides what the result proves:
+
+```rust
+export_head(&root, &dir)?;            // git archive HEAD | tar -x   -> the COMMITTED tree
+if opts.worktree { overlay_worktree(&root, &dir)?; }   // --worktree: copy the working tree's edits on top
+```
+
+* **plain `fresh-gate`** — the export is **exactly HEAD**. This is the form that verifies a COMMIT, and the form
+  to use while another session is working in the repo: their edits cannot reach it.
+* **`fresh-gate --worktree`** — HEAD **plus** the current uncommitted state of every git-visible path (a snapshot
+  taken at run start). This is the form that checks "my work as it stands", and it is the form that a worker can
+  legitimately use to verify its own uncommitted changes.
+* **The trap** — a `--worktree` run while someone else is mid-edit silently includes THEIR half-finished file.
+  Measured: spec 115's worker was editing `crates/pii-cli/src/cmd_soak.rs`, and a `--worktree` run of spec 114's
+  commit failed `build`/`clippy`/`test`/`lint-observability` with `error[E0277]: RpcError doesn't implement
+  std::fmt::Display` — an error in nobody's committed code. A one-line check before trusting a `--worktree`
+  failure: `git status --porcelain` — if it is non-empty and the files are not yours, the run measured someone
+  else's work in progress.
+
+Retention: a PASS removes the export; a FAIL keeps one and removes older ones. Disk: `cargo clean` inside a kept
+kept export reclaims its target (measured 13.0 GiB) without deleting the directory.

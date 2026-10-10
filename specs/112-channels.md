@@ -95,9 +95,13 @@ memory while the trait cursor is `origin_server_ts`; and **any `PiiError::Denied
 `channel.egress.denied`**, so a `Denied` from the CLI channel's file scope would be mislabelled the same way —
 a naming imprecision, filed rather than smoothed.
 
-**Note on the worker's `fresh-gate: PASS`**: fresh-gate exports **HEAD**, and the worker could not commit, so its
-run verified 111's tree, not 112's. I ran it again on 112's committed HEAD (below) — that is the check that
-counts.
+**Note on the worker's `fresh-gate: PASS`** — CORRECTED 2026-10-10 after measuring `xtask/src/fresh_gate.rs`
+(`export_head` = `git archive HEAD`, then `if opts.worktree { overlay_worktree(...) }`): the base export is HEAD,
+but **`--worktree` overlays the working tree's edited paths on top of it**, so a worker's
+`fresh-gate --worktree` DOES cover its own uncommitted work. My earlier note here said the opposite and was
+wrong. What fresh-gate cannot do is isolate a run from ANOTHER writer's dirty tree: a concurrent worker's
+half-finished edits land in the overlay and fail the gate for reasons that are not yours (measured: spec 115's
+mid-edit `cmd_soak.rs` broke a 114 run with `RpcError doesn't implement Display`).
 
 ### The fresh-gate criterion CLOSED (2026-10-10, orchestrator, on 112's own HEAD)
 `fresh-gate --worktree` on `28f8ff8`: `quality-gate: ALL PASS`, `fresh-gate: PASS`, exit 0, 76G free. This is
