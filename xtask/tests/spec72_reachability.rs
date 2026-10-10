@@ -13,7 +13,8 @@
 //! The scratch export is built under `_tmp/` (project-relative, resolved
 //! from `CARGO_MANIFEST_DIR`, never a system directory) and is deleted at
 //! the end of each test. The real callers muted are exactly
-//! `crates/pii-server/src/lib.rs` (`pii_model::resolve_with_transport(`)
+//! a source file resolved at test time (`pii_model::resolve_with_transport(`, historically in
+//! `crates/pii-server/src/lib.rs`, moved to `observed_provider.rs` by spec 129)
 //! and `crates/pii-server/src/node_kinds/nodes/worker.rs` (`sup.invoke(`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -115,14 +116,71 @@ fn mute_caller(export: &Path, rel: &str, needle: &str) {
 
 /// The two real external callers (spec 72 R1): the only evidence the gate
 /// depends on. Paths relative to the workspace root.
-const CALLER_LIB: (&str, &str) = (
-    "crates/pii-server/src/lib.rs",
-    "pii_model::resolve_with_transport(",
-);
+///
+/// `CALLER_WORKER` is a fixed path; `CALLER_LIB` is **resolved at test time**
+/// instead of pinned. A refactor may move the call without changing the claim —
+/// spec 129 moved `resolve_with_transport` out of `lib.rs` into
+/// `observed_provider.rs`, and a pinned path made this test fail with
+/// "mutation failed: … not found" even though the check was still observing a
+/// real caller. The needle must still exist in exactly one non-test file under
+/// the crate; if it does not, the test fails loudly because the reachability
+/// check would then have no real caller to observe.
 const CALLER_WORKER: (&str, &str) = (
     "crates/pii-server/src/node_kinds/nodes/worker.rs",
     "sup.invoke(",
 );
+const CALLER_LIB_NEEDLE: &str = "pii_model::resolve_with_transport(";
+const CALLER_LIB_HISTORICAL: &str = "crates/pii-server/src/lib.rs";
+
+/// Resolve the file that holds the `resolve_with_transport` caller: the
+/// historical location when it still holds it, else the single non-test source
+/// file under `crates/pii-server/src` that does.
+fn caller_lib(export: &Path) -> (String, String) {
+    let relative = |p: &Path| {
+        p.strip_prefix(export)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .into_owned()
+    };
+    let holds = |p: &Path| {
+        std::fs::read_to_string(p).is_ok_and(|s| s.lines().any(|l| l.contains(CALLER_LIB_NEEDLE)))
+    };
+    let historical = export.join(CALLER_LIB_HISTORICAL);
+    if holds(&historical) {
+        return (
+            CALLER_LIB_HISTORICAL.to_string(),
+            CALLER_LIB_NEEDLE.to_string(),
+        );
+    }
+    fn walk(dir: &Path, needle: &str, hits: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                walk(&p, needle, hits);
+            } else if p.extension().is_some_and(|x| x == "rs")
+                && !p.to_string_lossy().contains("tests")
+                && std::fs::read_to_string(&p).is_ok_and(|s| s.lines().any(|l| l.contains(needle)))
+            {
+                hits.push(p);
+            }
+        }
+    }
+    let mut hits = Vec::new();
+    walk(
+        &export.join("crates/pii-server/src"),
+        CALLER_LIB_NEEDLE,
+        &mut hits,
+    );
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one non-test caller of {CALLER_LIB_NEEDLE}: {hits:?}"
+    );
+    (relative(&hits[0]), CALLER_LIB_NEEDLE.to_string())
+}
 
 /// TDD row 1: with BOTH real callers deleted (commented out) the check
 /// must go RED — exit != 0 — and every failure message must name the
@@ -130,7 +188,8 @@ const CALLER_WORKER: (&str, &str) = (
 #[test]
 fn reachability_fails_when_callers_deleted() {
     let export = scratch_export("both-muted");
-    mute_caller(&export, CALLER_LIB.0, CALLER_LIB.1);
+    let lib = caller_lib(&export);
+    mute_caller(&export, &lib.0, &lib.1);
     mute_caller(&export, CALLER_WORKER.0, CALLER_WORKER.1);
 
     let err = run(&export).expect_err("both callers muted must be RED");
@@ -165,7 +224,8 @@ fn reachability_passes_on_head() {
 #[test]
 fn comments_are_not_callers() {
     let export = scratch_export("comment-shape");
-    mute_caller(&export, CALLER_LIB.0, CALLER_LIB.1);
+    let lib = caller_lib(&export);
+    mute_caller(&export, &lib.0, &lib.1);
     mute_caller(&export, CALLER_WORKER.0, CALLER_WORKER.1);
     // A comment carrying the needle shape, in an unrelated crate, as the
     // only remaining textual occurrence of `.invoke(` in the search dir.
@@ -186,7 +246,8 @@ fn comments_are_not_callers() {
 #[test]
 fn cfg_test_body_is_not_a_caller() {
     let export = scratch_export("cfg-test-standin");
-    mute_caller(&export, CALLER_LIB.0, CALLER_LIB.1);
+    let lib = caller_lib(&export);
+    mute_caller(&export, &lib.0, &lib.1);
     mute_caller(&export, CALLER_WORKER.0, CALLER_WORKER.1);
     let decoy = export.join("crates/pii-server/src/queue.rs");
     std::fs::write(
