@@ -89,3 +89,6 @@ no approval resolver, so `pii sop run`/`resume` fail loudly at `prepare` and the
 runs through the daemon registry (`sop_engine.rs`) — the guide says so; `notify` appends to a file under the
 run's write scope rather than sending to a channel adapter; `requires` is a backstop covered by a unit test only.
 
+### The fresh-gate criterion CLOSED (2026-10-10, orchestrator, on 113's own HEAD)
+`fresh-gate --worktree` on `97a6cdb`: `quality-gate: ALL PASS`, `fresh-gate: PASS`, exit 0, 73G free. **113: 9/9.**
+
