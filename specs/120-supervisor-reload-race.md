@@ -52,3 +52,14 @@ R7. **Docs**: the runbook gains the reload semantics in one short section — wh
   state any latency cost you add, with the number.
 - A silent drop is a fail, even if it makes the test green: the fix must leave a signal.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+
+## Orchestrator's own reproduction attempts (2026-10-10)
+Two attempts, and the disagreement between them is the reason R1 demands a DETERMINISTIC repro:
+1. **cargo path** — `taskset -c 0-3 cargo test -q -p pii-worker --test supervisor reload_drops_no_requests -- --exact`
+   under 16 hogs, 10 runs: **0 failures** (`/projects/_tmp/repro-reload-race.sh`).
+2. **binary path** — the built test binary run directly under `taskset -c 0-3` with 16 hogs, 15 runs
+   (`/projects/_tmp/repro-reload-race2.sh`) — the invocation spec 119 used for its 6-of-25.
+So the same defect shows 6 of 25 in one invocation and 0 of 10 in another. A probabilistic repro cannot falsify a
+fix and cannot catch a regression: **build the deterministic seam first (R1)**, and treat "0 of N" as a statement
+about the conditions, never as evidence the defect is gone.
+
