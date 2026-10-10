@@ -4,7 +4,7 @@
 //!
 //! Scope is deliberately narrow (v1): every backtick-quoted token that looks
 //! like a repo-relative path (`crates/…`, `specs/…`, `xtask/…`, `graphs/…`,
-//! `scripts/…`, `fixtures/…`, `_tmp/…`, or a bare filename ending in a known
+//! `scripts/…`, `fixtures/…`, or a bare filename ending in a known
 //! extension) must resolve to an existing file or directory under the repo
 //! root. Semantic claim verification is out of scope — this is the first
 //! rung the future checks build on.
@@ -24,7 +24,6 @@ const PATH_PREFIXES: &[&str] = &[
     "graphs/",
     "scripts/",
     "fixtures/",
-    "_tmp/",
     "_docs/",
 ];
 
@@ -82,14 +81,21 @@ fn backtick_tokens(src: &str) -> Vec<String> {
 /// disambiguate — the anchor rule keeps the gate real (our own tree is
 /// verified) without noise.
 fn anchored_path(token: &str) -> bool {
-    if token.contains("://") || token.contains('{') || token.contains('}') {
+    // Spec 118: `_tmp/` is gitignored scratch (logs, exports) that HANDOFF
+    // cites as history, so its absence is not drift; globs, ellipses and
+    // `<N>`/argument forms are patterns, not paths.
+    if token.contains("://")
+        || token.contains(['{', '}', '*', '…', '<', ' '])
+        || token.contains("...")
+        || token.starts_with("_tmp/")
+    {
         return false;
     }
     PATH_PREFIXES.iter().any(|p| token.starts_with(p))
 }
 
 /// True when `token` exists under root, tolerating a trailing `:line`
-/// (e.g. `` `crates/pii-store/src/lib.rs:41` ``).
+/// (e.g. `` `crates/pii-store/src/lib.rs:41` `` or a `:5-9` range).
 ///
 /// Forward-referenced future specs are exempt: HANDOFF routinely points at
 /// spec files the planner has not authored yet (e.g. `06-phase3b-…`), so a
@@ -98,7 +104,7 @@ fn anchored_path(token: &str) -> bool {
 fn token_exists(root: &Path, token: &str) -> bool {
     let stripped = token
         .rsplit_once(':')
-        .filter(|(_, n)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+        .filter(|(_, n)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit() || c == '-'))
         .map_or(token, |(path, _)| path);
     if root.join(stripped).exists() {
         return true;
@@ -115,6 +121,32 @@ mod tests {
 
     use super::{anchored_path, backtick_tokens, token_exists};
 
+    /// Spec 118 R2: scratch, placeholders and patterns are not durable targets.
+    #[test]
+    fn scratch_and_placeholders_are_not_checked() {
+        assert!(!anchored_path("_tmp/sidecar.log"), "scratch is not durable");
+        assert!(!anchored_path("_tmp/_trash/"));
+        assert!(!anchored_path("_docs/06-research/032-*.md"), "glob");
+        assert!(!anchored_path("_docs/06-research/046-…md"), "ellipsis");
+        assert!(!anchored_path("xtask/..."), "ellipsis");
+        assert!(!anchored_path("scripts/run.sh <N>"), "placeholder/args");
+        assert!(
+            anchored_path("crates/pii-x/src/y.rs"),
+            "real paths still checked"
+        );
+        assert!(anchored_path("_docs/02-guides/x.md"));
+    }
+
+    #[test]
+    fn trailing_line_range_is_stripped() {
+        let root_buf = crate::workspace_root();
+        assert!(token_exists(root_buf.as_path(), "xtask/src/lib.rs:5-9"));
+        assert!(!token_exists(
+            root_buf.as_path(),
+            "xtask/src/nope_zz.rs:5-9"
+        ));
+    }
+
     #[test]
     fn tokens_and_path_heuristics() {
         let src = "see `crates/pii-x/src/y.rs` and `dispatch.rs` and `~/.x` and `_tmp/a`";
@@ -122,7 +154,7 @@ mod tests {
         assert!(toks.contains(&"crates/pii-x/src/y.rs".to_owned()));
         assert!(toks.contains(&"dispatch.rs".to_owned()));
         assert!(anchored_path("crates/pii-x/src/y.rs"));
-        assert!(anchored_path("_tmp/a"));
+        assert!(!anchored_path("_tmp/a"), "spec 118: scratch is not durable");
         assert!(!anchored_path("dispatch.rs"), "bare names unchecked in v1");
         assert!(!anchored_path("https://example.com/x"));
         assert!(!anchored_path("~/.pi/x"));

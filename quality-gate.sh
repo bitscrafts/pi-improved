@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Phase 0 quality gate: fmt --check, clippy -D warnings, test.
-# Exit 0 only if all three pass.
+# Quality gate: fmt, clippy, test, coverage floor and the xtask repo checks.
+# Exit 0 only if every step passes.
 # CI-equivalent fresh-tree run (NOT part of this chain; recompiles the workspace):
 #   cargo xtask fresh-gate [--worktree] [--overlay src=dest]  (spec 84)
 set -uo pipefail
@@ -147,6 +147,36 @@ if cargo run -q -p xtask -- reachability-check; then
     echo "PASS: reachability-check"
 else
     echo "FAIL: reachability-check"
+    status=1
+fi
+
+echo "==> cargo run -q -p xtask -- deps-check"
+# Spec 118: the repo's five dependency invariants (xtask/src/deps.rs). A
+# cargo/xtask failure to run is a FAIL here, never a skip.
+if cargo run -q -p xtask -- deps-check; then
+    echo "PASS: deps-check"
+else
+    echo "FAIL: deps-check"
+    status=1
+fi
+
+echo "==> cargo run -q -p xtask -- net-check"
+# Spec 118: sockets/name resolution only in the allowlisted files; comments
+# that merely name a symbol are not flagged.
+if cargo run -q -p xtask -- net-check; then
+    echo "PASS: net-check"
+else
+    echo "FAIL: net-check"
+    status=1
+fi
+
+echo "==> cargo run -q -p xtask -- doc-drift-check"
+# Spec 118: backticked repo paths in HANDOFF.md must exist (`_tmp/` scratch,
+# globs and placeholders excluded). Offline and deterministic.
+if cargo run -q -p xtask -- doc-drift-check; then
+    echo "PASS: doc-drift-check"
+else
+    echo "FAIL: doc-drift-check"
     status=1
 fi
 

@@ -54,3 +54,29 @@ R6. **Keep the gate usable**: state each step's wall-clock contribution; if any 
 - A promoted step must be deterministic and offline: no network, no dependence on a scratch path existing.
 - Do not increase the gate's runtime without stating the cost; the fresh tree already builds the workspace twice.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+
+## Result + orchestrator verification (2026-10-10) — 7/8, and my spec's two measurements were WRONG
+**What landed (verified by me):** the three checks are gate steps and the gate now has **13** steps; my runs:
+`net-check` rc=0, `deps-check` rc=0, `doc-drift-check` rc=0. The worker's own violation→red controls are pasted in
+its report (a real `UnixStream::connect` in code, a non-optional `pii-graph` dep in `pii-tui`, a doc naming a
+nonexistent file — each turns the gate red, all restored) and the cost is **+2-3 s per gate run** (each check ~1 s
+warm against a ~4.5-minute gate).
+
+**MY SPEC UNDERSTATED BOTH PROBLEMS, and the worker measured the truth:**
+- `net-check` did not have *one* false positive: it had **nine hits** — the doc-comment FP I found, plus **eight
+  real socket uses**. Seven were allowlisted with stated reasons (one entry had gone stale when `service.rs` was
+  split); and **one is real production code: `crates/pii-evolve/src/driver.rs` dials the daemon socket directly**
+  instead of going through `pii_uds::client_connect`. It was allowlisted with a comment rather than fixed, and the
+  guide says so. That fix changes error text and adds a crate edge → **its own spec** (filed below).
+- `doc-drift-check` had **37** findings, not one — all in `HANDOFF.md`: 36 were legitimately ignored once the
+  checker learned that gitignored `_tmp/` scratch, globs, `…`/`...` and `<N>` placeholders are not durable
+  targets (and that `:5-9` is a line range), and **three had genuinely drifted** and were corrected.
+- Comment stripping now blanks line/doc/nested-block comments while **keeping string and char literals** (so a
+  `"//"` cannot hide code) — with a test written first (`net_check_ignores_comments`).
+
+**Criterion 8 (fresh-gate) is NOT met, and the reason is a defect class, not this spec:** the worker's two runs
+failed **different** tests — first `resume_never_reinvokes_completed_node`, then `diamond_race_cancels_loser` and
+`diamond_race_cancels_multi_node_arm`. Tests that fail differently run to run under gate load are timing-sensitive
+checks, and this lane treats a check that reports failures nobody can trust as a defect. Filed as **spec 119**
+(Stage A4) with the repro harness I have running: `cargo test --workspace` (what the gate runs) under CPU pressure.
+

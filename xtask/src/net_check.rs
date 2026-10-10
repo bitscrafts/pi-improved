@@ -31,7 +31,11 @@ pub const ALLOWLIST: &[&str] = &[
     // P4.7 (spec 22): service.rs is inside pii-net (the sanctioned socket
     // crate); its production path uses TcpStream via dial.rs/Conn, and the
     // only raw loopback-bind in a test is the streaming dechunk fake.
+    // Spec 118: the file was split into service/{mod,conn,http,dechunk}.rs
+    // (629ac9f) and this entry went stale; the only socket call is the same
+    // test-only loopback fake in service/mod.rs.
     "crates/pii-net/src/service.rs",
+    "crates/pii-net/src/service/mod.rs",
     "crates/pii-server/src/engine/uds.rs",
     // B2 (011 A.11): client-side connect moved to pii-uds so clients do not
     // pull the daemon tree; the sanctioned client connect site lives here.
@@ -43,6 +47,18 @@ pub const ALLOWLIST: &[&str] = &[
     // (no system broker exists on the CI host); it binds 127.0.0.1 only and
     // is `#[path]`-included by pii-server's MQTT end-to-end test.
     "crates/pii-channels/tests/mqtt_broker/mod.rs",
+    // Spec 118: sockets that were already in the tree when this gate was first
+    // run (it ran nowhere before 118, so they were never reviewed). Test files
+    // bind/connect loopback or tempdir sockets to fake a daemon or server.
+    "crates/pii-cli/tests/transport_failures_visible.rs",
+    "crates/pii-cli/tests/tui_failure_logged.rs",
+    "crates/pii-evolve/tests/launcher.rs",
+    "crates/pii-net/tests/accept_pool.rs",
+    // PRODUCTION code: pii-evolve's boss launcher dials the daemon control
+    // socket directly instead of through `pii_uds::client_connect`. Recorded,
+    // not fixed here (changes its error text and adds a crate edge): a spec
+    // should route it through pii-uds and delete this entry.
+    "crates/pii-evolve/src/driver.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.
@@ -52,7 +68,8 @@ pub fn scan_one(path: &str, contents: &str, allowlist: &[&str]) -> Vec<String> {
     if allowlist.contains(&path) {
         return out;
     }
-    for (idx, line) in contents.lines().enumerate() {
+    let code = strip_comments(contents);
+    for (idx, line) in code.lines().enumerate() {
         let Some(symbol) = SYMBOLS.iter().find(|s| line.contains(*s)) else {
             continue;
         };
@@ -62,6 +79,117 @@ pub fn scan_one(path: &str, contents: &str, allowlist: &[&str]) -> Vec<String> {
         ));
     }
     out
+}
+
+/// Blanks line, block (nested) and doc comments with spaces, keeping every
+/// newline so reported line numbers stay true (spec 118: a doc comment that
+/// merely names a symbol is not a call). String and char literals are kept
+/// verbatim and skipped over, so `"//"` cannot open a comment and hide code.
+fn strip_comments(src: &str) -> String {
+    let c: Vec<char> = src.chars().collect();
+    let mut out = String::with_capacity(src.len());
+    let (mut i, mut depth) = (0, 0usize);
+    while let Some(&cur) = c.get(i) {
+        let pair = (cur, c.get(i + 1).copied());
+        if depth > 0 {
+            match pair {
+                ('/', Some('*')) => {
+                    depth += 1;
+                    i += 2;
+                }
+                ('*', Some('/')) => {
+                    depth -= 1;
+                    i += 2;
+                }
+                _ => {
+                    out.push(if cur == '\n' { '\n' } else { ' ' });
+                    i += 1;
+                }
+            }
+        } else if pair == ('/', Some('*')) {
+            depth = 1;
+            i += 2;
+        } else if pair == ('/', Some('/')) {
+            while c.get(i).is_some_and(|&h| h != '\n') {
+                i += 1;
+            }
+        } else if let Some(end) = literal_end(&c, i) {
+            out.extend(c.get(i..end).unwrap_or_default());
+            i = end;
+        } else {
+            out.push(cur);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Count of consecutive `#` from `from`.
+fn hashes_at(c: &[char], from: usize) -> usize {
+    c.get(from..)
+        .unwrap_or_default()
+        .iter()
+        .take_while(|&&h| h == '#')
+        .count()
+}
+
+/// If a string, raw string or char literal starts at `i`, the index just past it.
+fn literal_end(c: &[char], i: usize) -> Option<usize> {
+    let at = |j: usize| c.get(j).copied();
+    let prev_is_ident = i > 0
+        && c.get(i - 1)
+            .is_some_and(|p| p.is_alphanumeric() || *p == '_');
+    match at(i)? {
+        '"' => Some(quoted_end(c, i + 1)),
+        'r' | 'b' if !prev_is_ident => {
+            let mut j = i + usize::from(at(i) == Some('b'));
+            if at(j) == Some('r') {
+                j += 1;
+                let hashes = hashes_at(c, j);
+                j += hashes;
+                if at(j) != Some('"') {
+                    return None;
+                }
+                j += 1;
+                while j < c.len() {
+                    if at(j) == Some('"') && hashes_at(c, j + 1) >= hashes {
+                        return Some(j + 1 + hashes);
+                    }
+                    j += 1;
+                }
+                Some(c.len())
+            } else if at(i) == Some('b') && at(j) == Some('"') {
+                Some(quoted_end(c, j + 1))
+            } else {
+                None
+            }
+        }
+        '\'' => {
+            // Char literal `'x'` / `'\n'`; otherwise a lifetime.
+            if at(i + 1) == Some('\\') {
+                let close = c.get(i + 2..)?.iter().position(|&h| h == '\'')?;
+                Some(i + 2 + close + 1)
+            } else if at(i + 2) == Some('\'') {
+                Some(i + 3)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Index just past the closing quote of a string whose body starts at `from`.
+fn quoted_end(c: &[char], from: usize) -> usize {
+    let mut j = from;
+    while let Some(&h) = c.get(j) {
+        match h {
+            '\\' => j += 2,
+            '"' => return j + 1,
+            _ => j += 1,
+        }
+    }
+    c.len()
 }
 
 /// Walks `crates/*/src/**/*.rs` and `xtask/src/**/*.rs`; every hit must be
@@ -107,6 +235,38 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::{ALLOWLIST, scan_one};
+
+    const SYM: &str = concat!("UnixStream", "::connect");
+
+    fn hits(src: &str) -> usize {
+        scan_one("crates/pii-x/src/a.rs", src, ALLOWLIST).len()
+    }
+
+    /// Spec 118 R1: a symbol named inside any comment form is not a call.
+    #[test]
+    fn net_check_ignores_comments() {
+        assert_eq!(
+            hits(&format!("/// docs mention {SYM} here\nfn f() {{}}\n")),
+            0
+        );
+        assert_eq!(hits(&format!("//! inner doc {SYM}\n")), 0);
+        assert_eq!(hits(&format!("// plain {SYM}\n")), 0);
+        assert_eq!(hits(&format!("/* block {SYM} */\n")), 0);
+        assert_eq!(hits(&format!("/* a\n {SYM}\n b */\nfn f() {{}}\n")), 0);
+        assert_eq!(hits(&format!("/* outer /* nested */ {SYM} */\n")), 0);
+    }
+
+    /// Spec 118 R1 control: code next to a comment is still code.
+    #[test]
+    fn net_check_still_flags_code_beside_comments() {
+        assert_eq!(hits(&format!("let s = {SYM}(p); // ok\n")), 1);
+        assert_eq!(hits(&format!("/* x */ let s = {SYM}(p);\n")), 1);
+        assert_eq!(hits(&format!("/* a\n b */ let s = {SYM}(p);\n")), 1);
+        assert_eq!(hits(&format!("let u = \"//\"; let s = {SYM}(p);\n")), 1);
+        assert_eq!(hits(&format!("let c = '\"'; let s = {SYM}(p);\n")), 1);
+        assert_eq!(hits(&format!("let s = {SYM}(p);\n")), 1);
+        assert_eq!(hits(&format!("/// doc\nlet s = {SYM}(p);\n")), 1);
+    }
 
     /// An allowlisted path with the same content is clean.
     #[test]

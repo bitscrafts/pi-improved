@@ -1,4 +1,4 @@
-# The quality gate: eight steps, two trees, and one rule about scratch
+# The quality gate: thirteen steps, two trees, and one rule about scratch
 
 **Audience**: anyone (human or agent) changing this repo, and especially anyone who will
 claim "the gate is green". This is the operating manual for `quality-gate.sh`, for the
@@ -10,7 +10,7 @@ explains *why* each step exists and what it cannot see. When they disagree, the 
 
 ---
 
-## 1. The eight steps (and one prerequisite)
+## 1. The thirteen steps (and one prerequisite)
 
 | step | what it runs | why it exists |
 |---|---|---|
@@ -20,11 +20,34 @@ explains *why* each step exists and what it cannot see. When they disagree, the 
 | `build` | `cargo build --workspace` | `pii-worker`'s supervisor tests spawn the real `pii` binary at a fixed `target/debug/pii` path |
 | `test (lib/bins/tests)` | `cargo test --workspace --lib --bins --tests` | the suite proper |
 | `test (doc)` | `cargo test --workspace --doc` | doc examples; run separately because doctests build libs *without* `cfg(test)` |
+| `coverage-floor` | `cargo llvm-cov … --json` then `xtask coverage-floor` | spec 108: line coverage must stay at or above `coverage-floor.txt`; a missing `cargo-llvm-cov` is a FAIL (`QG_SKIP_COVERAGE=1` skips it loudly, see the script) |
 | `lint-files` | `cargo run -q -p xtask -- lint-files` | file-size ratchet + spec/doc hygiene checks the compiler cannot express |
 | `lint-scratch` | `cargo run -q -p xtask -- lint-scratch` | spec 96: fails on a test that uses a crate-local `_tmp` directory it never creates |
+| `lint-observability` | `cargo run -q -p xtask -- lint-observability` | spec 98: every crate uses the `pii-observe` seam (or a named exemption), no new raw prints, the registry names are all in `ALL` |
 | `reachability-check` | `cargo run -q -p xtask -- reachability-check` | spec 72/87: proves the named seed symbols still have a real, non-test, non-comment caller |
+| `deps-check` | `cargo run -q -p xtask -- deps-check` | spec 118: the repo's dependency invariants, from `cargo metadata` (list below) |
+| `net-check` | `cargo run -q -p xtask -- net-check` | spec 118: no `TcpStream::connect` / `TcpListener::bind` / `Udp*` / `Unix{Stream,Listener}` / `to_socket_addrs` / `lookup_host` outside the allowlisted files (`pii-net`'s socket files, the control-socket sites, named test fakes). Comments are ignored; code beside a comment, and string contents, are not |
+| `doc-drift-check` | `cargo run -q -p xtask -- doc-drift-check` | spec 118: every backticked repo path in `HANDOFF.md` (`crates/`, `specs/`, `xtask/`, `graphs/`, `scripts/`, `fixtures/`, `_docs/`) must exist; `specs/` forward references, `_tmp/` scratch, globs, `…`/`...` and `<N>` placeholders are exempt; `:41` and `:5-9` suffixes are stripped |
 
-A step is a step only if it can **fail the gate**. `lint-scratch` and `reachability-check`
+### The five `deps-check` invariants (`xtask/src/deps.rs`)
+
+1. **`pii-abi` purity** — its direct non-dev deps are only `serde`, `serde_json`, `thiserror`, `schemars`, `bitflags`, and no `tokio`/`reqwest`/`redb`/`wasmtime`/`axum`/`hyper`/`rustls` appears transitively.
+2. **`pii-proto` stays a contract** — with default features it never reaches `pii-core`, `pii-abi`, `pii-store`, `pii-graph` or `axum`, and its direct non-optional deps are exactly `serde`, `serde_json`, `schemars`, `thiserror` (anything else must be optional behind the `client` feature).
+3. **Clients stay lean** — `pii-tui` and `pii-web` must not reach `pii-graph` (the client/server split is real).
+4. **Single versions** — exactly one version each of `redb`, `reqwest`, `wasmtime`, `serde` in the resolved graph.
+5. **Confinement** — `redb` appears only under `pii-store`, and `rustls` only under `pii-net`.
+
+### What the three new steps do NOT cover
+
+- `deps-check` reads `cargo metadata`; it cannot see a dependency that is only a `#[path]` source include or a `use` of a crate already in the graph.
+- `net-check` is a text scan of `crates/` and `xtask/` `.rs` files: it misses a symbol built by `concat!`/macros, an alias (`use TcpStream as S; S::connect`), and `build.rs`/non-`.rs` sources. Its allowlist is per-file, so anything *inside* an allowlisted file is unchecked. `crates/pii-evolve/src/driver.rs` is allowlisted although it is production code (it should go through `pii_uds::client_connect`).
+- `doc-drift-check` reads only `HANDOFF.md`, only anchored backtick paths, and only existence — not whether the prose is true.
+
+### Cost of the three steps (warm, measured 2026-10-10)
+
+Each is `cargo run -q -p xtask` on an already built xtask: about a second apiece, dominated by `cargo metadata` for `deps-check`. On a fresh tree they add one incremental `xtask` build that the `lint-*` steps already paid.
+
+A step is a step only if it can **fail the gate**. `lint-scratch`, `reachability-check` and the three spec-118 checks
 are enforcement, not advice: they exit non-zero and set the gate's status.
 
 ## 2. Two trees: the developer tree and a fresh export
