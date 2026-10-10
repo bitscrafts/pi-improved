@@ -96,3 +96,6 @@ Verified: **`deps-check` rc=0**, workspace `cargo check` clean, `lint-observabil
   that check could ever be promoted to a gate step.
 - `doc-drift-check` reports `_tmp/sidecar.log` (named in `HANDOFF.md`) does not exist — real but trivial drift.
 
+### The fresh-gate criterion CLOSED (2026-10-10, plain form, on 117's own HEAD)
+`fresh-gate` (exactly HEAD `d2d88b3`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0. **117: 8/8.**
+
