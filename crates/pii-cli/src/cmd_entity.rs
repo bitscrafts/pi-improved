@@ -16,7 +16,12 @@ pii memory entity show <id> [--dir D]\n       pii memory entity list {--kind K|-
 pii memory link <from-id> <to-id> --kind K --source S... [--attr k=v]... [--dir D]\n       \
 pii memory neighbours <id> [--depth N] [--limit N] [--dir D]\n       pii memory compact [--dir D]\n\
 sources are run:<id>, file:<path> or actor:<name>; --dir defaults to the runtime dir; \
-caps: --max-entities --max-relationships --max-provenance --max-depth --max-results.";
+caps: --max-entities --max-relationships --max-provenance --max-depth --max-results --max-bytes;\n\
+tiers (spec 127): --hot-secs --warm-secs --hot-count; list takes --rank; \
+`pii memory show <id>` states the tier and why; `pii memory tiers` reports counts;\n\
+`pii memory archive --before <epoch-secs|Ns|Nm|Nh|Nd ago>` writes <dir>/memory/archive-<ts>.jsonl, \
+verifies it, then removes those records; `pii memory restore <file>` reads one back; \
+--now-secs N overrides the clock (diagnostics and tests).";
 
 struct Opts {
     dir: Option<PathBuf>,
@@ -28,6 +33,9 @@ struct Opts {
     positional: Vec<String>,
     depth: Option<u32>,
     limit: Option<usize>,
+    rank: bool,
+    before: Option<String>,
+    now_secs: Option<u64>,
 }
 
 fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
@@ -41,6 +49,9 @@ fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
         positional: Vec::new(),
         depth: None,
         limit: None,
+        rank: false,
+        before: None,
+        now_secs: None,
     };
     while let Some(a) = next_str(args) {
         match a.as_str() {
@@ -55,6 +66,13 @@ fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
             }
             "--depth" => o.depth = Some(next_str(args)?.parse().ok()?),
             "--limit" => o.limit = Some(next_str(args)?.parse().ok()?),
+            "--rank" => o.rank = true,
+            "--before" => o.before = Some(next_str(args)?),
+            "--now-secs" => o.now_secs = Some(next_str(args)?.parse().ok()?),
+            "--hot-secs" => o.cfg.hot_secs = next_str(args)?.parse().ok()?,
+            "--warm-secs" => o.cfg.warm_secs = next_str(args)?.parse().ok()?,
+            "--hot-count" => o.cfg.hot_count = next_str(args)?.parse().ok()?,
+            "--max-bytes" => o.cfg.max_bytes = next_str(args)?.parse().ok()?,
             "--max-entities" => o.cfg.max_entities = next_str(args)?.parse().ok()?,
             "--max-relationships" => o.cfg.max_relationships = next_str(args)?.parse().ok()?,
             "--max-provenance" => o.cfg.max_provenance = next_str(args)?.parse().ok()?,
@@ -112,7 +130,11 @@ pub(crate) fn cmd_entity(sub: &str, args: &mut std::env::ArgsOs) -> ExitCode {
         Ok(s) => s,
         Err(e) => return fail(&e.to_string()),
     };
+    let store = with_clock(store, o.now_secs);
     let pos = |i: usize| o.positional.get(i).map(String::as_str);
+    if is_tier_cmd(&o, sub, verb.as_deref()) {
+        return tier_cmd(&store, &o, sub, verb.as_deref());
+    }
     match (sub, verb.as_deref()) {
         ("entity", Some("add")) => {
             let (Some(kind), Some(name)) = (o.kind.clone(), o.name.clone()) else {
@@ -127,14 +149,6 @@ pub(crate) fn cmd_entity(sub: &str, args: &mut std::env::ArgsOs) -> ExitCode {
             store
                 .put_entity(input)
                 .map_or_else(|e| refused(&e), |p| print(&serde_json::json!(p.record)))
-        }
-        ("entity", Some("show")) => {
-            let Some(id) = pos(0) else { return usage() };
-            match store.get(id) {
-                Ok(Some(e)) => print(&serde_json::json!(e)),
-                Ok(None) => fail(&format!("no entity {id}")),
-                Err(e) => refused(&e),
-            }
         }
         ("entity", Some("list")) => {
             let found = match (&o.kind, &o.name) {
@@ -171,6 +185,142 @@ pub(crate) fn cmd_entity(sub: &str, args: &mut std::env::ArgsOs) -> ExitCode {
             }
         }
         _ => usage(),
+    }
+}
+
+/// `--now-secs N` pins the store's clock (diagnostics and tests); otherwise the system clock.
+fn with_clock(store: EntityStore, now_secs: Option<u64>) -> EntityStore {
+    let Some(n) = now_secs else { return store };
+    let clock = std::sync::Arc::new(pii_core::FixedClock::new());
+    clock.advance(n.saturating_mul(1000));
+    store.with_clock(clock)
+}
+
+/// The tiering surface (spec 127): `show`, `tiers`, `archive`, `restore` and `entity list --rank`.
+fn tier_cmd(store: &EntityStore, o: &Opts, sub: &str, verb: Option<&str>) -> ExitCode {
+    let pos = |i: usize| o.positional.get(i).map(String::as_str);
+    match (sub, verb) {
+        ("entity", Some("show")) | ("show", None) => show(store, pos(0)),
+        ("tiers", None) => {
+            if let Err(e) = store.sweep() {
+                return refused(&e);
+            }
+            store.counts().map_or_else(
+                |e| refused(&e),
+                |c| {
+                    print(&serde_json::json!({
+                        "tiers": c.tiers, "tier_changes": c.tier_changes,
+                        "archive_ops": c.archive_ops, "entities": c.entities,
+                        "relationships": c.relationships, "bytes": c.bytes,
+                    }))
+                },
+            )
+        }
+        ("archive", None) => archive(store, o),
+        ("restore", None) => {
+            let Some(file) = pos(0) else { return usage() };
+            match store.restore(std::path::Path::new(file)) {
+                Ok(r) => {
+                    let _ = writeln!(
+                        std::io::stdout(),
+                        "restored={} unchanged={} refused={}",
+                        r.restored,
+                        r.unchanged,
+                        r.refused.len()
+                    );
+                    for (line, reason, why) in &r.refused {
+                        let _ = writeln!(std::io::stdout(), "refused line {line}: {reason}: {why}");
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => refused(&e),
+            }
+        }
+        ("entity", Some("list")) if o.rank => {
+            let found = match (&o.kind, &o.name) {
+                (Some(k), None) => store.by_kind_ranked(k, o.limit),
+                (None, Some(n)) => store.by_name_ranked(n, o.limit),
+                _ => return usage(),
+            };
+            found.map_or_else(
+                |e| refused(&e),
+                |list| {
+                    print(&serde_json::json!(
+                        list.iter()
+                            .map(|r| serde_json::json!({"entity": r.entity, "tier": r.info}))
+                            .collect::<Vec<_>>()
+                    ))
+                },
+            )
+        }
+        _ => usage(),
+    }
+}
+
+/// True for the subcommands [`tier_cmd`] serves.
+fn is_tier_cmd(o: &Opts, sub: &str, verb: Option<&str>) -> bool {
+    matches!(
+        (sub, verb),
+        ("show" | "tiers" | "archive" | "restore", None) | ("entity", Some("show"))
+    ) || (sub == "entity" && verb == Some("list") && o.rank)
+}
+
+/// `show`: the record and, from just before this read, the tier it was in and why.
+fn show(store: &EntityStore, id: Option<&str>) -> ExitCode {
+    let Some(id) = id else { return usage() };
+    let info = store.explain(id);
+    match (store.get(id), info) {
+        (Ok(Some(e)), Ok(info)) => {
+            let mut v = serde_json::json!(e);
+            if let Some(m) = v.as_object_mut() {
+                m.insert(String::from("tier"), serde_json::json!(info));
+            }
+            print(&v)
+        }
+        (Ok(None), _) => fail(&format!("no entity {id}")),
+        (Err(e), _) | (_, Err(e)) => refused(&e),
+    }
+}
+
+/// `--before`: epoch seconds, or an age (`90s`, `15m`, `12h`, `30d`) counted back from now.
+fn cutoff(store: &EntityStore, text: &str) -> Option<u64> {
+    let (num, unit) = text.split_at(text.len().checked_sub(1)?);
+    let mult = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3_600,
+        "d" => 86_400,
+        _ => return text.parse().ok(),
+    };
+    Some(
+        store
+            .now_secs()
+            .saturating_sub(num.parse::<u64>().ok()?.checked_mul(mult)?),
+    )
+}
+
+/// The audited removal: dump, verify, then remove.
+fn archive(store: &EntityStore, o: &Opts) -> ExitCode {
+    let Some(before) = o.before.as_deref().and_then(|t| cutoff(store, t)) else {
+        return usage();
+    };
+    match store.archive_before(before) {
+        Ok(r) => {
+            let file = r
+                .path
+                .as_ref()
+                .map_or_else(|| String::from("-"), |p| p.display().to_string());
+            let _ = writeln!(
+                std::io::stdout(),
+                "archived records={} bytes={} entities={} relationships={} file={file}",
+                r.records,
+                r.bytes,
+                r.entities,
+                r.relationships
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => refused(&e),
     }
 }
 

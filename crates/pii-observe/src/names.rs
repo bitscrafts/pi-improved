@@ -70,6 +70,14 @@ pub const MEMORY_RELATIONSHIP_WRITTEN: &str = "memory.relationship_written";
 pub const MEMORY_WRITE_REFUSED: &str = "memory.write_refused";
 /// Event: an entity query was refused (`op`: `get`, `by_kind`, `by_name` or `neighbours`; `reason`: `bad_query`, `bad_depth`, `depth_cap`, `result_cap` or `unknown_entity`).
 pub const MEMORY_QUERY_REFUSED: &str = "memory.query_refused";
+/// Event: a record's tier changed (`id`, `from`, `to`: `hot`, `warm` or `cold`) (spec 127).
+pub const MEMORY_TIER_CHANGED: &str = "memory.tier_changed";
+/// Event: records were archived and removed after a verified dump (`path`, `records`, `bytes`) (spec 127).
+pub const MEMORY_ARCHIVED: &str = "memory.archived";
+/// Event: an archive or restore was refused and nothing was removed (`op`: `archive` or `restore`; `reason`; `error`) (spec 127).
+pub const MEMORY_ARCHIVE_REFUSED: &str = "memory.archive_refused";
+/// Event: an archive was restored (`file`, `restored`, `unchanged`, `refused`) (spec 127).
+pub const MEMORY_RESTORED: &str = "memory.restored";
 /// Event: an operator-facing CLI failure (startup, daemon connect, graph error).
 pub const CLI_FAILURE: &str = "cli.failure";
 /// Event: a channel poll failed.
@@ -291,6 +299,13 @@ pub const METRIC_MEMORY_WRITE_REFUSALS_TOTAL: &str = "pii_memory_write_refusals_
 /// Metric (counter, label `reason`): memory graph queries refused (spec 126).
 pub const METRIC_MEMORY_QUERY_REFUSALS_TOTAL: &str = "pii_memory_query_refusals_total";
 
+/// Metric (gauge, label `tier`): memory records in each tier (spec 127).
+pub const METRIC_MEMORY_TIER: &str = "pii_memory_tier";
+/// Metric (counter, label `change`): tier transitions seen, `<from>_to_<to>` (spec 127).
+pub const METRIC_MEMORY_TIER_CHANGES_TOTAL: &str = "pii_memory_tier_changes_total";
+/// Metric (counter, label `op`): archive operations by outcome, `archived`, `restored` or `refused` (spec 127).
+pub const METRIC_MEMORY_ARCHIVE_OPS_TOTAL: &str = "pii_memory_archive_ops_total";
+
 /// Every registered name; keep in sync with the constants above.
 pub const ALL: &[&str] = &[
     GRAPH_NODE_DEAD,
@@ -325,6 +340,10 @@ pub const ALL: &[&str] = &[
     MEMORY_RELATIONSHIP_WRITTEN,
     MEMORY_WRITE_REFUSED,
     MEMORY_QUERY_REFUSED,
+    MEMORY_TIER_CHANGED,
+    MEMORY_ARCHIVED,
+    MEMORY_ARCHIVE_REFUSED,
+    MEMORY_RESTORED,
     CLI_FAILURE,
     CHANNEL_POLL_FAILED,
     CHANNEL_SEND_FAILED,
@@ -426,6 +445,9 @@ pub const ALL: &[&str] = &[
     METRIC_MEMORY_WRITES_TOTAL,
     METRIC_MEMORY_WRITE_REFUSALS_TOTAL,
     METRIC_MEMORY_QUERY_REFUSALS_TOTAL,
+    METRIC_MEMORY_TIER,
+    METRIC_MEMORY_TIER_CHANGES_TOTAL,
+    METRIC_MEMORY_ARCHIVE_OPS_TOTAL,
 ];
 
 #[cfg(test)]

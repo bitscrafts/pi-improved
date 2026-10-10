@@ -191,6 +191,10 @@ pub enum Reason {
     DepthCap,
     /// More matches than the result cap allows.
     ResultCap,
+    /// The write would take the graph past its byte budget (spec 127).
+    BytesCap,
+    /// An archive could not be written and verified, so nothing was removed (spec 127).
+    ArchiveFailed,
 }
 
 impl Reason {
@@ -210,6 +214,8 @@ impl Reason {
             Self::BadDepth => "bad_depth",
             Self::DepthCap => "depth_cap",
             Self::ResultCap => "result_cap",
+            Self::BytesCap => "bytes_cap",
+            Self::ArchiveFailed => "archive_failed",
         }
     }
 }

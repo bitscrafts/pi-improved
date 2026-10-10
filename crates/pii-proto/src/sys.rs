@@ -217,6 +217,15 @@ pub struct Counts {
     /// Memory graph queries refused, by reason (spec 126).
     #[serde(default)]
     pub memory_query_refusals: BTreeMap<String, u64>,
+    /// Memory records now in each tier (`hot`, `warm`, `cold`); empty until the graph has been used (spec 127).
+    #[serde(default)]
+    pub memory_tiers: BTreeMap<String, u64>,
+    /// Tier transitions seen, by `<from>_to_<to>` (spec 127).
+    #[serde(default)]
+    pub memory_tier_changes: BTreeMap<String, u64>,
+    /// Archive operations by outcome: `archived`, `restored`, `refused` (spec 127).
+    #[serde(default)]
+    pub memory_archive_ops: BTreeMap<String, u64>,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).

@@ -68,3 +68,33 @@ R10. **Injection stance inherited**: entity text stays data — a hostile string
 - No model in the loop: tiering is arithmetic over recorded access, not inference.
 - Do not change the archive's on-disk shape without saying so; the dump is an artefact a human may need to read.
 - Scratch under `/projects/_tmp/`, delete only your own, no daemon left running. Do NOT commit.
+
+## Orchestrator verification (2026-10-10)
+**My controls:**
+- `cargo test -p pii-memory --test tiering` → **13 passed**; `cargo test -p pii-cli --test memory_tiering` →
+  **2 passed**; `cargo test -p pii-server --test tiering_e2e` → **1 passed** (that one drives a **live daemon**
+  with a real clock: hot → warm → hot via a `recall` run → cold, archive 3 records/729 bytes → 0 entities →
+  restore 3 → hot, with the tier counters moving at every step).
+- `deps-check`, `net-check`, `doc-drift-check`, `lint-observability` → **rc 0 each**.
+- **Mutation (mine)**: making `record_access` a no-op at its three sites turns **seven** tests red —
+  `access_is_recorded_by_get_by_kind_by_name_and_neighbours_in_one_write_each`,
+  `a_record_walks_hot_warm_cold_by_advancing_time_and_one_read_restores_it`,
+  `frequently_read_records_stay_hot_through_the_warm_window_but_not_past_it`,
+  `explain_states_the_two_numbers_and_the_rule`, `ranking_is_total_and_stable_tier_then_recency_then_count_then_id`,
+  `archive_writes_a_verified_sorted_dump_then_removes_and_restore_round_trips`, and — the one that matters most
+  for R4 — **`nothing_is_ever_removed_by_time_alone`**; restored byte-identical → 13 pass.
+
+**Design read at the source:** tiers are **derived** (`hot_secs` 86400 / `warm_secs` 604800 / `hot_count` 10, keys
+`[memory_graph] …`), never stored; the budget policy is **refuse** (`max_bytes` 16 MiB, failure `bytes_cap`, and a
+test asserts the tier counters did not move, so nothing is quietly demoted or dropped to make room); the archive
+writes `archive-<ts>.jsonl` **sorted by id with no timestamp inside**, re-reads it and checks **bytes and line
+count** before removing anything, and refuses with `archive_failed` otherwise; `restore` replays the dump through
+the normal validation, caps and budget.
+
+**Kept honest (the worker's own list):** the code was written before its tests (**no RED observed first**; the six
+mutations are the failure proof); the **id tie-break cannot be shown to matter** (input comes from an id-sorted
+map, so dropping it from the sort key would not fail a test — an untested tie-break is an untested claim); no soak
+at the byte budget; no clock-goes-backwards test; no concurrent archive-while-writing stress; archiving near the
+64 MiB read bound unexercised; and the tier-transition counters are **sweep-based**, so a change is counted at the
+next read or status poll rather than at the instant the threshold passes.
+

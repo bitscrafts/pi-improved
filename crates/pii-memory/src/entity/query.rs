@@ -40,7 +40,11 @@ impl EntityStore {
     /// # Errors
     /// [`GraphError::Store`] when the file cannot be read.
     pub fn get(&self, id: &str) -> Result<Option<Entity>, GraphError> {
-        Ok(self.load()?.entities.get(id).cloned())
+        let found = self.load()?.entities.get(id).cloned();
+        if found.is_some() {
+            self.record_access(&[id])?;
+        }
+        Ok(found)
     }
 
     /// Entities of `kind`, sorted by id.
@@ -60,6 +64,20 @@ impl EntityStore {
     }
 
     fn select(
+        &self,
+        op: &'static str,
+        key: &str,
+        limit: Option<usize>,
+        keep: impl Fn(&Entity) -> bool,
+    ) -> Result<Vec<Entity>, GraphError> {
+        let found = self.select_untouched(op, key, limit, keep)?;
+        let ids: Vec<&str> = found.iter().map(|e| e.id.as_str()).collect();
+        self.record_access(&ids)?;
+        Ok(found)
+    }
+
+    /// The matching entities, sorted by id, without recording a read.
+    pub(super) fn select_untouched(
         &self,
         op: &'static str,
         key: &str,
@@ -162,6 +180,12 @@ impl EntityStore {
                 relationships: crossed.into_values().cloned().collect(),
             })
         };
-        run().map_err(|e| self.refuse_query("neighbours", e))
+        let found = run().map_err(|e| self.refuse_query("neighbours", e))?;
+        let ids: Vec<&str> = std::iter::once(found.root.as_str())
+            .chain(found.entities.iter().map(|(_, e)| e.id.as_str()))
+            .chain(found.relationships.iter().map(|r| r.id.as_str()))
+            .collect();
+        self.record_access(&ids)?;
+        Ok(found)
     }
 }

@@ -13,6 +13,10 @@
 //! | `recall`   | `by_name`       | `name`, `limit`?                                       | `{op, count, entities}`       |
 //! | `recall`   | `neighbours`    | `entity_id`, `depth`?, `limit`?                        | `{op, count, entities, relationships}` |
 //!
+//! `by_kind` and `by_name` take `rank: true` (spec 127): the entities come back hottest first
+//! (tier, then last read, then read count, then id) with a parallel `tiers` list. Every recall
+//! records a read of what it returned, which is what keeps a record hot.
+//!
 //! (`id` is taken: it names the node in the graph file.) `from`/`to` are an entity id or `{kind, name}`. Every argument may be a `$.` expression.
 //! The writing run's id is always added to the provenance (`run:<id>`). A refused write or
 //! query leaves on the `err` port as `{error, reason}`; it is already counted and reported.
@@ -260,6 +264,23 @@ impl Node {
 
     fn recall(&self, store: &EntityStore, a: &Args<'_>) -> Result<Outcome, PiiError> {
         let limit: Option<usize> = a.number("limit")?;
+        let rank = a.get("rank")?.and_then(|v| v.as_bool()).unwrap_or(false);
+        if rank && matches!(self.op.as_str(), "by_kind" | "by_name") {
+            let ranked = if self.op == "by_kind" {
+                store.by_kind_ranked(&a.text("entity_kind")?, limit)
+            } else {
+                store.by_name_ranked(&a.text("name")?, limit)
+            };
+            return match ranked {
+                Ok(list) => Ok(ok(json!({
+                    "op": self.op,
+                    "count": list.len(),
+                    "entities": list.iter().map(|r| &r.entity).collect::<Vec<_>>(),
+                    "tiers": list.iter().map(|r| r.info.tier.as_str()).collect::<Vec<_>>(),
+                }))),
+                Err(e) => failed(e),
+            };
+        }
         let found = match self.op.as_str() {
             "get" => store
                 .get(&a.text("entity_id")?)

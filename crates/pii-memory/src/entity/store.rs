@@ -12,15 +12,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use pii_core::Clock as _;
+use pii_core::{Clock, SystemClock};
 use pii_observe::{Event, Level, NullObserver, Observer, names};
 use serde::{Deserialize, Serialize};
 
-use super::types::{Entity, EntityInput, GraphError, Relationship, RelationshipInput};
+use super::tier::{Access, AccessFile, Tier};
+use super::types::{
+    Entity, EntityInput, GraphError, Reason, Relationship, RelationshipInput, refuse,
+};
 use super::upsert::{upsert_entity, upsert_relationship};
 
 /// Largest graph or counters file this store will read.
-const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+pub(super) const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const LOCK_TRIES: u32 = 300;
 const LOCK_STALE: Duration = Duration::from_secs(30);
 
@@ -42,6 +45,15 @@ pub struct GraphConfig {
     pub default_depth: u32,
     /// Most results a query may return; more matches are refused (`result_cap`), never truncated.
     pub max_results: usize,
+    /// A record read within this many seconds is `hot` (spec 127; default one day).
+    pub hot_secs: u64,
+    /// A record read within this many seconds is at least `warm`; older is `cold` (default seven days).
+    pub warm_secs: u64,
+    /// A record read at least this many times stays `hot` through the warm window (default 10).
+    pub hot_count: u64,
+    /// Most bytes the graph file may hold. A write that would pass it is refused
+    /// (`bytes_cap`); nothing is demoted or dropped to make room (default 16 MiB).
+    pub max_bytes: u64,
 }
 
 impl Default for GraphConfig {
@@ -54,6 +66,10 @@ impl Default for GraphConfig {
             max_depth: 3,
             default_depth: 1,
             max_results: 200,
+            hot_secs: 86_400,
+            warm_secs: 604_800,
+            hot_count: 10,
+            max_bytes: 16 * 1024 * 1024,
         }
     }
 }
@@ -119,6 +135,18 @@ pub struct Counters {
     /// Refused queries by reason.
     #[serde(default)]
     pub query_refusals: BTreeMap<String, u64>,
+    /// Tier transitions seen, by `<from>_to_<to>` (spec 127).
+    #[serde(default)]
+    pub tier_changes: BTreeMap<String, u64>,
+    /// Archive and restore operations by outcome: `archived`, `restored`, `refused` (spec 127).
+    #[serde(default)]
+    pub archive_ops: BTreeMap<String, u64>,
+    /// Records written to archives, ever.
+    #[serde(default)]
+    pub archived_records: u64,
+    /// Records read back from archives, ever.
+    #[serde(default)]
+    pub restored_records: u64,
 }
 
 /// What `pii health` and `pii metrics` report.
@@ -136,6 +164,14 @@ pub struct Counts {
     pub write_refusals: BTreeMap<String, u64>,
     /// Refused queries by reason.
     pub query_refusals: BTreeMap<String, u64>,
+    /// Records now in each tier (`hot`, `warm`, `cold`), derived from their access data at the store's clock.
+    pub tiers: BTreeMap<String, u64>,
+    /// Tier transitions seen, by `<from>_to_<to>`.
+    pub tier_changes: BTreeMap<String, u64>,
+    /// Archive and restore operations by outcome.
+    pub archive_ops: BTreeMap<String, u64>,
+    /// Bytes of the graph file.
+    pub bytes: u64,
 }
 
 /// What a compaction measured.
@@ -149,12 +185,13 @@ pub struct CompactReport {
 
 /// The entity store under one directory. Cheap to clone-by-`Arc`; holds no file open.
 pub struct EntityStore {
-    area: PathBuf,
-    cfg: GraphConfig,
-    observer: Arc<dyn Observer>,
+    pub(super) area: PathBuf,
+    pub(super) cfg: GraphConfig,
+    pub(super) observer: Arc<dyn Observer>,
+    pub(super) clock: Arc<dyn Clock>,
 }
 
-struct LockGuard(PathBuf);
+pub(super) struct LockGuard(PathBuf);
 
 impl Drop for LockGuard {
     fn drop(&mut self) {
@@ -162,11 +199,13 @@ impl Drop for LockGuard {
     }
 }
 
-fn io_err(what: &str, path: &Path, e: impl std::fmt::Display) -> GraphError {
+pub(super) fn io_err(what: &str, path: &Path, e: impl std::fmt::Display) -> GraphError {
     GraphError::Store(format!("{what} {}: {e}", path.display()))
 }
 
-fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &Path) -> Result<T, GraphError> {
+pub(super) fn read_json<T: for<'de> Deserialize<'de> + Default>(
+    path: &Path,
+) -> Result<T, GraphError> {
     let meta = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(T::default()),
@@ -186,13 +225,13 @@ fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &Path) -> Result<T, G
     serde_json::from_slice(&buf).map_err(|e| io_err("parse", path, e))
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), GraphError> {
+pub(super) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), GraphError> {
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, bytes).map_err(|e| io_err("write", &tmp, e))?;
     fs::rename(&tmp, path).map_err(|e| io_err("rename", path, e))
 }
 
-fn bump(map: &mut BTreeMap<String, u64>, key: &str) {
+pub(super) fn bump(map: &mut BTreeMap<String, u64>, key: &str) {
     let n = map.entry(key.to_owned()).or_insert(0);
     *n = n.saturating_add(1);
 }
@@ -209,7 +248,21 @@ impl EntityStore {
             area,
             cfg,
             observer: Arc::new(NullObserver),
+            clock: Arc::new(SystemClock),
         })
+    }
+
+    /// Reads time from `clock` (tests advance it; the default is the system clock).
+    #[must_use]
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Whole seconds since the epoch on the store's clock.
+    #[must_use]
+    pub fn now_secs(&self) -> u64 {
+        self.clock.now_ms() / 1000
     }
 
     /// Reports writes and refusals to `observer`.
@@ -231,8 +284,12 @@ impl EntityStore {
         self.area.join("graph.json")
     }
 
-    fn counters_path(&self) -> PathBuf {
+    pub(super) fn counters_path(&self) -> PathBuf {
         self.area.join("counters.json")
+    }
+
+    pub(super) fn access_path(&self) -> PathBuf {
+        self.area.join("access.json")
     }
 
     fn lock_path(&self) -> PathBuf {
@@ -243,7 +300,7 @@ impl EntityStore {
         read_json(&self.graph_path())
     }
 
-    fn lock(&self) -> Result<LockGuard, GraphError> {
+    pub(super) fn lock(&self) -> Result<LockGuard, GraphError> {
         let path = self.lock_path();
         for _ in 0..LOCK_TRIES {
             match fs::OpenOptions::new()
@@ -274,16 +331,18 @@ impl EntityStore {
 
     /// Runs `f` on the loaded state under the lock; saves the graph when `f` says it changed,
     /// and the counters when they did. A refusal from `f` is counted here, once.
-    fn txn<T>(
+    pub(super) fn txn<T>(
         &self,
         query: bool,
-        f: impl FnOnce(&mut State, &mut Counters) -> Result<(T, bool), GraphError>,
+        f: impl FnOnce(&mut State, &mut Counters, &mut AccessFile) -> Result<(T, bool), GraphError>,
     ) -> Result<T, GraphError> {
         let _guard = self.lock()?;
         let mut state = self.load()?;
         let mut counters: Counters = read_json(&self.counters_path())?;
+        let mut access: AccessFile = read_json(&self.access_path())?;
         let before = counters.clone();
-        let outcome = f(&mut state, &mut counters);
+        let access_before = access.clone();
+        let outcome = f(&mut state, &mut counters, &mut access);
         let result = match outcome {
             Ok((v, changed)) => {
                 if changed {
@@ -304,6 +363,11 @@ impl EntityStore {
             }
             Err(e) => Err(e),
         };
+        if access != access_before && result.is_ok() {
+            let bytes =
+                serde_json::to_vec(&access).map_err(|e| GraphError::Store(e.to_string()))?;
+            write_atomic(&self.access_path(), &bytes)?;
+        }
         if counters != before {
             let bytes =
                 serde_json::to_vec(&counters).map_err(|e| GraphError::Store(e.to_string()))?;
@@ -316,7 +380,8 @@ impl EntityStore {
     pub(super) fn refuse_query(&self, op: &'static str, e: GraphError) -> GraphError {
         if let GraphError::Refused(r, _) = &e {
             let r = *r;
-            let counted = self.txn::<()>(true, |_, _| Err(GraphError::Refused(r, String::new())));
+            let counted =
+                self.txn::<()>(true, |_, _, _| Err(GraphError::Refused(r, String::new())));
             drop(counted);
             self.observer.event(
                 &Event::new("memory", Level::Warn, names::MEMORY_QUERY_REFUSED)
@@ -348,11 +413,18 @@ impl EntityStore {
     /// `entity_cap`, `provenance_cap`), counted and reported; or a store failure.
     pub fn put_entity(&self, input: EntityInput) -> Result<Put<Entity>, GraphError> {
         let cfg = self.cfg;
-        let res = self.txn(false, move |state, counters| {
+        let now = self.now_secs();
+        let res = self.txn(false, move |state, counters, access| {
             let put = upsert_entity(state, &cfg, input)?;
             let changed = put.written != Written::Unchanged;
             if changed {
+                check_budget(state, &cfg)?;
                 counters.entities_written = counters.entities_written.saturating_add(1);
+            }
+            if put.written == Written::Created {
+                access
+                    .entries
+                    .insert(put.record.id.clone(), Access::new(now));
             }
             Ok((put, changed))
         });
@@ -381,11 +453,18 @@ impl EntityStore {
         input: RelationshipInput,
     ) -> Result<Put<Relationship>, GraphError> {
         let cfg = self.cfg;
-        let res = self.txn(false, move |state, counters| {
+        let now = self.now_secs();
+        let res = self.txn(false, move |state, counters, access| {
             let put = upsert_relationship(state, &cfg, input)?;
             let changed = put.written != Written::Unchanged;
             if changed {
+                check_budget(state, &cfg)?;
                 counters.relationships_written = counters.relationships_written.saturating_add(1);
+            }
+            if put.written == Written::Created {
+                access
+                    .entries
+                    .insert(put.record.id.clone(), Access::new(now));
             }
             Ok((put, changed))
         });
@@ -413,7 +492,21 @@ impl EntityStore {
     pub fn counts(&self) -> Result<Counts, GraphError> {
         let state = self.load()?;
         let c: Counters = read_json(&self.counters_path())?;
+        let access: AccessFile = read_json(&self.access_path())?;
+        let now = self.now_secs();
+        let mut tiers: BTreeMap<String, u64> = Tier::ALL
+            .iter()
+            .map(|t| (t.as_str().to_owned(), 0))
+            .collect();
+        for id in state.entities.keys().chain(state.relationships.keys()) {
+            let t = access.tier(&self.cfg, id, now);
+            bump(&mut tiers, t.as_str());
+        }
         Ok(Counts {
+            tiers,
+            tier_changes: c.tier_changes,
+            archive_ops: c.archive_ops,
+            bytes: fs::metadata(self.graph_path()).map_or(0, |m| m.len()),
             entities: state.entities.len() as u64,
             relationships: state.relationships.len() as u64,
             entities_written: c.entities_written,
@@ -449,13 +542,29 @@ impl EntityStore {
     }
 }
 
+/// Refuses a write that would leave the graph over `max_bytes`. The policy is to refuse, not to
+/// demote: no record changes tier or leaves the store to make room (spec 127 R5).
+pub(super) fn check_budget(state: &State, cfg: &GraphConfig) -> Result<(), GraphError> {
+    let size = serde_json::to_vec(state).map_or(u64::MAX, |b| b.len() as u64);
+    if size > cfg.max_bytes {
+        return refuse(
+            Reason::BytesCap,
+            format!(
+                "the graph would hold {size} bytes, over the {} byte budget",
+                cfg.max_bytes
+            ),
+        );
+    }
+    Ok(())
+}
+
 fn lock_is_stale(path: &Path) -> bool {
     let modified_ms = fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis());
-    let now_ms = u128::from(pii_core::SystemClock.now_ms());
+    let now_ms = u128::from(SystemClock.now_ms());
     if modified_ms.is_some_and(|m| now_ms.saturating_sub(m) > LOCK_STALE.as_millis()) {
         return true;
     }

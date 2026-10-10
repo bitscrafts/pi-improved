@@ -1,4 +1,4 @@
-# Memory entities and relationships (spec 126)
+# Memory entities, relationships and tiers (specs 126, 127)
 
 The memory pillar's **structure**: typed entities and typed relationships with provenance, a
 bounded query surface, and a `remember` / `recall` node pair the engine can use. Until this
@@ -129,7 +129,77 @@ attribute is an attribute; in a name it is a name; as a provenance source it is 
 ordinary `bad_provenance` rule. The same control `pii-learn` carries. A consumer that puts a recalled
 value into a model prompt must treat it as data too: that boundary is the consumer's, not the store's.
 
-## Not verified
+## Tiers (spec 127)
+
+Time is part of memory. Every record (entity or relationship) carries an access record in
+`<dir>/memory/access.json`: `last_access_secs` and `access_count`. It is written at creation and by
+**every read** through the query surface (`get`, `by_kind`, `by_name`, `neighbours`, `entity show|list`,
+`neighbours`, the `recall` node, all via the same store methods): one transaction and one small file write per
+query, not per attribute, and `graph.json` is never touched by a read. A refused query reads nothing.
+
+**A tier is derived, not stored.** `tier = f(last_access_secs, access_count, now, thresholds)`:
+
+| tier | when |
+|---|---|
+| `hot` | last read within `hot_secs`, **or** read at least `hot_count` times and within `warm_secs` |
+| `warm` | not hot, last read within `warm_secs` |
+| `cold` | last read longer ago than `warm_secs` (a record with no access entry counts as never read) |
+
+Defaults and why: `hot_secs` = 86400 (a day: what a working session just touched), `warm_secs` = 604800 (a week:
+what is still part of the current working set), `hot_count` = 10 (something read ten times is a habit, not an
+accident, and stays hot for the warm window; it cannot hold a record hot past `warm_secs`). Keys:
+`[memory_graph] hot_secs / warm_secs / hot_count` in `pii.toml`, or `--hot-secs --warm-secs --hot-count` on
+the CLI. Because the tier is arithmetic over two stored numbers, it cannot disagree with them; the same
+numbers under different thresholds give a different tier (tested).
+
+**Ranking.** `entity list --rank` (and `rank: true` on a `recall` `by_kind`/`by_name`) orders by tier (hot,
+warm, cold), then last read (latest first), then read count (most first), then id: a total order, so the same
+state returns the same list. `pii memory show <id>` prints the record with `tier` = `{tier, last_access_secs,
+age_secs, access_count, why}`; `why` names the two numbers and the threshold that decided it. `show` explains the tier the
+record had just before this read, and the read then counts.
+
+**Demotion is not deletion.** A record that goes cold is *demoted*: counted (`hot_to_cold` and so on), reported
+(`memory.tier_changed`), ranked last, still returned by every query. One read makes it hot again (`cold_to_hot`).
+Nothing deletes a fact without an audited command: there is no timer that removes anything.
+
+**The budget policy is refuse.** `max_bytes` (default 16 MiB, `--max-bytes`, `[memory_graph] max_bytes`) bounds
+the graph file, beside the entity and relationship caps. A write that would pass it is refused as `bytes_cap`,
+counted, and nothing is stored. It is **not** "demote the coldest": no record changes tier, moves or leaves to
+make room (tested: at the budget the tier counters have not moved and nothing was evicted).
+
+## Archive and restore (the only removal path)
+
+`pii memory archive --before <epoch-secs | Ns|Nm|Nh|Nd>` selects records last read before the cut (a relationship
+is taken with an entity it touches, so no link dangles), writes `<dir>/memory/archive-<ts>.jsonl`, **re-reads
+it and checks the bytes and the line count**, and only then removes them from the graph. It prints
+`archived records=N bytes=M entities=.. relationships=.. file=..`. If the dump cannot be written and
+verified (the name is taken, the disk refuses), nothing is removed and the refusal is `archive_failed`, counted,
+and `memory.archive_refused`. Nothing old enough prints `records=0` and writes no file.
+
+The dump is plain JSONL, sorted by id (entities `e-...` then relationships `r-...`), one record per line:
+`{"type":"entity|relationship","record":{...with provenance...},"access":{"last_access_secs":N,"access_count":N}}`.
+It holds no timestamp inside, so two archives of the same state are byte-identical (tested with `cmp` semantics).
+`pii memory restore <file>` replays it through the ordinary validation, caps and byte budget (a line whose id
+does not match its content, or that breaks a rule, is refused and listed; the rest are restored), prints
+`restored=N unchanged=N refused=N`, and gives restored records a fresh read (hot) with their dumped read counts.
+
+## Tier observability
+
+Events: `memory.tier_changed` (`id`, `from`, `to`), `memory.archived`, `memory.archive_refused`,
+`memory.restored` (all in `names::ALL`). Metrics from a live daemon: `pii_memory_tier{tier}` (gauge),
+`pii_memory_tier_changes_total{change}`, `pii_memory_archive_ops_total{op}` (`archived`, `restored`, `refused`).
+`pii health --json` `memory_entities` carries `tier_hot|warm|cold`, `bytes`, `max_bytes`. The daemon's status
+read sweeps the tiers, so a record that only aged still moves the counters. `pii memory tiers` prints the same.
+Hostile text in an attribute is data here too: it cannot change a tier, a rank or the shape of a dump line.
+
+## Not verified (spec 127)
+
+No soak at the byte budget; no clock-skew or clock-goes-backwards testing (ages saturate at zero); the tier
+counters are sweep-based, so a transition is observed at the next read or status poll, not at the instant of
+the threshold; no concurrent archive-while-writing stress beyond the store lock; archive of a store larger
+than the 64 MiB read bound is not exercised. Pillar 3 still has no model-driven inference and no cross-instance sync.
+
+## Not verified (spec 126)
 
 No soak of a store at its caps; no concurrent-writer stress beyond the lock being exercised by the
 daemon-plus-CLI case; no fuzzing of the JSON reader (it is size-bounded, and a corrupt file is

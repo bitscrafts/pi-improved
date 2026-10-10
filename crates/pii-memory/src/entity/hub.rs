@@ -61,7 +61,10 @@ impl EntityHealth {
         if !area.join("graph.json").is_file() && !area.join("counters.json").is_file() {
             return None;
         }
-        EntityStore::open(&self.dir, self.cfg).ok()?.counts().ok()
+        let store = EntityStore::open(&self.dir, self.cfg).ok()?;
+        // Report transitions that time alone caused, so the counters move without a read.
+        let _ = store.sweep();
+        store.counts().ok()
     }
 }
 
@@ -81,6 +84,11 @@ impl Health for EntityHealth {
                     "relationship_cap",
                     self.cfg.max_relationships as u64,
                 );
+                put(&mut h, "bytes", c.bytes);
+                put(&mut h, "max_bytes", self.cfg.max_bytes);
+                for (tier, n) in &c.tiers {
+                    put(&mut h, &format!("tier_{tier}"), *n);
+                }
                 put(&mut h, "write_refusals", c.write_refusals.values().sum());
                 put(&mut h, "query_refusals", c.query_refusals.values().sum());
             }

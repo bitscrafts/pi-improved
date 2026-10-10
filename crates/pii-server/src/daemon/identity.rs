@@ -236,6 +236,9 @@ fn add_entity_counters(counts: &mut Counts, entities: Option<&pii_memory::entity
     .collect();
     counts.memory_write_refusals = c.write_refusals;
     counts.memory_query_refusals = c.query_refusals;
+    counts.memory_tiers = c.tiers;
+    counts.memory_tier_changes = c.tier_changes;
+    counts.memory_archive_ops = c.archive_ops;
 }
 
 /// Worker requests refused or cancelled around a drain/reload, summed (spec 120).

@@ -227,6 +227,32 @@ fn render_memory_graph(v: &serde_json::Value, out: &mut String) {
             n.as_u64().unwrap_or(0)
         );
     }
+    for (ptr, label, metric) in [
+        ("/counts/memory_tiers", "tier", names::METRIC_MEMORY_TIER),
+        (
+            "/counts/memory_tier_changes",
+            "change",
+            names::METRIC_MEMORY_TIER_CHANGES_TOTAL,
+        ),
+        (
+            "/counts/memory_archive_ops",
+            "op",
+            names::METRIC_MEMORY_ARCHIVE_OPS_TOTAL,
+        ),
+    ] {
+        for (key, n) in v
+            .pointer(ptr)
+            .and_then(|o| o.as_object())
+            .into_iter()
+            .flatten()
+        {
+            let _ = writeln!(
+                out,
+                "{metric}{{{label}=\"{key}\"}} {}",
+                n.as_u64().unwrap_or(0)
+            );
+        }
+    }
     for (ptr, metric) in [
         (
             "/counts/memory_write_refusals",
@@ -506,7 +532,10 @@ mod tests {
             "counts": {"memory_entities": 2, "memory_relationships": 1,
                        "memory_writes": {"entity": 3, "relationship": 1},
                        "memory_write_refusals": {"no_provenance": 4},
-                       "memory_query_refusals": {"result_cap": 1}}
+                       "memory_query_refusals": {"result_cap": 1},
+                       "memory_tiers": {"hot": 2, "cold": 1},
+                       "memory_tier_changes": {"hot_to_cold": 1},
+                       "memory_archive_ops": {"archived": 1}}
         }));
         for line in [
             "pii_memory_entities 2",
@@ -515,6 +544,10 @@ mod tests {
             "pii_memory_writes_total{kind=\"relationship\"} 1",
             "pii_memory_write_refusals_total{reason=\"no_provenance\"} 4",
             "pii_memory_query_refusals_total{reason=\"result_cap\"} 1",
+            "pii_memory_tier{tier=\"hot\"} 2",
+            "pii_memory_tier{tier=\"cold\"} 1",
+            "pii_memory_tier_changes_total{change=\"hot_to_cold\"} 1",
+            "pii_memory_archive_ops_total{op=\"archived\"} 1",
         ] {
             assert!(on.lines().any(|l| l == line), "missing {line}\n{on}");
         }

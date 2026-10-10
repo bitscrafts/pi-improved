@@ -388,6 +388,14 @@ pub struct MemoryGraphSection {
     pub default_depth: Option<u32>,
     /// Most results a query may return (default 200); more is refused as `result_cap`.
     pub max_results: Option<usize>,
+    /// Seconds a read keeps a record `hot` (default 86400; spec 127).
+    pub hot_secs: Option<u64>,
+    /// Seconds a read keeps a record at least `warm`; older is `cold` (default 604800).
+    pub warm_secs: Option<u64>,
+    /// Reads that keep a record `hot` through the warm window (default 10).
+    pub hot_count: Option<u64>,
+    /// Byte budget for the graph file; the write that would pass it is refused as `bytes_cap` (default 16 MiB).
+    pub max_bytes: Option<u64>,
 }
 
 impl MemoryGraphSection {
@@ -403,6 +411,10 @@ impl MemoryGraphSection {
             max_depth: self.max_depth.unwrap_or(d.max_depth),
             default_depth: self.default_depth.unwrap_or(d.default_depth),
             max_results: self.max_results.unwrap_or(d.max_results),
+            hot_secs: self.hot_secs.unwrap_or(d.hot_secs),
+            warm_secs: self.warm_secs.unwrap_or(d.warm_secs),
+            hot_count: self.hot_count.unwrap_or(d.hot_count),
+            max_bytes: self.max_bytes.unwrap_or(d.max_bytes),
         }
     }
 }
