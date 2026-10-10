@@ -104,3 +104,12 @@ resume test never failed naturally in any round (only the injected stall reddens
 **Caveat carried:** the worker verified with `fresh-gate --worktree` (nothing committed), so the plain form had to
 be run after committing — done below.
 
+### CLOSED (2026-10-10): the committed HEAD passes the fresh tree
+`fresh-gate` (plain, exactly HEAD after committing the harness and the two test fixes): **`quality-gate: ALL PASS` ·
+`fresh-gate: PASS`**, exit 0 — with the three new checks reporting (`PASS: doc-drift-check` visible in the tail).
+The two criteria the worker could not close itself are now closed: **criterion 1** (the harness is committed —
+`scripts/flake_hunt.py`) and **criterion 7** (the plain form, which it could not run without committing).
+**119: 8/8.** The one thing it could not fix — `reload_drops_no_requests`, a product race, not a test problem — is
+spec 120, now running, and its own reproduction evidence (0/10, 6/25, 2/15 across three invocations) is recorded
+there along with the cwd path bug my attempt 2 uncovered.
+
