@@ -825,3 +825,25 @@ numbers, and the correction is behavioural: use `ask`/`ask_files` for **short, d
 (a "what are the numbers" question returns a noul verdict — laya classifies, it does not summarise; and a
 7,947-byte file is judged from a PREFIX only, so a verdict under ~0.7 means read it).
 
+### The 5m50s laya outage, explained precisely (owner asked: "it should have stopped before?")
+From `laya.log`, every gated call in the window — 3 BLOCK, 9 PASS, **0 state-changing calls executed while down**:
+```
+01:01:09 PASS  my disk-rescue script (last successful state change)
+01:01:51 BLOCK (laya unreachable)  ← the first gated call after the sidecar died — and it was NOT mine
+                                   (UA="Mozilla/5.0 …", another session's probe)
+01:03:07 BLOCK  my fresh-gate retry      01:03:16 BLOCK  my `ls -l /run/laya/sidecar.sock` (diagnosis)
+01:07:41 PASS   the other session's probe again — the gate was back
+```
+So it DID stop, at the very first gated call after the death, and nothing slipped through. Between my last
+PASS (01:01:09) and that BLOCK there were no gated calls at all — the gate is synchronous and per-call, so an
+outage is discovered by the NEXT call, not by a monitor. Read-only work continued *by design*: the hook gates
+only `terminal|write_file|patch|execute_code` ("Only the calls that CHANGE STATE"), which is exactly why the
+diagnosis above was possible while blocked.
+
+**Two honest design findings** (filed in the register):
+1. **No heartbeat**: a dead sidecar is invisible until the next gated call (here 42 s later).
+2. **The gate cannot be bootstrapped by the agent it gates**: starting the sidecar is itself a gated
+   `terminal` call, so recovery needs the human (or a watchdog). Fix: `Restart=always` on
+   `laya-sidecar.service` and/or a startup probe that reports the outage instead of waiting to be discovered.
+   (`systemctl --user` does not work in this container as-is: no `DBUS_SESSION_BUS_ADDRESS`.)
+
