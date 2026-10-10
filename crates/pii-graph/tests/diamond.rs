@@ -45,7 +45,13 @@ fn load_example(name: &str) -> GraphSpec {
     let full = ws_root().join("examples").join(name);
     let src =
         std::fs::read_to_string(&full).unwrap_or_else(|e| panic!("read {}: {e}", full.display()));
-    load_toml(&src).unwrap_or_else(|e| panic!("load {name}: {e}"))
+    let mut spec = load_toml(&src).unwrap_or_else(|e| panic!("load {name}: {e}"));
+    // Spec 119: `max_parallel = 0` means `available_parallelism()`, which is 1 on a one-CPU
+    // affinity/cgroup quota. The engine then dispatches a "parallel" batch one node at a time and
+    // `slow` runs out its whole timer before `fast` starts, so the race and overlap tests below fail
+    // for a reason that has nothing to do with them. State the fan-out the tests assume.
+    spec.limits.max_parallel = 4;
+    spec
 }
 
 /// One engine run of an example graph, with its journal and metrics.

@@ -74,3 +74,33 @@ exports** — a cold target, HEAD+overlay, running beside compile load, i.e. a d
    `resume_never_reinvokes_completed_node`; run 2 failed `diamond_race_cancels_loser` and
    `diamond_race_cancels_multi_node_arm`; all pass alone.
 
+## Result (2026-10-10) — two test assumptions found and fixed, and a PRODUCT race surfaced
+**Fixed, with the mechanism named (spec R3), evidence, and teeth:**
+- **`diamond.rs`** — the three race tests left `limits.max_parallel = 0`, which means `available_parallelism()`; with
+  ONE usable CPU the engine runs the "parallel" arms one at a time, so the slow arm's 5 s timer finishes before the
+  fast arm starts. Evidence: at `taskset -c 0` the tests were **red 3 of 5 before, green 5 of 5 after**; fix is
+  `max_parallel = 4` in the test's `load_example`. Teeth: dropping `cancel_losers` → both race tests red; setting
+  `max_parallel = 1` → three tests red. Honest limit: this was **never** observed at >= 2 CPUs, and the `wall_ms < 2000`
+  bound is still a duration assumption (left alone deliberately).
+- **`resume.rs`** — my earlier fix waited on `a`'s log line, but the engine can stall between `a` finishing and `b`
+  being dispatched; the cancel then lands before `b` starts and no `NodeInterrupted` is recorded. Evidence: an
+  injected 400 ms stall reddens the old test; the fix waits on the **observer** for `NodeStarted(b)`, notified at
+  append time, and is green with the stall still injected. Teeth: making resume forget completed nodes → red (`a`
+  runs twice).
+**The harness**: `scripts/flake_hunt.py` — N rounds of the gate's own test command under a stated load, per-test
+failure counts, dev tree or a fresh export, optional core pinning; every sleep/timeout-using test is listed even at
+"0 of N". `DO-NOT-REPEAT` §1 gained row **1.42**: *a test that needs a duration to be correct is a defect*.
+
+**A THIRD failure is NOT a test problem — it is a product race, filed as spec 120:**
+`reload_drops_no_requests` (`crates/pii-worker/tests/supervisor.rs`) fails **6 of 25** at `taskset -c 0-3` with 16
+hogs with `WorkerDied` / `worker writer closed`, because a request can be registered and sent to a worker that is
+draining. The worker correctly **did not skip, ignore or weaken the test** and left the supervisor alone: its
+assertion is the specification, and the fix is a design change → spec 120.
+
+**Required "not reproduced" lines (kept, not dropped):** the diamond tests never failed at >= 2 CPUs in the export
+under 24 hogs with compile load, nor at 2 CPUs with 32 hogs over 10 runs — the only reproduction is at 1 CPU; the
+resume test never failed naturally in any round (only the injected stall reddens it).
+
+**Caveat carried:** the worker verified with `fresh-gate --worktree` (nothing committed), so the plain form had to
+be run after committing — done below.
+

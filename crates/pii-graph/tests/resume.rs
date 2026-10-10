@@ -20,7 +20,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use pii_abi::{RunEvent, Terminal};
-use pii_core::{Budget, CapKind, CapSet, Ctx, Observer, PathScope, RecordingObserver, TraceCtx};
+use pii_core::{
+    Budget, CapKind, CapSet, Ctx, ObsEvent, Observer, PathScope, RecordingObserver, TraceCtx,
+};
 use pii_graph::node::NodeRegistry;
 use pii_graph::run;
 use pii_graph::toml_load::load_toml;
@@ -51,48 +53,54 @@ fn load_crash_resume() -> pii_graph::GraphSpec {
 /// append to the log) and whose cancel token the test can fire from another
 /// thread.
 fn root_ctx(run: pii_abi::RunId) -> (Ctx, pii_core::CancelToken) {
+    let (ctx, cancel, _) = root_ctx_observed(run);
+    (ctx, cancel)
+}
+
+/// [`root_ctx`] plus the recording observer, which sees every journal append LIVE (the journal
+/// itself is write-behind).
+fn root_ctx_observed(run: pii_abi::RunId) -> (Ctx, pii_core::CancelToken, Arc<RecordingObserver>) {
     let caps = CapSet {
         kinds: CapKind::FS_READ | CapKind::FS_WRITE,
         fs_write: PathScope::new(vec![tmp_root()]),
         fs_read: PathScope::new(vec![tmp_root()]),
         ..CapSet::default()
     };
+    let obs = Arc::new(RecordingObserver::new());
     let ctx = Ctx::with_observer(
         caps,
         Budget::unlimited(),
-        Arc::new(RecordingObserver::new()) as Arc<dyn Observer>,
+        Arc::clone(&obs) as Arc<dyn Observer>,
         TraceCtx { run, span: 0 },
     );
     let cancel = ctx.cancel_token().clone();
-    (ctx, cancel)
+    (ctx, cancel, obs)
 }
 
-/// Waits (bounded) until `a` has appended its line to `log`.
+/// Waits (bounded) until node `b` is mid-flight: its `NodeStarted` has been appended.
 ///
-/// The wait is on the node's OWN side effect because the journal is write-behind: a flush carried
-/// `NodeStarted(b)` and `NodeFinished(b)` of the same tick together at 6.1 s, so a test that waits on
-/// the journal measures the flusher and can only ever observe a node AFTER it finished. Extracted so
-/// the test function stays inside the workspace's line limit.
-fn wait_until_a_appended(log: &Path) {
-    // Wait until `a` has appended its line -- a CONDITION, not a fixed sleep. Two facts measured here
-    // (2026-10-10) decided the shape of this wait:
-    //   * a fixed 300 ms sleep was a latent flake: under load it elapsed before `a` had run at all, and
-    //     the assertion below then failed for a reason that had nothing to do with resume (it failed
-    //     once inside fresh-gate);
-    //   * polling the JOURNAL for "b started" is worse: the journal is write-behind, and a flush carried
-    //     `NodeStarted(b)` and `NodeFinished(b)` of the same tick TOGETHER at 6.1 s -- so that wait only
-    //     returns after `b` has already finished, cancelling too late (the run completes, `b` is never
-    //     mid-flight, and the NodeInterrupted assertion fails).
-    // `a`'s log write is immediate, so it is the honest "a is done, b is next" signal.
+/// The wait is on the observer, which is notified at append time, because the journal is write-behind:
+/// a flush carried `NodeStarted(b)` and `NodeFinished(b)` of the same tick together at 6.1 s, so a test
+/// that polls the journal can only observe a node AFTER it finished. Two earlier waits were wrong:
+///   * a fixed 300 ms sleep elapsed before `a` had run at all under load (spec 119);
+///   * waiting for `a`'s log line is not enough either: the engine can stall between `a` finishing and
+///     `b` being dispatched (measured: a 400 ms stall there makes the cancel land at the top of the next
+///     tick, `b` is never started, and no `NodeInterrupted` is ever journalled).
+///
+/// `NodeStarted(b)` implies `a` is done and `b` is inside its 6000 ms `wait`, so the cancel is mid-flight.
+fn wait_until_b_started(obs: &RecordingObserver) {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     loop {
-        if std::fs::read_to_string(log).is_ok_and(|s| s.contains('a')) {
+        let started = obs.events().iter().any(|e| {
+            matches!(e, ObsEvent::Journal { event: RunEvent::NodeStarted { node, .. }, .. }
+                if node.as_str() == "b")
+        });
+        if started {
             break;
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "within 15s: `a` must append its line; log: {:?}",
-            std::fs::read_to_string(log).unwrap_or_default()
+            "within 15s: `b` must start (NodeStarted observed)"
         );
         std::thread::sleep(Duration::from_millis(5));
     }
@@ -111,7 +119,7 @@ fn resume_never_reinvokes_completed_node() {
     let input = serde_json::json!({ "log": log.to_string_lossy() });
     let reg = NodeRegistry::builtin();
 
-    let (ctx, cancel) = root_ctx(run_id.clone());
+    let (ctx, cancel, obs) = root_ctx_observed(run_id.clone());
 
     // Run in a thread; cancel the root mid-`wait` (b has a 6000 ms timer).
     let store2 = Arc::clone(&store);
@@ -119,7 +127,7 @@ fn resume_never_reinvokes_completed_node() {
     let run_id2 = run_id.clone();
     let handle = std::thread::spawn(move || run::run(&store2, &spec, &reg2, &ctx, &run_id2, input));
 
-    wait_until_a_appended(&log);
+    wait_until_b_started(&obs);
     cancel.cancel();
     let first = handle.join().expect("run thread");
     // The run is torn down mid-`wait`; it returns Cancelled (or the wait node
