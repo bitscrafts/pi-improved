@@ -132,6 +132,24 @@ const CALLER_WORKER: (&str, &str) = (
 const CALLER_LIB_NEEDLE: &str = "pii_model::resolve_with_transport(";
 const CALLER_LIB_HISTORICAL: &str = "crates/pii-server/src/lib.rs";
 
+/// Collect every non-test `.rs` file under `dir` that holds `needle`.
+fn walk_sources(dir: &Path, needle: &str, hits: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            walk_sources(&p, needle, hits);
+        } else if p.extension().is_some_and(|x| x == "rs")
+            && !p.to_string_lossy().contains("tests")
+            && std::fs::read_to_string(&p).is_ok_and(|s| s.lines().any(|l| l.contains(needle)))
+        {
+            hits.push(p);
+        }
+    }
+}
+
 /// Resolve the file that holds the `resolve_with_transport` caller: the
 /// historical location when it still holds it, else the single non-test source
 /// file under `crates/pii-server/src` that does.
@@ -152,24 +170,8 @@ fn caller_lib(export: &Path) -> (String, String) {
             CALLER_LIB_NEEDLE.to_string(),
         );
     }
-    fn walk(dir: &Path, needle: &str, hits: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                walk(&p, needle, hits);
-            } else if p.extension().is_some_and(|x| x == "rs")
-                && !p.to_string_lossy().contains("tests")
-                && std::fs::read_to_string(&p).is_ok_and(|s| s.lines().any(|l| l.contains(needle)))
-            {
-                hits.push(p);
-            }
-        }
-    }
     let mut hits = Vec::new();
-    walk(
+    walk_sources(
         &export.join("crates/pii-server/src"),
         CALLER_LIB_NEEDLE,
         &mut hits,
