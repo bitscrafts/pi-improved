@@ -189,6 +189,13 @@ pub struct Counts {
     /// WASM modules or calls refused before running (spec 122).
     #[serde(default)]
     pub wasm_refusals: u64,
+    /// Candidate lessons from the last `pii learn scan`, by kind; empty before
+    /// any scan (spec 123).
+    #[serde(default)]
+    pub learn_candidates: BTreeMap<String, u64>,
+    /// Candidates refused for missing evidence, across every scan (spec 123).
+    #[serde(default)]
+    pub learn_refusals: u64,
 }
 
 /// One subsystem's self-reported health (mirror of `pii_observe::SubsystemHealth`).

@@ -43,6 +43,12 @@ Read $SPEC and execute it exactly: TDD (RED observed before GREEN), minimal diff
 Full gate context: fmt/clippy(-D warnings)/workspace tests; quality-gate.sh is the arbiter.
 HARD RULES: do NOT create/edit/rewrite anything under specs/ (read-only for implementers);
 do NOT commit; do NOT run git commit/push; leave the tree for the orchestrator.
+DESTRUCTIVE COMMANDS ARE BANNED, absolutely: never run rm -rf (or rm on a path you did not create in
+this run), never git checkout/restore ., git reset --hard, or a bare git stash in this shared tree,
+and never touch /dev, /proc, /sys or /root. Scratch YOU create under /projects/_tmp/ may be removed
+with your own guarded script; anything pre-existing (including _tmp items you did not create) is left
+alone or moved aside with mv. The only bulk reclaim allowed is cargo clean. A stray rm that "misses"
+is still a breach and must be reported.
 Scratch exports under /projects/_tmp/ only. Work ENTIRELY in foreground tool calls; no
 background processes, no /loop, no scheduling. If budget runs out mid-work, write a
 COMPLETE handoff envelope (done/remaining/next-start) to $LOGD/HANDOFF-$TAG.md and stop

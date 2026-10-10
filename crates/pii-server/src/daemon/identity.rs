@@ -19,7 +19,7 @@ use crate::Engine;
 /// The subsystem groups `sys.status` aggregates, in report order. A group
 /// with no live members (no daemon, no workers configured) is still
 /// registered; `registry_is_pinned_by_name` fails if one is dropped.
-const GROUPS: [&str; 8] = [
+const GROUPS: [&str; 9] = [
     "store",
     "memory",
     "net",
@@ -28,6 +28,7 @@ const GROUPS: [&str; 8] = [
     "model_tiers",
     "hal",
     "wasm",
+    "learn",
 ];
 
 /// Every health-reporting subsystem the daemon aggregates, as
@@ -42,6 +43,7 @@ impl<'a> Registry<'a> {
         channels: Option<&'a BTreeMap<String, ChannelRuntime>>,
         hal: Option<&'a pii_hal::Hal>,
         wasm: Option<&'a pii_wasm::WasmHost>,
+        learn: Option<&'a pii_learn::LearnHealth>,
     ) -> Self {
         Self(vec![
             (GROUPS[0], vec![&*engine.store as &dyn Health]),
@@ -72,6 +74,10 @@ impl<'a> Registry<'a> {
             (
                 GROUPS[7],
                 wasm.map(|w| w as &dyn Health).into_iter().collect(),
+            ),
+            (
+                GROUPS[8],
+                learn.map(|l| l as &dyn Health).into_iter().collect(),
             ),
         ])
     }
@@ -179,6 +185,16 @@ fn add_wasm_counters(counts: &mut Counts, wasm: Option<&pii_wasm::WasmHost>) {
     counts.wasm_refusals = c.refusals;
 }
 
+/// The last extraction scan's candidates by kind and the refusals (spec 123).
+/// Absent (no scan yet) leaves them empty, so `pii metrics` prints no learn lines.
+fn add_learn_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHealth>) {
+    let Some(s) = learn.and_then(pii_learn::LearnHealth::status) else {
+        return;
+    };
+    counts.learn_candidates = s.candidates_by_kind;
+    counts.learn_refusals = s.refused_total;
+}
+
 /// Worker requests refused or cancelled around a drain/reload, summed (spec 120).
 fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> u64 {
     workers
@@ -198,6 +214,8 @@ fn build_identity() -> BuildIdentity {
 
 /// Fills the identity fields of `out` from `engine` (and `ctx` when a daemon
 /// is attached). The pre-existing fields are left untouched.
+// reason: one block per status section; each added subsystem is a few lines here.
+#[allow(clippy::too_many_lines)]
 pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResult) {
     attach_latency(engine, out);
     let info = engine.store.info().ok();
@@ -251,6 +269,13 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     let channels = ctx.map(|c| c.channels.lock());
     let hal = engine.hal.get();
     let wasm = engine.wasm.get();
+    // Spec 123 (+ orchestrator fix, 2026-10-10): read-only, and from the directory the CLI actually writes.
+    // The guide and `pii learn --help` both say `--dir` defaults to the DAEMON'S RUNTIME DIR, which is where
+    // `pii learn scan` leaves `learn/status.json`. The first implementation read `store.path().parent()`, a
+    // different directory in any normal layout — so a guide-conformant scan was invisible to the daemon and
+    // `learn_candidates`/`learn_refusals` could only ever read zero (measured: scan into the runtime dir, daemon
+    // answers "no scan yet"). The daemon's own runtime dir is the same value the CLI default resolves to.
+    let learn = ctx.map(|c| pii_learn::LearnHealth::new(c.runtime_dir.clone()));
     let registry = Registry::build(
         engine,
         ctx.map(|c| &*c.net),
@@ -258,7 +283,9 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         channels.as_deref(),
         hal.as_deref(),
         wasm.as_deref(),
+        learn.as_ref(),
     );
+    add_learn_counters(&mut counts, learn.as_ref());
     add_device_counters(&mut counts, hal.as_deref(), wasm.as_deref());
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
@@ -472,7 +499,7 @@ mod tests {
             graph_dir: dir.path().join("graphs"),
         })
         .unwrap();
-        let registry = Registry::build(&engine, None, None, None, None, None);
+        let registry = Registry::build(&engine, None, None, None, None, None, None);
         assert_eq!(
             registry.group_names(),
             [
@@ -483,7 +510,8 @@ mod tests {
                 "channels",
                 "model_tiers",
                 "hal",
-                "wasm"
+                "wasm",
+                "learn"
             ]
         );
         let names: Vec<_> = registry.reports().into_iter().map(|h| h.name).collect();

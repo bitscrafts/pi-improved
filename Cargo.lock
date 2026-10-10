@@ -1964,6 +1964,7 @@ dependencies = [
  "pii-abi",
  "pii-core",
  "pii-graph",
+ "pii-learn",
  "pii-observe",
  "pii-proto",
  "pii-server",
@@ -2040,6 +2041,18 @@ dependencies = [
  "pii-model",
  "pii-net",
  "pii-observe",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "pii-learn"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dunce",
+ "pii-observe",
+ "serde",
  "serde_json",
  "tempfile",
 ]
@@ -2138,6 +2151,7 @@ dependencies = [
  "pii-core",
  "pii-graph",
  "pii-hal",
+ "pii-learn",
  "pii-memory",
  "pii-model",
  "pii-net",

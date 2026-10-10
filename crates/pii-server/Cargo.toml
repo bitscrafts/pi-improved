@@ -18,6 +18,7 @@ pii-model = { path = "../pii-model" }
 pii-memory = { path = "../pii-memory" }
 pii-hal = { path = "../pii-hal" }
 pii-wasm = { path = "../pii-wasm" }
+pii-learn = { path = "../pii-learn" }
 pii-tools = { path = "../pii-tools" }
 pii-net = { path = "../pii-net" }
 pii-worker = { path = "../pii-worker" }

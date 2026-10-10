@@ -1,0 +1,24 @@
+[package]
+name = "pii-learn"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Learning loop, stage 1: deterministic offline extraction of cited candidate lessons from the trajectory substrate (spec 123)"
+
+[dependencies]
+pii-observe = { path = "../pii-observe" }
+blake3 = { workspace = true }
+dunce = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

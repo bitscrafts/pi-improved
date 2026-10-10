@@ -130,6 +130,33 @@ fn render_wasm(v: &serde_json::Value, out: &mut String) {
     }
 }
 
+/// Candidate lessons by kind and the refusals (spec 123). Emitted only once a
+/// `pii learn scan` has left a status (the kinds map is then non-empty).
+fn render_learn(v: &serde_json::Value, out: &mut String) {
+    let Some(kinds) = v
+        .pointer("/counts/learn_candidates")
+        .and_then(|o| o.as_object())
+    else {
+        return;
+    };
+    for (kind, n) in kinds {
+        let _ = writeln!(
+            out,
+            "{}{{kind=\"{kind}\"}} {}",
+            names::METRIC_LEARN_CANDIDATES,
+            n.as_u64().unwrap_or(0)
+        );
+    }
+    if !kinds.is_empty() {
+        let _ = writeln!(
+            out,
+            "{} {}",
+            names::METRIC_LEARN_REFUSALS_TOTAL,
+            num(v, "/counts/learn_refusals")
+        );
+    }
+}
+
 /// Renders a `sys.status` payload as metric lines.
 fn render(v: &serde_json::Value) -> String {
     let mut out = String::new();
@@ -180,6 +207,7 @@ fn render(v: &serde_json::Value) -> String {
     render_latency(v, &mut out);
     render_hal(v, &mut out);
     render_wasm(v, &mut out);
+    render_learn(v, &mut out);
     for st in v
         .pointer("/stores")
         .and_then(|s| s.as_array())
@@ -314,6 +342,28 @@ mod tests {
         assert!(
             !off.contains("pii_wasm"),
             "host off prints no WASM lines: {off}"
+        );
+    }
+
+    /// Spec 123 R7: candidate gauges by kind and the refusals appear once a
+    /// scan has left a status, and not before.
+    #[test]
+    fn render_carries_learn_candidates_by_kind_only_after_a_scan() {
+        let on = render(&serde_json::json!({
+            "counts": {"learn_candidates": {"limit_hit": 2, "stuck_loop": 0}, "learn_refusals": 1}
+        }));
+        for line in [
+            "pii_learn_candidates{kind=\"limit_hit\"} 2",
+            "pii_learn_candidates{kind=\"stuck_loop\"} 0",
+            "pii_learn_refusals_total 1",
+        ] {
+            assert!(on.lines().any(|l| l == line), "missing {line}\n{on}");
+        }
+        let off =
+            render(&serde_json::json!({"counts": {"learn_candidates": {}, "learn_refusals": 0}}));
+        assert!(
+            !off.contains("pii_learn"),
+            "no scan prints no learn lines: {off}"
         );
     }
 

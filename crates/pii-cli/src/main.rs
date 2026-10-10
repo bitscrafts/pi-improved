@@ -11,6 +11,7 @@ mod cmd_backup;
 mod cmd_ctl;
 mod cmd_daemon;
 mod cmd_health;
+mod cmd_learn;
 mod cmd_metrics;
 mod cmd_oneshot;
 mod cmd_run;
@@ -28,7 +29,7 @@ mod ndjson;
 use crate::cli_util::fail;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D]";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii learn {scan|list|show} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]
@@ -104,6 +105,8 @@ fn cmd_graph_show(path: &str) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+// reason: one dispatch arm per subcommand; splitting it would only hide the list.
+#[allow(clippy::too_many_lines)]
 fn main() -> ExitCode {
     let mut args = std::env::args_os();
     let _argv0 = args.next();
@@ -180,6 +183,9 @@ fn main() -> ExitCode {
     }
     if cmd == "store" {
         return cmd_store::cmd_store(&mut args);
+    }
+    if cmd == "learn" {
+        return cmd_learn::cmd_learn(&mut args);
     }
     if cmd == "run" {
         return cmd_sys::cmd_run_ctl(&mut args);

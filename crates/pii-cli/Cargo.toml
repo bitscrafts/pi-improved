@@ -17,6 +17,7 @@ pii-core = { path = "../pii-core" }
 pii-store = { path = "../pii-store" }
 pii-graph = { path = "../pii-graph" }
 pii-observe = { path = "../pii-observe" }
+pii-learn = { path = "../pii-learn" }
 pii-proto = { path = "../pii-proto", features = ["client"] }
 pii-server = { path = "../pii-server" }
 pii-uds = { path = "../pii-uds" }
