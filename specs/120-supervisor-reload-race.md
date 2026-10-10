@@ -108,3 +108,8 @@ timers; restored → 5 passed.
 the red evidence is the deterministic seam, which is stronger. And a queued request whose caller has already timed
 out still runs on the new worker with nobody listening: left alone as out of scope, and worth its own line later.
 
+### CLOSED (2026-10-10, plain fresh-gate on the committed HEAD)
+`fresh-gate` (exactly HEAD `06fed47`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0 — and this run
+included the diamond `at_ms` fix, so the duration assumption that flaked inside a coverage run is gone from the gate
+as well. **120: 9/9.**
+
