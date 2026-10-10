@@ -44,28 +44,34 @@ grows without bound is not usable**
 | 115 | **operator surfaces under load**: (F1) `run.get` answers NotFound for a KNOWN run that is still in flight (128 054 such polls for 12 452 runs) so a client cannot tell "not yet" from "unknown id"; (F4) trajectories have per-run caps but NO aggregate cap or retention (85 019 files / 196 MB in 33 min, ~160k inodes/hour at the ceiling); (F5) the store never shrinks (216.6 MB / 85k runs, `pii_store_bytes` the only visibility); (F6) `pii metrics` exposes no latency histogram and no RSS, so the numbers an operator needs under load are invisible | a run in flight is distinguishable from an unknown id (test + paste); trajectory retention is bounded by a documented policy and the bound is proven; store growth is visible and has a documented compaction/vacuum path (or an honest statement of why not); metrics carry latency + RSS |
 | 116 | **cost findings**: (F2) RSS grows ~155 B/run with NO plateau over 85 018 runs (+25.9 MB), baseline config included — investigate by bisecting the run path (client turn / journal / sink state / run table) and fix what is identified, or state precisely what was ruled out; (F3) write amplification ~125-131 KB written per run to retain 2.5 KB (~50x, ~3 GB per 8 min at 44 runs/s); (F8) there is no `NullObserver` switch and no way to disable the audit log, so the instrumentation A/B could not be run as specified | each item either fixed with a mutation control, or closed with the measurement that shows it is not the cause; the A/B switches exist (or the report says why not) |
 
+**Stage A3 — the checks that exist but run nowhere (spec 118), before more features land on an unenforced base**
+
+| # | spec | why | done when |
+|---|---|---|---|
+| 118 | **the three ungated repo checks become gate steps**: `deps-check` (the five dependency invariants — it caught spec 109's contract dep on `pii-proto`), `net-check` (it currently produces a FALSE POSITIVE on a doc comment that merely mentions `UnixStream::connect`), `doc-drift-check` (it flags a real, trivial drift: `HANDOFF.md` names `_tmp/sidecar.log`) | a check that runs nowhere enforces nothing; the owner's standing preference is mandatory enforcement over an advisory observer, and one of these three already earned its place by catching a real invariant break | the false positive is fixed with a control both ways, all three run as gate steps with PASS/FAIL lines and fail-closed semantics, each has a violation→red control, and the guide lists the steps and the five dependency invariants |
+
 **Stage B — IoT/reactive (vision phase 4), honestly bounded by what this host can prove**
 
 | # | spec | why | done when |
 |---|---|---|---|
 | 117 | **MQTT node(s)**: subscribe/publish as graph nodes (native client, not WASM) | the reactive pillar's front door; testable against a local broker | a graph subscribes to a topic and fires a run; a publish is observable; a broker outage degrades loudly, not silently |
-| 118 | **hardware HAL**: an abstraction with a SIMULATED backend first, so the contract is testable here, plus one real backend behind a feature | no hardware in this container — the contract must be provable without it | the HAL trait + simulated backend + tests; the real backend feature-gated and documented as unverified on this host |
-| 119 | **WASM plugin host**: `wasmtime` + WASI component model, epoch interruption, fuel opt-in, pooling allocator | the vision's plugin surface; enables third-party nodes without rebuilding | a trivial WASM node runs under the host's limits; an infinite loop is interrupted by epoch; a plugin without fuel is bounded |
+| 119 | **hardware HAL**: an abstraction with a SIMULATED backend first, so the contract is testable here, plus one real backend behind a feature | no hardware in this container — the contract must be provable without it | the HAL trait + simulated backend + tests; the real backend feature-gated and documented as unverified on this host |
+| 120 | **WASM plugin host**: `wasmtime` + WASI component model, epoch interruption, fuel opt-in, pooling allocator | the vision's plugin surface; enables third-party nodes without rebuilding | a trivial WASM node runs under the host's limits; an infinite loop is interrupted by epoch; a plugin without fuel is bounded |
 
 **Stage C — self-improvement (vision phase 5), on the substrate that already exists**
 
 | # | spec | why | done when |
 |---|---|---|---|
-| 120 | **extraction**: turn trajectories (spec 103) into candidate skills/procedures, with the corpus-quality guards (no fake wins — the laya lesson) | the substrate records; this is what reads it | a real trajectory set yields ≥1 candidate, each citing its source runs; a failed run can never produce a success claim |
-| 121 | **verifier + shadow runs**: `outcome.verifier` as a programmatic pass/fail, and shadow-run agreement before any promotion | a skill that is not verified is a liability, and promotion without agreement is how bad procedural memory spreads | a candidate is accepted only on verifier pass + shadow agreement; both negatives (no verifier, disagreement) refuse |
-| 122 | **promotion + lifecycle**: `Skill.graph` zero-token promotion, progressive disclosure, never-delete lifecycle | the vision's mechanism, gated by 119 | a promoted skill is selectable without spending tokens; deleting is never destructive; the lifecycle is exercised end to end |
+| 121 | **extraction**: turn trajectories (spec 103) into candidate skills/procedures, with the corpus-quality guards (no fake wins — the laya lesson) | the substrate records; this is what reads it | a real trajectory set yields ≥1 candidate, each citing its source runs; a failed run can never produce a success claim |
+| 122 | **verifier + shadow runs**: `outcome.verifier` as a programmatic pass/fail, and shadow-run agreement before any promotion | a skill that is not verified is a liability, and promotion without agreement is how bad procedural memory spreads | a candidate is accepted only on verifier pass + shadow agreement; both negatives (no verifier, disagreement) refuse |
+| 123 | **promotion + lifecycle**: `Skill.graph` zero-token promotion, progressive disclosure, never-delete lifecycle | the vision's mechanism, gated by 119 | a promoted skill is selectable without spending tokens; deleting is never destructive; the lifecycle is exercised end to end |
 
 **Stage D — pillar 3 completion**
 
 | # | spec | why | done when |
 |---|---|---|---|
-| 123 | **entities/relationships**: an entity model over the existing memory stores, with extraction from documents and a graph view | the vision's cognitive-memory pillar names it explicitly | entities and relationships persist, are searchable, and survive consolidation; a document yields entities with provenance |
-| 124 | **memory tiering**: tier-aware retention/recall (hot/warm/cold) on top of decay + consolidation | the vision pairs tiering with model tiers | a tier policy is configurable and observable; a recall across tiers is measured |
+| 124 | **entities/relationships**: an entity model over the existing memory stores, with extraction from documents and a graph view | the vision's cognitive-memory pillar names it explicitly | entities and relationships persist, are searchable, and survive consolidation; a document yields entities with provenance |
+| 125 | **memory tiering**: tier-aware retention/recall (hot/warm/cold) on top of decay + consolidation | the vision pairs tiering with model tiers | a tier policy is configurable and observable; a recall across tiers is measured |
 
 ## Rules this order inherits (they are not optional here)
 
