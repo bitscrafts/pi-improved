@@ -112,6 +112,10 @@ pub const DAEMON_STARTED: &str = "daemon.started";
 pub const DAEMON_STOPPED: &str = "daemon.stopped";
 /// Event: a connecting peer was refused (uid mismatch or unreadable credential).
 pub const DAEMON_PEER_REFUSED: &str = "daemon.peer.refused";
+/// Event: the daemon runs with its observer fan-out detached (`--observer off`); measurement only.
+pub const DAEMON_OBSERVER_DETACHED: &str = "daemon.observer.detached";
+/// Event: the daemon runs with its audit feed disabled (`--audit off`); measurement only.
+pub const DAEMON_AUDIT_DISABLED: &str = "daemon.audit.disabled";
 /// Event: writing the daemon log file failed (the daemon keeps running).
 pub const LOG_WRITE_FAILED: &str = "log.write.failed";
 
@@ -151,6 +155,8 @@ pub const METRIC_CRON_ENTRIES: &str = "pii_cron_entries";
 pub const METRIC_STORE_BYTES: &str = "pii_store_bytes";
 /// Metric (gauge, label `store`): persisted format version of a store.
 pub const METRIC_STORE_FORMAT_VERSION: &str = "pii_store_format_version";
+/// Metric (gauge): bytes of RSS growth per run over the recent window (spec 116; 0 until measurable).
+pub const METRIC_RSS_BYTES_PER_RUN: &str = "pii_rss_bytes_per_run";
 /// Metric (gauge): process resident set size in KiB (`sys.status` `rss_kb`).
 pub const METRIC_PROCESS_RSS_KB: &str = "pii_process_rss_kb";
 /// Metric (gauge): main-store bytes divided by runs (0 with no runs); the growth rate as one number.
@@ -217,6 +223,8 @@ pub const ALL: &[&str] = &[
     DAEMON_STARTED,
     DAEMON_STOPPED,
     DAEMON_PEER_REFUSED,
+    DAEMON_OBSERVER_DETACHED,
+    DAEMON_AUDIT_DISABLED,
     LOG_WRITE_FAILED,
     PROTO_HANDSHAKE_TIMEOUT,
     PROTO_HANDSHAKE_CLOSED,
@@ -236,6 +244,7 @@ pub const ALL: &[&str] = &[
     METRIC_STORE_BYTES,
     METRIC_STORE_FORMAT_VERSION,
     METRIC_PROCESS_RSS_KB,
+    METRIC_RSS_BYTES_PER_RUN,
     METRIC_STORE_BYTES_PER_RUN,
     METRIC_RUN_LATENCY_MS,
     METRIC_RUN_LATENCY_COUNT,

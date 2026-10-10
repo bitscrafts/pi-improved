@@ -207,7 +207,14 @@ impl TrajectorySink {
                 if is_outcome {
                     st.file = None;
                 }
+                // Spec 116 F2: and so is its entry, or the map (and the scan
+                // over it in `account`) grows with every run ever seen. A run
+                // that hit its cap keeps its entry so a late event stays gated.
+                let release = is_outcome && !st.truncated;
                 self.account(&runs, &path, line.len() as u64);
+                if release {
+                    runs.remove(&run.0);
+                }
             }
             Err(err) => {
                 if !st.failure_reported {
@@ -216,6 +223,14 @@ impl TrajectorySink {
                 }
             }
         }
+    }
+
+    /// How many runs the sink holds state for: runs in flight, plus any run
+    /// that hit its cap (spec 116 F2). A finished run must not stay here, or
+    /// the map and the per-event scan over it grow with every run ever seen.
+    #[must_use]
+    pub fn tracked_runs(&self) -> usize {
+        self.runs.lock().map_or(0, |r| r.len())
     }
 
     /// Books `n` appended bytes against the retention index and enforces the
@@ -519,6 +534,36 @@ mod tests {
         let l = lines(&sink);
         assert!(l.len() < 20);
         assert_eq!(l.last().unwrap()["kind"], "trajectory.truncated");
+    }
+
+    /// Spec 116 F2: the leak spec 110 measured with trajectories on. A finished
+    /// run's entry used to stay in the sink's map forever.
+    #[test]
+    fn a_finished_run_is_released_by_the_sink() {
+        let d = tempfile::tempdir().unwrap();
+        let sink = TrajectorySink::new(d.path(), Arc::new(NoRedaction));
+        for i in 0..50 {
+            let run = RunId(format!("r{i}"));
+            sink.event(&Event::new("graph", Level::Info, "run.journal").in_run(run.clone()));
+            assert_eq!(sink.tracked_runs(), 1, "the run in flight is tracked");
+            sink.event(
+                &Outcome {
+                    verdict: Verdict::Success,
+                    reason: "t".into(),
+                    detail: Value::Null,
+                }
+                .into_event("graph")
+                .in_run(run),
+            );
+            assert_eq!(sink.tracked_runs(), 0, "run {i} finished: nothing retained");
+        }
+        assert_eq!(
+            std::fs::read_dir(d.path().join("trajectories"))
+                .unwrap()
+                .count(),
+            50,
+            "releasing the entry does not lose the trajectories"
+        );
     }
 
     #[test]

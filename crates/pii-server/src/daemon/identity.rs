@@ -98,6 +98,13 @@ fn attach_latency(engine: &Engine, out: &mut StatusResult) {
     out.notes.push(STORE_NEVER_SHRINKS.to_owned());
 }
 
+/// Notes `(runs, rss_kb)` on the engine's trend and returns the recent RSS
+/// growth in bytes per run (spec 116 R2; 0 until a window of runs exists).
+fn rss_gauge(engine: &Engine, runs: u64, rss_kb: u64) -> u64 {
+    engine.rss_trend.note(runs, rss_kb);
+    engine.rss_trend.bytes_per_run(runs, rss_kb)
+}
+
 /// Fills the identity fields of `out` from `engine` (and `ctx` when a daemon
 /// is attached). The pre-existing fields are left untouched.
 pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResult) {
@@ -175,6 +182,7 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     watch_health(engine, &reports);
     drop(registry);
     drop((workers, channels));
+    out.rss_bytes_per_run = rss_gauge(engine, counts.runs, out.rss_kb);
     out.counts = counts;
     out.subsystems = reports.into_iter().map(wire).collect();
 }
@@ -316,6 +324,39 @@ mod tests {
             "{}",
             off.policy
         );
+    }
+
+    /// Spec 116 R2: a leak is visible in the product. Polls that show RSS
+    /// growing with runs read as bytes per run; flat RSS reads 0. If
+    /// `rss_gauge` stopped feeding the trend, the first assertion fails.
+    #[test]
+    fn rss_gauge_reports_growth_per_run_and_zero_when_flat() {
+        let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "rssg-").unwrap();
+        let mk = |name: &str| {
+            std::fs::create_dir_all(dir.path().join(name)).unwrap();
+            Engine::new(EngineConfig {
+                workspace: dir.path().to_path_buf(),
+                store_path: dir.path().join(name).join("store.redb"),
+                model: format!(
+                    "scripted:{}/../../fixtures/phase2/hello.json",
+                    env!("CARGO_MANIFEST_DIR")
+                ),
+                sandbox: SandboxProfileName::Off,
+                route_policy: BTreeMap::new(),
+                tiers: Vec::new(),
+                session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
+                graph_dir: dir.path().join("graphs"),
+            })
+            .unwrap()
+        };
+        let leaking = mk("a");
+        assert_eq!(rss_gauge(&leaking, 0, 50_000), 0, "first poll: no window");
+        // 150 B/run: 10 000 runs -> 1 464 KiB.
+        let got = rss_gauge(&leaking, 10_000, 50_000 + 1_464);
+        assert!((140..=160).contains(&got), "{got}");
+        let flat = mk("b");
+        rss_gauge(&flat, 0, 50_000);
+        assert_eq!(rss_gauge(&flat, 10_000, 50_000), 0);
     }
 
     /// The aggregator's registered set, pinned by NAME (spec 100 R2): dropping

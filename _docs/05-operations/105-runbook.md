@@ -39,6 +39,7 @@ stamped too but is not listed in the payload.
     pii_cron_entries                   gauge    configured cron entries
     pii_uptime_ms                      gauge    daemon uptime
     pii_process_rss_kb                 gauge    daemon resident set size (VmRSS, KiB)
+    pii_rss_bytes_per_run              gauge    RSS growth per run over the last ~32 000 runs (0 until 4 000 runs span the window)
     pii_store_bytes_per_run            gauge    main-store bytes / runs: the growth rate as one number
     pii_store_bytes{store="main"}      gauge    file size, one line per store
     pii_store_format_version{store=…}  gauge    persisted format version, one line per store
@@ -134,6 +135,94 @@ fires once per ~5 000 runs).
 Growth expectation (056, debug build, scripted model): a run leaves ~2.3 KB of trajectory and ~2.5 KB
 in the main store. At the measured ceiling of ~45 runs/s that is ~390 MB and ~160k files per hour
 of trajectory (now capped by the bound above) and ~400 MB per hour in the store (NOT capped).
+Spec 116 F2: with trajectories on the sink also held a map entry per run forever (fixed), and its
+retention index costs ~250 B of RSS per retained file up to `trajectory_max_files`.
+
+## Memory growth: what slope is expected, what is not (spec 116 F2)
+
+`pii_process_rss_kb` and `pii_runs` give a slope with two polls; `pii_rss_bytes_per_run` does the
+division for you: bytes of RSS growth per run between the oldest of up to 32 checkpoints (one per
+>= 1 000 runs, taken on `sys.status`/`pii metrics`/`pii health` polls) and now. It is an AVERAGE over
+the window, not an instantaneous slope, and it is `0` until 4 000 runs separate the window ends or
+while RSS did not grow. The checkpoints live in memory: a daemon restart starts a new window.
+
+Measured (debug build, scripted model, shared host; `scripts/leak_bisect.py`, one persistent
+connection, fresh store):
+
+    runs since daemon start    RSS growth per run          why
+    0 - ~20 000                ~1.3 KB (1 node) to ~2.5 KB (8 events)   warm-up: caches and allocator fill
+    ~20 000 - 32 000+          ~5 - 40 B (plateau)         residual, below; same with every switch below off
+    with trajectories ON       +~190-270 B/run until 50 000 files, then flat   the retention index, bounded by trajectory_max_files
+
+- **Read `pii_rss_bytes_per_run` only after the daemon has served ~60 000 runs** (the window then no
+  longer contains the warm-up). Before that it is dominated by warm-up and reads high. The warm-up
+  is per process, not per store: it happens again after a restart.
+- **Expected after warm-up: under ~100 B/run.** A reading that stays above ~100 B/run with the
+  daemon past ~60 000 runs is NOT expected: file a bug with `scripts/leak_bisect.py` output.
+- RSS also moves with `trajectory_max_files` (the index holds ~190 B per retained file: ~9 MB at the
+  default 50 000) and with the number of retained log/audit rotations (not RSS: disk).
+- The residual ~5-40 B/run is in the store/runner path, not in the observer fan-out, the audit feed,
+  or connection handling (all measured, report 058). It is not explained; at the ceiling of ~100
+  runs/s it is a few MB per hour.
+- **Fixed in this spec:** with trajectories on, the sink kept one map entry per run it ever saw and
+  scanned the whole map on every event (so it also got slower with every run: 150 000 runs through
+  the sink alone did not finish in 580 s, and finish in 22 s with the fix). Finished runs are now
+  released; a run that hit its per-run cap keeps its (small) entry so a late event stays gated.
+
+## Measurement switches: observer and audit (spec 116 F8)
+
+Both are for MEASUREMENT. Both default to ON; neither is a tuning knob.
+
+| switch | flag | `[core]` key | default | what `off` does |
+|---|---|---|---|---|
+| observer | `pii daemon --observer on\|off` | `observer = "on"\|"off"` | on | detaches the observer fan-out: runs carry no tool-call observer, the store/provider/net/worker/channel events and out-of-run persist errors are NOT logged (the late-bound log stays unattached and drops them). The bus (client events), the trajectory sink and the audit feed are separate and unaffected. |
+| audit | `pii daemon --audit on\|off` | `audit = "on"\|"off"` | on | stops the audit feed of in-run denials (spec 107 R3) and narrows `audit.log` to the single line saying it was switched off. |
+
+The flag wins over `[core]`; anything but `on`/`off` is a usage error (exit 2), never a silent "on".
+**Risk:** with `--audit off` a capability, deny-list, scope or egress denial is not recorded anywhere
+durable; with `--observer off` a failing store write or a tool call leaves no log line. Do not run
+either in production. Switching either off is announced three ways: a stderr line, a `warn` log event
+(`daemon.audit.disabled` / `daemon.observer.detached`, both carrying `effect` and
+`purpose: measurement only; the default is on`), and the audit trail itself
+(`daemon.audit.disabled` is the one record `audit.log` keeps when the trail is off;
+`daemon.observer.detached` is an audit kind).
+
+## Write amplification: where a run's bytes go (spec 116 F3)
+
+Measured with the daemon's own `/proc/<pid>/io` (`write_bytes`: bytes handed to the block layer) and
+reproduced in-process (`cargo test -p pii-graph --test write_amp -- --nocapture` and
+`cargo test -p pii-store --lib write_amp -- --ignored --nocapture`). Per run, 4 000 runs in, default
+config (no log file, trajectories off, audit on):
+
+    writer                                  before        after
+    run-id counter commit                   ~24 600 B      766 B   (ids reserved 32 at a time)
+    graph body commit                       ~24 600 B        0     (content-addressed: not re-committed)
+    run input body commit                   ~24 600 B        0     (same)
+    journal + header + status (1 commit)    ~50 400 B     50 429 B
+      of which fixed cost of ANY commit     24 576 B      (6 x 4 KiB pages: redb's tree + freed-tree + header)
+      journal rows (5 events)                8 220 B   (marginal, 1 000-run-deep store)
+      run header                             8 929 B   (marginal)
+      run_by_status index                    8 219 B   (marginal)
+    audit.log                               0 per run (279 B once)
+    log file (if configured)                ~205 B (below resolution, spec 056)
+    trajectory (if configured)              +4 085 B
+    daemon total (leak_bisect.py, lean)   124 150 B      51 236 B   (-58.7%)
+    sum of in-process parts (after)                      51 195 B   (0.08% from the daemon's total)
+
+**Tolerance: the parts must sum to the daemon's total within 5%** (they do, within 0.1%: in-process
+766 + 50 429 = 51 195 B vs the daemon's 51 236 B). The per-table split is coarser: it is in 4 KiB
+pages, and the three cumulative probe commits sum to 49 916 B against 45 274 B for the real
+`append_events` (10% apart), so read the split as "each table costs about one tree path, ~8 KB",
+not as a precise ledger. The ~50x
+of spec 056 (125-131 KB to retain 2.5 KB) was NOT the events: one commit costs ~24.6 KB whatever it
+carries, and a run used to make four. It is now one. The remaining 50 KB is that one commit; its
+size grows with the store (the btree paths deepen: 120 -> 131 KB per run over 32 000 runs before the
+change). Throughput on this host went from ~45 to ~80-120 runs/s because the disk was the ceiling.
+
+**Run ids now have gaps after a restart.** The counter is persisted 32 ahead; a restart skips the
+unissued rest of the block (up to 31 ids). Ids are still strictly increasing and never reused.
+Durability of a run's journal, header and the audit trail is unchanged: nothing was made
+asynchronous and no commit was weakened.
 
 ## The store never shrinks on its own (spec 115 R3)
 
@@ -192,7 +281,8 @@ startup event, and this page; pinned by `crates/pii-cli/tests/sandbox_grant.rs`)
 
 **Audit trail.** Denials that pass through pii (bash deny list, bash cwd scope, fscap
 `fs_read`/`fs_write`, the http allowlist, any tool returning Denied) are written as
-`core.cap.denied` events to `<store dir>/audit.log` (e.g. `/var/lib/pii/audit.log`), always on,
+`core.cap.denied` events to `<store dir>/audit.log` (e.g. `/var/lib/pii/audit.log`), on by default
+(`--audit off` is a measurement switch, below, never a production setting),
 together with `daemon.sandbox.in_force` and `daemon.peer.refused`. Rotation is the log's:
 `audit.log` -> `audit.log.1` ... `.5`, rotated at `log_rotate_bytes` (default 10 MiB),
 `log_keep_files` kept. Example line from a real run:

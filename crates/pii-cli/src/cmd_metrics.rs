@@ -103,6 +103,10 @@ fn render(v: &serde_json::Value) -> String {
         (names::METRIC_CRON_ENTRIES, num(v, "/counts/cron_entries")),
         (names::METRIC_UPTIME_MS, num(v, "/uptime_ms")),
         (names::METRIC_PROCESS_RSS_KB, num(v, "/rss_kb")),
+        (
+            names::METRIC_RSS_BYTES_PER_RUN,
+            num(v, "/rss_bytes_per_run"),
+        ),
         (names::METRIC_STORE_BYTES_PER_RUN, main_bytes_per_run(v)),
     ] {
         let _ = writeln!(out, "{name} {value}");
@@ -161,7 +165,7 @@ mod tests {
 
     fn status() -> serde_json::Value {
         serde_json::json!({
-            "uptime_ms": 42, "rss_kb": 86372,
+            "uptime_ms": 42, "rss_kb": 86372, "rss_bytes_per_run": 155,
             "counts": {"runs": 4, "journal_events": 32},
             "stores": [{"name": "main", "bytes": 10_000, "format_version": 1}],
             "latency": [
@@ -178,6 +182,7 @@ mod tests {
         let text = render(&status());
         for line in [
             "pii_process_rss_kb 86372",
+            "pii_rss_bytes_per_run 155",
             "pii_store_bytes_per_run 2500",
             "pii_run_latency_count{outcome=\"succeeded\"} 3",
             "pii_run_latency_ms{outcome=\"succeeded\",quantile=\"0.5\"} 65",

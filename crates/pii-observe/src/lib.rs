@@ -28,10 +28,11 @@ mod observer;
 mod outcome;
 mod redaction;
 mod retention;
+mod rss_trend;
 mod secrets;
 mod trajectory;
 
-pub use audit::{AUDIT_KINDS, AuditFilter, Fanout};
+pub use audit::{AUDIT_KINDS, AUDIT_OFF_KINDS, AuditFilter, Fanout};
 pub use event::{Event, Fields, Level, OwnedEvent, RunId, SessionId, SpanId};
 pub use filelog::FileLog;
 pub use health::{Health, HealthWatch, State, SubsystemHealth};
@@ -44,5 +45,6 @@ pub use observer::{
 pub use outcome::{Outcome, Verdict};
 pub use redaction::{DropFields, NoRedaction, Redaction, RedactionPolicy, ScrubbingPolicy};
 pub use retention::Retention;
+pub use rss_trend::{RssTrend, TREND_MIN_SPAN_RUNS, TREND_POINTS, TREND_STEP_RUNS};
 pub use secrets::{REDACTED, SecretScrubber, is_secret_name};
 pub use trajectory::{TrajectoryCaps, TrajectorySink};

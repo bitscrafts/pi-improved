@@ -68,6 +68,12 @@ pub struct CoreSection {
     /// Rotated log files kept besides the live one. Overridden by
     /// `--log-keep-files`. Absent = [`DEFAULT_LOG_KEEP_FILES`].
     pub log_keep_files: Option<usize>,
+    /// `"on"` (default) or `"off"` (spec 116, measurement only): `off` detaches
+    /// the daemon's observer fan-out. Overridden by `--observer`.
+    pub observer: Option<String>,
+    /// `"on"` (default) or `"off"` (spec 116, measurement only): `off` stops
+    /// the audit feed. Overridden by `--audit`.
+    pub audit: Option<String>,
 }
 
 /// Default size at which the log file rotates (10 MiB).

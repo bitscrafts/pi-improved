@@ -6,7 +6,8 @@ use crate::cli_util::CliObserver;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use pii_observe::{AuditFilter, Event, Fanout, FileLog, Level, Observer, names};
+use pii_observe::{AUDIT_OFF_KINDS, AuditFilter, Event, Fanout, FileLog, Level, Observer, names};
+use pii_server::Engine;
 use pii_server::daemon::config::Config;
 use pii_tools::sandbox::SandboxProfileName;
 
@@ -50,6 +51,94 @@ pub(crate) fn writable_dirs(flags: &LogFlags, cfg: &Config) -> Vec<PathBuf> {
     dirs
 }
 
+/// Parses an `on`/`off` switch value (spec 116). Anything else is an error that
+/// names the switch: a typo must not silently leave a security surface off.
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn parse_switch(name: &str, value: &str) -> Result<bool, String> {
+    match value {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        other => Err(format!("{name} must be 'on' or 'off', got '{other}'")),
+    }
+}
+
+/// A switch's effective state: flag > `[core]` > on (the default is ALWAYS on).
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn resolve_switch(
+    name: &str,
+    flag: Option<bool>,
+    cfg: Option<&str>,
+) -> Result<bool, String> {
+    match (flag, cfg) {
+        (Some(f), _) => Ok(f),
+        (None, Some(v)) => parse_switch(name, v),
+        (None, None) => Ok(true),
+    }
+}
+
+/// The measurement switches in force (spec 116); both default on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) struct Switches {
+    pub(crate) observer: bool,
+    pub(crate) audit: bool,
+}
+
+/// Resolves both switches from the flags and `[core]`.
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn resolve_switches(
+    observer: Option<bool>,
+    audit: Option<bool>,
+    cfg: &Config,
+) -> Result<Switches, String> {
+    Ok(Switches {
+        observer: resolve_switch("observer", observer, cfg.core.observer.as_deref())?,
+        audit: resolve_switch("audit", audit, cfg.core.audit.as_deref())?,
+    })
+}
+
+/// One warn event per switched-off surface, stated at every start.
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn switch_off_events(s: Switches) -> Vec<Event> {
+    let off = |kind: &'static str, effect: &'static str| {
+        Event::new("daemon", Level::Warn, kind)
+            .field("effect", effect)
+            .field("purpose", "measurement only; the default is on")
+    };
+    let mut out = Vec::new();
+    if !s.audit {
+        out.push(off(
+            names::DAEMON_AUDIT_DISABLED,
+            "denials are NOT recorded in the audit trail",
+        ));
+    }
+    if !s.observer {
+        out.push(off(
+            names::DAEMON_OBSERVER_DETACHED,
+            "tool calls, store/provider/net events and persist errors are NOT logged",
+        ));
+    }
+    out
+}
+
+/// Attaches the daemon's observers to `engine` (specs 107, 108, 116): the
+/// contract observer and the late-bound log unless the observer is switched
+/// off, and the denial feed to the audit trail unless the audit is.
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn wire_observers(engine: &Engine, log: &Arc<dyn Observer>, s: Switches) {
+    if s.observer {
+        engine.attach_observer(Arc::new(pii_core::ContractObserver::new(Arc::clone(log))));
+        engine.attach_log(Arc::clone(log));
+    } else {
+        // Measurement only: runs carry no tool-call observer and the late-bound
+        // log stays unattached (it drops, it does not queue).
+        engine.detach_observers();
+    }
+    if s.audit {
+        engine.attach_audit(Arc::new(pii_core::DenialObserver::new(Arc::clone(log))));
+    }
+}
+
 /// The audit trail's file name, next to the store (durable state dir).
 const AUDIT_FILE: &str = "audit.log";
 
@@ -57,13 +146,15 @@ const AUDIT_FILE: &str = "audit.log";
 /// configured (flag > `[core]` > off), plus the audit trail — an always-on
 /// `audit.log` next to the store that receives only the security-relevant
 /// events ([`pii_observe::AUDIT_KINDS`]: denials, the sandbox profile in
-/// force). A file that cannot be written is reported once and never stops
-/// the daemon.
+/// force). With `audit_on == false` (spec 116, measurement only) the file
+/// records only that the trail was switched off. A file that cannot be
+/// written is reported once and never stops the daemon.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn open_log(
     flags: &LogFlags,
     cfg: &Config,
     audit_dir: &std::path::Path,
+    audit_on: bool,
 ) -> Arc<dyn Observer> {
     use pii_server::daemon::config::{DEFAULT_LOG_KEEP_FILES, DEFAULT_LOG_ROTATE_BYTES};
     let rotate = flags
@@ -81,7 +172,12 @@ pub(crate) fn open_log(
                 .with_reporter(Arc::new(CliObserver)),
         )
     };
-    let audit: Arc<dyn Observer> = Arc::new(AuditFilter::new(file(audit_dir.join(AUDIT_FILE))));
+    let audit_file = file(audit_dir.join(AUDIT_FILE));
+    let audit: Arc<dyn Observer> = Arc::new(if audit_on {
+        AuditFilter::new(audit_file)
+    } else {
+        AuditFilter::with_kinds(audit_file, AUDIT_OFF_KINDS)
+    });
     let mut sinks = vec![audit];
     sinks.extend(log_path(flags, cfg).map(file));
     Arc::new(Fanout::new(sinks))
@@ -100,4 +196,83 @@ pub(crate) fn sandbox_event(sandbox: SandboxProfileName) -> Event {
     .field("profile", pii_tools::sandbox::profile_name(sandbox))
     .field("grant", pii_tools::sandbox::grant_policy(sandbox))
     .field("enforced", enforced)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    fn scratch() -> tempfile::TempDir {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp");
+        std::fs::create_dir_all(&root).unwrap();
+        tempfile::Builder::new()
+            .prefix("audit-")
+            .tempdir_in(root)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_switch_defaults_on_and_only_on_or_off_parse() {
+        assert_eq!(resolve_switch("audit", None, None), Ok(true));
+        assert_eq!(resolve_switch("audit", None, Some("off")), Ok(false));
+        assert_eq!(resolve_switch("audit", Some(true), Some("off")), Ok(true));
+        assert_eq!(resolve_switch("audit", Some(false), None), Ok(false));
+        let e = resolve_switch("audit", None, Some("0")).unwrap_err();
+        assert!(e.contains("audit") && e.contains("'0'"), "{e}");
+    }
+
+    #[test]
+    fn switched_off_surfaces_are_each_announced_and_on_announces_nothing() {
+        let on = Switches {
+            observer: true,
+            audit: true,
+        };
+        assert!(switch_off_events(on).is_empty());
+        let both = Switches {
+            observer: false,
+            audit: false,
+        };
+        let kinds: Vec<_> = switch_off_events(both).iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                names::DAEMON_AUDIT_DISABLED,
+                names::DAEMON_OBSERVER_DETACHED
+            ]
+        );
+        let cfg: Config = Config::default();
+        assert_eq!(resolve_switches(None, None, &cfg), Ok(on));
+        assert_eq!(
+            resolve_switches(Some(false), None, &cfg).map(|s| s.observer),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn audit_off_leaves_a_trail_that_says_so_and_nothing_else() {
+        let dir = scratch();
+        let log = open_log(&LogFlags::default(), &Config::default(), dir.path(), false);
+        log.event(&Event::new("core", Level::Warn, names::CORE_CAP_DENIED));
+        log.event(&Event::new(
+            "daemon",
+            Level::Warn,
+            names::DAEMON_AUDIT_DISABLED,
+        ));
+        log.flush();
+        let trail = std::fs::read_to_string(dir.path().join(AUDIT_FILE)).unwrap();
+        assert!(trail.contains(names::DAEMON_AUDIT_DISABLED), "{trail}");
+        assert!(!trail.contains(names::CORE_CAP_DENIED), "{trail}");
+    }
+
+    #[test]
+    fn audit_on_records_denials() {
+        let dir = scratch();
+        let log = open_log(&LogFlags::default(), &Config::default(), dir.path(), true);
+        log.event(&Event::new("core", Level::Warn, names::CORE_CAP_DENIED));
+        log.flush();
+        let trail = std::fs::read_to_string(dir.path().join(AUDIT_FILE)).unwrap();
+        assert!(trail.contains(names::CORE_CAP_DENIED), "{trail}");
+    }
 }

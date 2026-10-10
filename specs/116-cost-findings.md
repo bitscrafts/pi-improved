@@ -60,3 +60,39 @@ R5. Every new surface: a test with a mutation control; every new name in `ALL`; 
   report line, not a commit.
 - Keep the harness small enough to run on this host's disk (it is shared); delete your own exports.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-10) — a real leak and a real 58.7% write reduction
+**Report**: `_docs/06-research/058-cost-findings-2026-10-10.md` (tables, files, keys, tolerance, limits).
+
+**F2 — the growth was mostly warm-up, with a REAL leak underneath, now fixed.** Ruled out by A/B inside noise:
+observer fan-out, audit feed, connection handling (24 000 idle connections ≈ 4 B each). What remained was
+`TrajectorySink` retaining a map entry per run forever AND scanning that map per event — a leak *and* a slowdown.
+Fix: `trajectory.rs:206-216` releases a finished run's handle (`runs.remove(&run.0)`).
+- **My own probe run** (`cargo test -p pii-observe --test rss_probe -- --ignored --nocapture`, 24.15 s):
+  `runs 0/10k/…/70k → tracked_runs 0 at every step`, RSS 3 172 → 16 272 kB and **flat after 60k**
+  (16 272 → 16 320 between 60k and 70k) — the retention is gone and the curve plateaus.
+- **My mutation** disabling the release (`if false && release`) → `a_finished_run_is_released_by_the_sink`
+  **FAILS** (`run 0 finished: nothing retained`); restored → green.
+- **Residual honesty**: ~5-40 B/run remains unattributed in the store/runner path; the worker says it needs a heap
+  profiler rather than a guess. Kept as a limit, not smoothed.
+
+**F3 — the 50× was not the events: it was redb's commit granularity.** One commit costs **24.6 KB whatever it
+carries**, and each run made four. Fixes: run ids are **reserved 32 at a time**, and `put_graph` no longer
+re-commits a body already stored. Result: **124 150 → 51 236 B/run (−58.7%)**, throughput **~45 → 80-120 runs/s**;
+in-process parts reconcile to the daemon total within **0.08%** (tolerance 5%).
+**Behaviour change worth stating:** run ids can now **skip up to 31 after a restart** — strictly increasing, never
+reused, and the whole suite plus the fresh tree pass with it.
+
+**F8 — the A/B finally ran, and the honest answer is "below resolution"**: `--observer on|off`, `--audit on|off`
+(and `[core] observer|audit`), both default ON and loud when turned off; every delta sits inside the ±1.5 ms/run
+baseline spread. Spec 110 could not run this at all; now it can, and it says so.
+
+**Tests I ran myself**: `a_finished_run_is_released` 1 pass · `log_wiring` 8 pass · `rss_gauge` 1 pass · the
+sink-only probe 24.15 s pass.
+
+**Limits carried:** the daemon was not run past 60 000 runs with trajectories ON (it still climbed ~270 B/run there;
+the sink-only probe suggests the retention index filling toward its 50 000-file bound, not confirmed in the daemon);
+RED-before-GREEN was observed only for the trajectory leak and the body dedup; the RSS gauge is not unit-tested
+live above 4 000 runs; `cmd_daemon.rs` now sits exactly at the 450-line limit; scratch left at
+`/projects/_tmp/leak-bisect` (~1 GB) per the no-delete rule.
+

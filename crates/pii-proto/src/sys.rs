@@ -244,4 +244,8 @@ pub struct StatusResult {
     /// Standing operator notes (spec 115), e.g. that the store never shrinks.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// Bytes of RSS growth per run over the recent window of polls (spec 116);
+    /// 0 until enough runs separate the window ends. Additive.
+    #[serde(default)]
+    pub rss_bytes_per_run: u64,
 }

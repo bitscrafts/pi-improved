@@ -45,6 +45,9 @@ pub struct Store {
     /// promise** — exposed so the batched-append tests can assert 1-vs-N
     /// write transactions without strace. Monotonic.
     write_txn_count: AtomicU64,
+    /// Run ids issued from memory: `(last issued, reserved ceiling)`. The
+    /// ceiling is what is durable in `META`; see [`Store::next_run_id`].
+    run_ids: parking_lot::Mutex<(u64, u64)>,
     /// Test instrumentation: cumulative bytes written by the session
     /// durability path (meta + per-message appends + periodic snapshots)
     /// since the store was opened (D3/D6, 026 report 5.0.4). **Not a
@@ -79,6 +82,9 @@ pub struct Store {
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
+
+/// Run ids reserved per durable counter commit (spec 116 F3).
+const RUN_ID_BLOCK: u64 = 32;
 
 pub use identity::{FORMAT_VERSION, StoreInfo, file_stats};
 
@@ -160,6 +166,7 @@ impl Store {
             db,
             path: path.to_path_buf(),
             write_txn_count: AtomicU64::new(0),
+            run_ids: parking_lot::Mutex::new((0, 0)),
             session_bytes_written: AtomicU64::new(0),
             fail_session_writes_for_test: std::sync::atomic::AtomicBool::new(false),
             fail_append_events_for_test: AtomicU64::new(0),
@@ -198,33 +205,51 @@ impl Store {
             .map_err(|e| PiiError::store_op("begin_write", "db", e))
     }
 
-    /// Allocates the next run id as `r{n:012}` (monotonic, in one write txn).
+    /// Allocates the next run id as `r{n:012}` (strictly monotonic, unique
+    /// across restarts).
+    ///
+    /// Ids are reserved in blocks of [`RUN_ID_BLOCK`]: one durable write
+    /// transaction moves the persisted counter to the end of the block, and the
+    /// ids inside it are then handed out from memory. A crash or restart skips
+    /// the unissued rest of the block, so ids may have gaps but are NEVER
+    /// reused; nothing about a run's journal or header is less durable (spec
+    /// 116 F3: the per-run counter commit was ~20% of the bytes a run wrote).
     ///
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb failure.
     pub fn next_run_id(&self) -> Result<RunId, PiiError> {
-        let write = self
-            .db
-            .begin_write()
-            .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
-        let next;
+        let n = {
+            let mut ids = self.run_ids.lock();
+            if ids.0 >= ids.1 {
+                *ids = self.reserve_run_ids()?;
+            }
+            ids.0 += 1;
+            ids.0
+        };
+        Ok(RunId::from(format!("r{n:012}")))
+    }
+
+    /// Persists a new ceiling [`RUN_ID_BLOCK`] ids above the old one and
+    /// returns `(last issued, ceiling)` for the fresh block.
+    fn reserve_run_ids(&self) -> Result<(u64, u64), PiiError> {
+        let write = self.begin_write_counted()?;
+        let cur;
         {
             let mut table = write
                 .open_table(META)
                 .map_err(|e| PiiError::store_op("open", "meta", e))?;
-            let cur = table
+            cur = table
                 .get(RUN_COUNTER_KEY)
                 .map_err(|e| PiiError::store_op("read", "counter", e))?
                 .map_or(0, |v| v.value());
-            next = cur + 1;
             table
-                .insert(RUN_COUNTER_KEY, next)
+                .insert(RUN_COUNTER_KEY, cur + RUN_ID_BLOCK)
                 .map_err(|e| PiiError::store_op("write", "counter", e))?;
         }
         write
             .commit()
             .map_err(|e| PiiError::store_op("commit", "counter", e))?;
-        Ok(RunId::from(format!("r{next:012}")))
+        Ok((cur, cur + RUN_ID_BLOCK))
     }
 
     /// Stores a graph body under its blake3 hash; returns the hash key.
@@ -233,10 +258,13 @@ impl Store {
     /// Returns [`PiiError::Internal`] on a redb failure.
     pub fn put_graph(&self, spec_json: &[u8]) -> Result<String, PiiError> {
         let key = hash(spec_json);
-        let write = self
-            .db
-            .begin_write()
-            .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
+        // Spec 116 F3: a body is addressed by its own hash and never changes, so
+        // one already stored is already durable; committing it again only
+        // rewrites pages (every run stored its graph and input afresh).
+        if self.has_graph(&key)? {
+            return Ok(key);
+        }
+        let write = self.begin_write_counted()?;
         {
             let mut table = write
                 .open_table(GRAPH_BODY)
@@ -249,6 +277,21 @@ impl Store {
             .commit()
             .map_err(|e| PiiError::store_op("commit", "graph", e))?;
         Ok(key)
+    }
+
+    /// Whether a body is stored under `key` (no fault injection: a write path).
+    fn has_graph(&self, key: &str) -> Result<bool, PiiError> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
+        let table = read
+            .open_table(GRAPH_BODY)
+            .map_err(|e| PiiError::store_op("open", "graph_body", e))?;
+        Ok(table
+            .get(key)
+            .map_err(|e| PiiError::store_op("read", "graph", e))?
+            .is_some())
     }
 
     /// Fetches a stored graph body by hash.
@@ -569,6 +612,65 @@ mod tests {
         assert_ne!(a, b);
         assert!(a.as_str().starts_with('r'));
         assert!(b.as_str().starts_with('r'));
+    }
+
+    /// Spec 116 F3: a block of ids costs one commit, not one per id.
+    #[test]
+    fn run_ids_are_reserved_in_blocks_not_committed_one_by_one() {
+        let store = tmp_store("run-id-blocks");
+        let before = store.write_txn_count();
+        for _ in 0..100 {
+            store.next_run_id().unwrap();
+        }
+        let commits = store.write_txn_count() - before;
+        // 100 ids at 32 per block: 4 commits, where one-per-id would be 100.
+        assert_eq!(commits, 4);
+    }
+
+    /// The price of batching is gaps after a restart; the guarantee that stays
+    /// is that an id is never issued twice.
+    #[test]
+    fn run_ids_are_never_reused_across_a_reopen() {
+        let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/pi-store-test"))
+            .join(format!("reopen-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.redb");
+        let _ = std::fs::remove_file(&path);
+        let first: Vec<_> = {
+            let s = Store::open(&path).unwrap();
+            (0..5).map(|_| s.next_run_id().unwrap()).collect()
+        };
+        let s = Store::open(&path).unwrap();
+        let after = s.next_run_id().unwrap();
+        assert!(
+            first.iter().all(|id| id.as_str() < after.as_str()),
+            "{first:?} then {after:?}"
+        );
+        assert_eq!(after.as_str(), format!("r{:012}", super::RUN_ID_BLOCK + 1));
+    }
+
+    /// Spec 116 F3: bodies are content-addressed and immutable, so storing one
+    /// that is already there must not commit again (every run used to commit
+    /// its graph and its input, identical to the last run's).
+    #[test]
+    fn storing_a_body_that_is_already_stored_commits_nothing() {
+        let store = tmp_store("graph-dedup");
+        let before = store.write_txn_count();
+        let k1 = store.put_graph(b"{ \"graph\": \"dedup-a\" }").unwrap();
+        assert_eq!(store.write_txn_count() - before, 1, "new body: one commit");
+        let k2 = store.put_graph(b"{ \"graph\": \"dedup-a\" }").unwrap();
+        assert_eq!(k1, k2);
+        assert_eq!(store.write_txn_count() - before, 1, "same body: none");
+        store.put_graph(b"{ \"graph\": \"dedup-b\" }").unwrap();
+        assert_eq!(
+            store.write_txn_count() - before,
+            2,
+            "another body: one more"
+        );
+        assert_eq!(
+            store.get_graph(&k1).unwrap().unwrap(),
+            b"{ \"graph\": \"dedup-a\" }"
+        );
     }
 
     #[test]

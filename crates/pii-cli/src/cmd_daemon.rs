@@ -2,7 +2,10 @@
 //! subsystems, and serves connections (F2.8/F2.9, F5.1-F5.5).
 
 use crate::cli_util::{CliObserver, fail, fail_to};
-use crate::daemon_log::{LogFlags, open_log, sandbox_event, writable_dirs};
+use crate::daemon_log::{
+    LogFlags, Switches, open_log, parse_switch, resolve_switches, sandbox_event, switch_off_events,
+    wire_observers, writable_dirs,
+};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -37,6 +40,8 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         store,
         config,
         log,
+        observer,
+        audit,
     } = flags;
     // Resolve the runtime dir and store path BEFORE applying the sandbox so
     // the store/runtime dirs can be granted read-write (F17, opus review):
@@ -88,10 +93,19 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         }
     }
 
-    let log = open_log(&log, &cfg, &store_parent);
+    // Spec 116: measurement switches (default ON; a typo is an error, never "on").
+    let Ok(switches) = resolve_switches(observer, audit, &cfg).inspect_err(|e| fail("daemon", e))
+    else {
+        return ExitCode::from(2);
+    };
+    let log = open_log(&log, &cfg, &store_parent, switches.audit);
     // The profile in force is stated at every start — an unconfined daemon is
-    // reported loudly (stderr + log + audit trail), never silently.
+    // reported loudly (stderr + log + audit trail), never silently. So is a
+    // switched-off surface.
     Tee(Arc::clone(&log)).event(&sandbox_event(sandbox));
+    for e in switch_off_events(switches) {
+        Tee(Arc::clone(&log)).event(&e);
+    }
 
     // NET-cap wiring and the "no model configured" error both need the
     // resolved model before the engine is built (2026-09-05: `[core].model`
@@ -155,6 +169,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         model,
         model_for_log,
         log.clone(),
+        switches,
     ));
     log.event(&daemon_event(
         Level::Info,
@@ -187,6 +202,8 @@ FLAGS:
                              (denials always go to <store dir>/audit.log, rotated like the log)
   --log-rotate-bytes <n>     rotate the log file past <n> bytes (default: 10485760)
   --log-keep-files <n>       rotated log files to keep besides the live one (default: 5)
+  --observer <on|off>        'off' detaches the observer fan-out; MEASUREMENT ONLY (default on)
+  --audit <on|off>           'off' stops the audit feed; MEASUREMENT ONLY (default on)
   --foreground               accepted for supervisors; the daemon never forks
   --help                     print this help and exit 0
 
@@ -204,6 +221,8 @@ struct DaemonFlags {
     store: Option<PathBuf>,
     config: Option<PathBuf>,
     log: LogFlags,
+    observer: Option<bool>,
+    audit: Option<bool>,
 }
 
 /// Why parsing stopped without producing [`DaemonFlags`].
@@ -223,6 +242,16 @@ fn flag_value(
         .ok_or_else(|| Parse::Usage(format!("{flag} needs a value")))
 }
 
+/// A measurement switch's `on|off` value (spec 116).
+fn switch_value(
+    args: &mut dyn Iterator<Item = std::ffi::OsString>,
+    flag: &str,
+) -> Result<Option<bool>, Parse> {
+    parse_switch(flag, &flag_value(args, flag)?)
+        .map(Some)
+        .map_err(Parse::Usage)
+}
+
 /// Parses a numeric flag value.
 fn flag_number<T: std::str::FromStr>(
     args: &mut dyn Iterator<Item = std::ffi::OsString>,
@@ -240,6 +269,8 @@ fn parse_flags(args: &mut dyn Iterator<Item = std::ffi::OsString>) -> Result<Dae
         store: None,
         config: None,
         log: LogFlags::default(),
+        observer: None,
+        audit: None,
     };
     while let Some(flag) = args.next() {
         let flag = flag.to_str().unwrap_or_default().to_owned();
@@ -253,6 +284,8 @@ fn parse_flags(args: &mut dyn Iterator<Item = std::ffi::OsString>) -> Result<Dae
                 f.sandbox = pii_tools::sandbox::parse_profile(&v)
                     .map_err(|e| Parse::Usage(e.to_string()))?;
             }
+            "--observer" => f.observer = switch_value(args, "--observer")?,
+            "--audit" => f.audit = switch_value(args, "--audit")?,
             "--log-file" => f.log.file = Some(PathBuf::from(flag_value(args, "--log-file")?)),
             "--log-rotate-bytes" => {
                 f.log.rotate_bytes = Some(flag_number(args, "--log-rotate-bytes")?);
@@ -339,6 +372,7 @@ async fn run_daemon(
     model: String,
     model_for_log: String,
     log: Arc<dyn Observer>,
+    switches: Switches,
 ) -> ExitCode {
     let fail = |stage: &'static str, m: String| {
         fail_to(&Tee(Arc::clone(&log)), stage, &m);
@@ -382,12 +416,7 @@ async fn run_daemon(
     // permanent zombies in `run.list --status running`.
     engine.seed_sessions_from_store();
     engine.reconcile_boot();
-    engine.attach_observer(Arc::new(pii_core::ContractObserver::new(Arc::clone(&log))));
-    // Spec 108: the store, provider, network, workers and channels report to
-    // the same log.
-    engine.attach_log(Arc::clone(&log));
-    // Spec 107 R3: denials inside runs reach the log and the audit trail.
-    engine.attach_audit(Arc::new(pii_core::DenialObserver::new(Arc::clone(&log))));
+    wire_observers(&engine, &log, switches);
 
     // PII_TEST_CLOCK_MS (test-only): when set, the daemon uses a FixedClock
     // starting at that epoch so scripts can drive timers deterministically.
@@ -584,6 +613,8 @@ mod tests {
             "--log-file",
             "--log-rotate-bytes",
             "--log-keep-files",
+            "--observer",
+            "--audit",
             "--foreground",
             "--help",
         ] {
@@ -607,6 +638,24 @@ mod tests {
         ));
         assert!(matches!(
             parse(&["--sandbox", "nope"]),
+            Err(super::Parse::Usage(_))
+        ));
+    }
+
+    /// Spec 116: both measurement switches are unset (= on) unless asked for,
+    /// accept only on/off, and a typo is a usage error, never a silent "on".
+    #[test]
+    fn observer_and_audit_switches_default_unset_and_accept_only_on_off() {
+        let f = parse(&[]).unwrap();
+        assert_eq!((f.observer, f.audit), (None, None));
+        let f = parse(&["--observer", "off", "--audit", "on"]).unwrap();
+        assert_eq!((f.observer, f.audit), (Some(false), Some(true)));
+        assert!(matches!(
+            parse(&["--audit", "false"]),
+            Err(super::Parse::Usage(m)) if m.contains("--audit") && m.contains("'false'")
+        ));
+        assert!(matches!(
+            parse(&["--observer"]),
             Err(super::Parse::Usage(_))
         ));
     }

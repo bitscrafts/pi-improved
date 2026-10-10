@@ -18,24 +18,37 @@ pub const AUDIT_KINDS: &[&str] = &[
     names::NET_EGRESS_DENIED,
     names::DAEMON_SANDBOX_IN_FORCE,
     names::DAEMON_PEER_REFUSED,
+    names::DAEMON_OBSERVER_DETACHED,
+    names::DAEMON_AUDIT_DISABLED,
 ];
 
-/// Forwards only [`AUDIT_KINDS`] events to `inner`.
+/// The only kind the trail still records once it is switched off (spec 116):
+/// the fact that it was switched off.
+pub const AUDIT_OFF_KINDS: &[&str] = &[names::DAEMON_AUDIT_DISABLED];
+
+/// Forwards only [`AUDIT_KINDS`] events (or the given kinds) to `inner`.
 pub struct AuditFilter {
     inner: Arc<dyn Observer>,
+    kinds: &'static [&'static str],
 }
 
 impl AuditFilter {
     /// A filter in front of `inner`.
     #[must_use]
     pub fn new(inner: Arc<dyn Observer>) -> Self {
-        Self { inner }
+        Self::with_kinds(inner, AUDIT_KINDS)
+    }
+
+    /// A filter that lets only `kinds` through (the audit-off trail, spec 116).
+    #[must_use]
+    pub fn with_kinds(inner: Arc<dyn Observer>, kinds: &'static [&'static str]) -> Self {
+        Self { inner, kinds }
     }
 }
 
 impl Observer for AuditFilter {
     fn event(&self, e: &Event) {
-        if AUDIT_KINDS.contains(&e.kind) {
+        if self.kinds.contains(&e.kind) {
             self.inner.event(e);
         }
     }
@@ -96,6 +109,20 @@ mod tests {
         ));
         let kinds: Vec<_> = rec.events().into_iter().map(|e| e.kind).collect();
         assert_eq!(kinds, [names::CORE_CAP_DENIED, names::TOOLS_DENY_LIST_HIT]);
+    }
+
+    #[test]
+    fn the_audit_off_filter_records_only_that_it_is_off() {
+        let rec = Arc::new(Recorder::new());
+        let f = AuditFilter::with_kinds(rec.clone(), AUDIT_OFF_KINDS);
+        f.event(&Event::new("core", Level::Warn, names::CORE_CAP_DENIED));
+        f.event(&Event::new(
+            "daemon",
+            Level::Warn,
+            names::DAEMON_AUDIT_DISABLED,
+        ));
+        let kinds: Vec<_> = rec.events().into_iter().map(|e| e.kind).collect();
+        assert_eq!(kinds, [names::DAEMON_AUDIT_DISABLED]);
     }
 
     #[test]

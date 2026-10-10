@@ -136,6 +136,8 @@ pub struct Engine {
     /// Trajectory sink (spec 103); `None` (default) records nothing.
     trajectory: parking_lot::Mutex<Option<Arc<pii_observe::TrajectorySink>>>,
     audit: parking_lot::Mutex<Option<Arc<dyn pii_core::Observer>>>,
+    /// Spec 116 (measurement only): when set, runs carry no tool-call observer.
+    observers_detached: std::sync::atomic::AtomicBool,
     /// The contract-observer switch (spec 108): handed to the store, the
     /// model provider and the network service at construction; unattached
     /// (drops everything) until [`Engine::attach_log`].
@@ -145,6 +147,8 @@ pub struct Engine {
     health_watch: pii_observe::HealthWatch,
     /// Run-lifecycle latency by outcome (spec 115 R4), recorded in-process.
     pub(crate) latency: pii_observe::RunLatency,
+    /// RSS-per-run trend over recent `sys.status` polls (spec 116 R2).
+    pub(crate) rss_trend: pii_observe::RssTrend,
 }
 
 /// A conversation session.
@@ -291,6 +295,7 @@ impl Engine {
             runs: parking_lot::Mutex::new(BTreeMap::new()),
             spawn_handle: Arc::clone(&spawn_engine),
             session_runs: parking_lot::Mutex::new(BTreeMap::new()),
+            observers_detached: std::sync::atomic::AtomicBool::new(false),
             daemon_ctx: parking_lot::Mutex::new(None),
             obs: parking_lot::Mutex::new(None),
             trajectory: parking_lot::Mutex::new(None),
@@ -298,6 +303,7 @@ impl Engine {
             log,
             health_watch: pii_observe::HealthWatch::new(),
             latency: pii_observe::RunLatency::default(),
+            rss_trend: pii_observe::RssTrend::new(),
         }))
     }
 
@@ -349,6 +355,22 @@ impl Engine {
     /// own bus and trajectory observers. Default is none.
     pub fn attach_audit(&self, obs: Arc<dyn pii_core::Observer>) {
         *self.audit.lock() = Some(obs);
+    }
+
+    /// Detaches the observer fan-out from every run started from now on
+    /// (spec 116, **measurement only**; the default is attached): no
+    /// tool-call/log observer is added to a run's context. The bus bridge, the
+    /// audit feed and the trajectory sink are separate surfaces and unaffected.
+    pub fn detach_observers(&self) {
+        self.observers_detached
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether [`Engine::detach_observers`] was called.
+    #[must_use]
+    pub fn observers_detached(&self) -> bool {
+        self.observers_detached
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// The audit observer, if one is attached.

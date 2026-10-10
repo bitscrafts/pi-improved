@@ -225,3 +225,35 @@ async fn a_deny_list_hit_in_a_run_reaches_the_log() {
         Some(&serde_json::json!("denied"))
     );
 }
+
+/// Spec 116 R4: with the observer fan-out detached the same run still reaches
+/// its terminal state, but no `tools.*` event reaches the log. The
+/// attached-case test above is the mutation control: if `detach_observers`
+/// did nothing, `tools.call` would arrive here and this test would fail.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_detached_observer_fan_out_logs_nothing_and_the_run_still_finishes() {
+    let dir = scratch("logw-detached");
+    std::fs::create_dir_all(dir.path().join("graphs")).unwrap();
+    std::fs::write(dir.path().join("graphs/sudo.toml"), SUDO).unwrap();
+    let (d, log) = daemon_with_log(dir.path(), "# none\n");
+    assert!(!d.engine.observers_detached(), "attached is the default");
+    d.engine.detach_observers();
+    let run = d.engine.start_run("sudo", &serde_json::json!({})).unwrap();
+    let end = Instant::now() + Duration::from_secs(10);
+    let finished = loop {
+        let h = d.engine.store.get_run(&run).unwrap();
+        if h.is_some_and(|h| h.status != pii_abi::RunStatus::Running) {
+            break true;
+        }
+        if Instant::now() > end {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(finished, "the run must still reach a terminal state");
+    assert!(
+        log.events_named(names::TOOLS_CALL).is_empty(),
+        "{:?}",
+        log.events()
+    );
+}
