@@ -771,3 +771,25 @@ The paragraph to paste there, pointing at the guide above:
 > silently read as empty. Static build: `cargo build --release --target x86_64-unknown-linux-musl -p pii-cli`
 > (the default build is dynamic). Runbook: `_docs/05-operations/105-runbook.md`.
 
+## 2026-10-09 — spec 107: P2, confinement and secrets (`b482c51`)
+The capability was already there; the DEFAULT was not, and I had misreported the capability in 052
+(corrected in `76c1488`, with measurements). What landed:
+- **The daemon now defaults to the `workspace` landlock profile** (it ran `off`); `--sandbox off` is an
+  explicit opt-out that prints `warning: daemon is running UNCONFINED` and records a warn-level audit line.
+  A start where confinement cannot be enforced exits 4 rather than continuing.
+- **The grant is stated in full and pinned by a test** — verbatim, from my run of `pii health --json`:
+  *"WRITES confined to the workspace, store dir, runtime dir, $TMPDIR and /dev/{null,zero,urandom,tty};
+  READS are NOT confined (read-only access to / is granted, so /etc, /home and every other readable path
+  stay readable)"*. Two mutation controls: a wider write grant → the deny test RED; a narrower read grant →
+  the read test RED.
+- **An audit trail**: `<runtime>/audit.log`, rotated (10 MiB, keep 5), recording both a confined start
+  (`info`) and an unconfined one (`warn`); tool denials appear as `core.cap.denied`. A gap was found and
+  fixed on the way: denials raised inside a run never reached the daemon log at all.
+- **A canary-secret test** over the log file, the ndjson stream and a trajectory (`grep -c <canary>` = 0 in
+  all three, redaction replacing it), with a positive control so the test can fail.
+- **Secrets**: env-only accepted, documented, with a root-owned 0600 `EnvironmentFile` in the unit and a
+  value scrubber for secret-looking variable names. **seccomp is not implemented** and the runbook says so.
+**Residuals carried:** `pii -p` (one-shot) still defaults to `off` — asymmetric with the daemon; the scrubber
+matches only the exact value and the client event stream to UIs is not scrubbed; bash deny-list hits still
+emit no `tools.*` event. The first two of those are folded into **spec 108 (P3)**.
+
