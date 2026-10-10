@@ -15,13 +15,14 @@ use std::path::PathBuf;
 fn full_ctx() -> Ctx {
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
-    // Tests run from the crate dir; resolve the workspace binary the same
-    // way worker_spec() does below, so the ArgvScope prefix (a plain string
-    // comparison, not a canonicalized path comparison) matches exactly.
-    let pii_bin = std::env::current_dir()
+    // Resolved from the manifest dir, NOT from the process cwd: a cwd read made the same binary fail
+    // 15 of 15 runs when started outside the crate dir (`spawn /target/debug/pii`), which looks like a
+    // race and is a path bug. Same NORMALIZED absolute path cargo's cwd produced, so the ArgvScope
+    // prefix (a plain string comparison) still matches exactly.
+    let pii_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
         .unwrap()
-        .ancestors()
-        .nth(2)
+        .parent()
         .unwrap()
         .join("target/debug/pii");
     caps.proc_argv0 = ArgvScope::new(vec![
@@ -44,11 +45,11 @@ fn full_ctx() -> Ctx {
 
 /// A worker spec running the reference `pii worker-exec` worker.
 fn worker_spec(name: &str, tag: &str) -> WorkerSpec {
-    // Tests run from the crate dir; resolve the workspace binary absolutely.
-    let pii_bin = std::env::current_dir()
+    // Resolved without reading the process cwd (see the note in full_ctx).
+    let pii_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
         .unwrap()
-        .ancestors()
-        .nth(2)
+        .parent()
         .unwrap()
         .join("target/debug/pii");
     WorkerSpec {

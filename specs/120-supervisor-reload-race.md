@@ -53,13 +53,22 @@ R7. **Docs**: the runbook gains the reload semantics in one short section — wh
 - A silent drop is a fail, even if it makes the test green: the fix must leave a signal.
 - Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
 
-## Orchestrator's own reproduction attempts (2026-10-10)
-Two attempts, and the disagreement between them is the reason R1 demands a DETERMINISTIC repro:
-1. **cargo path** — `taskset -c 0-3 cargo test -q -p pii-worker --test supervisor reload_drops_no_requests -- --exact`
-   under 16 hogs, 10 runs: **0 failures** (`/projects/_tmp/repro-reload-race.sh`).
-2. **binary path** — the built test binary run directly under `taskset -c 0-3` with 16 hogs, 15 runs
-   (`/projects/_tmp/repro-reload-race2.sh`) — the invocation spec 119 used for its 6-of-25.
-So the same defect shows 6 of 25 in one invocation and 0 of 10 in another. A probabilistic repro cannot falsify a
-fix and cannot catch a regression: **build the deterministic seam first (R1)**, and treat "0 of N" as a statement
-about the conditions, never as evidence the defect is gone.
+## Orchestrator's reproduction attempts, all three, corrected (2026-10-10)
+1. **cargo path**, 10 runs at `taskset -c 0-3` + 16 hogs: **0 failures** — conditions too mild.
+2. **binary path**, 15 runs, same load: **15 of 15 "failures" — for the WRONG reason.** The test resolved its worker
+   binary with `std::env::current_dir().unwrap().ancestors().nth(2)` (it assumes cwd == the crate dir, true under
+   `cargo test`), so started from the repo root it built `/target/debug/pii` and every run died at
+   `Supervisor::start` with `spawn /target/debug/pii: No such file or directory (os error 2)` — a path bug wearing a
+   race's clothes. **A red is a claim about your invocation.** It would also have poisoned the new flake harness's
+   binary mode with 15-of-15 false failures, which is why it is fixed rather than worked around.
+   **FIXED by the orchestrator**, minimally and shape-preserving: both sites now derive the path from
+   `env!("CARGO_MANIFEST_DIR")` (`parent().parent().join("target/debug/pii")`) — compile-time, cwd-independent, and
+   textually identical to the normalized path cargo's cwd produced, so the `ArgvScope` string comparison still
+   matches (`cargo test -p pii-worker --test supervisor` → 10 passed, unchanged). (Three attempts: the first hit the
+   wrong site, the second broke the braces, the third was reverted and redone as the smallest possible change.)
+3. **binary path again, after that fix**, 15 runs at 4 cores + 16 hogs: **2 of 15 failed with `worker writer closed`**
+   — the same error spec 119 reported (6 of 25). **So the race is real, at roughly 1 in 8 runs in this invocation.**
 
+Two consequences this spec already encodes: R1 demands a **deterministic seam** because probabilistic repros
+disagree by two orders of magnitude between invocations (0/10, 6/25, 2/15), and any harness must run the test the
+way the GATE runs it.
