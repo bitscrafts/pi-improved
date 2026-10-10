@@ -90,3 +90,28 @@ check, so it was investigated. Measured facts, in order:
 the SAME flush, so "the journal shows X" is not "the engine has done X" — and a test that waits on the journal
 measures the flusher, not the engine. Wait on the node's own side effect.
 
+## 114 CLOSED (2026-10-10) — and the way it closed corrected a rule I had written
+`fresh-gate` on the committed HEAD (`4846143`, my test fix included): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**,
+exit 0, 71G free.
+
+Getting there took four attempts and each failure was informative:
+1. Run 1 (`--worktree`, HEAD `1dff96d`): **clippy** — `this function has too many lines (90/80)`: a lint **my own
+   test edit** carried, because after editing I ran tests/fmt/stability/mutations and skipped clippy.
+2. Fix attempt A: extracted the wait into `wait_until_a_appended` — verified in the kept export: `too_many_lines`
+   gone, but clippy immediately found **`needless_borrow`** at the two `read_to_string(&log)` sites inside the
+   helper (double reference; `log` is already `&Path`).
+3. Fix attempt B (`4846143`): clippy clean and the test green **in that export**.
+4. Run 2 (`--worktree`): **five** steps failed — and the cause was not mine at all: spec 115's worker was
+   mid-edit, and `--worktree` overlays the working tree, so its half-finished `cmd_soak.rs` came along
+   (`error[E0277]: RpcError doesn't implement std::fmt::Display`).
+5. Run 3 (**plain `fresh-gate`** = exactly HEAD): **ALL PASS**.
+
+**Corrected:** my earlier claim (spec 112, `DO-NOT-REPEAT` 1.30) that "fresh-gate exports HEAD, so a worker cannot
+have verified its own work" was WRONG: base is HEAD, but `--worktree` overlays the working tree's edited paths, so
+a worker's `--worktree` run does cover its own uncommitted work. What fresh-gate cannot do is shield a run from
+**another writer's** dirty tree. The guide now carries both modes with the check that tells whose red it is
+(`git status --porcelain`).
+
+**Standing ordering rule adopted:** verify a COMMIT with the plain form **before** dispatching the next worker.
+A `--worktree` run overlapping a worker's edits measures the worker's work in progress, not the commit.
+
