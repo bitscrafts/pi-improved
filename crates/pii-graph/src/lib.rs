@@ -21,6 +21,7 @@ pub mod render;
 pub mod run;
 pub mod run_helpers;
 pub mod sched;
+pub mod sop;
 pub mod spec;
 pub mod toml_load;
 pub mod validate;

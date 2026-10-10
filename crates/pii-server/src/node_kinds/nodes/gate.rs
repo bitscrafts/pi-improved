@@ -109,11 +109,18 @@ impl GraphNode for GateNode {
 /// `cycle` 0 = no salt (historical id); a fresh cycle forces a new decision.
 #[must_use]
 pub fn approval_id(ctx: &Ctx, cycle: u64) -> String {
-    use std::fmt::Write as _;
     let (run, node) = match ctx.principal() {
         Principal::GraphNode { run, node } => (run.to_string(), node.to_string()),
         _ => (ctx.trace().run.to_string(), String::new()),
     };
+    approval_id_for(&run, &node, cycle)
+}
+
+/// [`approval_id`] for an explicit `(run, node)`: lets a sibling node (the
+/// SOP `await` step) name the approval a gate is about to request.
+#[must_use]
+pub fn approval_id_for(run: &str, node: &str, cycle: u64) -> String {
+    use std::fmt::Write as _;
     let digest = blake3::hash(format!("{run}:{node}:{cycle}").as_bytes());
     digest
         .as_bytes()

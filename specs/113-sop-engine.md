@@ -68,3 +68,24 @@ R8. **A control for the compiler** (this repo's standing rule): a mutation that 
 - Approval semantics are the existing ones; do not add a second approval store or a second id scheme.
 - Scratch under `/projects/_tmp/`; keep it small, delete your own, no daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
+
+## Orchestrator verification (2026-10-10)
+**My controls:**
+- `cargo test -p pii-graph --test sop` → **9 passed**; `cargo test -p pii-server --test sop_engine` → **3 passed**.
+- **Determinism verified at the artefact, twice**: `pii sop compile examples/cut-release.sop.toml` run twice →
+  rc 0 both, `sha256 e03c6013264720be90b8df09f242c170e0434cfa8095a74320e2f3e37a9d779d` for both, `cmp` identical —
+  and the compiled output is a graph with `caps = ["fs_read","fs_write","proc"]` and `[[node]]` entries, i.e. the
+  SOP becomes the DAG rather than driving a second scheduler.
+- **MUTATION (mine)**: disabling `pii-graph/src/sop/lint.rs::find_cycle` (prepend `return None;`) →
+  `lint_refuses_a_dependency_cycle` **FAILS** at `tests/sop.rs:54`; restored → 9 pass. The cycle refusal is real.
+- **The allowlist change is legitimate and is the intended mechanism**: one new per-file budget line for the new
+  CLI surface, with a reason — `crates/pii-cli/src/cmd_sop.rs # new CLI surface (spec 113): compile/show print the
+  graph on stdout; usage and SOP refusals go to stderr # 8`. It is a NEW file (not a raised budget on an existing
+  one), which is exactly what spec 102 designed the list for; the SOP node still emits the four named events, so
+  the crate is not relying on prints for its observability.
+
+**Honest limits carried from the report (kept, not smoothed):** the offline CLI registry has an empty model and
+no approval resolver, so `pii sop run`/`resume` fail loudly at `prepare` and the approval + scripted-model proof
+runs through the daemon registry (`sop_engine.rs`) — the guide says so; `notify` appends to a file under the
+run's write scope rather than sending to a channel adapter; `requires` is a backstop covered by a unit test only.
+

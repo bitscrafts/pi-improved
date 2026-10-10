@@ -16,6 +16,7 @@ mod cmd_oneshot;
 mod cmd_run;
 mod cmd_sandbox_exec;
 mod cmd_soak;
+mod cmd_sop;
 mod cmd_sys;
 mod cmd_trace;
 mod cmd_tui;
@@ -26,7 +27,7 @@ mod ndjson;
 use crate::cli_util::fail;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ...";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]
@@ -136,6 +137,9 @@ fn main() -> ExitCode {
     }
     if cmd == "graph" {
         return cmd_graph(&mut args);
+    }
+    if cmd == "sop" {
+        return cmd_sop::cmd_sop(&mut args);
     }
     if cmd == "net" {
         return cmd_ctl::cmd_net(&mut args);

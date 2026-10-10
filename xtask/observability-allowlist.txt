@@ -21,3 +21,4 @@ crates/pii-server/src/engine/inline_measure_tests.rs  # pre-existing at spec 98 
 crates/pii-server/src/engine/registry.rs  # pre-existing at spec 98 seed  # 3
 crates/pii-server/src/engine/runs.rs  # pre-existing at spec 98 seed  # 2
 crates/pii-web/src/main.rs  # pre-existing at spec 98 seed  # 8
+crates/pii-cli/src/cmd_sop.rs  # new CLI surface (spec 113): compile/show print the graph on stdout; usage and SOP refusals go to stderr  # 8

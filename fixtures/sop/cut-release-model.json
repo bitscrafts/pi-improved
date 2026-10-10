@@ -1,0 +1,6 @@
+{
+  "turns": [
+    { "text": "prepared: version bumped, changelog updated", "tokens_in": 1, "tokens_out": 1 },
+    { "text": "published: tag pushed", "tokens_in": 1, "tokens_out": 1 }
+  ]
+}

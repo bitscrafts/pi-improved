@@ -16,12 +16,13 @@ const RUN_USAGE: &str = "usage: pii graph run <file.toml> --db <path> [--run-id 
 const RESUME_USAGE: &str = "usage: pii graph resume <run_id> --db <path> [--allow-write <dir>]...";
 
 /// Shared flags for run/resume (spec F5.2/F5.4). `--input` defaults to `{}`.
-struct Common {
-    db: PathBuf,
-    run_id: Option<RunId>,
-    input: serde_json::Value,
-    allow_write: Vec<PathBuf>,
-    no_validate: bool,
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) struct Common {
+    pub(crate) db: PathBuf,
+    pub(crate) run_id: Option<RunId>,
+    pub(crate) input: serde_json::Value,
+    pub(crate) allow_write: Vec<PathBuf>,
+    pub(crate) no_validate: bool,
 }
 
 impl Common {
@@ -31,7 +32,8 @@ impl Common {
     /// # Errors
     /// Returns the usage exit code on an unknown flag, missing value, or
     /// invalid `--input` JSON.
-    fn parse(
+    #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+    pub(crate) fn parse(
         args: &mut dyn Iterator<Item = std::ffi::OsString>,
         usage: &str,
         allow_novalidate: bool,
@@ -177,7 +179,12 @@ fn load_and_validate(
 /// graph's declared caps are intersected per node inside the engine. The root
 /// budget is built from the graph's `limits` (pass-1 §3.5: budget checked
 /// before dispatch and after each node).
-fn root_ctx(allow_write: &[PathBuf], run: RunId, limits: &pii_graph::GraphLimits) -> Ctx {
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn root_ctx(
+    allow_write: &[PathBuf],
+    run: RunId,
+    limits: &pii_graph::GraphLimits,
+) -> Ctx {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     root_ctx_in(&cwd, allow_write, run, limits)
 }
@@ -230,7 +237,8 @@ fn root_ctx_in(
 }
 
 /// Prints the final `{"terminal":..}` line; maps to F5.3 exit codes.
-fn report(result: Result<Terminal, PiiError>) -> ExitCode {
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn report(result: Result<Terminal, PiiError>) -> ExitCode {
     match result {
         Ok(terminal) => {
             let body = serde_json::to_string(&terminal).unwrap_or_else(|_| "null".into());

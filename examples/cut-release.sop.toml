@@ -1,0 +1,41 @@
+# Worked example for spec 113: cut a release.
+# act -> check -> approve -> act -> notify. See _docs/02-guides/writing-an-sop.md.
+id = "cut-release"
+title = "Cut a release"
+# Authority comes from here and nowhere else: the compiled graph declares these
+# caps, and the run's Ctx attenuates them as usual.
+caps = ["fs_read", "fs_write", "proc"]
+
+[[step]]
+id = "prepare"
+kind = "act"
+prompt = "Bump the workspace version and update the changelog for the release."
+tools = ["fs_read"]
+max_turns = 4
+
+[[step]]
+id = "manifest-present"
+kind = "check"
+requires = ["prepare"]
+command = "test -f Cargo.toml && grep -q '^version' Cargo.toml"
+
+[[step]]
+id = "approve-tag"
+kind = "approve"
+requires = ["manifest-present"]
+prompt = "Tag the release and publish it?"
+
+[[step]]
+id = "publish"
+kind = "act"
+requires = ["approve-tag"]
+prompt = "Tag the release commit and push the tag."
+tools = ["fs_read"]
+max_turns = 4
+
+[[step]]
+id = "announce"
+kind = "notify"
+requires = ["publish"]
+message = "release cut and published"
+path = "_tmp/sop-cut-release-notify.log"

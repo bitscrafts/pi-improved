@@ -53,6 +53,9 @@ pub fn registry(
         }),
     }));
     reg.register(Arc::new(nodes::heal::HealRecordFactory { heals }));
+    reg.register(Arc::new(nodes::sop::SopFactory {
+        log: Arc::clone(&log),
+    }));
     reg.register(Arc::new(nodes::memory::MemoryFactory {
         store: memory,
         log,
@@ -82,7 +85,19 @@ pub fn registry(
 /// string that only exists in this checkout.
 #[must_use]
 pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
+    lint_registry_with_log(workspace, runtime_dir, Arc::new(pii_observe::NullObserver))
+}
+
+/// [`lint_registry`] whose `sop` nodes report to `log` — what `pii sop run`
+/// uses so a CLI run emits the `sop.step.*` events somewhere visible.
+#[must_use]
+pub fn lint_registry_with_log(
+    workspace: &std::path::Path,
+    runtime_dir: &std::path::Path,
+    log: Arc<dyn pii_observe::Observer>,
+) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
+    reg.register(Arc::new(nodes::sop::SopFactory { log }));
     reg.register(Arc::new(nodes::worker::WorkerFactory {
         pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<
             String,

@@ -116,6 +116,15 @@ pub const PROTO_HANDSHAKE_FAILED: &str = "proto.handshake.failed";
 /// Event: the client could not connect to a daemon socket (`endpoint`, `error`).
 pub const UDS_CONNECT_FAILED: &str = "uds.connect.failed";
 
+/// Event: an SOP step started (`sop`, `step`, `kind`).
+pub const SOP_STEP_STARTED: &str = "sop.step.started";
+/// Event: an SOP step finished (`sop`, `step`, `kind`).
+pub const SOP_STEP_FINISHED: &str = "sop.step.finished";
+/// Event: an SOP step failed and ended the run (`sop`, `step`, `kind`, `reason`).
+pub const SOP_STEP_FAILED: &str = "sop.step.failed";
+/// Event: an SOP approval step is waiting on a human (`sop`, `step`, `kind`, `approval`).
+pub const SOP_STEP_AWAITING_APPROVAL: &str = "sop.step.awaiting_approval";
+
 /// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
 pub const METRIC_RUNS: &str = "pii_runs";
 /// Metric (gauge): sessions in the main store.
@@ -191,6 +200,10 @@ pub const ALL: &[&str] = &[
     PROTO_HANDSHAKE_SKEW,
     PROTO_HANDSHAKE_FAILED,
     UDS_CONNECT_FAILED,
+    SOP_STEP_STARTED,
+    SOP_STEP_FINISHED,
+    SOP_STEP_FAILED,
+    SOP_STEP_AWAITING_APPROVAL,
     METRIC_RUNS,
     METRIC_SESSIONS,
     METRIC_APPROVALS_PENDING,
@@ -214,6 +227,18 @@ mod tests {
         for n in ALL {
             assert!(!n.is_empty(), "empty name in registry");
             assert!(seen.insert(*n), "duplicate name {n}");
+        }
+    }
+
+    #[test]
+    fn the_sop_step_events_are_registered() {
+        for n in [
+            "sop.step.started",
+            "sop.step.finished",
+            "sop.step.failed",
+            "sop.step.awaiting_approval",
+        ] {
+            assert!(ALL.contains(&n), "{n} missing from ALL");
         }
     }
 

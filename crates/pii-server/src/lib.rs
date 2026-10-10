@@ -14,7 +14,7 @@ pub mod daemon;
 pub mod engine;
 pub mod node_kinds;
 
-pub use engine::registry::{lint_registry, registry};
+pub use engine::registry::{lint_registry, lint_registry_with_log, registry};
 
 /// Default cap on `session_runs` entries retained per session (D3/D6, 026
 /// report 5.0.4) when a caller does not set `EngineConfig.session_runs_cap`
