@@ -99,3 +99,9 @@ a naming imprecision, filed rather than smoothed.
 run verified 111's tree, not 112's. I ran it again on 112's committed HEAD (below) — that is the check that
 counts.
 
+### The fresh-gate criterion CLOSED (2026-10-10, orchestrator, on 112's own HEAD)
+`fresh-gate --worktree` on `28f8ff8`: `quality-gate: ALL PASS`, `fresh-gate: PASS`, exit 0, 76G free. This is
+the run that counts — the worker's own `fresh-gate: PASS` exported HEAD and therefore tested 111's tree, a
+distinction worth remembering every time a worker claims it: **fresh-gate exports the committed HEAD, so a
+worker that cannot commit cannot have verified its own work with it.** 112: 9/9.
+
