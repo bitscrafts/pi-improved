@@ -102,3 +102,7 @@ reservation. `parking_lot` is already a workspace dependency used by six other c
 a new external crate, and it is justified by the fix; but the report did not mention it, and a dependency change
 that nobody states is exactly what this lane asks to be stated. Accepted with the note.
 
+### The fresh-gate criterion CLOSED (2026-10-10, plain form, on 116's own HEAD)
+`fresh-gate` (exactly HEAD `f20203a`): **`quality-gate: ALL PASS` · `fresh-gate: PASS`**, exit 0, 58G free — with
+spec 117's worker already editing the tree beside it. **116: 8/8.**
+
