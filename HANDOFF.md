@@ -2,6 +2,20 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## CURRENT STATE — 2026-10-11: the autonomy loop closed its first item (A2 / spec 133)
+
+- `9fc7f9f` **spec 133 — the quarantine test waits on the event it asserts** (059 F3/Q7). Exit criteria 4/4
+  and `fresh-gate --worktree` green on the tree the worker left; the orchestrator's own mutation (the
+  059 §2.2 probe: 300 ms sleep after the broadcast in `refuse_start`) gives **10 of 10 green** on the fix and
+  **3 of 3 red** on the pre-fix test shape, both restored byte-identical (`sha256sum` verified). Closure,
+  evidence and the mutation are in `specs/133-quarantine-test-waits-on-the-event.md`.
+- `a86e85c` **autonomy — the plan's A2 row named a commit path that does not exist** (`pii.toml`, in no
+  tree). `git add` aborted with `fatal: pathspec 'pii.toml' did not match any files` (`OUTCOME=add-failed`)
+  after a green gate, and the item stayed `needs-review` — so every cycle would have re-resumed the same
+  session and billed it again. Row fixed; the item is `done`, and the next pick is A3 / spec 134.
+- The loop itself: `scripts/autonomy/{tick,cycle,probe,control,selftest}.sh`; queue `scripts/autonomy/plan.tsv`;
+  state `_tmp/autonomy/state.json`; one log per cycle in `_tmp/autonomy/logs/`.
+
 **ONE COMMAND when the amem intervention finishes:** `bash /root/.hermes/scripts/pii-review-run.sh` (`DRY_RUN=1` in front to check without spending). It probes the quota window, runs the review in test mode on the resumed session, proves read-only, then files the report into _docs + amem and writes a commit summary. Nothing else needs to be assembled.
 
 > **2026-09-28 — ⚠ THE claude+opus FULL REVIEW OF THIS REPO HAS NOT RUN YET.** Both attempts today were blocked

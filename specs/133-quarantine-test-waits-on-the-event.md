@@ -77,5 +77,41 @@ moves the fuse.
 
 ## Closure
 
-(outcome, evidence, the orchestrator's own mutation, and the 10-of-10 control — filled in when this item is
-closed; the cycle commits the code, the closure section is written by the orchestrator.)
+**Outcome: closed 2026-10-11 — the test waits on the event it asserts; the fix is real under the 059 probe.**
+
+What landed: `crates/pii-server/src/daemon/mod.rs` — `refusals_seen(at_least)`, a bounded poll of
+`rec.events()` (bound `EVENT_POLLS = 6000` × 10 ms = the same 60 s ceiling as `finished()`, stated as a
+constant with its reason), used for **both** the `find` and the final count assertion (R1, R3). No assertion
+was relaxed: the refusal is still found, its `error` field still carries the exact text, and the count is
+still asserted to be exactly 1 (R2). No sleep was added as the mechanism and no bound was raised (R4).
+
+Evidence, all run on the tree the worker left (commit `9fc7f9f`):
+
+| check (the spec's own Exit Criteria) | result |
+|---|---|
+| `cargo test -p pii-server --lib` | rc=0 — `test result: ok. 117 passed; 0 failed; 1 ignored` |
+| `cargo test -p pii-server --lib daemon::tests::a_quarantined` | rc=0 — `1 passed; 0 failed` |
+| `cargo clippy -p pii-server --all-targets -- -D warnings` | rc=0 |
+| the wait helper is used for both the find and the count | `mod.rs:734 refusals_seen(1)` (find) and `mod.rs:759 refusals_seen(1)` (count) |
+
+**The orchestrator's own mutation (059 §2.2's probe), not the worker's word.** A 300 ms
+`std::thread::sleep` inserted after the broadcast in `refuse_start`
+(`crates/pii-server/src/engine/runs.rs:204`, the exact repro of 059 §2.2):
+
+- **CONTROL, pre-registered: 10 of 10 green** with the fixed test and the probe in place (`green=10 red=0`).
+- **REDDEN: 3 of 3 red** with the SAME probe and the test returned to its pre-fix shape (wait on the store
+  status, read the events once): `panicked at crates/pii-server/src/daemon/mod.rs:738:14: run.start.refused`.
+  The redden is also the control that the probe bites — a probe that changed nothing would have left the
+  pre-fix shape green.
+
+Both files were restored byte-identical afterwards (`sha256sum` before/after:
+`mod.rs 43e22b8c…511c9`, `runs.rs f296af07…20a6`), and the tree is clean at `9fc7f9f`.
+
+**The loop could not commit this item, and that was a defect in the loop, not in the work.** The cycle
+reached `fresh-gate PASS` at 16:16:31Z and then died at `git add`: this plan row listed `pii.toml` among its
+commit paths, a file that exists nowhere in the tree, so `git add` aborted with
+`fatal: pathspec 'pii.toml' did not match any files` (`OUTCOME=add-failed`) and the item stayed
+`needs-review` — a state in which the next cycle would have re-dispatched the same session, and billed it
+again, forever. Fixed in `a86e85c` (the row now lists `crates;Cargo.lock;scripts/autonomy`; it was the only
+row with the phantom path).
+
