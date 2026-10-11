@@ -82,4 +82,5 @@ messaging gateway with one performant, local-first, modular system.
 - `041-BRIEF-full-review.md` — the brief for the full opus review of this repo (derives from `031`/`032`)
 - **Consolidated (2026-09-28):** `002` now carries passes 1+3 · `012` carries `008`+`009` · `026` carries `010`+`011` · `037` carries `035`+`036` · `014` carries `004`+`017` (absorbed verbatim as `## [merged]` sections; originals in `99-archive/06-research-merged-2026-09-28/`).
 - [`_docs/06-research/045-opus-rereview-2026-10-09.md`](06-research/045-opus-rereview-2026-10-09.md) — the claude+opus RE-REVIEW (2026-10-09): batches A-D judged by behaviour,
+- [`059-opus-vision-judgement-2026-10-11.md`](06-research/059-opus-vision-judgement-2026-10-11.md) — **Opus judgement: does the tree deliver the vision?** (provenance header; nothing in it is authorised work): the machine runs month-old binaries, one pillar has a real user, every pillar works by hand, and the brief's premises were corrected by measurement
   with the two findings the orchestrator reproduced independently.
