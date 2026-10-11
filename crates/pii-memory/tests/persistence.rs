@@ -22,8 +22,21 @@ fn tmp_root() -> PathBuf {
     root
 }
 
+/// A store path **this invocation owns**.
+///
+/// A fixed path (`phase3/persist-test.redb`) meant two concurrent runs of this binary — a developer's
+/// `cargo test` and a gate run overlap all the time, and a dispatched worker's test run counts as one
+/// — opened the same redb, and whichever came second died at the reopen with
+/// `Database already open. Cannot acquire lock`. Reproduced **3 of 3** concurrent rounds on
+/// 2026-10-11, and the trigger for intermittent gate failures that looked like a flake. Per the repo
+/// rule, a test creates the scratch it uses.
 fn db() -> PathBuf {
-    tmp_root().join("phase3/persist-test.redb")
+    // The pid alone is enough: a concurrent run is always another process, and only one test in this
+    // binary uses this path. (Not wall-clock time — `clippy.toml` forbids `SystemTime::now`; time comes
+    // from `pii_core::Clock`, and a clock is the wrong tool for a uniqueness key anyway.)
+    let dir = tmp_root().join(format!("phase3/persist-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create this invocation's scratch dir");
+    dir.join("persist-test.redb")
 }
 
 fn put(store: &MemStore, text: &str) {
@@ -53,7 +66,6 @@ fn put(store: &MemStore, text: &str) {
 
 #[test]
 fn vector_lane_survives_restart() {
-    let _ = std::fs::remove_file(db());
     let store = MemStore::open(db().as_path()).unwrap();
     for i in 0..100 {
         put(
