@@ -19,8 +19,9 @@ STATE = os.path.join(ROOT, "_tmp", "autonomy", "state.json")
 
 
 def rows():
+    plan = os.environ.get("PII_PLAN") or os.path.join(ROOT, "scripts", "autonomy", "plan.tsv")
     out = []
-    for line in open(os.path.join(ROOT, "scripts", "autonomy", "plan.tsv")):
+    for line in open(plan):
         line = line.rstrip("\n")
         if not line or line.startswith("#"):
             continue

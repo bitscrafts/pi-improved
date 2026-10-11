@@ -7,6 +7,7 @@
 # fallback and then timed out at 90 s — a provider dependency on the critical path, in the wrong account.
 #
 # It does nothing when there is nothing to do: paused, a cycle in flight, or a closed window all mean silence.
+. "$(dirname "$(readlink -f "$0")")/env.sh"   # the loop needs PATH set inside the script
 set -uo pipefail
 cd /projects/pi-improved || { echo "pii autonomy: cannot cd to the project"; exit 1; }
 ST=_tmp/autonomy; LOGD=$ST/logs; mkdir -p "$LOGD"
@@ -49,7 +50,11 @@ and stop — waiting costs nothing, retrying blindly costs a window. Commits car
 Your final answer is one short paragraph: what you did, what you found, and what the next tick should do.
 EOF
 
-stdbuf -oL -eL claude -p "$(cat "$BRIEF")" --allowedTools 'Read,Grep,Glob,Bash,Edit,Write' \
+# the SKILL file is loaded as an appended system prompt: the cron run is driven by the skill itself, not by a
+# paraphrase of it (the user's requirement: "corra a skill via cronjob")
+SKILL=/root/.hermes/skills/pii/pii-autonomy/SKILL.md
+SKILLARG=(); [ -f "$SKILL" ] && SKILLARG=(--append-system-prompt-file "$SKILL")
+stdbuf -oL -eL claude -p "$(cat "$BRIEF")" "${SKILLARG[@]}" --allowedTools 'Read,Grep,Glob,Bash,Edit,Write' \
   --permission-mode bypassPermissions --max-turns 60 >"$LOG" 2>&1
 RC=$?
 SID=$(python3 - "$LOG" <<'PY' 2>/dev/null || true
