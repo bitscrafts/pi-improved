@@ -1,8 +1,8 @@
 //! `DiscordChannel` (F6.3): HTTP(S) against a Discord-API-compatible endpoint.
 //!
 //! TLS is available now: the transport the daemon wires in (`pii-net`
-//! `NetService`) handles `https://` URLs (rustls, spec 17), so the default
-//! `DEFAULT_API_BASE` below works as-is; `PII_DISCORD_API_BASE` may point at
+//! `NetService`) handles `https://` URLs (rustls, spec 17); the default
+//! `DEFAULT_API_BASE` below is the real API (`discord.com/api/v10`); `PII_DISCORD_API_BASE` may point at
 //! either scheme (tests point it at a plaintext loopback fake).
 
 use std::sync::Arc;
@@ -13,9 +13,15 @@ use serde::Deserialize;
 
 use crate::{Channel, Incoming};
 
-/// Default Discord API base (https works: pii-net's TLS landed in spec 17;
-/// tests point this at a loopback fake).
-pub const DEFAULT_API_BASE: &str = "https://api.discord.com";
+mod forum;
+
+/// Default Discord API base: the versioned REST API on `discord.com`.
+///
+/// (`api.discord.com` does not
+/// resolve, so the earlier default could never reach Discord.) Every request URL is
+/// `{base}/channels/{id}...`: poll, plain send, the forum shape probe (which also reads the tags)
+/// and the thread create. Override with `PII_DISCORD_API_BASE`; tests point it at a loopback fake.
+pub const DEFAULT_API_BASE: &str = "https://discord.com/api/v10";
 
 /// One message as Discord's API shapes it.
 #[derive(Debug, Deserialize)]
@@ -40,6 +46,10 @@ pub struct DiscordChannel {
     token: String,
     channel_id: String,
     timeout_ms: u64,
+    /// Tag name a forum post carries when the caller gave none (`PII_DISCORD_FORUM_TAG`).
+    forum_tag: String,
+    /// Channel shapes already probed, each valid for [`forum::SHAPE_TTL`].
+    shapes: forum::ShapeCache,
 }
 
 impl DiscordChannel {
@@ -62,6 +72,10 @@ impl DiscordChannel {
             token,
             channel_id,
             timeout_ms: 10_000,
+            forum_tag: pii_core::env_var("PII_DISCORD_FORUM_TAG")
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| String::from(forum::DEFAULT_FORUM_TAG)),
+            shapes: forum::ShapeCache::default(),
         })
     }
 
@@ -94,6 +108,10 @@ impl Channel for DiscordChannel {
 
     fn kind(&self) -> &'static str {
         "discord"
+    }
+
+    fn egress_hosts(&self) -> Vec<String> {
+        crate::url_target(&self.base).into_iter().collect()
     }
 
     fn poll(&self, ctx: &Ctx, cursor: Option<u64>) -> Result<Vec<Incoming>, PiiError> {
@@ -133,35 +151,60 @@ impl Channel for DiscordChannel {
     }
 
     fn send(&self, ctx: &Ctx, to: &str, text: &str) -> Result<(), PiiError> {
+        self.send_tagged(ctx, to, text, None)
+    }
+
+    fn send_tagged(
+        &self,
+        ctx: &Ctx,
+        to: &str,
+        text: &str,
+        tag: Option<&str>,
+    ) -> Result<(), PiiError> {
+        // A forum takes threads, not messages: ask Discord which this is (spec 132 R1).
+        match self.shape_of(ctx, to)? {
+            forum::Shape::Text => self.send_message(ctx, to, text),
+            forum::Shape::Forum(tags) => self.send_forum_post(ctx, to, text, tag, &tags),
+        }
+    }
+}
+
+impl DiscordChannel {
+    fn json_headers(&self) -> Vec<(String, String)> {
+        vec![
+            self.auth_header(),
+            (
+                String::from("Content-Type"),
+                String::from("application/json"),
+            ),
+        ]
+    }
+
+    /// The provider's refusal as an error: Discord says *why* in the body (`50013 Missing
+    /// Permissions`); a bare status would swallow it. Bounded, and the token scrubbed.
+    fn refusal(&self, what: &str, resp: &pii_abi::HttpResponse) -> PiiError {
+        let body = String::from_utf8_lossy(&resp.body);
+        let why: String = crate::scrub(body.trim(), &self.token)
+            .chars()
+            .take(300)
+            .collect();
+        let sep = if why.is_empty() { "" } else { ": " };
+        PiiError::Unavailable(format!("discord: {what} status {}{sep}{why}", resp.status))
+    }
+
+    fn send_message(&self, ctx: &Ctx, to: &str, text: &str) -> Result<(), PiiError> {
         let body = serde_json::to_vec(&serde_json::json!({ "content": text }))
             .map_err(|e| PiiError::Internal(format!("discord: encode: {e}")))?;
         let req = HttpRequest {
             method: HttpMethod::Post,
             url: format!("{}/channels/{to}/messages", self.base),
-            headers: vec![
-                self.auth_header(),
-                (
-                    String::from("Content-Type"),
-                    String::from("application/json"),
-                ),
-            ],
+            headers: self.json_headers(),
             body,
             timeout_ms: self.timeout_ms,
         };
         let resp = self.transport.request(ctx, &req)?;
         if !resp.is_success() {
-            // Spec 128 R1c: Discord says *why* in the body (`50013 Missing Permissions`);
-            // a bare status would swallow it. Bounded, and the token scrubbed.
-            let body = String::from_utf8_lossy(&resp.body);
-            let why: String = crate::scrub(body.trim(), &self.token)
-                .chars()
-                .take(300)
-                .collect();
-            let sep = if why.is_empty() { "" } else { ": " };
-            return Err(PiiError::Unavailable(format!(
-                "discord: send status {}{sep}{why}",
-                resp.status
-            )));
+            return Err(self.refusal("send", &resp));
         }
         Ok(())
     }
@@ -214,6 +257,14 @@ mod tests {
 
     impl pii_core::HttpTransport for FakeTransport {
         fn request(&self, _ctx: &Ctx, req: &HttpRequest) -> Result<HttpResponse, PiiError> {
+            // The shape probe (`GET /channels/{id}`) answers "text channel".
+            if req.method == pii_abi::HttpMethod::Get && !req.url.contains("/messages") {
+                return Ok(HttpResponse {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: br#"{"type":0}"#.to_vec(),
+                });
+            }
             *self.last.lock() = Some(req.clone());
             self.resp.clone()
         }
@@ -233,6 +284,8 @@ mod tests {
             token: String::from("tok"),
             channel_id: String::from("ch1"),
             timeout_ms: 10_000,
+            forum_tag: String::from("chat"),
+            shapes: super::forum::ShapeCache::default(),
         }
     }
 
@@ -244,6 +297,29 @@ mod tests {
             })
             .collect();
         serde_json::to_vec(&arr).unwrap()
+    }
+
+    /// Pin (spec 132): the old default, `api.discord.com`, does not resolve, so no URL built from it
+    /// ever reached Discord while every fake-base test passed.
+    #[test]
+    fn the_default_base_is_the_real_discord_api() {
+        assert_eq!(super::DEFAULT_API_BASE, "https://discord.com/api/v10");
+        let mut ch = channel(FakeTransport::ok(Vec::new()));
+        ch.base = super::DEFAULT_API_BASE.to_owned();
+        let url = ch.messages_url(None);
+        assert!(
+            url.starts_with("https://discord.com/api/v10/channels/"),
+            "{url}"
+        );
+    }
+
+    #[test]
+    fn egress_follows_the_configured_base() {
+        let mut ch = channel(FakeTransport::ok(Vec::new()));
+        ch.base = super::DEFAULT_API_BASE.to_owned();
+        assert_eq!(ch.egress_hosts(), vec![String::from("discord.com:443")]);
+        ch.base = String::from("http://127.0.0.1:9000");
+        assert_eq!(ch.egress_hosts(), vec![String::from("127.0.0.1:9000")]);
     }
 
     #[test]

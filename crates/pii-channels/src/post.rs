@@ -41,6 +41,8 @@ pub struct PostRequest<'a> {
     pub text: &'a str,
     /// Idempotence key: a second post with the same `(channel, to, key)` is suppressed.
     pub key: Option<&'a str>,
+    /// Per-post tag name (a forum channel resolves it by name; others ignore it).
+    pub tag: Option<&'a str>,
     /// Per-call bound; the call returns `Timeout` when the channel is slower.
     pub timeout_ms: u64,
 }
@@ -169,11 +171,12 @@ impl ChannelHub {
             return Ok(PostOutcome::Duplicate);
         }
         let (to, text) = (req.to.to_owned(), req.text.to_owned());
+        let tag = req.tag.map(str::to_owned);
         let (tx, rx) = std::sync::mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name(String::from("channel-post"))
             .spawn(move || {
-                let _ = tx.send(channel.send(&ctx, &to, &text));
+                let _ = tx.send(channel.send_tagged(&ctx, &to, &text, tag.as_deref()));
             });
         if let Err(e) = spawned {
             self.release(key.as_deref());
@@ -300,6 +303,7 @@ mod tests {
             to,
             text,
             key,
+            tag: None,
             timeout_ms: 2000,
         }
     }

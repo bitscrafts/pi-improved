@@ -136,6 +136,10 @@ impl Channel for TelegramChannel {
         "telegram"
     }
 
+    fn egress_hosts(&self) -> Vec<String> {
+        crate::url_target(&self.base).into_iter().collect()
+    }
+
     fn health_issue(&self) -> Option<String> {
         if self.token.is_none() {
             return Some(String::from("token missing"));

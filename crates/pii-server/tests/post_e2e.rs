@@ -443,3 +443,69 @@ async fn live_discord_post() {
     println!("LIVE run {rid}: {run}\n{trace}");
     assert_eq!(run["status"], "succeeded", "{run}\n{trace}");
 }
+
+/// Live (spec 132): needs `PII_DISCORD_TOKEN`, `PII_DISCORD_CHANNEL_ID` and `PII_DISCORD_FORUM` (a forum
+/// the bot may post into; its tag comes from `PII_DISCORD_FORUM_TAG`, default `chat`). Creates one real
+/// thread. Never part of the gate.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "posts to real Discord: needs PII_DISCORD_TOKEN, PII_DISCORD_CHANNEL_ID, PII_DISCORD_FORUM"]
+async fn live_discord_forum_post() {
+    let forum = pii_core::env_var("PII_DISCORD_FORUM").expect("PII_DISCORD_FORUM");
+    let dir = scratch("post-forum-live-");
+    let cfg = "[[channel]]\nname = \"discord\"\nkind = \"discord\"\ngraph = \"discord-triage\"\n";
+    let (d, _log) = daemon_in(dir.path(), cfg);
+    std::fs::write(
+        dir.path().join("graphs/live.toml"),
+        "name = \"live\"\nentry = \"p\"\ncaps = [\"post\"]\n[[node]]\nid = \"p\"\nkind = \"post\"\nchannel = \"discord\"\nto = \"$.input.to\"\ntext = \"pii spec 132 live forum post\"\n",
+    )
+    .unwrap();
+    let (rid, run, trace) = run_graph(&d.engine, "live", serde_json::json!({"to": forum})).await;
+    println!("LIVE run {rid}: {run}\n{trace}");
+    assert_eq!(run["status"], "succeeded", "{run}\n{trace}");
+}
+
+/// Spec 132, on the production path: the egress a channel declares reaches the daemon's
+/// `NetService` grants for that channel's principal — and only that host, only that principal.
+/// (The channel's own `Ctx` caps were never what the network layer checked; its `GrantStore` is.)
+#[test]
+fn a_channel_may_dial_the_host_it_declares_and_no_other() {
+    use pii_abi::{HttpMethod, HttpRequest, PiiError};
+    use pii_core::{
+        Budget, BudgetShare, CapKind, CapSet, Ctx, HostScope, HttpTransport, Principal,
+    };
+
+    let dir = scratch("channel-egress-");
+    // No `[net] grants` at all: the only grant a channel can have is the one it declares.
+    let cfg = "[[channel]]\nname = \"tg\"\nkind = \"telegram\"\ngraph = \"discord-triage\"\n\
+               base_url = \"http://203.0.113.5:8080\"\n";
+    let (d, _log) = daemon_in(dir.path(), cfg);
+    let mut caps = CapSet::empty();
+    caps.kinds = CapKind::NET;
+    caps.net_hosts = HostScope::new(vec![String::new()]);
+    let as_principal = |p: Principal| {
+        Ctx::root(caps.clone(), Budget::unlimited()).child(p, &caps, &BudgetShare::Shared)
+    };
+    let get = |url: &str| HttpRequest {
+        method: HttpMethod::Get,
+        url: url.to_owned(),
+        headers: Vec::new(),
+        body: Vec::new(),
+        timeout_ms: 300,
+    };
+    let tg = as_principal(Principal::Channel(String::from("tg")));
+    let denied =
+        |r: Result<_, PiiError>| matches!(r, Err(PiiError::Denied(m)) if m.contains("grant"));
+    assert!(
+        !denied(d.ctx.net.request(&tg, &get("http://203.0.113.5:8080/x"))),
+        "the declared host is granted"
+    );
+    assert!(
+        denied(d.ctx.net.request(&tg, &get("http://203.0.113.6:8080/x"))),
+        "another host is not"
+    );
+    let other = as_principal(Principal::Channel(String::from("other")));
+    assert!(
+        denied(d.ctx.net.request(&other, &get("http://203.0.113.5:8080/x"))),
+        "another principal does not inherit it"
+    );
+}

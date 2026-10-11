@@ -131,6 +131,14 @@ impl Channel for MatrixChannel {
         "matrix"
     }
 
+    fn egress_hosts(&self) -> Vec<String> {
+        self.base
+            .as_deref()
+            .and_then(crate::url_target)
+            .into_iter()
+            .collect()
+    }
+
     fn health_issue(&self) -> Option<String> {
         self.missing()
             .map(str::to_owned)

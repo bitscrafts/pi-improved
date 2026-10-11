@@ -63,6 +63,10 @@ impl Channel for ObservedChannel {
         self.inner.health_issue()
     }
 
+    fn egress_hosts(&self) -> Vec<String> {
+        self.inner.egress_hosts()
+    }
+
     fn counters(&self) -> Option<crate::ChannelCounters> {
         self.inner.counters()
     }
@@ -79,7 +83,17 @@ impl Channel for ObservedChannel {
     }
 
     fn send(&self, ctx: &Ctx, to: &str, text: &str) -> Result<(), PiiError> {
-        let result = self.inner.send(ctx, to, text);
+        self.send_tagged(ctx, to, text, None)
+    }
+
+    fn send_tagged(
+        &self,
+        ctx: &Ctx,
+        to: &str,
+        text: &str,
+        tag: Option<&str>,
+    ) -> Result<(), PiiError> {
+        let result = self.inner.send_tagged(ctx, to, text, tag);
         if let Err(e) = &result {
             self.failure(names::CHANNEL_SEND_FAILED, e);
         }

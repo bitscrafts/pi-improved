@@ -19,6 +19,27 @@ pub mod secret;
 pub mod telegram;
 pub mod webhook;
 
+#[cfg(test)]
+mod tests {
+    use super::url_target;
+
+    #[test]
+    fn url_target_is_host_and_port() {
+        let t = |u| url_target(u);
+        assert_eq!(
+            t("https://discord.com/api/v10").as_deref(),
+            Some("discord.com:443")
+        );
+        assert_eq!(
+            t("http://127.0.0.1:8080/x?y").as_deref(),
+            Some("127.0.0.1:8080")
+        );
+        assert_eq!(t("http://u:p@h.test/").as_deref(), Some("h.test:80"));
+        assert_eq!(t("nonsense"), None);
+        assert_eq!(t("https:///x"), None);
+    }
+}
+
 use pii_abi::PiiError;
 use pii_core::Ctx;
 
@@ -68,6 +89,27 @@ pub trait Channel: Send + Sync {
     /// # Errors
     /// [`PiiError::Unavailable`] on a transient failure.
     fn send(&self, ctx: &Ctx, to: &str, text: &str) -> Result<(), PiiError>;
+    /// [`Channel::send`] with an optional per-post `tag` (spec 132). A channel with no notion of
+    /// tags ignores it, which is this default.
+    ///
+    /// # Errors
+    /// As [`Channel::send`].
+    fn send_tagged(
+        &self,
+        ctx: &Ctx,
+        to: &str,
+        text: &str,
+        tag: Option<&str>,
+    ) -> Result<(), PiiError> {
+        let _ = tag;
+        self.send(ctx, to, text)
+    }
+    /// The `host:port` targets this channel dials, for its egress grant (spec 132; the channel
+    /// analogue of a model provider's `egress_host`). Empty = no network: the daemon grants no
+    /// host, so a channel that forgets to declare one fails closed.
+    fn egress_hosts(&self) -> Vec<String> {
+        Vec::new()
+    }
     /// Why this channel cannot work right now (missing token, credential
     /// rejected, ...), or `None` when healthy. A `Some` is reported as
     /// `Degraded` by the daemon's health (spec 112 R6). Never contains a secret.
@@ -78,6 +120,25 @@ pub trait Channel: Send + Sync {
     fn counters(&self) -> Option<ChannelCounters> {
         None
     }
+}
+
+/// The `host:port` an HTTP(S) `url` dials (`https` defaults to 443, `http` to 80); userinfo, path
+/// and query are dropped. `None` when `url` has no scheme or host.
+#[must_use]
+pub fn url_target(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let authority = authority.rsplit('@').next().unwrap_or_default();
+    let port = match scheme {
+        "https" => 443,
+        "http" => 80,
+        _ => return None,
+    };
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((h, p)) if !p.contains(']') => (h, p.parse::<u16>().ok()?),
+        _ => (authority, port),
+    };
+    (!host.is_empty()).then(|| format!("{host}:{port}"))
 }
 
 /// Message prefix that marks a credential rejection (see [`auth_rejected`]).

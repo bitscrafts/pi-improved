@@ -177,6 +177,15 @@ impl Channel for WebhookChannel {
         "webhook"
     }
 
+    fn egress_hosts(&self) -> Vec<String> {
+        self.cfg
+            .out_url
+            .as_deref()
+            .and_then(crate::url_target)
+            .into_iter()
+            .collect()
+    }
+
     fn health_issue(&self) -> Option<String> {
         (!self.cfg.loopback && self.cfg.secret.is_none()).then(|| {
             String::from("secret missing on a non-loopback bind; every request is refused")

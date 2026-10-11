@@ -616,8 +616,12 @@ impl Config {
 /// no per-principal partitioning — `pii-net`'s own suite covers isolation
 /// at the policy-engine level.
 pub struct ConfigGrants {
+    patterns: Vec<String>,
     connect: pii_net::grant::HostScope,
     allow_private: bool,
+    /// Spec 132: hosts a channel declared (`Channel::egress_hosts`), granted to that channel's
+    /// principal alone, on top of `[net] grants`.
+    declared: parking_lot::Mutex<BTreeMap<String, Vec<String>>>,
 }
 
 impl ConfigGrants {
@@ -627,14 +631,37 @@ impl ConfigGrants {
     /// [`PiiError::Invalid`] for a malformed host pattern.
     pub fn from_section(net: &NetSection) -> Result<Self, PiiError> {
         Ok(Self {
+            patterns: net.grants.clone(),
             connect: pii_net::grant::HostScope::parse_all(&net.grants)?,
             allow_private: net.allow_private,
+            declared: parking_lot::Mutex::default(),
         })
     }
 
+    /// Grants `hosts` (`host:port`) to `principal` only. An empty list grants nothing.
+    ///
+    /// # Errors
+    /// [`PiiError::Invalid`] for a malformed host pattern.
+    pub fn allow_declared(&self, principal: &str, hosts: &[String]) -> Result<(), PiiError> {
+        if hosts.is_empty() {
+            return Ok(());
+        }
+        pii_net::grant::HostScope::parse_all(hosts)?;
+        self.declared
+            .lock()
+            .entry(principal.to_owned())
+            .or_default()
+            .extend(hosts.iter().cloned());
+        Ok(())
+    }
+
     fn one_grant(&self) -> pii_net::grant::NetGrant {
+        self.grant_with(&self.connect)
+    }
+
+    fn grant_with(&self, connect: &pii_net::grant::HostScope) -> pii_net::grant::NetGrant {
         pii_net::grant::NetGrant {
-            connect: self.connect.clone(),
+            connect: connect.clone(),
             allow_private: self.allow_private,
             max_conns: 64,
             max_bytes_out: 16 * 1024 * 1024,
@@ -645,8 +672,17 @@ impl ConfigGrants {
 }
 
 impl pii_net::grant::GrantStore for ConfigGrants {
-    fn grant(&self, _principal: &str, _key: &str) -> Option<pii_net::grant::NetGrant> {
-        Some(self.one_grant())
+    fn grant(&self, principal: &str, _key: &str) -> Option<pii_net::grant::NetGrant> {
+        let declared = self.declared.lock().get(principal).cloned();
+        let Some(extra) = declared else {
+            return Some(self.one_grant());
+        };
+        let all: Vec<String> = self.patterns.iter().cloned().chain(extra).collect();
+        // Every pattern was validated when it was added, so this parse cannot fail; if it ever
+        // did, the config-only grant is the safe answer.
+        let scope =
+            pii_net::grant::HostScope::parse_all(&all).unwrap_or_else(|_| self.connect.clone());
+        Some(self.grant_with(&scope))
     }
 
     fn all(&self) -> Vec<(String, String, pii_net::grant::NetGrant)> {

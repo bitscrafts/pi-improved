@@ -5,7 +5,7 @@
 //! `$.`-expression), and exactly one of `text` (literal or `$.`-expression) or `template`
 //! (`${path}` substitution, paths as in `$.` expressions plus `${run}`). Optional `key`
 //! (idempotence: a retried step that already delivered posts nothing; may use `${…}`),
-//! `timeout_ms` (default 5000, max 30000) and `max_bytes` (default 1900, max 2000: longer text
+//! `tag` (a forum channel's tag, by name; ignored by other channels), `timeout_ms` (default 5000, max 30000) and `max_bytes` (default 1900, max 2000: longer text
 //! is cut and says so). The node needs the `post` capability on the graph **and** the node.
 //!
 //! No `err` port: a refusal or provider failure fails the node with the channel's own
@@ -36,6 +36,7 @@ struct PostNode {
     text: Option<Value>,
     template: Option<String>,
     key: Option<String>,
+    tag: Option<String>,
     timeout_ms: u64,
     max_bytes: usize,
 }
@@ -132,6 +133,7 @@ impl PostNode {
             to: &to,
             text: &text,
             key: key.as_deref(),
+            tag: self.tag.as_deref(),
             timeout_ms: self.timeout_ms,
         })?;
         let duplicate = outcome == PostOutcome::Duplicate;
@@ -239,6 +241,7 @@ impl NodeFactory for PostFactory {
             text,
             template,
             key,
+            tag: str_of("tag")?,
             timeout_ms,
             max_bytes,
         }))
@@ -265,6 +268,7 @@ mod tests {
 
     struct Mock {
         delivered: Mutex<Vec<(String, String)>>,
+        tags: Mutex<Vec<Option<String>>>,
         fail: AtomicU64,
     }
 
@@ -277,6 +281,16 @@ mod tests {
         }
         fn poll(&self, _: &Ctx, _: Option<u64>) -> Result<Vec<Incoming>, PiiError> {
             Ok(Vec::new())
+        }
+        fn send_tagged(
+            &self,
+            c: &Ctx,
+            to: &str,
+            text: &str,
+            tag: Option<&str>,
+        ) -> Result<(), PiiError> {
+            self.tags.lock().push(tag.map(str::to_owned));
+            self.send(c, to, text)
         }
         fn send(&self, _: &Ctx, to: &str, text: &str) -> Result<(), PiiError> {
             if self.fail.load(Ordering::SeqCst) > 0 {
@@ -300,6 +314,7 @@ mod tests {
     fn rig(cfg: &Value, fail: u64) -> Rig {
         let mock = Arc::new(Mock {
             delivered: Mutex::new(Vec::new()),
+            tags: Mutex::new(Vec::new()),
             fail: AtomicU64::new(fail),
         });
         let hub = Arc::new(ChannelHub::default());
@@ -405,6 +420,18 @@ mod tests {
                 .to_string()
                 .contains("50013")
         );
+    }
+
+    #[test]
+    fn the_post_node_forwards_its_tag() {
+        let mut c = cfg();
+        c["tag"] = json!("status");
+        let r = rig(&c, 0);
+        r.node.run(&ctx(CapKind::POST), &input()).unwrap();
+        assert_eq!(*r.mock.tags.lock(), vec![Some(String::from("status"))]);
+        let r = rig(&cfg(), 0);
+        r.node.run(&ctx(CapKind::POST), &input()).unwrap();
+        assert_eq!(*r.mock.tags.lock(), vec![None]);
     }
 
     #[test]

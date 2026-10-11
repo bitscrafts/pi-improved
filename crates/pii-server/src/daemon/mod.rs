@@ -83,10 +83,10 @@ impl Daemon {
         config_path: PathBuf,
         clock: Arc<dyn pii_core::Clock>,
     ) -> Result<Arc<Self>, PiiError> {
-        let grants = config::ConfigGrants::from_section(&cfg.net)?;
+        let grants = Arc::new(config::ConfigGrants::from_section(&cfg.net)?);
         let net = Arc::new(pii_net::NetService::new(pii_net::NetConfig {
             resolver: Arc::new(pii_net::SystemResolver),
-            grants: Arc::new(grants),
+            grants: Arc::clone(&grants) as pii_net::grant::Grants,
             clock: Arc::clone(&clock),
         }));
         net.set_observer(engine.log());
@@ -95,7 +95,7 @@ impl Daemon {
 
         let mut channels = BTreeMap::new();
         for c in &cfg.channel {
-            let channel = build_channel(c, &net, runtime_dir, &engine)?;
+            let channel = build_channel(c, &net, &grants, runtime_dir, &engine)?;
             channels.insert(
                 c.name.clone(),
                 ChannelRuntime {
@@ -320,6 +320,7 @@ fn start_workers(
 fn build_channel(
     c: &config::ChannelSection,
     net: &Arc<pii_net::NetService>,
+    grants: &config::ConfigGrants,
     runtime_dir: &Path,
     engine: &Engine,
 ) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
@@ -341,10 +342,16 @@ fn build_channel(
     let channel: Arc<dyn pii_channels::Channel> =
         Arc::new(pii_channels::observe::ObservedChannel::new(inner, log));
     // Spec 128: the `post` node reaches the channel through the hub, with the router's own context.
-    engine.channel_hub.insert(
-        Arc::clone(&channel),
-        router::channel_ctx(&resolve_channels_scope(runtime_dir)?, &c.name),
+    // The channel's own context says what it may do; the egress itself is allowed by the net
+    // grant, which is what the network layer checks (spec 132): the channel's declared hosts,
+    // for the channel's principal only. A channel that declares none gets none.
+    let rctx = router::channel_ctx(
+        &resolve_channels_scope(runtime_dir)?,
+        &c.name,
+        &channel.egress_hosts(),
     );
+    grants.allow_declared(&rctx.principal_str(), &channel.egress_hosts())?;
+    engine.channel_hub.insert(Arc::clone(&channel), rctx);
     Ok(channel)
 }
 

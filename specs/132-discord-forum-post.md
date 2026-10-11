@@ -102,3 +102,46 @@ between them.
 - Do NOT break 128's idempotence: the thread path must honour the same key.
 - Do NOT add a dependency for HTTP or JSON; the seam and `serde_json` are already there.
 - Do NOT touch `specs/`.
+
+## Closure (2026-10-11) — the live proof failed three times, each for a real pre-existing reason
+
+The mock tests were green from the first implementation. The live run against the user's forum failed three
+times, and every failure was a defect the mocks could not see:
+
+1. **`api.discord.com` does not resolve.** `DEFAULT_API_BASE` pointed at a host that does not exist (since a
+   phase-3 checkpoint), so neither `send` nor `poll` could ever reach Discord. Fixed to
+   `https://discord.com/api/v10` and **pinned by a test** (`the_default_base_is_the_real_discord_api`).
+2. **The channel's egress grant was never read by the network layer.** `channel_ctx` set `Caps.net_hosts`, and
+   the unit tests asserted it — but the dial-time decision comes from **`pii-net`'s own grant store**
+   (`ConfigGrants`, built from `[net] grants`), which had nothing for the channel principal. So the caps were a
+   value nothing on the live path consulted: `capability denied: net: target 'discord.com:443' not in grant scope`
+   with every test green. The daemon now registers the channel's declared hosts for that principal
+   (`ConfigGrants::allow_declared`), and a principal that declares nothing still gets exactly the config grant —
+   **fail-closed**.
+3. The graph's grant is untouched throughout: the graph grants `post` (intent); the **channel principal** carries
+   the egress scope. That separation is what stops a graph from gaining the network.
+
+**Live proof (orchestrator, real forum, token read at runtime and never printed):**
+
+```
+LIVE run r000000000001  status succeeded
+node p finished: {"bytes":28,"channel":"discord","to":"1558589728671146105","duplicate":false}
+NEW THREAD 1558696818995372134 | tags: ["1558593520950976588"]   ← the `chat` tag
+  content: "pii spec 132 live forum post"
+delete http=200   ← the test thread removed; nothing left on the phone
+```
+
+**My mutations (independent of the worker's):**
+- a failed shape probe cached as `Text` → `a_failed_probe_is_a_refusal_not_a_plain_message_and_is_not_cached`
+  reddens (`left: Post · right: Get`) — the 50008 bug it prevents;
+- `allow_declared` registering nothing → `a_channel_may_dial_the_host_it_declares_and_no_other` reddens
+  ("the declared host is granted"). Both restored byte-identical.
+
+**Verified:** `pii-channels` 13 + 12 + 2 · `pii-server --lib` 117 · `post_e2e` 6 passed / 2 ignored · four repo
+checks rc 0 (`deps`, `net`, `doc-drift`, `lint-observability` 0 findings).
+
+**Limits, stated:** the worker's real-path grant test uses a **telegram** channel (a Discord channel needs token
+env vars), so the Discord host specifically rests on the unit-tested `egress_hosts` plus the live run above;
+`channel_ctx` still sets the hosts on the `Ctx` caps even though the dial check reads the grant store — kept
+because it is the correct shape for that layer, and named here rather than left implicit.
+

@@ -49,7 +49,11 @@ pub fn spawn_all(
         .collect()
 }
 
-pub(crate) fn channel_ctx(channels_scope: &std::path::Path, name: &str) -> Ctx {
+pub(crate) fn channel_ctx(
+    channels_scope: &std::path::Path,
+    name: &str,
+    egress_hosts: &[String],
+) -> Ctx {
     // The channel needs NET (Discord) AND FS (the cli channel's inbox/
     // outbox files are read/written through Ctx::fs). Capability denial is
     // enforced by Ctx::fs/ctx.net; the router grants both.
@@ -58,11 +62,16 @@ pub(crate) fn channel_ctx(channels_scope: &std::path::Path, name: &str) -> Ctx {
     // derived from the daemon's resolved runtime dir (`channels_scope`,
     // set in `daemon/mod.rs::Daemon::build` from `resolve_runtime_dir`),
     // never a hardcoded literal.
+    //
+    // Spec 132: the net hosts are exactly what the channel declares through
+    // `Channel::egress_hosts`; a channel that declares none can dial nothing.
+    let hosts = pii_core::HostScope::new(egress_hosts.to_vec());
     let scope = channels_scope.join(name);
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::NET | CapKind::FS_READ | CapKind::FS_WRITE;
     caps.fs_read = PathScope::new(vec![scope.clone()]);
     caps.fs_write = PathScope::new(vec![scope.clone()]);
+    caps.net_hosts = hosts.clone();
     Ctx::with_observer(
         caps,
         Budget::unlimited(),
@@ -79,6 +88,7 @@ pub(crate) fn channel_ctx(channels_scope: &std::path::Path, name: &str) -> Ctx {
             c.kinds = CapKind::NET | CapKind::FS_READ | CapKind::FS_WRITE;
             c.fs_read = PathScope::new(vec![scope.clone()]);
             c.fs_write = PathScope::new(vec![scope]);
+            c.net_hosts = hosts;
             c
         },
         &pii_core::BudgetShare::Shared,
@@ -95,7 +105,7 @@ fn poll_once(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, name: &str) {
         return;
     };
     let cursor = ctx.channel_store.get(name).ok().flatten().map(|c| c.cursor);
-    let rctx = channel_ctx(&ctx.channels_scope, name);
+    let rctx = channel_ctx(&ctx.channels_scope, name, &channel.egress_hosts());
     let Ok(incoming) = channel.poll(&rctx, cursor) else {
         let _ = ctx.channel_store.record_error(name);
         return;
@@ -144,7 +154,7 @@ pub fn reply(ctx: &Arc<DaemonContext>, channel: &str, chat: &str, text: &str) {
     else {
         return;
     };
-    let rctx = channel_ctx(&ctx.channels_scope, channel);
+    let rctx = channel_ctx(&ctx.channels_scope, channel, &c.egress_hosts());
     if c.send(&rctx, chat, text).is_err() {
         let _ = c.send(&rctx, chat, text);
     }
@@ -176,7 +186,7 @@ mod tests {
         let channels_scope = root_path.join("channels");
         std::fs::create_dir_all(&channels_scope).expect("mkdir channels_scope");
 
-        let rctx = channel_ctx(&channels_scope, "cli-test");
+        let rctx = channel_ctx(&channels_scope, "cli-test", &[]);
 
         // Inside: <channels_scope>/cli-test/inbox.jsonl -> Allowed.
         let inside = channels_scope.join("cli-test").join("inbox.jsonl");
@@ -194,6 +204,29 @@ mod tests {
             matches!(denied_result, Err(pii_abi::PiiError::Denied(_))),
             "path outside the configured channel scope must be Denied: {denied_result:?}"
         );
+    }
+
+    /// Spec 132: the grant is exactly what the channel declares. Discord's real API is reachable,
+    /// a near-miss host is not, and a channel that declares nothing (`cli`) can dial nothing.
+    #[test]
+    fn channel_ctx_grants_exactly_the_declared_hosts() {
+        use pii_channels::Channel;
+        let scope = std::path::Path::new("/nonexistent-channels");
+        let discord = channel_ctx(scope, "d", &[String::from("discord.com:443")]);
+        let hosts = &discord.caps().net_hosts;
+        assert!(hosts.permits("discord.com:443"));
+        assert!(!hosts.permits("discord.com.evil.test:443"), "near miss");
+        assert!(!hosts.permits("api.telegram.org:443"));
+
+        let cli = pii_channels::cli::CliChannel::new(
+            String::from("c"),
+            scope.join("in"),
+            scope.join("out"),
+        );
+        assert!(cli.egress_hosts().is_empty());
+        let rctx = channel_ctx(scope, "c", &cli.egress_hosts());
+        assert!(!rctx.caps().net_hosts.permits("discord.com:443"));
+        assert!(!rctx.caps().net_hosts.permits(""));
     }
 
     // ---- poll_on_blocking_thread (TDD: poll must not starve tokio) ----
