@@ -15,6 +15,7 @@ cd /projects/pi-improved || exit 1
 T=$(mktemp -d /projects/_tmp/autonomy-selftest-XXXXXX)
 # the selftest must not collide with a live cycle: its own lock file (and its own state, via PII_PLAN rows)
 export PII_LOCK=$T/selftest.lock
+export TICK_DRY=1   # a test must never start a real cycle (it did once, and it bought spec 135 by accident)
 BIN=$T/bin; mkdir -p "$BIN"
 PASS=0; FAIL=0
 row(){ # row <name> <expected> <actual>
@@ -43,7 +44,7 @@ PATH=$BIN:$PATH bash scripts/autonomy/probe.sh >/dev/null 2>&1; row "a real erro
 fake x 'echo "{\"type\":\"result\",\"result\":\"PONG55\",\"modelUsage\":{\"claude-opus-5-5\":{}}}"'
 
 echo "== 3. one cycle at a time (the lock)"
-flock -n /projects/pi-improved/_tmp/autonomy/lock -c 'sleep 3' &
+flock -n "$PII_LOCK" -c 'sleep 3' &
 sleep 0.5
 bash scripts/autonomy/cycle.sh >/dev/null 2>&1; row "a held lock -> 5 (nothing done)" 5 $?
 wait

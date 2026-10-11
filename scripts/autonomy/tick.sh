@@ -64,6 +64,12 @@ if [ -f "$Q" ] && grep -q '^- \[ \]' "$Q"; then
   say_once "$KEY" "pii autonomy · $OPEN open question(s) for you:" "$(grep '^- \[ \]' "$Q" | head -3 | sed 's/^- \[ \] //' | cut -c1-160)"
 fi
 
+# 2c) TICK_DRY=1: say what would start, and start nothing (the selftest uses this; a test must never buy work)
+if [ -n "${TICK_DRY:-}" ]; then
+  echo "pii autonomy · dry: would start ${NEXT:-the next pending item}"
+  exit 0
+fi
+
 # 3) start exactly one cycle, detached
 setsid nohup bash scripts/autonomy/cycle.sh >>"$LOGD/cycle-last-detached.log" 2>&1 </dev/null &
 sleep 2
