@@ -9,7 +9,6 @@ use std::path::{Component, Path, PathBuf};
 use super::types::{
     LedgerEntry, Metric, Outcome, Promotion, PromotionKind, PromotionState, PromotionStatus,
 };
-use crate::scan::RunSummary;
 use crate::store::{StoreError, area, read_small, write_atomic};
 
 const MAX_PROMOTIONS: usize = 10_000;
@@ -195,38 +194,21 @@ pub(super) fn refused_total(dir: &Path) -> u64 {
     read_status(dir).refused_by_reason.values().sum()
 }
 
-/// Failed runs of `graph` whose trajectory was last written in
-/// `[from, to)` (epoch seconds).
-fn failed_in(runs: &[RunSummary], graph: &str, from: u64, to: u64) -> u64 {
-    runs.iter()
-        .filter(|r| {
-            r.graph == graph && r.verdict == "failure" && r.mtime_secs >= from && r.mtime_secs < to
-        })
-        .count() as u64
-}
-
-/// Measures `p`'s metric over its window and the window before it (R5).
+/// Measures `p`'s metric (R5, spec 139).
+///
+/// `after` is 1 when the graph's definition hash now (`current`) differs from
+/// the one captured at apply time, else 0. An unobservable definition (`None`)
+/// is unmet, never met.
 #[must_use]
-pub fn measure(p: &Promotion, runs: &[RunSummary]) -> Outcome {
-    let (before, after) = match p.metric {
-        Metric::GraphFailedRuns => (
-            failed_in(
-                runs,
-                &p.graph,
-                p.applied_secs.saturating_sub(p.window_secs),
-                p.applied_secs,
-            ),
-            failed_in(
-                runs,
-                &p.graph,
-                p.applied_secs,
-                p.applied_secs.saturating_add(p.window_secs),
-            ),
-        ),
+pub fn measure(p: &Promotion, current: Option<&str>) -> Outcome {
+    let changed = match p.metric {
+        Metric::GraphDefinitionChanged => {
+            current.is_some() && current != p.definition_at_apply.as_deref()
+        }
     };
     Outcome {
-        before,
-        after,
-        improved: after < before,
+        before: 0,
+        after: u64::from(changed),
+        improved: changed,
     }
 }

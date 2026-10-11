@@ -18,7 +18,6 @@ use parking_lot::{Mutex, MutexGuard};
 
 use pii_observe::{Event, Level, Observer, names};
 
-use crate::scan::RunSummary;
 use crate::store::{self, StoreError};
 use crate::verdict::{Verdict, get_verdict};
 use storage::{append_ledger, read_status, save, status_path};
@@ -46,11 +45,15 @@ fn writer() -> MutexGuard<'static, ()> {
     WRITER.lock()
 }
 
+/// Resolves a graph name to the hash of its current definition (spec 139).
+pub type DefinitionHash = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 /// Applies, reverts, expires and evaluates promotions under one store dir.
 pub struct Promoter {
     dir: PathBuf,
     cfg: PromoteConfig,
     obs: Arc<dyn Observer>,
+    defs: Option<DefinitionHash>,
 }
 
 impl Promoter {
@@ -61,7 +64,20 @@ impl Promoter {
             dir: dir.into(),
             cfg,
             obs,
+            defs: None,
         }
+    }
+
+    /// Lets this promoter see graph definitions (spec 139). Without it a
+    /// definition is never observed, so its metric can only read unmet.
+    #[must_use]
+    pub fn with_definitions(mut self, defs: DefinitionHash) -> Self {
+        self.defs = Some(defs);
+        self
+    }
+
+    fn definition_of(&self, graph: &str) -> Option<String> {
+        self.defs.as_ref().and_then(|f| f(graph))
     }
 
     fn refuse(&self, req: &PromoteRequest, reason: Refusal, message: String, now: u64) -> Refused {
@@ -168,7 +184,7 @@ impl Promoter {
         let Some(metric) = req.metric.as_deref().and_then(Metric::parse) else {
             return no(
                 Refusal::Unmeasurable,
-                "no known metric declared (use --metric graph_failed_runs)".into(),
+                "no known metric declared (use --metric graph_definition_changed)".into(),
             );
         };
         let window = req.window_secs.unwrap_or(0);
@@ -181,6 +197,15 @@ impl Promoter {
         let ttl = req.ttl_secs.unwrap_or(self.cfg.ttl_secs);
         if ttl == 0 {
             return no(Refusal::BadTtl, "ttl must be greater than zero".into());
+        }
+        // Spec 139: a change is only counted within the TTL, so the window must fit in it.
+        if window > ttl {
+            return no(
+                Refusal::Unmeasurable,
+                format!(
+                    "window {window}s exceeds ttl {ttl}s: the change is measured within the ttl"
+                ),
+            );
         }
         let Some(graph) = kind.target(&cand) else {
             return no(
@@ -220,6 +245,7 @@ impl Promoter {
             expires_secs: now.saturating_add(ttl),
             metric,
             window_secs: window,
+            definition_at_apply: self.definition_of(&graph),
             outcome: None,
             ended_secs: None,
             decision: format!(
@@ -339,27 +365,17 @@ impl Promoter {
 
     /// One lifecycle pass: lapses promotions past their TTL and evaluates those
     /// whose window has closed, reverting any that did not improve the metric.
-    /// `load_runs` is called at most once, and only when an evaluation is due.
     /// Returns `(promotion id, new state)` for each one that changed.
-    pub fn sweep(
-        &self,
-        now: u64,
-        load_runs: impl FnOnce() -> Vec<RunSummary>,
-    ) -> Vec<(String, PromotionState)> {
+    pub fn sweep(&self, now: u64) -> Vec<(String, PromotionState)> {
         let _w = writer();
         let mut changed = Vec::new();
-        let mut runs: Option<Vec<RunSummary>> = None;
-        let mut load = Some(load_runs);
         for mut p in list_promotions(&self.dir) {
             if p.state != PromotionState::Active {
                 continue;
             }
             let due = now >= p.applied_secs.saturating_add(p.window_secs);
             if p.outcome.is_none() && due {
-                if runs.is_none() {
-                    runs = load.take().map(|f| f());
-                }
-                let o = measure(&p, runs.as_deref().unwrap_or(&[]));
+                let o = measure(&p, self.definition_of(&p.graph).as_deref());
                 let improved = o.improved;
                 p.outcome = Some(o.clone());
                 let verdict = format!(

@@ -99,7 +99,7 @@ fn promote_graph(dir: &std::path::Path, graph: &str) -> Promotion {
                 candidate: c.id,
                 kind: String::from("quarantine_graph"),
                 actor: String::from("test"),
-                metric: Some(String::from("graph_failed_runs")),
+                metric: Some(String::from("graph_definition_changed")),
                 window_secs: Some(3_600),
                 ttl_secs: None,
             },

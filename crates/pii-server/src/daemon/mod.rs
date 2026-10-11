@@ -8,6 +8,7 @@ pub mod approvals;
 pub mod config;
 pub mod identity;
 mod lag;
+mod learn_loop;
 #[cfg(test)]
 mod learn_rpc_tests;
 #[cfg(test)]
@@ -34,9 +35,6 @@ use pii_proto::event::{Event, WireTerminal};
 use crate::Engine;
 use status::{ChannelRuntime, CronEntry, DaemonContext};
 
-/// How often the daemon advances the promotion lifecycle (spec 125).
-const PROMOTION_SWEEP_SECS: u64 = 5;
-
 /// Attaches the daemon context to `engine`, and (spec 125) records the
 /// trajectory root the promotion lifecycle measures outcomes against.
 fn attach_ctx(engine: &Engine, ctx: &Arc<DaemonContext>, cfg: &config::Config) {
@@ -57,6 +55,8 @@ pub struct Daemon {
     pub ctx: Arc<DaemonContext>,
     /// The timer scheduler.
     pub scheduler: Arc<scheduler::Scheduler>,
+    /// Period of the unattended learn pass (spec 139); `None` = off.
+    learn_interval: Option<std::time::Duration>,
 }
 
 impl Daemon {
@@ -68,6 +68,8 @@ impl Daemon {
     /// # Errors
     /// A malformed host pattern, an unknown channel kind, a missing
     /// Discord env var, or a store-open failure.
+    // reason: one linear wiring sequence; splitting would only hide the order.
+    #[allow(clippy::too_many_lines)]
     pub fn build(
         engine: Arc<Engine>,
         cfg: &config::Config,
@@ -170,6 +172,7 @@ impl Daemon {
             engine,
             ctx,
             scheduler,
+            learn_interval: cfg.core.learn_interval(),
         }))
     }
 
@@ -208,27 +211,24 @@ impl Daemon {
         handles.extend(router::spawn_all(&self.engine, &self.ctx));
         handles.push(self.spawn_reactive_loop());
         handles.push(self.spawn_promotion_loop());
+        handles.extend(self.spawn_learn_loop());
         handles
     }
 
-    /// Spec 125 R4/R5: every [`PROMOTION_SWEEP_SECS`] lapse promotions past
-    /// their TTL and evaluate those whose window has closed (reverting any that
-    /// did not improve their metric). The blocking work runs off the runtime.
+    /// Spec 125 R4/R5: the promotion lifecycle sweep (see [`learn_loop::spawn_promotion`]).
     fn spawn_promotion_loop(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
-        let engine = Arc::clone(&self.engine);
-        let dir = self.ctx.runtime_dir.clone();
-        tokio::spawn(async move {
-            let mut tick =
-                tokio::time::interval(std::time::Duration::from_secs(PROMOTION_SWEEP_SECS));
-            loop {
-                tick.tick().await;
-                let (e, d) = (Arc::clone(&engine), dir.clone());
-                let _ = tokio::task::spawn_blocking(move || {
-                    crate::engine::learn_methods::promotion_sweep(&e, &d)
-                })
-                .await;
-            }
-        })
+        learn_loop::spawn_promotion(Arc::clone(&self.engine), self.ctx.runtime_dir.clone())
+    }
+
+    /// Spec 139 R1: the unattended learn timer (see [`learn_loop`]).
+    fn spawn_learn_loop(self: &Arc<Self>) -> Option<tokio::task::JoinHandle<()>> {
+        let period = self.learn_interval?;
+        self.engine.learn_traj_root()?;
+        Some(learn_loop::spawn(
+            Arc::clone(&self.engine),
+            self.ctx.runtime_dir.clone(),
+            period,
+        ))
     }
 
     fn spawn_reactive_loop(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
@@ -679,7 +679,7 @@ mod tests {
                     candidate: c.id,
                     kind: String::from("quarantine_graph"),
                     actor: String::from("test"),
-                    metric: Some(String::from("graph_failed_runs")),
+                    metric: Some(String::from("graph_definition_changed")),
                     window_secs: Some(3_600),
                     ttl_secs: None,
                 },

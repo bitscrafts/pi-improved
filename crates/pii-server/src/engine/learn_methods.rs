@@ -43,8 +43,24 @@ fn store_dir(engine: &Arc<Engine>, req: &Request) -> Result<std::path::PathBuf, 
     Ok(own)
 }
 
-fn promoter(engine: &Arc<Engine>, dir: &Path) -> Promoter {
+/// The hash of `name`'s definition on disk (spec 139): the canonical JSON of the
+/// parsed graph, so a whitespace or comment edit is not a change; the raw bytes
+/// when it does not parse. `None` when there is no such graph file.
+fn definition_hash(graph_dir: &Path, name: &str) -> Option<String> {
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+        return None;
+    }
+    let src = std::fs::read_to_string(graph_dir.join(format!("{name}.toml"))).ok()?;
+    let body = pii_graph::toml_load::load_toml(&src)
+        .and_then(|s| s.to_json())
+        .unwrap_or_else(|_| src.into_bytes());
+    Some(blake3::hash(&body).to_hex().to_string())
+}
+
+fn promoter(engine: &Engine, dir: &Path) -> Promoter {
+    let graph_dir = engine.cfg.graph_dir.clone();
     Promoter::new(dir, PromoteConfig::default(), engine.log())
+        .with_definitions(Arc::new(move |g: &str| definition_hash(&graph_dir, g)))
 }
 
 fn str_param(req: &Request, key: &str) -> Option<String> {
@@ -130,17 +146,42 @@ pub(crate) fn learn_sweep(engine: &Arc<Engine>, req: &Request) -> Response {
     Response::ok(req.id.clone(), serde_json::json!({"changed": changed}))
 }
 
-/// One lifecycle pass over the promotions under `dir`. The trajectories are
-/// scanned only when an outcome window has actually closed.
+/// One lifecycle pass over the promotions under `dir`, now.
 pub(crate) fn promotion_sweep(
     engine: &Engine,
     dir: &Path,
 ) -> Vec<(String, pii_learn::PromotionState)> {
-    let root = engine.learn_traj_root();
-    let promoter = Promoter::new(dir, PromoteConfig::default(), engine.log());
-    promoter.sweep(learn_now_secs(), || {
-        root.and_then(|r| pii_learn::scan(&r, &pii_learn::LearnConfig::default()).ok())
-            .map(|(runs, _)| runs)
-            .unwrap_or_default()
-    })
+    promotion_sweep_at(engine, dir, learn_now_secs())
+}
+
+/// One lifecycle pass at `now`: lapses what is past its TTL and evaluates what
+/// has closed its window against the graphs' current definitions.
+pub(crate) fn promotion_sweep_at(
+    engine: &Engine,
+    dir: &Path,
+    now: u64,
+) -> Vec<(String, pii_learn::PromotionState)> {
+    promoter(engine, dir).sweep(now)
+}
+
+/// One unattended extraction + verification pass (spec 139 R1): what the daemon's
+/// learn timer runs. It proposes and verifies; it has no path to a promotion.
+///
+/// # Errors
+/// A message when no trajectory root is attached or the pass cannot complete.
+pub(crate) fn learn_unattended_pass(
+    engine: &Engine,
+    dir: &Path,
+) -> Result<pii_learn::UnattendedStatus, String> {
+    let root = engine
+        .learn_traj_root()
+        .ok_or_else(|| String::from("no trajectory root attached ([core].trajectory_dir)"))?;
+    let mut verify = pii_learn::VerifyConfig::new(root.clone(), engine.cfg.graph_dir.clone());
+    verify.scratch_dir = dir.join("scratch");
+    verify.protected.push(dir.to_path_buf());
+    let cfg = pii_learn::UnattendedConfig {
+        learn: pii_learn::LearnConfig::default(),
+        verify,
+    };
+    pii_learn::run_unattended(&root, dir, &cfg, &engine.log(), learn_now_secs())
 }

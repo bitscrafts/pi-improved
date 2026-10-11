@@ -56,6 +56,12 @@ pub struct CoreSection {
     /// Aggregate file-count bound on the trajectory directory (spec 115).
     /// Absent = 50 000.
     pub trajectory_max_files: Option<usize>,
+    /// Seconds between unattended extraction + verification passes (spec 139).
+    /// Needs a trajectory root. Absent = [`DEFAULT_LEARN_INTERVAL_SECS`] (daily);
+    /// `0` = off. The pass proposes and verifies only: promotion stays a human
+    /// act, and the loop's pre-registered decision rule is in
+    /// `_docs/02-guides/learning-loop.md` (14 days, `pii metrics`).
+    pub learn_interval_secs: Option<u64>,
     /// Daemon log file (spec 104): contract events as JSON lines. Overridden
     /// by `--log-file`. Absent = no log file.
     pub log_file: Option<String>,
@@ -86,6 +92,8 @@ pub struct LlamaSection {
 
 /// Default size at which the log file rotates (10 MiB).
 pub const DEFAULT_LOG_ROTATE_BYTES: u64 = 10 * 1024 * 1024;
+/// Default seconds between unattended learn passes: once a day (spec 139).
+pub const DEFAULT_LEARN_INTERVAL_SECS: u64 = 24 * 60 * 60;
 /// Default number of rotated log files kept.
 pub const DEFAULT_LOG_KEEP_FILES: usize = 5;
 
@@ -100,6 +108,15 @@ impl CoreSection {
             max_bytes: self.trajectory_max_bytes.filter(|n| *n > 0).or(d.max_bytes),
             max_files: self.trajectory_max_files.filter(|n| *n > 0).or(d.max_files),
         }
+    }
+
+    /// The unattended learn period (spec 139); `None` when switched off (`0`).
+    #[must_use]
+    pub fn learn_interval(&self) -> Option<std::time::Duration> {
+        let n = self
+            .learn_interval_secs
+            .unwrap_or(DEFAULT_LEARN_INTERVAL_SECS);
+        (n > 0).then(|| std::time::Duration::from_secs(n))
     }
 
     /// Resolves the effective `session_runs_cap` (D3/D6): the configured
@@ -743,6 +760,20 @@ mod tests {
             z.core.trajectory_retention(),
             pii_core::DEFAULT_TRAJECTORY_RETENTION
         );
+    }
+
+    #[test]
+    fn learn_interval_defaults_to_daily_zero_is_off_and_typos_fail() {
+        let day = std::time::Duration::from_secs(super::DEFAULT_LEARN_INTERVAL_SECS);
+        assert_eq!(Config::parse("").unwrap().core.learn_interval(), Some(day));
+        let off = Config::parse("[core]\nlearn_interval_secs = 0\n").unwrap();
+        assert_eq!(off.core.learn_interval(), None);
+        let hourly = Config::parse("[core]\nlearn_interval_secs = 3600\n").unwrap();
+        assert_eq!(
+            hourly.core.learn_interval(),
+            Some(std::time::Duration::from_hours(1))
+        );
+        assert!(Config::parse("[core]\nlearn_intervals = 1\n").is_err());
     }
 
     #[test]

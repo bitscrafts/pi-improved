@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use pii_learn::{
     Candidate, Evidence, Kind, LedgerEntry, Metric, PromoteConfig, PromoteRequest, Promoter,
-    Promotion, PromotionKind, PromotionRefusal, PromotionState, RunSummary, Verdict, VerdictRecord,
+    Promotion, PromotionKind, PromotionRefusal, PromotionState, Verdict, VerdictRecord,
     get_promotion, ledger_tail, list_promotions, promotion_counts, quarantine_reason, store,
     write_scoped,
 };
@@ -73,12 +73,19 @@ fn promoter(dir: &Path) -> (Promoter, Arc<Recorder>) {
     )
 }
 
+/// A promoter whose view of every graph's definition is `defs` (None = no such graph).
+fn promoter_seeing(dir: &Path, defs: &Arc<parking_lot::Mutex<Option<String>>>) -> Promoter {
+    let defs = Arc::clone(defs);
+    Promoter::new(dir, PromoteConfig::default(), Arc::new(Recorder::new()))
+        .with_definitions(Arc::new(move |_graph: &str| defs.lock().clone()))
+}
+
 fn req(c: &Candidate) -> PromoteRequest {
     PromoteRequest {
         candidate: c.id.clone(),
         kind: "quarantine_graph".into(),
         actor: "test:operator".into(),
-        metric: Some("graph_failed_runs".into()),
+        metric: Some("graph_definition_changed".into()),
         window_secs: Some(100),
         ttl_secs: None,
     }
@@ -86,16 +93,6 @@ fn req(c: &Candidate) -> PromoteRequest {
 
 fn refusal_of(dir: &Path, r: &PromoteRequest, now: u64) -> PromotionRefusal {
     promoter(dir).0.promote(r, now).unwrap_err().reason
-}
-
-fn run(graph: &str, verdict: &str, mtime: u64) -> RunSummary {
-    RunSummary {
-        run: format!("x{mtime}"),
-        graph: graph.into(),
-        verdict: verdict.into(),
-        mtime_secs: mtime,
-        ..RunSummary::default()
-    }
 }
 
 fn nothing_changed(dir: &Path) {
@@ -211,87 +208,85 @@ fn r4_revert_restores_the_graph_and_records_it() {
 #[test]
 fn r4_ttl_lapses_the_promotion_and_the_graph_is_usable_again() {
     let (d, c) = fixture("g", Some(Verdict::Confirmed));
-    let (p, rec) = promoter(d.path());
+    let defs = Arc::new(parking_lot::Mutex::new(Some("h1".to_owned())));
+    let p = promoter_seeing(d.path(), &defs);
     let mut r = req(&c);
     r.ttl_secs = Some(50);
-    r.window_secs = Some(1_000_000);
+    r.window_secs = Some(10);
     let a = p.promote(&r, T0).unwrap();
+    *defs.lock() = Some("h2".to_owned());
     assert!(quarantine_reason(d.path(), "g", T0 + 49).is_some());
     // Past the TTL the graph is usable even before any sweep has recorded it.
     assert_eq!(quarantine_reason(d.path(), "g", T0 + 50), None);
-    let changed = p.sweep(T0 + 60, Vec::new);
+    let changed = p.sweep(T0 + 60);
     assert_eq!(changed, vec![(a.id.clone(), PromotionState::Expired)]);
     assert_eq!(
         get_promotion(d.path(), &a.id).unwrap().state,
         PromotionState::Expired
     );
-    assert_eq!(ledger_tail(d.path(), 10)[1].event, "expired");
-    assert!(
-        rec.events()
-            .iter()
-            .any(|e| e.kind == names::LEARN_PROMOTION_EXPIRED)
-    );
+    // The kept outcome is recorded first, then the lapse.
+    assert_eq!(ledger_tail(d.path(), 10)[2].event, "expired");
 }
 
+/// Spec 139 R5(a): the control. A quarantine with NO definition change must read
+/// unmet — the quarantine alone cannot satisfy the metric (the old
+/// `graph_failed_runs` read 0 after any quarantine, so it was always met).
 #[test]
-fn r5_a_window_that_closes_without_improvement_reverts_automatically_with_both_numbers() {
+fn the_outcome_metric_can_read_unsatisfied() {
     let (d, c) = fixture("g", Some(Verdict::Confirmed));
-    let (p, rec) = promoter(d.path());
+    let defs = Arc::new(parking_lot::Mutex::new(Some("h1".to_owned())));
+    let p = promoter_seeing(d.path(), &defs);
     let a = p.promote(&req(&c), T0).unwrap();
-    // 1 failure before the promotion, 3 after it: worse.
-    let runs = vec![
-        run("g", "failure", T0 - 10),
-        run("g", "failure", T0 + 10),
-        run("g", "failure", T0 + 20),
-        run("g", "failure", T0 + 30),
-        run("other", "failure", T0 + 40),
-    ];
-    assert!(
-        p.sweep(T0 + 99, || runs.clone()).is_empty(),
-        "window still open"
-    );
+    assert_eq!(a.definition_at_apply.as_deref(), Some("h1"));
+    assert!(p.sweep(T0 + 99).is_empty(), "window still open");
     assert!(quarantine_reason(d.path(), "g", T0 + 99).is_some());
-    let changed = p.sweep(T0 + 100, || runs.clone());
+    // Quarantined, nothing else changed: the metric is unmet and it auto-reverts.
+    let changed = p.sweep(T0 + 100);
     assert_eq!(changed, vec![(a.id.clone(), PromotionState::AutoReverted)]);
     let s: Promotion = get_promotion(d.path(), &a.id).unwrap();
-    assert_eq!(s.state, PromotionState::AutoReverted);
     let o = s.outcome.unwrap();
-    assert_eq!((o.before, o.after, o.improved), (1, 3, false));
+    assert_eq!((o.before, o.after, o.improved), (0, 0, false));
     assert_eq!(quarantine_reason(d.path(), "g", T0 + 101), None);
     let l = ledger_tail(d.path(), 10);
     assert_eq!(l[1].event, "auto_reverted");
-    assert_eq!((l[1].before, l[1].after), (Some(1), Some(3)));
-    let ev = rec.events();
-    let e = ev
-        .iter()
-        .find(|e| e.kind == names::LEARN_PROMOTION_REVERTED)
-        .expect("reverted event");
-    assert!(e.fields.get("before").is_some() && e.fields.get("after").is_some());
+    assert_eq!((l[1].before, l[1].after), (Some(0), Some(0)));
 }
 
+/// Spec 139 R5(b): a new definition hash for the promoted graph within the TTL is met.
 #[test]
-fn r5_a_window_that_improves_keeps_the_promotion_and_records_the_numbers() {
+fn the_outcome_metric_reads_satisfied_after_a_definition_change() {
     let (d, c) = fixture("g", Some(Verdict::Confirmed));
-    let (p, _) = promoter(d.path());
+    let defs = Arc::new(parking_lot::Mutex::new(Some("h1".to_owned())));
+    let p = promoter_seeing(d.path(), &defs);
     let a = p.promote(&req(&c), T0).unwrap();
-    let runs = vec![run("g", "failure", T0 - 30), run("g", "failure", T0 - 20)];
-    assert!(p.sweep(T0 + 100, || runs.clone()).is_empty());
+    *defs.lock() = Some("h2".to_owned());
+    assert!(p.sweep(T0 + 100).is_empty());
     let s = get_promotion(d.path(), &a.id).unwrap();
     assert_eq!(s.state, PromotionState::Active);
     let o = s.outcome.unwrap();
-    assert_eq!((o.before, o.after, o.improved), (2, 0, true));
+    assert_eq!((o.before, o.after, o.improved), (0, 1, true));
     assert!(quarantine_reason(d.path(), "g", T0 + 101).is_some());
     assert_eq!(ledger_tail(d.path(), 10)[1].event, "outcome_kept");
 }
 
+/// A promoter that cannot see definitions never reads met (fail-safe), and a
+/// window longer than the TTL cannot be measured within it.
 #[test]
-fn r5_a_window_with_nothing_to_improve_is_not_a_win() {
+fn an_unobservable_definition_is_unmet_and_a_window_past_the_ttl_is_refused() {
     let (d, c) = fixture("g", Some(Verdict::Confirmed));
     let (p, _) = promoter(d.path());
     let a = p.promote(&req(&c), T0).unwrap();
-    // The graph was not failing in the window before: 0 -> 0 is not an improvement.
-    let changed = p.sweep(T0 + 100, Vec::new);
-    assert_eq!(changed, vec![(a.id, PromotionState::AutoReverted)]);
+    assert_eq!(
+        p.sweep(T0 + 100),
+        vec![(a.id, PromotionState::AutoReverted)]
+    );
+    let mut long = req(&c);
+    long.ttl_secs = Some(50);
+    long.window_secs = Some(51);
+    assert_eq!(
+        refusal_of(d.path(), &long, T0 + 200),
+        PromotionRefusal::Unmeasurable
+    );
 }
 
 #[test]
@@ -310,8 +305,13 @@ fn r5_an_unmeasurable_promotion_is_refused_at_apply_time() {
     }
     nothing_changed(d.path());
     assert_eq!(
+        Metric::parse("graph_definition_changed"),
+        Some(Metric::GraphDefinitionChanged)
+    );
+    assert_eq!(
         Metric::parse("graph_failed_runs"),
-        Some(Metric::GraphFailedRuns)
+        None,
+        "the tautology is gone"
     );
 }
 
@@ -453,7 +453,7 @@ fn concurrent_revert_and_sweep_do_not_duplicate_or_lose() {
             std::thread::spawn(move || {
                 gate.wait();
                 // Both windows are closed and nothing improved: it auto-reverts them.
-                p.sweep(T0 + 100, Vec::new);
+                p.sweep(T0 + 100);
             })
         };
         for h in [ra, rb, sweeper] {

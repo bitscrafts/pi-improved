@@ -164,6 +164,24 @@ fn render_verdicts(v: &serde_json::Value, out: &mut String) {
     }
 }
 
+/// The unattended loop's counters (spec 139); nothing before its first pass.
+/// Expected rate: a handful of distinct candidates in the first passes, then
+/// near-flat. A total still 0 after 14 days of passes is the pre-registered
+/// "the input does not exist" outcome (`_docs/02-guides/learning-loop.md`).
+fn render_unattended(v: &serde_json::Value, out: &mut String) {
+    let runs = num(v, "/counts/learn_unattended_runs");
+    if runs == 0 {
+        return;
+    }
+    let _ = writeln!(out, "{} {runs}", names::METRIC_LEARN_UNATTENDED_RUNS_TOTAL);
+    let _ = writeln!(
+        out,
+        "{} {}",
+        names::METRIC_LEARN_CANDIDATES_PROPOSED_TOTAL,
+        num(v, "/counts/learn_candidates_proposed")
+    );
+}
+
 /// Promotions by state and refusals (spec 125); nothing until one exists.
 fn render_promotions(v: &serde_json::Value, out: &mut String) {
     let Some(ps) = v
@@ -187,6 +205,7 @@ fn render_promotions(v: &serde_json::Value, out: &mut String) {
 fn render_learn(v: &serde_json::Value, out: &mut String) {
     render_verdicts(v, out);
     render_promotions(v, out);
+    render_unattended(v, out);
     let Some(kinds) = v
         .pointer("/counts/learn_candidates")
         .and_then(|o| o.as_object())
@@ -516,6 +535,21 @@ mod tests {
 
     /// Spec 125 R7: promotion counters render in the same place, after a
     /// promotion exists and not before.
+    #[test]
+    fn render_carries_the_unattended_counters_as_zero_once_a_pass_has_run() {
+        let ran = render(&serde_json::json!({
+            "counts": {"learn_unattended_runs": 14, "learn_candidates_proposed": 0}
+        }));
+        for want in [
+            "pii_learn_unattended_runs_total 14",
+            "pii_learn_candidates_proposed_total 0",
+        ] {
+            assert!(ran.contains(want), "{want} missing: {ran}");
+        }
+        let off = render(&serde_json::json!({"counts": {}}));
+        assert!(!off.contains("pii_learn_unattended"), "{off}");
+    }
+
     #[test]
     fn render_carries_learn_promotions_only_once_one_exists() {
         let on = render(&serde_json::json!({

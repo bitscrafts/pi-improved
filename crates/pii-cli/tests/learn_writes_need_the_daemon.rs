@@ -23,7 +23,7 @@ fn the_cli_refuses_to_write_the_ledger_without_the_daemon() {
             "promote",
             "c-0",
             "--metric",
-            "graph_failed_runs",
+            "graph_definition_changed",
             "--window-secs",
             "10",
             "--dir",

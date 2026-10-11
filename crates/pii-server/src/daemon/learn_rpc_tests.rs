@@ -19,7 +19,9 @@ use pii_proto::method::Method;
 use pii_proto::{Id, Request, Response};
 
 use super::tests::test_ctx;
-use crate::engine::learn_methods::{learn_promote, learn_revert};
+use crate::engine::learn_methods::{
+    learn_promote, learn_revert, learn_unattended_pass, promotion_sweep_at,
+};
 use crate::{Engine, EngineConfig};
 
 fn engine_in(dir: &std::path::Path) -> Arc<Engine> {
@@ -112,7 +114,7 @@ fn a_promotion_reads_back_after_a_restart() {
             Method::LearnPromote,
             serde_json::json!({
                 "candidate": c.id, "actor": "test:operator",
-                "metric": "graph_failed_runs", "window_secs": 100, "dir": dir,
+                "metric": "graph_definition_changed", "window_secs": 100, "dir": dir,
             }),
         ),
     );
@@ -158,7 +160,7 @@ fn a_request_for_another_store_is_refused_not_written_here() {
         &req(
             Method::LearnPromote,
             serde_json::json!({
-                "candidate": c.id, "actor": "x", "metric": "graph_failed_runs",
+                "candidate": c.id, "actor": "x", "metric": "graph_definition_changed",
                 "window_secs": 100, "dir": other.path(),
             }),
         ),
@@ -166,4 +168,110 @@ fn a_request_for_another_store_is_refused_not_written_here() {
     let e = r.error.expect("must be refused");
     assert!(e.message.contains("the daemon owns the ledger"), "{e:?}");
     assert!(ledger_tail(&dir, 10).is_empty(), "nothing was written");
+}
+
+const SICK_V1: &str = "name = \"sick\"\nentry = \"a\"\ncaps = []\n[[node]]\nid = \"a\"\nkind = \"transform\"\nexpr = \"$.input\"\n";
+
+/// Applies a quarantine on `sick` (its definition on disk is `SICK_V1`) and
+/// returns the engine, the dir and the promotion id.
+fn promoted_sick(tmp: &tempfile::TempDir) -> (Arc<Engine>, std::path::PathBuf, String) {
+    let dir = tmp.path().to_path_buf();
+    std::fs::write(dir.join("sick.toml"), SICK_V1).unwrap();
+    let c = confirmed_candidate(&dir);
+    let engine = engine_in(&dir);
+    let r = learn_promote(
+        &engine,
+        &req(
+            Method::LearnPromote,
+            serde_json::json!({
+                "candidate": c.id, "actor": "test:operator",
+                "metric": "graph_definition_changed", "window_secs": 100, "dir": dir,
+            }),
+        ),
+    );
+    let id = result(&r)["promotion"]["id"].as_str().unwrap().to_owned();
+    (engine, dir, id)
+}
+
+/// Spec 139 R2/R5(a) through the daemon's own resolver: quarantined, graph file
+/// untouched -> the window closes unmet and the promotion reverts itself.
+#[test]
+fn the_daemon_reads_an_untouched_graph_as_unsatisfied() {
+    let tmp = scratch();
+    let (engine, dir, id) = promoted_sick(&tmp);
+    let at = get_promotion(&dir, &id).unwrap().applied_secs;
+    assert!(
+        get_promotion(&dir, &id)
+            .unwrap()
+            .definition_at_apply
+            .is_some()
+    );
+    let changed = promotion_sweep_at(&engine, &dir, at + 100);
+    assert_eq!(changed, vec![(id, pii_learn::PromotionState::AutoReverted)]);
+}
+
+/// Spec 139 R5(b): edit the graph's definition inside the window -> met, kept.
+#[test]
+fn the_daemon_reads_an_edited_graph_as_satisfied() {
+    let tmp = scratch();
+    let (engine, dir, id) = promoted_sick(&tmp);
+    let at = get_promotion(&dir, &id).unwrap().applied_secs;
+    std::fs::write(
+        dir.join("sick.toml"),
+        SICK_V1.replace("$.input", "$.input.x"),
+    )
+    .unwrap();
+    assert!(promotion_sweep_at(&engine, &dir, at + 100).is_empty());
+    let p = get_promotion(&dir, &id).unwrap();
+    assert_eq!(p.state, pii_learn::PromotionState::Active);
+    assert!(p.outcome.unwrap().improved);
+}
+
+/// Spec 139 R5(c): the unattended trigger, driven without a human, counts the
+/// candidates and attempts no promotion.
+#[test]
+fn the_unattended_pass_runs_without_an_operator_and_never_promotes() {
+    let tmp = scratch();
+    let dir = tmp.path().to_path_buf();
+    let engine = engine_in(&dir);
+    let root = dir.join("traj");
+    std::fs::create_dir_all(root.join("trajectories")).unwrap();
+    for r in ["r1", "r2", "r3"] {
+        let l = |k: &str, f: serde_json::Value| {
+            serde_json::json!({"fields":f,"kind":k,"level":"info","run":r,"session":"","span":null,"subsystem":"graph"}).to_string()
+        };
+        let lines = [
+            l(
+                "run.journal",
+                serde_json::json!({"event":{"Started":{"graph":"g","input_hash":"h"}},"seq":0}),
+            ),
+            l(
+                "run.journal",
+                serde_json::json!({"event":{"NodeFailed":{"node":"fetch","error":"connection reset","retryable":false,"attempt":1}},"seq":1}),
+            ),
+            l(
+                "run.outcome",
+                serde_json::json!({"detail":"connection reset","reason":"terminal","verdict":"failure"}),
+            ),
+        ];
+        std::fs::write(
+            root.join("trajectories").join(format!("{r}.jsonl")),
+            lines.join("\n") + "\n",
+        )
+        .unwrap();
+    }
+    engine.attach_learn_traj_root(root);
+    let s = learn_unattended_pass(&engine, &dir).unwrap();
+    assert!(s.last_candidates >= 1 && s.candidates_proposed_total == s.last_candidates);
+    assert!(pii_learn::list_promotions(&dir).is_empty());
+    assert!(ledger_tail(&dir, 10).is_empty());
+}
+
+/// Without a trajectory root there is nothing to learn from: a named error, not a panic.
+#[test]
+fn the_unattended_pass_without_a_trajectory_root_says_so() {
+    let tmp = scratch();
+    let engine = engine_in(tmp.path());
+    let e = learn_unattended_pass(&engine, tmp.path()).unwrap_err();
+    assert!(e.contains("trajectory"), "{e}");
 }

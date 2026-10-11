@@ -214,6 +214,12 @@ pub struct Counts {
     /// Promotions by state (`active`, `reverted`, `expired`, `auto_reverted`) and `refused`; empty until one exists (spec 125).
     #[serde(default)]
     pub learn_promotions: BTreeMap<String, u64>,
+    /// Unattended learn passes completed (spec 139); 0 until the first.
+    #[serde(default)]
+    pub learn_unattended_runs: u64,
+    /// Distinct candidates the unattended loop has proposed, cumulative (spec 139).
+    #[serde(default)]
+    pub learn_candidates_proposed: u64,
     /// Entities in the memory graph (spec 126).
     #[serde(default)]
     pub memory_entities: u64,

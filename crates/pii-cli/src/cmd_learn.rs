@@ -25,7 +25,7 @@ const USAGE: &str = "usage: pii learn scan [--traj <root>] [--dir <store dir>] [
 pii learn show <id> [--dir <store dir>]\n       \
 pii learn verify {<id>|--all} [--traj <root>] [--dir <store dir>] [--graphs <dir>] [--max-runs N] [--run-ms N] \
 [--input <json>] [--scratch <dir>] [--protect <path>]...\n       \
-pii learn promote <candidate-id> --metric graph_failed_runs --window-secs N [--kind quarantine_graph] [--ttl-secs N] [--actor NAME] [--dir D]\n       \
+pii learn promote <candidate-id> --metric graph_definition_changed --window-secs N [--kind quarantine_graph] [--ttl-secs N] [--actor NAME] [--dir D]\n       \
 pii learn promotions [--sweep [--traj <root>]] [--dir D]\n       pii learn revert <promotion-id> [--actor NAME] [--dir D]\n       \
 pii learn ledger [--tail N] [--dir D]\n--traj defaults to $PII_TRAJECTORY_DIR; --dir to the runtime dir; \
 --graphs to <dir>/graphs; --max-runs 5; --run-ms 30000; --scratch to $PII_RUNTIME_DIR/scratch (else the pii-learn crate _tmp).";

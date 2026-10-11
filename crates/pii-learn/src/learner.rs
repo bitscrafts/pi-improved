@@ -125,6 +125,14 @@ impl LearnHealth {
 }
 
 impl LearnHealth {
+    /// The unattended loop's record, if it has run (spec 139).
+    #[must_use]
+    pub fn unattended(&self) -> Option<crate::unattended::UnattendedStatus> {
+        crate::unattended::read_unattended_status(&self.dir)
+    }
+}
+
+impl LearnHealth {
     /// Promotion counts by state plus `refused` (spec 125); all keys present.
     #[must_use]
     pub fn promotions(&self) -> BTreeMap<String, u64> {

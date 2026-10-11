@@ -228,6 +228,9 @@ pub const LEARN_CANDIDATE_REFUTED: &str = "learn.candidate_refuted";
 /// Event: a candidate could not be decided (`candidate`, `reason`, `bound`, `elapsed_ms`).
 pub const LEARN_CANDIDATE_INCONCLUSIVE: &str = "learn.candidate_inconclusive";
 
+/// Event: one unattended extraction + verification pass ended (`candidates`, `new_candidates`, `verified`, `total_proposed`). Emitted even when all are 0.
+pub const LEARN_UNATTENDED_RUN: &str = "learn.unattended_run";
+
 /// Event: a promotion took effect (`promotion`, `kind`, `graph`, `metric`, `window_secs`, `ttl_secs`, `ledger`).
 pub const LEARN_PROMOTION_APPLIED: &str = "learn.promotion_applied";
 /// Event: a promotion was taken back, by a person or automatically (`promotion`, `kind`, `graph`, `metric`, `state`, `ledger`, and `before`/`after` when measured).
@@ -300,6 +303,11 @@ pub const METRIC_WASM_REFUSALS_TOTAL: &str = "pii_wasm_refusals_total";
 pub const METRIC_LEARN_CANDIDATES: &str = "pii_learn_candidates";
 /// Metric (counter): candidates refused for missing evidence, across every scan (spec 123).
 pub const METRIC_LEARN_REFUSALS_TOTAL: &str = "pii_learn_refusals_total";
+
+/// Metric (counter): distinct candidates the unattended loop has proposed since it was enabled (spec 139).
+pub const METRIC_LEARN_CANDIDATES_PROPOSED_TOTAL: &str = "pii_learn_candidates_proposed_total";
+/// Metric (counter): unattended extraction + verification passes completed (spec 139).
+pub const METRIC_LEARN_UNATTENDED_RUNS_TOTAL: &str = "pii_learn_unattended_runs_total";
 
 /// Metric (gauge, label `verdict`): verdicts of the last verification pass (spec 124).
 pub const METRIC_LEARN_VERDICTS: &str = "pii_learn_verdicts";
@@ -433,6 +441,7 @@ pub const ALL: &[&str] = &[
     LEARN_CANDIDATE_CONFIRMED,
     LEARN_CANDIDATE_REFUTED,
     LEARN_CANDIDATE_INCONCLUSIVE,
+    LEARN_UNATTENDED_RUN,
     LEARN_PROMOTION_APPLIED,
     LEARN_PROMOTION_REVERTED,
     LEARN_PROMOTION_EXPIRED,
@@ -465,6 +474,8 @@ pub const ALL: &[&str] = &[
     METRIC_WASM_REFUSALS_TOTAL,
     METRIC_LEARN_CANDIDATES,
     METRIC_LEARN_REFUSALS_TOTAL,
+    METRIC_LEARN_CANDIDATES_PROPOSED_TOTAL,
+    METRIC_LEARN_UNATTENDED_RUNS_TOTAL,
     METRIC_LEARN_VERDICTS,
     METRIC_LEARN_PROMOTIONS,
     METRIC_MEMORY_ENTITIES,

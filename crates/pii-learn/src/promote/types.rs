@@ -71,11 +71,16 @@ impl PromotionKind {
 }
 
 /// The metric a promotion declares it will move (R5).
+///
+/// Spec 139: the one metric is one the action cannot satisfy by itself. The
+/// old "failed runs of the quarantined graph" read 0 after any quarantine,
+/// because a quarantined graph does not run — the action confirmed itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Metric {
-    /// Failed runs of the promoted graph in a window; lower is better.
-    GraphFailedRuns,
+    /// The promoted graph's definition hash differs from the one captured at
+    /// apply time, within the TTL. Met only if someone changed the graph.
+    GraphDefinitionChanged,
 }
 
 impl Metric {
@@ -83,14 +88,14 @@ impl Metric {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::GraphFailedRuns => "graph_failed_runs",
+            Self::GraphDefinitionChanged => "graph_definition_changed",
         }
     }
 
     /// Parses the wire name.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
-        (s == Self::GraphFailedRuns.as_str()).then_some(Self::GraphFailedRuns)
+        (s == Self::GraphDefinitionChanged.as_str()).then_some(Self::GraphDefinitionChanged)
     }
 }
 
@@ -226,14 +231,16 @@ pub struct Rollback {
     pub captured_secs: u64,
 }
 
-/// The measured outcome of a promotion's window (R5).
+/// The measured outcome of a promotion's window (R5). For
+/// [`Metric::GraphDefinitionChanged`], `before` is 0 and `after` is 1 when the
+/// definition changed, else 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Outcome {
     /// The metric over the window before the promotion.
     pub before: u64,
     /// The metric over the window after it.
     pub after: u64,
-    /// `after < before`.
+    /// `after > before`: the metric moved.
     pub improved: bool,
 }
 
@@ -268,6 +275,10 @@ pub struct Promotion {
     pub metric: Metric,
     /// The measurement window, seconds.
     pub window_secs: u64,
+    /// The graph's definition hash when applied (spec 139); `None` = not
+    /// resolvable then. The reference [`Metric::GraphDefinitionChanged`] compares against.
+    #[serde(default)]
+    pub definition_at_apply: Option<String>,
     /// The window's result once evaluated.
     pub outcome: Option<Outcome>,
     /// Epoch seconds it left `active`.

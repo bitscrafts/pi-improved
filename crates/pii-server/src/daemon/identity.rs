@@ -210,6 +210,14 @@ fn add_verdict_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHeal
     }
 }
 
+/// The unattended loop's pass and proposal counters (spec 139); 0 until a pass has run.
+fn add_unattended_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHealth>) {
+    if let Some(u) = learn.and_then(pii_learn::LearnHealth::unattended) {
+        counts.learn_unattended_runs = u.runs;
+        counts.learn_candidates_proposed = u.candidates_proposed_total;
+    }
+}
+
 /// Promotions by state and refusals (spec 125); left empty until any exist, so
 /// a daemon that never promoted prints no promotion lines.
 fn add_promotion_counters(counts: &mut Counts, learn: Option<&pii_learn::LearnHealth>) {
@@ -344,6 +352,7 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     add_entity_counters(&mut counts, entities.as_ref());
     add_learn_counters(&mut counts, learn.as_ref());
     add_verdict_counters(&mut counts, learn.as_ref());
+    add_unattended_counters(&mut counts, learn.as_ref());
     add_promotion_counters(&mut counts, learn.as_ref());
     add_device_counters(&mut counts, hal.as_deref(), wasm.as_deref());
     let posts = engine.channel_hub.counts();
