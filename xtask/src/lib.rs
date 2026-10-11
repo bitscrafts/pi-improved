@@ -49,6 +49,10 @@ pub mod heal_seed;
 /// the bin.
 #[cfg_attr(not(test), allow(unreachable_pub))]
 pub mod lint_files;
+/// `cargo xtask lint-scratch`: public so `tests/` can feed `check_source`
+/// controls (spec 136 R5).
+#[cfg_attr(not(test), allow(unreachable_pub))]
+pub mod lint_scratch;
 /// `cargo xtask promote-build`: build + dev-daemon soak step (spec 34 R2).
 pub mod promote_build;
 /// `cargo xtask reachability-check`: the declared-capability caller gate

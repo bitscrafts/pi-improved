@@ -502,7 +502,9 @@ mod tests {
 
     /// Starts a fake daemon on a fresh UDS socket under `_tmp`.
     fn start_fake_daemon() -> (std::path::PathBuf, Arc<AtomicU64>) {
-        let dir = std::env::temp_dir().join(format!("pii-web-mem-{}", std::process::id()));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("_tmp")
+            .join(format!("pii-web-mem-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let sock = dir.join("control.sock");
         let _ = std::fs::remove_file(&sock);

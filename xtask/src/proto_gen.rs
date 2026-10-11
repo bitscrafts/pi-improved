@@ -33,7 +33,9 @@ pub(super) fn check() -> Result<(), Vec<String>> {
     let dir = Path::new(SCHEMA_DIR);
     // Generate to a temp dir and diff file-by-file (guarantees the check and
     // the generator use the identical serialisation path).
-    let tmp = std::env::temp_dir().join(format!("pii-proto-schema-{}", std::process::id()));
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("_tmp")
+        .join(format!("pii-proto-schema-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).map_err(|e| vec![format!("proto-check: mkdir tmp: {e}")])?;
     generate_into(&tmp).map_err(|e| vec![e])?;

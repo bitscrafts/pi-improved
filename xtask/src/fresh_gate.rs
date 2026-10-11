@@ -379,7 +379,9 @@ mod tests {
     }
 
     fn tempfile_dir() -> PathBuf {
-        let p = std::env::temp_dir().join(format!("fg-stale-{}", std::process::id()));
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("_tmp")
+            .join(format!("fg-stale-{}", std::process::id()));
         std::fs::create_dir_all(&p).unwrap();
         p
     }

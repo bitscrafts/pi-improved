@@ -53,6 +53,15 @@ pub struct VerifyConfig {
     pub protected: Vec<PathBuf>,
 }
 
+/// In-tree default scratch parent: `$PII_RUNTIME_DIR/scratch`, else this
+/// crate's `_tmp` — never the system temp dir.
+fn default_scratch() -> PathBuf {
+    pii_core::env_var("PII_RUNTIME_DIR").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp"),
+        |d| PathBuf::from(d).join("scratch"),
+    )
+}
+
 impl VerifyConfig {
     /// Defaults over a trajectory `root` and a `graph_dir`.
     #[must_use]
@@ -63,7 +72,7 @@ impl VerifyConfig {
             input: serde_json::Value::Null,
             root,
             graph_dir,
-            scratch_dir: std::env::temp_dir(),
+            scratch_dir: default_scratch(),
             protected: Vec::new(),
         }
     }
@@ -362,6 +371,8 @@ impl Verifier {
 
     /// A fresh shadow session directory under the scratch dir, or why not.
     fn session(&self) -> Result<tempfile::TempDir, String> {
+        fs::create_dir_all(&self.cfg.scratch_dir)
+            .map_err(|e| format!("scratch {}: {e}", self.cfg.scratch_dir.display()))?;
         let scratch = dunce::canonicalize(&self.cfg.scratch_dir)
             .map_err(|e| format!("scratch {}: {e}", self.cfg.scratch_dir.display()))?;
         let mut guarded: Vec<PathBuf> = self.cfg.protected.clone();

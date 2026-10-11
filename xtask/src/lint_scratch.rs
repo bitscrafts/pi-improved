@@ -5,6 +5,10 @@
 //! in that function calls `create_dir_all` or `tmp_scratch`. Such a test
 //! passes in a developer tree (the directory is left over from an earlier
 //! run) and panics `NotFound` in a fresh clone.
+//!
+//! Spec 136: a second rule refuses any `temp_dir()` call — scratch rooted
+//! outside the tree leaks past `cargo clean`. Comment lines are excluded
+//! explicitly (see [`is_comment`]); no file is allowlisted.
 
 // reason: see lint_files.rs — binary-internal helpers; clippy
 // `redundant_pub_crate` conflicts with rustc `unreachable_pub`.
@@ -15,12 +19,24 @@ use std::path::{Path, PathBuf};
 
 const ROOTS: &[&str] = &["crates", "xtask"];
 const CALL: &str = "tempdir_in(";
+const OUTSIDE_ROOT: &str = "temp_dir()";
+
+/// True for `//`, `///` and `//!` lines, which may name `temp_dir()` freely.
+fn is_comment(line: &str) -> bool {
+    line.trim_start().starts_with("//")
+}
 
 /// Returns `path:line` messages for every bare site in `src`.
-fn check_source(path: &str, src: &str) -> Vec<String> {
+pub fn check_source(path: &str, src: &str) -> Vec<String> {
     let lines: Vec<&str> = src.lines().collect();
     let mut out = Vec::new();
     for (i, line) in lines.iter().enumerate() {
+        if !is_comment(line) && line.contains(OUTSIDE_ROOT) {
+            out.push(format!(
+                "{path}:{}: temp_dir() roots scratch outside the tree; use a `_tmp` dir under the crate or the runtime dir",
+                i + 1
+            ));
+        }
         let Some((_, rest)) = line.split_once(CALL) else {
             continue;
         };

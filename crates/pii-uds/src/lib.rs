@@ -122,10 +122,15 @@ mod tests {
         clippy::indexing_slicing
     )]
 
+    /// Test scratch root inside the tree (`<crate>/_tmp`), never `/tmp`.
+    fn scratch_root() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp")
+    }
+
     #[tokio::test]
     async fn connect_failure_is_emitted_with_the_endpoint() {
         let rec = pii_observe::Recorder::new();
-        let sock = std::env::temp_dir().join("pii-uds-no-such-socket-109");
+        let sock = scratch_root().join("pii-uds-no-such-socket-109");
         let err = super::client_connect_observed(&sock, &rec).await.err();
         assert!(err.is_some(), "connecting to a missing socket must fail");
         let ev = rec.events_named(pii_observe::names::UDS_CONNECT_FAILED);
@@ -138,7 +143,7 @@ mod tests {
 
     #[test]
     fn config_runtime_dir_reads_core_section() {
-        let dir = std::env::temp_dir().join(format!("pii-uds-test-{}", std::process::id()));
+        let dir = scratch_root().join(format!("pii-uds-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let cfg = dir.join("pii.toml");
         std::fs::write(&cfg, "[core]\nruntime_dir = \"/tmp/pii-runtime\"\n").unwrap();
@@ -148,7 +153,7 @@ mod tests {
 
     #[test]
     fn config_runtime_dir_none_when_absent() {
-        let dir = std::env::temp_dir().join(format!("pii-uds-none-{}", std::process::id()));
+        let dir = scratch_root().join(format!("pii-uds-none-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let cfg = dir.join("pii.toml");
         std::fs::write(&cfg, "[core]\nmodel = \"x\"\n").unwrap();
