@@ -57,9 +57,13 @@ if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
 fi
 ARGS=(); [ -n "$RSID" ] && ARGS=(--resume "$RSID")
 BRIEFARG=(); [ -n "$BRIEF" ] && [ "$BRIEF" != "-" ] && BRIEFARG=("$BRIEF")
-( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$SPEC" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
+# the dispatcher takes a spec NUMBER, not a filename (it resolves specs/<N>-*.md itself)
+N=$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')
+[ -n "$N" ] || { say "cannot read a spec number out of '$SPEC'"; echo "OUTCOME=bad-plan ITEM=$ITEM"; exit 6; }
+say "dispatching spec number $N"
+( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
 WRC=$?
-NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$SPEC"-*.txt 2>/dev/null | tail -1)
+NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
 say "worker rc=$WRC session=${NEWSID:-none}"
 python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC
 [ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
