@@ -1,38 +1,54 @@
 #!/usr/bin/env bash
-# tick.sh — one scheduled tick, no LLM involved.
+# tick.sh — one scheduled tick, no LLM involved, and QUIET unless something happened.
 #
-# This is the engine's heartbeat: it either starts exactly one cycle, or reports the one that is running,
-# and prints three lines (which the scheduler delivers verbatim to the phone). It deliberately runs no agent:
-# a cron agent inherits the session's model/provider and dies on a 90 s API timeout before it can run anything
-# (measured 2026-10-10 and again 2026-10-11 — the first tick of the autonomy job fell from gemini to an nvidia
-# fallback and then timed out). The deterministic script cannot be starved by a provider.
+# This is the engine's heartbeat: it starts exactly one cycle, or reports the one that is running, and prints
+# at most two lines — which the scheduler delivers verbatim to the phone. Empty output sends nothing.
 #
-# The judgement (authoring a spec, reddening a mutation by hand, judging a live proof) is a separate,
-# best-effort supervisor job — if that one dies on a provider error, this loop keeps going.
+# Why no agent: a cron agent inherits the session's model/provider and dies on a 90 s API timeout before it can
+# run anything (measured 2026-10-10, and again 2026-10-11 when the first tick of the autonomy job fell from
+# gemini to an nvidia fallback and timed out). A deterministic script cannot be starved by a provider. The
+# judgement (reddening a mutation by hand, judging a live proof, authoring the next spec) is a separate,
+# best-effort supervisor job — if that one dies, this loop keeps going.
+#
+# Quiet rules: a cycle in flight prints nothing; a milestone (a commit, a park, a closed window) prints once,
+# and printing is de-duplicated against _tmp/autonomy/last-reported so the same fact is not re-sent every tick.
 set -uo pipefail
 cd /projects/pi-improved || { echo "pii autonomy: cannot cd to the project"; exit 1; }
 ST=_tmp/autonomy; LOGD=$ST/logs; mkdir -p "$LOGD"
+REPORTED=$ST/last-reported
 
-# 1) is a cycle already running? (flock on the same file the cycle uses; touching nothing)
+say_once() { # say_once <key> <line...>   — print only when <key> differs from the last reported key
+  local key="$1"; shift
+  [ "$(cat "$REPORTED" 2>/dev/null)" = "$key" ] && return 0
+  printf '%s' "$key" >"$REPORTED"
+  printf '%s\n' "$@"
+}
+
+# 1) a cycle is running — silence is the normal state; only a stuck worker is worth a line
 if ! flock -n "$ST/lock" true 2>/dev/null; then
   AGE=$(( $(date +%s) - $(stat -c %Y "$ST/lock" 2>/dev/null || date +%s) ))
-  LAST=$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | head -1)
-  ITEM=$(python3 scripts/autonomy/state.py list 2>/dev/null | awk -F'\t' '$4!="done"{print $1" "$3; exit}')
-  echo "pii autonomy · a cycle is in flight (${AGE}s)"
-  echo "working on: ${ITEM:-unknown}"
-  echo "log: ${LAST##*/}"
+  if [ "$AGE" -gt 5400 ]; then
+    say_once "stuck:$AGE" "pii autonomy · a cycle has been in flight for $((AGE/60)) min" "check: tail -30 $(ls -t "$LOGD"/cycle-*.log | head -1)"
+  fi
   exit 0
 fi
 
-# 2) the last cycle's outcome, for the record line
+# 2) the last cycle's outcome
 LASTLOG=$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | head -1)
-LASTLINE=$([ -n "$LASTLOG" ] && grep -o 'OUTCOME=[^ ]*' "$LASTLOG" | tail -1 || echo "OUTCOME=none-yet")
-
-# 3) start exactly one cycle, detached, and say so
+OUT=$(grep -o 'OUTCOME=[^ ]*' "$LASTLOG" 2>/dev/null | tail -1 | cut -d= -f2)
+ITEM=$(grep -o 'ITEM=[^ ]*' "$LASTLOG" 2>/dev/null | tail -1 | cut -d= -f2)
+HEAD=$(git log --oneline -1 2>/dev/null | cut -c1-60)
 NEXT=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f1,4)
+
+case "$OUT" in
+  done)          say_once "done:$ITEM:$HEAD" "pii autonomy · $ITEM done" "$HEAD" ;;
+  verify-failed|gate-failed|worker-rc-*|dirty-tree|bad-plan)
+                 say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM needs a hand ($OUT)" "log: ${LASTLOG##*/}" ;;
+  window-closed) say_once "closed:$(cut -c1-20 <<<"$(grep -o 'resets [^ ]* [^ ]*' "$LASTLOG" 2>/dev/null | tail -1)")" \
+                   "pii autonomy · the Anthropic window is closed — nothing spent, the queue is untouched" ;;
+esac
+
+# 3) start exactly one cycle, detached
 setsid nohup bash scripts/autonomy/cycle.sh >>"$LOGD/cycle-last-detached.log" 2>&1 </dev/null &
 sleep 2
-RUNNING=$(flock -n "$ST/lock" true 2>/dev/null && echo no || echo yes)
-echo "pii autonomy · tick · previous ${LASTLINE#OUTCOME=}"
-echo "started: ${NEXT:-queue empty}"
-echo "cycle running: ${RUNNING} · log: ${LASTLOG##*/}"
+exit 0
