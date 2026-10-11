@@ -25,6 +25,11 @@ say "=== cycle $CID"
 exec 9>"$STATEDIR/lock"
 if ! flock -n 9; then say "another cycle holds the lock — nothing done"; echo "OUTCOME=locked"; exit 5; fi
 
+# 0b) the operator's switch (Discord: `scripts/autonomy/control.sh pause`) — honour it before spending
+if grep -q PAUSED "$STATEDIR/control" 2>/dev/null; then
+  say "PAUSED by the operator — nothing spent, nothing advanced"; echo "OUTCOME=paused"; exit 0
+fi
+
 # 1) the window
 PROBE=$(bash scripts/autonomy/probe.sh 2>&1); PRC=$?
 echo "$PROBE" >>"$LOG"

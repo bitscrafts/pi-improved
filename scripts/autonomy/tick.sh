@@ -33,7 +33,13 @@ if ! flock -n "$ST/lock" true 2>/dev/null; then
   exit 0
 fi
 
-# 2) the last cycle's outcome
+# 2) paused by the operator (Discord: `control.sh pause`) — say it once, start nothing
+if grep -q PAUSED "$ST/control" 2>/dev/null; then
+  say_once "paused:$(sed -n 1p "$ST/control")" "pii autonomy · PAUSED — $(sed -n 1p "$ST/control")"
+  exit 0
+fi
+
+# 3) the last cycle's outcome
 LASTLOG=$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | head -1)
 OUT=$(grep -o 'OUTCOME=[^ ]*' "$LASTLOG" 2>/dev/null | tail -1 | cut -d= -f2)
 ITEM=$(grep -o 'ITEM=[^ ]*' "$LASTLOG" 2>/dev/null | tail -1 | cut -d= -f2)
