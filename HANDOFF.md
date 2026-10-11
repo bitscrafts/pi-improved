@@ -907,3 +907,22 @@ SOP engine, model tiers, the load/cost defect fixes, HAL, WASM, the closed self-
 (propose -> verify -> promote -> measure -> auto-revert), entities/relationships and memory tiering.
 Open items and the Discord surface state are in `/projects/docs/05-operations/RESUME-REGISTER.md`.
 Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
+
+## 2026-10-10 (late) — 128 Discord graphs + 129 ollama retirement closed
+
+- **Closed:** 128 (post node + `discord-triage` + `discord-digest`; idempotence key protects against
+  double-posting on retry — orchestrator mutation + live daemon proof) and 129 (`ollama:` refused with a
+  pointer, `llamacpp-server:<model>` is the local HTTP kind with `[llama] host`, in-process `llamacpp:<path>`
+  untouched, production example now on the llama.cpp server lane).
+- **Both fresh-gate PASS** (14 steps) on the tree carrying them: `147ccc8`.
+- **Open, not guessed:** the spec-125 quarantine test failed in two gate runs and passed in four clean
+  full-suite rounds — cause NOT established; the gate now keeps the failing output
+  (`<export>/gate-output.log`) so the next occurrence is diagnosable. `5cb67a9` raised its ceiling (2 s → 60 s,
+  assumption stated) but was not the mechanism.
+- **Test hygiene paid for twice today:** a test that mutates a symbol by PATH breaks on any refactor that moves
+  it (spec 129's split moved `resolve_with_transport`; three reachability tests failed) — now resolved at test
+  time (`489efe5`, `8cf4eb1`, DO-NOT-REPEAT 1.47).
+- **Next:** the filed-open list (unify the two promotion audit trails, the sweep-vs-revert race, resumed runs of
+  a quarantined graph, `pii-evolve`'s direct socket dial, `pii-store` `store_op` redb residual), the laya lane,
+  and the Discord questions awaiting a user call (home channel flip; the `post` node's optional tag).
+
