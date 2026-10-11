@@ -16,11 +16,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 fn scratch(name: &str) -> std::path::PathBuf {
+    // Per-invocation: a fixed dir meant two concurrent runs of this binary opened the same redb and the
+    // second died with `Database already open` (spec 134; measured 6 of 6 concurrent rounds). The pid is
+    // unique because a concurrent run is always another process.
     let dir = Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/_tmp/phase3/routing-it"
     ))
-    .join(name);
+    .join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

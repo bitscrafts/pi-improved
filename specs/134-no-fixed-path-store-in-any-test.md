@@ -72,5 +72,30 @@ can collide. The job is to fix the ones that can, and to say with evidence why t
 
 ## Closure
 
-(outcome, the collision count before and after, the sweep table, and the orchestrator's own control — filled
-in when the item is closed.)
+**Outcome.** The class is fixed and now has a control that can see it.
+
+- `crates/pii-memory/tests/lanes.rs` gives every test invocation its own store path (a per-pid directory under
+  the crate's `_tmp/phase3`), with the mechanism and the measurement written above the function — the comment
+  is what stops the next person from "simplifying" it back to a fixed name.
+- The sweep found and fixed the same class in three more test files: `crates/pii-server/tests/fail_port.rs`,
+  `failover_graph.rs`, `model_routing.rs`.
+- The control is committed: `scripts/checks/concurrent-store.sh <package> <test-binary> [rounds]` runs the same
+  test binary twice at the same moment and prints `ROUNDS <n> COLLISIONS <k>`, exiting 0 only when k = 0.
+
+**The numbers.**
+
+| run | result |
+|---|---|
+| the pre-fix shape, harness (the finding's measurement) | 2 of 6 rounds collide |
+| the pre-fix shape, harness (orchestrator's own control, mutation restored byte-identical) | `ROUNDS 6 COLLISIONS 1` |
+| the fixed tree, harness | `ROUNDS 10 COLLISIONS 0` |
+| the item's own criteria on the tree the worker left | `cargo test -p pii-memory --test lanes` rc 0; harness rc 0 |
+| `fresh-gate --worktree` on that tree | `quality-gate: ALL PASS` |
+
+**Restored byte-identical.** The mutation that reddened the control was reverted and the file hashed back to
+`b6616df02934da94` before this commit.
+
+**Note on how this item was closed.** The cycle that produced it was killed *after* its gate passed and before
+its commit, because the orchestrator rewrote `cycle.sh` while that cycle was still executing it
+(DO-NOT-REPEAT 2.15 — a running script is not editable). The work was verified by hand against the same gate
+output and committed by the orchestrator, which is the role the workflow assigns the commit to anyway.

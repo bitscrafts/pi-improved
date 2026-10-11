@@ -26,8 +26,18 @@ fn tmp_root() -> PathBuf {
     root
 }
 
+/// A store path **this invocation owns**.
+///
+/// A fixed path (`phase3/lanes-test.redb`) meant two concurrent runs of this binary — a developer's
+/// `cargo test`, a gate export and a dispatched worker's run overlap routinely — opened the same redb,
+/// and whichever came second died with `Database already open. Cannot acquire lock`. Measured 2 of 6
+/// concurrent rounds (059 F4; `scripts/checks/concurrent-store.sh pii-memory lanes`). The pid is a
+/// unique key because a concurrent run is always another process; only one test in this binary uses
+/// this path. (Not wall-clock time: `clippy.toml` forbids `SystemTime::now`.)
 fn db() -> PathBuf {
-    tmp_root().join("phase3/lanes-test.redb")
+    let dir = tmp_root().join(format!("phase3/lanes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create this invocation's scratch dir");
+    dir.join("lanes-test.redb")
 }
 
 fn put(store: &MemStore, text: &str, kind: DocKind, created: u64) -> String {
