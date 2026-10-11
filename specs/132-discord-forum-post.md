@@ -9,6 +9,16 @@ The user's `pii` surface **is a Discord forum** (`1558589728671146105`), and it 
 rejects a forum post that carries no tag. Measured today on the Hermes side, where the same wall appeared:
 `{"message": "A tag is required to create a forum post in this channel", "code": 40067}`.
 
+**Measured live, 2026-10-11, against the user's forum (nothing was created — both calls fail):**
+
+| path | result |
+| --- | --- |
+| `POST /channels/<forum>/messages` (what pii's `send` does today) | **400 `50008` "Cannot send messages in a non-text channel"** |
+| `POST /channels/<forum>/threads` with no tag | **400 `40067` "A tag is required to create a forum post in this channel"** |
+
+So the gap is worse than a missing tag: a forum cannot be messaged at all — pii's current path fails with
+`50008`, and the correct path additionally needs a tag.
+
 pii's Discord channel posts a **plain message** and cannot cross that wall:
 
 ```rust
