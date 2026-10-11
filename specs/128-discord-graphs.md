@@ -111,3 +111,34 @@ a graph that already answered through `post` ends with `text = ""`, and Discord 
 keywords) is deterministic rules only — no model; the live Discord path is `#[ignore]`d; `sys.status` counters
 were verified in-process by the worker and by me through the CLI against a real daemon.
 
+## Closure (2026-10-10)
+
+**Committed** `dd5e0c9` (impl) after `e0007a6` (spec). Plain `fresh-gate` on the tree that carries it:
+`quality-gate: ALL PASS · fresh-gate: PASS` (14 steps, `fed5e37`'s diagnostic + the two hygiene fixes below).
+
+**Verified by the orchestrator, not taken from the worker's report:**
+- `cargo test -p pii-channels --lib post` 8 · `-p pii-server --lib post` 8 · `--test post_e2e` 5 passed / 1 ignored.
+- **My mutation:** releasing the idempotence key on a timeout (instead of keeping it) reddens
+  `a_timeout_is_bounded_and_keeps_the_key_because_the_send_may_still_land` — `left Err(Timeout { after_ms: 100 })`
+  vs `right Ok(Duplicate)`. Restored byte-identical. The property that protects the phone (a retry after a
+  timeout must NOT post twice) is real and tested.
+- **Live, with a real daemon** (the worker could not): `pii run start post-cli` → `{"run_id":"r000000000001"}`;
+  the channel really sent — outbox `{"text":"hello from the post node","to":"out"}`; `pii metrics` rendered
+  `pii_channel_posts_total 1 · pii_channel_post_refusals_total 0`; daemon log `channel.posted`. The same run
+  showed the refusal path twice, fail-closed: no `fs_write` on the run → `capability denied: fs_write`; an
+  outbox outside the channel's scope (`<runtime_dir>/channels/<name>`) → refused.
+- Four repo checks (`deps-check`, `net-check`, `doc-drift-check`, `lint-observability`) at rc 0.
+
+**Two gate blockers, neither of them this spec's logic — both fixed:**
+- `xtask/tests/spec72_reachability.rs` pinned `crates/pii-server/src/lib.rs` as the file holding the
+  `resolve_with_transport` caller. This spec's worker moved that call into `observed_provider.rs` (the 450-line
+  split) and reported "I did not edit xtask", not noticing it had broken three reachability tests
+  (`mutation failed: … not found in …/lib.rs`). The test now resolves the target file at test time, keeping the
+  claim and dropping the path (`489efe5`, `8cf4eb1`; DO-NOT-REPEAT 1.47).
+- `daemon::tests::a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert` (spec 125) failed in
+  two gate runs and passed in four clean full-suite rounds (repo + export ×2). **The cause is NOT established**:
+  the gate reported only test names until `fed5e37` made it keep the failing output at
+  `<export>/gate-output.log` and echo the failing block. Its ceiling was raised 2 s → 60 s with the assumption
+  stated (`5cb67a9`), but that was not the mechanism (it failed again at 60 s). Open item, now diagnosable on
+  its next occurrence.
+
