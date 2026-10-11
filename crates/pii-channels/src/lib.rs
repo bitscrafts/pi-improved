@@ -110,6 +110,12 @@ pub trait Channel: Send + Sync {
     fn egress_hosts(&self) -> Vec<String> {
         Vec::new()
     }
+    /// The subset of [`Self::egress_hosts`] that did not come from the configuration file (an
+    /// environment override), which the daemon refuses unless `[net] grants` or the channel's
+    /// `hosts` sanction it (spec 137). Empty = every host was named by the config itself.
+    fn env_derived_hosts(&self) -> Vec<String> {
+        Vec::new()
+    }
     /// Why this channel cannot work right now (missing token, credential
     /// rejected, ...), or `None` when healthy. A `Some` is reported as
     /// `Degraded` by the daemon's health (spec 112 R6). Never contains a secret.

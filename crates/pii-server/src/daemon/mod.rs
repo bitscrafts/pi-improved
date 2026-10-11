@@ -11,6 +11,8 @@ mod lag;
 #[cfg(test)]
 mod refusal_tests;
 pub mod router;
+#[cfg(test)]
+mod sanction_tests;
 pub mod scheduler;
 pub mod status;
 mod suspend;
@@ -341,6 +343,7 @@ fn build_channel(
     }
     let channel: Arc<dyn pii_channels::Channel> =
         Arc::new(pii_channels::observe::ObservedChannel::new(inner, log));
+    check_sanctioned(c, channel.as_ref(), grants)?;
     // Spec 128: the `post` node reaches the channel through the hub, with the router's own context.
     // The channel's own context says what it may do; the egress itself is allowed by the net
     // grant, which is what the network layer checks (spec 132): the channel's declared hosts,
@@ -353,6 +356,25 @@ fn build_channel(
     grants.allow_declared(&rctx.principal_str(), &channel.egress_hosts())?;
     engine.channel_hub.insert(Arc::clone(&channel), rctx);
     Ok(channel)
+}
+
+/// Spec 137: a host a channel took from its environment is registered only if the configuration
+/// sanctions it — `[net] grants` or the channel's own `hosts`. Refused at startup, by name.
+fn check_sanctioned(
+    c: &config::ChannelSection,
+    channel: &dyn pii_channels::Channel,
+    grants: &config::ConfigGrants,
+) -> Result<(), PiiError> {
+    for host in channel.env_derived_hosts() {
+        if !c.hosts.contains(&host) && !grants.net_covers(&host) {
+            return Err(PiiError::Invalid(format!(
+                "channel '{}': egress host '{host}' comes from the environment and the configuration does \
+                 not sanction it; add it to `hosts` on [[channel]] '{}' or to `grants` under [net]",
+                c.name, c.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn build_raw_channel(

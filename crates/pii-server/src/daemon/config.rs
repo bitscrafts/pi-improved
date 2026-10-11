@@ -206,6 +206,10 @@ pub struct ChannelSection {
     /// `webhook` only: a 0600 file holding the shared secret.
     #[serde(default)]
     pub secret_file: Option<String>,
+    /// Spec 137: `host:port` targets the operator sanctions for this channel's egress, for a host the
+    /// channel takes from its environment (`discord` with `PII_DISCORD_API_BASE`).
+    #[serde(default)]
+    pub hosts: Vec<String>,
 }
 
 const fn default_poll_ms() -> u64 {
@@ -636,6 +640,16 @@ impl ConfigGrants {
             allow_private: net.allow_private,
             declared: parking_lot::Mutex::default(),
         })
+    }
+
+    /// True when `[net] grants` covers `host_port` (`host:port`).
+    #[must_use]
+    pub fn net_covers(&self, host_port: &str) -> bool {
+        let Some((host, port)) = host_port.rsplit_once(':') else {
+            return false;
+        };
+        port.parse::<u16>()
+            .is_ok_and(|p| self.connect.permits(host, p))
     }
 
     /// Grants `hosts` (`host:port`) to `principal` only. An empty list grants nothing.

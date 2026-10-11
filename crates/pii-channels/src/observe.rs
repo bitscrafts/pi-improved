@@ -67,6 +67,10 @@ impl Channel for ObservedChannel {
         self.inner.egress_hosts()
     }
 
+    fn env_derived_hosts(&self) -> Vec<String> {
+        self.inner.env_derived_hosts()
+    }
+
     fn counters(&self) -> Option<crate::ChannelCounters> {
         self.inner.counters()
     }

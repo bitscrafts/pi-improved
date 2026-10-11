@@ -23,6 +23,10 @@ mod forum;
 /// and the thread create. Override with `PII_DISCORD_API_BASE`; tests point it at a loopback fake.
 pub const DEFAULT_API_BASE: &str = "https://discord.com/api/v10";
 
+/// The `host:port` of [`DEFAULT_API_BASE`]: the one egress target the shipped configuration sanctions
+/// without an operator entry (spec 137). A pin test keeps it equal to `url_target(DEFAULT_API_BASE)`.
+pub const DEFAULT_EGRESS_HOST: &str = "discord.com:443";
+
 /// One message as Discord's API shapes it.
 #[derive(Debug, Deserialize)]
 struct DiscordMessage {
@@ -59,12 +63,23 @@ impl DiscordChannel {
     /// # Errors
     /// [`PiiError::Invalid`] when a required env var is missing.
     pub fn from_env(name: &str, transport: Arc<dyn HttpTransport>) -> Result<Self, PiiError> {
-        let token = pii_core::env_var("PII_DISCORD_TOKEN")
+        Self::from_lookup(name, transport, pii_core::env_var)
+    }
+
+    /// [`Self::from_env`] over an arbitrary variable lookup (so tests need no process-global env).
+    ///
+    /// # Errors
+    /// [`PiiError::Invalid`] when a required variable is missing.
+    pub fn from_lookup(
+        name: &str,
+        transport: Arc<dyn HttpTransport>,
+        env: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, PiiError> {
+        let token = env("PII_DISCORD_TOKEN")
             .ok_or_else(|| PiiError::Invalid(String::from("PII_DISCORD_TOKEN is not set")))?;
-        let channel_id = pii_core::env_var("PII_DISCORD_CHANNEL_ID")
+        let channel_id = env("PII_DISCORD_CHANNEL_ID")
             .ok_or_else(|| PiiError::Invalid(String::from("PII_DISCORD_CHANNEL_ID is not set")))?;
-        let base = pii_core::env_var("PII_DISCORD_API_BASE")
-            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+        let base = env("PII_DISCORD_API_BASE").unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         Ok(Self {
             name: name.to_owned(),
             transport,
@@ -72,7 +87,7 @@ impl DiscordChannel {
             token,
             channel_id,
             timeout_ms: 10_000,
-            forum_tag: pii_core::env_var("PII_DISCORD_FORUM_TAG")
+            forum_tag: env("PII_DISCORD_FORUM_TAG")
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| String::from(forum::DEFAULT_FORUM_TAG)),
             shapes: forum::ShapeCache::default(),
@@ -112,6 +127,14 @@ impl Channel for DiscordChannel {
 
     fn egress_hosts(&self) -> Vec<String> {
         crate::url_target(&self.base).into_iter().collect()
+    }
+
+    /// The base can come from `PII_DISCORD_API_BASE`, so every host but the shipped default needs
+    /// the configuration's sanction (spec 137).
+    fn env_derived_hosts(&self) -> Vec<String> {
+        let mut hosts = self.egress_hosts();
+        hosts.retain(|h| h != DEFAULT_EGRESS_HOST);
+        hosts
     }
 
     fn poll(&self, ctx: &Ctx, cursor: Option<u64>) -> Result<Vec<Incoming>, PiiError> {
@@ -310,6 +333,26 @@ mod tests {
         assert!(
             url.starts_with("https://discord.com/api/v10/channels/"),
             "{url}"
+        );
+    }
+
+    #[test]
+    fn the_default_egress_host_is_the_default_base_s_target() {
+        assert_eq!(
+            crate::url_target(super::DEFAULT_API_BASE).as_deref(),
+            Some(super::DEFAULT_EGRESS_HOST)
+        );
+    }
+
+    #[test]
+    fn only_a_non_default_base_is_env_derived() {
+        let mut ch = channel(FakeTransport::ok(Vec::new()));
+        ch.base = super::DEFAULT_API_BASE.to_owned();
+        assert!(ch.env_derived_hosts().is_empty());
+        ch.base = String::from("https://evil.example");
+        assert_eq!(
+            ch.env_derived_hosts(),
+            vec![String::from("evil.example:443")]
         );
     }
 
