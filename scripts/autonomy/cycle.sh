@@ -62,6 +62,28 @@ if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
 fi
 ARGS=(); [ -n "$RSID" ] && ARGS=(--resume "$RSID")
 BRIEFARG=(); [ -n "$BRIEF" ] && [ "$BRIEF" != "-" ] && BRIEFARG=("$BRIEF")
+# A resume after a failed attempt carries a corrective brief: the worker cannot see the gate's verdict, and
+# its own criteria may well have passed (that is exactly how spec 133's first pass went — criteria 4/4, gate
+# RED on a tree the export had not included). Naming the failure is the difference between a fix and a retry.
+if [ -n "$RSID" ]; then
+  PRV=$(python3 scripts/autonomy/state.py get "$ITEM" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("last",""))' 2>/dev/null)
+  case "$PRV" in
+    *gate-failed*|*verify-failed*|*worker-rc*)
+      FB="$STATEDIR/briefs/corrective-$ITEM-$CID.md"; mkdir -p "$STATEDIR/briefs"
+      LASTCYCLE=$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | head -1)
+      { echo "# Corrective brief — $ITEM ($SPEC). The previous attempt ended: $PRV"; echo
+        echo "Your earlier pass on this spec did not survive the orchestrator's check. Evidence:"
+        echo '```'
+        grep -E 'failed steps:|failing tests:|panicked at|FAIL: |^OUTCOME=' "$LASTCYCLE" 2>/dev/null | head -20
+        echo '```'
+        echo "Fix the CAUSE, not the symptom: do not weaken, skip, ignore or delete an assertion, do not raise"
+        echo "a timeout, do not add a sleep, and do not touch anything outside this spec's scope."
+        echo "Re-read the spec's TDD Contract and Exit Criteria and leave the tree with those criteria passing."
+      } >"$FB"
+      BRIEFARG=("$FB"); say "resume carries a corrective brief: $FB"
+      ;;
+  esac
+fi
 # the dispatcher takes a spec NUMBER, not a filename (it resolves specs/<N>-*.md itself)
 N=$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')
 [ -n "$N" ] || { say "cannot read a spec number out of '$SPEC'"; echo "OUTCOME=bad-plan ITEM=$ITEM"; exit 6; }
@@ -93,7 +115,7 @@ if [ "${GATE:-1}" = "1" ]; then
   FREE=$(df -m --output=avail /projects | tail -1 | tr -d ' ')
   if [ "$FREE" -lt 20000 ]; then say "gate SKIPPED: only ${FREE}M free (needs 20000M) — recorded, not pretended"; else
     say "fresh-gate (this is the project's truth, not the worker's)"
-    if ( export PATH="/usr/local/cargo/bin:$PATH"; FRESH_GATE_MIN_FREE_MB=12000 timeout 1780 cargo run -q -p xtask -- fresh-gate ) >>"$LOG" 2>&1
+    if ( export PATH="/usr/local/cargo/bin:$PATH"; FRESH_GATE_MIN_FREE_MB=12000 timeout 1780 cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
     then say "fresh-gate PASS"; else
       python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-failed
       say "fresh-gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
