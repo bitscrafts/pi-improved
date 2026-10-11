@@ -147,6 +147,8 @@ pub const TRAJECTORY_PRUNED: &str = "trajectory.pruned";
 pub const TRAJECTORY_OVER_BUDGET: &str = "trajectory.over_budget";
 /// Event: a run's start was refused after its id was handed out; the run is failed, not lost (`run`, `error`).
 pub const RUN_START_REFUSED: &str = "run.start.refused";
+/// Event: a node panicked; the run is failed, the daemon survives (`run`, `node`, `message`).
+pub const NODE_PANICKED: &str = "node.panicked";
 /// Event: the daemon finished starting and is serving.
 pub const DAEMON_STARTED: &str = "daemon.started";
 /// Event: the daemon is shutting down (`reason`: signal or forced).
@@ -394,6 +396,7 @@ pub const ALL: &[&str] = &[
     TRAJECTORY_PRUNED,
     TRAJECTORY_OVER_BUDGET,
     RUN_START_REFUSED,
+    NODE_PANICKED,
     DAEMON_STARTED,
     DAEMON_STOPPED,
     DAEMON_PEER_REFUSED,

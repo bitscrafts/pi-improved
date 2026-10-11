@@ -52,6 +52,16 @@ pub enum ObsEvent {
         /// The error text.
         error: String,
     },
+    /// A node panicked (spec 135); the run fails with the message, the
+    /// daemon survives.
+    NodePanicked {
+        /// The run the node belonged to.
+        run: String,
+        /// The node id.
+        node: String,
+        /// The panic message.
+        message: String,
+    },
     /// A durable-store write failed outside the run journal (D3/D6, 026
     /// report 5.0.4) — e.g. a session append/snapshot. The Phase-1
     /// journaler has its own `Result` return for callers that check it
@@ -242,6 +252,13 @@ impl Observer for ContractObserver {
                     .field("error", error.as_str())
                     .field("where", "agent_turn"),
             ),
+            ObsEvent::NodePanicked { run, node, message } => self.0.event(
+                &Event::new("graph", Level::Error, names::NODE_PANICKED)
+                    .field("run", run.as_str())
+                    .field("node", node.as_str())
+                    .field("message", message.as_str())
+                    .in_run(pii_observe::RunId(run.clone())),
+            ),
             ObsEvent::Run(_) | ObsEvent::Journal { .. } => {}
         }
     }
@@ -308,6 +325,7 @@ impl Observer for ToolCallObserver {
             ObsEvent::ToolCall { .. }
                 | ObsEvent::MemorySearchFailed { .. }
                 | ObsEvent::TierResolved { .. }
+                | ObsEvent::NodePanicked { .. }
         ) {
             ContractObserver::new(Arc::clone(&self.0)).event(e);
         }

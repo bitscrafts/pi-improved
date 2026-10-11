@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use pii_abi::{NodeId, NodeInput, Outcome, PortName, ResumeKey, RunEvent, RunId};
+use pii_abi::{NodeId, NodeInput, Outcome, PiiError, PortName, ResumeKey, RunEvent, RunId};
 use pii_core::{BudgetShare, CancelToken, CapKind, CapSet, Ctx, Principal};
 
 use crate::blackboard::Blackboard;
@@ -227,7 +227,7 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
                 error: e.to_string(),
             };
         }
-        let result = node.run(&ctx, input);
+        let result = run_caught(env, &ns.id, || node.run(&ctx, input));
         let dur_ms = ctx.elapsed_ms().saturating_sub(at_ms);
         match result {
             Ok(outcome @ (Outcome::Next { .. } | Outcome::Suspend { .. })) => {
@@ -265,6 +265,35 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
             }
         }
     }
+}
+
+/// Spec 135: runs a node, turning a panic into a named failure. The panic is
+/// caught at the NODE boundary only — the run then fails through the ordinary
+/// `NodeFailed` path (terminal `Failed`, never retried) and the crash is
+/// recorded as an observer event. A worker process (`pii-worker`) has its own
+/// `main` and is not under this boundary: a panic there still aborts it.
+fn run_caught(
+    env: &Env<'_>,
+    id: &NodeId,
+    f: impl FnOnce() -> Result<Outcome, PiiError>,
+) -> Result<Outcome, PiiError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| String::from("non-string panic payload"));
+        env.root
+            .observer()
+            .event(&pii_core::ObsEvent::NodePanicked {
+                run: env.run.to_string(),
+                node: id.to_string(),
+                message: message.clone(),
+            });
+        Err(PiiError::Internal(format!(
+            "node '{id}' panicked: {message}"
+        )))
+    })
 }
 
 /// Journals a `Next` or `Suspend` outcome, shared by the normal `run()` path

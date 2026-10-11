@@ -698,6 +698,106 @@ mod tests {
             .unwrap();
         assert_eq!(super::stored_run_scope_root(&store, &run).unwrap(), None);
     }
+    mod crash {
+        use super::*;
+        /// A node kind whose handler panics on purpose (spec 135).
+        struct PanicFactory;
+        struct PanicNode;
+        impl pii_graph::node::GraphNode for PanicNode {
+            fn run(
+                &self,
+                _ctx: &Ctx,
+                _input: &pii_abi::NodeInput,
+            ) -> Result<pii_abi::Outcome, pii_abi::PiiError> {
+                #[allow(clippy::panic)] // the point of the test: a node that panics
+                {
+                    panic!("boom on purpose");
+                }
+            }
+        }
+        impl pii_graph::node::NodeFactory for PanicFactory {
+            fn kind(&self) -> &'static str {
+                "panics"
+            }
+            fn ports(
+                &self,
+                _cfg: &serde_json::Value,
+            ) -> Result<Vec<pii_abi::PortName>, pii_abi::PiiError> {
+                Ok(vec![pii_abi::PortName::from("out")])
+            }
+            fn required_caps(&self) -> pii_core::CapKind {
+                pii_core::CapKind::empty()
+            }
+            fn effects(&self) -> pii_abi::Effects {
+                pii_abi::Effects::PURE
+            }
+            fn build(
+                &self,
+                _cfg: &serde_json::Value,
+            ) -> Result<Box<dyn pii_graph::node::GraphNode>, pii_abi::PiiError> {
+                Ok(Box::new(PanicNode))
+            }
+        }
+
+        /// Spec 135 R1-R5: a panicking node ends the run `Failed`, naming the node
+        /// and the panic, records the crash event, and the daemon thread pool
+        /// survives to serve a following run.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_panicking_node_leaves_a_terminal_run() {
+            use pii_core::{ObsEvent, RecordingObserver};
+            // The finding's gate: a terminal state within 5 s.
+            const BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+            let (_dir, mut engine) = fault_engine("crash-");
+            std::sync::Arc::get_mut(&mut engine)
+                .expect("sole owner")
+                .reg
+                .register(std::sync::Arc::new(PanicFactory));
+            let rec = std::sync::Arc::new(RecordingObserver::new());
+            engine.attach_audit(rec.clone());
+            let spec = pii_graph::load_toml_with_registry(
+            "name = \"crashy\"\nentry = \"bad\"\ncaps = []\n\n[[node]]\nid = \"bad\"\nkind = \"panics\"\n",
+            &engine.reg,
+        )
+        .unwrap();
+            let run = pii_abi::RunId::from("r-crash");
+            super::super::spawn_run(
+                std::sync::Arc::clone(&engine),
+                spec,
+                run.clone(),
+                "go".into(),
+                "s".into(),
+                None,
+            )
+            .unwrap();
+            let deadline = std::time::Instant::now() + BOUND;
+            let header = loop {
+                if let Ok(Some(h)) = engine.store.get_run(&run)
+                    && h.status == pii_abi::RunStatus::Failed
+                {
+                    break h;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "run never reached Failed within {BOUND:?}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            };
+            assert_eq!(header.status, pii_abi::RunStatus::Failed);
+            let journal = format!("{:?}", engine.store.read_journal(&run).unwrap());
+            assert!(
+                journal.contains("node 'bad' panicked: boom on purpose"),
+                "{journal}"
+            );
+            assert!(
+                rec.events().iter().any(|e| matches!(e,
+                ObsEvent::NodePanicked { node, message, .. }
+                    if node == "bad" && message == "boom on purpose")),
+                "crash event missing: {:?}",
+                rec.events()
+            );
+        }
+    }
+
     /// Builds a bare engine over a fresh store in the crate `_tmp`.
     fn fault_engine(tag: &str) -> (tempfile::TempDir, std::sync::Arc<crate::Engine>) {
         let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), tag).unwrap();
