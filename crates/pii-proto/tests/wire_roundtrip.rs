@@ -55,6 +55,9 @@ const METHODS: &[(Method, &str)] = &[
     (Method::MemoryPut, "memory.put"),
     (Method::MemoryConsolidate, "memory.consolidate"),
     (Method::SysReload, "sys.reload"),
+    (Method::LearnPromote, "learn.promote"),
+    (Method::LearnRevert, "learn.revert"),
+    (Method::LearnSweep, "learn.sweep"),
 ];
 
 #[test]

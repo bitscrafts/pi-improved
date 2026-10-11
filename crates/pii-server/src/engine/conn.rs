@@ -219,6 +219,9 @@ fn is_heavy(method: Method) -> bool {
             | Method::RunTrace
             | Method::SessionPrompt
             | Method::EventSubscribe
+            | Method::LearnPromote
+            | Method::LearnRevert
+            | Method::LearnSweep
     )
 }
 

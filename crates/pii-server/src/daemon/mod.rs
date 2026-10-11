@@ -9,6 +9,8 @@ pub mod config;
 pub mod identity;
 mod lag;
 #[cfg(test)]
+mod learn_rpc_tests;
+#[cfg(test)]
 mod refusal_tests;
 pub mod router;
 #[cfg(test)]
@@ -45,18 +47,6 @@ fn attach_ctx(engine: &Engine, ctx: &Arc<DaemonContext>, cfg: &config::Config) {
     {
         engine.attach_learn_traj_root(PathBuf::from(root));
     }
-}
-
-/// One lifecycle pass over the promotions under `dir`. The trajectories are
-/// scanned only when an outcome window has actually closed.
-fn promotion_sweep(engine: &Engine, dir: &Path) {
-    let root = engine.learn_traj_root();
-    let promoter = pii_learn::Promoter::new(dir, pii_learn::PromoteConfig::default(), engine.log());
-    promoter.sweep(crate::engine::runs::learn_now_secs(), || {
-        root.and_then(|r| pii_learn::scan(&r, &pii_learn::LearnConfig::default()).ok())
-            .map(|(runs, _)| runs)
-            .unwrap_or_default()
-    });
 }
 
 /// Owns everything `pii daemon` starts on top of a bare [`Engine`] (F5.1).
@@ -233,7 +223,10 @@ impl Daemon {
             loop {
                 tick.tick().await;
                 let (e, d) = (Arc::clone(&engine), dir.clone());
-                let _ = tokio::task::spawn_blocking(move || promotion_sweep(&e, &d)).await;
+                let _ = tokio::task::spawn_blocking(move || {
+                    crate::engine::learn_methods::promotion_sweep(&e, &d)
+                })
+                .await;
             }
         })
     }

@@ -422,3 +422,59 @@ fn r7_refusals_are_events_and_counters_by_state_are_complete() {
         assert!(names::ALL.contains(&n), "{n} not in ALL");
     }
 }
+
+/// Spec 138 R3/R5(a): a hand revert racing the lifecycle sweep (the reviewer's
+/// 059 F5 harness) must leave one ledger line per event, `seq` unique and
+/// contiguous, and exactly one ending per promotion — 50 rounds.
+#[test]
+fn concurrent_revert_and_sweep_do_not_duplicate_or_lose() {
+    for round in 0..50 {
+        let d = TempDir::new().unwrap();
+        let (ca, cb) = (candidate("ga"), candidate("gb"));
+        store::put_candidates(d.path(), &[ca.clone(), cb.clone()]).unwrap();
+        for c in [&ca, &cb] {
+            pii_learn::put_verdict(d.path(), &verdict_rec(c, Verdict::Confirmed)).unwrap();
+        }
+        let (p, _) = promoter(d.path());
+        let a = p.promote(&req(&ca), T0).unwrap();
+        let b = p.promote(&req(&cb), T0 + 1).unwrap();
+        let p = Arc::new(p);
+        let gate = Arc::new(std::sync::Barrier::new(3));
+        let spawn_revert = |id: String| {
+            let (p, gate) = (Arc::clone(&p), Arc::clone(&gate));
+            std::thread::spawn(move || {
+                gate.wait();
+                let _ = p.revert(&id, "test:operator", T0 + 50);
+            })
+        };
+        let (ra, rb) = (spawn_revert(a.id.clone()), spawn_revert(b.id.clone()));
+        let sweeper = {
+            let (p, gate) = (Arc::clone(&p), Arc::clone(&gate));
+            std::thread::spawn(move || {
+                gate.wait();
+                // Both windows are closed and nothing improved: it auto-reverts them.
+                p.sweep(T0 + 100, Vec::new);
+            })
+        };
+        for h in [ra, rb, sweeper] {
+            h.join().unwrap();
+        }
+        let l = ledger_tail(d.path(), 100);
+        let seqs: Vec<u64> = l.iter().map(|e| e.seq).collect();
+        let want: Vec<u64> = (1..=l.len() as u64).collect();
+        assert_eq!(seqs, want, "round {round}: seq duplicated or gapped");
+        assert_eq!(l.len(), 4, "round {round}: a record was lost or doubled");
+        for id in [&a.id, &b.id] {
+            let ends = l
+                .iter()
+                .filter(|e| &e.promotion == id && e.event != "applied")
+                .count();
+            assert_eq!(ends, 1, "round {round}: {id} ended {ends} times");
+            let s = get_promotion(d.path(), id).unwrap();
+            assert_ne!(s.state, PromotionState::Active);
+        }
+        // The raw file agrees with the parsed view: no unparsable line was written.
+        let raw = fs::read_to_string(d.path().join("learn/ledger.jsonl")).unwrap();
+        assert_eq!(raw.lines().count(), l.len(), "round {round}: torn line");
+    }
+}

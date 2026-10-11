@@ -1,22 +1,24 @@
 //! `pii learn {scan|list|show|verify|promote|promotions|revert|ledger}` (specs
 //! 123 R8, 124 R8, 125 R8): offline extraction of candidate lessons from the
 //! trajectory directory, their verification by isolated shadow runs, and the
-//! one promotion the loop may make (`quarantine_graph`). It runs in this
-//! process, never in the daemon; the daemon enforces and advances promotions.
+//! one promotion the loop may make (`quarantine_graph`). Reading and offline
+//! analysis run in this process; every write to `learn/` (`promote`, `revert`,
+//! `promotions --sweep`) is a request to the daemon, the ledger's only writer
+//! (spec 138) — with no daemon the command fails closed.
 
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use pii_core::Clock as _;
 use pii_learn::{
-    LearnConfig, Learner, PromoteConfig, PromoteRequest, Promoter, Verdict, Verifier, VerifyConfig,
-    get_verdict, ledger_id, ledger_tail, list_promotions, store,
+    LearnConfig, Learner, Promotion, Verdict, Verifier, VerifyConfig, get_verdict, ledger_id,
+    ledger_tail, list_promotions, store,
 };
 use pii_observe::StderrObserver;
+use pii_proto::method::Method;
 
-use crate::cmd_ctl::next_str;
+use crate::cmd_ctl::{next_str, run_call};
 
 const USAGE: &str = "usage: pii learn scan [--traj <root>] [--dir <store dir>] [--min-runs N] \
 [--outlier-factor N] [--max-files N] [--max-file-bytes N]\n       pii learn list [--dir <store dir>]\n       \
@@ -282,10 +284,6 @@ fn verify(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Exi
     ExitCode::SUCCESS
 }
 
-fn now_secs() -> u64 {
-    pii_core::SystemClock.now_ms() / 1000
-}
-
 /// The named actor: `--actor`, else `cli:<$USER>`.
 fn actor(o: &Opts) -> String {
     o.actor.clone().unwrap_or_else(|| {
@@ -296,8 +294,22 @@ fn actor(o: &Opts) -> String {
     })
 }
 
-fn promoter(dir: &std::path::Path) -> Promoter {
-    Promoter::new(dir, PromoteConfig::default(), Arc::new(StderrObserver))
+/// Asks the daemon — the only writer of `learn/` (spec 138) — to do `method`.
+/// With no daemon to ask, the command fails closed: never a local write.
+fn ask_daemon(
+    method: Method,
+    dir: &std::path::Path,
+    mut params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if let Some(m) = params.as_object_mut() {
+        m.insert("dir".into(), serde_json::json!(dir.display().to_string()));
+    }
+    run_call(method, params).map_err(|e| {
+        format!(
+            "the daemon owns the ledger and cannot be reached ({e}); \
+             start `pii daemon` — nothing was written"
+        )
+    })
 }
 
 /// `pii learn promote <candidate-id> ...`: prints the promotion and its ledger id.
@@ -306,53 +318,69 @@ fn promote(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Ex
         let _ = writeln!(std::io::stderr(), "{USAGE}");
         return ExitCode::from(2);
     };
-    let req = PromoteRequest {
-        candidate,
-        kind: o.kind.clone(),
-        actor: actor(o),
-        metric: o.metric.clone(),
-        window_secs: o.window_secs,
-        ttl_secs: o.ttl_secs,
+    let params = serde_json::json!({
+        "candidate": candidate,
+        "kind": o.kind,
+        "actor": actor(o),
+        "metric": o.metric,
+        "window_secs": o.window_secs,
+        "ttl_secs": o.ttl_secs,
+    });
+    let v = match ask_daemon(Method::LearnPromote, dir, params) {
+        Ok(v) => v,
+        Err(e) => return fail(&e),
     };
-    match promoter(dir).promote(&req, now_secs()) {
-        Ok(p) => {
-            let seq = ledger_tail(dir, 1).last().map_or(0, |e| e.seq);
-            let _ = writeln!(
-                out,
-                "promoted {} {} graph={} state={} expires={} metric={} window={}s ledger={}",
-                p.id,
-                p.kind.as_str(),
-                p.graph,
-                p.state.as_str(),
-                p.expires_secs,
-                p.metric.as_str(),
-                p.window_secs,
-                ledger_id(seq)
-            );
-            ExitCode::SUCCESS
-        }
-        Err(r) => {
-            let _ = writeln!(
-                std::io::stderr(),
-                "refused: {r} (ledger {})",
-                r.ledger.as_deref().unwrap_or("-")
-            );
-            ExitCode::from(1)
-        }
+    if let Some(why) = v.get("refused").and_then(serde_json::Value::as_str) {
+        let ledger = v.get("ledger").and_then(serde_json::Value::as_str);
+        let _ = writeln!(
+            std::io::stderr(),
+            "refused: {why} (ledger {})",
+            ledger.unwrap_or("-")
+        );
+        return ExitCode::from(1);
     }
+    let Some(p) = v
+        .get("promotion")
+        .and_then(|p| serde_json::from_value::<Promotion>(p.clone()).ok())
+    else {
+        return fail("the daemon answered learn.promote without a promotion");
+    };
+    let ledger = v.get("ledger").and_then(serde_json::Value::as_str);
+    let _ = writeln!(
+        out,
+        "promoted {} {} graph={} state={} expires={} metric={} window={}s ledger={}",
+        p.id,
+        p.kind.as_str(),
+        p.graph,
+        p.state.as_str(),
+        p.expires_secs,
+        p.metric.as_str(),
+        p.window_secs,
+        ledger.unwrap_or("-")
+    );
+    ExitCode::SUCCESS
 }
 
 /// `pii learn promotions [--sweep]`: state, verdict, metric, before/after, decision.
 fn promotions(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> ExitCode {
     if o.sweep {
-        let traj = o.traj.clone();
-        let changed = promoter(dir).sweep(now_secs(), || {
-            traj.and_then(|t| pii_learn::scan(&t, &o.cfg).ok())
-                .map(|(runs, _)| runs)
-                .unwrap_or_default()
-        });
-        for (id, st) in &changed {
-            let _ = writeln!(out, "swept {id} -> {}", st.as_str());
+        // The daemon sweeps against its own trajectory root; `--traj` is not used here.
+        let v = match ask_daemon(Method::LearnSweep, dir, serde_json::json!({})) {
+            Ok(v) => v,
+            Err(e) => return fail(&e),
+        };
+        for c in v
+            .get("changed")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let _ = writeln!(
+                out,
+                "swept {} -> {}",
+                c.get(0).and_then(serde_json::Value::as_str).unwrap_or("?"),
+                c.get(1).and_then(serde_json::Value::as_str).unwrap_or("?")
+            );
         }
     }
     let list = list_promotions(dir);
@@ -384,9 +412,11 @@ fn revert(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Exi
         let _ = writeln!(std::io::stderr(), "{USAGE}");
         return ExitCode::from(2);
     };
-    match promoter(dir).revert(&id, &actor(o), now_secs()) {
-        Ok(l) => {
-            let _ = writeln!(out, "reverted {id} ledger={l}");
+    let params = serde_json::json!({"id": id, "actor": actor(o)});
+    match ask_daemon(Method::LearnRevert, dir, params) {
+        Ok(v) => {
+            let l = v.get("ledger").and_then(serde_json::Value::as_str);
+            let _ = writeln!(out, "reverted {id} ledger={}", l.unwrap_or("-"));
             ExitCode::SUCCESS
         }
         Err(e) => fail(&e),

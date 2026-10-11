@@ -108,6 +108,15 @@ pub enum Method {
     /// Reload config (channels/workers), never restarts the process.
     #[serde(rename = "sys.reload")]
     SysReload,
+    /// Promote a verified learning candidate; the daemon applies and records it (spec 138).
+    #[serde(rename = "learn.promote")]
+    LearnPromote,
+    /// Take a promotion back by hand; the daemon applies and records it (spec 138).
+    #[serde(rename = "learn.revert")]
+    LearnRevert,
+    /// One promotion lifecycle pass (TTL, outcome windows); the daemon records it (spec 138).
+    #[serde(rename = "learn.sweep")]
+    LearnSweep,
 }
 
 impl std::fmt::Display for Method {
@@ -147,6 +156,9 @@ impl std::fmt::Display for Method {
             Self::MemoryPut => "memory.put",
             Self::MemoryConsolidate => "memory.consolidate",
             Self::SysReload => "sys.reload",
+            Self::LearnPromote => "learn.promote",
+            Self::LearnRevert => "learn.revert",
+            Self::LearnSweep => "learn.sweep",
         })
     }
 }
@@ -190,6 +202,9 @@ impl std::str::FromStr for Method {
             "memory.put" => Self::MemoryPut,
             "memory.consolidate" => Self::MemoryConsolidate,
             "sys.reload" => Self::SysReload,
+            "learn.promote" => Self::LearnPromote,
+            "learn.revert" => Self::LearnRevert,
+            "learn.sweep" => Self::LearnSweep,
             other => return Err(other.to_owned()),
         })
     }

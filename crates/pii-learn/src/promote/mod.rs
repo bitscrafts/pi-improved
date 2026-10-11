@@ -14,6 +14,8 @@ mod types;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use parking_lot::{Mutex, MutexGuard};
+
 use pii_observe::{Event, Level, Observer, names};
 
 use crate::scan::RunSummary;
@@ -31,6 +33,18 @@ pub use types::{
 };
 
 const SUBSYSTEM: &str = "learn";
+
+/// The one writer's lock (spec 138): every mutation of `learn/` — the ledger
+/// line, its `seq`, the promotion record — happens while this is held, so two
+/// callers in the daemon cannot interleave a read-count-then-append. The
+/// daemon is the only process that writes (the CLI asks it over the control
+/// socket), so a process-wide lock is the whole story; there is no waiting
+/// loop, a caller just takes its turn.
+static WRITER: Mutex<()> = Mutex::new(());
+
+fn writer() -> MutexGuard<'static, ()> {
+    WRITER.lock()
+}
 
 /// Applies, reverts, expires and evaluates promotions under one store dir.
 pub struct Promoter {
@@ -111,6 +125,7 @@ impl Promoter {
     // reason: the rules are a flat sequence of guards; splitting would only hide the order.
     #[allow(clippy::too_many_lines)]
     pub fn promote(&self, req: &PromoteRequest, now: u64) -> Result<Promotion, Refused> {
+        let _w = writer();
         let no = |r, m: String| Err(self.refuse(req, r, m, now));
         let kind = match PromotionKind::parse(&req.kind) {
             Ok(k) => k,
@@ -305,6 +320,7 @@ impl Promoter {
     /// A message when the id is unknown, the promotion is no longer active, its
     /// rollback data is missing, or the ledger cannot be written.
     pub fn revert(&self, id: &str, actor: &str, now: u64) -> Result<String, String> {
+        let _w = writer();
         let mut p = get_promotion(&self.dir, id).ok_or_else(|| format!("no promotion {id}"))?;
         if p.state != PromotionState::Active {
             return Err(format!("promotion {id} is already {}", p.state.as_str()));
@@ -330,6 +346,7 @@ impl Promoter {
         now: u64,
         load_runs: impl FnOnce() -> Vec<RunSummary>,
     ) -> Vec<(String, PromotionState)> {
+        let _w = writer();
         let mut changed = Vec::new();
         let mut runs: Option<Vec<RunSummary>> = None;
         let mut load = Some(load_runs);

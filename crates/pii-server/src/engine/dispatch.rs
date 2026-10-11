@@ -139,6 +139,9 @@ pub fn dispatch(
         Method::MemoryPut => crate::engine::methods::memory_put(engine, req),
         Method::MemoryConsolidate => crate::engine::methods::memory_consolidate(engine, req),
         Method::SysReload => crate::engine::methods::sys_reload(engine, req),
+        Method::LearnPromote => crate::engine::learn_methods::learn_promote(engine, req),
+        Method::LearnRevert => crate::engine::learn_methods::learn_revert(engine, req),
+        Method::LearnSweep => crate::engine::learn_methods::learn_sweep(engine, req),
         Method::RunResume => crate::engine::methods::run_resume(engine, req),
         Method::SessionInterrupt => {
             let sid = req

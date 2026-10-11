@@ -14,6 +14,7 @@ pii-observe = { path = "../pii-observe" }
 pii-store = { path = "../pii-store" }
 blake3 = { workspace = true }
 dunce = { workspace = true }
+parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
