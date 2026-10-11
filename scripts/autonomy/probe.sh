@@ -14,6 +14,7 @@
 # to grep as if they were FILENAMES ("grep: {…}: File name too long" / "[ ! -s '' ]"), so a real
 # error was misread as a closed window AND an OPEN window was misread as a probe error — a loop
 # that would never have spent anything, discovered by the fake-CLI tests before any dispatch.
+. "$(dirname "$(readlink -f "$0")")/env.sh"   # the loop needs PATH set inside the script
 set -uo pipefail
 OUT="$(mktemp)"; ERR="$(mktemp)"
 trap 'rm -f "$OUT" "$ERR"' EXIT

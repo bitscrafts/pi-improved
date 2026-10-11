@@ -12,6 +12,7 @@
 #
 # Quiet rules: a cycle in flight prints nothing; a milestone (a commit, a park, a closed window) prints once,
 # and printing is de-duplicated against _tmp/autonomy/last-reported so the same fact is not re-sent every tick.
+. "$(dirname "$(readlink -f "$0")")/env.sh"   # the loop needs PATH set inside the script
 set -uo pipefail
 cd /projects/pi-improved || { echo "pii autonomy: cannot cd to the project"; exit 1; }
 ST=_tmp/autonomy; LOGD=$ST/logs; mkdir -p "$LOGD"

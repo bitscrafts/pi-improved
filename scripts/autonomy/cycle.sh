@@ -14,6 +14,7 @@
 # belongs to the agent that calls it; the mechanics belong here, where they can be tested.
 #
 # env: PLAN, GATE=1|0 (default 1), DRY=1 prints the plan and stops before dispatching.
+. "$(dirname "$(readlink -f "$0")")/env.sh"   # the loop needs PATH set inside the script
 set -uo pipefail
 ROOT=/projects/pi-improved; cd "$ROOT" || exit 1
 STATEDIR=$ROOT/_tmp/autonomy; LOGD=$STATEDIR/logs
