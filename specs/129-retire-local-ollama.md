@@ -132,7 +132,9 @@ llama.cpp server lane ([llama] host = 10.10.10.217:8082), with a dated backup ke
 2 s ceiling and panicked; it passes alone and fails under the full parallel suite. Bound raised to 60 s with
 the assumption written down.
 
-**Gate:** plain `fresh-gate` on the tree that carries this spec — `quality-gate: ALL PASS · fresh-gate: PASS`
+## Closure (2026-10-11)
+
+**Committed** `5a6ba25` (impl) after `1ca4b62`/`4505979` (spec + evidence). **Gate:** plain `fresh-gate` on the tree that carries this spec — `quality-gate: ALL PASS · fresh-gate: PASS`
 (14 steps). The two blockers of that run were the path-pinned reachability test this spec's worker invalidated by
 moving the call (`489efe5`) and a clippy error in the orchestrator's own fix (`8cf4eb1`); see spec 128's closure.
 
