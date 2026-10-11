@@ -95,3 +95,6 @@ contains `client_connect_observed`. A text check can pass while another raw dial
 is really carried by `net-check` and `no_raw_dial_remains_in_pii_evolve` (both proven by mutation), not by the
 string match.
 
+**Gate:** plain `fresh-gate` on the tree carrying this spec — `quality-gate: ALL PASS · fresh-gate: PASS`
+(14 steps). Closed 2026-10-11. Commit `4a70f23`.
+
