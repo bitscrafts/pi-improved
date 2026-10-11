@@ -926,3 +926,16 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
   a quarantined graph, `pii-evolve`'s direct socket dial, `pii-store` `store_op` redb residual), the laya lane,
   and the Discord questions awaiting a user call (home channel flip; the `post` node's optional tag).
 
+## 2026-10-11 (early) — 132 closed: the Discord channel posts into a forum
+
+- `76e4dd5`. Forum path (thread + tag by name), `send_tagged` seam, the `post` node's `tag`, 128's idempotence
+  over the thread path — plus **two pre-existing defects the live proof found** (a default base that does not
+  resolve; a channel egress grant written where nothing reads it). The daemon now registers a channel's declared
+  hosts for that channel's principal; a graph still gets only `post`, never the network.
+- **Live proof (orchestrator):** a real thread in the user's forum carrying the `chat` tag, then deleted.
+- Also closed this session: **130** (the boss launcher dials through `pii_uds`, its exemption removed) and **131**
+  (a refused run is recorded as a decision, refusals accumulating in the store's ring — found by a live harness
+  after its own contract test passed while dropping 2 of 3 refusals).
+- Next: the audit-trail fork (three trails) awaits the user; then the backlog (g4/g6/g8) and the open
+  quarantine flake.
+
