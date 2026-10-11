@@ -278,6 +278,12 @@ pub const METRIC_CHANNEL_POSTS_TOTAL: &str = "pii_channel_posts_total";
 /// Metric (counter): `post` node calls refused or failed since the daemon started (spec 128).
 pub const METRIC_CHANNEL_POST_REFUSALS_TOTAL: &str = "pii_channel_post_refusals_total";
 
+/// Metric (counter): runs refused because a promotion quarantines their graph (spec 131).
+pub const METRIC_QUARANTINE_REFUSALS_TOTAL: &str = "pii_quarantine_refusals_total";
+/// Metric (counter): quarantine refusals whose deny decision reached the ledger; a gap to the line above is a finding (spec 131).
+pub const METRIC_QUARANTINE_REFUSALS_RECORDED_TOTAL: &str =
+    "pii_quarantine_refusals_recorded_total";
+
 /// Metric (counter, label `kind`): HAL operations that succeeded since the daemon started (spec 121).
 pub const METRIC_HAL_OPS_TOTAL: &str = "pii_hal_ops_total";
 /// Metric (counter): HAL operations refused by the claim or scope rules since the daemon started (spec 121).
@@ -448,6 +454,8 @@ pub const ALL: &[&str] = &[
     METRIC_WORKER_REQUESTS_REFUSED_TOTAL,
     METRIC_CHANNEL_POSTS_TOTAL,
     METRIC_CHANNEL_POST_REFUSALS_TOTAL,
+    METRIC_QUARANTINE_REFUSALS_TOTAL,
+    METRIC_QUARANTINE_REFUSALS_RECORDED_TOTAL,
     METRIC_HAL_OPS_TOTAL,
     METRIC_HAL_REFUSALS_TOTAL,
     METRIC_WASM_CALLS_TOTAL,

@@ -173,6 +173,8 @@ pub struct Engine {
     pub(crate) latency: pii_observe::RunLatency,
     /// RSS-per-run trend over recent `sys.status` polls (spec 116 R2).
     pub(crate) rss_trend: pii_observe::RssTrend,
+    /// Quarantine refusals vs refusals recorded in the decision ledger (spec 131).
+    pub refusals: engine::refusal::RefusalCounts,
 }
 
 /// A conversation session.
@@ -302,6 +304,7 @@ impl Engine {
             log,
             health_watch: pii_observe::HealthWatch::new(),
             latency: pii_observe::RunLatency::default(),
+            refusals: engine::refusal::RefusalCounts::default(),
             rss_trend: pii_observe::RssTrend::new(),
         }))
     }

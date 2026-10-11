@@ -349,6 +349,8 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     let posts = engine.channel_hub.counts();
     counts.channel_posts = posts.posted;
     counts.channel_post_refusals = posts.refused;
+    counts.quarantine_refusals = engine.refusals.refused();
+    counts.quarantine_refusals_recorded = engine.refusals.recorded();
     if let Some(ctx) = ctx {
         counts.cron_entries = ctx.cron.lock().len() as u64;
         add_channel_counters(&mut counts, channels.as_deref());

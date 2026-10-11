@@ -89,10 +89,7 @@ pub fn spawn_run(
         // The Phase-1 `run` journals every event (bridge → bus) and writes
         // the terminal to the journal; nothing else writes redb.
         let mut refused = false;
-        let started = quarantine_of(&engine, &spec.name).map_or_else(
-            || pii_graph::run::run(&engine.store, &spec, &engine.reg, &ctx, &run_id, input),
-            |reason| Err(PiiError::Denied(reason)),
-        );
+        let started = start_or_refuse(&engine, &spec, &ctx, &run_id, input);
         let terminal = match started {
             Ok(t) => Some(t),
             Err(e) => {
@@ -128,11 +125,37 @@ pub fn spawn_run(
     Ok(())
 }
 
+/// Runs the graph, or refuses it by name when a promotion quarantines it (spec 125).
+/// Spec 131: the refusal is a decision; it is recorded, never gated on that.
+fn start_or_refuse(
+    engine: &Engine,
+    spec: &GraphSpec,
+    ctx: &pii_core::Ctx,
+    run_id: &RunId,
+    input: serde_json::Value,
+) -> Result<pii_abi::Terminal, PiiError> {
+    quarantine_of(engine, &spec.name).map_or_else(
+        || pii_graph::run::run(&engine.store, spec, &engine.reg, ctx, run_id, input),
+        |(promo, reason)| {
+            crate::engine::refusal::record_quarantine_refusal(
+                engine,
+                &promo,
+                &reason,
+                run_id,
+                ctx.now_ms(),
+            );
+            Err(PiiError::Denied(reason))
+        },
+    )
+}
+
 /// Spec 125 R1: the named reason when a promotion in effect quarantines `graph`.
 /// Read-only: expiry and outcome are advanced by the daemon's sweep, not here.
-fn quarantine_of(engine: &Engine, graph: &str) -> Option<String> {
+fn quarantine_of(engine: &Engine, graph: &str) -> Option<(pii_learn::Promotion, String)> {
     let ctx = engine.daemon_ctx()?;
-    pii_learn::quarantine_reason(&ctx.runtime_dir, graph, learn_now_secs())
+    let promo = pii_learn::quarantining_promotion(&ctx.runtime_dir, graph, learn_now_secs())?;
+    let reason = pii_learn::quarantine_refusal(&promo, graph);
+    Some((promo, reason))
 }
 
 /// Wall-clock epoch seconds, for the promotion lifecycle (spec 125).

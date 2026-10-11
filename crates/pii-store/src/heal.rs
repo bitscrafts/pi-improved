@@ -25,6 +25,8 @@ pub enum HealState {
     Applied,
     /// Escalated to a human (never auto-promoted).
     Escalated,
+    /// A system decision denied something under this signature (spec 131).
+    Denied,
 }
 
 /// The human decision attached to a promotion (spec 26 R3), bound to the id
@@ -354,6 +356,62 @@ impl HealStore {
     }
 }
 
+impl HealStore {
+    /// Records one system denial under `sig` (spec 131): the decision, the
+    /// run that was denied as a ring entry (outcome `denied`), and `extra`,
+    /// all in ONE write. Repeats accumulate, none overwrite: `attempt_count`
+    /// is the true total, the ring holds the newest [`ATTEMPT_RING_CAP`], and
+    /// `extra["dropped"]` counts the evicted, so
+    /// `attempt_count == attempts.len() + dropped` always holds.
+    ///
+    /// # Errors
+    /// [`PiiError::StoreOp`] on a redb or encode/decode failure.
+    pub fn record_denial(
+        &self,
+        sig: &str,
+        gate: &str,
+        decision: ApprovalDecision,
+        run: HealAttemptRun,
+        extra: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<HealAttempt, PiiError> {
+        let mut attempt = self.get_attempt(sig)?.unwrap_or_else(|| HealAttempt {
+            signature_hash: sig.to_owned(),
+            gate: gate.to_owned(),
+            state: HealState::Denied,
+            first_seen_ms: run.ts_ms,
+            last_seen_ms: run.ts_ms,
+            attempts: Vec::new(),
+            attempt_count: 0,
+            patch_hash: None,
+            gate_before: None,
+            gate_after: None,
+            decision: None,
+            model: None,
+            tokens_in: 0,
+            tokens_out: 0,
+            extra: serde_json::Map::new(),
+        });
+        attempt.last_seen_ms = run.ts_ms;
+        attempt.attempt_count = attempt.attempt_count.saturating_add(1);
+        attempt.state = HealState::Denied;
+        attempt.attempts.push(run);
+        let mut dropped = attempt
+            .extra
+            .get("dropped")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        while attempt.attempts.len() > ATTEMPT_RING_CAP {
+            attempt.attempts.remove(0);
+            dropped += 1;
+        }
+        attempt.decision = Some(decision);
+        attempt.extra.extend(extra);
+        attempt.extra.insert("dropped".into(), dropped.into());
+        self.put_attempt(&attempt)?;
+        Ok(attempt)
+    }
+}
+
 /// Max attempts kept in the ring (older runs evicted; `attempt_count` keeps
 /// the true total). Spec 26 R3 — a human approving a promotion sees the
 /// recent attempts plus an honest total.
@@ -372,6 +430,53 @@ mod tests {
         let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    /// Spec 131: denials accumulate under one signature, survive a reopen,
+    /// and the ring reconciles `attempt_count == attempts + dropped`.
+    #[test]
+    fn denials_accumulate_survive_reopen_and_reconcile_past_the_cap() {
+        let dir = Builder::new()
+            .prefix("heal-denial-")
+            .tempdir_in(scratch_root())
+            .unwrap();
+        let path = dir.path().join("heal.redb");
+        let total = ATTEMPT_RING_CAP as u64 + 3;
+        {
+            let store = HealStore::open(&path).unwrap();
+            for i in 0..total {
+                let d = ApprovalDecision {
+                    allow: false,
+                    approval_id: String::new(),
+                    by: String::from("engine"),
+                    ts_ms: i,
+                };
+                let run = HealAttemptRun {
+                    run_id: format!("r{i}"),
+                    outcome: HealState::Denied,
+                    ts_ms: i,
+                    detail: String::new(),
+                };
+                store
+                    .record_denial("p-1", "quarantine", d, run, serde_json::Map::new())
+                    .unwrap();
+            }
+        }
+        let a = HealStore::open(&path)
+            .unwrap()
+            .get_attempt("p-1")
+            .unwrap()
+            .unwrap();
+        let dropped = a
+            .extra
+            .get("dropped")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap();
+        assert_eq!(u64::from(a.attempt_count), total);
+        assert_eq!(a.attempts.len(), ATTEMPT_RING_CAP);
+        assert_eq!(dropped, 3);
+        assert_eq!(a.attempts.len() as u64 + dropped, total);
+        assert_eq!(a.attempts.last().unwrap().run_id, format!("r{}", total - 1));
     }
 
     #[test]

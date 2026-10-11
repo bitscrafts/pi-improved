@@ -28,7 +28,7 @@ pub use promote::{
     DEFAULT_TTL_SECS, LedgerEntry, Metric, Outcome, PromoteConfig, PromoteRequest, Promoter,
     Promotion, PromotionKind, PromotionState, Refusal as PromotionRefusal, Refused, Rollback,
     get_promotion, ledger_id, ledger_tail, list_promotions, measure, promotion_counts,
-    quarantine_reason, write_scoped,
+    quarantine_reason, quarantine_refusal, quarantining_promotion, write_scoped,
 };
 pub use scan::{RunSummary, ScanError, ScanStats, classify, scan, token};
 pub use store::{LearnStatus, StoreError};

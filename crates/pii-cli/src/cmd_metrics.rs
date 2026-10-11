@@ -30,6 +30,22 @@ fn main_bytes_per_run(v: &serde_json::Value) -> u64 {
     bytes.checked_div(runs).unwrap_or(0)
 }
 
+/// Quarantine refusals vs refusals recorded (spec 131): a gap is a finding.
+fn render_quarantine(v: &serde_json::Value, out: &mut String) {
+    for (name, key) in [
+        (
+            names::METRIC_QUARANTINE_REFUSALS_TOTAL,
+            "/counts/quarantine_refusals",
+        ),
+        (
+            names::METRIC_QUARANTINE_REFUSALS_RECORDED_TOTAL,
+            "/counts/quarantine_refusals_recorded",
+        ),
+    ] {
+        let _ = writeln!(out, "{name} {}", num(v, key));
+    }
+}
+
 /// Run-lifecycle latency lines (spec 115 R4) and the standing notes (R3c).
 /// A quantile is emitted only for an outcome that has samples.
 fn render_latency(v: &serde_json::Value, out: &mut String) {
@@ -334,6 +350,7 @@ fn render(v: &serde_json::Value) -> String {
         let _ = writeln!(out, "{name} {value}");
     }
     render_latency(v, &mut out);
+    render_quarantine(v, &mut out);
     render_hal(v, &mut out);
     render_wasm(v, &mut out);
     render_learn(v, &mut out);
@@ -572,6 +589,19 @@ mod tests {
         for line in [
             "pii_channel_posts_total 3",
             "pii_channel_post_refusals_total 1",
+        ] {
+            assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
+        }
+    }
+
+    #[test]
+    fn render_carries_the_quarantine_refusal_counters() {
+        let text = render(&serde_json::json!({
+            "counts": {"quarantine_refusals": 2, "quarantine_refusals_recorded": 1}
+        }));
+        for line in [
+            "pii_quarantine_refusals_total 2",
+            "pii_quarantine_refusals_recorded_total 1",
         ] {
             assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
         }

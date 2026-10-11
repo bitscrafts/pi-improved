@@ -145,19 +145,30 @@ pub fn get_promotion(dir: &Path, id: &str) -> Option<Promotion> {
     serde_json::from_slice(&b).ok()
 }
 
+/// The promotion in effect at `now` that quarantines `graph`, if any.
+/// Read-only: this is what the engine asks before every run (spec 131 records
+/// the promotion id alongside the refusal).
+#[must_use]
+pub fn quarantining_promotion(dir: &Path, graph: &str, now: u64) -> Option<Promotion> {
+    list_promotions(dir).into_iter().find(|p| {
+        p.in_effect(now)
+            && match p.kind {
+                PromotionKind::QuarantineGraph => p.graph == graph,
+            }
+    })
+}
+
+/// The named refusal for starting `graph` under promotion `p`.
+#[must_use]
+pub fn quarantine_refusal(p: &Promotion, graph: &str) -> String {
+    format!("learn: graph {graph} is quarantined by promotion {}", p.id)
+}
+
 /// The named refusal for starting `graph`, if a promotion in effect at `now`
 /// quarantines it. Read-only: this is what the engine asks before every run.
 #[must_use]
 pub fn quarantine_reason(dir: &Path, graph: &str, now: u64) -> Option<String> {
-    list_promotions(dir)
-        .into_iter()
-        .find(|p| {
-            p.in_effect(now)
-                && match p.kind {
-                    PromotionKind::QuarantineGraph => p.graph == graph,
-                }
-        })
-        .map(|p| format!("learn: graph {graph} is quarantined by promotion {}", p.id))
+    quarantining_promotion(dir, graph, now).map(|p| quarantine_refusal(&p, graph))
 }
 
 /// Promotion counts by state plus `refused`; every key is always present.

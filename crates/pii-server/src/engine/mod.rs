@@ -32,6 +32,7 @@ pub mod dispatch;
 mod inline_measure_tests;
 pub mod loopback;
 pub mod methods;
+pub mod refusal;
 pub mod registry;
 pub mod runs;
 pub mod session_durability;

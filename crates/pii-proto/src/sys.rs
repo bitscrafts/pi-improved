@@ -181,6 +181,12 @@ pub struct Counts {
     /// `post` node calls refused or failed (spec 128).
     #[serde(default)]
     pub channel_post_refusals: u64,
+    /// Runs refused because a promotion quarantines their graph (spec 131).
+    #[serde(default)]
+    pub quarantine_refusals: u64,
+    /// Of those, refusals whose deny decision reached the ledger (spec 131).
+    #[serde(default)]
+    pub quarantine_refusals_recorded: u64,
     /// Successful HAL operations by kind (`claim`, `release`, `read`, `write`,
     /// `transaction`); empty when no `[hal]` is configured (spec 121).
     #[serde(default)]

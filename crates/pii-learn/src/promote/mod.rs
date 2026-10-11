@@ -23,7 +23,7 @@ use storage::{append_ledger, read_status, save, status_path};
 
 pub use storage::{
     get_promotion, ledger_tail, list_promotions, measure, promotion_counts, quarantine_reason,
-    write_scoped,
+    quarantine_refusal, quarantining_promotion, write_scoped,
 };
 pub use types::{
     DEFAULT_TTL_SECS, LedgerEntry, Metric, Outcome, PromoteConfig, PromoteRequest, Promotion,

@@ -95,3 +95,39 @@ and stop. What is not acceptable is overloading a field with something it does n
 - Do NOT touch `specs/`. If the store's decision API cannot carry a *system* decision (it was built for heal
   approvals, keyed by `signature_hash`) without a signature that misrepresents this event, STOP and report the
   shape you would need — do not overload `sig` with something that is not a signature.
+
+## Closure (2026-10-11)
+
+**The contract passed on the first implementation while the live path lost data.** My harness
+(`/projects/_tmp/verify131-live.sh`) refused a quarantined graph **three** times:
+
+```
+run ids r000000000004 · r000000000005 · r000000000006
+counters  pii_quarantine_refusals_total 3 · pii_quarantine_refusals_recorded_total 3
+ledger    ONE row, extra.run_id = the LAST one, attempt_count 0, attempts []
+```
+
+Two refusals were gone from the record — and the implementation's own tests could not see it, because they
+refused once. Sent back to the same session with the harness, not with prose.
+
+**After the fix (my own re-run, not the worker's paste):**
+
+```
+counters  refusals 3 · recorded 3
+row       attempt_count 3 · state "denied" · attempts = [r…004, r…005, r…006] (each outcome "denied")
+          extra.dropped 0 · decision {allow:false, by:"engine", approval_id:""} · gate "quarantine"
+          read back through a fresh process (`pii heal ls` / `pii heal show <promotion-id>`)
+```
+
+The row keeps its key (`sig` = the promotion id, the join) and now **accumulates** in the store's existing
+`attempts` ring (`ATTEMPT_RING_CAP = 20`, spec 26's own structure); `attempt_count` is the true total and
+`extra.dropped` makes `attempt_count == attempts.len() + dropped` hold past the cap (a store test pushes 23).
+
+**My independent mutation:** an eviction that does not count itself (`dropped += 1` removed) reddens
+`heal::tests::denials_accumulate_survive_reopen_and_reconcile_past_the_cap` with `left: 0 · right: 3`; restored
+byte-identical → 49 pass. The worker's own two mutations (record-call swapped for a read; `push(run)` →
+`attempts = vec![run]`, which prints `left ["r…003"] right ["r…001","r…002","r…003"]`) are pasted in its report.
+
+**Verified:** `cargo test -p pii-server --lib` 115 passed · `-p pii-store --lib` 49 · four repo checks rc 0
+(`deps`, `net`, `doc-drift`, `lint-observability` 0 findings) · DO-NOT-REPEAT 1.49 records the lesson.
+

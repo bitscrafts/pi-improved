@@ -8,6 +8,8 @@ pub mod approvals;
 pub mod config;
 pub mod identity;
 mod lag;
+#[cfg(test)]
+mod refusal_tests;
 pub mod router;
 pub mod scheduler;
 pub mod status;
