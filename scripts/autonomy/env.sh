@@ -12,3 +12,7 @@
 export PATH="${PATH:-}:/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin"
 case ":$PATH:" in *":/root/.local/bin:"*) ;; *) export PATH="$PATH:/root/.local/bin" ;; esac
 export PII_TMP_ROOT="${PII_TMP_ROOT:-/projects/_tmp}"
+
+# root + bypassPermissions also needs the sandbox marker, or the worker dies in one second with
+# "--dangerously-skip-permissions cannot be used with root/sudo privileges".
+export IS_SANDBOX="${IS_SANDBOX:-1}"

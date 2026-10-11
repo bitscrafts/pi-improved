@@ -8,6 +8,12 @@ set -euo pipefail
 export PATH="/usr/local/cargo/bin:/root/.local/bin:$PATH"
 export HOME=/root
 export RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
+# root + `--permission-mode bypassPermissions` is refused unless the CLI is told it is sandboxed:
+#   "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons" (rc=1, no session).
+# Measured 2026-10-11: a cycle launched by the scheduler failed in ONE SECOND with exactly that line while the same
+# dispatch worked from an interactive shell - the same class as the PATH rule, and it is why every sibling script in
+# scripts/ exports this (measured 2026-09-28). Set here so a dispatch does not depend on its parent.
+export IS_SANDBOX="${IS_SANDBOX:-1}"
 REPO=/projects/pi-improved
 LOGD=$REPO/_tmp/claude-batchC
 mkdir -p "$LOGD"
