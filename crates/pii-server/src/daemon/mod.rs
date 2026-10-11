@@ -597,6 +597,7 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     #[tokio::test]
     async fn a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert() {
+        const EVENT_POLLS: usize = 6000;
         use pii_learn::{
             Candidate, Evidence, Kind, PromoteConfig, PromoteRequest, Promoter, Verdict,
             VerdictRecord, put_verdict, store,
@@ -706,10 +707,31 @@ mod tests {
             panic!("run {id} never finished within 60s");
         };
 
+        // The store status going terminal does not mean the observer has seen the event yet; wait on
+        // the event itself. Bound: observer delivery lags the commit by scheduling delay only, so the
+        // same 60 s ceiling as `finished` applies (polled every 10 ms).
+        let refusals_seen = |at_least: usize| {
+            for _ in 0..EVENT_POLLS {
+                let ev = rec.events();
+                let n = ev
+                    .iter()
+                    .filter(|e| e.kind == pii_observe::names::RUN_START_REFUSED)
+                    .count();
+                if n >= at_least {
+                    return ev;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            panic!(
+                "run.start.refused never reached the observer: {} events seen",
+                rec.events().len()
+            );
+        };
+
         let refused = start("sick");
         assert_eq!(finished(&refused).status, RunStatus::Failed);
         let want = format!("learn: graph sick is quarantined by promotion {}", promo.id);
-        let ev = rec.events();
+        let ev = refusals_seen(1);
         let e = ev
             .iter()
             .find(|e| e.kind == pii_observe::names::RUN_START_REFUSED)
@@ -734,7 +756,8 @@ mod tests {
             "the reverted graph runs again"
         );
         assert_eq!(
-            ev.iter()
+            refusals_seen(1)
+                .iter()
                 .filter(|e| e.kind == pii_observe::names::RUN_START_REFUSED)
                 .count(),
             1
