@@ -67,6 +67,14 @@ row "unskip puts it back" "X1" "$(PII_PLAN=$T/plan.tsv python3 scripts/autonomy/
 bash scripts/autonomy/control.sh status >/dev/null 2>&1; row "status runs" 0 $?
 bash scripts/autonomy/control.sh note "selftest note" >/dev/null; row "note appends" "ok" "$(grep -q 'selftest note' _tmp/autonomy/notes.md && echo ok)"
 
+echo "== 5b. a question reaches the phone, and an answer stops it"
+bash scripts/autonomy/control.sh ask "selftest: which way should the loop go?" >/dev/null
+bash scripts/autonomy/tick.sh | grep -q 'open question'; row "an open question is carried to the phone" 0 $?
+bash scripts/autonomy/tick.sh | grep -q 'open question'; row "it is not repeated every tick" 1 $?
+N=$(grep -c '^- \[ \]' _tmp/autonomy/questions.md)
+bash scripts/autonomy/control.sh answer "$N" "selftest answer" >/dev/null
+row "the answer is recorded" "ok" "$(grep -q 'ANSWERED: selftest answer' _tmp/autonomy/questions.md && echo ok)"
+
 echo "== 6. the supervisor does nothing when there is nothing to do"
 bash scripts/autonomy/control.sh pause "selftest2" >/dev/null
 bash scripts/autonomy/supervise.sh | grep -q 'paused'; row "paused -> the supervisor is idle" 0 $?

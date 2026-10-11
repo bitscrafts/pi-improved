@@ -55,6 +55,15 @@ case "$OUT" in
                    "pii autonomy · the Anthropic window is closed — nothing spent, the queue is untouched" ;;
 esac
 
+# 2b) an open question must reach the phone (the user's instruction: "qualquer duvida, pelo discord")
+#     keyed by the question list itself, so the same question is not re-sent every tick
+Q="$ST/questions.md"
+if [ -f "$Q" ] && grep -q '^- \[ \]' "$Q"; then
+  KEY="q:$(grep '^- \[ \]' "$Q" | md5sum | cut -c1-12)"
+  OPEN=$(grep -c '^- \[ \]' "$Q")
+  say_once "$KEY" "pii autonomy · $OPEN open question(s) for you:" "$(grep '^- \[ \]' "$Q" | head -3 | sed 's/^- \[ \] //' | cut -c1-160)"
+fi
+
 # 3) start exactly one cycle, detached
 setsid nohup bash scripts/autonomy/cycle.sh >>"$LOGD/cycle-last-detached.log" 2>&1 </dev/null &
 sleep 2
