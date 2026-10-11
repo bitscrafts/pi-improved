@@ -2000,6 +2000,7 @@ dependencies = [
  "pii-core",
  "pii-observe",
  "pii-proto",
+ "pii-uds",
  "serde_json",
  "tempfile",
  "tokio",

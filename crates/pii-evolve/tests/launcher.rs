@@ -236,3 +236,44 @@ fn driver_spawns_no_subprocess() {
         "driver must not spawn a subprocess or shell out to cargo xtask"
     );
 }
+
+/// Spec 130 R1: no production file in `pii-evolve` dials a socket itself; the
+/// one dial path is `pii_uds::client_connect_observed`.
+#[test]
+fn no_raw_dial_remains_in_pii_evolve() {
+    let symbol = concat!("UnixStream", "::connect");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    for entry in std::fs::read_dir(&dir).expect("read src") {
+        let path = entry.expect("entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("read source");
+        assert!(!src.contains(symbol), "raw dial in {}", path.display());
+    }
+}
+
+/// Spec 130 R1: the launch succeeds against a daemon that answers `hello`,
+/// dialling through the uds client.
+#[test]
+fn launcher_dials_through_the_uds_client() {
+    let src = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/driver.rs"),
+    )
+    .expect("read driver.rs");
+    assert!(
+        src.contains("client_connect_observed"),
+        "driver must dial through pii_uds::client_connect_observed"
+    );
+    let (path, listener, _keepalive) = bind_socket("launch-uds");
+    let (stub, _m, _p) = StubDaemon::new("r-boss-uds");
+    spawn_stub(stub, listener);
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+    std::fs::create_dir_all(&root).expect("create crate-local _tmp");
+    let state_dir = tempfile::Builder::new()
+        .prefix("launch-uds-dir")
+        .tempdir_in(&root)
+        .expect("state dir");
+    let cfg = BossLaunch::new(path, state_dir.path().to_path_buf());
+    assert_eq!(run_cycle(&cfg).expect("run_cycle").run_id, "r-boss-uds");
+}

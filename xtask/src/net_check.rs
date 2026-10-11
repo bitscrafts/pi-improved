@@ -54,11 +54,6 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-cli/tests/tui_failure_logged.rs",
     "crates/pii-evolve/tests/launcher.rs",
     "crates/pii-net/tests/accept_pool.rs",
-    // PRODUCTION code: pii-evolve's boss launcher dials the daemon control
-    // socket directly instead of through `pii_uds::client_connect`. Recorded,
-    // not fixed here (changes its error text and adds a crate edge): a spec
-    // should route it through pii-uds and delete this entry.
-    "crates/pii-evolve/src/driver.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.
@@ -276,5 +271,16 @@ mod tests {
             "::connect_timeout(addr, d);\n"
         );
         assert!(scan_one("crates/pii-net/src/dial.rs", src, ALLOWLIST).is_empty());
+    }
+
+    /// Spec 130 R5: `pii-evolve`'s production code holds no allowlist entry, so
+    /// a direct dial there is a violation that names the file.
+    #[test]
+    fn net_check_refuses_a_direct_dial_in_pii_evolve() {
+        let src = format!("let s = {SYM}(p);\n");
+        let file = ["crates/pii-evolve/src", "driver.rs"].join("/");
+        let out = scan_one(&file, &src, ALLOWLIST);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(out.first().is_some_and(|l| l.contains(&file)));
     }
 }

@@ -73,3 +73,25 @@ would catch it was told to look away.
 - Do NOT touch `specs/`.
 - If the connect-failure event cannot carry the endpoint through the launcher's observer without changing
   `pii_uds`'s signature, STOP and report the conflict rather than widening the API.
+
+## Orchestrator verification (2026-10-11)
+
+**My own mutation (independent of the worker's R5):** a direct dial appended to `crates/pii-evolve/src/driver.rs`
+(the worker had mutated `lib.rs`) → `net-check` exited 1 with
+`NET-CHECK FAIL: crates/pii-evolve/src/driver.rs:176 — UnixStream::connect outside pii-net`; restored
+byte-identical (`f72b733bf8a37e0d…`) → `net-check` rc 0. The exemption is gone and the check still bites.
+
+**The production caller goes through a real observer** — this is what makes R3's intent true rather than
+nominal: `crates/pii-evolve/src/main.rs:50` calls `run_cycle_observed(&cfg, &StderrObserver)`. Only the
+convenience wrapper `run_cycle` (no observer available) passes `NullObserver`, as R3 allows.
+
+**Cross-checked, not taken from the report:** `grep -rn 'UnixStream::connect' crates/pii-evolve/src/` → nothing
+after the final edit (the worker's criterion 2 ran before that edit); the `driver.rs` allowlist entry is gone
+from `xtask/src/net_check.rs` (only the test's entry, for a real stub daemon, remains); `cargo test -p pii-evolve`
+= 5 + 2 + 2 green; `deps-check`/`doc-drift-check`/`lint-observability` rc 0 with 0 findings.
+
+**Noted weakness (kept, not hidden):** `launcher_dials_through_the_uds_client` also asserts the *source text*
+contains `client_connect_observed`. A text check can pass while another raw dial exists — which is why the claim
+is really carried by `net-check` and `no_raw_dial_remains_in_pii_evolve` (both proven by mutation), not by the
+string match.
+

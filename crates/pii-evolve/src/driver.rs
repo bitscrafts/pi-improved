@@ -116,7 +116,7 @@ async fn run_cycle_async(
             .field("cycle", cycle)
             .field("graph", cfg.graph.as_str()),
     );
-    let started = launch(cfg, cycle).await?;
+    let started = launch(cfg, cycle, observer).await?;
 
     state
         .properties
@@ -139,10 +139,18 @@ async fn run_cycle_async(
 }
 
 /// Connects to the daemon and sends one `run.start`, returning its result.
-async fn launch(cfg: &BossLaunch, cycle: u64) -> Result<RunStartResult, PiiError> {
-    let stream = tokio::net::UnixStream::connect(&cfg.socket)
+///
+/// Dials through `pii_uds::client_connect_observed` with the caller's observer,
+/// so a dead socket reaches it as `UDS_CONNECT_FAILED` (`NullObserver` for
+/// [`run_cycle`], which has none).
+async fn launch(
+    cfg: &BossLaunch,
+    cycle: u64,
+    observer: &dyn Observer,
+) -> Result<RunStartResult, PiiError> {
+    let stream = pii_uds::client_connect_observed(&cfg.socket, observer)
         .await
-        .map_err(|e| PiiError::Unavailable(format!("connect {}: {e}", cfg.socket.display())))?;
+        .map_err(|e| PiiError::Unavailable(e.to_string()))?;
     let (r, w) = tokio::io::split(stream);
     let (client, _hello) = Client::connect(r, w, client_info())
         .await
