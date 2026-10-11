@@ -90,8 +90,9 @@ between them.
 - [ ] `cargo run -q -p xtask -- net-check` and `deps-check` exit 0, and the new host is inside the channel's
       existing egress scope (no new allowlist entry)
 - [ ] `bash quality-gate.sh` passes in the dev tree
-- [ ] **live (orchestrator or worker with the token):** one real post into the user's forum arrives as a thread
-      carrying the tag, and the id is pasted; if no token is available, say so plainly instead of implying it
+- [ ] **live — the ORCHESTRATOR does this, with the token read at runtime and never printed:** the worker
+      implements and proves the paths with the mock transport, and must NOT go looking for a token or take a
+      dependency on one. Say plainly in your report that the live proof is mine to run.
 
 ## Guardrails
 
