@@ -45,6 +45,25 @@ only writer in this path, so the record belongs here — not in a CLI-side JSONL
 - **R5 — only denials.** An ordinary allowed run writes no decision: the ledger does not become a run log.
 - **R6 — mutation control.** Deleting the record call reddens the read-back test. Paste the red output.
 
+### The mapping, stated (so a STOP is only for a genuine mismatch)
+
+`pii_store`'s ledger was built for heal approvals: `record_decision(sig, gate, ApprovalDecision)` with
+`ApprovalDecision { allow, approval_id, by, ts_ms }` and a free-form `HealAttempt.extra` map. Read side by side
+with this event, the honest mapping is:
+
+| ledger field | this event |
+| --- | --- |
+| `sig` | the **promotion id** — the record that caused the denial, `pii learn show`-visible |
+| `gate` | `"quarantine"` — not `"promotion"` (this is the *effect* of a promotion, not an approval of one) |
+| `allow` | `false` (a denial) |
+| `approval_id` | the promotion's own approval id **if it has one**; otherwise empty — never the run id, which is not an approval |
+| `by` | `"engine"` — the daemon, not a human |
+| `extra` | `{"graph": …, "reason": …, "run_id": …}` |
+
+Use that mapping, with a comment naming the join key, **or** report precisely which field cannot carry its
+meaning — in which case say what the store needs (a decision *kind*, a nullable `approval_id`, a subject field)
+and stop. What is not acceptable is overloading a field with something it does not mean.
+
 ### Non-Functional
 
 - 450-line file rule; no new dependency; `cargo fmt` + `clippy -D warnings` clean; tests create their scratch
