@@ -114,7 +114,14 @@ fi
 # 5) the gate — a green verify is not a green gate
 if [ "${GATE:-1}" = "1" ]; then
   FREE=$(df -m --output=avail /projects | tail -1 | tr -d ' ')
-  if [ "$FREE" -lt 20000 ]; then say "gate SKIPPED: only ${FREE}M free (needs 20000M) — recorded, not pretended"; else
+  if [ "$FREE" -lt 20000 ]; then
+    # A skipped gate must NOT fall through to the commit: an ungated commit is worse than a parked item.
+    python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-skipped-disk
+    say "gate SKIPPED: only ${FREE}M free (needs 20000M) — the item is NOT committed without a gate"
+    echo "OUTCOME=gate-skipped-disk ITEM=$ITEM FREE_MB=$FREE"
+    bash scripts/autonomy/control.sh ask "disk is down to ${FREE}M: the gate cannot run, so $ITEM cannot be committed. Reclaim with cargo clean (an operator action here)?" >/dev/null 2>&1 || true
+    exit 13
+  else
     say "fresh-gate (this is the project's truth, not the worker's)"
     if ( export PATH="/usr/local/cargo/bin:$PATH"; FRESH_GATE_MIN_FREE_MB=12000 timeout 1780 cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
     then say "fresh-gate PASS"; else
@@ -135,3 +142,14 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
 fi
 python3 scripts/autonomy/state.py set "$ITEM" status=done attempts=$((ATTEMPTS+1)) "last=committed $(git rev-parse --short HEAD)"
 say "ITEM $ITEM DONE"; echo "OUTCOME=done ITEM=$ITEM HEAD=$(git rev-parse --short HEAD)"
+
+# 7) chain: the next item starts as soon as the lock is free — the loop must not idle between items
+if [ -z "${NO_CHAIN:-}" ]; then
+  NEXT=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f1)
+  if [ -n "$NEXT" ] && [ "$NEXT" != "NONE" ]; then
+    say "chaining: $NEXT will start as soon as this cycle releases the lock"
+    setsid nohup bash -c 'sleep 5; bash scripts/autonomy/tick.sh' >>"$LOGD/cycle-last-detached.log" 2>&1 </dev/null &
+  else
+    say "no chain: the queue has nothing pending"
+  fi
+fi
