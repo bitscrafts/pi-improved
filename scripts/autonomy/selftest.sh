@@ -13,6 +13,8 @@
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 T=$(mktemp -d /projects/_tmp/autonomy-selftest-XXXXXX)
+# the selftest must not collide with a live cycle: its own lock file (and its own state, via PII_PLAN rows)
+export PII_LOCK=$T/selftest.lock
 BIN=$T/bin; mkdir -p "$BIN"
 PASS=0; FAIL=0
 row(){ # row <name> <expected> <actual>

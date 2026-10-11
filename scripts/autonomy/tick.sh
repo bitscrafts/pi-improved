@@ -26,8 +26,8 @@ say_once() { # say_once <key> <line...>   — print only when <key> differs from
 }
 
 # 1) a cycle is running — silence is the normal state; only a stuck worker is worth a line
-if ! flock -n "$ST/lock" true 2>/dev/null; then
-  AGE=$(( $(date +%s) - $(stat -c %Y "$ST/lock" 2>/dev/null || date +%s) ))
+if ! flock -n "${PII_LOCK:-$ST/lock}" true 2>/dev/null; then
+  AGE=$(( $(date +%s) - $(stat -c %Y "${PII_LOCK:-$ST/lock}" 2>/dev/null || date +%s) ))
   if [ "$AGE" -gt 5400 ]; then
     say_once "stuck:$AGE" "pii autonomy · a cycle has been in flight for $((AGE/60)) min" "check: tail -30 $(ls -t "$LOGD"/cycle-*.log | head -1)"
   fi

@@ -23,7 +23,7 @@ CID=$(date -u +%Y%m%dT%H%M%SZ)
 LOG=$LOGD/cycle-$CID.log
 say(){ printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 say "=== cycle $CID"
-exec 9>"$STATEDIR/lock"
+exec 9>"${PII_LOCK:-$STATEDIR/lock}"
 if ! flock -n 9; then say "another cycle holds the lock — nothing done"; echo "OUTCOME=locked"; exit 5; fi
 
 # 0b) the operator's switch (Discord: `scripts/autonomy/control.sh pause`) — honour it before spending
@@ -53,6 +53,20 @@ if [ -n "$BRIEF" ] && [ "$BRIEF" != "-" ] && [ ! -f "$BRIEF" ]; then
   say "NO BRIEF at $BRIEF"; echo "OUTCOME=needs-brief ITEM=$ITEM"; exit 6
 fi
 [ -n "${DRY:-}" ] && { say "DRY=1: would dispatch spec=$SPEC brief=$BRIEF resume=${RSID:-none}"; echo "OUTCOME=dry"; exit 0; }
+
+# 2b) re-read the state at the LAST moment: between the pick and this line another cycle (or the orchestrator)
+# may have closed the item, and re-dispatching finished work buys the same spec twice.
+ST_NOW=$(python3 scripts/autonomy/state.py get "$ITEM" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status",""), d.get("last",""))' 2>/dev/null)
+case "$ST_NOW" in
+  done*|skipped*|parked*)
+    say "item $ITEM is already ${ST_NOW%% *} — not dispatching (nothing else to do)"; echo "OUTCOME=item-already-closed ITEM=$ITEM"; exit 0 ;;
+esac
+# a phase marker from a cycle that died mid-flight: if the work is already worker-ok/verified/gated and the tree
+# still holds it, resume at verify instead of buying the same spec again
+SKIP_DISPATCH=""
+case "$ST_NOW" in
+  *verified*|*gated*|*worker-ok*) SKIP_DISPATCH=1; say "phase marker says the work is already ${ST_NOW#* }: resuming at verify, no re-dispatch" ;;
+esac
 
 # 3) the worker — resume-first, the session id comes from the state, not from memory
 DIRTY=$(git status --porcelain | wc -l)
@@ -88,13 +102,18 @@ fi
 # the dispatcher takes a spec NUMBER, not a filename (it resolves specs/<N>-*.md itself)
 N=$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')
 [ -n "$N" ] || { say "cannot read a spec number out of '$SPEC'"; echo "OUTCOME=bad-plan ITEM=$ITEM"; exit 6; }
-say "dispatching spec number $N"
-( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
-WRC=$?
-NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
-say "worker rc=$WRC session=${NEWSID:-none}"
-python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC
-[ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
+if [ -n "$SKIP_DISPATCH" ]; then
+  NEWSID="$RSID"
+else
+  say "dispatching spec number $N"
+  ( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
+  WRC=$?
+  NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
+  say "worker rc=$WRC session=${NEWSID:-none}"
+  python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC
+  [ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
+  python3 scripts/autonomy/state.py set "$ITEM" last=worker-ok "session=${NEWSID:-}"
+fi
 
 # 4) the item's own criteria — run from the plan, on the tree the worker left
 VFAIL=""
@@ -124,7 +143,7 @@ if [ "${GATE:-1}" = "1" ]; then
   else
     say "fresh-gate (this is the project's truth, not the worker's)"
     if ( export PATH="/usr/local/cargo/bin:$PATH"; FRESH_GATE_MIN_FREE_MB=12000 timeout 1780 cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
-    then say "fresh-gate PASS"; else
+    then python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "fresh-gate PASS (phase marked: gated)"; else
       python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-failed
       say "fresh-gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
     fi
