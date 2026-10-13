@@ -29,7 +29,9 @@ say_once() { # say_once <key> <line...>   — print only when <key> differs from
 #    revived it: no systemd in this container, and its own log said it exited "so systemd Restart=on-failure can
 #    revive the gateway". For two days nothing reached the phone because of it. Revive it here, but only when no
 #    paid worker is in flight (HARD RULE 0f).
-if ! hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
+# the check must not fire when the tool is not on PATH (a test's minimal environment made the tick believe the
+# gateway was down and exit before it could report anything — measured 2026-10-13)
+if command -v hermes >/dev/null 2>&1 && ! hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
   if ps -eo cmd | grep -qE '[c]laude -p|[r]un-batchC'; then
     say_once "gw-dead-worker" "pii autonomy · the gateway is down but a worker is in flight — not restarting it now (0f)"
   else
