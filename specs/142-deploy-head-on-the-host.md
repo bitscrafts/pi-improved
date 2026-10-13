@@ -86,6 +86,31 @@ Not applicable in the usual sense; the acceptance is the scratch-prefix exercise
 
 ## Closure
 
-(outcome, the dry-run transcript, the rollback exercise, and the exact operator commands — filled in when the
-item is closed. The deployment itself is NOT closed by this item: it is closed by the operator's run and the
-7-day measurement.)
+Independent verification, 2026-10-13, on the committed tree (93d29cd + f1c6e50, which carried
+`scripts/checks/deploy-dry-run.sh`):
+
+- All four exit criteria run rc=0.
+- The dry-run is not vacuous: mutating `deploy/rollback-pii.sh` to `cp` instead of `mv` makes it fail with
+  `FAIL: moved-aside copy still present (copied, not moved)`; the file was restored byte-identical
+  (sha256 `339a81d5…2f09b86342` before and after).
+- Live check of the real binary (not a fake): installing `target/debug/pii` into a scratch prefix and starting
+  `pii daemon --foreground` with the generated unit's flags and the generated `pii.toml` gives
+  `daemon.started` with `model=llamacpp-server:granite-4.2-3b`, and the discord channel polls (401 on the
+  dummy token, as expected). Config schema and the unit's flags are accepted.
+
+Outcome: **criteria met, deployment NOT yet runnable as a product.** One defect the criteria cannot see:
+
+- **The graphs are never installed.** The daemon resolves a graph as `<runtime_dir>/graphs/<name>.toml`
+  (`crates/pii-cli/src/cmd_daemon.rs` `graph_dir: runtime_dir.join("graphs")`; `Engine::load_spec` in
+  `crates/pii-server/src/lib.rs` returns `NotFound` otherwise, falling back only for `default`). The installer
+  writes `graph = "discord-triage"` and `graph = "discord-digest"` but copies neither `graphs/*.toml`
+  anywhere; after the live run `<runtime_dir>` held `channel.redb`, `timer.redb`, `channels/`, `memory/` and no
+  `graphs/`. Every Discord message would end in `graph 'discord-triage'` not found. And `runtime_dir` is under
+  `/run` (tmpfs), so a hand copy would vanish on reboot: the unit must place them on each start (e.g.
+  `ExecStartPre` copying from a persistent `$STATE_DIR/graphs`), and the dry-run must assert it.
+- Minor: a second `rollback-pii.sh` finds the now-empty newest `.old-*` dir, restores 0 files and exits 0.
+- Minor: the appended block's comment says the forum id never lives in `pii.toml`, but the cron's
+  `input = { to = ... }` writes it there (an id, not a secret; the token is correctly kept out).
+
+Next: a follow-up spec for the graph install (with a dry-run assertion that `<runtime_dir>/graphs/discord-triage.toml`
+exists after a unit start), before the operator runs this on the host.
