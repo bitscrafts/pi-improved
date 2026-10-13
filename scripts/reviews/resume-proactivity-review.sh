@@ -7,6 +7,8 @@ cd /projects/pi-improved
 BR=/projects/_tmp/pii-review-20261013/brief-proactivity-self-improvement.md
 OUT=/projects/_tmp/pii-review-20261013
 SID=ef17e6d6-1741-42d6-87c6-16ffc775d231
+# RESUME-FIRST, mechanically: this script must never start a fresh review. A session that cannot be resumed
+# (because the id is missing) is a stop, not a new run — the user's standing rule: "retomar a sessao sempre!" 
 
 if bash scripts/autonomy/window.sh check 2>/dev/null; then
   echo "pii review · still inside the closed window ($(bash scripts/autonomy/window.sh show)) — nothing spent"
@@ -29,6 +31,10 @@ for i in $(seq 1 40); do
   [ $i -eq 1 ] && echo "pii review · a worker is in flight; waiting for the loop to free the window"
   sleep 30
 done
+[ -n "$SID" ] || { echo "pii review · REFUSED: no session id to resume — a fresh review is not what this script does"; exit 0; }
+grep -q -- '--resume' <<EOF
+$SID
+EOF
 echo "pii review · window open, resuming the review session (this takes ~20-30 min)"
 TASK_LABEL=opus-proactivity-review REVIEW_MODE=test MAX_TURNS=140 \
   bash /root/.hermes/skills/research/opus-review/scripts/run-opus-review.sh /projects/pi-improved "$BR" "$OUT" --resume "$SID" >"$OUT/resume-attempt.log" 2>&1
