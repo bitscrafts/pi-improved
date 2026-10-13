@@ -355,7 +355,7 @@ option "re-scope the vision" is REJECTED: `001-pii-vision.md` stands, and the re
 sequenced in **`_docs/06-research/057-vision-implementation-plan-2026-10-10.md`** as specs 111-122 (gateway
 completion -> IoT/reactive -> self-improvement -> pillar 3), one spec per run, orchestrator-verified, gated.
 Two consequences worth stating here: (a) the "30+ channels / ~20 providers / WASM host / hardware HAL"
-claims in `001` are now COMMITMENTS on a plan rather than stale promises, and each stage updates `001`'s
+claims in `001` are now COMMITMENTS on a plan rather than stale promises [**SUPERSEDED 2026-10-13** by the user's two-protocol directive ("2 kinds openai and anthropic"; systemd, not Docker): "30+ channels / ~20 providers" were zeroclaw's figures and are not commitments — see `001-pii-vision.md` for what is measured, and 059 §2.2 Q4/F10], and each stage updates `001`'s
 status lines as it lands; (b) the production-readiness axis of this doc (P0-P3, P5) is closed except P5,
 which was running when this was written.
 
