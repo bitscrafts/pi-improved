@@ -96,7 +96,7 @@ E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error
 
 echo; echo "== 8. a worker cut off by the window keeps its resume handle"
 python3 scripts/autonomy/state.py set A17 status=needs-review session=test-session-1234 last=window-closed >/dev/null 2>&1
-H=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f8); row "the state still offers the session (pick field 8)" "test-session-1234" "$H"
+H=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f9); row "the state still offers the session (pick field 9 = the resume handle)" "test-session-1234" "$H"
 python3 - <<'PY'
 import importlib.util
 spec=importlib.util.spec_from_file_location("st","scripts/autonomy/state.py"); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
