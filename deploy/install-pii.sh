@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# Spec 142: install the pii release binaries, runtime config and systemd unit on THIS host.
+# One command, idempotent. Never deletes: existing binaries/config are moved aside to a dated dir.
+# It does NOT enable/start the unit and does NOT touch the token: it prints those commands.
+#
+#   bash deploy/install-pii.sh
+#
+# Environment (all optional):
+#   PREFIX        binary target dir            (default $HOME/.local/bin)
+#   SCOPE         user | system                (default user)
+#   LLAMA_HOST    llama.cpp server base URL    (default http://10.10.10.217:8082/v1)
+#   CONFIG_DIR    pii.toml + pii.env location  (user: $HOME/.config/pii, system: /etc/pii)
+#   STATE_DIR     store/log/trajectory root    (user: $HOME/.local/state/pii, system: /var/lib/pii)
+#   RUNTIME_DIR   control socket dir           (user: /run/user/<uid>/pii, system: /run/pii)
+#   UNIT_DIR      where the unit file goes     (user: $HOME/.config/systemd/user, system: /etc/systemd/system)
+#   SKIP_BUILD=1  do not run cargo; install from BIN_SRC
+#   BIN_SRC       built binaries dir           (default <repo>/target/release)
+# Preconditions (checked before anything is moved): llama host answers, PII_DISCORD_TOKEN and
+# PII_DISCORD_CHANNEL_ID are set (their values are never written anywhere), PREFIX is creatable.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCOPE="${SCOPE:-user}"
+LLAMA_HOST="${LLAMA_HOST:-http://10.10.10.217:8082/v1}"
+PREFIX="${PREFIX:-$HOME/.local/bin}"
+case "$SCOPE" in
+  user)
+    CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/pii}"
+    STATE_DIR="${STATE_DIR:-$HOME/.local/state/pii}"
+    RUNTIME_DIR="${RUNTIME_DIR:-/run/user/$(id -u)/pii}"
+    UNIT_DIR="${UNIT_DIR:-$HOME/.config/systemd/user}"
+    CTL="systemctl --user" ;;
+  system)
+    CONFIG_DIR="${CONFIG_DIR:-/etc/pii}"
+    STATE_DIR="${STATE_DIR:-/var/lib/pii}"
+    RUNTIME_DIR="${RUNTIME_DIR:-/run/pii}"
+    UNIT_DIR="${UNIT_DIR:-/etc/systemd/system}"
+    CTL="systemctl" ;;
+  *) echo "ABORT: SCOPE must be user or system, got '$SCOPE'" >&2; exit 2 ;;
+esac
+BIN_SRC="${BIN_SRC:-$REPO/target/release}"
+BINS=(pii pii-web pii-evolve)   # swapped in place
+STAGED=(pii-mcp)                # installed as <name>.new only: the pii-mcp swap is a separate step (runbook)
+TS="$(date +%s)"
+
+abort() { echo "ABORT (nothing was changed): $*" >&2; exit 1; }
+
+# ---- R3: preconditions, before anything is built or moved ----
+command -v curl >/dev/null || abort "curl not found"
+curl -sf --max-time 5 "${LLAMA_HOST%/}/models" >/dev/null \
+  || abort "llama.cpp host ${LLAMA_HOST} does not answer GET ${LLAMA_HOST%/}/models"
+[ -n "${PII_DISCORD_TOKEN:-}" ] || abort "PII_DISCORD_TOKEN is not set in the environment (needed for the discord channel)"
+[ -n "${PII_DISCORD_CHANNEL_ID:-}" ] || abort "PII_DISCORD_CHANNEL_ID (the forum channel id) is not set in the environment"
+if [ ! -d "$PREFIX" ]; then
+  mkdir -p "$PREFIX" 2>/dev/null || abort "target prefix $PREFIX does not exist and cannot be created"
+fi
+[ -w "$PREFIX" ] || abort "target prefix $PREFIX is not writable"
+
+# ---- 1: build ----
+if [ "${SKIP_BUILD:-0}" != 1 ]; then
+  (cd "$REPO" && cargo build --release -p pii-cli -p pii-mcp -p pii-web -p pii-evolve)
+fi
+for b in "${BINS[@]}" "${STAGED[@]}"; do
+  [ -x "$BIN_SRC/$b" ] || abort "built binary $BIN_SRC/$b missing"
+done
+
+# ---- 2: move existing binaries aside (dated; never delete) ----
+ASIDE="${PREFIX}.old-${TS}"
+moved=0
+for b in "${BINS[@]}"; do
+  if [ -e "$PREFIX/$b" ]; then
+    mkdir -p "$ASIDE"
+    mv "$PREFIX/$b" "$ASIDE/$b"
+    moved=$((moved + 1))
+  fi
+done
+
+# ---- 3: install ----
+for b in "${BINS[@]}"; do install -m 0755 "$BIN_SRC/$b" "$PREFIX/$b"; done
+for b in "${STAGED[@]}"; do install -m 0755 "$BIN_SRC/$b" "$PREFIX/$b.new"; done
+
+# ---- 4: runtime config from the production example ----
+mkdir -p "$CONFIG_DIR" "$STATE_DIR/trajectory"
+CONF="$CONFIG_DIR/pii.toml"
+if [ -e "$CONF" ]; then
+  mkdir -p "$ASIDE"
+  mv "$CONF" "$ASIDE/pii.toml"
+fi
+TMPCONF="$(mktemp "$CONFIG_DIR/pii.toml.XXXXXX")"
+sed \
+  -e "s|^model = .*|model = \"llamacpp-server:granite-4.2-3b\"|" \
+  -e "s|^runtime_dir = .*|runtime_dir = \"$RUNTIME_DIR\"|" \
+  -e "s|^# trajectory_dir = .*|trajectory_dir = \"$STATE_DIR/trajectory\"|" \
+  -e "s|^log_file = .*|log_file = \"$STATE_DIR/pii.log\"|" \
+  -e "s|^host = .*|host = \"$LLAMA_HOST\"|" \
+  "$REPO/examples/pii.production.toml" > "$TMPCONF"
+cat >> "$TMPCONF" <<TOML
+
+# --- appended by deploy/install-pii.sh (spec 142) ---
+# ONE Discord forum channel. The token (PII_DISCORD_TOKEN) and the forum id
+# (PII_DISCORD_CHANNEL_ID) come from the unit's environment file, never from here.
+[[channel]]
+name = "discord"
+kind = "discord"
+graph = "discord-triage"
+
+# ONE daily digest. \`schedule\` is the display mirror; firing is driven by the graph's timer node.
+[[cron]]
+name = "daily-digest"
+graph = "discord-digest"
+schedule = "0 9 * * *"
+input = { to = "$PII_DISCORD_CHANNEL_ID" }
+TOML
+mv "$TMPCONF" "$CONF"
+
+# ---- 5: systemd unit (written, not enabled) ----
+mkdir -p "$UNIT_DIR"
+UNIT="$UNIT_DIR/pii.service"
+if [ -e "$UNIT" ]; then
+  mkdir -p "$ASIDE"
+  mv "$UNIT" "$ASIDE/pii.service"
+fi
+if [ "$SCOPE" = system ]; then
+  WANTED=multi-user.target; USERLINE="User=$(id -un)"
+else
+  WANTED=default.target; USERLINE=""
+fi
+cat > "$UNIT" <<UNITEOF
+# Written by deploy/install-pii.sh (spec 142). Secrets live ONLY in $CONFIG_DIR/pii.env.
+[Unit]
+Description=Pii daemon
+After=network-online.target
+
+[Service]
+Type=simple
+$USERLINE
+Environment=PII_RUNTIME_DIR=$RUNTIME_DIR
+Environment=PII_CONFIG=$CONF
+EnvironmentFile=-$CONFIG_DIR/pii.env
+WorkingDirectory=$STATE_DIR
+ExecStartPre=/usr/bin/env mkdir -p $RUNTIME_DIR
+ExecStart=$PREFIX/pii daemon --foreground --config $CONF --store $STATE_DIR/store.redb --workspace $STATE_DIR --log-file $STATE_DIR/pii.log --log-rotate-bytes 10485760 --log-keep-files 5
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=$WANTED
+UNITEOF
+sed -i '/^$/d' "$UNIT"
+
+# ---- 6: what the operator still has to do ----
+echo "INSTALLED: $PREFIX/{${BINS[*]}} (pii-mcp staged as $PREFIX/pii-mcp.new, NOT swapped)"
+echo "MOVED ASIDE: $moved binaries${ASIDE:+ -> $ASIDE}"
+echo "CONFIG: $CONF   UNIT: $UNIT"
+echo
+echo "OPERATOR COMMANDS (nothing below was run):"
+echo "  1. place the token (mode 0600, value is yours; never commit it):"
+echo "       install -m 0600 /dev/null '$CONFIG_DIR/pii.env'"
+echo "       printf 'PII_DISCORD_TOKEN=%s\\nPII_DISCORD_CHANNEL_ID=%s\\n' '<token>' '<forum-channel-id>' > '$CONFIG_DIR/pii.env'"
+echo "  2. enable and start:"
+echo "       $CTL daemon-reload && $CTL enable --now pii"
+[ "$SCOPE" = user ] && echo "       loginctl enable-linger \"\$(id -un)\"   # keep it running after logout"
+echo "  3. verify:  PII_RUNTIME_DIR='$RUNTIME_DIR' '$PREFIX/pii' health --json   (see _docs/05-operations/deploy-runbook.md)"
+echo "  4. roll back:  bash deploy/rollback-pii.sh   (PREFIX='$PREFIX' SCOPE=$SCOPE)"
