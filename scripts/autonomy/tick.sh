@@ -44,11 +44,30 @@ if ! hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
   exit 0
 fi
 
+# 0b) an incident is opened from our own records (spec 150): N identical outcomes within 30 min, no model. One
+#     phone line per NEW incident; `--new` prints nothing when none is new, so this is silent in the normal case.
+#     Needs the built binary; a missing one is skipped, never compiled here (a tick must not start a build).
+PII_BIN=${PII_BIN:-target/debug/pii}
+if [ -x "$PII_BIN" ]; then
+  "$PII_BIN" incidents scan --root "$LOGD" --new 2>/dev/null | while read -r _ FP COUNT FIRST _; do
+    echo "pii autonomy · INCIDENT $FP — ${COUNT#count=} times since ${FIRST#first_seen=} (see $LOGD/incidents.jsonl)"
+  done
+fi
+
 # 1) a cycle is running — silence is the normal state; only a stuck worker is worth a line
 if ! flock -n "${PII_LOCK:-$ST/lock}" true 2>/dev/null; then
   AGE=$(( $(date +%s) - $(stat -c %Y "${PII_LOCK:-$ST/lock}" 2>/dev/null || date +%s) ))
+  BUCKET=$(( AGE / 1800 ))
   if [ "$AGE" -gt 5400 ]; then
-    say_once "stuck:$AGE" "pii autonomy · a cycle has been in flight for $((AGE/60)) min" "check: tail -30 $(ls -t "$LOGD"/cycle-*.log | head -1)"
+    say_once "stuck:$BUCKET" "pii autonomy · a cycle has been in flight for $((AGE/60)) min" "check: tail -30 $(ls -t "$LOGD"/cycle-*.log | head -1)"
+  else
+    # PROGRESS, not only an alarm: from the outside a working worker and a stall look identical, and the user asked
+    # "looks stopped?" with a worker 9 minutes into an honest job. One line per 30-minute bucket, keyed so it is sent
+    # once per bucket and not every tick.
+    ITEM=$(grep -o 'item=[^ ]*' "$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | head -1)" 2>/dev/null | tail -1 | cut -d= -f2)
+    WLOG=$(ls -t _tmp/claude-batchC/*.log 2>/dev/null | head -1)
+    SZ=$(du -m "$WLOG" 2>/dev/null | cut -f1)
+    say_once "flying:$BUCKET:$ITEM" "pii autonomy · ${ITEM:-a cycle} in flight $((AGE/60)) min (worker stream ${SZ:-0} MB) — working, not stuck"
   fi
   exit 0
 fi

@@ -119,6 +119,14 @@ printf '%s\n' '{"type":"system","session_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee
 R=$(bash scripts/autonomy/session.sh recover 99999 2>/dev/null); row "a cut-off worker's stream log still speaks" "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" "$R"
 rm -f _tmp/claude-batchC/99999-probe.log
 
+echo; echo "== 10. a working worker is not mistaken for a stall"
+flock -n _tmp/autonomy/lock -c 'sleep 4' &
+HOLD=$!
+sleep 1
+OUT=$(bash scripts/autonomy/tick.sh 2>&1)
+kill $HOLD 2>/dev/null; wait $HOLD 2>/dev/null
+case "$OUT" in *"working, not stuck"*) row "a cycle in flight -> a progress line, not silence" 0 0 ;; *) row "a cycle in flight -> a progress line, not silence" 0 1 ;; esac
+
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]
