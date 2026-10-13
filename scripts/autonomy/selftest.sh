@@ -94,6 +94,17 @@ row "the parsed reset is in the future" 0 $([ -n "$E" ] && [ "$E" -gt "$(date -u
 printf '%s\n' 'Error: connect ECONNREFUSED 127.0.0.1:443' > "$W"
 E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error -> no reset claimed (near-miss control)" 0 $([ -z "$E2" ] && echo 0 || echo 1)
 
+echo; echo "== 8. a worker cut off by the window keeps its resume handle"
+python3 scripts/autonomy/state.py set A17 status=needs-review session=test-session-1234 last=window-closed >/dev/null 2>&1
+H=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f8); row "the state still offers the session (pick field 8)" "test-session-1234" "$H"
+python3 - <<'PY'
+import importlib.util
+spec=importlib.util.spec_from_file_location("st","scripts/autonomy/state.py"); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+st=m.load()
+a=st.get("A17",{}); a.pop("session",None); a["status"]="pending"; a.pop("last",None)
+m.save(st)
+PY
+
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]

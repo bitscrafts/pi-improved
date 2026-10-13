@@ -132,6 +132,10 @@ else
   if [ -n "$WUNTIL" ]; then
     echo "$WUNTIL" > "$STATEDIR/window-closed-until"
     say "the account window is closed (the worker's own log said so) — not retrying before $(date -u -d "@$WUNTIL" '+%H:%M UTC')"
+    # RECORD the session before leaving: a worker cut off by the window must be RESUMED, not restarted. Without this
+    # the next cycle saw a dirty tree with no session, kept the WIP as a leftover and dispatched the spec again from
+    # scratch (measured 2026-10-13, spec 153).
+    [ -n "${NEWSID:-}" ] && python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=$NEWSID" last=window-closed
     echo "OUTCOME=window-closed ITEM=$ITEM SESSION=${NEWSID:-}"
     exit 3
   fi
