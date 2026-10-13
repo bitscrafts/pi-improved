@@ -10,6 +10,11 @@ SID=ef17e6d6-1741-42d6-87c6-16ffc775d231
 # RESUME-FIRST, mechanically: this script must never start a fresh review. A session that cannot be resumed
 # (because the id is missing) is a stop, not a new run — the user's standing rule: "retomar a sessao sempre!" 
 
+# one review at a time: a second fire (a manual run plus the scheduled one) must become a no-op, not a
+# second review of the same session
+exec 9>_tmp/autonomy/review.lock
+if ! flock -n 9; then echo "pii review · a review is already running — nothing to do"; exit 0; fi
+
 if bash scripts/autonomy/window.sh check 2>/dev/null; then
   echo "pii review · still inside the closed window ($(bash scripts/autonomy/window.sh show)) — nothing spent"
   exit 0
