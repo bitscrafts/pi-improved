@@ -36,13 +36,30 @@ const SUBSYSTEM: &str = "learn";
 /// The one writer's lock (spec 138): every mutation of `learn/` — the ledger
 /// line, its `seq`, the promotion record — happens while this is held, so two
 /// callers in the daemon cannot interleave a read-count-then-append. The
-/// daemon is the only process that writes (the CLI asks it over the control
-/// socket), so a process-wide lock is the whole story; there is no waiting
-/// loop, a caller just takes its turn.
+/// daemon is the usual writer (the CLI asks it over the control socket), so a
+/// process-wide lock covers it; there is no waiting loop, a caller just takes
+/// its turn.
 static WRITER: Mutex<()> = Mutex::new(());
 
-fn writer() -> MutexGuard<'static, ()> {
-    WRITER.lock()
+/// The process lock plus an advisory file lock on `learn/.writer.lock` (spec
+/// 149): the CLI's documented no-daemon revert is a second *process*, and a
+/// daemon may start while it runs, so the turn-taking must cross processes.
+struct WriterGuard {
+    _file: Option<std::fs::File>,
+    _process: MutexGuard<'static, ()>,
+}
+
+fn writer(dir: &std::path::Path) -> WriterGuard {
+    let process = WRITER.lock();
+    let area = dir.join("learn");
+    let file = std::fs::create_dir_all(&area)
+        .and_then(|()| std::fs::File::create(area.join(".writer.lock")))
+        .and_then(|f| f.lock().map(|()| f))
+        .ok();
+    WriterGuard {
+        _file: file,
+        _process: process,
+    }
 }
 
 /// Resolves a graph name to the hash of its current definition (spec 139).
@@ -141,7 +158,7 @@ impl Promoter {
     // reason: the rules are a flat sequence of guards; splitting would only hide the order.
     #[allow(clippy::too_many_lines)]
     pub fn promote(&self, req: &PromoteRequest, now: u64) -> Result<Promotion, Refused> {
-        let _w = writer();
+        let _w = writer(&self.dir);
         let no = |r, m: String| Err(self.refuse(req, r, m, now));
         let kind = match PromotionKind::parse(&req.kind) {
             Ok(k) => k,
@@ -346,7 +363,7 @@ impl Promoter {
     /// A message when the id is unknown, the promotion is no longer active, its
     /// rollback data is missing, or the ledger cannot be written.
     pub fn revert(&self, id: &str, actor: &str, now: u64) -> Result<String, String> {
-        let _w = writer();
+        let _w = writer(&self.dir);
         let mut p = get_promotion(&self.dir, id).ok_or_else(|| format!("no promotion {id}"))?;
         if p.state != PromotionState::Active {
             return Err(format!("promotion {id} is already {}", p.state.as_str()));
@@ -367,7 +384,7 @@ impl Promoter {
     /// whose window has closed, reverting any that did not improve the metric.
     /// Returns `(promotion id, new state)` for each one that changed.
     pub fn sweep(&self, now: u64) -> Vec<(String, PromotionState)> {
-        let _w = writer();
+        let _w = writer(&self.dir);
         let mut changed = Vec::new();
         for mut p in list_promotions(&self.dir) {
             if p.state != PromotionState::Active {

@@ -478,3 +478,76 @@ fn concurrent_revert_and_sweep_do_not_duplicate_or_lose() {
         assert_eq!(raw.lines().count(), l.len(), "round {round}: torn line");
     }
 }
+
+/// Spec 149 R3: a hand revert and the sweep's auto-revert on one promotion are
+/// one application and one "already reverted" — two ledger lines, not three.
+#[test]
+fn two_reverts_are_one_revert() {
+    let (d, c) = fixture("g", Some(Verdict::Confirmed));
+    let (p, _) = promoter(d.path());
+    let a = p.promote(&req(&c), T0).unwrap();
+    p.revert(&a.id, "cli:op", T0 + 5).unwrap();
+    assert!(
+        p.sweep(T0 + 100).is_empty(),
+        "the sweep finds nothing left to revert"
+    );
+    let e = p.revert(&a.id, "cli:op", T0 + 6).unwrap_err();
+    assert!(e.contains("already reverted"), "{e}");
+    let l = ledger_tail(d.path(), 10);
+    assert_eq!(l.len(), 2, "applied + one revert, no double bookkeeping");
+    assert_eq!(l.iter().filter(|e| e.event != "applied").count(), 1);
+}
+
+/// Spec 149 R4: the ledger row names the principal — `cli…` for a hand revert,
+/// `daemon` for the sweep's.
+#[test]
+fn the_ledger_names_the_principal() {
+    let d = TempDir::new().unwrap();
+    let (ca, cb) = (candidate("ga"), candidate("gb"));
+    store::put_candidates(d.path(), &[ca.clone(), cb.clone()]).unwrap();
+    for c in [&ca, &cb] {
+        pii_learn::put_verdict(d.path(), &verdict_rec(c, Verdict::Confirmed)).unwrap();
+    }
+    let (p, _) = promoter(d.path());
+    let a = p.promote(&req(&ca), T0).unwrap();
+    let b = p.promote(&req(&cb), T0).unwrap();
+    p.revert(&a.id, "cli:op", T0 + 5).unwrap();
+    p.sweep(T0 + 100);
+    let l = ledger_tail(d.path(), 10);
+    let actor_of = |id: &str| {
+        l.iter()
+            .find(|e| e.promotion == id && e.event != "applied")
+            .map(|e| e.actor.clone())
+            .unwrap()
+    };
+    assert!(actor_of(&a.id).starts_with("cli"), "{}", actor_of(&a.id));
+    assert_eq!(actor_of(&b.id), "daemon");
+}
+
+/// Spec 149 R1/R3: the writer lock is held across processes, so a CLI that
+/// reverts directly cannot interleave with a daemon that has just started.
+#[test]
+fn the_writer_lock_is_held_across_processes() {
+    let (d, c) = fixture("g", Some(Verdict::Confirmed));
+    let (p, _) = promoter(d.path());
+    let a = p.promote(&req(&c), T0).unwrap();
+    // Another process's hold on the lock file, simulated by a second handle.
+    let other = fs::File::create(d.path().join("learn/.writer.lock")).unwrap();
+    other.lock().unwrap();
+    let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let h = {
+        let (done, id) = (Arc::clone(&done), a.id);
+        std::thread::spawn(move || {
+            let _ = p.revert(&id, "cli:op", T0 + 5);
+            done.store(true, std::sync::atomic::Ordering::SeqCst);
+        })
+    };
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(
+        !done.load(std::sync::atomic::Ordering::SeqCst),
+        "the revert wrote while another process held the writer lock"
+    );
+    other.unlock().unwrap();
+    h.join().unwrap();
+    assert_eq!(ledger_tail(d.path(), 10).len(), 2);
+}

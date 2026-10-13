@@ -4,7 +4,8 @@
 //! one promotion the loop may make (`quarantine_graph`). Reading and offline
 //! analysis run in this process; every write to `learn/` (`promote`, `revert`,
 //! `promotions --sweep`) is a request to the daemon, the ledger's only writer
-//! (spec 138) — with no daemon the command fails closed.
+//! (spec 138) — with no daemon `promote` and `--sweep` fail closed, while
+//! `revert` takes the documented direct path and says so (spec 149).
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -18,7 +19,7 @@ use pii_learn::{
 use pii_observe::StderrObserver;
 use pii_proto::method::Method;
 
-use crate::cmd_ctl::{next_str, run_call};
+use crate::cmd_ctl::{CallError, next_str, run_call, run_call_typed};
 
 const USAGE: &str = "usage: pii learn scan [--traj <root>] [--dir <store dir>] [--min-runs N] \
 [--outlier-factor N] [--max-files N] [--max-file-bytes N]\n       pii learn list [--dir <store dir>]\n       \
@@ -406,19 +407,46 @@ fn promotions(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) ->
     ExitCode::SUCCESS
 }
 
-/// `pii learn revert <id>`: prints the ledger id of the reversal.
+/// `pii learn revert <id>`: prints the ledger id of the reversal and the path
+/// taken. A daemon that owns the store applies it (`path=daemon`); with none
+/// reachable the CLI applies it itself (`path=direct`, spec 149) under the
+/// same cross-process writer lock — it never waits for the daemon.
 fn revert(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> ExitCode {
     let Some(id) = o.positional.clone() else {
         let _ = writeln!(std::io::stderr(), "{USAGE}");
         return ExitCode::from(2);
     };
-    let params = serde_json::json!({"id": id, "actor": actor(o)});
-    match ask_daemon(Method::LearnRevert, dir, params) {
-        Ok(v) => {
-            let l = v.get("ledger").and_then(serde_json::Value::as_str);
-            let _ = writeln!(out, "reverted {id} ledger={}", l.unwrap_or("-"));
+    let who = actor(o);
+    let params = serde_json::json!({"id": id, "actor": who, "dir": dir.display().to_string()});
+    let (path, applied) = match run_call_typed(Method::LearnRevert, params) {
+        Ok(v) => (
+            "daemon",
+            Ok(v.get("ledger")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("-")
+                .to_owned()),
+        ),
+        Err(CallError::Failed(e)) => return fail(&e),
+        Err(CallError::Down(_)) => (
+            "direct",
+            pii_learn::Promoter::new(
+                dir,
+                pii_learn::PromoteConfig::default(),
+                Arc::new(StderrObserver),
+            )
+            .revert(&id, &who, now_secs()),
+        ),
+    };
+    match applied {
+        Ok(l) => {
+            let _ = writeln!(out, "reverted {id} ledger={l} path={path}");
             ExitCode::SUCCESS
         }
         Err(e) => fail(&e),
     }
+}
+
+fn now_secs() -> u64 {
+    use pii_core::Clock as _;
+    pii_core::SystemClock.now_ms() / 1000
 }

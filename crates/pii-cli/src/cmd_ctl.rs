@@ -17,18 +17,37 @@ fn client_info() -> PeerInfo {
     }
 }
 
+/// Why a control call failed: nothing answered the socket (`Down`), or
+/// something did and the call went wrong (`Failed`) — the difference decides
+/// whether a daemon owns the store (spec 149).
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) enum CallError {
+    Down(String),
+    Failed(String),
+}
+
+impl CallError {
+    #[allow(clippy::redundant_pub_crate)]
+    pub(crate) fn into_message(self) -> String {
+        match self {
+            Self::Down(m) | Self::Failed(m) => m,
+        }
+    }
+}
+
 /// Connects to `<runtime_dir>/control.sock`, calls `method`, and returns
 /// the raw JSON result.
 async fn call_async(
     method: Method,
     params: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let runtime_dir = pii_uds::runtime_dir("default")
-        .ok_or_else(|| String::from("no usable runtime dir (set PII_RUNTIME_DIR)"))?;
+) -> Result<serde_json::Value, CallError> {
+    let runtime_dir = pii_uds::runtime_dir("default").ok_or_else(|| {
+        CallError::Failed(String::from("no usable runtime dir (set PII_RUNTIME_DIR)"))
+    })?;
     let sock = runtime_dir.join("control.sock");
     let stream = pii_uds::client_connect_observed(&sock, &CliObserver)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CallError::Down(e.to_string()))?;
     let (r, w) = tokio::io::split(stream);
     let endpoint = sock.display().to_string();
     let opts = pii_proto::client::ConnectOptions {
@@ -38,11 +57,11 @@ async fn call_async(
     };
     let (client, _hello) = Client::connect_with(r, w, client_info(), &opts)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CallError::Failed(e.to_string()))?;
     let result = client
         .call(method, params)
         .await
-        .map_err(|e| format!("{}: {}", e.code, e.message));
+        .map_err(|e| CallError::Failed(format!("{}: {}", e.code, e.message)));
     // B5: one-shot ctl calls must release the connection (the Drop backstop
     // is best-effort; be explicit here).
     client.shutdown();
@@ -56,10 +75,18 @@ pub(crate) fn run_call(
     method: Method,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    run_call_typed(method, params).map_err(CallError::into_message)
+}
+
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) fn run_call_typed(
+    method: Method,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, CallError> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CallError::Failed(e.to_string()))?;
     rt.block_on(call_async(method, params))
 }
 

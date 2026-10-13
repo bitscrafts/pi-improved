@@ -79,7 +79,7 @@ a separate question.
 
 ### 9. Smaller filed items
 - the two audit trails should be unified — see #1;
-- a CLI `learn revert` racing the daemon's sweep (filed with 125);
+- ~~a CLI `learn revert` racing the daemon's sweep (filed with 125)~~ — closed by spec 149: a daemon-owned store takes the revert as a request; without one the CLI applies it directly under a cross-process writer lock (`learn/.writer.lock`) and prints `path=direct`;
 - **resumed runs of a quarantined graph are not refused** (filed with 125);
 - `pii-evolve`'s direct socket dial — **closed by 130**;
 - unify the promotion JSONL with the decision ledger — see #1.
