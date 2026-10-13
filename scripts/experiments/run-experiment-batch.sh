@@ -26,7 +26,9 @@ TBL
     echo "stopping: $(bash scripts/autonomy/window.sh usage)"
     break
   fi
-  fix=$(git log --grep="^$spec:" -1 --format=%h)
+  # the OLDEST subject match: the fix. A later "133: closure …" also matches and would seed the tree ON the fix
+  # (measured: that is exactly how my first attempt handed the worker a tree that already had the cure).
+  fix=$(git log --grep="^$spec:" --reverse --format=%h | head -1)
   if [ -z "$fix" ]; then echo "[$spec] no fix commit found by content — skipped"; continue; fi
   echo "=== $spec ($fp): fix=$fix base=$(git rev-parse --short "$fix^")"
   bash scripts/experiments/measure-proven-fix.sh "$spec" "$fp" "$fix" "$crate" "$paths"
