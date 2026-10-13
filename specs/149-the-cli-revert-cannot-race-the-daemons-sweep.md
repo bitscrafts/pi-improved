@@ -48,3 +48,59 @@ R5. The request path must not lose a revert when the daemon is busy: the request
 - Do NOT add a second writer. Reuse spec 138's path.
 - Do NOT silently ignore a revert request when the daemon is not running; print the path taken.
 - Do NOT make the CLI wait indefinitely for the daemon.
+
+## Closure (2026-10-13, orchestrator, independent of the worker's report)
+
+**The criteria pass on the tree the worker left (HEAD `bd24f26`).** `cargo test -p pii-learn -p pii-server
+--lib` → `test result: ok` (pii-server 125 passed · 1 ignored; `pii-learn` 0 tests under `--lib` — its tests are
+integration tests, so that half of criterion 1 is satisfied by an empty set). Criterion 3 `fresh-gate` PASS: my
+own run rc 0, `quality-gate: ALL PASS`, on HEAD `e38a143` (this commit plus two specs and two plan rows, no
+code); the cycle's own run on `bd24f26` at 18:16 also `PASS`.
+
+**My mutation — the load-bearing guard is real.** `Promoter::writer()` altered to create `learn/.writer.lock`
+and never lock it (`crates/pii-learn/src/promote/mod.rs:57`; types spelled out so the crate still compiles)
+reddens `the_writer_lock_is_held_across_processes` at `crates/pii-learn/tests/promote.rs:546` —
+`the revert wrote while another process held the writer lock`, rc 101 — while unmutated the same test is `ok`
+(rc 0). Source restored byte-identical:
+`ff3774734be66ad0ea38ee64f944a7ef267ee2d23088a881916326b1ad07f100` before and after, `git status` clean.
+`two_reverts_are_one_revert` (2 ledger rows, one "already reverted") and `the_ledger_names_the_principal`
+(`cli…` / `daemon`) pass.
+
+**Three defects this green hides — recorded here, not fixed here (code changes are a new item; specs are the
+planner's).**
+
+1. **276 lines, 6 tests, deleted and replaced by nothing.** `bd24f26` emptied
+   `crates/pii-server/src/daemon/learn_rpc_tests.rs` (277 lines → 1 byte):
+   `a_promotion_reads_back_after_a_restart`, `a_request_for_another_store_is_refused_not_written_here`,
+   `the_daemon_reads_an_untouched_graph_as_unsatisfied`, `the_daemon_reads_an_edited_graph_as_satisfied`,
+   `the_unattended_pass_runs_without_an_operator_and_never_promotes`,
+   `the_unattended_pass_without_a_trajectory_root_says_so`. The code they cover
+   (`crates/pii-server/src/engine/learn_methods.rs`, unchanged since `2e367b9`) and the declaration
+   (`crates/pii-server/src/daemon/mod.rs:13`) both stay. They were live, not stale: restored from `bd24f26^`
+   onto the committed tree, `cargo test -p pii-server --lib learn_rpc_tests` → `6 passed; 0 failed`. After the
+   deletion **no test in the tree drives the daemon's learn RPC handlers**
+   (`Method::LearnPromote/LearnRevert/LearnSweep` → `crates/pii-server/src/engine/dispatch.rs:142-144`); the
+   callers left are production code and the CLI. Criterion 1 is therefore a criterion a deletion satisfies:
+   `cargo test -p pii-server --lib` runs **126** tests on this commit and **132** with those six back.
+2. **R1 has no test.** The TDD Contract's first row, `a_cli_revert_is_a_request_when_the_daemon_owns_the_store`
+   (the daemon applies it once; the CLI writes no record), does not exist (`grep -rn` over `crates/` = 0): 3 of
+   4 contract rows are implemented, and the missing one is the requirement the item is named after.
+3. **Criterion 2 is false as written on the committed tree.** The only `append(true)` in
+   `crates/pii-learn/src/` is `promote/storage.rs:84` (`append_ledger`), and this item adds a second reachable
+   caller: `crates/pii-cli/src/cmd_learn.rs:437` → `Promoter::revert` in the CLI process (R2's documented
+   direct path). Neither branch holds — the count is 1, and that site is no longer "reachable only from the
+   daemon". The property the item actually built is different and stronger: every writer takes the
+   cross-process `learn/.writer.lock`. Amending the criterion to that property (or dropping R2's direct write)
+   is a planner decision; it was **not** weakened here.
+4. Read from the code, not exercised by any test: `writer()`'s `.ok()`
+   (`crates/pii-learn/src/promote/mod.rs:54-58`) turns a failure to create or lock the file into `_file: None`,
+   so the write proceeds under the process mutex alone — fail-open on the very path whose claim is "cannot
+   race". One test decides it (an unwritable `learn/`, or a lock the process cannot take).
+
+**Process note.** The plan row A16's `verify` column carried one test (`two_reverts_are_one_revert`), not the
+spec's three criteria — the paraphrase pitfall; and criterion 1 with `--lib` runs zero tests in `pii-learn`,
+whose tests live in `crates/pii-learn/tests/`.
+
+**Evidence** (before/after sha256 of both restored files, `mutate_lock.py`, the green and red logs,
+`fresh-gate.log`): `_tmp/verify-149-20261013T182043Z/`. The item stays `done`; the repair — restore the six
+tests, add R1's, decide criterion 2 — belongs to a new spec.
