@@ -38,8 +38,36 @@ if when <= now:
 print(int(when.timestamp()))
 PY
   ;;
+usage)
+  # THE source of truth is the account itself, not a remembered string: Claude Code's own usage endpoint, the one
+  # its /usage command calls (read by the workspace's usage-check.sh). Measured 2026-10-13: my marker said "closed
+  # until 21:50Z" from a stale log line while the account was at 65%% of the 5-hour window with 35%% still available.
+  U=$(bash /root/.hermes/scripts/usage-check.sh 2>/dev/null | grep '5-hour session' | head -1)
+  [ -n "$U" ] || { echo "usage: unknown (endpoint unreadable)"; exit 2; }
+  # the first number on that line is the "5" of "5-hour": read the value AFTER the colon
+  PCT=$(printf '%s' "$U" | grep -oE ': *[0-9]+(\.[0-9]+)?%' | head -1 | tr -dc '0-9.')
+  RESET=$(printf '%s' "$U" | grep -oE 'resets [0-9TZ:.+-]+' | head -1 | cut -d' ' -f2)
+  echo "5-hour session at ${PCT}% used (resets ${RESET:-unknown})"
+  INT=${PCT%%.*}
+  if [ "${INT:-0}" -ge 98 ] && [ -n "$RESET" ]; then
+    python3 - "$RESET" <<'PY' >"$MARK" 2>/dev/null
+import datetime, sys
+s = sys.argv[1].replace("Z", "+00:00")
+print(int(datetime.datetime.fromisoformat(s).timestamp()))
+PY
+    echo "closed (the account itself says the window is spent)"
+  else
+    rm -f "$MARK"; echo "open (the account has room right now)"
+  fi
+  ;;
 check)
-  [ -f "$MARK" ] || exit 1
+  if [ ! -f "$MARK" ]; then exit 1; fi
+  # the marker is a throttle: past 30 minutes, ask the ACCOUNT again rather than believing the string
+  AGE=$(( $(date -u +%s) - $(stat -c %Y "$MARK" 2>/dev/null || echo 0) ))
+  if [ "$AGE" -gt 1800 ]; then
+    bash "${BASH_SOURCE[0]}" usage >/dev/null 2>&1 || true
+    [ -f "$MARK" ] || exit 1
+  fi
   UNTIL=$(cat "$MARK" 2>/dev/null || echo 0)
   [ -n "$UNTIL" ] && [ "$(date -u +%s)" -lt "$UNTIL" ] && exit 0
   exit 1
