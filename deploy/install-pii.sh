@@ -15,7 +15,7 @@
 #   UNIT_DIR      where the unit file goes     (user: $HOME/.config/systemd/user, system: /etc/systemd/system)
 #   SKIP_BUILD=1  do not run cargo; install from BIN_SRC
 #   BIN_SRC       built binaries dir           (default <repo>/target/release)
-# Preconditions (checked before anything is moved): llama host answers, PII_DISCORD_TOKEN and
+# Preconditions (checked before anything is moved): graphs/discord-{triage,digest}.toml exist, llama host answers, PII_DISCORD_TOKEN and
 # PII_DISCORD_CHANNEL_ID are set (their values are never written anywhere), PREFIX is creatable.
 set -euo pipefail
 
@@ -55,6 +55,10 @@ if [ ! -d "$PREFIX" ]; then
   mkdir -p "$PREFIX" 2>/dev/null || abort "target prefix $PREFIX does not exist and cannot be created"
 fi
 [ -w "$PREFIX" ] || abort "target prefix $PREFIX is not writable"
+GRAPH_NAMES=(discord-triage discord-digest)   # the graphs the generated config names
+for g in "${GRAPH_NAMES[@]}"; do
+  [ -f "$REPO/graphs/$g.toml" ] || abort "graph '$g' is named by the generated config but $REPO/graphs/$g.toml is missing"
+done
 
 # ---- 1: build ----
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
@@ -97,8 +101,9 @@ sed \
 cat >> "$TMPCONF" <<TOML
 
 # --- appended by deploy/install-pii.sh (spec 142) ---
-# ONE Discord forum channel. The token (PII_DISCORD_TOKEN) and the forum id
-# (PII_DISCORD_CHANNEL_ID) come from the unit's environment file, never from here.
+# ONE Discord forum channel. The token (PII_DISCORD_TOKEN) comes only from the unit's
+# environment file, never from here. The forum id is written into the cron's input below
+# (it is an id, not a secret).
 [[channel]]
 name = "discord"
 kind = "discord"
@@ -112,6 +117,21 @@ schedule = "0 9 * * *"
 input = { to = "$PII_DISCORD_CHANNEL_ID" }
 TOML
 mv "$TMPCONF" "$CONF"
+
+# ---- 4b: graphs into the persistent state dir (the unit places them in the runtime dir on each start) ----
+mkdir -p "$STATE_DIR/graphs"
+installed_graphs=()
+for gf in "$REPO"/graphs/*.toml; do
+  gn="$(basename "$gf")"
+  dest="$STATE_DIR/graphs/$gn"
+  if [ -e "$dest" ]; then
+    cmp -s "$gf" "$dest" && { installed_graphs+=("$gn"); continue; }
+    mkdir -p "$ASIDE"
+    mv "$dest" "$ASIDE/graph.$gn"
+  fi
+  install -m 0644 "$gf" "$dest"
+  installed_graphs+=("$gn")
+done
 
 # ---- 5: systemd unit (written, not enabled) ----
 mkdir -p "$UNIT_DIR"
@@ -139,6 +159,7 @@ Environment=PII_CONFIG=$CONF
 EnvironmentFile=-$CONFIG_DIR/pii.env
 WorkingDirectory=$STATE_DIR
 ExecStartPre=/usr/bin/env mkdir -p $RUNTIME_DIR
+ExecStartPre=/usr/bin/env ln -sfn $STATE_DIR/graphs $RUNTIME_DIR/graphs
 ExecStart=$PREFIX/pii daemon --foreground --config $CONF --store $STATE_DIR/store.redb --workspace $STATE_DIR --log-file $STATE_DIR/pii.log --log-rotate-bytes 10485760 --log-keep-files 5
 Restart=always
 RestartSec=2
@@ -153,6 +174,7 @@ sed -i '/^$/d' "$UNIT"
 # ---- 6: what the operator still has to do ----
 echo "INSTALLED: $PREFIX/{${BINS[*]}} (pii-mcp staged as $PREFIX/pii-mcp.new, NOT swapped)"
 echo "MOVED ASIDE: $moved binaries${ASIDE:+ -> $ASIDE}"
+echo "GRAPHS: ${installed_graphs[*]} -> $STATE_DIR/graphs (placed in $RUNTIME_DIR/graphs on each unit start)"
 echo "CONFIG: $CONF   UNIT: $UNIT"
 echo
 echo "OPERATOR COMMANDS (nothing below was run):"

@@ -58,5 +58,36 @@ bash "$REPO/deploy/rollback-pii.sh" > "$S/rollback.out" 2>&1 || { cat "$S/rollba
 [ ! -e "$ASIDE/pii" ] || fail "moved-aside copy still present (copied, not moved)"
 grep -q 'RESTORED' "$S/rollback.out" || fail "rollback did not print what it restored"
 
+# 4. spec 145: the graphs the config names are installed and placed on every unit start
+GRAPHS=(discord-triage discord-digest)
+for g in "${GRAPHS[@]}"; do   # R6.1
+  cmp -s "$REPO/graphs/$g.toml" "$S/state/graphs/$g.toml" || fail "graph $g not installed byte-identical in STATE_DIR/graphs"
+done
+grep -q 'ExecStartPre=.*graphs' "$S/units/pii.service" || fail "unit has no ExecStartPre placing the graphs"
+run_prestart() {   # R6.2: execute the unit's ExecStartPre lines in order
+  local line
+  while IFS= read -r line; do eval "${line#ExecStartPre=}"; done < <(grep '^ExecStartPre=' "$S/units/pii.service")
+}
+run_prestart || fail "ExecStartPre failed on an empty runtime dir"
+for g in "${GRAPHS[@]}"; do
+  [ -r "$S/run/graphs/$g.toml" ] || fail "graph $g not readable under RUNTIME_DIR/graphs after pre-start"
+  cmp -s "$REPO/graphs/$g.toml" "$S/run/graphs/$g.toml" || fail "graph $g under RUNTIME_DIR/graphs differs from the repo's"
+done
+run_prestart || fail "second ExecStartPre run failed (not idempotent)"
+[ -r "$S/run/graphs/discord-triage.toml" ] || fail "graphs unreadable after the second pre-start"
+grep -q 'forum id is written into' "$S/cfg/pii.toml" || fail "pii.toml comment about the forum id is not the truth"
+
+# R6.4: a second rollback has nothing to restore and must say so
+if bash "$REPO/deploy/rollback-pii.sh" > "$S/rollback2.out" 2>&1; then fail "second rollback exited 0"; fi
+grep -q 'NOTHING TO RESTORE' "$S/rollback2.out" || fail "second rollback did not print NOTHING TO RESTORE"
+
+# R6.3: a re-install over an edited installed graph moves the edited copy aside
+sleep 1   # the aside dir is named by epoch seconds
+echo '# edited by the dry-run' >> "$S/state/graphs/discord-triage.toml"
+bash "$REPO/deploy/install-pii.sh" > "$S/install2.out" 2>&1 || { cat "$S/install2.out"; fail "re-install failed"; }
+ASIDE2="$(ls -d "$S/bin".old-* | tail -1)"
+grep -q 'edited by the dry-run' "$ASIDE2"/*discord-triage.toml || fail "edited graph not moved into $ASIDE2"
+cmp -s "$REPO/graphs/discord-triage.toml" "$S/state/graphs/discord-triage.toml" || fail "re-install did not restore the repo graph"
+
 echo "scratch: $S (left in place; remove by hand)"
 echo "DRY-RUN OK"

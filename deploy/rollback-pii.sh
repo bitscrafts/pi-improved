@@ -14,6 +14,7 @@ case "$SCOPE" in
           CTL="${SYSTEMCTL:-systemctl}" ;;
   *) echo "ABORT: SCOPE must be user or system" >&2; exit 2 ;;
 esac
+STATE_DIR="${STATE_DIR:-$([ "$SCOPE" = system ] && echo /var/lib/pii || echo "$HOME/.local/state/pii")}"
 TS="$(date +%s)"
 
 ASIDE=""
@@ -21,6 +22,11 @@ for d in "${PREFIX}".old-*; do
   [ -d "$d" ] && ASIDE="$d"   # glob is sorted: the last is the newest timestamp
 done
 [ -n "$ASIDE" ] || { echo "ABORT: no ${PREFIX}.old-* directory to restore from" >&2; exit 1; }
+
+shopt -s nullglob
+held=("$ASIDE"/*)
+shopt -u nullglob
+[ "${#held[@]}" -gt 0 ] || { echo "NOTHING TO RESTORE: $ASIDE holds no files" >&2; exit 1; }
 
 if $CTL is-active --quiet pii 2>/dev/null; then
   $CTL stop pii
@@ -35,6 +41,7 @@ for f in "$ASIDE"/*; do
   case "$name" in
     pii.toml)    dest="$CONFIG_DIR/pii.toml" ;;
     pii.service) dest="$UNIT_DIR/pii.service" ;;
+    graph.*.toml) dest="$STATE_DIR/graphs/${name#graph.}" ;;
     *)           dest="$PREFIX/$name" ;;
   esac
   if [ -e "$dest" ]; then

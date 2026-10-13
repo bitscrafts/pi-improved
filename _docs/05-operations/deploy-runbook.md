@@ -20,7 +20,8 @@ bash deploy/install-pii.sh                 # SCOPE=user (default); SCOPE=system 
 It builds `pii`, `pii-web`, `pii-evolve` and `pii-mcp`; moves existing binaries/config/unit to
 `$PREFIX.old-<epoch>/` (never deletes); installs; writes `~/.config/pii/pii.toml` (model
 `llamacpp-server:granite-4.2-3b`, `[llama] host`, trajectories on, one `discord` channel, one daily
-`discord-digest` cron) and the unit; then prints the operator commands. **`pii-mcp` is only staged as
+`discord-digest` cron) and the unit; copies `graphs/*.toml` to `$STATE_DIR/graphs` (default
+`~/.local/state/pii/graphs`; a differing existing copy is moved aside to `$PREFIX.old-<epoch>/graph.<name>`); then prints the operator commands. **`pii-mcp` is only staged as
 `$PREFIX/pii-mcp.new`** — see §5.
 
 ## 2. The two host actions
@@ -45,7 +46,11 @@ It builds `pii`, `pii-web`, `pii-evolve` and `pii-mcp`; moves existing binaries/
 | `pii run get <id>` on a fresh run (start one with the usual `pii run` path) | the run record, state finished |
 | `pii metrics \| grep pii_channel_posts_total` | the counter **increments** after a triage message or the digest |
 | the Discord forum | receives the daily digest post |
+| `ls /run/user/$(id -u)/pii/graphs/` (`<runtime_dir>/graphs/`) | lists `discord-triage.toml` and `discord-digest.toml` |
 | `journalctl --user -u pii` / `tail ~/.local/state/pii/pii.log` | `daemon.started`, no startup failure |
+
+The graphs live in `$STATE_DIR/graphs` (persistent); the runtime dir is tmpfs, so the unit's `ExecStartPre=`
+symlinks `<runtime_dir>/graphs` to it on every start.
 
 Caveat: `[[cron]]` only mirrors the schedule; firing is the graph's own `timer` entry node, and
 `graphs/discord-digest.toml` has none yet (its entry is `devices`). Until a timer-fronted graph exists, the digest
