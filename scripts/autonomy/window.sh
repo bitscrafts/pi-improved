@@ -14,22 +14,27 @@ usage() { echo "usage: window.sh parse <logfile> | check | clear | show" >&2; ex
 case "${1:-}" in
 parse)
   LOG="${2:-}"; [ -n "$LOG" ] && [ -f "$LOG" ] || { echo "window.sh: no such log: ${2:-}" >&2; exit 2; }
-  SIG=$(grep -oE 'hit your (session|weekly|monthly) limit|api_error_status":"?429|resets [0-9]{1,2}:[0-9]{2}(am|pm) \(UTC\)' "$LOG" | head -1)
-  [ -n "$SIG" ] || exit 0                      # no refusal in this log: print nothing
-  R=$(grep -oE 'resets [0-9]{1,2}:[0-9]{2}(am|pm) \(UTC\)' "$LOG" | tail -1)
+  # a log accumulates refusals from several runs, so only its TAIL can speak for the run that just ended
+  # (measured 2026-10-13: a stale "resets 8:20pm" line from an earlier run parked the loop while the window was open)
+  TAIL=$(tail -n 60 "$LOG")
+  SIG=$(printf '%s' "$TAIL" | grep -oE 'hit your (session|weekly|monthly) limit|api_error_status":"?429|resets [0-9]{1,2}:[0-9]{2}(am|pm) \(UTC\)' | head -1)
+  [ -n "$SIG" ] || exit 0                      # no refusal in this run's tail: print nothing
+  R=$(printf '%s' "$TAIL" | grep -oE 'resets [0-9]{1,2}:[0-9]{2}(am|pm) \(UTC\)' | tail -1)
   python3 - "$R" <<'PY'
 import datetime, re, sys
 now = datetime.datetime.now(datetime.timezone.utc)
 raw = sys.argv[1] if len(sys.argv) > 1 else ""
 m = re.search(r'resets (\d{1,2}):(\d{2})(am|pm)', raw)
 if not m:
-    # the log says we are refused but not when: assume the shortest sane wait, and say so by the value's size
+    # the log says we are refused but not when: the shortest sane wait, never hours
     print(int((now + datetime.timedelta(minutes=10)).timestamp())); raise SystemExit(0)
 h, mi, ap = int(m.group(1)) % 12, int(m.group(2)), m.group(3)
 h += 12 if ap == "pm" else 0
 when = now.replace(hour=h, minute=mi, second=0, microsecond=0)
-if when <= now:                       # the stated time already passed: it means the next window, not this one
-    when += datetime.timedelta(hours=5)
+if when <= now:
+    # an already-passed time means the log is stale (or the window is already open): cost ten minutes, not five hours.
+    # The marker is a THROTTLE, never an absolute block — a live probe always has the last word.
+    when = now + datetime.timedelta(minutes=10)
 print(int(when.timestamp()))
 PY
   ;;

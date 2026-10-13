@@ -16,7 +16,7 @@
 set -uo pipefail
 cd /projects/pi-improved || { echo "pii autonomy: cannot cd to the project"; exit 1; }
 ST=_tmp/autonomy; LOGD=$ST/logs; mkdir -p "$LOGD"
-REPORTED=$ST/last-reported
+REPORTED=${PII_REPORTED:-$ST/last-reported}
 
 say_once() { # say_once <key> <line...>   — print only when <key> differs from the last reported key
   local key="$1"; shift
@@ -55,8 +55,15 @@ fi
 
 # 1b) the account's window: if the CLI itself said when it reopens, do not probe before then
 if bash scripts/autonomy/window.sh check 2>/dev/null; then
-  say_once "closed:$(cat _tmp/autonomy/window-closed-until)" "pii autonomy · the account window is closed ($(bash scripts/autonomy/window.sh show)) — nothing spent"
-  exit 0
+  # the marker is a THROTTLE: it stops a probe storm, it does not block for ever. A live probe has the last word,
+  # so after 30 min of believing the marker, probe anyway (measured 2026-10-13: a stale limit line parked the loop
+  # while the window was open, and the user had to say so).
+  AGE=$(( $(date -u +%s) - $(stat -c %Y _tmp/autonomy/window-closed-until 2>/dev/null || echo 0) ))
+  if [ "$AGE" -lt 1800 ]; then
+    say_once "closed:$(cat _tmp/autonomy/window-closed-until)" "pii autonomy · the account window is closed ($(bash scripts/autonomy/window.sh show)) — nothing spent"
+    exit 0
+  fi
+  echo "pii autonomy · the marker is $(($AGE/60)) min old — probing again (the marker throttles, it does not block)"
 fi
 
 # 2) paused by the operator (Discord: `control.sh pause`) — say it once, start nothing
@@ -82,7 +89,7 @@ esac
 
 # 2b) an open question must reach the phone (the user's instruction: "qualquer duvida, pelo discord")
 #     keyed by the question list itself, so the same question is not re-sent every tick
-Q="$ST/questions.md"
+Q="${PII_QUESTIONS:-$ST/questions.md}"
 if [ -f "$Q" ] && grep -q '^- \[ \]' "$Q"; then
   KEY="q:$(grep '^- \[ \]' "$Q" | md5sum | cut -c1-12)"
   OPEN=$(grep -c '^- \[ \]' "$Q")

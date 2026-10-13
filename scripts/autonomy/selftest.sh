@@ -17,6 +17,7 @@ T=$(mktemp -d /projects/_tmp/autonomy-selftest-XXXXXX)
 export PII_LOCK=$T/selftest.lock
 export TICK_DRY=1   # a test must never start a real cycle (it did once, and it bought spec 135 by accident)
 export PII_CONTROL=$T/selftest.control   # and never flip the real operator switch
+export PII_QUESTIONS=$T/questions.md PII_NOTES=$T/notes.md PII_STATE=$T/state.json PII_ACTS=$T/operator-acts.log PII_REPORTED=$T/last-reported   # nor write the operator's records
 BIN=$T/bin; mkdir -p "$BIN"
 PASS=0; FAIL=0
 row(){ # row <name> <expected> <actual>
@@ -30,7 +31,7 @@ PII_PLAN=$T/plan.tsv printf 'X1\tfake-spec.md\t-\tthe fake item\t-\t-\t0\n' >"$T
 row "pick finds the first row" "X1" "$(PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py pick | cut -f1)"
 PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py set X1 status=needs-review attempts=2 >/dev/null
 row "set writes and get reads back" "2" "$(python3 scripts/autonomy/state.py get X1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["attempts"])')"
-row "state file stays valid JSON" "ok" "$(python3 -c 'import json;json.load(open("_tmp/autonomy/state.json"));print("ok")')"
+row "state file stays valid JSON" "ok" "$(python3 -c 'import json,os;json.load(open(os.environ["PII_STATE"]));print("ok")')"
 
 echo "== 2. the window probe (fake CLIs: no money spent)"
 fake x "echo '{\"type\":\"result\",\"result\":\"PONG55\",\"modelUsage\":{\"claude-opus-5-5\":{}}}'"
@@ -63,21 +64,21 @@ PATH=$BIN:$PATH bash scripts/autonomy/cycle.sh 2>&1 | grep -q 'OUTCOME=paused'; 
 bash scripts/autonomy/tick.sh | grep -q 'PAUSED'; row "paused -> the tick says so (once)" 0 $?
 bash scripts/autonomy/tick.sh | grep -q 'PAUSED'; row "paused -> the tick does not repeat itself" 1 $?
 bash scripts/autonomy/control.sh resume >/dev/null
-row "resume clears the switch" "RUNNING at" "$(cut -c1-10 _tmp/autonomy/control)"
+row "resume clears the switch" "RUNNING at" "$(cut -c1-10 "$PII_CONTROL")"
 bash scripts/autonomy/control.sh skip X1 >/dev/null
 row "skip takes an item out of the pick" "NONE" "$(PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py pick | cut -f1)"
 bash scripts/autonomy/control.sh unskip X1 >/dev/null
 row "unskip puts it back" "X1" "$(PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py pick | cut -f1)"
 bash scripts/autonomy/control.sh status >/dev/null 2>&1; row "status runs" 0 $?
-bash scripts/autonomy/control.sh note "selftest note" >/dev/null; row "note appends" "ok" "$(grep -q 'selftest note' _tmp/autonomy/notes.md && echo ok)"
+bash scripts/autonomy/control.sh note "selftest note" >/dev/null; row "note appends" "ok" "$(grep -q 'selftest note' "$PII_NOTES" && echo ok)"
 
 echo "== 5b. a question reaches the phone, and an answer stops it"
 bash scripts/autonomy/control.sh ask "selftest: which way should the loop go?" >/dev/null
 bash scripts/autonomy/tick.sh | grep -q 'open question'; row "an open question is carried to the phone" 0 $?
 bash scripts/autonomy/tick.sh | grep -q 'open question'; row "it is not repeated every tick" 1 $?
-N=$(grep -c '^- \[ \]' _tmp/autonomy/questions.md)
+N=$(grep -c '^- \[ \]' "$PII_QUESTIONS")
 bash scripts/autonomy/control.sh answer "$N" "selftest answer" >/dev/null
-row "the answer is recorded" "ok" "$(grep -q 'ANSWERED: selftest answer' _tmp/autonomy/questions.md && echo ok)"
+row "the answer is recorded" "ok" "$(grep -q 'ANSWERED: selftest answer' "$PII_QUESTIONS" && echo ok)"
 
 echo "== 6. the supervisor does nothing when there is nothing to do"
 bash scripts/autonomy/control.sh pause "selftest2" >/dev/null
@@ -94,14 +95,5 @@ printf '%s\n' 'Error: connect ECONNREFUSED 127.0.0.1:443' > "$W"
 E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error -> no reset claimed (near-miss control)" 0 $([ -z "$E2" ] && echo 0 || echo 1)
 
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
-# the selftest's own rows are removed from the real state file (the plan row was the test's, not the loop's)
-python3 - "$T" <<'PY'
-import json, os
-p = "/projects/pi-improved/_tmp/autonomy/state.json"
-try:
-    d = json.load(open(p)); d.pop("X1", None); json.dump(d, open(p, "w"), indent=1, sort_keys=True)
-except Exception as e:
-    print("cleanup skipped:", e)
-PY
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]

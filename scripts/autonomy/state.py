@@ -15,7 +15,7 @@ A `plan.tsv` row is: id <tab> spec <tab> brief <tab> title <tab> verify(cmd;cmd)
 import json, os, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-STATE = os.path.join(ROOT, "_tmp", "autonomy", "state.json")
+STATE = os.environ.get("PII_STATE") or os.path.join(ROOT, "_tmp", "autonomy", "state.json")
 
 
 def rows():

@@ -18,16 +18,22 @@
 set -uo pipefail
 cd /projects/pi-improved || { echo "cannot cd to /projects/pi-improved"; exit 1; }
 ST=_tmp/autonomy; mkdir -p "$ST"; CTL=${PII_CONTROL:-$ST/control}   # overridable: a test must not flip the operator's switch
+QF=${PII_QUESTIONS:-$ST/questions.md}; NF=${PII_NOTES:-$ST/notes.md}   # likewise: a test must not write the operator's records
+export PII_QUESTIONS="$QF"
 TS=$(date -u +%FT%TZ)
+# every operator act leaves one line, the record an operator-distance metric counts; a log that cannot be written never fails the act
+act(){ printf '%s | human | %s | %s\n' "$TS" "$1" "${2:--}" >>"${PII_ACTS:-$ST/operator-acts.log}" 2>/dev/null || echo "(operator-acts.log not writable; carrying on)" >&2; }
 
 case "${1:-status}" in
   pause)
     printf 'PAUSED by %s at %s: %s\n' "${PII_CONTROL_BY:-human}" "$TS" "${2:-no reason given}" >"$CTL"
+    act pause "${2:-no reason given}"
     echo "pii autonomy: PAUSED — ${2:-no reason given}"
     echo "(a cycle already running finishes; no new one starts)"
     ;;
   resume)
     printf 'RUNNING at %s (resumed by %s)\n' "$TS" "${PII_CONTROL_BY:-human}" >"$CTL"
+    act resume
     echo "pii autonomy: RUNNING — the next tick starts a cycle"
     ;;
   skip|park|unskip)
@@ -37,19 +43,20 @@ case "${1:-status}" in
       park)   python3 scripts/autonomy/state.py set "$ID" status=parked  "last=parked $TS" ;;
       unskip) python3 scripts/autonomy/state.py set "$ID" status=pending "last=re-queued $TS" ;;
     esac
+    act "$1" "$ID"
     echo "pii autonomy: item $ID -> $1"; python3 scripts/autonomy/state.py get "$ID" | head -4
     ;;
   ask)
-    printf -- '- [ ] %s | %s\n' "$TS" "${2:?ask needs text}" >>"$ST/questions.md"
+    printf -- '- [ ] %s | %s\n' "$TS" "${2:?ask needs text}" >>"$QF"
     echo "pii autonomy: question raised — the next tick carries it to the phone"
-    tail -1 "$ST/questions.md"
+    tail -1 "$QF"
     ;;
   answer)
     ID=${2:?answer needs the question number (see 'status')}; TXT=${3:?answer needs the text}
     python3 - "$ID" "$TXT" <<'PY'
-import sys, pathlib
+import os, sys, pathlib
 n, txt = sys.argv[1], sys.argv[2]
-p = pathlib.Path("_tmp/autonomy/questions.md")
+p = pathlib.Path(os.environ["PII_QUESTIONS"])
 lines = p.read_text().splitlines()
 open_q = [i for i, l in enumerate(lines) if l.startswith("- [ ]")]
 if not open_q:
@@ -62,9 +69,10 @@ lines[i] = lines[i].replace("- [ ]", "- [x]", 1) + f"  ==> ANSWERED: {txt}"
 p.write_text("\n".join(lines) + "\n")
 print("answered:", lines[i][:120])
 PY
+    [ $? -eq 0 ] && act answer "q$ID"
     ;;
   note)
-    printf '%s | %s\n' "$TS" "${2:?note needs text}" >>"$ST/notes.md"
+    printf '%s | %s\n' "$TS" "${2:?note needs text}" >>"$NF"
     echo "pii autonomy: noted"
     ;;
   log)
@@ -78,7 +86,7 @@ PY
     echo "== queue:"; python3 scripts/autonomy/state.py list | awk -F'\t' '{printf "   %-4s %-52s %s\n", $1, substr($3,1,52), $4}'
     L=$(ls -t "$ST"/logs/cycle-*.log 2>/dev/null | head -1)
     [ -n "$L" ] && { echo "== last cycle: ${L##*/}"; grep -o 'OUTCOME=[^ ]*\|ITEM=[^ ]*' "$L" | tail -2 | tr '\n' ' '; echo; }
-    Q="$ST/questions.md"
+    Q="$QF"
     if [ -f "$Q" ] && grep -q '^- \[ \]' "$Q"; then
       echo "== open questions (the tick is carrying these to the phone):"
       grep -n '^- \[ \]' "$Q" | sed 's/^/   /' | cut -c1-140
