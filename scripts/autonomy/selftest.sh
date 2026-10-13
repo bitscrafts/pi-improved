@@ -16,6 +16,7 @@ T=$(mktemp -d /projects/_tmp/autonomy-selftest-XXXXXX)
 # the selftest must not collide with a live cycle: its own lock file (and its own state, via PII_PLAN rows)
 export PII_LOCK=$T/selftest.lock
 export TICK_DRY=1   # a test must never start a real cycle (it did once, and it bought spec 135 by accident)
+export PII_CONTROL=$T/selftest.control   # and never flip the real operator switch
 BIN=$T/bin; mkdir -p "$BIN"
 PASS=0; FAIL=0
 row(){ # row <name> <expected> <actual>

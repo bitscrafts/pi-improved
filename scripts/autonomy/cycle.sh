@@ -27,7 +27,7 @@ exec 9>"${PII_LOCK:-$STATEDIR/lock}"
 if ! flock -n 9; then say "another cycle holds the lock — nothing done"; echo "OUTCOME=locked"; exit 5; fi
 
 # 0b) the operator's switch (Discord: `scripts/autonomy/control.sh pause`) — honour it before spending
-if grep -q PAUSED "$STATEDIR/control" 2>/dev/null; then
+if grep -q PAUSED "${PII_CONTROL:-$STATEDIR/control}" 2>/dev/null; then
   say "PAUSED by the operator — nothing spent, nothing advanced"; echo "OUTCOME=paused"; exit 0
 fi
 

@@ -12,7 +12,7 @@ set -uo pipefail
 cd /projects/pi-improved || { echo "pii autonomy: cannot cd to the project"; exit 1; }
 ST=_tmp/autonomy; LOGD=$ST/logs; mkdir -p "$LOGD"
 
-grep -q PAUSED "$ST/control" 2>/dev/null && { echo "pii autonomy · paused — supervisor idle"; exit 0; }
+grep -q PAUSED "${PII_CONTROL:-$ST/control}" 2>/dev/null && { echo "pii autonomy · paused — supervisor idle"; exit 0; }
 flock -n "$ST/lock" true 2>/dev/null || { echo "pii autonomy · a cycle is in flight — supervisor idle"; exit 0; }
 if ! bash scripts/autonomy/probe.sh >/dev/null 2>&1; then
   echo "pii autonomy · the Anthropic window is closed — supervisor idle, nothing spent"; exit 0

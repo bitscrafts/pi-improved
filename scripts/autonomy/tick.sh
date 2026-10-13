@@ -54,8 +54,8 @@ if ! flock -n "${PII_LOCK:-$ST/lock}" true 2>/dev/null; then
 fi
 
 # 2) paused by the operator (Discord: `control.sh pause`) — say it once, start nothing
-if grep -q PAUSED "$ST/control" 2>/dev/null; then
-  say_once "paused:$(sed -n 1p "$ST/control")" "pii autonomy · PAUSED — $(sed -n 1p "$ST/control")"
+if grep -q PAUSED "${PII_CONTROL:-$ST/control}" 2>/dev/null; then
+  say_once "paused:$(sed -n 1p "${PII_CONTROL:-$ST/control}")" "pii autonomy · PAUSED — $(sed -n 1p "${PII_CONTROL:-$ST/control}")"
   exit 0
 fi
 
