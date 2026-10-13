@@ -5,7 +5,8 @@
 #   2. hand ONE budgeted worker only the incident evidence,
 #   3. measure MECHANICALLY: every test name the worker's change introduces must FAIL in a copy of the tree with
 #      the base files restored, and PASS in the worker's tree. Nothing the worker reports is trusted.
-# Records one row in _tmp/autonomy/experiment/results.tsv, and spends at most $1 (--max-budget-usd).
+# Records one row in _tmp/autonomy/experiment/results.tsv. The cost is MEASURED and reported, not capped (the user
+# removed the cap on 2026-10-13); a time ceiling of 1500 s per worker still bounds each run.
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/../autonomy/env.sh"
 cd /projects/pi-improved || exit 2
@@ -39,7 +40,7 @@ EOF
 
 echo "[$IDX] $FP — base $BASE, tree $TREE"
 ( cd "$TREE" && timeout 1500 claude -p "$(cat "$BRIEF")" \
-    --model sonnet --permission-mode bypassPermissions --max-turns 40 --max-budget-usd 1 \
+    --model sonnet --permission-mode bypassPermissions --max-turns 60 \   # no budget cap (user, 2026-10-13); the cost is measured and reported, the time ceiling stays
     --output-format json >"$OUT/worker-$IDX.json" 2>"$OUT/worker-$IDX.err" )
 WRC=$?
 COST=$(python3 -c 'import json,sys
