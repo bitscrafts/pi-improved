@@ -19,7 +19,7 @@ cat <<'TBL' | while IFS='|' read -r spec fp crate paths; do
 135|panicking-node-no-terminal|pii-server|crates
 134|fixed-path-store-class|pii-memory|crates
 132|forum-channel-posting|pii-channels|crates
-141|docs-truth-pass|pii-cli|_docs
+136|scratch-outside-the-tree|pii-web|crates
 TBL
   [ -n "$spec" ] || continue
   if bash scripts/autonomy/window.sh check 2>/dev/null; then
@@ -28,7 +28,7 @@ TBL
   fi
   # the OLDEST subject match: the fix. A later "133: closure …" also matches and would seed the tree ON the fix
   # (measured: that is exactly how my first attempt handed the worker a tree that already had the cure).
-  fix=$(git log --grep="^$spec:" --reverse --format=%h | head -1)
+  fix=$(git log --grep="^$spec[-:]" --reverse --format=%h | head -1)
   if [ -z "$fix" ]; then echo "[$spec] no fix commit found by content — skipped"; continue; fi
   echo "=== $spec ($fp): fix=$fix base=$(git rev-parse --short "$fix^")"
   bash scripts/experiments/measure-proven-fix.sh "$spec" "$fp" "$fix" "$crate" "$paths"
