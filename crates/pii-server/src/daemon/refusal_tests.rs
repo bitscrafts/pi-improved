@@ -288,3 +288,84 @@ async fn a_second_promotion_has_its_own_row() {
     assert_eq!(b.attempts[0].run_id, b_run.as_str());
     assert_eq!(fx.engine.heals.list_attempts().unwrap().len(), 2);
 }
+
+/// Seeds a run of the graph `name` that has started but not finished: the
+/// shape a resume picks up.
+fn seed_started(fx: &Fixture, name: &str) -> RunId {
+    use pii_abi::{RunEvent, RunHeader};
+    let spec = pii_graph::toml_load::load_toml(&format!(
+        "name = \"{name}\"\nentry = \"a\"\ncaps = []\n[[node]]\nid = \"a\"\nkind = \"transform\"\nexpr = \"$.input\"\n"
+    ))
+    .unwrap();
+    let store = &fx.engine.store;
+    let graph = store
+        .put_graph(&serde_json::to_vec(&spec).unwrap())
+        .unwrap();
+    let input_hash = store.put_graph(br#"{"prompt":"resume"}"#).unwrap();
+    let id = store.next_run_id().unwrap();
+    let mut header = RunHeader {
+        run: id.clone(),
+        graph: graph.clone(),
+        status: RunStatus::Running,
+        seq: 0,
+        dur_ms: 0,
+    };
+    store
+        .append_event(&mut header, &RunEvent::Started { graph, input_hash })
+        .unwrap();
+    id
+}
+
+/// A run created before the quarantine, resumed after it: refused, terminal,
+/// recorded, and not deleted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_run_of_a_quarantined_graph_is_refused() {
+    let fx = fixture();
+    let id = seed_started(&fx, "sick");
+    let err = crate::engine::runs::spawn_resume(Arc::clone(&fx.engine), id.clone(), None)
+        .expect_err("a quarantined graph must not resume");
+    assert!(matches!(err, pii_abi::PiiError::Denied(_)), "{err:?}");
+    let header = fx.engine.store.get_run(&id).unwrap().expect("not deleted");
+    assert_eq!(header.status, RunStatus::Failed, "terminal, not in flight");
+    let journal = format!("{:?}", fx.engine.store.read_journal(&id).unwrap());
+    assert!(journal.contains("quarantined by promotion"), "{journal}");
+    assert_eq!(fx.engine.refusals.refused(), 1);
+    assert_eq!(fx.engine.refusals.recorded(), 1);
+    assert!(fx.engine.runs.lock().is_empty(), "no handle left behind");
+}
+
+/// The record answers "which promotion" without reading code.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_refusal_names_the_promotion() {
+    let fx = fixture();
+    let id = seed_started(&fx, "sick");
+    let _ = crate::engine::runs::spawn_resume(Arc::clone(&fx.engine), id.clone(), None);
+    let want = format!(
+        "learn: graph sick is quarantined by promotion {}",
+        fx.promo.id
+    );
+    let journal = format!("{:?}", fx.engine.store.read_journal(&id).unwrap());
+    assert!(journal.contains(&want), "{journal}");
+    let a = row(&fx, &fx.promo.id);
+    assert_eq!(a.extra["graph"], "sick");
+    assert_eq!(a.extra["run_id"], id.as_str());
+    assert_eq!(a.extra["reason"], want);
+}
+
+/// Near-miss control: a graph with no quarantine resumes as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_healthy_resume_still_works() {
+    let fx = fixture();
+    let id = seed_started(&fx, "healthy");
+    crate::engine::runs::spawn_resume(Arc::clone(&fx.engine), id.clone(), None).unwrap();
+    let mut status = RunStatus::Running;
+    for _ in 0..6000 {
+        status = fx.engine.store.get_run(&id).unwrap().unwrap().status;
+        if status != RunStatus::Running {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_ne!(status, RunStatus::Failed, "a healthy resume continues");
+    assert_eq!(fx.engine.refusals.refused(), 0);
+}

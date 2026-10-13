@@ -184,15 +184,25 @@ fn refuse_start(engine: &Engine, run_id: &RunId, graph: &str, err: &PiiError) ->
     if !matches!(engine.store.get_run(run_id), Ok(None)) {
         return false;
     }
-    let terminal = pii_abi::Terminal::Failure {
-        error: err.to_string(),
-    };
-    let mut header = pii_abi::RunHeader {
+    let header = pii_abi::RunHeader {
         run: run_id.clone(),
         graph: graph.to_owned(),
         status: pii_abi::RunStatus::Failed,
         seq: 0,
         dur_ms: 0,
+    };
+    fail_run(engine, header, graph, err);
+    true
+}
+
+/// Ends the run `header` names as `Failed` with `err` as the reason: the
+/// terminal journal event, the bus broadcast and the refusal log line. Shared
+/// by a refused start and a refused resume, so both reach the same terminal.
+fn fail_run(engine: &Engine, mut header: pii_abi::RunHeader, graph: &str, err: &PiiError) {
+    let run_id = header.run.clone();
+    header.status = pii_abi::RunStatus::Failed;
+    let terminal = pii_abi::Terminal::Failure {
+        error: err.to_string(),
     };
     let finished = pii_abi::RunEvent::Finished {
         terminal,
@@ -200,7 +210,7 @@ fn refuse_start(engine: &Engine, run_id: &RunId, graph: &str, err: &PiiError) ->
     };
     if let Err(e) = engine.store.append_event(&mut header, &finished) {
         engine.report_unhandled("run.start.refused", &e.to_string());
-    } else if let Some(ev) = crate::engine::bus::map_event(run_id, &finished) {
+    } else if let Some(ev) = crate::engine::bus::map_event(&run_id, &finished) {
         engine.bus.broadcast(ev);
     }
     engine.log().event(
@@ -214,7 +224,6 @@ fn refuse_start(engine: &Engine, run_id: &RunId, graph: &str, err: &PiiError) ->
         .field("error", err.to_string())
         .in_run(pii_observe::RunId(run_id.to_string())),
     );
-    true
 }
 
 /// Continues a suspended run (F5.5/F5.9/F5.10: timer fire, approval resolve).
@@ -256,9 +265,23 @@ pub fn spawn_resume(
         .get_graph(&header.graph)
         .map_err(|e| refuse("graph unreadable", &e))?
         .ok_or_else(|| refuse("graph missing", &header.graph))?;
-    let limits = GraphSpec::from_json(&graph_bytes)
-        .map_err(|e| refuse("graph unparsable", &e))?
-        .limits;
+    let spec = GraphSpec::from_json(&graph_bytes).map_err(|e| refuse("graph unparsable", &e))?;
+    // Spec 148: the SAME check a start consults. A refused resume ends the run
+    // `Failed` with the reason in its journal; it is neither left in flight
+    // nor deleted, and no handle is registered.
+    if let Some((promo, reason)) = quarantine_of(&engine, &spec.name) {
+        let denied = PiiError::Denied(reason.clone());
+        crate::engine::refusal::record_quarantine_refusal(
+            &engine,
+            &promo,
+            &reason,
+            &run_id,
+            learn_now_secs() * 1000,
+        );
+        fail_run(&engine, header, &spec.name, &denied);
+        return Err(denied);
+    }
+    let limits = spec.limits;
     let (max_tokens, max_tool_calls, max_micro_usd, max_wall_ms) = (
         limits.max_tokens,
         limits.max_tool_calls,
