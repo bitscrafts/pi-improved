@@ -60,7 +60,9 @@ cp -a "$TREE" "$BASECOPY" 2>/dev/null
 ( cd "$BASECOPY" && git -C /projects/pi-improved archive "$BASE" | tar -x -C . ) 2>/dev/null
 
 PROOF="unmeasured"; NOTE=""
-if [ -n "$(find "$TREE" -name '*.rs' -newermt '-90 minutes' | head -1)" ]; then
+CHANGED=$(cd "$TREE" && find . -name '*.rs' -exec md5sum {} + 2>/dev/null | sort | md5sum)
+SEEDED=$(md5sum "$OUT/manifest-$IDX.base.md5" | cut -d' ' -f1)
+if [ -n "$CHANGED" ]; then
   # try each introduced name; the proof is a name that fails on base and passes on the worker's tree
   while read -r NAME; do
     [ -n "$NAME" ] || continue
