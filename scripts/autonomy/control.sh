@@ -17,7 +17,7 @@
 #   log [n]                      the last n lines of the newest cycle log (default 20)
 set -uo pipefail
 cd /projects/pi-improved || { echo "cannot cd to /projects/pi-improved"; exit 1; }
-ST=_tmp/autonomy; mkdir -p "$ST"; CTL=$ST/control
+ST=_tmp/autonomy; mkdir -p "$ST"; CTL=${PII_CONTROL:-$ST/control}   # overridable: a test must not flip the operator's switch
 TS=$(date -u +%FT%TZ)
 
 case "${1:-status}" in
