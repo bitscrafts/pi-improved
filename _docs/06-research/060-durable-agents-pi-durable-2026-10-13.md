@@ -96,7 +96,11 @@ them plainly.
 
 ## Actions
 
-- Added to the autonomy queue (see `scripts/autonomy/plan.tsv`): **spec 143** (run recovery with replay
-  semantics) and **spec 144** (the proactive judge graph). Both are traceable to this document.
+- **Held as RESEARCH, not queued for implementation** (user directive 2026-10-13): **spec 143** (run recovery
+  with replay semantics) and **spec 144** (the proactive judge graph). They are marked `STATUS: RESEARCH` in
+  their headers and were removed from `scripts/autonomy/plan.tsv`; they go to a claude+opus review first.
+- The review's frame is the point the user took from the video: **proactivity applied to pii's own
+  self-improvement** — the loop reads its logs by itself, resolves by itself, and asks permission only to put a
+  change into production, with the operator as far from the loop as possible and deciding only the end.
 - Dual agent-memory entries stored: `workspace/research/pi-durable-durable-agents-2026-10-13` (facts) and
   `workspace/insights/pii-from-pi-durable-2026-10-13` (the angle).

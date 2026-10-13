@@ -1,5 +1,11 @@
 # Spec: a run survives the death of the process that was running it
 
+> **STATUS: RESEARCH — NOT QUEUED FOR IMPLEMENTATION.** Held for the claude+opus review (user directive
+> 2026-10-13: *"marque os specs como pesquisa e passaremos ao claude+opus antes de qualquer implementação"*).
+> The review must judge them against the point of the source they came from: proactivity applied to pii's own
+> self-improvement — the loop reads its logs by itself, resolves by itself, and asks permission only to put a
+> change into production, with the operator as far from the loop as possible, deciding only the end.
+
 ## Overview
 
 pii persists run *records*; it does not persist the *step*. A run whose process died mid-node stays `Running`
