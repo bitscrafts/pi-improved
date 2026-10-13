@@ -32,9 +32,6 @@ for i in $(seq 1 40); do
   sleep 30
 done
 [ -n "$SID" ] || { echo "pii review · REFUSED: no session id to resume — a fresh review is not what this script does"; exit 0; }
-grep -q -- '--resume' <<EOF
-$SID
-EOF
 echo "pii review · window open, resuming the review session (this takes ~20-30 min)"
 TASK_LABEL=opus-proactivity-review REVIEW_MODE=test MAX_TURNS=140 \
   bash /root/.hermes/skills/research/opus-review/scripts/run-opus-review.sh /projects/pi-improved "$BR" "$OUT" --resume "$SID" >"$OUT/resume-attempt.log" 2>&1
