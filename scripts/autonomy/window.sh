@@ -39,25 +39,21 @@ print(int(when.timestamp()))
 PY
   ;;
 usage)
-  # THE source of truth is the account itself, not a remembered string: Claude Code's own usage endpoint, the one
-  # its /usage command calls (read by the workspace's usage-check.sh). Measured 2026-10-13: my marker said "closed
-  # until 21:50Z" from a stale log line while the account was at 65%% of the 5-hour window with 35%% still available.
-  U=$(bash /root/.hermes/scripts/usage-check.sh 2>/dev/null | grep '5-hour session' | head -1)
-  [ -n "$U" ] || { echo "usage: unknown (endpoint unreadable)"; exit 2; }
-  # the first number on that line is the "5" of "5-hour": read the value AFTER the colon
-  PCT=$(printf '%s' "$U" | grep -oE ': *[0-9]+(\.[0-9]+)?%' | head -1 | tr -dc '0-9.')
-  RESET=$(printf '%s' "$U" | grep -oE 'resets [0-9TZ:.+-]+' | head -1 | cut -d' ' -f2)
-  echo "5-hour session at ${PCT}% used (resets ${RESET:-unknown})"
-  INT=${PCT%%.*}
-  if [ "${INT:-0}" -ge 98 ] && [ -n "$RESET" ]; then
-    python3 - "$RESET" <<'PY' >"$MARK" 2>/dev/null
-import datetime, sys
-s = sys.argv[1].replace("Z", "+00:00")
-print(int(datetime.datetime.fromisoformat(s).timestamp()))
-PY
-    echo "closed (the account itself says the window is spent)"
+  # THE source of truth is the account itself: Claude Code's own usage endpoint (what its /usage command calls).
+  # Read its JSON, never a human-readable line: parsing prose made the "5" of "5-hour" look like the value (twice).
+  # `severity` is the account's own verdict — normal means the limit is NOT binding, whatever the percentage is.
+  JSON=$(python3 /projects/pi-improved/scripts/autonomy/usage_json.py 2>/dev/null || true)
+  if [ -z "$JSON" ]; then echo "usage: unknown (the endpoint could not be read)"; exit 2; fi
+  PCT=$(printf '%s' "$JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("pct"))')
+  SEV=$(printf '%s' "$JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("severity"))')
+  RESET=$(printf '%s' "$JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("reset") or "")')
+  echo "5-hour session at ${PCT}% used, severity=${SEV} (resets ${RESET})"
+  SPENT=$(python3 -c 'import sys; print(1 if float(sys.argv[1] or 0) >= 98 else 0)' "${PCT:-0}")
+  if [ "$SEV" != "normal" ] || [ "$SPENT" = "1" ]; then
+    python3 /projects/pi-improved/scripts/autonomy/usage_json.py --epoch "$RESET" >"$MARK" 2>/dev/null || true
+    echo "closed (the account itself says the window is spent: severity=${SEV}, ${PCT}%)"
   else
-    rm -f "$MARK"; echo "open (the account has room right now)"
+    rm -f "$MARK"; echo "open (the account has room right now: ${PCT}% used, severity=${SEV})"
   fi
   ;;
 check)
