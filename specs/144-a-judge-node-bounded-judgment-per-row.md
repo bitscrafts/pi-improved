@@ -23,9 +23,18 @@ graphs), 129 (`llamacpp-server:`), 131 (a refused run is a decision)
 
 ### Functional
 - **R1** A `judge` node kind: given one row (text + optional metadata) and a declared set of labels, it makes
-  **one bounded model call** and returns a structured verdict — the label, a confidence, and an optional short
-  reason. The call goes through the existing model resolution, so `llamacpp-server:<model>` (the local llama.cpp
-  server) is the default and no new dependency is added.
+  **one bounded decision call** and returns a **typed** verdict — the label, a **calibrated confidence**, and an
+  optional short reason. The call goes through the existing model resolution, so `llamacpp-server:<model>` (the
+  local llama.cpp server) is the default and no new dependency is added.
+  This shape is not invented here: it is the decision-layer pattern already researched in this workspace — a
+  model that *picks* rather than writes, one call per row, with a confidence, at the seams of the harness
+  (`research/jev-agent-harness-sam-witteveen` names the five seams: routing, gating, selection, ranking,
+  triage; `research/jev-seven-usecases-ailabs` measures it). What is new is that it can be **local and open**:
+  `TheoLeeCJ/SemIf-OpenJev` (4,810 stars, verified 2026-10-13, "semantic ifs from open models, on a 3090 at
+  home") and a model fine-tuned for **typed decisions** such as `caiovicentino1/Eikos-27B` (781 downloads,
+  pipeline `text-classification`, tags `decision-making`, `calibration`, `typed-decisions`, verified
+  2026-10-13) are the open equivalents of the paid classifier the demo uses. Preferring them keeps the judging
+  layer's marginal cost at ~0.
 - **R2** A verdict is recorded where the graph can act on it: an event per verdict and a counter keyed by a
   **fingerprint** the graph supplies (e.g. the error class or the service), so a threshold can be expressed as
   a query over counters inside a window. The node never opens a run itself.
@@ -69,7 +78,11 @@ graphs), 129 (`llamacpp-server:`), 131 (a refused run is a decision)
   run directly is a model with a capability, and this project's whole safety story is that models do not hold
   capabilities.
 - Do NOT default to a cloud model. The point is a judging layer that costs nothing per row; the local
-  llama.cpp server is the default, and a cloud model may only be an explicit, documented override.
+  llama.cpp server is the default, and a cloud model may only be an explicit, documented override. Where a
+  typed-decision model (a local semantic-if / distilled classifier) is available, it is the better judge than a
+  chat model asked to label: the verdict is a decision, not prose.
+- Do NOT let the judge's output be free text a caller must parse. The verdict is a typed value with a
+  confidence; a caller compares labels and thresholds, never strings.
 - Do NOT build a threshold inside the model's prompt ("open an incident if …") — thresholds are code/graph
   (the demo's own table says so).
 - A test that passes with a judge that always answers `normal` is the defect this spec exists to prevent: make
