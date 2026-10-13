@@ -95,14 +95,18 @@ printf '%s\n' 'Error: connect ECONNREFUSED 127.0.0.1:443' > "$W"
 E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error -> no reset claimed (near-miss control)" 0 $([ -z "$E2" ] && echo 0 || echo 1)
 
 echo; echo "== 8. a worker cut off by the window keeps its resume handle"
-python3 scripts/autonomy/state.py set A17 status=needs-review session=test-session-1234 last=window-closed >/dev/null 2>&1
-H=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f9); row "the state still offers the session (pick field 9 = the resume handle)" "test-session-1234" "$H"
+# the test uses its own plan row (X2) and never a real item id: the loop is running and owns A17
+printf 'X2\tfake-2.md\t-\tthe resume-handle item\t-\t-\t0\n' > $T/plan2.tsv
+python3 scripts/autonomy/state.py set X2 status=needs-review session=test-session-1234 last=window-closed >/dev/null 2>&1
+H=$(PII_PLAN=$T/plan2.tsv python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f9)
+row "the state still offers the session (pick field 9 = the resume handle)" "test-session-1234" "$H"
 python3 - <<'PY'
-import importlib.util
-spec=importlib.util.spec_from_file_location("st","scripts/autonomy/state.py"); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-st=m.load()
-a=st.get("A17",{}); a.pop("session",None); a["status"]="pending"; a.pop("last",None)
-m.save(st)
+import json
+p = "/projects/pi-improved/_tmp/autonomy/state.json"
+try:
+    d = json.load(open(p)); d.pop("X2", None); json.dump(d, open(p, "w"), indent=1, sort_keys=True)
+except Exception as e:
+    print("cleanup skipped:", e)
 PY
 
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
