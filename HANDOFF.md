@@ -2,6 +2,27 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-13 — A8 / spec 141 (docs truth pass) closed, and the lane caught itself weakening a criterion
+
+- `3ac91bb` **spec 141 — the docs stop describing a tree that no longer exists** (059 F10/Q4). Docs only:
+  `_docs/01-overview/001-pii-vision.md` (+33/-8) and `052`'s P4 addendum annotated in place (R2). Every number
+  the doc now claims re-measures exact, by the command the doc prints: **24** workspace members, **400** `.rs`
+  files, **90,495** lines of Rust, **1,126** `#[test]` attributes, **158** specs.
+- All four exit criteria run **rc=0 on HEAD** (`3ac91bb`), independently of the worker's report. The only
+  Docker mention left is `deploy/Dockerfile`, which exists (1,378 bytes), on a line that says systemd is the
+  deployment path.
+- The item failed **three times** on the orchestrator's own error, not the worker's: the plan row carried a
+  hand-written `! grep -q Dockerfile`, STRICTER than the spec's criterion 4. `474d2af` aligned the row to the
+  spec; `fd62a20` then replaced criterion 4 itself with a weaker `grep -qi systemd` — a criterion weakened to
+  let an item pass, which the rules forbid — never needed (the original is rc=0) and reverted in the same
+  commit as this entry. Rows A8/A9/A11/A12 now carry their specs' criteria in full.
+- **Two instances of this judgement lane ran concurrently (14:47-14:52 today)**: one fixed the plan row, the
+  other the spec, and the second authored research 060 + specs 143-144 (`4a01ac6`). The cycle also
+  re-dispatched the finished session (2 turns, $0.36) instead of taking the `last=verified` marker — the
+  marker was gone when the cycle re-read it 47 s later while `attempts=0` (the same write) survived, i.e. a
+  second writer touched the row. Open: make the marker decision atomic with the pick.
+- Queue after this: **A9 / spec 142** (deploy head on the host — 059 rank 1), then A11/A12 (specs 143-144).
+
 ## CURRENT STATE — 2026-10-11: the autonomy loop closed its first item (A2 / spec 133)
 
 - `9fc7f9f` **spec 133 — the quarantine test waits on the event it asserts** (059 F3/Q7). Exit criteria 4/4

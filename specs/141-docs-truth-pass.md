@@ -56,7 +56,18 @@ a number without a command, and a capability claimed in the present tense that i
 - [ ] `! grep -n '~14 crates\|2,000-line' _docs/01-overview/001-pii-vision.md`
 - [ ] `! grep -n '30+' _docs/01-overview/001-pii-vision.md | grep -v zeroclaw`
 - [ ] `grep -n 'llamacpp-server' _docs/01-overview/001-pii-vision.md | head -1` is non-empty
-- [ ] `grep -qi 'systemd' _docs/01-overview/001-pii-vision.md` succeeds (the doc states the deployment reality; a criterion that forbids the word Docker outright would fail a document that mentions it factually)
+- [ ] `grep -in 'Docker' _docs/01-overview/001-pii-vision.md | grep -v 'systemd' | head -1` is empty (the doc does not present Docker as the deployment path)
+- [ ] `grep -qi 'systemd' _docs/01-overview/001-pii-vision.md` succeeds (the doc states the deployment reality)
+
+> **2026-10-13 — criterion 4 was REPLACED, then restored.** `fd62a20` swapped it for `grep -qi systemd` on the
+> reading that it forbade the word "Dockerfile" outright. It never did: it forbids a Docker line that does
+> **not** also state systemd, and the only such mention in the doc is a truthful pointer to the spare
+> `deploy/Dockerfile` that says systemd is the deployment path. The replacement was weaker — a doc presenting
+> Docker as the path would still have passed — and it was unnecessary: on the committed tree (`3ac91bb`)
+> criterion 4 runs **rc=0**, as do the other three. The defect was in the plan row's hand-written command,
+> never in this criterion. A criterion is not edited weaker to let an item pass; a worker that cannot meet one
+> stops and says so.<br>**Also 2026-10-13: keep the plan row's `verify` column equal to the list above** — a
+> row that paraphrases it (stricter or looser) is a gate nobody agreed to. Rows A8/A9/A11/A12 were aligned.
 
 ## Guardrails
 
@@ -68,5 +79,25 @@ a number without a command, and a capability claimed in the present tense that i
 
 ## Closure
 
-(outcome, the diff's shape, and the two classes found beyond the list above — filled in when the item is
-closed.)
+**Closed 2026-10-13 by `3ac91bb`** — docs only: `_docs/01-overview/001-pii-vision.md` (+33/-8) and
+`_docs/06-research/052-production-readiness-2026-10-09.md` (+1/-1, the P4 addendum annotated in place, R2).
+Exit criteria verified by the orchestrator on the tree the worker left, independently of any worker report:
+**all four commands rc=0 on HEAD**. The numbers the doc now carries were re-measured by the commands it
+prints and are exact: **24** workspace members (`cargo metadata --no-deps … workspace_members`), **400** `.rs`
+files (`git ls-files '*.rs'`), **90,495** lines of Rust, **1,126** `#[test]` attributes, **158** specs.
+
+Two classes found in the read-through, beyond the list above:
+
+- a **broken link** — the doc's closing line pointed at `06-research/001-pii-architecture-plan.md` while the
+  file is `002-pii-architecture-plan-pass2.md` (fixed in place);
+- a **contradiction between two docs** — `052`'s P4 addendum called the "30+ channels / ~20 providers"
+  figures COMMITMENTS while `001` measures them as zeroclaw's; annotated as superseded, not deleted (R2).
+
+**The three failures this item cost were the orchestrator's, not the worker's.** The plan row carried a
+hand-written criterion, `! grep -q 'Dockerfile'`, stricter than criterion 4 — it forbade the word outright,
+so an honest document that names the spare `deploy/Dockerfile` (which exists, 1,378 bytes) could never pass
+it. The row was aligned to this spec's criteria verbatim (`474d2af`); a later pass then replaced criterion 4
+itself with a weaker `grep -qi systemd` (`fd62a20`) — a criterion weakened to let an item pass, which the
+rules forbid — which bought nothing and is reverted here, the original re-proven rc=0 on `3ac91bb`. The rule,
+now stated in the plan's header: the `verify` column **is** the Exit Criteria, copied — never paraphrased,
+never relaxed, and a worker that cannot meet one stops and says so.
