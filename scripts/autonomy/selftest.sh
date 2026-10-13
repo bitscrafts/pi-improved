@@ -88,10 +88,10 @@ echo
 echo; echo "== 7. the account's window, read from the worker's own words"
 W=$T/worker-quota.log
 printf '%s\n' '{"api_error_status":429,"result":"You hit your session limit - resets 4:50pm (UTC)"}' > "$W"
-E=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a 429 log -> a reset is parsed" 1 $([ -n "$E" ] && echo 0 || echo 1)
+E=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a 429 log -> a reset is parsed" 0 $([ -n "$E" ] && echo 0 || echo 1)
 row "the parsed reset is in the future" 0 $([ -n "$E" ] && [ "$E" -gt "$(date -u +%s)" ] && echo 0 || echo 1)
 printf '%s\n' 'Error: connect ECONNREFUSED 127.0.0.1:443' > "$W"
-E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error -> no reset claimed (near-miss control)" 1 $([ -z "$E2" ] && echo 0 || echo 1)
+E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error -> no reset claimed (near-miss control)" 0 $([ -z "$E2" ] && echo 0 || echo 1)
 
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 # the selftest's own rows are removed from the real state file (the plan row was the test's, not the loop's)
