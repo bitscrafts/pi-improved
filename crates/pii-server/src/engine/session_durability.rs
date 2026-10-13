@@ -303,25 +303,53 @@ impl Engine {
     /// accumulating permanent zombies. Appends a `Finished(Failure)`
     /// terminal event and repoints `run_by_status` to `Failed`. Never
     /// auto-resumes (G8).
+    ///
+    /// Spec 154: every failure is reported as a
+    /// [`pii_core::ObsEvent::PersistError`] and every reconciled run as one
+    /// [`pii_core::ObsEvent::RunReconciled`].
     pub fn reconcile_boot(&self) {
-        let Ok(running) = self.store.runs_by_status(pii_abi::RunStatus::Running) else {
-            return;
+        const REASON: &str = "interrupted by daemon restart";
+        let running = match self.store.runs_by_status(pii_abi::RunStatus::Running) {
+            Ok(running) => running,
+            Err(e) => {
+                self.report_reconcile_error("list", &e);
+                return;
+            }
         };
         for run in running {
-            let Ok(Some(mut header)) = self.store.get_run(&run) else {
-                continue;
+            let mut header = match self.store.get_run(&run) {
+                Ok(Some(header)) => header,
+                Ok(None) => continue,
+                Err(e) => {
+                    self.report_reconcile_error(run.as_str(), &e);
+                    continue;
+                }
             };
             header.status = pii_abi::RunStatus::Failed;
-            let _ = self.store.append_event(
+            let written = self.store.append_event(
                 &mut header,
                 &pii_abi::RunEvent::Finished {
                     terminal: pii_abi::Terminal::Failure {
-                        error: String::from("interrupted by daemon restart"),
+                        error: String::from(REASON),
                     },
                     output_hash: String::new(),
                 },
             );
+            match written {
+                Ok(_) => self.observer().event(&pii_core::ObsEvent::RunReconciled {
+                    run: run.as_str().to_owned(),
+                    reason: String::from(REASON),
+                }),
+                Err(e) => self.report_reconcile_error(run.as_str(), &e),
+            }
         }
+    }
+
+    fn report_reconcile_error(&self, what: &str, err: &PiiError) {
+        self.observer().event(&pii_core::ObsEvent::PersistError {
+            context: format!("reconcile:{what}"),
+            message: err.to_string(),
+        });
     }
 
     /// `session.interrupt` (B5): cancels the session's active run, if any.

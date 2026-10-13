@@ -62,6 +62,14 @@ pub enum ObsEvent {
         /// The panic message.
         message: String,
     },
+    /// Boot reconciliation closed a run a crash left `Running` (spec 154):
+    /// one event per reconciled run, naming it and why.
+    RunReconciled {
+        /// The reconciled run.
+        run: String,
+        /// Why it was closed.
+        reason: String,
+    },
     /// A durable-store write failed outside the run journal (D3/D6, 026
     /// report 5.0.4) — e.g. a session append/snapshot. The Phase-1
     /// journaler has its own `Result` return for callers that check it
@@ -259,6 +267,12 @@ impl Observer for ContractObserver {
                     .field("message", message.as_str())
                     .in_run(pii_observe::RunId(run.clone())),
             ),
+            ObsEvent::RunReconciled { run, reason } => self.0.event(
+                &Event::new("graph", Level::Warn, names::RUN_RECONCILED)
+                    .field("run", run.as_str())
+                    .field("reason", reason.as_str())
+                    .in_run(pii_observe::RunId(run.clone())),
+            ),
             ObsEvent::Run(_) | ObsEvent::Journal { .. } => {}
         }
     }
@@ -326,6 +340,7 @@ impl Observer for ToolCallObserver {
                 | ObsEvent::MemorySearchFailed { .. }
                 | ObsEvent::TierResolved { .. }
                 | ObsEvent::NodePanicked { .. }
+                | ObsEvent::RunReconciled { .. }
         ) {
             ContractObserver::new(Arc::clone(&self.0)).event(e);
         }

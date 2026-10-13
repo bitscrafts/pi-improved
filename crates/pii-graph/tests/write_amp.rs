@@ -79,11 +79,12 @@ fn per_run_store_bytes_by_writer() {
         per_run / 100,
         per_run % 100
     );
-    // One commit per run (the journal append) plus the amortised id blocks and
-    // the first sight of the graph and input bodies. It used to be 4.
+    // Two commits per run: the synchronous acceptance write (header + `Started`,
+    // spec 154) and the journal append, plus the amortised id blocks and the
+    // first sight of the graph and input bodies. It used to be 4.
     assert!(
-        per_run < 120,
-        "a run costs {per_run}/100 commits; expected ~1"
+        per_run < 220,
+        "a run costs {per_run}/100 commits; expected ~2"
     );
     println!(
         "next_run_id: write_bytes/run={} wchar/run={}",

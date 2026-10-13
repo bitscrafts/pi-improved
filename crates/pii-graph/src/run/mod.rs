@@ -98,6 +98,9 @@ pub fn run_with_validate(
         graph: spec.name.clone(),
         input_hash,
     })?;
+    // Spec 154: the accepted run (header + `Started`) is durable before the
+    // first node executes — one synchronous write per run, not per event.
+    jr.flush()?;
 
     let tokens = fresh_tokens(ctx, spec);
     let mut st = RunState::from_spec(spec);

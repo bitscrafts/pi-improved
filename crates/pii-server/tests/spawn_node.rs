@@ -127,12 +127,15 @@ value = "child-done"
         .expect("child run id");
     let child_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let child_header = loop {
-        if let Some(h) = engine.store.get_run(&child).unwrap() {
+        // The header exists from acceptance (spec 154); wait for it to settle.
+        if let Some(h) = engine.store.get_run(&child).unwrap()
+            && h.status != RunStatus::Running
+        {
             break h;
         }
         assert!(
             std::time::Instant::now() <= child_deadline,
-            "child header missing for {child}; journal={journal:?}"
+            "child header missing or still running for {child}; journal={journal:?}"
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     };
