@@ -39,8 +39,9 @@ false, say so and stop — a worker that refuses a false premise is doing its jo
 EOF
 
 echo "[$IDX] $FP — base $BASE, tree $TREE"
+# no budget cap (user, 2026-10-13): the cost is measured and reported, the time ceiling stays
 ( cd "$TREE" && timeout 1500 claude -p "$(cat "$BRIEF")" \
-    --model sonnet --permission-mode bypassPermissions --max-turns 60 \   # no budget cap (user, 2026-10-13); the cost is measured and reported, the time ceiling stays
+    --model sonnet --permission-mode bypassPermissions --max-turns 60 \
     --output-format json >"$OUT/worker-$IDX.json" 2>"$OUT/worker-$IDX.err" )
 WRC=$?
 COST=$(python3 -c 'import json,sys
