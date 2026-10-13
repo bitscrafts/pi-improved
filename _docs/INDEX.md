@@ -84,3 +84,4 @@ messaging gateway with one performant, local-first, modular system.
 - [`_docs/06-research/045-opus-rereview-2026-10-09.md`](06-research/045-opus-rereview-2026-10-09.md) — the claude+opus RE-REVIEW (2026-10-09): batches A-D judged by behaviour,
 - [`059-opus-vision-judgement-2026-10-11.md`](06-research/059-opus-vision-judgement-2026-10-11.md) — **Opus judgement: does the tree deliver the vision?** (provenance header; nothing in it is authorised work): the machine runs month-old binaries, one pillar has a real user, every pillar works by hand, and the brief's premises were corrected by measurement
   with the two findings the orchestrator reproduced independently.
+- `06-research/061-opus-proactivity-judgement-2026-10-13.md` — the proactivity judgement: detection first, one permission at the end (contradicts 143/144 by measurement)

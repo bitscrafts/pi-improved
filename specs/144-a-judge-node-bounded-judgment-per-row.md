@@ -20,6 +20,8 @@ pii already has every piece except the node: cron graphs (128) trigger work, `ll
 local llama.cpp server, the store counts, and the engine opens runs. The judging layer therefore costs
 **nothing per row** here, and it runs on a machine the user owns.
 
+**STATUS: SUPERSEDED by the Opus proactivity judgement (2026-10-13, `_docs/06-research/061-…`): every incident here is an exact-match string; a model judge buys nothing yet, and my 4th criterion can never pass. Kept as evidence; do not implement.**
+
 **Project**: /projects/pi-improved
 **Phase**: post-vision hardening (proactive capability; 060 §2)
 **Source of the finding**: `_docs/06-research/060-durable-agents-pi-durable-2026-10-13.md`; specs 128 (cron

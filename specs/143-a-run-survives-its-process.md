@@ -18,6 +18,8 @@ storage, finds the unfinished tasks and continues each from its last checkpoint;
 re-sent with the partial answer marked **aborted**; a tool call cut off **reruns only if it declares
 `replay: "safe"`**, otherwise the model is told it was **interrupted**, with the output stored so far.
 
+**STATUS: SUPERSEDED by the Opus proactivity judgement (2026-10-13, `_docs/06-research/061-…`): the measured crash leaves NO record (the journal buffers 16 events), and reconcile_boot already marks Running runs Failed. Kept as evidence; do not implement.**
+
 **Project**: /projects/pi-improved
 **Phase**: post-vision hardening (durability; 060 §1)
 **Source of the finding**: `_docs/06-research/060-durable-agents-pi-durable-2026-10-13.md`; DO-NOT-REPEAT 1.50
