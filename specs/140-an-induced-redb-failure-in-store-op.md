@@ -64,5 +64,27 @@ failure.
 
 ## Closure
 
-(outcome, what the three sites turned out to be, the seam chosen, the caller-visible assertion, and — if it
-applies — the dead-code finding — filled in when the item is closed.)
+**Closed as already covered — the premise was false, and the worker stopped instead of forcing it.**
+
+The item came from open-items `g4`, which cited `crates/pii-store/src/lib.rs:96,103,357` as op/resource swaps
+whose failure path no test could reach. Measured on 2026-10-13 (the worker's own report, `SPEC-DONE 140
+criteria=0/4`, no commands run, no code touched):
+
+- **Those line numbers are doc and comment lines** — stale references, not code.
+- **There are no op/resource swaps with their own failure branch.** The real sites are `PiiError::store_op(op,
+  resource, e)` calls, and the failure is already induced and asserted by two tests from an earlier spec:
+  `open_failure_renders_structured_store_op` (opens a directory as the database; asserts `store op open on
+  <path>: … Is a directory (os error 21)`) and `open_table_failures_render_op_resource_and_detail` (a table with
+  the wrong type; asserts `store op open on <name>: <name> is of type Table<u8, u8>`). Both assert the full
+  caller-visible message, which is exactly what this spec was written to create.
+- **The residual, recorded rather than specced**: the `begin_write`/`"db"` sites (`lib.rs:115, 205, 484, 531`,
+  plus sites in `heal.rs`, `identity.rs`, `session.rs`) remain unreachable, because redb's `begin_write` only
+  errors when the database is poisoned. Reaching them would need another injection flag, and there is no
+  user-visible behaviour to assert when it fires — a test whose purpose cannot be stated is not worth a seam.
+  If one of those sites ever gains a caller-visible failure, it becomes its own item, named by line.
+- **Lesson recorded in the plan**: this row's verify command (`cargo test -p pii-store … ok`) passed on an
+  unchanged tree, so a no-op satisfied it — a criterion no change can fail is not a criterion. The item's real
+  acceptance is the two named tests above, which existed before this spec.
+
+**Outcome**: nothing to build. `g4` is closed as covered; the unreachable `begin_write` sites are a documented,
+deliberate residual.
