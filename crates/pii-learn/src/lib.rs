@@ -13,6 +13,7 @@
 mod candidate;
 mod config;
 mod extract;
+pub mod incident;
 mod learner;
 mod promote;
 mod scan;
