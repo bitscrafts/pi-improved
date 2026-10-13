@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Quality gate: fmt, clippy, test, coverage floor and the xtask repo checks.
-# Exit 0 only if every step passes.
+# Exit 0 only if every step passes. The steps live in gate-steps.txt (the one list, read by the
+# local run and the fresh-gate export alike); scripts/gate-lib.sh runs each with a heartbeat.
 # CI-equivalent fresh-tree run (NOT part of this chain; recompiles the workspace):
 #   cargo xtask fresh-gate [--worktree] [--overlay src=dest]  (spec 84)
 set -uo pipefail
@@ -8,186 +9,20 @@ set -uo pipefail
 export PATH=/usr/local/cargo/bin:$PATH
 cd "$(dirname "$0")" || exit 1
 
+# shellcheck source=scripts/gate-lib.sh
+. scripts/gate-lib.sh || exit 1
+
 status=0
+steps=0
+while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '' | '#'*) continue ;; esac
+    run_step "${line%%|*}" "${line#*|}" || status=1
+    steps=$((steps + 1))
+done <gate-steps.txt
 
-echo "==> cargo fmt --all --check"
-if cargo fmt --all --check; then
-    echo "PASS: fmt"
-else
-    echo "FAIL: fmt"
-    status=1
-fi
-
-echo "==> cargo clippy --workspace --all-targets -- -D warnings"
-# F-01 fix: clippy's --all-targets build writes libschemars/libserde_json
-# (and other proc-macro-generated) rlibs into target/debug/deps with a
-# feature-unification hash that differs from the plain `cargo test` build.
-# rustdoc's doctest linker then picks up the stale/mismatched rlib and fails
-# with E0463 ("can't find crate"). Isolating clippy into its own target dir
-# means it can never poison the artifacts `cargo test --workspace` (which
-# includes the doctest step) relies on.
-if CARGO_TARGET_DIR=target/clippy-gate cargo clippy --workspace --all-targets -- -D warnings; then
-    echo "PASS: clippy"
-else
-    echo "FAIL: clippy"
-    status=1
-fi
-
-echo "==> cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings"
-# Spec 89 (N4): `llamacpp` is off in every other step (spec 76 keeps llama out
-# of the default build), so the in-process llama provider and the tests that
-# carry required-features = ["llamacpp"] would otherwise be compiled by no
-# gate step. Compile + lint only; the real-model tests stay #[ignore]d. Own
-# target dir: the feature changes unification hashes, same hazard as F-01.
-if CARGO_TARGET_DIR=target/llamacpp-gate cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings; then
-    echo "PASS: clippy (llamacpp)"
-else
-    echo "FAIL: clippy (llamacpp)"
-    status=1
-fi
-
-echo "==> cargo clippy -p pii-hal --features hal-gpiod --all-targets -- -D warnings"
-# Spec 121 (R6): the real GPIO backend is behind `hal-gpiod`, off in every other
-# step. It is compiled and linted here so it cannot rot; it is NEVER run (no
-# /dev/gpiochip* on this host). Own target dir: the feature changes unification hashes.
-if CARGO_TARGET_DIR=target/hal-gate cargo clippy -p pii-hal --features hal-gpiod --all-targets -- -D warnings; then
-    echo "PASS: clippy (hal-gpiod)"
-else
-    echo "FAIL: clippy (hal-gpiod)"
-    status=1
-fi
-
-echo "==> cargo test --workspace"
-# pii-worker's supervisor integration tests spawn the real `pii` binary at
-# target/debug/pii (a fixed path, not a `CARGO_BIN_EXE_pii` env lookup), so
-# it must exist before `cargo test` runs it.
-if cargo build --workspace; then
-    :
-else
-    echo "FAIL: build"
-    status=1
-fi
-if cargo test --workspace --lib --bins --tests; then
-    echo "PASS: test (lib/bins/tests)"
-else
-    echo "FAIL: test (lib/bins/tests)"
-    status=1
-fi
-
-echo "==> cargo test --workspace --doc"
-# F-01: doctests build each crate's lib WITHOUT `cfg(test)`, while the step
-# above just built the same libs WITH `cfg(test)` (for their own unit
-# tests). Both compilations share target/debug/deps; rustdoc's doctest
-# linker can then pick up a stale/mismatched rlib hash for a
-# proc-macro-heavy dep (schemars/serde_json), failing with E0463. Running
-# the doctest step in its own CARGO_TARGET_DIR (per the 026 report's
-# recommendation: "run cargo test --workspace --doc as its own step with a
-# fresh profile") means it always builds its own non-cfg(test) libs from
-# scratch and never races the previous step's artifacts.
-if CARGO_TARGET_DIR=target/doctest-gate cargo test --workspace --doc; then
-    echo "PASS: test (doc)"
-else
-    echo "FAIL: test (doc)"
-    status=1
-fi
-
-echo "==> cargo llvm-cov (coverage floor, spec 108)"
-# Spec 108 R2: line coverage of the lib/bins/tests scopes (no doctests: those
-# need nightly) must stay at or above the floor pinned in coverage-floor.txt.
-# Needs cargo-llvm-cov + the rustup llvm-tools component; their absence is a
-# FAIL, not a skip. Own target dir (target/llvm-cov-target) so instrumented
-# artifacts never touch the plain build.
-#
-# QG_SKIP_COVERAGE=1 skips ONLY this step, and says so LOUDLY. It exists for one
-# measured reason: the instrumented build is ~18G, so a fresh-gate export (which
-# already re-runs the whole suite in a clean tree) cannot fit it on a volume with
-# under ~25G free — the export's job is the hermetic-tree model, not a second
-# measurement of a floor the repo gate already enforces. It is NEVER implied:
-# unset means the floor is measured, exactly as before.
-COV_JSON=target/coverage-summary.json
-if [ "${QG_SKIP_COVERAGE:-0}" = "1" ]; then
-    echo "SKIPPED: coverage-floor (QG_SKIP_COVERAGE=1 — the floor was NOT measured in this run;"
-    echo "         the repo gate enforces it by default and this line is the record that it was skipped)"
-elif cargo llvm-cov --workspace --lib --bins --tests --json --summary-only --output-path "$COV_JSON" >/dev/null \
-    && cargo run -q -p xtask -- coverage-floor "$COV_JSON"; then
-    echo "PASS: coverage-floor"
-else
-    echo "FAIL: coverage-floor"
-    status=1
-fi
-
-echo "==> cargo run -q -p xtask -- lint-files"
-# 450-effective-line file gate (spec 67, Fix 1): pure text scan, no
-# target-dir isolation needed. Also enforced here so pidag runs whose
-# exit criteria omit lint-files still get the gate.
-if cargo run -q -p xtask -- lint-files; then
-    echo "PASS: lint-files"
-else
-    echo "FAIL: lint-files"
-    status=1
-fi
-
-echo "==> cargo run -q -p xtask -- lint-scratch"
-# Spec 96: a tempdir_in on a crate-local `_tmp` directory must be preceded by
-# create_dir_all / tmp_scratch in the same fn (the N1 class: green in a
-# developer tree where _tmp is left over, NotFound in a fresh clone).
-if cargo run -q -p xtask -- lint-scratch; then
-    echo "PASS: lint-scratch"
-else
-    echo "FAIL: lint-scratch"
-    status=1
-fi
-
-echo "==> cargo run -q -p xtask -- lint-observability"
-# Spec 98: every crate depends on and uses the pii-observe seam (or carries a
-# named exemption), no new raw prints outside the allowlist, and every name in
-# the registry is listed in ALL.
-if cargo run -q -p xtask -- lint-observability; then
-    echo "PASS: lint-observability"
-else
-    echo "FAIL: lint-observability"
-    status=1
-fi
-
-echo "==> cargo run -q -p xtask -- reachability-check"
-# Declared-capability caller gate (spec 72, D3 fix): every seed entry's
-# needle must have a REAL external caller — outside the declaring crate,
-# outside comments and cfg(test) bodies. Runs AFTER the test steps and
-# BEFORE the summary so a deleted caller turns the shared gate red.
-if cargo run -q -p xtask -- reachability-check; then
-    echo "PASS: reachability-check"
-else
-    echo "FAIL: reachability-check"
-    status=1
-fi
-
-echo "==> cargo run -q -p xtask -- deps-check"
-# Spec 118: the repo's five dependency invariants (xtask/src/deps.rs). A
-# cargo/xtask failure to run is a FAIL here, never a skip.
-if cargo run -q -p xtask -- deps-check; then
-    echo "PASS: deps-check"
-else
-    echo "FAIL: deps-check"
-    status=1
-fi
-
-echo "==> cargo run -q -p xtask -- net-check"
-# Spec 118: sockets/name resolution only in the allowlisted files; comments
-# that merely name a symbol are not flagged.
-if cargo run -q -p xtask -- net-check; then
-    echo "PASS: net-check"
-else
-    echo "FAIL: net-check"
-    status=1
-fi
-
-echo "==> cargo run -q -p xtask -- doc-drift-check"
-# Spec 118: backticked repo paths in HANDOFF.md must exist (`_tmp/` scratch,
-# globs and placeholders excluded). Offline and deterministic.
-if cargo run -q -p xtask -- doc-drift-check; then
-    echo "PASS: doc-drift-check"
-else
-    echo "FAIL: doc-drift-check"
+# An empty or unreadable list must never read as green.
+if [ "$steps" -eq 0 ]; then
+    echo "FAIL: gate-steps.txt lists no steps"
     status=1
 fi
 
