@@ -50,7 +50,7 @@ echo "[$IDX] $FP — base $BASE, tree $TREE"
 # ---- 1. the worker (no budget cap; a time ceiling so a runaway cannot hold the window) ----
 ( cd "$TREE" && timeout 1500 claude -p "$(cat "$BRIEF")" \
     --model sonnet --permission-mode bypassPermissions --max-turns 60 \
-    --output-format json >"$OUT/worker-$IDX.json" 2>"$OUT/worker-$IDX.err" )
+    --output-format json >"$OUT/worker-$IDX.json" 2>"$OUT/worker-$IDX.err" </dev/null )
 WRC=$?
 
 read_json() { python3 -c 'import json,sys
@@ -84,7 +84,15 @@ cp -a "$TREE" "$BASECOPY"
 
 # names in the diff: every `fn <name>(` line in a .rs file that the change touched
 CHANGED_FILES=$(diff "$OUT/manifest-$IDX.seed.md5" "$OUT/manifest-$IDX.now.md5" | awk '/^[<>]/{print $3}' | sed 's|^\./||' | sort -u)
-NAMES=$(for f in $CHANGED_FILES; do [ -f "$TREE/$f" ] && grep -ohE 'fn [a-z0-9_]{5,}\(' "$TREE/$f" 2>/dev/null; done | sed 's/^fn //; s/($//' | sort -u | head -30)
+names_of() { grep -ohE 'fn [a-z0-9_]{5,}\(' "$1" 2>/dev/null | sed 's/^fn //; s/($//' | sort -u; }
+ADDED=""
+for f in $CHANGED_FILES; do
+  [ -f "$TREE/$f" ] || continue
+  NEW=$(names_of "$TREE/$f"); OLD=$(names_of "$BASECOPY/$f")
+  ADDED="$ADDED $(comm -23 <(printf '%s\n' "$NEW") <(printf '%s\n' "$OLD"))"
+done
+NAMES=$(printf '%s\n' $ADDED | sort -u | head -30)
+[ -n "$NAMES" ] || NOTE="the change introduced no new test name"
 
 PROOF="unproven"; NOTE="no introduced test went red on the base and green on the fix"
 for NAME in $NAMES; do
