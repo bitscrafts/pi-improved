@@ -76,6 +76,14 @@ if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
   # in its plan row's paths, so the tree stayed dirty and every cycle refused - the loop idled for hours).
   # Keep the diff as a patch, commit the paths as a named leftover, and carry on: nothing is lost, and the
   # commit is reversible.
+  # Before treating a dirty tree as a leftover, look for a session to RESUME: a worker cut off mid-flight leaves
+  # its session id in its own log even when the dispatcher never got to write it (measured 2026-10-13).
+  RECOVER=$(bash scripts/autonomy/session.sh recover "$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')" 2>/dev/null || true)
+  if [ -n "$RECOVER" ]; then
+    python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=$RECOVER" "last=resumed-from-worker-log"
+    say "dirty tree WITH a session recovered from the worker's log ($RECOVER): resuming, not restarting"
+    RSID="$RECOVER"; ARGS=(--resume "$RECOVER")
+  else
   LEFT=$STATEDIR/leftovers; mkdir -p "$LEFT"
   git diff >"$LEFT/$CID-tracked.patch" 2>/dev/null || true
   git status --porcelain | awk '{print $2}' >"$LEFT/$CID-paths.txt"
@@ -88,6 +96,7 @@ if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
     say "leftover committed: $(git log --oneline -1)"
   fi
   bash scripts/autonomy/control.sh ask "found a leftover from the previous item and committed it for review (cycle $CID). Nothing was lost; check the message if it looks wrong." >/dev/null 2>&1 || true
+  fi
 fi
 ARGS=(); [ -n "$RSID" ] && ARGS=(--resume "$RSID")
 BRIEFARG=(); [ -n "$BRIEF" ] && [ "$BRIEF" != "-" ] && BRIEFARG=("$BRIEF")
@@ -183,7 +192,18 @@ fi
 if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
   IFS=';' read -ra P <<<"$PATHS"
   git add -- "${P[@]}" || { say "git add failed"; echo "OUTCOME=add-failed ITEM=$ITEM"; exit 11; }
-  if git diff --cached --quiet; then say "nothing staged — the worker changed nothing"; echo "OUTCOME=no-change ITEM=$ITEM"; exit 12; fi
+  if git diff --cached --quiet; then
+    # The item may ALREADY be satisfied: its work can have landed in an earlier commit (a leftover commit is still a
+    # commit — measured 2026-10-13: spec 153's whole implementation was in `91dc682`, so every cycle re-dispatched it,
+    # the worker changed nothing, and the loop could never finish the item). Close it on exactly the evidence the
+    # normal path uses — the item's own criterion plus a green gate — and name the commit that carries the work.
+    CARRY=$(git log -1 --format='%h' -- $(printf '%s ' "${P[@]}") 2>/dev/null | tail -1)
+    [ -n "$CARRY" ] || CARRY="no commit touches $(echo "$PATHS" | tr ';' ' ')"
+    python3 scripts/autonomy/state.py set "$ITEM" status=done attempts=$((ATTEMPTS+1)) "last=satisfied by $CARRY: the criterion passed and fresh-gate is green"
+    say "nothing staged — the item is already satisfied by $CARRY (criterion rc=0, gate green): closing it"
+    echo "OUTCOME=done-satisfied ITEM=$ITEM CARRY=$CARRY"
+    exit 0
+  fi
   git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" commit -q \
     -m "$SPEC: automated pass — $TITLE (spec + criteria in specs/$SPEC; gate green)" || { say "commit failed"; exit 11; }
   say "committed: $(git log --oneline -1)"

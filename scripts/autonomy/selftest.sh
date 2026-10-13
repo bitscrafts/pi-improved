@@ -109,6 +109,16 @@ except Exception as e:
     print("cleanup skipped:", e)
 PY
 
+echo; echo "== 9. the resume handle survives a cut-off worker (session.sh)"
+D=$T/sessions; mkdir -p $D
+R=$(bash scripts/autonomy/session.sh recover 99999 2>/dev/null); row "no record at all -> nothing claimed (near-miss control)" "" "$R"
+printf '11111111-2222-3333-4444-555555555555 extra\n' > _tmp/claude-batchC/session-99999-probe.txt
+R=$(bash scripts/autonomy/session.sh recover 99999 2>/dev/null); row "the dispatcher's own record wins" "11111111-2222-3333-4444-555555555555" "$R"
+rm -f _tmp/claude-batchC/session-99999-probe.txt
+printf '%s\n' '{"type":"system","session_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}' > _tmp/claude-batchC/99999-probe.log
+R=$(bash scripts/autonomy/session.sh recover 99999 2>/dev/null); row "a cut-off worker's stream log still speaks" "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" "$R"
+rm -f _tmp/claude-batchC/99999-probe.log
+
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]
