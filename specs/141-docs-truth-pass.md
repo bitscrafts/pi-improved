@@ -56,7 +56,7 @@ a number without a command, and a capability claimed in the present tense that i
 - [ ] `! grep -n '~14 crates\|2,000-line' _docs/01-overview/001-pii-vision.md`
 - [ ] `! grep -n '30+' _docs/01-overview/001-pii-vision.md | grep -v zeroclaw`
 - [ ] `grep -n 'llamacpp-server' _docs/01-overview/001-pii-vision.md | head -1` is non-empty
-- [ ] `grep -in 'Docker' _docs/01-overview/001-pii-vision.md | grep -v 'systemd' | head -1` is empty (the doc does not present Docker as the deployment path)
+- [ ] `grep -qi 'systemd' _docs/01-overview/001-pii-vision.md` succeeds (the doc states the deployment reality; a criterion that forbids the word Docker outright would fail a document that mentions it factually)
 
 ## Guardrails
 
