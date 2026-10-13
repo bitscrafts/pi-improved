@@ -174,7 +174,7 @@ place in `pii` where a learned conclusion changes behaviour by itself, so every 
 exists to make that safe.
 
 ```
-pii learn promote <candidate-id> --metric graph_failed_runs --window-secs N
+pii learn promote <candidate-id> --metric graph_definition_changed --window-secs N
                   [--kind quarantine_graph] [--ttl-secs N] [--actor NAME] [--dir D]
 pii learn promotions [--sweep [--traj <root>]] [--dir D]
 pii learn revert <promotion-id> [--actor NAME] [--dir D]
@@ -198,8 +198,8 @@ effect, and its tests are written. There is no string dispatch.
 1. *Only `confirmed` verdicts.* The verdict is **re-read from `<dir>/learn/verdicts/`** at
    promotion time, never passed in. No verdict, `refuted` and `inconclusive` are each
    refused with that reason, counted, and change nothing.
-2. *Measurable or refused.* A promotion must declare its metric (`graph_failed_runs`) and a
-   window (`--window-secs`, > 0). Without them it is refused at apply time: an unmeasured
+2. *Measurable or refused.* A promotion must declare its metric (`graph_definition_changed`) and a
+   window (`--window-secs`, > 0, not longer than the TTL). Without them it is refused at apply time: an unmeasured
    change is a guess wearing a promotion's clothes.
 3. *The ledger first.* A record (promotion id, kind, graph, candidate id and verdict, the
    evidence, the named actor, the state transition) is appended to
@@ -211,16 +211,17 @@ effect, and its tests are written. There is no string dispatch.
 5. *TTL.* A promotion lasts `--ttl-secs` (default **86400**, 24 h). After that the graph is
    usable again immediately (the engine's check compares the clock); the daemon's sweep then
    records it as `expired`.
-6. *Outcome and automatic reversal.* When the window closes the daemon evaluates the
-   metric: failed runs of that graph in the window **after** the promotion vs. the window of
-   the same length **before** it, read from the trajectories by file modification time. If
-   `after < before` the promotion is kept (ledger `outcome_kept`); otherwise it is
-   **reverted automatically** (`auto_reverted`), with both numbers in the ledger and the
-   `learn.promotion_reverted` event. Note what this does and does not prove: after a
-   quarantine the graph does not run, so `after` is 0 by construction; the test with teeth is
-   `before` — a promotion on a graph that was not failing in the preceding window (0 → 0) is
-   not an improvement and is taken back, and a quarantine that did not take effect shows as
-   `after >= before`.
+6. *Outcome and automatic reversal (spec 139).* The one metric is
+   `graph_definition_changed`: at apply time the daemon records the hash of the graph's
+   definition (canonical JSON of `<graphs>/<name>.toml`, so a comment or whitespace edit is not
+   a change); when the window closes it hashes it again. A different hash is **met** (ledger
+   `outcome_kept`, before 0 / after 1); the same hash is **unmet** and the promotion is
+   **reverted automatically** (`auto_reverted`, before 0 / after 0). Quarantine alone cannot
+   satisfy it: it does not edit a graph, so the metric reads unmet until someone fixes the graph.
+   This replaces `graph_failed_runs`, which read 0 after every quarantine (a quarantined graph
+   does not run) and so confirmed the action instead of testing it. An unobservable definition
+   (no graph file) is unmet, never met. The window must fit inside the TTL, so a change is
+   always a change within the TTL.
 7. *Refusals by construction (R6).* A promotion may not touch secrets, the observability
    contract, the gate, capability scopes, or any file outside its own store area. The
    mechanism is two things: the whitelist (any other kind is refused by name:
@@ -253,6 +254,50 @@ refusals included.
 edit code, config or thresholds, and it cannot widen anything. A resumed (suspended) run of a
 quarantined graph is not refused; only starts are.
 
+## Stage 4: the loop runs unattended; promotion stays human (spec 139)
+
+The daemon runs one **extraction + verification pass** every `[core] learn_interval_secs`
+(default **86400**, daily; `0` = off; needs `[core] trajectory_dir`). The first pass is one
+period after start, never at start. A pass is `scan` → extract → shadow-verify every candidate
+that has no verdict yet, and it **cannot promote**: it has no path to the promoter. Promotion
+is still `pii learn promote`, by a person, through the daemon. (The test
+`extraction_and_verification_run_without_an_operator` drives the pass and asserts the
+promotion list and the ledger are empty afterwards; promotion without a verdict stays refused
+by `r2_no_verdict_refuses_and_changes_nothing`.)
+
+**Observable.** Each pass emits `learn.unattended_run` (`candidates`, `new_candidates`,
+`verified`, `total_proposed`) even when everything is 0. `pii metrics` shows
+`pii_learn_unattended_runs_total` and `pii_learn_candidates_proposed_total` (distinct
+candidates, a lesson seen again is not counted again) once the first pass has run. **Expected
+rate:** a handful of candidates in the first passes on a deployment that has failing runs,
+then near-flat; a deployment whose graphs do not fail reads a flat 0, and that is the signal,
+not a fault.
+
+**Retention (30 days).** Bounded without a prune: candidates and verdicts are files keyed by
+candidate id (the same lesson rewrites the same file), a candidate with a verdict is not
+re-verified, `learn/unattended.json` is one fixed-size file, shadow directories are removed
+when each verification ends, and the ledger grows only by a human's promotion/revert (plus
+the daemon's automatic reversal of that promotion). Trajectories keep their own bound (spec
+115).
+
+### Pre-registered decision rule (spec 139 R3)
+
+Over **14 days** of real deployment with the unattended pass on:
+
+* **≥ 3 confirmed candidates and the user judges ≥ 2 of those 3 worth acting on** → design a
+  second action.
+* **0 confirmed candidates** → the input does not exist in practice; more actions are waste.
+* Anything between: keep running; do not build.
+
+Commands that produce each number:
+
+| number | command |
+|---|---|
+| candidates proposed | `pii metrics \| grep pii_learn_candidates_proposed_total` |
+| passes that ran (the 14 days really happened) | `pii metrics \| grep pii_learn_unattended_runs_total` |
+| confirmed candidates | `grep -l '"verdict": "confirmed"' <dir>/learn/verdicts/*.json \| wc -l` (or count `learn.candidate_confirmed` in the daemon log) |
+| judged worth acting on | the user reads `pii learn list` / `pii learn show <id>` for each confirmed one; each one acted on is a `pii learn promote` — count them in `pii learn promotions` |
+
 ## What was not verified
 
 * Verification reproduces a *failure* claim by re-running the graph with an empty capability
@@ -260,9 +305,7 @@ quarantined graph is not refused; only starts are.
   or external state may come back `refuted` or confirmed for a different reason than the
   original. The failure class is compared, not the cause.
 * A timed-out shadow run is abandoned, not killed.
-* Promotion (125): the outcome metric is failed trajectories by file mtime, so a deployment
-  with trajectories off measures 0 → 0 and every promotion is reverted at its window (the
-  safe direction). The sweep interval (5 s) is a constant, not a config key. A CLI revert
+* Promotion (125, metric replaced by 139): the sweep interval (5 s) is a constant, not a config key. A CLI revert
   racing the daemon's sweep on the same promotion is last-writer-wins on one JSON file.
 * The daemon never verifies; it only reads the verdict status. Its counters were checked
   against a live daemon once, by hand, not by an automated test.
