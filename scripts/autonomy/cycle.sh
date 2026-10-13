@@ -72,8 +72,22 @@ esac
 DIRTY=$(git status --porcelain | wc -l)
 say "tree: $DIRTY changed paths before dispatch"
 if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
-  say "DIRTY TREE and no session to resume — refusing to dispatch onto someone else's work"
-  git status --porcelain | head -10 >>"$LOG"; echo "OUTCOME=dirty-tree"; exit 7
+  # A leftover from the last item must not stop the loop (measured 2026-10-13: spec 139's guide update was not
+  # in its plan row's paths, so the tree stayed dirty and every cycle refused - the loop idled for hours).
+  # Keep the diff as a patch, commit the paths as a named leftover, and carry on: nothing is lost, and the
+  # commit is reversible.
+  LEFT=$STATEDIR/leftovers; mkdir -p "$LEFT"
+  git diff >"$LEFT/$CID-tracked.patch" 2>/dev/null || true
+  git status --porcelain | awk '{print $2}' >"$LEFT/$CID-paths.txt"
+  say "DIRTY TREE with no session: keeping the leftover as $LEFT/$CID-tracked.patch and committing it as a named leftover"
+  mapfile -t LP < <(git status --porcelain | awk '{print $2}')
+  [ "${#LP[@]}" -gt 0 ] && git add -- "${LP[@]}" 2>>"$LOG" || true
+  if git diff --cached --quiet; then say "nothing stageable in the leftover"; else
+    git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" commit -q \
+      -m "leftover from the previous item, kept for review (cycle $CID; the diff is also at $LEFT/$CID-tracked.patch)" 2>>"$LOG" || true
+    say "leftover committed: $(git log --oneline -1)"
+  fi
+  bash scripts/autonomy/control.sh ask "found a leftover from the previous item and committed it for review (cycle $CID). Nothing was lost; check the message if it looks wrong." >/dev/null 2>&1 || true
 fi
 ARGS=(); [ -n "$RSID" ] && ARGS=(--resume "$RSID")
 BRIEFARG=(); [ -n "$BRIEF" ] && [ "$BRIEF" != "-" ] && BRIEFARG=("$BRIEF")
