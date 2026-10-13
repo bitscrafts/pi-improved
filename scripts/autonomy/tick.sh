@@ -25,6 +25,25 @@ say_once() { # say_once <key> <line...>   — print only when <key> differs from
   printf '%s\n' "$@"
 }
 
+# 0) the gateway delivers this loop's messages and runs the other scheduler. It died on 2026-10-11 and nothing
+#    revived it: no systemd in this container, and its own log said it exited "so systemd Restart=on-failure can
+#    revive the gateway". For two days nothing reached the phone because of it. Revive it here, but only when no
+#    paid worker is in flight (HARD RULE 0f).
+if ! hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
+  if ps -eo cmd | grep -qE '[c]laude -p|[r]un-batchC'; then
+    say_once "gw-dead-worker" "pii autonomy · the gateway is down but a worker is in flight — not restarting it now (0f)"
+  else
+    setsid nohup hermes gateway run >/root/.hermes/logs/gateway-restart.log 2>&1 </dev/null &
+    sleep 12
+    if hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
+      say_once "gw-up" "pii autonomy · the gateway was down and is running again (it delivers these messages)"
+    else
+      say_once "gw-still-down" "pii autonomy · the gateway is down and would not start — messages cannot be delivered"
+    fi
+  fi
+  exit 0
+fi
+
 # 1) a cycle is running — silence is the normal state; only a stuck worker is worth a line
 if ! flock -n "${PII_LOCK:-$ST/lock}" true 2>/dev/null; then
   AGE=$(( $(date +%s) - $(stat -c %Y "${PII_LOCK:-$ST/lock}" 2>/dev/null || date +%s) ))
