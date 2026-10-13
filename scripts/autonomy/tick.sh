@@ -53,6 +53,12 @@ if ! flock -n "${PII_LOCK:-$ST/lock}" true 2>/dev/null; then
   exit 0
 fi
 
+# 1b) the account's window: if the CLI itself said when it reopens, do not probe before then
+if bash scripts/autonomy/window.sh check 2>/dev/null; then
+  say_once "closed:$(cat _tmp/autonomy/window-closed-until)" "pii autonomy · the account window is closed ($(bash scripts/autonomy/window.sh show)) — nothing spent"
+  exit 0
+fi
+
 # 2) paused by the operator (Discord: `control.sh pause`) — say it once, start nothing
 if grep -q PAUSED "${PII_CONTROL:-$ST/control}" 2>/dev/null; then
   say_once "paused:$(sed -n 1p "${PII_CONTROL:-$ST/control}")" "pii autonomy · PAUSED — $(sed -n 1p "${PII_CONTROL:-$ST/control}")"

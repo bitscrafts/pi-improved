@@ -28,7 +28,8 @@ if [ "$RC" -eq 0 ] && printf '%s' "$BODY" | grep -q 'PONG55'; then
   MODEL="$(printf '%s' "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(d.get("modelUsage",{}).keys()))' 2>/dev/null || true)"
   COST="$(printf '%s' "$BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total_cost_usd"))' 2>/dev/null || true)"
   printf 'OPEN model=%s cost=%s\n' "${MODEL:-?}" "${COST:-?}"
-  exit 0
+  bash scripts/autonomy/window.sh clear >/dev/null 2>&1 || true   # an open window clears the marker
+exit 0
 fi
 
 # 2) a limit, in the CLI's own words ("resets 8:20pm (UTC)", "spend limit", 429 …)

@@ -124,6 +124,17 @@ else
   WRC=$?
   NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
   say "worker rc=$WRC session=${NEWSID:-none}"
+  # The worker may have been refused by the account's WINDOW rather than stopped by its work. The 1-turn probe can
+  # say OPEN while the worker is refused (measured 2026-10-13), so read the worker's OWN log for the CLI's words and
+  # honour the reset it states — never blind-retry, never shrink scope (the project's oldest operational rule).
+  WLOG=$(ls -t _tmp/claude-batchC/"$N"-*.log 2>/dev/null | head -1)
+  WUNTIL=$(bash scripts/autonomy/window.sh parse "$WLOG" 2>/dev/null || true)
+  if [ -n "$WUNTIL" ]; then
+    echo "$WUNTIL" > "$STATEDIR/window-closed-until"
+    say "the account window is closed (the worker's own log said so) — not retrying before $(date -u -d "@$WUNTIL" '+%H:%M UTC')"
+    echo "OUTCOME=window-closed ITEM=$ITEM SESSION=${NEWSID:-}"
+    exit 3
+  fi
   python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC
   [ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
   python3 scripts/autonomy/state.py set "$ITEM" last=worker-ok "session=${NEWSID:-}"

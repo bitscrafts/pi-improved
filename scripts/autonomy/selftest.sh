@@ -89,6 +89,14 @@ echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 # the selftest's own rows are removed from the real state file (the plan row was the test's, not the loop's)
 python3 - "$T" <<'PY'
 import json, os
+echo; echo "== 7. the account's window, read from the worker's own words"
+W=$T/worker-quota.log
+printf '%s\n' '{"api_error_status":429,"result":"You hit your session limit - resets 4:50pm (UTC)"}' > "$W"
+E=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a 429 log -> a reset is parsed" 1 $([ -n "$E" ] && echo 0 || echo 1)
+row "the parsed reset is in the future" 0 $([ -n "$E" ] && [ "$E" -gt "$(date -u +%s)" ] && echo 0 || echo 1)
+printf '%s\n' 'Error: connect ECONNREFUSED 127.0.0.1:443' > "$W"
+E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error -> no reset claimed (near-miss control)" 1 $([ -z "$E2" ] && echo 0 || echo 1)
+
 p = "/projects/pi-improved/_tmp/autonomy/state.json"
 try:
     d = json.load(open(p)); d.pop("X1", None); json.dump(d, open(p, "w"), indent=1, sort_keys=True)
