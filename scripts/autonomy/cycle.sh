@@ -42,7 +42,27 @@ esac
 
 # 2) the plan
 PICK=$(python3 scripts/autonomy/state.py pick)
-if [ "$PICK" = "NONE" ]; then say "queue empty — nothing pending"; echo "OUTCOME=queue-empty"; exit 0; fi
+if [ "$PICK" = "NONE" ]; then
+  # 2a) the second plan source (spec 151), after plan.tsv: each open incident (no state yet under incidents/<fp>/)
+  # goes to incident-fix.sh, which works on a branch and parks or merges only on its own proof. DRY=1 only lists.
+  INCF=${PII_INCIDENTS:-$STATEDIR/incidents.jsonl}; [ -f "$INCF" ] || INCF=$STATEDIR/logs/incidents.jsonl
+  if [ -f "$INCF" ]; then
+    mapfile -t OPEN < <(python3 -c 'import json,sys
+seen=[]
+for l in open(sys.argv[1]):
+    try: f=json.loads(l).get("fingerprint")
+    except Exception: continue
+    if f and f not in seen: seen.append(f)
+print("\n".join(seen))' "$INCF")
+    for FP in "${OPEN[@]}"; do
+      [ -n "$FP" ] && [ ! -f "$STATEDIR/incidents/$FP/state" ] || continue
+      if [ -n "${DRY:-}" ]; then say "DRY=1: would work incident $FP"; echo "OUTCOME=dry-incident FP=$FP"; continue; fi
+      say "incident $FP: working it on its own branch"
+      bash scripts/autonomy/incident-fix.sh "$FP" 2>&1 | tee -a "$LOG"
+    done
+  fi
+  say "queue empty — nothing pending"; echo "OUTCOME=queue-empty"; exit 0
+fi
 IFS=$'\t' read -r ITEM SPEC BRIEF TITLE VERIFY PATHS GATE ATTEMPTS RSID <<<"$PICK"
 say "item=$ITEM spec=$SPEC attempts=$ATTEMPTS title=$TITLE"
 if [ ! -f "specs/$SPEC" ]; then
