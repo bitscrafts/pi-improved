@@ -2,6 +2,35 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-14 — the queue was not empty: a duplicate plan-row id hid spec 152 for five hours
+
+- **Finding:** plan rows `A20/151` (done, `ba0b8d5`) and `A20/152` (queued, its spec and brief committed in `404b7aa`)
+  carried the same id. `state.py` keys the state by that id, so the finished row's `done` marked the queued row done:
+  from 01:13 to 06:11 every cycle — the 5-minute watchdog beat and the 30-minute cron — printed `queue empty` with work
+  sitting in the queue. The loop was idle in exactly the way the operator forbade.
+- **Fix (`80d3320`, `e726c53`):** `state.py` now REFUSES a duplicate row id (the pick fails loudly instead of returning
+  a row), `cycle.sh` prints `OUTCOME=plan-error` rather than an empty queue, row 152 keeps its own id (`A21`), and
+  `selftest.sh` gained four checks for the class — the cycle-level one drives the real `cycle.sh` with a duplicated
+  plan, and the near-miss control (a unique-id plan still picks) holds. **34 passed, 0 failed.**
+- **Second finding, caught one dispatch early:** spec 152's exit criterion 2 asked `bash deploy/rollback-pii.sh --dry-run`
+  to exit 0. The script parses **no arguments**, so that "dry-run" would have performed a real rollback of
+  `$HOME/.local/bin` on a host that had a prior install; and with no `${PREFIX}.old-*` present it aborts rc=1 — measured
+  on this host, where the deploy has run 0 times. It is now bound to the rehearsal the repo already runs green
+  (`scripts/checks/deploy-dry-run.sh`) plus the two named tests, and the row carries spec 152's criteria verbatim with
+  `gate=1` (the old row had `quality-gate.sh` in the gate column, which is not `1` and would have skipped fresh-gate).
+  The correction is recorded in the spec's Closure, with why it is not a weakened criterion.
+- **Obstacle, reported and not worked around:** the laya decision layer crash-looped through this whole window (the
+  fail-closed `pre_tool_call` gate). Head `3550378` started 06:22, served ~06:30-06:34, died; `3563455` served from
+  ~06:43 and died by ~06:46; a third was ready by 06:59. Host load sat at 12-16 while a head loaded at 300-450% CPU and
+  grew to ~2.8 GB RSS before dying. In every gap every state-changing tool call was refused — `BLOCK (laya unreachable)`,
+  or `hook laya-gate.sh failed closed: timed out after 15s` when the head was alive but starved — so the judgement lane
+  waited for the next window instead of routing work around the gate. The container's cgroup reports `oom_kill 25`
+  (cumulative, not attributable to today by itself): the leading hypothesis, and **not proven**. Recovery is not
+  unit-managed here (`systemctl --user` has no session bus; `is-enabled` says not-found), so the gate cannot be
+  bootstrapped by the agent it gates — an open design gap, not a transient error.
+- **Next:** the next cycle picks `A21/152` (the deploy card). Behind it the plan queue is empty; the incident lane has
+  parked rows whose reason is `no proving test recorded in the incident: nothing can be proven`.
+
 ## 2026-10-13 — A8 / spec 141 (docs truth pass) closed, and the lane caught itself weakening a criterion
 
 - `3ac91bb` **spec 141 — the docs stop describing a tree that no longer exists** (059 F10/Q4). Docs only:
