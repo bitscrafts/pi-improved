@@ -42,6 +42,12 @@ esac
 
 # 2) the plan
 PICK=$(python3 scripts/autonomy/state.py pick)
+# 2a-1) a plan that cannot be READ is a loud failure, never an empty queue: state.py refuses a duplicate row id,
+# and "nothing pending" and "the queue is broken" are different outcomes — only one of them is safe to sleep on.
+if [ -z "$PICK" ]; then
+  say "the plan could not be read — state.py refused it (see its message above). NOTHING dispatched; this is NOT an empty queue"
+  echo "OUTCOME=plan-error"; exit 4
+fi
 if [ "$PICK" = "NONE" ]; then
   # 2a) the second plan source (spec 151), after plan.tsv: each open incident (no state yet under incidents/<fp>/)
   # goes to incident-fix.sh, which works on a branch and parks or merges only on its own proof. DRY=1 only lists.

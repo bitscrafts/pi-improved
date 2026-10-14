@@ -1,6 +1,13 @@
 # The autonomy plan — what the loop works on, in order, one item per cycle.
 # One row: id <tab> spec <tab> brief(- = the dispatcher's own brief) <tab> title <tab> verify(cmd;cmd) <tab> commit paths(a;b) <tab> gate(1|0)
 #
+# The id column MUST be unique — state.json is keyed by it, so a second row reusing an id silently inherits the
+# first row's status and is never dispatched. Measured 2026-10-14: rows A20/151 (done) and A20/152 (queued, its spec
+# and brief already committed) both said A20, so the finished 151 marked the queued 152 done and ~5 h of cycles
+# reported "queue empty" with work sitting in the queue. state.py now refuses a duplicate id, and the cycle prints
+# OUTCOME=plan-error instead of pretending the queue is empty.
+
+#
 # The verify column MUST be the spec's own Exit Criteria, copied verbatim — same commands, same sense.
 # A paraphrased criterion is one nobody agreed to, and it re-fails a correct worker for ever. Measured
 # 2026-10-13: A8 failed twice on a hand-written `! grep -q Dockerfile`, STRICTER than spec 141's
@@ -36,4 +43,4 @@ A17	153-the-operators-records-are-not-test-fixtures.md	-	the operator's records 
 A18	150-an-incident-is-opened-from-our-own-records.md	-	an incident is opened from the system's own records, with no model (061; the 41.5h detection gap)	cargo test -p pii-learn --test incidents 2>&1 | tail -2 | grep -q 'test result: ok'	crates;Cargo.lock;_docs;scripts	1
 A19	154-an-accepted-run-is-on-disk-before-its-first-node.md	-	an accepted run is on disk before its first node runs (061: a crash must leave evidence)	cargo test -p pii-server --lib an_accepted_run_is_readable_before_its_first_node 2>&1 | tail -2 | grep -q 'test result: ok'; bash scripts/checks/daemon-crash-leaves-evidence.sh 2>&1 | tail -1 | grep -q 'CRASH-EVIDENCE OK'	crates;Cargo.lock;_docs	1
 A20	151-an-incident-reaches-a-proven-fix-on-a-branch.md	-	an incident reaches a proven fix on a branch, never master (061 order 153->150->154->151->152)	bash scripts/checks/incident-to-branch.sh 2>&1 | tail -1 | grep -q 'INCIDENT-BRANCH OK';bash scripts/checks/incident-to-branch.sh 2>&1 | grep -q 'legs: base_rc=[^0] branch_rc=0 gate=PASS';bash scripts/checks/incident-to-branch.sh --control master-moved 2>&1 | tail -1 | grep -q 'CONTROL OK';bash scripts/checks/incident-budget.sh 2>&1 | tail -1 | grep -q 'BUDGET OK'	scripts;crates;_docs	1
-A20	152-the-deploy-card-one-permission-or-it-is-refused.md	_tmp/autonomy/briefs/152-the-deploy-card.md	the deploy card (one permission, five fields, or refused)	bash scripts/quality-gate.sh	specs/152-the-deploy-card-one-permission-or-it-is-refused.md;deploy;crates/pii-cli	quality-gate.sh
+A21	152-the-deploy-card-one-permission-or-it-is-refused.md	_tmp/autonomy/briefs/152-the-deploy-card.md	the deploy card (one permission, five fields, or refused)	cargo test -p pii-cli --test deploy_card 2>&1 | tail -2 | grep -q 'test result: ok';cargo test -p pii-cli --test deploy_card a_card_missing_any_field_is_refused -- --exact 2>&1 | grep -q '1 passed';cargo test -p pii-cli --test deploy_card the_rollback_line_is_rehearsed_before_the_card -- --exact 2>&1 | grep -q '1 passed';bash scripts/checks/deploy-dry-run.sh 2>&1 | tail -1 | grep -q 'DRY-RUN OK'	crates/pii-cli;deploy;scripts;Cargo.lock;_docs	1

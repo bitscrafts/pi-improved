@@ -29,6 +29,17 @@ def rows():
         if len(f) < 7:
             raise SystemExit(f"plan.tsv row needs 7 tab-separated fields: {line!r}")
         out.append(dict(zip(("id", "spec", "brief", "title", "verify", "paths", "gate"), f)))
+    # The id IS the key the state is stored under, so two rows sharing one is not a cosmetic mistake: the second row
+    # inherits the first's status and is never picked. Measured 2026-10-14: A20/151 (done) and A20/152 (queued, its
+    # spec and brief already committed) both said A20, so every cycle for ~5 h reported "queue empty" with that work
+    # sitting in the queue. Refuse loudly: an unreachable row must look broken, never idle.
+    ids = [r["id"] for r in out]
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:
+        raise SystemExit(
+            "plan.tsv: duplicate row id(s): " + ", ".join(dup) + " — the state is keyed by the id, so a second row "
+            "reusing one silently inherits the first row's status and is never dispatched. Give every row its own id."
+        )
     return out
 
 

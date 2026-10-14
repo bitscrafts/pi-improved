@@ -119,6 +119,14 @@ printf '%s\n' '{"type":"system","session_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee
 R=$(bash scripts/autonomy/session.sh recover 99999 2>/dev/null); row "a cut-off worker's stream log still speaks" "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" "$R"
 rm -f _tmp/claude-batchC/99999-probe.log
 
+echo; echo "== 10. a malformed plan is LOUD, never a silent empty queue (a row id is the state's key)"
+printf 'X4\tfake-a.md\t-\tfirst\t-\t-\t0\nX4\tfake-b.md\t-\tsecond\t-\t-\t0\n' >"$T/dup.tsv"
+row "a unique-id plan still picks (the near-miss control)" "X1" "$(PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py pick | cut -f1)"
+PII_PLAN=$T/dup.tsv python3 scripts/autonomy/state.py pick >/dev/null 2>&1; row "state.py pick refuses a duplicate id" 1 $?
+OUTPUT=$(PII_PLAN=$T/dup.tsv PATH=$BIN:$PATH bash scripts/autonomy/cycle.sh 2>&1)
+row "the cycle reports plan-error" "plan-error" "$(printf '%s' "$OUTPUT" | grep -o 'OUTCOME=plan-error' | head -1 | cut -d= -f2)"
+printf '%s' "$OUTPUT" | grep -q 'queue empty'; row "and never claims an empty queue" 1 $?
+
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]
