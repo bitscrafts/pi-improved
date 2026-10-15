@@ -4,7 +4,10 @@
 # released the moment the cycle starts: that is how four cycles ran at once and their builds queued on cargo.
 if [ -z "${PII_CYCLE_LOCKED:-}" ]; then
   export PII_CYCLE_LOCKED=1
-  exec flock -n /projects/pi-improved/_tmp/autonomy/lock bash "$0" "$@" || { echo "OUTCOME=locked ITEM=-"; exit 5; }
+  # not `exec flock ... || ...`: exec replaces this shell, so the || never ran and a held lock exited 1, silently
+  flock -n -E 75 "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" bash "$0" "$@"; rc=$?
+  [ "$rc" = 75 ] && { echo "OUTCOME=locked ITEM=-"; exit 5; }
+  exit "$rc"
 fi
 # cycle.sh — ONE unit of autonomous work, from probe to commit-or-park.
 #
@@ -30,8 +33,12 @@ CID=$(date -u +%Y%m%dT%H%M%SZ)
 LOG=$LOGD/cycle-$CID.log
 say(){ printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 say "=== cycle $CID"
-exec 9>"${PII_LOCK:-$STATEDIR/lock}"
-if ! flock -n 9; then say "another cycle holds the lock — nothing done"; echo "OUTCOME=locked"; exit 5; fi
+# The launcher above already holds the lock for this process. A second flock on a NEW descriptor of the same file
+# conflicts with it (flock is per open file description), so re-taking it here refused every cycle (02:01-04:01).
+if [ "${PII_CYCLE_LOCKED:-}" != 1 ]; then
+  exec 9>"${PII_LOCK:-$STATEDIR/lock}"
+  if ! flock -n 9; then say "another cycle holds the lock — nothing done"; echo "OUTCOME=locked"; exit 5; fi
+fi
 
 # 0b) the operator's switch (Discord: `scripts/autonomy/control.sh pause`) — honour it before spending
 if grep -q PAUSED "${PII_CONTROL:-$STATEDIR/control}" 2>/dev/null; then
