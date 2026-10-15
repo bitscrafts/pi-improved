@@ -206,7 +206,7 @@ if [ "${GATE:-1}" = "1" ]; then
     exit 13
   else
     say "fresh-gate (this is the project's truth, not the worker's)"
-    if ( export PATH="/usr/local/cargo/bin:$PATH"; FRESH_GATE_MIN_FREE_MB=12000 timeout 1780 cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
+    if ( export PATH="/usr/local/cargo/bin:$PATH"; CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout 1780 cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
     then python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "fresh-gate PASS (phase marked: gated)"; else
       python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-failed
       say "fresh-gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
