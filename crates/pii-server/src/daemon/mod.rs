@@ -349,7 +349,7 @@ fn build_channel(
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
     let log = engine.log();
-    let inner = build_raw_channel(c, net, runtime_dir, &log, env)?;
+    let inner = channel_wiring::build_raw_channel(c, net, runtime_dir, &log, env)?;
     // Spec 112 R5: a channel that cannot work says so at startup, by name.
     if let Some(issue) = inner.health_issue() {
         log.event(
@@ -397,43 +397,6 @@ fn check_sanctioned(
         }
     }
     Ok(())
-}
-
-fn build_raw_channel(
-    c: &config::ChannelSection,
-    net: &Arc<pii_net::NetService>,
-    runtime_dir: &Path,
-    log: &Arc<dyn pii_observe::Observer>,
-    env: &dyn Fn(&str) -> Option<String>,
-) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
-    let transport = Arc::clone(net) as Arc<dyn pii_core::HttpTransport>;
-    match c.kind.as_str() {
-        "telegram" => adapters::telegram(c, transport),
-        "matrix" => adapters::matrix(c, transport),
-        "webhook" => adapters::webhook(c, net, transport, log),
-        "discord" => Ok(Arc::new(
-            pii_channels::discord::DiscordChannel::from_lookup(&c.name, transport, env)?,
-        )),
-        "cli" => {
-            let inbox = c.inbox.clone().map_or_else(
-                || runtime_dir.join(format!("{}.in.jsonl", c.name)),
-                PathBuf::from,
-            );
-            let outbox = c.outbox.clone().map_or_else(
-                || runtime_dir.join(format!("{}.out.jsonl", c.name)),
-                PathBuf::from,
-            );
-            Ok(Arc::new(pii_channels::cli::CliChannel::new(
-                c.name.clone(),
-                inbox,
-                outbox,
-            )))
-        }
-        other => Err(PiiError::Invalid(format!(
-            "channel '{}': unknown kind '{other}'",
-            c.name
-        ))),
-    }
 }
 
 /// Root capability set for daemon-internal spawns (worker start/reload):

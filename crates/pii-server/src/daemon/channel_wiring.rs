@@ -1,9 +1,12 @@
 //! Spec 157: the Discord channel's credentials are a state to report, and the daemon's first post
 //! names the revision it runs.
 
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use pii_abi::PiiError;
 
-use super::{Daemon, config, identity};
+use super::{Daemon, adapters, config, identity};
 use crate::Engine;
 
 /// How long the startup verification post may take before it is reported as timed out.
@@ -109,5 +112,56 @@ impl Daemon {
         };
         self.engine.log().event(&event.field("channel", name));
         Some(result)
+    }
+}
+
+/// Spec 157: the first post names the deployed revision. Off the startup path, so an unreachable
+/// channel delays nothing; the daemon counts and logs its outcome.
+impl Daemon {
+    /// Runs [`Self::post_verification`] on its own thread.
+    pub fn spawn_verification_post(self: &Arc<Self>) {
+        let daemon = Arc::clone(self);
+        let _ = std::thread::Builder::new()
+            .name(String::from("verification-post"))
+            .spawn(move || {
+                let _ = daemon.post_verification(&pii_core::env_var);
+            });
+    }
+}
+
+pub(super) fn build_raw_channel(
+    c: &config::ChannelSection,
+    net: &Arc<pii_net::NetService>,
+    runtime_dir: &Path,
+    log: &Arc<dyn pii_observe::Observer>,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
+    let transport = Arc::clone(net) as Arc<dyn pii_core::HttpTransport>;
+    match c.kind.as_str() {
+        "telegram" => adapters::telegram(c, transport),
+        "matrix" => adapters::matrix(c, transport),
+        "webhook" => adapters::webhook(c, net, transport, log),
+        "discord" => Ok(Arc::new(
+            pii_channels::discord::DiscordChannel::from_lookup(&c.name, transport, env)?,
+        )),
+        "cli" => {
+            let inbox = c.inbox.clone().map_or_else(
+                || runtime_dir.join(format!("{}.in.jsonl", c.name)),
+                PathBuf::from,
+            );
+            let outbox = c.outbox.clone().map_or_else(
+                || runtime_dir.join(format!("{}.out.jsonl", c.name)),
+                PathBuf::from,
+            );
+            Ok(Arc::new(pii_channels::cli::CliChannel::new(
+                c.name.clone(),
+                inbox,
+                outbox,
+            )))
+        }
+        other => Err(PiiError::Invalid(format!(
+            "channel '{}': unknown kind '{other}'",
+            c.name
+        ))),
     }
 }
