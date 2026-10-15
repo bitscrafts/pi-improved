@@ -83,7 +83,10 @@ print("\n".join(seen))' "$INCF")
   fi
   say "queue empty — nothing pending"; echo "OUTCOME=queue-empty"; exit 0
 fi
-IFS=$'\t' read -r ITEM SPEC BRIEF TITLE VERIFY PATHS GATE ATTEMPTS RSID <<<"$PICK"
+# A tab is IFS whitespace, so read merges consecutive tabs and an empty column shifts every later field (measured
+# 2026-10-15: A25's empty gate put its session id into ATTEMPTS, the done-arithmetic failed, and the item was
+# re-verified 23 times without ever closing). Split on a non-whitespace separator so an empty field stays empty.
+IFS=$'\x1f' read -r ITEM SPEC BRIEF TITLE VERIFY PATHS GATE ATTEMPTS RSID <<<"${PICK//$'\t'/$'\x1f'}"
 say "item=$ITEM spec=$SPEC attempts=$ATTEMPTS title=$TITLE"
 if [ ! -f "specs/$SPEC" ]; then
   say "NO SPEC at specs/$SPEC — the agent must AUTHOR it before this cycle can spend anything"
@@ -214,7 +217,10 @@ if [ -n "$VFAIL" ]; then
 fi
 
 # 5) the gate — a green verify is not a green gate
-if [ "${GATE:-1}" = "1" ]; then
+# Only an explicit 0 / - / none skips the gate: rows A22-A24 named "quality-gate.sh" here, failed an `= 1` test, and
+# were committed with no fresh-gate under a message that said "gate green" (075fee9). Fail toward gating.
+case "${GATE:-1}" in 0|-|none) GATE_ON= ;; *) GATE_ON=1 ;; esac
+if [ -n "$GATE_ON" ]; then
   FREE=$(df -m --output=avail /projects | tail -1 | tr -d ' ')
   if [ "$FREE" -lt 20000 ]; then
     # A skipped gate must NOT fall through to the commit: an ungated commit is worse than a parked item.
