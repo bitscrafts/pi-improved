@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Spec 142: install the pii release binaries, runtime config and systemd unit on THIS host.
 # One command, idempotent. Never deletes: existing binaries/config are moved aside to a dated dir.
-# It does NOT enable/start the unit and does NOT touch the token: it prints those commands.
+# It does NOT enable/start the unit. It writes $CONFIG_DIR/pii.env (mode 0600) from the operator's
+# PII_DISCORD_TOKEN / PII_DISCORD_CHANNEL_ID when both are set; values go nowhere else and are never printed.
 #
 #   bash deploy/install-pii.sh
 #
@@ -15,8 +16,9 @@
 #   UNIT_DIR      where the unit file goes     (user: $HOME/.config/systemd/user, system: /etc/systemd/system)
 #   SKIP_BUILD=1  do not run cargo; install from BIN_SRC
 #   BIN_SRC       built binaries dir           (default <repo>/target/release)
-# Preconditions (checked before anything is moved): graphs/discord-{triage,digest}.toml exist, llama host answers, PII_DISCORD_TOKEN and
-# PII_DISCORD_CHANNEL_ID are set (their values are never written anywhere), PREFIX is creatable.
+# Preconditions (checked before anything is moved): graphs/discord-{triage,digest}.toml exist, llama host answers, PREFIX is creatable.
+# PII_DISCORD_TOKEN / PII_DISCORD_CHANNEL_ID are optional: without them no pii.env is written and the daemon
+# starts with `channels: []` (spec 157).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,8 +51,8 @@ abort() { echo "ABORT (nothing was changed): $*" >&2; exit 1; }
 command -v curl >/dev/null || abort "curl not found"
 curl -sf --max-time 5 "${LLAMA_HOST%/}/models" >/dev/null \
   || abort "llama.cpp host ${LLAMA_HOST} does not answer GET ${LLAMA_HOST%/}/models"
-[ -n "${PII_DISCORD_TOKEN:-}" ] || abort "PII_DISCORD_TOKEN is not set in the environment (needed for the discord channel)"
-[ -n "${PII_DISCORD_CHANNEL_ID:-}" ] || abort "PII_DISCORD_CHANNEL_ID (the forum channel id) is not set in the environment"
+HAVE_CHANNEL=0
+[ -n "${PII_DISCORD_TOKEN:-}" ] && [ -n "${PII_DISCORD_CHANNEL_ID:-}" ] && HAVE_CHANNEL=1
 if [ ! -d "$PREFIX" ]; then
   mkdir -p "$PREFIX" 2>/dev/null || abort "target prefix $PREFIX does not exist and cannot be created"
 fi
@@ -109,6 +111,10 @@ name = "discord"
 kind = "discord"
 graph = "discord-triage"
 
+TOML
+if [ "$HAVE_CHANNEL" = 1 ]; then
+  cat >> "$TMPCONF" <<TOML
+
 # ONE daily digest. \`schedule\` is the display mirror; firing is driven by the graph's timer node.
 [[cron]]
 name = "daily-digest"
@@ -116,7 +122,22 @@ graph = "discord-digest"
 schedule = "0 9 * * *"
 input = { to = "$PII_DISCORD_CHANNEL_ID" }
 TOML
+fi
 mv "$TMPCONF" "$CONF"
+
+# ---- 4a: the channel credentials, by reference to the operator's environment (spec 157) ----
+# The file lives next to pii.toml, outside the repo, mode 0600, and is the only place the values go.
+ENVF="$CONFIG_DIR/pii.env"
+if [ "$HAVE_CHANNEL" = 1 ]; then
+  if [ -e "$ENVF" ]; then
+    mkdir -p "$ASIDE"
+    mv "$ENVF" "$ASIDE/pii.env"
+  fi
+  TMPENV="$(mktemp "$CONFIG_DIR/pii.env.XXXXXX")"   # mktemp creates it 0600
+  printf 'PII_DISCORD_TOKEN=%s\nPII_DISCORD_CHANNEL_ID=%s\n' "$PII_DISCORD_TOKEN" "$PII_DISCORD_CHANNEL_ID" > "$TMPENV"
+  chmod 0600 "$TMPENV"
+  mv "$TMPENV" "$ENVF"
+fi
 
 # ---- 4b: graphs into the persistent state dir (the unit places them in the runtime dir on each start) ----
 mkdir -p "$STATE_DIR/graphs"
@@ -177,10 +198,15 @@ echo "MOVED ASIDE: $moved binaries${ASIDE:+ -> $ASIDE}"
 echo "GRAPHS: ${installed_graphs[*]} -> $STATE_DIR/graphs (placed in $RUNTIME_DIR/graphs on each unit start)"
 echo "CONFIG: $CONF   UNIT: $UNIT"
 echo
+if [ "$HAVE_CHANNEL" = 1 ]; then
+  echo "CHANNEL: $ENVF written (0600) from PII_DISCORD_TOKEN / PII_DISCORD_CHANNEL_ID; the first post names the revision"
+else
+  echo "CHANNEL: PII_DISCORD_TOKEN / PII_DISCORD_CHANNEL_ID not both set: no pii.env written, the daemon will report channels: []"
+fi
+echo
 echo "OPERATOR COMMANDS (nothing below was run):"
-echo "  1. place the token (mode 0600, value is yours; never commit it):"
-echo "       install -m 0600 /dev/null '$CONFIG_DIR/pii.env'"
-echo "       printf 'PII_DISCORD_TOKEN=%s\\nPII_DISCORD_CHANNEL_ID=%s\\n' '<token>' '<forum-channel-id>' > '$CONFIG_DIR/pii.env'"
+echo "  1. channel credentials: rerun this script with both variables exported (values never printed), or place"
+echo "     '$CONFIG_DIR/pii.env' yourself (mode 0600, never commit it)"
 echo "  2. enable and start:"
 echo "       $CTL daemon-reload && $CTL enable --now pii"
 [ "$SCOPE" = user ] && echo "       loginctl enable-linger \"\$(id -un)\"   # keep it running after logout"

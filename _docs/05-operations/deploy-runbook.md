@@ -6,9 +6,13 @@ host actions, then you verify. Nothing here has been run on the host by the orch
 ## 0. Preconditions (the script aborts, changing nothing, if one is missing)
 
 - llama.cpp answers: `curl -s http://10.10.10.217:8082/v1/models`
-- `PII_DISCORD_TOKEN` (bot token) and `PII_DISCORD_CHANNEL_ID` (the one forum channel id) are exported in the shell
-  that runs the installer. Their values are used only for the check and the cron `to`; the token is never
-  written to the config or the unit.
+- Optional (spec 157): `PII_DISCORD_TOKEN` (bot token) and `PII_DISCORD_CHANNEL_ID` (the one forum channel id)
+  exported in the shell that runs the installer. When both are set the installer writes
+  `~/.config/pii/pii.env` (mode 0600, outside the repo) and the digest cron's `to`; the token is never written
+  to the config, the unit or the store. When either is absent nothing is written and the daemon starts with
+  `channels: []` (a state to report, not a failure). With them, the daemon starts the channel and makes one
+  startup post naming its revision (`pii health --json`: `channel_posts >= 1`).
+  Check: `bash scripts/checks/no-secret-in-tree.sh`.
 - `$PREFIX` (default `~/.local/bin`) exists or can be created.
 
 ## 1. Install
@@ -26,7 +30,7 @@ It builds `pii`, `pii-web`, `pii-evolve` and `pii-mcp`; moves existing binaries/
 
 ## 2. The two host actions
 
-1. **Place the token** (mode 0600; the file is yours, never commit it):
+1. **Place the token** if the installer did not (mode 0600; the file is yours, never commit it):
    ```sh
    install -m 0600 /dev/null ~/.config/pii/pii.env
    printf 'PII_DISCORD_TOKEN=%s\nPII_DISCORD_CHANNEL_ID=%s\n' '<token>' '<forum-channel-id>' > ~/.config/pii/pii.env

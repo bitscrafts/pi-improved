@@ -438,6 +438,16 @@ async fn run_daemon(
     daemon.install_panic_hook();
     daemon.start_cron_entries();
     let mut handles = daemon.spawn_background();
+    // Spec 157: the first post names the deployed revision. Off the startup path, so an
+    // unreachable channel delays nothing; its outcome is counted and logged by the daemon.
+    {
+        let daemon = Arc::clone(&daemon);
+        let _ = std::thread::Builder::new()
+            .name(String::from("verification-post"))
+            .spawn(move || {
+                let _ = daemon.post_verification(&pii_core::env_var);
+            });
+    }
 
     // reason: the daemon binds the UDS control socket; NetService (Phase 3)
     // is not yet wired. The socket dir is chmod 0700 in prepare_socket (F10)

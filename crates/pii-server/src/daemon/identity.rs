@@ -258,10 +258,13 @@ fn refused_total(workers: Option<&BTreeMap<String, pii_worker::Supervisor>>) -> 
         .sum()
 }
 
+/// The git revision this binary was built from.
+pub const REVISION: &str = env!("PII_GIT_REV");
+
 fn build_identity() -> BuildIdentity {
     BuildIdentity {
         version: env!("CARGO_PKG_VERSION").to_owned(),
-        revision: env!("PII_GIT_REV").to_owned(),
+        revision: REVISION.to_owned(),
         target: env!("PII_TARGET").to_owned(),
     }
 }

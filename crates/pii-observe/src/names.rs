@@ -100,6 +100,8 @@ pub const CHANNEL_CURSOR_LAG: &str = "channel.cursor.lag";
 pub const CHANNEL_POSTED: &str = "channel.posted";
 /// Event: a `post` node was refused or failed (`channel`, `reason`; spec 128).
 pub const CHANNEL_POST_REFUSED: &str = "channel.post_refused";
+/// Event: the startup post naming the deployed revision was delivered (`channel`, `text`; spec 157).
+pub const CHANNEL_VERIFICATION_POSTED: &str = "channel.verification_posted";
 /// Event: an MQTT channel connected to its broker (`channel`, `broker`).
 pub const MQTT_CONNECTED: &str = "mqtt.connected";
 /// Event: an MQTT channel lost or failed to reach its broker (`channel`, `broker`, `error`, `attempt`, `retry_in_ms`).
@@ -383,6 +385,7 @@ pub const ALL: &[&str] = &[
     CHANNEL_CURSOR_LAG,
     CHANNEL_POSTED,
     CHANNEL_POST_REFUSED,
+    CHANNEL_VERIFICATION_POSTED,
     MQTT_CONNECTED,
     MQTT_CONNECTION_LOST,
     MQTT_MESSAGE_RECEIVED,

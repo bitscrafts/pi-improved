@@ -47,7 +47,12 @@ grep -q '^trajectory_dir = ' "$S/cfg/pii.toml" || fail "trajectories not on"
 [ "$(grep -c '^\[\[channel\]\]' "$S/cfg/pii.toml")" = 1 ] || fail "want exactly one channel"
 [ "$(grep -c '^\[\[cron\]\]' "$S/cfg/pii.toml")" = 1 ] || fail "want exactly one cron"
 grep -q 'discord-digest' "$S/cfg/pii.toml" || fail "digest cron missing"
-grep -rq 'dry-run-not-a-token' "$S/cfg" "$S/units" && fail "token leaked into a written file"
+grep -q 'dry-run-not-a-token' "$S/cfg/pii.toml" "$S/units/pii.service" && fail "token leaked into a written file"
+[ -f "$S/cfg/pii.env" ] || fail "pii.env not written though both credentials were set"
+[ "$(stat -c %a "$S/cfg/pii.env")" = 600 ] || fail "pii.env is not mode 0600"
+grep -q '^PII_DISCORD_TOKEN=dry-run-not-a-token$' "$S/cfg/pii.env" || fail "pii.env lacks the token variable"
+grep -q '^PII_DISCORD_CHANNEL_ID=123456789$' "$S/cfg/pii.env" || fail "pii.env lacks the channel id variable"
+grep -q 'dry-run-not-a-token' "$S/install.out" && fail "install output printed the token"
 for needle in 'pii.env' 'enable --now pii' 'health --json' 'rollback-pii.sh'; do
   grep -q -- "$needle" "$S/install.out" || fail "operator commands incomplete: $needle"
 done
@@ -88,6 +93,15 @@ bash "$REPO/deploy/install-pii.sh" > "$S/install2.out" 2>&1 || { cat "$S/install
 ASIDE2="$(ls -d "$S/bin".old-* | tail -1)"
 grep -q 'edited by the dry-run' "$ASIDE2"/*discord-triage.toml || fail "edited graph not moved into $ASIDE2"
 cmp -s "$REPO/graphs/discord-triage.toml" "$S/state/graphs/discord-triage.toml" || fail "re-install did not restore the repo graph"
+
+# 5. spec 157: no credentials is a state, not an abort: install succeeds, writes no pii.env, no cron
+sleep 1
+S2="$S/nocreds"
+if env -u PII_DISCORD_TOKEN -u PII_DISCORD_CHANNEL_ID CONFIG_DIR="$S2/cfg" STATE_DIR="$S2/state" UNIT_DIR="$S2/units" \
+  bash "$REPO/deploy/install-pii.sh" > "$S/install3.out" 2>&1; then :; else cat "$S/install3.out"; fail "install without credentials aborted"; fi
+[ ! -e "$S2/cfg/pii.env" ] || fail "pii.env written without credentials"
+[ "$(grep -c '^\[\[cron\]\]' "$S2/cfg/pii.toml")" = 0 ] || fail "digest cron written without a channel id"
+grep -q 'channels: \[\]' "$S/install3.out" || fail "install did not say the daemon will report no channels"
 
 echo "scratch: $S (left in place; remove by hand)"
 echo "DRY-RUN OK"

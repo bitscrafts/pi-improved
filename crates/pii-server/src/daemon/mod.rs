@@ -5,6 +5,7 @@
 
 mod adapters;
 pub mod approvals;
+mod channel_wiring;
 pub mod config;
 pub mod identity;
 mod lag;
@@ -68,14 +69,38 @@ impl Daemon {
     /// # Errors
     /// A malformed host pattern, an unknown channel kind, a missing
     /// Discord env var, or a store-open failure.
-    // reason: one linear wiring sequence; splitting would only hide the order.
-    #[allow(clippy::too_many_lines)]
     pub fn build(
         engine: Arc<Engine>,
         cfg: &config::Config,
         runtime_dir: &Path,
         config_path: PathBuf,
         clock: Arc<dyn pii_core::Clock>,
+    ) -> Result<Arc<Self>, PiiError> {
+        Self::build_with_env(
+            engine,
+            cfg,
+            runtime_dir,
+            config_path,
+            clock,
+            &pii_core::env_var,
+        )
+    }
+
+    /// [`Self::build`] over an arbitrary variable lookup (so tests need no process-global env).
+    /// A `discord` channel whose credentials are absent is not built: it is reported at startup
+    /// and the daemon runs without it (spec 157).
+    ///
+    /// # Errors
+    /// As [`Self::build`].
+    // reason: one linear wiring sequence; splitting would only hide the order.
+    #[allow(clippy::too_many_lines)]
+    pub fn build_with_env(
+        engine: Arc<Engine>,
+        cfg: &config::Config,
+        runtime_dir: &Path,
+        config_path: PathBuf,
+        clock: Arc<dyn pii_core::Clock>,
+        env: &dyn Fn(&str) -> Option<String>,
     ) -> Result<Arc<Self>, PiiError> {
         let grants = Arc::new(config::ConfigGrants::from_section(&cfg.net)?);
         let net = Arc::new(pii_net::NetService::new(pii_net::NetConfig {
@@ -89,7 +114,10 @@ impl Daemon {
 
         let mut channels = BTreeMap::new();
         for c in &cfg.channel {
-            let channel = build_channel(c, &net, &grants, runtime_dir, &engine)?;
+            if channel_wiring::skip_unconfigured(&engine, c, env) {
+                continue;
+            }
+            let channel = build_channel(c, &net, &grants, runtime_dir, &engine, env)?;
             channels.insert(
                 c.name.clone(),
                 ChannelRuntime {
@@ -318,9 +346,10 @@ fn build_channel(
     grants: &config::ConfigGrants,
     runtime_dir: &Path,
     engine: &Engine,
+    env: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
     let log = engine.log();
-    let inner = build_raw_channel(c, net, runtime_dir, &log)?;
+    let inner = build_raw_channel(c, net, runtime_dir, &log, env)?;
     // Spec 112 R5: a channel that cannot work says so at startup, by name.
     if let Some(issue) = inner.health_issue() {
         log.event(
@@ -375,15 +404,16 @@ fn build_raw_channel(
     net: &Arc<pii_net::NetService>,
     runtime_dir: &Path,
     log: &Arc<dyn pii_observe::Observer>,
+    env: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Arc<dyn pii_channels::Channel>, PiiError> {
     let transport = Arc::clone(net) as Arc<dyn pii_core::HttpTransport>;
     match c.kind.as_str() {
         "telegram" => adapters::telegram(c, transport),
         "matrix" => adapters::matrix(c, transport),
         "webhook" => adapters::webhook(c, net, transport, log),
-        "discord" => Ok(Arc::new(pii_channels::discord::DiscordChannel::from_env(
-            &c.name, transport,
-        )?)),
+        "discord" => Ok(Arc::new(
+            pii_channels::discord::DiscordChannel::from_lookup(&c.name, transport, env)?,
+        )),
         "cli" => {
             let inbox = c.inbox.clone().map_or_else(
                 || runtime_dir.join(format!("{}.in.jsonl", c.name)),
