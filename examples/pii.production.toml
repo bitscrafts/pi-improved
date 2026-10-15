@@ -103,6 +103,7 @@ path = ""
 # max_in_flight = 0            # default 0 = built-in cap
 
 # [[channel]]: inbound message sources. Default: none. Repeat the table.
+# default channel kinds: cli, discord   (the other kinds: 0 posts ever; see _docs/05-operations/m7-retiring-the-dormant-surface.md)
 # [[channel]]
 # name = "inbox"               # required
 # kind = "cli"                 # required: "cli" or "discord"
