@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+
+# THE LOCK SPANS THE WHOLE CYCLE (2026-10-15). The launcher exits immediately, so a lock taken by the launcher is
+# released the moment the cycle starts: that is how four cycles ran at once and their builds queued on cargo.
+if [ -z "${PII_CYCLE_LOCKED:-}" ]; then
+  export PII_CYCLE_LOCKED=1
+  exec flock -n /projects/pi-improved/_tmp/autonomy/lock "$0" "$@" || { echo "OUTCOME=locked ITEM=-"; exit 5; }
+fi
 # cycle.sh — ONE unit of autonomous work, from probe to commit-or-park.
 #
 # What it does, in order, and why in that order:
@@ -154,6 +161,11 @@ N=$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')
 if [ -n "$SKIP_DISPATCH" ]; then
   NEWSID="$RSID"
 else
+  if [ "${ATTEMPTS:-0}" -ge 3 ]; then
+    say "attempts=$ATTEMPTS reached the cap of 3 — PARKING for a person, not dispatching again"
+    python3 scripts/autonomy/state.py set "$ITEM" status=parked attempts="$ATTEMPTS" "last=parked after $ATTEMPTS attempts: the same mechanical failure repeated, so a fourth dispatch would spend without new information"
+    echo "OUTCOME=parked-attempt-cap ITEM=$ITEM"; exit 11
+  fi
   say "dispatching spec number $N"
   ( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
   WRC=$?
