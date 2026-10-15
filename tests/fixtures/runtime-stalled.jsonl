@@ -1,0 +1,7 @@
+{"subsystem": "engine", "level": "info", "kind": "daemon.sandbox.in_force", "fields": {}, "ts_ms": 1760000000000}
+{"subsystem": "engine", "level": "info", "kind": "daemon.started", "fields": {}, "ts_ms": 1760000002000}
+{"subsystem": "engine", "level": "info", "kind": "run.journal", "fields": {"event": {"Started": {"graph": "g"}}}, "run": "run-7f3a", "ts_ms": 1760000010000}
+{"subsystem": "engine", "level": "info", "kind": "run.journal", "fields": {"event": {"NodeFinished": {"dur_ms": 5}}}, "run": "run-7f3a", "ts_ms": 1760000020000}
+{"subsystem": "engine", "level": "info", "kind": "run.journal", "fields": {"event": {"Started": {"graph": "g"}}}, "run": "run-9c1d", "ts_ms": 1760003000000}
+{"subsystem": "engine", "level": "info", "kind": "run.outcome", "fields": {"verdict": "success"}, "run": "run-9c1d", "ts_ms": 1760003005000}
+{"subsystem": "engine", "level": "info", "kind": "daemon.stopped", "fields": {"reason": "signal"}, "ts_ms": 1760003100000}

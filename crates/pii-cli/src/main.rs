@@ -32,7 +32,7 @@ mod ndjson;
 use crate::cli_util::fail;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|link|neighbours|compact|show|tiers|archive|restore} ... | pii incidents scan --root <dir> [--new] | pii deploy-card {render|approve|refuse} --card <file> | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|link|neighbours|compact|show|tiers|archive|restore} ... | pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii deploy-card {render|approve|refuse} --card <file> | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]

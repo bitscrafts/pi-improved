@@ -14,6 +14,7 @@ mod candidate;
 mod config;
 mod extract;
 pub mod incident;
+pub mod incident_runtime;
 mod learner;
 mod promote;
 mod scan;
