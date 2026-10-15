@@ -16,3 +16,9 @@ export PII_TMP_ROOT="${PII_TMP_ROOT:-/projects/_tmp}"
 # root + bypassPermissions also needs the sandbox marker, or the worker dies in one second with
 # "--dangerously-skip-permissions cannot be used with root/sudo privileges".
 export IS_SANDBOX="${IS_SANDBOX:-1}"
+
+# The gate's compiler cache. Measured 2026-10-15: cycle.sh exported CARGO_TARGET_DIR, but xtask/src/fresh_gate.rs
+# reads FRESH_GATE_TARGET - so the export pinned its OWN empty target directory and every attempt paid a full cold
+# workspace build, while _tmp/gate-target never even existed on disk. The gate's TREE stays fresh either way; only the
+# compiler cache is reused. This is the name the gate actually reads.
+export FRESH_GATE_TARGET="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"
