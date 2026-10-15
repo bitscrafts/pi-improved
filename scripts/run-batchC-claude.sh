@@ -46,7 +46,11 @@ BRIEF="$LOGD/brief-$TAG.md"
 cat > "$BRIEF" <<EOF
 # Implement spec $TAG (follow the spec file as the CONTRACT)
 Read $SPEC and execute it exactly: TDD (RED observed before GREEN), minimal diffs.
-Full gate context: fmt/clippy(-D warnings)/workspace tests; quality-gate.sh is the arbiter.
+CONTEXT - do NOT run the gate yourself: the loop runs fmt/clippy(-D warnings)/workspace tests AFTER you and
+quality-gate.sh is the arbiter. Running the whole workspace gate inside your turn costs 10+ minutes of wall clock per
+attempt and writes no code at all - measured 2026-10-15: three attempts at one spec took 1h40m each for exactly that
+reason. Run ONLY the tests your spec names (e.g. cargo test -p <crate> --test <name>), keep your turn short, and leave
+the tree for the orchestrator to verify.
 HARD RULES: do NOT create/edit/rewrite anything under specs/ (read-only for implementers);
 do NOT commit; do NOT run git commit/push; leave the tree for the orchestrator.
 DESTRUCTIVE COMMANDS ARE BANNED, absolutely: never run rm -rf (or rm on a path you did not create in
