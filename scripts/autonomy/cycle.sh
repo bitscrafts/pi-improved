@@ -4,7 +4,7 @@
 # released the moment the cycle starts: that is how four cycles ran at once and their builds queued on cargo.
 if [ -z "${PII_CYCLE_LOCKED:-}" ]; then
   export PII_CYCLE_LOCKED=1
-  exec flock -n /projects/pi-improved/_tmp/autonomy/lock "$0" "$@" || { echo "OUTCOME=locked ITEM=-"; exit 5; }
+  exec flock -n /projects/pi-improved/_tmp/autonomy/lock bash "$0" "$@" || { echo "OUTCOME=locked ITEM=-"; exit 5; }
 fi
 # cycle.sh — ONE unit of autonomous work, from probe to commit-or-park.
 #
