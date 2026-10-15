@@ -190,10 +190,20 @@ fn run_gate(dir: &Path) -> Result<(bool, String), String> {
         );
         "1"
     };
+    // The export's TREE must be fresh; its COMPILER OUTPUT does not have to be. Measured 2026-10-15: because
+    // this line pins CARGO_TARGET_DIR to the export's own empty directory, every attempt paid a full cold
+    // workspace build and overrode any target the caller had exported — a spec that took minutes on 2026-10-10
+    // took 40-60 minutes after commit 4938209 introduced the export into the loop. FRESH_GATE_TARGET=<dir>
+    // reuses one warm cache: the first run pays the cold build once and later runs resume incrementally. The
+    // tree stays fresh either way, which is the guarantee the export exists for.
+    let target = match std::env::var("FRESH_GATE_TARGET") {
+        Ok(v) if !v.trim().is_empty() => PathBuf::from(v),
+        _ => dir.join("target"),
+    };
     let mut child = Command::new("bash")
         .args(["-c", "bash quality-gate.sh 2>&1"])
         .current_dir(dir)
-        .env("CARGO_TARGET_DIR", dir.join("target"))
+        .env("CARGO_TARGET_DIR", &target)
         .env("QG_SKIP_COVERAGE", covev)
         .stdout(Stdio::piped())
         .spawn()
