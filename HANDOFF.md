@@ -1037,3 +1037,27 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
 - Next: the audit-trail fork (three trails) awaits the user; then the backlog (g4/g6/g8) and the open
   quarantine flake.
 
+## 2026-10-16 (06:15Z–06:45Z, autonomy tick) — the gate was red for two reasons, and neither was an item
+
+- The queue has read "empty" since 03:29Z because **A22 and A27 were parked, and both parkings were the gate, not the
+  work.** A27's three failures: the fresh-gate executed a test binary compiled against a *different* export dir —
+  its `.d` records `env-dep:CARGO_MANIFEST_DIR=/projects/_tmp/fresh-gate-72466/crates/pii-evolve`, a tree whose
+  `crates/pii-evolve/src/` no longer exists — so three source-reading tests answered `read driver.rs: NotFound`,
+  while the same five tests pass 5/5 on this tree (measured twice, incl. with the gate's own target dir).
+- **The second red is the box:** the gate's `clippy (llamacpp)` step needs `cmake`, `make`, bindgen's `libclang` and
+  the OpenSSL headers, and the container had lost all of them; the coverage-floor step needs `cargo-llvm-cov` +
+  `llvm-tools`, also gone. Everything was restored this tick (`cmake 3.31.6`, `make 4.4.1`, `libclang-19-dev`,
+  `libssl-dev`, `pkg-config`, `cargo-llvm-cov 0.9.1`, `llvm-tools`) and the failing step's own command now returns
+  **rc=0** (it was rc=101 in every run since 2026-10-15 13:35). Until that restore, no gate could pass and nothing
+  could be committed: the loop was blocked by a toolchain, not idle by choice.
+- Both items are back in the queue as `needs-review` with a `verified` phase marker, so the next cycle verifies them
+  with **no paid dispatch**: A27 runs its five criteria plus a fresh-gate (then closes as satisfied by `a8403f0`),
+  A22 runs the full repo gate — its criterion 5, still owed. Criteria measured this tick, rc=0: A27 5/5, A22 1–4.
+- The plan rows for A22 and A27 each carried about a fifth of their spec's Exit Criteria; both now carry all of them,
+  concretised against the specs' own fixture copies and config paths.
+- **Disk is the next wall:** `/projects` is at 95% (33 GB free) and A22's criterion 5 needs ~18 GB of instrumented
+  build. `cargo clean` is the only sanctioned reclamation, and it is an operator-scale action.
+- Selftest: 32 passed, 2 failed — both are the tick's pause *announcement* rows in section 5 (the gateway branch runs
+  before the pause branch); the switch's own control (`paused -> the cycle spends nothing`, `resume clears the
+  switch`) passes in the same run, so the operator switch is intact.
+

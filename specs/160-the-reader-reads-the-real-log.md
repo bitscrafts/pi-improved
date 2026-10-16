@@ -37,3 +37,31 @@ The runtime reader (156) must judge the daemon's own records as they are actuall
 
 ## Milestone link
 `_docs/06-research/063-opus-next-phases-2026-10-15.md` Phase B · spec 156 (the reader this corrects) · `_docs/05-operations/production-progression.md`.
+
+## Closure
+- **2026-10-16, orchestrator: the `gate-failed` rows this item carried were the GATE, not the worker.** The fresh-gate
+  that stopped it executed `_tmp/gate-target/debug/deps/launcher-b20b8ddc02b01e72`, whose dependency file records
+  `env-dep:CARGO_MANIFEST_DIR=/projects/_tmp/fresh-gate-72466/crates/pii-evolve` — the export of a *previous* run
+  (the 01:39 fresh-gate verification), whose `crates/pii-evolve/src/` no longer exists. The three tests that read
+  files relative to `CARGO_MANIFEST_DIR` (`driver_spawns_no_subprocess`, `no_raw_dial_remains_in_pii_evolve`,
+  `launcher_dials_through_the_uds_client`) answered `read driver.rs: NotFound`, and the gate went red on a tree that
+  is green: **the same five tests pass 5/5 when built for THIS tree, measured twice** (default target dir; and with
+  the gate's own `CARGO_TARGET_DIR=_tmp/gate-target`). A shared warm cache plus per-run throwaway export paths is
+  what lets an artefact carry a source path that has since been deleted. Worth a mechanism fix of its own.
+- **The second red was environmental and is now fixed.** The gate's `clippy (llamacpp)` step builds
+  `llama-cpp-sys-2` from source, which needs `cmake`, `make`, a `libclang` that bindgen can load, and the OpenSSL
+  headers; the box had lost all of them (measured: `which cmake gmake` → empty; bindgen `Unable to find libclang`;
+  `is cmake not installed?`; `gmake: ... openssl/err.h file not found`). Restored by the orchestrator on 2026-10-16:
+  `cmake 3.31.6`, `make 4.4.1`, `libclang-19-dev`, `libssl-dev`, `pkg-config`, plus `cargo-llvm-cov 0.9.1` and the
+  `llvm-tools` component that the coverage-floor step's own comment demands ("their absence is a FAIL, not a skip").
+  **Measured after the restore:** the step's command verbatim,
+  `CARGO_TARGET_DIR=target/llamacpp-gate cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings`
+  → **rc=0** (it had been rc=101 in every run since 2026-10-15 13:35, which is what parked this item and item A22).
+- **Criteria, run by the orchestrator on the committed tree (`a8403f0`), all rc=0**: `cargo test -p pii-learn --test
+  incidents_runtime_production`; the scan of the production `pii.log` copy → `starts_considered=1 incidents=0
+  files=1`; the scan of the audit-log copy → `starts_considered=0 incidents=0`; the printed
+  `time_to_notice_ms=22`; and `production-progression.md` carrying "starts seen 1 of 1". The plan row A27 carried
+  only the first of these five; it now carries all five, concretised against the spec's own fixture copies (the row
+  had dropped four criteria — the class the plan header warns about).
+- **Still owed:** one green fresh-gate on this tree, and nothing else. The implementation and its fixtures are
+  committed; no worker dispatch is owed.

@@ -43,3 +43,21 @@ non-existent product look finished. This spec removes that reading, without dele
 - Do NOT weaken any existing gate step to make the summary pass; if a step genuinely cannot be exercised, say so in the
   summary instead of removing it.
 - Do not commit — the orchestrator commits.
+
+## Closure
+- **2026-10-16, orchestrator: four `verify-failed` rows, none of them this spec's product** (which is committed in
+  `7debbdf`). Three of them (2026-10-15 04:12, 07:25, 07:40) ran `bash scripts/quality-gate.sh` and answered in ~7 s:
+  **that path does not exist** — the gate script lives at the repo root — so the criterion was answered by the
+  shell, not by the gate. The row now reads `bash quality-gate.sh` (fixed in `850cc39`/`f02b465`), and this closure
+  carries all five of this spec's criteria: the row had kept only the gate one, four criteria short.
+- The fourth (2026-10-16 00:30) ran the real gate and died on `FAIL: clippy (llamacpp)` — bindgen could not find
+  `libclang`, and the box had also lost `cmake`, `make` and `libssl-dev`, plus `cargo-llvm-cov` for the
+  coverage-floor step. That is the environment, not this spec; the list and the measured evidence are in spec 160's
+  Closure (restored 2026-10-16, and the llamacpp step re-measured rc=0).
+- **Criteria 1-4, run by the orchestrator on the committed tree, rc=0:** the default config names no dormant kind
+  (`grep -rE 'telegram|matrix|webhook' examples/pii.production.toml` → 0 non-comment lines); the config carries the
+  measured `0 posts ever`; `quality-gate.sh --summary` marks `hal-gpiod` UNEXERCISED; `cargo test -p pii-cli --test
+  channels` is green.
+- **Criterion 5 (`bash quality-gate.sh` green) is the one still owed**, and it is the heavy one: the local gate
+  measures the coverage floor by default, which is ~18 GB of instrumented build against the 33 GB free on
+  `/projects` (95% used). It is owed to the loop, not to the worker — no dispatch is required.
