@@ -2,6 +2,28 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-16 — the loop's own verify could not find cargo, so a correct item was failing twice
+
+- **Finding (A26 / spec 159, the operator distance):** both cycles that ran this item recorded `verify-failed`
+  on `cargo: command not found` — a string that appears in no other cycle log of the 904 kept. `cycle.sh` ran
+  each criterion as `bash -lc "<cmd>"`, and for root `/etc/profile` *resets* PATH to
+  `/usr/local/sbin:/usr/local/bin:...`, so the loop's own PATH contract (`env.sh`, which exists for exactly this
+  reason) was gone by the time the item's command ran. Re-run with cargo on PATH, on the tree the worker left:
+  all four of spec 159's criteria rc=0 — 6 tests passed; 8 incidents with H_pre no-act-before-card 8/8, L median
+  510.5 s, A 0; output byte-identical twice; the doc carries its numbers and R/K. The worker was right and the
+  harness was wrong.
+- **Fix:** the verify's login shell now sources `scripts/autonomy/env.sh` before the item's command, so a
+  criterion runs with the tools the cycle itself has. Control: `cargo test --test no_such_test_exists` still
+  fails, so the fix cannot blanket-pass a criterion. The A26 row also carried only two of the spec's four
+  criteria; it now carries all four, as `plan.tsv`'s own header requires.
+- **Second defect, same sweep:** A22 (spec 155) sat in state `verifying` with its work already committed
+  (`7debbdf`); `state.py pick` accepts only pending/in-progress/needs-review, so the item was unpickable and
+  neither the beat nor the cron could ever close it. It is back in the queue as `needs-review last=worker-ok` —
+  it resumes at verify and no worker is paid twice.
+- **Resume handles:** A26 `session=778bdff6`, A22 `session=048de4cf`; both armed to resume at verify.
+- **Restored:** the 5-minute beat (`scripts/autonomy/watchdog.sh`) had died with the container's last restart;
+  the 30-minute cron ticker was the only scheduler left (it drove the 23:29Z and 00:01Z cycles).
+
 ## 2026-10-14 — the queue was not empty: a duplicate plan-row id hid spec 152 for five hours
 
 - **Finding:** plan rows `A20/151` (done, `ba0b8d5`) and `A20/152` (queued, its spec and brief committed in `404b7aa`)

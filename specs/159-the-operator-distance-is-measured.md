@@ -34,3 +34,21 @@ and prints the three distributions, their medians, the counts, and **the denomin
 
 ## Milestone link
 `_docs/06-research/061-opus-proactivity-judgement-2026-10-13.md` (the definition) · `_docs/06-research/063-opus-next-phases-2026-10-15.md` Phase D (the threshold) · `_docs/05-operations/production-progression.md`.
+
+## Closure
+- **2026-10-16, orchestrator: the two `verify-failed` rows this item carried were the harness, not the worker.**
+  `cycle.sh` ran each criterion as `bash -lc "<cmd>"`, and for root `/etc/profile` *resets* PATH to
+  `/usr/local/sbin:/usr/local/bin:...` — no `/usr/local/cargo/bin` — so both criteria answered
+  `cargo: command not found`, and only these two cycles in the whole log carry that string. Re-run with cargo
+  on PATH, on the very tree the worker left: criterion 1 rc=0 (6 tests passed), criterion 2 rc=0 (8 incidents,
+  H_pre no-act-before-card 8/8, L median 510.5 s, A 0), criterion 3 rc=0 (byte-identical twice), criterion 4
+  rc=0. Fixed in `cycle.sh`: the login shell now sources `scripts/autonomy/env.sh` before the item's command, so
+  a criterion is verified with the tools the cycle itself has — and a control (`cargo test --test
+  no_such_test_exists`) still fails, so the fix cannot blanket-pass a criterion.
+- The A26 row carried only criteria 1 and 2 of the four above; it now carries all four, as the plan file's own
+  header requires. A dropped criterion is a gate nobody sees.
+- **Still owed before this item is DONE:** fresh-gate green on the worker's tree and the commit itself. Both are
+  the next cycle's work, and no dispatch is owed — the implementation is already on disk (resume at verify).
+- The targets are met by the numbers above, but read the caveat carried in
+  `_docs/05-operations/operator-distance.md`: with no `operator_acts` recorded yet, H_pre and A read "none
+  recorded", not "none happened", so only **L** is a live measurement today.
