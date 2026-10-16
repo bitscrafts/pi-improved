@@ -239,6 +239,47 @@ async fn wait_for_status(
     }
 }
 
+/// Waits until the journal holds at least `want` events matching `pred`, then returns the whole journal.
+///
+/// Event-based, not length-based. Under the write-behind journal an event becomes durable at the next flush, which may
+/// happen while the node that produced it is still running, so a wait on `journal.len() + 1` can return one event early
+/// and hand the caller a journal in which the event under test has not happened. Found by the loop's own lane on
+/// 2026-10-16 (commit c0b3601) while reviewing doc 064 D3; it is what has to move before that barrier can land.
+async fn wait_for_n_events<F>(
+    engine: &Arc<Engine>,
+    run_id: &RunId,
+    condition: &str,
+    want: usize,
+    pred: F,
+) -> Vec<(u64, RunEvent)>
+where
+    F: Fn(&RunEvent) -> bool,
+{
+    let deadline_secs = test_deadline_secs();
+    let stale_after = Duration::from_secs(deadline_secs);
+    let deadline = Instant::now() + Duration::from_secs(deadline_secs * 4);
+    let mut last_seen = 0usize;
+    let mut last_growth = Instant::now();
+    loop {
+        let j = engine.store.read_journal(run_id).unwrap();
+        if j.iter().filter(|(_, e)| pred(e)).count() >= want {
+            return j;
+        }
+        if j.len() > last_seen {
+            last_seen = j.len();
+            last_growth = Instant::now();
+        }
+        assert!(
+            last_growth.elapsed() < stale_after && Instant::now() <= deadline,
+            "the journal stopped growing before {condition}: last len {last_seen}, \
+             no growth for {:?}, absolute deadline {:?}",
+            last_growth.elapsed(),
+            deadline.saturating_duration_since(Instant::now())
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 async fn wait_for_journal_len(
     engine: &Arc<Engine>,
     run_id: &RunId,
@@ -356,7 +397,14 @@ async fn boss_watch_timer_suspends_for_real() {
     );
 
     pii_server::engine::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
-    let after = wait_for_journal_len(&engine, &run_id, before.len() + 1).await;
+    let after = wait_for_n_events(
+        &engine,
+        &run_id,
+        "a second tick Timer suspend",
+        2,
+        |e| matches!(e, RunEvent::Suspended { node, reason: SuspendReason::Timer { .. }, .. } if node.as_str() == "tick"),
+    )
+    .await;
 
     let timer_suspends_after = after
         .iter()
@@ -767,8 +815,14 @@ kind = "data"
 
     // The resume is async — wait for the journal to grow past the initial
     // suspend (the timer fires and forwards to heal_detect).
-    let before = engine.store.read_journal(&run_id).unwrap().len();
-    let journal = wait_for_journal_len(&engine, &run_id, before + 1).await;
+    let journal = wait_for_n_events(
+        &engine,
+        &run_id,
+        "the check node to finish",
+        1,
+        |e| matches!(e, RunEvent::NodeFinished { node, .. } if node.as_str() == "check"),
+    )
+    .await;
     let check_started = journal
         .iter()
         .filter(
@@ -936,8 +990,14 @@ kind = "data"
     .await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     pii_server::engine::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
-    let before = engine.store.read_journal(&run_id).unwrap().len();
-    let journal = wait_for_journal_len(&engine, &run_id, before + 1).await;
+    let journal = wait_for_n_events(
+        &engine,
+        &run_id,
+        "the check node to finish",
+        1,
+        |e| matches!(e, RunEvent::NodeFinished { node, .. } if node.as_str() == "check"),
+    )
+    .await;
     let ports: Vec<String> = journal
         .iter()
         .filter_map(|(_, ev)| match ev {
