@@ -20,6 +20,14 @@
 - **Queue:** A22 and A27 stay parked. Their blocker is green on HEAD, but a `fresh-gate` cannot be green while the
   working tree is red. Re-queue both — resuming the sessions already on disk, never re-deriving — once the D3
   batch lands with its test fix and the tree is clean.
+- **Second defect found by the same tick, the loop's own alarm:** at 18:15:20Z the heartbeat wrote
+  `gw-still-down` ("the gateway is down and would not start — messages cannot be delivered") while the gateway had
+  been up 19.5 h, and its start attempt was refused with "Another gateway instance is already running (PID: 73)".
+  `hermes gateway status` answers correctly but takes 13.6-14.0 s per call (measured five times), so the branch's
+  un-timed `grep -q 'Gateway is running'` is a race; and the branch `exit 0`s before the pause and question
+  branches, which is what reddens the selftest's question pair. Measured, with the minimal fix and the proof it
+  needs: `_docs/05-operations/DEFECT-2026-10-16-the-tick-reports-the-gateway-down-while-it-runs.md` (`tick.sh`
+  itself was left untouched — it is the live heartbeat).
 
 ## 2026-10-16 — the loop's own verify could not find cargo, so a correct item was failing twice
 
