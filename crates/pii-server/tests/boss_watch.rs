@@ -221,18 +221,32 @@ async fn wait_for_journal_len(
     run_id: &RunId,
     min_len: usize,
 ) -> Vec<(u64, RunEvent)> {
+    // A test that only passes on an idle host will fail in the gate forever, which is how a real defect gets
+    // normalised as "flaky". Measured 2026-10-16: this assertion fired while the gate had llama.cpp saturating all
+    // 32 cores in the same run — the journal was growing, just slower than a wall clock set for an idle machine.
+    // What this helper actually wants is "the journal REACHES min_len", so the bound is a STALL: it fails only when
+    // growth stops for the whole budget, and it also honours the original deadline as an absolute cap.
     let deadline_secs = test_deadline_secs();
-    let deadline = Instant::now() + Duration::from_secs(deadline_secs);
+    let stale_after = Duration::from_secs(deadline_secs);
+    let deadline = Instant::now() + Duration::from_secs(deadline_secs * 4);
+    let mut last_seen = 0usize;
+    let mut last_growth = Instant::now();
     loop {
         let j = engine.store.read_journal(run_id).unwrap();
         let last = j.len();
         if last >= min_len {
             return j;
         }
+        if last > last_seen {
+            last_seen = last;
+            last_growth = Instant::now();
+        }
         assert!(
-            Instant::now() <= deadline,
-            "timed out waiting for journal growth: condition `journal len >= {min_len}` \
-             (deadline {deadline_secs}s, last journal len {last})"
+            last_growth.elapsed() < stale_after && Instant::now() <= deadline,
+            "the journal stopped growing: condition `journal len >= {min_len}` \
+             (last journal len {last}, no growth for {:?}, absolute deadline {:?})",
+            last_growth.elapsed(),
+            deadline.saturating_duration_since(Instant::now())
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
