@@ -858,3 +858,101 @@ async fn join_panic_message<T>(handle: tokio::task::JoinHandle<T>) -> String {
         .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
         .expect("panic payload is a string")
 }
+
+/// Doc 064, D2: a gate attempt that TIMED OUT is inconclusive, never a failure.
+///
+/// The production runner caps a gate at two minutes, so on a busy host a timeout arrives as `pass=false` —
+/// indistinguishable from a broken tree. Two of them used to be "reproduced", which wrote a heal ledger row and
+/// escalated a human gate. This asserts the PORT instead: `inconclusive`, and never `detected`.
+#[tokio::test]
+async fn a_timed_out_gate_is_inconclusive_never_detected() {
+    let dir = scratch(&format!("timeout-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("graphs/starter")).unwrap();
+    std::fs::write(
+        dir.join("graphs/starter/boss-watch.toml"),
+        r#"
+name = "starter/boss-watch"
+entry = "tick"
+caps = ["proc"]
+
+[[node]]
+id = "tick"
+kind = "timer"
+in_ms = 1
+
+[[node]]
+id = "check"
+kind = "heal_detect"
+gate = "silent-noop-check"
+caps = ["proc"]
+
+[[node]]
+id = "done"
+kind = "transform"
+join = "any"
+value = "no-silent-noop"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "flake"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "inconclusive"
+to = "done"
+kind = "data"
+"#,
+    )
+    .unwrap();
+    let timeout = || GateResult {
+        pass: false,
+        detail: String::from("gate timed out"),
+        timed_out: true,
+    };
+    let engine = engine_with_stub_at(&dir, dir.join("graphs"), vec![timeout(), timeout()]);
+    let run_id = engine
+        .start_run("starter/boss-watch", &serde_json::json!({"cycle": 0}))
+        .unwrap();
+    wait_for_status(
+        &engine,
+        &run_id,
+        "run status == Suspended (timer fired)",
+        |s| s == RunStatus::Suspended,
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    pii_server::engine::runs::spawn_resume(Arc::clone(&engine), run_id.clone(), None).unwrap();
+    let before = engine.store.read_journal(&run_id).unwrap().len();
+    let journal = wait_for_journal_len(&engine, &run_id, before + 1).await;
+    let ports: Vec<String> = journal
+        .iter()
+        .filter_map(|(_, ev)| match ev {
+            RunEvent::NodeFinished { node, port, .. } if node.as_str() == "check" => {
+                Some(port.as_str().to_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(
+        ports.iter().any(|p| p == "inconclusive"),
+        "a timed-out gate must finish on `inconclusive`, got {ports:?}"
+    );
+    assert!(
+        !ports.iter().any(|p| p == "detected"),
+        "a timeout must NEVER be recorded as a detection, got {ports:?}"
+    );
+}
