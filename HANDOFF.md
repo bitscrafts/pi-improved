@@ -1061,3 +1061,40 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
   before the pause branch); the switch's own control (`paused -> the cycle spends nothing`, `resume clears the
   switch`) passes in the same run, so the operator switch is intact.
 
+## 2026-10-16 (12:15Z–12:35Z, autonomy skill lane) — the queue is empty, the parks are the gate, and the gate is now a named defect
+
+- **A paid review is in flight and owns the tree's next step.** `scripts/reviews/opus-boss-watch-stall.sh` resumed
+  session `f3a2a7df` at 12:13:58Z on the boss-watch defect's five questions (not a fresh session: the project state
+  it already established was not re-derived). Its stream is `/projects/_tmp/pii-review-20261016/`, and its
+  deliverable is a dated file under `_docs/06-research/`. Nothing was dispatched beside it.
+- **Why the queue reads "empty" while two items exist:** A22 (155) and A27 (160) are parked, and every row that
+  parked them is the gate, never their own criteria — A27's four answers are all `OUTCOME=gate-failed` (02:10,
+  02:53, 07:26, 08:24), and A22's owed criterion 5 *is* `bash quality-gate.sh`. The gate's red step is now
+  `boss_watch_reaches_detect_after_resume`: the journal reaches five entries and stops under CPU load, reproduced
+  twice (gate run + a 32-hog control) and written up in
+  `_docs/05-operations/DEFECT-2026-10-16-boss-watch-stalls-under-load.md`. Both closures now say so, with the cheap
+  criteria re-run green by hand on today's tree (A22 1–2, A27's doc criterion).
+- **Committed this tick (all four alone, neutral identity):** `711bd7d` the diagnosis-producing test repair (the
+  stall bound that made the failure describe itself — the tree was dirty from the 11:48Z turn and would otherwise
+  have been swept by the cycle's leftover path), `1d0066f` the review launcher, `1f41464` spec 158's closure
+  (all five criteria re-run by the orchestrator: `ctl.sh status` sections, `ctl.sh gates`, `ctl-selftest SELFTEST
+  OK` 8/8, `stop-pid 1` refused; criterion 4 deliberately not run live with a worker in flight — the verb restarts
+  the gateway), `0aa0a7c` the 155+160 closures.
+- **Rule 0f held live today, twice.** With a worker in flight the tick's gateway branch printed `gw-dead-worker` and
+  restarted nothing; `/root/.hermes/logs/gateway-restart.log` holds one self-refusal at 12:04:10Z (`Another gateway
+  instance is already running (PID 73)`), and one gateway process ran throughout. No gateway was started or
+  restarted by this tick.
+- Selftest: **33 passed, 1 failed** — the failure is section 5's pause *announcement* row, and its cause is
+  measured, not assumed: the selftest's own scratch ends with `last-reported = gw-dead-worker`, i.e. inside that row
+  the gateway-status probe did not answer under a loaded host, the gateway branch took over and exited before the
+  pause branch. The switch itself is intact: with a temp `PII_CONTROL` holding PAUSED, `TICK_DRY=1 bash
+  scripts/autonomy/tick.sh` prints the PAUSED line, and the operator's real `control` file and `operator-acts.log`
+  were untouched (the selftest uses its own).
+- **Deliberately NOT done, so the next tick does not have to guess:** no spec was authored ahead of the review
+  (059 §4 ranks 1–9 are all implemented; the next finding is the review's own file, and guessing its fix mechanism
+  would be inventing); no build was started while the review times gate builds on an otherwise idle host; A22/A27
+  were not re-dispatched (a re-dispatch spends on the same red gate).
+- **Next:** read the review's dated file, author the boss-watch fix spec + plan row with its load-reproducing test
+  and its idle-host control as exit criteria, then re-queue A22 and A27 (their sessions on disk are the resume
+  handles — do not re-derive). Disk is still the wall behind A22's criterion 5: `/projects` 95% used.
+
