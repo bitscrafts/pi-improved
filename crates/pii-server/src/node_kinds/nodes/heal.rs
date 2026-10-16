@@ -101,6 +101,8 @@ impl NodeFactory for HealFactory {
             PortName::from("ok"),
             PortName::from("detected"),
             PortName::from("flake"),
+            // A timeout is not a failure: it is inconclusive, and it finishes the run with no ledger row (doc 064, D2).
+            PortName::from("inconclusive"),
         ])
     }
 
