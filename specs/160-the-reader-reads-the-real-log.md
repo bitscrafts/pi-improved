@@ -65,3 +65,14 @@ The runtime reader (156) must judge the daemon's own records as they are actuall
   had dropped four criteria — the class the plan header warns about).
 - **Still owed:** one green fresh-gate on this tree, and nothing else. The implementation and its fixtures are
   committed; no worker dispatch is owed.
+- **2026-10-16 12:15Z, orchestrator: the four rows that parked it are all `gate-failed`, none `verify-failed`.**
+  Measured from `_tmp/autonomy/logs/cycle-last-detached.log`: A27 answered `OUTCOME=gate-failed` at 02:10, 02:53,
+  07:26 and 08:24, and was parked by the attempt cap. Its own criteria were never the reason, so the four sessions
+  on disk remain the right resume handles for when the gate is green — re-queue the row, do not re-derive it.
+- **The red it now carries is a third cause, new and neither of the two above:** `boss_watch_reaches_detect_after_resume`
+  stops growing its journal at a fixed entry under CPU load (measured twice, the second with a 32-hog control;
+  `_docs/05-operations/DEFECT-2026-10-16-boss-watch-stalls-under-load.md`), which a paid review was answering at
+  12:14Z. The cheap criterion was re-run green today: `_docs/05-operations/production-progression.md` carries
+  `starts seen 1 of 1`. The two `cargo test`/`cargo run` criteria need a build and were deliberately not run while
+  the review was timing gate builds on an otherwise idle host. "Still owed" is unchanged in kind and now has a
+  name: one green fresh-gate on this tree cannot come before the boss-watch fix.

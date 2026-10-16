@@ -61,3 +61,12 @@ non-existent product look finished. This spec removes that reading, without dele
 - **Criterion 5 (`bash quality-gate.sh` green) is the one still owed**, and it is the heavy one: the local gate
   measures the coverage floor by default, which is ~18 GB of instrumented build against the 33 GB free on
   `/projects` (95% used). It is owed to the loop, not to the worker — no dispatch is required.
+- **2026-10-16 12:15Z, orchestrator: parked again (5 attempts), and the owed criterion is now red on a defect in the
+  PRODUCT, not in this spec.** The gate's failing step is `boss_watch_reaches_detect_after_resume`, which stops
+  growing its journal at a fixed entry under CPU load — reproduced twice, the second time with a 32-hog control, and
+  recorded in `_docs/05-operations/DEFECT-2026-10-16-boss-watch-stalls-under-load.md`. A paid review was answering
+  that defect's narrow question while this row was re-read. Criteria 1-2 of this spec re-run by hand on today's tree
+  (`1d0066f`): 0 non-comment dormant kinds in `examples/pii.production.toml`, and the config carries the measured
+  `0 posts ever`. Criteria 3-5 need the gate. **A re-dispatch before the boss-watch fix lands would spend on the
+  same mechanical failure** — that is why this item stays parked and why the fix spec comes first; nothing about
+  this spec's own surface is in question.
