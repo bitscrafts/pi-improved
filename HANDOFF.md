@@ -23,6 +23,18 @@
 - **Resume handles:** A26 `session=778bdff6`, A22 `session=048de4cf`; both armed to resume at verify.
 - **Restored:** the 5-minute beat (`scripts/autonomy/watchdog.sh`) had died with the container's last restart;
   the 30-minute cron ticker was the only scheduler left (it drove the 23:29Z and 00:01Z cycles).
+- **Selftest, run alone in the background (546 s class): `31 passed, 3 failed`.** All three sit in the
+  gateway-dependent group — `paused -> the tick says so (once)`, its dependent `paused -> the tick does not
+  repeat itself`, and `an open question is carried to the phone` — while the near-miss controls in the same run
+  pass (`paused -> the cycle spends nothing`, `it is not repeated every tick`). That is the documented
+  environmental signature: `tick.sh`'s gateway branch runs *before* pause and questions, so a tick whose
+  `hermes gateway status` does not answer exits before it can print either line. Not a switch regression.
+- **New datum from that window, recorded for a fix:** the live tick took the same branch, ran
+  `setsid nohup hermes gateway run` and reported `gw-up`. The duplicate was refused by the instance already
+  running (`Another gateway instance is already running (PID 73)`), so nothing was restarted and no worker was
+  in flight — but the standing rule held only because the gateway's own port guard refused it. The branch fires
+  on *any* unanswered probe, and a probe starved by a concurrent diagnostic is enough. Owed fix: fire only on a
+  definite "not running" answer, never on an empty one.
 
 ## 2026-10-14 — the queue was not empty: a duplicate plan-row id hid spec 152 for five hours
 
