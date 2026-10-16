@@ -70,6 +70,16 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 fn engine_in(dir: &std::path::Path) -> Arc<Engine> {
+    engine_in_at(dir, graphs_dir())
+}
+
+/// [`engine_in`] with the graph directory under the caller's control.
+///
+/// A test that writes its OWN graph — a 1 ms timer, say — must load it from `dir/graphs`. With the repo's `graphs/` the
+/// real `starter/boss-watch` runs instead, on its `*/30` cron, so the timer under test is ~15 minutes away and the run
+/// never reaches the next node. Measured 2026-10-16: the journal showed `Timer { in_ms: 922796 }` where the test's own
+/// graph asked for 1 ms (doc 064, and the comment the test has carried since it was written).
+fn engine_in_at(dir: &std::path::Path, graph_dir: PathBuf) -> Arc<Engine> {
     Engine::new(EngineConfig {
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
@@ -79,7 +89,7 @@ fn engine_in(dir: &std::path::Path) -> Arc<Engine> {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
-        graph_dir: graphs_dir(),
+        graph_dir,
     })
     .unwrap()
 }
@@ -118,7 +128,18 @@ fn fail(msg: &str) -> GateResult {
 /// reference, so `try_unwrap` is infallible; this mutates the `pub reg`
 /// field directly rather than duplicating `Engine::new`'s construction.
 fn engine_with_stub(dir: &std::path::Path, results: Vec<GateResult>) -> Arc<Engine> {
-    let engine = engine_in(dir);
+    engine_with_stub_at(dir, graphs_dir(), results)
+}
+
+/// [`engine_with_stub`] with the graph directory under the caller's control: a test that writes its OWN graph must load
+/// it from `dir/graphs`, or the repo's real `starter/boss-watch` runs on its `*/30` cron instead and the node under test
+/// is ~15 minutes away (measured `Timer { in_ms: 922796 }`, doc 064).
+fn engine_with_stub_at(
+    dir: &std::path::Path,
+    graph_dir: PathBuf,
+    results: Vec<GateResult>,
+) -> Arc<Engine> {
+    let engine = engine_in_at(dir, graph_dir);
     let mut engine =
         Arc::try_unwrap(engine).unwrap_or_else(|_| panic!("engine has unexpected extra refs"));
     engine.reg.register(Arc::new(HealFactory {
@@ -707,18 +728,24 @@ kind = "data"
     )
     .unwrap();
     // Engine whose graph_dir is the SCRATCH dir (not the real graphs/).
-    let engine = Engine::new(EngineConfig {
-        workspace: dir.clone(),
-        store_path: dir.join("store.redb"),
-        model: format!("scripted:{}", fixture_path().display()),
-        sandbox: SandboxProfileName::Off,
-        route_policy: std::collections::BTreeMap::new(),
-        tiers: Vec::new(),
-        session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
-        llama_host: None,
-        graph_dir: dir.join("graphs"),
-    })
-    .unwrap();
+    //
+    // The heal_detect runner is the SCRIPTED one. The production runner shells `cargo xtask <gate>`, and because the
+    // process capability scrubs CARGO_TARGET_DIR it builds a SECOND copy of xtask in a target the gate never warms:
+    // measured 73 s idle and 103 s under load (doc 064, D1). That nested cold build is what made this unit test look
+    // like a stall — the journal reached five entries and then sat silent while xtask compiled. The behaviour this
+    // test asserts is "the watch reaches the check node after a resume", which a passing script proves. Review:
+    // _docs/06-research/064-opus-boss-watch-stall-diagnosis-2026-10-16.md, change #1.
+    //
+    // `_at` because THIS test writes its own graph into `dir/graphs` (a 1 ms timer): with the repo's `graphs/` the real
+    // `starter/boss-watch` runs on its `*/30` cron and the timer under test is ~15 minutes away.
+    let engine = engine_with_stub_at(
+        &dir,
+        dir.join("graphs"),
+        vec![GateResult {
+            pass: true,
+            detail: String::new(),
+        }],
+    );
     let run_id = engine
         .start_run("starter/boss-watch", &serde_json::json!({"cycle": 0}))
         .unwrap();
