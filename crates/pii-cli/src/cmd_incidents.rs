@@ -7,7 +7,8 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use pii_learn::incident::{IncidentConfig, iso, scan_incidents};
+use pii_learn::distance::{measure_distance, render};
+use pii_learn::incident::{IncidentConfig, iso, parse_iso, scan_incidents};
 use pii_learn::incident_runtime::scan_runtime_log;
 
 use crate::cmd_ctl::next_str;
@@ -20,15 +21,20 @@ pub(crate) fn cmd_incidents(args: &mut std::env::ArgsOs) -> ExitCode {
     let mut sub = None;
     let mut source = None;
     let mut log = None;
+    let mut since = None;
     while let Some(a) = next_str(args) {
         match a.as_str() {
             "--root" => root = next_str(args).map(PathBuf::from),
             "--new" => only_new = true,
             "--source" => source = next_str(args),
+            "--since" => since = next_str(args),
             "--log" => log = next_str(args).map(PathBuf::from),
             s if sub.is_none() && !s.starts_with("--") => sub = Some(s.to_owned()),
             _ => sub = None,
         }
+    }
+    if sub.as_deref() == Some("distance") {
+        return distance(root, since.as_deref());
     }
     if sub.as_deref() == Some("scan") && source.as_deref() == Some("runtime") {
         return log.map_or_else(usage, |log| scan_runtime(&log));
@@ -60,10 +66,25 @@ pub(crate) fn cmd_incidents(args: &mut std::env::ArgsOs) -> ExitCode {
     }
 }
 
+/// `pii incidents distance --since <date> [--root <dir>]` (spec 159): the
+/// operator distance from recorded timestamps, read-only.
+fn distance(root: Option<PathBuf>, since: Option<&str>) -> ExitCode {
+    let Some(since) = since.and_then(|s| parse_iso(&format!("{s}T00:00:00Z"))) else {
+        return usage();
+    };
+    let root = root.unwrap_or_else(|| PathBuf::from("_tmp/autonomy/logs"));
+    let _ = write!(
+        std::io::stdout(),
+        "{}",
+        render(&measure_distance(&root, since))
+    );
+    ExitCode::SUCCESS
+}
+
 fn usage() -> ExitCode {
     let _ = writeln!(
         std::io::stderr(),
-        "usage: pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file>"
+        "usage: pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii incidents distance --since <date> [--root <dir>]"
     );
     ExitCode::from(2)
 }

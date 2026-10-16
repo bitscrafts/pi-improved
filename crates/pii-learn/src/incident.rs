@@ -125,6 +125,29 @@ pub fn iso(ts: i64) -> String {
     )
 }
 
+/// `YYYY-MM-DDTHH:MM:SSZ` → Unix seconds (the inverse of [`iso`]).
+#[must_use]
+pub fn parse_iso(s: &str) -> Option<i64> {
+    let b = s.as_bytes();
+    if b.len() != 20
+        || b.get(4) != Some(&b'-')
+        || b.get(7) != Some(&b'-')
+        || b.get(10) != Some(&b'T')
+        || b.get(13) != Some(&b':')
+        || b.get(16) != Some(&b':')
+        || b.get(19) != Some(&b'Z')
+    {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    Some(
+        days_from_civil(n(0..4)?, n(5..7)?, n(8..10)?) * 86_400
+            + n(11..13)? * 3600
+            + n(14..16)? * 60
+            + n(17..19)?,
+    )
+}
+
 /// `20261011T154626Z` → Unix seconds.
 fn parse_compact(s: &str) -> Option<i64> {
     let b = s.as_bytes();

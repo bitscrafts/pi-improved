@@ -12,6 +12,7 @@
 
 mod candidate;
 mod config;
+pub mod distance;
 mod extract;
 pub mod incident;
 pub mod incident_runtime;
