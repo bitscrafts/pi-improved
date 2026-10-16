@@ -207,7 +207,13 @@ if [ -n "$VERIFY" ] && [ "$VERIFY" != "-" ]; then
   IFS=';' read -ra CMDS <<<"$VERIFY"
   for c in "${CMDS[@]}"; do
     say "verify: $c"
-    if bash -lc "$c" >>"$LOG" 2>&1; then say "  rc=0"; else say "  rc!=0"; VFAIL="$c"; fi
+    # The item's command runs in a LOGIN shell on purpose (the operator's environment), but /etc/profile
+    # RESETS PATH for root to `/usr/local/sbin:/usr/local/bin:...` — no /usr/local/cargo/bin — so the loop's
+    # own PATH contract (env.sh) is gone by the time the command runs. Measured 2026-10-16: `bash -lc 'command
+    # -v cargo'` answers nothing, while the same criterion returns rc=0 with cargo on PATH; A26's two cargo
+    # criteria were therefore recorded verify-failed twice on a tree where all four of its criteria pass.
+    # Source env.sh INSIDE the login shell so the item is verified with the tools the cycle itself has.
+    if bash -lc ". '$ROOT/scripts/autonomy/env.sh'; $c" >>"$LOG" 2>&1; then say "  rc=0"; else say "  rc!=0"; VFAIL="$c"; fi
   done
 fi
 if [ -n "$VFAIL" ]; then
