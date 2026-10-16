@@ -403,6 +403,7 @@ mod tests {
                 GateResult {
                     pass: true,
                     detail: String::new(),
+                    timed_out: false,
                 }
             } else {
                 r.remove(0)
@@ -440,6 +441,7 @@ mod tests {
         GateResult {
             pass: false,
             detail: String::from(msg),
+            timed_out: false,
         }
     }
 
@@ -448,6 +450,7 @@ mod tests {
         let f = factory(vec![GateResult {
             pass: true,
             detail: String::new(),
+            timed_out: false,
         }]);
         let node = f
             .build(&serde_json::json!({"gate": "reachability-check"}))
@@ -492,6 +495,7 @@ mod tests {
             GateResult {
                 pass: true,
                 detail: String::new(),
+                timed_out: false,
             },
         ]);
         let node = f.build(&serde_json::json!({"gate": "lint-files"})).unwrap();
