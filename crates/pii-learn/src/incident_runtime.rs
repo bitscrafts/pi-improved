@@ -55,12 +55,98 @@ struct Run {
     terminal: bool,
 }
 
+/// One start of the daemon as the log records it.
+///
+/// The rule (spec 160): every
+/// `daemon.started` record is exactly one start record; its first evidence is
+/// the start marker (`daemon.sandbox.in_force`) written before it, if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartRecord {
+    /// Unix milliseconds of the start marker, when one precedes the start.
+    pub first_evidence_ms: Option<i64>,
+    /// Unix milliseconds of the `daemon.started` record.
+    pub started_ms: i64,
+}
+
+impl StartRecord {
+    /// Time-to-notice in milliseconds: first evidence line to the start record.
+    #[must_use]
+    pub fn time_to_notice_ms(&self) -> Option<i64> {
+        self.first_evidence_ms.map(|f| self.started_ms - f)
+    }
+}
+
+/// Everything one scan read: incidents, start records, files considered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeScan {
+    /// Incidents, ordered by when they became detectable.
+    pub incidents: Vec<RuntimeIncident>,
+    /// Start records in log order (rotated files first, oldest to newest).
+    pub starts: Vec<StartRecord>,
+    /// Files read: rotated siblings `<name>.<N>` (oldest first), then `log`.
+    pub files: Vec<String>,
+}
+
+/// `log` preceded by its rotated siblings `<name>.<N>`, oldest (highest N) first.
+fn with_rotated(log: &Path) -> Vec<std::path::PathBuf> {
+    let (Some(dir), Some(name)) = (log.parent(), log.file_name().and_then(|n| n.to_str())) else {
+        return vec![log.to_path_buf()];
+    };
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    let mut rotated: Vec<(u64, std::path::PathBuf)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let n = e
+                .file_name()
+                .to_str()?
+                .strip_prefix(name)?
+                .strip_prefix('.')?
+                .parse::<u64>()
+                .ok()?;
+            Some((n, e.path()))
+        })
+        .collect();
+    rotated.sort_by_key(|b| std::cmp::Reverse(b.0));
+    let mut out: Vec<_> = rotated.into_iter().map(|(_, p)| p).collect();
+    out.push(log.to_path_buf());
+    out
+}
+
 /// Incidents in the runtime log at `log`.
 ///
 /// # Errors
 /// Fails if the log cannot be read.
 pub fn scan_runtime_log(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Vec<RuntimeIncident>> {
-    let text = String::from_utf8_lossy(&std::fs::read(log)?).into_owned();
+    scan_runtime(log, cfg).map(|s| s.incidents)
+}
+
+/// Incidents, start records and files of the runtime log at `log` and its
+/// rotated siblings (`--log-keep-files`): rotation is not a blind spot.
+///
+/// A start marker with no `daemon.started` after it is a failed start only in a
+/// log that carries the daemon's lifecycle records (`daemon.started` or
+/// `daemon.stopped`): the audit log holds start markers alone, so there the
+/// absence of a readiness record is no evidence of anything.
+///
+/// # Errors
+/// Fails if a file cannot be read.
+#[allow(clippy::too_many_lines)] // one pass over the log; splitting it scatters the state
+pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<RuntimeScan> {
+    let paths = with_rotated(log);
+    let mut text = String::new();
+    for p in &paths {
+        text.push_str(&String::from_utf8_lossy(&std::fs::read(p)?));
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+    }
+    let files = paths.iter().map(|p| p.display().to_string()).collect();
     let source = log.display().to_string();
     let mk = |fp: String, count: u64, first: i64, last: i64, opened: i64| RuntimeIncident {
         fingerprint: fp,
@@ -76,21 +162,33 @@ pub fn scan_runtime_log(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Vec
     let mut log_end = i64::MIN;
     let mut starting: Option<i64> = None;
     let mut running: Option<i64> = None;
+    let mut starts = Vec::new();
+    let mut mark_ms: Option<i64> = None;
+    let mut lifecycle = false;
     for line in text.lines() {
-        let Some((kind, ts, run)) = parse(line) else {
+        let Some((kind, ms, run)) = parse(line) else {
             continue;
         };
+        let ts = ms / 1000;
         log_end = log_end.max(ts);
         if kind == START_MARK {
+            mark_ms = Some(ms);
             if let Some(t) = starting.replace(ts) {
                 out.push(mk("daemon-start-not-ready".to_owned(), 1, t, t, ts));
             }
         } else if kind == pii_observe::names::DAEMON_STARTED {
+            lifecycle = true;
+            starts.push(StartRecord {
+                first_evidence_ms: mark_ms.take(),
+                started_ms: ms,
+            });
             starting = None;
             if let Some(t) = running.replace(ts) {
                 out.push(mk("daemon-restart-unexpected".to_owned(), 1, t, ts, ts));
             }
         } else if kind == pii_observe::names::DAEMON_STOPPED {
+            lifecycle = true;
+            mark_ms = None;
             running = None;
             starting = None;
         } else if let Some(r) = REFUSALS.iter().find(|r| **r == kind) {
@@ -110,6 +208,9 @@ pub fn scan_runtime_log(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Vec
     }
     if let Some(t) = starting {
         out.push(mk("daemon-start-not-ready".to_owned(), 1, t, t, log_end));
+    }
+    if !lifecycle {
+        out.retain(|i| i.fingerprint != "daemon-start-not-ready");
     }
     out.extend(
         runs.into_iter()
@@ -136,7 +237,11 @@ pub fn scan_runtime_log(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Vec
         }
     }
     out.sort_by(|a, b| (a.opened_at, &a.fingerprint).cmp(&(b.opened_at, &b.fingerprint)));
-    Ok(out)
+    Ok(RuntimeScan {
+        incidents: out,
+        starts,
+        files,
+    })
 }
 
 /// Bursts of at least `threshold` timestamps, each within the window of the
@@ -165,15 +270,14 @@ fn clusters(mut ts: Vec<i64>, cfg: &IncidentConfig) -> Vec<(i64, i64, u64, i64)>
     out
 }
 
-/// `(kind, unix seconds, run id)` of one log line; `None` if it is not an event.
+/// `(kind, unix milliseconds, run id)` of one log line; `None` if it is not an event.
 fn parse(line: &str) -> Option<(String, i64, Option<String>)> {
     let v: serde_json::Value = serde_json::from_str(line).ok()?;
     let kind = v.get("kind")?.as_str()?.to_owned();
     let ts = v
         .get("ts_ms")
         .and_then(serde_json::Value::as_i64)
-        .unwrap_or(0)
-        / 1000;
+        .unwrap_or(0);
     let run = v.get("run").and_then(|r| r.as_str()).map(str::to_owned);
     Some((kind, ts, run))
 }

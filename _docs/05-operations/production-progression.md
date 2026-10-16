@@ -46,3 +46,9 @@ progression asks you for anything.
 - If `pii health` cannot prove the deployed revision, M5 is rolled back and the deploy script is the defect.
 - If the deployed daemon produces no incident-worthy records in a week, M6 is premature and 150's sources get
   revisited rather than widened "just in case".
+
+## Measured: the runtime reader on the production log (spec 160, 2026-10-16)
+
+`pii incidents scan --source runtime --log <copy of production pii.log>`: starts seen 1 of 1 (grep of
+`daemon.started` agrees), false incidents 0 (the audit log copy: 0, was 5), time-to-notice = 22 ms (start
+marker to `daemon.started`). Rotated siblings `pii.log.N` are read with the current file.

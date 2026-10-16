@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use pii_learn::distance::{measure_distance, render};
 use pii_learn::incident::{IncidentConfig, iso, parse_iso, scan_incidents};
-use pii_learn::incident_runtime::scan_runtime_log;
+use pii_learn::incident_runtime::scan_runtime as scan_runtime_full;
 
 use crate::cmd_ctl::next_str;
 
@@ -93,10 +93,19 @@ fn usage() -> ExitCode {
 /// read-only, with the detection latency against the configured window.
 fn scan_runtime(log: &std::path::Path) -> ExitCode {
     let cfg = IncidentConfig::default();
-    match scan_runtime_log(log, &cfg) {
-        Ok(found) => {
+    match scan_runtime_full(log, &cfg) {
+        Ok(scan) => {
             let mut out = std::io::stdout();
-            for i in &found {
+            for s in &scan.starts {
+                let _ = writeln!(
+                    out,
+                    "start ts={} time_to_notice_ms={}",
+                    iso(s.started_ms / 1000),
+                    s.time_to_notice_ms()
+                        .map_or_else(|| "none".to_owned(), |t| t.to_string())
+                );
+            }
+            for i in &scan.incidents {
                 let _ = writeln!(
                     out,
                     "incident {} count={} first_seen={} last_seen={} latency_secs={} window_secs={} source={}",
@@ -109,6 +118,13 @@ fn scan_runtime(log: &std::path::Path) -> ExitCode {
                     i.source
                 );
             }
+            let _ = writeln!(
+                out,
+                "starts_considered={} incidents={} files={}",
+                scan.starts.len(),
+                scan.incidents.len(),
+                scan.files.len()
+            );
             ExitCode::SUCCESS
         }
         Err(e) => {
