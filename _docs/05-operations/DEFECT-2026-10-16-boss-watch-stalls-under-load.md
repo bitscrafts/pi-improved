@@ -61,3 +61,40 @@ Two different loads, same point, same shape.
 The narrow question, not a full sweep: *why does the boss watch stop at a fixed journal entry under CPU
 contention, and which of the three hypotheses does the instrumentation eliminate?* Give it this file, the test,
 the watch's source, and the two logs — and ask for the fix that makes the failure diagnosable by itself.
+
+## 2026-10-16 18:25Z — the defect is cleared on HEAD, and the in-flight barrier reddens two length-waiting tests
+
+Measured by the orchestrator on the tick that owns the plan queue. The working tree carried one uncommitted hunk
+in `crates/pii-graph/src/sched/dispatch.rs` (a second lane's in-flight D3 work, session
+`20261006_131058_33628f`, file mtime 17:24:09Z): a `flush()` placed between the `NodeStarted` append and
+`run_caught`. It was **not touched and not committed** by this tick.
+
+1. **HEAD is green for the whole file.** `git worktree add --detach /projects/_tmp/wt-d3check 6419a70`, then
+   `CARGO_TARGET_DIR=/projects/pi-improved/target cargo test -p pii-server --test boss_watch` →
+   `test result: ok. 9 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.36s`, and it
+   includes both `boss_watch_reaches_detect_after_resume` and `boss_watch_gate_suspends_and_approve_resumes`.
+   The stall does not reproduce on HEAD, and the file no longer pays a cold nested xtask build (0.36 s).
+
+2. **The same command on the working tree (with the uncommitted barrier) → `7 passed; 2 failed`:**
+   `a_timed_out_gate_is_inconclusive_never_detected` (`a timed-out gate must finish on \`inconclusive\`, got []`)
+   and `boss_watch_timer_suspends_for_real` (`spawn_resume must genuinely re-enter dispatch`, `left: 1 right: 2`).
+   Both fail alone under `--exact --test-threads=1`, so this is not test interference.
+
+3. **Cause, read from the test:** both wait by *length*, not by event —
+   `wait_for_journal_len(&engine, &run_id, before.len() + 1)` (`boss_watch.rs:359` and `:940`). Under the
+   write-behind journal a `+1` becomes visible only at a flush, i.e. after the node finished. The barrier flushes
+   `NodeStarted` *before* the node runs, so the wait returns one event early and the assertion then reads a journal
+   in which `check` has not finished: `ports = []` for the timeout test, the first suspend only for the timer test.
+
+4. **What the barrier therefore owes:** the two waits must be by event, not by length (wait for the `check` node's
+   `NodeFinished`, or for the resumed `Suspended { reason: Timer }`), before the barrier can be committed. The
+   barrier is what doc 064 R1 asks for; the tests' progress rule is the thing that has to move with it.
+
+Queue state at that moment: **A22 (155) and A27 (160) stay parked.** The blocker both closures named —
+`boss_watch_reaches_detect_after_resume` — is green on HEAD, but the working tree is red, so a `fresh-gate` on it
+cannot be green either. Re-queue the two rows (resume the sessions already on disk, do not re-derive them) once
+the D3 batch lands with its test fix and the tree is clean.
+
+Cost of this check: the worktree shared the main target dir (`CARGO_TARGET_DIR=/projects/pi-improved/target`),
+2m03s of build and negligible disk on a 96 %-full volume (25 GB free). The worktree and its log are left in place:
+`/projects/_tmp/wt-d3check`, `_tmp/autonomy/logs/head-boss_watch.out`.

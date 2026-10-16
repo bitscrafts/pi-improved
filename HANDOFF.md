@@ -2,6 +2,25 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-16 18:25Z — the boss-watch defect is cleared on HEAD, and the in-flight D3 barrier reddens two tests that wait on journal length
+
+- **The test that parked A22 (155) and A27 (160) is green on HEAD.** In a `--detach` worktree at `6419a70`,
+  `cargo test -p pii-server --test boss_watch` → `9 passed; 0 failed; 1 ignored ... finished in 0.36s`, and it
+  includes `boss_watch_reaches_detect_after_resume`. The stall no longer reproduces, and the file no longer pays
+  a cold nested xtask build.
+- **The working tree carries a second lane's uncommitted D3 hunk** (`crates/pii-graph/src/sched/dispatch.rs`,
+  session `20261006_131058_33628f`, mtime 17:24:09Z): a `flush()` placed between the `NodeStarted` append and
+  `run_caught`. It was left untouched and uncommitted. With it present the same file is `7 passed; 2 failed`,
+  alone and single-threaded (so not interference): `a_timed_out_gate_is_inconclusive_never_detected` and
+  `boss_watch_timer_suspends_for_real`. Both wait on `wait_for_journal_len(..., before.len() + 1)` — a *length*
+  wait that write-behind only satisfies at a flush; the barrier flushes `NodeStarted` before the node runs, so
+  both read one event early. The measurement is in
+  `_docs/05-operations/DEFECT-2026-10-16-boss-watch-stalls-under-load.md`; the fix owed with the barrier is a wait
+  by event (the `check` node's finish, the resumed `Suspended { Timer }`), not a wait by length.
+- **Queue:** A22 and A27 stay parked. Their blocker is green on HEAD, but a `fresh-gate` cannot be green while the
+  working tree is red. Re-queue both — resuming the sessions already on disk, never re-deriving — once the D3
+  batch lands with its test fix and the tree is clean.
+
 ## 2026-10-16 — the loop's own verify could not find cargo, so a correct item was failing twice
 
 - **Finding (A26 / spec 159, the operator distance):** both cycles that ran this item recorded `verify-failed`
