@@ -40,3 +40,24 @@ One executable, `/root/.hermes/scripts/ctl.sh`, owns every way work can be refus
 
 ## Milestone link
 `_docs/05-operations/RESUME-REGISTER.md`, and the incident record `INCIDENT-2026-10-14-the-gate-convoy.md`; this spec is the standing answer to "there are holes everywhere".
+
+## Closure
+- **2026-10-16 12:30Z, orchestrator: all five criteria re-run independently on the committed tree, rc=0.** `ctl.sh
+  status` prints every section the criterion names — `gates`, `schedulers`, `loop`, `workers`, `deployments`,
+  `UNOWNED` — and reads the live system rather than a hard-wired inventory: 3 gate registrations across
+  `config.yaml` and this project's `.claude/settings.json`, 7 of 11 schedulers enabled with their next fire times,
+  `control: RUNNING at 2026-10-15T12:35:36Z (resumed by human)` and `cycle: none running`. `ctl.sh gates` prints one
+  line per registration with file and line. `ctl-selftest.sh` printed `SELFTEST OK` with 8 PASS rows: the injected
+  third registration reported under `UNOWNED`, `restart` detaching in 563 ms, `restart` refusing while naming the
+  in-flight pid, `gate off` reaching both registrations with a timestamped backup for each, `stop-pid` mismatched
+  signalling nothing, and `stop-pid 1` refused. `ctl.sh stop-pid 1` → `REFUSED: pid 1 is not ours (init/invalid)`.
+- **The in-flight refusal was exercised against a real paid worker, not only a fixture.** The check ran while the
+  boss-watch review (`claude -p`, opus) held the host, and the day's tick shows rule 0f working live: with a worker
+  in flight the tick's gateway branch reported `gw-dead-worker` and restarted nothing. One gateway process before
+  and after (PID 73, up 13 h 34 m), and `/root/.hermes/logs/gateway-restart.log` holds a single refusal from
+  12:04:10Z — `Another gateway instance is already running (PID 73)` — so the guard held and no second gateway was
+  ever launched.
+- **Criterion 4 was not re-run live, deliberately.** With a paid worker in flight rule 0f makes `ctl.sh restart`
+  refuse by design, and the live verb is the one action this loop must never take while a worker is in flight; its
+  contract was exercised in the same run by the selftest's fixture command (`CTL_RESTART_CMD`), measured at 563 ms
+  against the 2 s bound.
