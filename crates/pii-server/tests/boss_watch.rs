@@ -108,6 +108,7 @@ impl GateRunner for StubRunner {
             GateResult {
                 pass: true,
                 detail: String::new(),
+                timed_out: false,
             }
         } else {
             r.remove(0)
@@ -119,6 +120,7 @@ fn fail(msg: &str) -> GateResult {
     GateResult {
         pass: false,
         detail: String::from(msg),
+        timed_out: false,
     }
 }
 
@@ -383,6 +385,7 @@ fn boss_watch_green_completes() {
         vec![GateResult {
             pass: true,
             detail: String::new(),
+            timed_out: false,
         }],
     );
     let spec = check_entry_spec(&engine);
@@ -744,6 +747,7 @@ kind = "data"
         vec![GateResult {
             pass: true,
             detail: String::new(),
+            timed_out: false,
         }],
     );
     let run_id = engine

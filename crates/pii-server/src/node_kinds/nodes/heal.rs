@@ -19,6 +19,10 @@ pub struct GateResult {
     pub pass: bool,
     /// Output preview (first 512 bytes) for the ledger detail + signature.
     pub detail: String,
+    /// True when the attempt hit the runner's time budget instead of the gate reporting a failure. A timeout is not
+    /// evidence of a broken tree, so it must never be recorded as one — measured 2026-10-16: a two-minute cap turned a
+    /// busy host into a "reproducible gate failure" with a ledger row and an escalation (doc 064, D2).
+    pub timed_out: bool,
 }
 
 /// Executes one gate. The production runner shells `cargo xtask <gate>`;
@@ -59,6 +63,7 @@ impl GateRunner for CargoXtaskRunner {
         Ok(GateResult {
             pass: out.exit_code == 0 && !out.timed_out,
             detail: truncate(&detail),
+            timed_out: out.timed_out,
         })
     }
 }
@@ -132,6 +137,19 @@ impl GraphNode for HealDetectNode {
         }
         // Reproduce before recording (guardrail): run the SAME check again.
         let second = self.runner.run_gate(ctx, &self.gate)?;
+        // A timeout is inconclusive, not a failure: the tree may be fine and the host merely busy. It writes NO ledger
+        // row and never escalates a human gate. (Doc 064, D2.)
+        if first.timed_out || second.timed_out {
+            let detail = if first.timed_out {
+                first.detail
+            } else {
+                second.detail
+            };
+            return Ok(Outcome::Next {
+                port: PortName::from("inconclusive"),
+                value: serde_json::json!({"reason": "timeout", "detail": detail}),
+            });
+        }
         if second.pass {
             // Flake — no ledger row.
             return Ok(Outcome::Next {

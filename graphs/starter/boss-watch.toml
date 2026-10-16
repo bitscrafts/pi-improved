@@ -68,6 +68,15 @@ port = "flake"
 to = "done"
 kind = "data"
 
+# A timeout is INCONCLUSIVE, never a failure: the host may simply have been busy. It finishes the run with NO ledger row
+# and no escalation to a human gate (measured 2026-10-16, doc 064 D2: a two-minute cap turned a busy host into a
+# "reproducible gate failure").
+[[edge]]
+from = "check"
+port = "inconclusive"
+to = "done"
+kind = "data"
+
 [[edge]]
 from = "check"
 port = "detected"
