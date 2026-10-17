@@ -2,6 +2,43 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-17 00:15Z — no gated item could close: the export's gate built `pii` into a cache while three tests looked for it in the tree
+
+- **The blocker of both parked rows, named.** A22 (155) and A27 (160) were parked `gate-failed`; the gate's own
+  export (`/projects/_tmp/fresh-gate-624085`, run 22:53) failed with
+  `spawn /projects/_tmp/fresh-gate-624085/target/debug/pii: No such file or directory` in three `pii-worker`
+  unit tests — and that export's `target/` holds no `debug/` at all, while `_tmp/gate-target/debug/pii`
+  (348 MB, 23:30) is where its `build` step actually wrote. `env.sh` exports
+  `FRESH_GATE_TARGET=/projects/pi-improved/_tmp/gate-target`, `cycle.sh:27` sources it, and
+  `fresh_gate.rs:199-206` sets the exported gate's `CARGO_TARGET_DIR` to it — so the binary is never in the
+  tree. Three helpers resolved it as `env!("CARGO_MANIFEST_DIR")/../../target/debug/pii`. **No cycle-run
+  `fresh-gate` could be green while this held, which is why every gated item since 2026-10-15 failed on the
+  harness and not on its work.**
+- **The class, measured rather than assumed** (`_tmp/autonomy/proof-red.sh`, log
+  `_tmp/autonomy/logs/proof-red-20261017.log`): with the tree's binary moved aside (`mv`, restored by the
+  script's trap) and cargo aimed at another target dir, `pii-worker --lib control::` was `3 failed` and
+  `pii-worker --test supervisor` was **`0 passed; 10 failed`** — thirteen tests in two files. The export only
+  reported three because cargo aborts the `test (lib/bins/tests)` step at the first failing target.
+- **Fix** (`crates/pii-worker/src/control.rs`, `crates/pii-worker/tests/supervisor.rs` — four call sites,
+  including the two wrapper scripts written as text — and `crates/pii-server/src/engine/inline_measure_tests.rs`):
+  resolve `pii` from `current_exe()` (pop the test binary, pop `deps`), i.e. from the target dir the CALLER
+  built into. No assertion weakened, no timeout raised, no test skipped. Proven green in the same configuration
+  (`logs/proof-green-20261017.log`: `5 passed; 0 failed` and `10 passed; 0 failed` with the tree path absent);
+  `fmt` clean, `clippy --workspace --all-targets -D warnings` clean. Written up in
+  `_docs/05-operations/DEFECT-2026-10-17-the-export-gate-builds-its-binary-somewhere-else.md`.
+- **Not claimed:** a loop-run `fresh-gate` PASS on HEAD. That is the next cycle's run on A22 — and it is the
+  acceptance this fix exists to make reachable.
+- **A second blocker, found by running the gate's own clippy step on HEAD:** `clippy --workspace --all-targets
+  -- -D warnings` failed on `crates/pii-server/tests/boss_watch.rs:922` — `a_timed_out_gate_is_inconclusive_never_detected`
+  is 88 lines against the repo's `too-many-lines-threshold = 80` (`clippy.toml`). It is the D2 proof test added
+  the day before, and it is the same error the 22:53 export reported; the fix that followed that run
+  (`d6226ff`) was about the four `GateResult` constructions instead. Marked `#[allow(clippy::too_many_lines)]`
+  with a reason, which is what this file already does at line 625 and what 20 other cohesive tests do — the
+  test itself is untouched.
+- **Queue:** A22 and A27 are back to `status=needs-review`, `last=worker-ok …`, so the next cycles resume at
+  verify (no worker is paid twice) now that the tree is clean and the gate can be green. Both stay one
+  `fresh-gate` away from `done-satisfied` — their work is already committed (`7debbdf`, and 160's in HEAD).
+
 ## 2026-10-16 18:25Z — the boss-watch defect is cleared on HEAD, and the in-flight D3 barrier reddens two tests that wait on journal length
 
 - **The test that parked A22 (155) and A27 (160) is green on HEAD.** In a `--detach` worktree at `6419a70`,

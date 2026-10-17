@@ -919,6 +919,7 @@ async fn join_panic_message<T>(handle: tokio::task::JoinHandle<T>) -> String {
 /// indistinguishable from a broken tree. Two of them used to be "reproduced", which wrote a heal ledger row and
 /// escalated a human gate. This asserts the PORT instead: `inconclusive`, and never `detected`.
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // reason: one cohesive scenario — the inline graph, the stub's verdicts and the port assertion
 async fn a_timed_out_gate_is_inconclusive_never_detected() {
     let dir = scratch(&format!("timeout-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("graphs/starter")).unwrap();
