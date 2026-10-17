@@ -51,3 +51,25 @@ A39 169 · A40 171.
   that no step read. The fix landed only after the correction.
 · The evening cost the user roughly **1 h 40 m** of console stillness, in two cold gates, for work that option A40
   (two-tier gate) removes permanently.
+
+## THE MEASUREMENT THAT MATTERS — added 07:12Z, from the cycle that ran while the user slept
+
+    [05:26:35Z] cycle starts, item=A22 (155)
+    [05:27:16Z] worker rc=0 session=048de4cf-…            ← THE WORKER TOOK 41 SECONDS
+    [05:27:16Z] verify: 4 criteria, each rc=0             ← the spec's own checks all passed
+    [05:27:17Z] verify: bash quality-gate.sh
+    [07:12:06Z] rc!=0 → OUTCOME=verify-failed ITEM=A22    ← THE GATE TOOK 1 HOUR 45 MINUTES
+
+  ⇒ 99.6% of a cycle is the gate. The model work is 41 seconds. Every hour of tonight's silence was spent compiling,
+    not thinking, and the warm-cache change (1759122) did not cure it — because the `build` and `test` cache directories
+    were brand new and had to be filled, and because `clippy (llamacpp)` alone is 720 s of it.
+
+  AND IT STILL FAILED. So the loop parked A22 again, and the queue behind it stops until a person clears it — the
+  deadlock A39/spec 169 describes, now with a 1 h 45 m price tag attached to every attempt.
+
+## WHAT THIS CHANGES
+  The overnight job (3efcc28a27c1) keeps cycling every 30 minutes, but each cycle is hostage to a 1 h 45 m gate, so expect
+  FEWER results by morning than anyone would like — that is the honest forecast, not a promise.
+  The cure is not another cache: it is A40/spec 171 (routine gate in the repo, warm, per item; the fresh export only
+  before a deploy) plus A36/spec 170 (drop the 720 s llamacpp step). Both are queued, both are small, and until they land
+  the loop's throughput is one item per two hours at best.
