@@ -8,15 +8,15 @@ fmt|cargo fmt --all --check
 # F-01 fix: clippy's --all-targets build writes libschemars/libserde_json (and other
 # proc-macro-generated) rlibs into target/debug/deps with a feature-unification hash that differs from
 # the plain `cargo test` build; rustdoc's doctest linker then fails with E0463. Own target dir.
-clippy|CARGO_TARGET_DIR=target/clippy-gate cargo clippy --workspace --all-targets -- -D warnings
+clippy|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/clippy-gate cargo clippy --workspace --all-targets -- -D warnings
 
 # Spec 89 (N4): `llamacpp` is off in every other step, so its provider and required-features tests
 # would be compiled by no step. Compile + lint only; real-model tests stay #[ignore]d. Own target dir.
-clippy (llamacpp)|CARGO_TARGET_DIR=target/llamacpp-gate cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings
+clippy (llamacpp)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/llamacpp-gate cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings
 
 # Spec 121 (R6): the real GPIO backend (`hal-gpiod`) is compiled and linted so it cannot rot; NEVER run
 # (no /dev/gpiochip* here). Own target dir.
-clippy (hal-gpiod)|CARGO_TARGET_DIR=target/hal-gate cargo clippy -p pii-hal --features hal-gpiod --all-targets -- -D warnings
+clippy (hal-gpiod)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/hal-gate cargo clippy -p pii-hal --features hal-gpiod --all-targets -- -D warnings
 
 # pii-worker's supervisor integration tests spawn the real `pii` binary at target/debug/pii (a fixed
 # path), so it must exist before `cargo test` runs.
@@ -26,11 +26,11 @@ clippy (hal-gpiod)|CARGO_TARGET_DIR=target/hal-gate cargo clippy -p pii-hal --fe
 # right to spawn the real binary.
 build|cargo build --workspace && mkdir -p target/debug && cp -f "${CARGO_TARGET_DIR:-target}/debug/pii" target/debug/pii
 
-test (lib/bins/tests)|cargo test --workspace --lib --bins --tests
+test (lib/bins/tests)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/test-gate cargo test --workspace --lib --bins --tests
 
 # F-01: doctests build each lib WITHOUT cfg(test); sharing target/debug/deps with the step above can
 # pick a stale rlib hash (E0463). Own CARGO_TARGET_DIR so it always builds its own libs.
-test (doc)|CARGO_TARGET_DIR=target/doctest-gate cargo test --workspace --doc
+test (doc)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/doctest-gate cargo test --workspace --doc
 
 # Spec 108 R2: line coverage of lib/bins/tests (no doctests) must stay at or above coverage-floor.txt.
 # Needs cargo-llvm-cov + the llvm-tools component; their absence is a FAIL, not a skip. Own target dir.
