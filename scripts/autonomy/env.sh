@@ -22,3 +22,11 @@ export IS_SANDBOX="${IS_SANDBOX:-1}"
 # workspace build, while _tmp/gate-target never even existed on disk. The gate's TREE stays fresh either way; only the
 # compiler cache is reused. This is the name the gate actually reads.
 export FRESH_GATE_TARGET="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"
+
+# BUILD PARALLELISM IS CAPPED. Measured 2026-10-17 04:52: load 81-88 on a 32-core machine with several workspace builds in
+# flight (one worker, its clippy/check/test steps, and whatever else was building). Each one was free to claim all 32
+# cores, so every model turn waited minutes on compiling and the account window stopped advancing for two hours while the
+# console sat at 31%. Slower per build, far faster overall; the gate's own CMAKE setting is now bounded by the same idea.
+: "${CARGO_BUILD_JOBS:=8}"
+: "${CMAKE_BUILD_PARALLEL_LEVEL:=8}"
+export CARGO_BUILD_JOBS CMAKE_BUILD_PARALLEL_LEVEL
