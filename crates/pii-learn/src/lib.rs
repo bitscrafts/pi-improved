@@ -18,6 +18,7 @@ pub mod incident;
 pub mod incident_runtime;
 pub mod incident_store;
 mod learner;
+pub mod loop_events;
 mod promote;
 mod scan;
 pub mod store;

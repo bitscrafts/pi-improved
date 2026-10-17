@@ -33,6 +33,7 @@ CID=$(date -u +%Y%m%dT%H%M%SZ)
 LOG=$LOGD/cycle-$CID.log
 say(){ printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 say "=== cycle $CID"
+. "$ROOT/scripts/autonomy/report.sh"   # spec 173: lifecycle lines go to pii as events (fail-open)
 # The launcher above already holds the lock for this process. A second flock on a NEW descriptor of the same file
 # conflicts with it (flock is per open file description), so re-taking it here refused every cycle (02:01-04:01).
 if [ "${PII_CYCLE_LOCKED:-}" != 1 ]; then
@@ -88,6 +89,7 @@ fi
 # re-verified 23 times without ever closing). Split on a non-whitespace separator so an empty field stays empty.
 IFS=$'\x1f' read -r ITEM SPEC BRIEF TITLE VERIFY PATHS GATE ATTEMPTS RSID <<<"${PICK//$'\t'/$'\x1f'}"
 say "item=$ITEM spec=$SPEC attempts=$ATTEMPTS title=$TITLE"
+report loop.cycle.start "item=$ITEM spec=$SPEC attempts=$ATTEMPTS"
 if [ ! -f "specs/$SPEC" ]; then
   say "NO SPEC at specs/$SPEC — the agent must AUTHOR it before this cycle can spend anything"
   echo "OUTCOME=needs-spec ITEM=$ITEM TITLE=$TITLE"; exit 6
@@ -174,6 +176,7 @@ else
   if [ "${ATTEMPTS:-0}" -ge 3 ]; then
     say "attempts=$ATTEMPTS reached the cap of 3 — PARKING for a person, not dispatching again"
     python3 scripts/autonomy/state.py set "$ITEM" status=parked attempts="$ATTEMPTS" "last=parked after $ATTEMPTS attempts: the same mechanical failure repeated, so a fourth dispatch would spend without new information"
+    report loop.park "item=$ITEM attempts=$ATTEMPTS"
     echo "OUTCOME=parked-attempt-cap ITEM=$ITEM"; exit 11
   fi
   say "dispatching spec number $N"
@@ -181,6 +184,7 @@ else
   WRC=$?
   NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
   say "worker rc=$WRC session=${NEWSID:-none}"
+  report loop.dispatch "item=$ITEM session=${NEWSID:-none} rc=$WRC"
   # The worker may have been refused by the account's WINDOW rather than stopped by its work. The 1-turn probe can
   # say OPEN while the worker is refused (measured 2026-10-13), so read the worker's OWN log for the CLI's words and
   # honour the reset it states — never blind-retry, never shrink scope (the project's oldest operational rule).
@@ -218,9 +222,12 @@ if [ -n "$VERIFY" ] && [ "$VERIFY" != "-" ]; then
 fi
 if [ -n "$VFAIL" ]; then
   python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) "last=verify-failed"
-  [ $((ATTEMPTS+1)) -ge 3 ] && python3 scripts/autonomy/state.py set "$ITEM" status=parked "last=3-strikes"
+  [ $((ATTEMPTS+1)) -ge 3 ] && { python3 scripts/autonomy/state.py set "$ITEM" status=parked "last=3-strikes"; report loop.park "item=$ITEM 3-strikes"; }
+  report loop.verify "item=$ITEM FAILED: $VFAIL"
   say "VERIFY FAILED: $VFAIL"; echo "OUTCOME=verify-failed ITEM=$ITEM CMD=$VFAIL"; exit 9
 fi
+
+report loop.verify "item=$ITEM ok"
 
 # 5) the gate — a green verify is not a green gate
 # Only an explicit 0 / - / none skips the gate: rows A22-A24 named "quality-gate.sh" here, failed an `= 1` test, and
@@ -247,6 +254,7 @@ if [ -n "$GATE_ON" ]; then
     GTRC=$?
     if [ "$GTRC" -eq 0 ]; then
       python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "fresh-gate PASS (phase marked: gated)"
+      report loop.gate.verdict "item=$ITEM pass"
     elif [ "$GTRC" -eq 124 ]; then
       # A KILLED gate is not a verdict. Decided 2026-10-14 (DECISION-fresh-worktrees-and-a-resumable-gate-build.md
       # §2): a timeout gets its own outcome, because "FAILED" must mean the tree is wrong, and a gate that says
@@ -258,6 +266,8 @@ if [ -n "$GATE_ON" ]; then
       echo "OUTCOME=gate-timeout ITEM=$ITEM SECS=$GATE_TIMEOUT"; exit 14
     else
       python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-failed
+      GSTEP=$(grep -E 'failed steps:' "$LOG" 2>/dev/null | tail -1 | cut -c1-200)
+      report loop.gate.verdict "item=$ITEM FAILED ${GSTEP:-failing step not named in the log}"
       say "fresh-gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
     fi
   fi
@@ -282,6 +292,7 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
   git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" commit -q \
     -m "$SPEC: automated pass — $TITLE (spec + criteria in specs/$SPEC; gate green)" || { say "commit failed"; exit 11; }
   say "committed: $(git log --oneline -1)"
+  report loop.commit "item=$ITEM rev=$(git rev-parse --short HEAD)"
 fi
 python3 scripts/autonomy/state.py set "$ITEM" status=done attempts=$((ATTEMPTS+1)) "last=committed $(git rev-parse --short HEAD)"
 say "ITEM $ITEM DONE"; echo "OUTCOME=done ITEM=$ITEM HEAD=$(git rev-parse --short HEAD)"
