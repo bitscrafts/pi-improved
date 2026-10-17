@@ -117,6 +117,15 @@ if [ -f "$Q" ] && grep -q '^- \[ \]' "$Q"; then
   say_once "$KEY" "pii autonomy · $OPEN open question(s) for you:" "$(grep '^- \[ \]' "$Q" | head -3 | sed 's/^- \[ \] //' | cut -c1-160)"
 fi
 
+# 2b-2) the review becomes queue rows (spec 167, doc 066): the importer copies ```queue blocks and refuses what it
+#       cannot verify; it takes the cycle lock itself (exit 75 = held, nothing read). It commits only the files it wrote.
+if [ -z "${TICK_DRY:-}" ]; then
+  python3 scripts/autonomy/plan_import.py import _docs/06-research/*.md 2>>"$LOGD/plan-import.log" | while IFS=$'\t' read -r _ BID RID SPECF; do
+    git add -- scripts/autonomy/plan.tsv scripts/autonomy/plan.provenance.tsv "$SPECF" &&
+      git -c user.name="Marcelo Correa" -c user.email="mvcorrea@lnx" commit -q -m "plan-import: $BID → $RID" -- scripts/autonomy/plan.tsv scripts/autonomy/plan.provenance.tsv "$SPECF"
+  done
+fi
+
 # 2c) TICK_DRY=1: say what would start, and start nothing (the selftest uses this; a test must never buy work)
 if [ -n "${TICK_DRY:-}" ]; then
   echo "pii autonomy · dry: would start ${NEXT:-the next pending item}"

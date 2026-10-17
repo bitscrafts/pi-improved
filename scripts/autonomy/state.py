@@ -74,6 +74,12 @@ def main():
         for r in rows():
             s = st.get(r["id"], {}).get("status", "pending")
             if s in ("pending", "in-progress", "needs-review"):
+                # a row imported from a review is re-verified at pick (doc 066 Q2): a broken anchor is a plan-error
+                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                import plan_import
+                why = plan_import.check_row(r["id"])
+                if why:
+                    raise SystemExit("plan-error: " + why)
                 print("\t".join([r["id"], r["spec"], r["brief"], r["title"], r["verify"], r["paths"], r["gate"],
                                  str(st.get(r["id"], {}).get("attempts", 0)),
                                  st.get(r["id"], {}).get("session", "")]))
