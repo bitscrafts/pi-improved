@@ -10,21 +10,26 @@ use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx};
 use pii_worker::{Supervisor, WorkerEvent, WorkerSpec, WorkerState};
 use std::path::PathBuf;
 
+/// The `pii` binary, resolved beside the RUNNING test executable: `.../<target>/debug/deps/<test>-<hash>`
+/// → `.../<target>/debug/pii`. A manifest-relative path (`<tree>/target/debug/pii`) is a DIFFERENT path
+/// whenever cargo is told to build elsewhere — the autonomy loop's fresh-gate reuses a warm cache
+/// (`FRESH_GATE_TARGET`), so it never exists there, and every test in this file died with
+/// `spawn .../fresh-gate-624085/target/debug/pii: No such file or directory` (measured 2026-10-16).
+fn pii_bin() -> PathBuf {
+    let mut dir = std::env::current_exe().expect("the test executable's path");
+    dir.pop(); // the test binary itself
+    if dir.ends_with("deps") {
+        dir.pop();
+    }
+    dir.join("pii")
+}
+
 /// A full-cap context: SPAWN + PROC, and `proc_argv0` permitting the worker
 /// program and the `kill` utility.
 fn full_ctx() -> Ctx {
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
-    // Resolved from the manifest dir, NOT from the process cwd: a cwd read made the same binary fail
-    // 15 of 15 runs when started outside the crate dir (`spawn /target/debug/pii`), which looks like a
-    // race and is a path bug. Same NORMALIZED absolute path cargo's cwd produced, so the ArgvScope
-    // prefix (a plain string comparison) still matches exactly.
-    let pii_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/debug/pii");
+    let pii_bin = pii_bin();
     caps.proc_argv0 = ArgvScope::new(vec![
         pii_bin.to_string_lossy().into_owned(),
         String::from("/usr/bin/kill"),
@@ -45,13 +50,7 @@ fn full_ctx() -> Ctx {
 
 /// A worker spec running the reference `pii worker-exec` worker.
 fn worker_spec(name: &str, tag: &str) -> WorkerSpec {
-    // Resolved without reading the process cwd (see the note in full_ctx).
-    let pii_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/debug/pii");
+    let pii_bin = pii_bin();
     WorkerSpec {
         name: String::from(name),
         program: pii_bin,
@@ -283,7 +282,7 @@ fn stderr_flood_does_not_deadlock() {
         &tmp,
         format!(
             "#!/bin/sh\nfor i in $(seq 1 2000); do echo flood-line-$i 1>&2; done\nexec {pii} worker-exec --name w --tag a\n",
-            pii = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/debug/pii"),
+            pii = pii_bin().display(),
         ),
     )
     .unwrap();
@@ -324,10 +323,7 @@ fn reload_swaps_program_and_tag() {
     let scratch = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp/phase3/test"));
     let _ = std::fs::create_dir_all(&scratch);
     let prog = scratch.join(format!("swap-{}-{}.sh", std::process::id(), line!()));
-    let pii_bin = PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/debug/pii"
-    ));
+    let pii_bin = pii_bin();
     let write_prog = |tag: &str| {
         // Operators never write in place over a running program (ETXTBSY);
         // they write a temp file and rename over the path — the atomic form.

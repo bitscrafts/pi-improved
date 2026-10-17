@@ -446,13 +446,18 @@ mod tests {
 
     use crate::{Supervisor, WorkerEvent, WorkerSpec, WorkerState};
 
+    /// The `pii` binary, resolved beside the RUNNING test executable: `.../<target>/debug/deps/<test>-<hash>`
+    /// → `.../<target>/debug/pii`. The manifest-relative form (`<tree>/target/debug/pii`) is a DIFFERENT
+    /// path whenever cargo is told to build elsewhere: the autonomy loop's fresh-gate reuses a warm cache
+    /// (`FRESH_GATE_TARGET`), so that path never exists in the export and these tests died with
+    /// `spawn .../fresh-gate-624085/target/debug/pii: No such file or directory` (measured 2026-10-16).
     fn pii_bin() -> std::path::PathBuf {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("target/debug/pii")
+        let mut dir = std::env::current_exe().expect("the test executable's path");
+        dir.pop(); // the test binary itself
+        if dir.ends_with("deps") {
+            dir.pop();
+        }
+        dir.join("pii")
     }
 
     fn ctx() -> Ctx {

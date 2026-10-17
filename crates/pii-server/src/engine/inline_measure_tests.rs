@@ -38,6 +38,19 @@ fn req(method: Method, params: serde_json::Value) -> Request {
     }
 }
 
+/// The `pii` binary, resolved beside the RUNNING test executable: `.../<target>/debug/deps/<test>-<hash>`
+/// → `.../<target>/debug/pii`. A manifest-relative path (`<tree>/target/debug/pii`) is a DIFFERENT path
+/// whenever cargo is told to build elsewhere — the autonomy loop's fresh-gate reuses a warm cache
+/// (`FRESH_GATE_TARGET`), so it never exists there and the worker cannot be started at all.
+fn pii_bin() -> std::path::PathBuf {
+    let mut dir = std::env::current_exe().expect("the test executable's path");
+    dir.pop(); // the test binary itself
+    if dir.ends_with("deps") {
+        dir.pop();
+    }
+    dir.join("pii")
+}
+
 struct Rig {
     engine: Arc<Engine>,
     subs: SubscriptionRegistry,
@@ -104,7 +117,7 @@ async fn rig() -> Rig {
     .expect("engine");
     // A real worker (the reference `pii worker-exec`) so `sys.reload`
     // reloads something; the daemon context is what `sys.reload` needs.
-    let pii_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/pii");
+    let pii_bin = pii_bin();
     let cfg_path = dir.path().join("config.toml");
     std::fs::write(
         &cfg_path,
