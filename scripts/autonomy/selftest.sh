@@ -97,7 +97,7 @@ E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error
 echo; echo "== 8. a worker cut off by the window keeps its resume handle"
 # the test uses its own plan row (X2) and never a real item id: the loop is running and owns A17
 printf 'X2\tfake-2.md\t-\tthe resume-handle item\t-\t-\t0\n' > $T/plan2.tsv
-python3 scripts/autonomy/state.py set X2 status=needs-review session=test-session-1234 last=window-closed >/dev/null 2>&1
+python3 scripts/autonomy/state.py set X2 status=in-progress session=test-session-1234 last=window-closed >/dev/null 2>&1
 H=$(PII_PLAN=$T/plan2.tsv python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f9)
 row "the state still offers the session (pick field 9 = the resume handle)" "test-session-1234" "$H"
 python3 - <<'PY'

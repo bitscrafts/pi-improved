@@ -6,7 +6,7 @@ os.rename'd into place, so a cycle killed mid-write cannot leave a truncated sta
 (that is the whole reason this is not `>>` on a log).
 
 usage:
-  state.py pick [<state>]                 -> the top pending item as TSV, or "NONE"
+  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped), or "NONE"
   state.py get <id> [<state>]             -> that row as JSON
   state.py set <id> k=v [k=v ...]         -> update fields (status/attempts/evidence/session/last)
   state.py list                           -> every row, TSV, for reporting
@@ -71,9 +71,17 @@ def main():
         return
     if cmd == "pick":
         st = load()
+        skipped = []
         for r in rows():
             s = st.get(r["id"], {}).get("status", "pending")
-            if s in ("pending", "in-progress", "needs-review"):
+            # a parked / needs-review row waits for a person and must not hold the queue behind it (spec 169):
+            # skip it for dispatch order only - its state is never touched - and name it on stderr
+            if s in ("parked", "needs-review"):
+                skipped.append(f'{r["id"]}({s})')
+                continue
+            if s in ("pending", "in-progress"):
+                if skipped:
+                    print("pick: skip parked " + ", ".join(skipped) + " -> dispatching " + r["id"], file=sys.stderr)
                 # a row imported from a review is re-verified at pick (doc 066 Q2): a broken anchor is a plan-error
                 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 import plan_import
@@ -84,6 +92,8 @@ def main():
                                  str(st.get(r["id"], {}).get("attempts", 0)),
                                  st.get(r["id"], {}).get("session", "")]))
                 return
+        if skipped:
+            print("pick: every open row is parked: " + ", ".join(skipped) + " - waiting for a person", file=sys.stderr)
         print("NONE")
         return
     if cmd == "get":
