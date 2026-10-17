@@ -86,6 +86,10 @@ pub struct Conn {
     pub(super) key: (String, String),
     pub(super) inner: Arc<Inner>,
     pub(super) deadline_ms: u64,
+    /// Bytes this connection has sent: the window `max_bytes_out` bounds.
+    pub(super) sent: u64,
+    /// Bytes this connection has received: the window `max_bytes_in` bounds.
+    pub(super) received: u64,
 }
 
 /// Shared service state.
@@ -116,7 +120,7 @@ pub struct GrantInfo {
     pub key: String,
     /// Live connection leases.
     pub conns: u32,
-    /// Bytes received, cumulative.
+    /// Bytes received, cumulative (a report; the budget is per connection).
     pub bytes_in: u64,
     /// Bytes sent, cumulative.
     pub bytes_out: u64,
@@ -153,17 +157,18 @@ impl Conn {
     /// # Errors
     /// [`PiiError::Denied`] past the byte budget; I/O errors are
     /// [`PiiError::Unavailable`].
-    #[allow(clippy::significant_drop_tightening)] // reason: the MutexGuard must
-    // stay held across the read-modify-write of the byte counter.
+    #[allow(clippy::significant_drop_tightening)] // reason: the registry guard is held across the
+    // read-modify-write of the cumulative byte report.
     pub fn write_all(&mut self, bytes: &[u8]) -> Result<(), PiiError> {
         let grant = self.grant();
+        self.sent = self.sent.saturating_add(bytes.len() as u64);
         {
             let mut reg = self.inner.registry.lock();
-            let used = reg.bytes_out.entry(self.key.clone()).or_insert(0);
-            *used = used.saturating_add(bytes.len() as u64);
-            if *used > grant.max_bytes_out {
-                return Err(PiiError::Denied(String::from("net: byte budget exhausted")));
-            }
+            let total = reg.bytes_out.entry(self.key.clone()).or_insert(0);
+            *total = total.saturating_add(bytes.len() as u64);
+        }
+        if self.sent > grant.max_bytes_out {
+            return Err(PiiError::Denied(String::from("net: byte budget exhausted")));
         }
         std::io::Write::write_all(&mut self.stream, bytes)
             .map_err(|e| PiiError::Unavailable(format!("net: write: {e}")))
@@ -173,19 +178,20 @@ impl Conn {
     ///
     /// # Errors
     /// [`PiiError::Denied`] past the byte budget.
-    #[allow(clippy::significant_drop_tightening)] // reason: the MutexGuard must
-    // stay held across the read-modify-write of the byte counter.
+    #[allow(clippy::significant_drop_tightening)] // reason: the registry guard is held across the
+    // read-modify-write of the cumulative byte report.
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, PiiError> {
         let grant = self.grant();
         let n = std::io::Read::read(&mut self.stream, buf)
             .map_err(|e| PiiError::Unavailable(format!("net: read: {e}")))?;
+        self.received = self.received.saturating_add(n as u64);
         {
             let mut reg = self.inner.registry.lock();
-            let used = reg.bytes_in.entry(self.key.clone()).or_insert(0);
-            *used = used.saturating_add(n as u64);
-            if *used > grant.max_bytes_in {
-                return Err(PiiError::Denied(String::from("net: byte budget exhausted")));
-            }
+            let total = reg.bytes_in.entry(self.key.clone()).or_insert(0);
+            *total = total.saturating_add(n as u64);
+        }
+        if self.received > grant.max_bytes_in {
+            return Err(PiiError::Denied(String::from("net: byte budget exhausted")));
         }
         Ok(n)
     }
