@@ -2,6 +2,25 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-17 18:22Z — A36/170 closed after four green gates produced no commit: the plan row named a neighbour's files
+
+- **The item.** The routine gate no longer builds llama.cpp: `clippy (llamacpp)` measured 720 s of C++ per run for a
+  binding the daemon never executes (models are reached over HTTP, `llamacpp-server:`). The step is gone from
+  `gate-steps.txt` and the `CMAKE_BUILD_PARALLEL_LEVEL` export is gone from `quality-gate.sh`; the on-demand command
+  now lives in `_docs/05-operations/deploy-runbook.md`. `5ffb8a5`.
+- **Why it sat.** Cycles 18:05Z/18:08Z/18:10Z/18:13Z each ran `fresh-gate` to PASS on the worker's tree and then
+  stopped with nothing committed: A36's row carried `crates/pii-graph/src/journal.rs;…/sched/dispatch.rs;…/tests/deadline_flush.rs`
+  — a neighbour's three files — so `git add` staged nothing and the only exit left was to close the item as "satisfied
+  by" an unrelated commit. The row now carries the three paths the work touches (`e42584f`).
+- **Verified by the orchestrator, not by the worker's report.** Criteria 3/3 green on the tree the worker left; the
+  criterion reddened by re-adding the `clippy (llamacpp)` step (rc=1) and the file restored byte-identical
+  (`sha256sum -c` OK, `590a1637…`). Closure recorded in `specs/170-…md`.
+- **The same defect, one row further on.** A37-A40 shared the copy-pasted paths column, and three criteria could not
+  fail: 172's two were already green (`incidents_runtime` 5 passed, `incidents distance` printing `H_pre`/`A`), and
+  173/171's greps pass on today's tree. Rows and spec 172 now carry criteria that are red where the work is not done
+  (`3d9bb05`). A37 is the head; its decisive criterion is that `distance.rs` reads the operator's own act record
+  (`operator-acts`), which it does not today.
+
 ## 2026-10-17 12:20Z — the gate was red on a committed formatting diff, so every item was being parked for a defect none of them could fix
 
 - **Named, with the file.** `cargo fmt --all --check` (the gate's own `fmt` step, `gate-steps.txt:6`) failed on

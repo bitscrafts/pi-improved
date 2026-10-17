@@ -33,3 +33,22 @@ code path the daemon never executes.
 - Do NOT delete the `llamacpp` feature or its tests; make it opt-in, and keep the code path compiling when it is asked for.
 - Do NOT touch gate-steps.txt while a gate is running (quality-gate.sh reads it per step).
 - Do NOT commit; the loop's orchestrator reviews and commits.
+
+## Closure
+
+Closed 2026-10-17T18:22Z. Work committed `5ffb8a5` (gate-steps.txt, quality-gate.sh, deploy-runbook.md); the plan row
+that could not commit it is `e42584f`.
+
+- **Criteria run by the orchestrator on the tree the worker left** (session `e5de5b89-8dde-4c1d-b27b-d2151766553b`),
+  not taken from the worker's report: all three green — `llamacpp` appears once and only as the pointer to the manual
+  check, no `clippy (llamacpp)` step remains, and the runbook carries the on-demand command.
+- **Gate, on that same tree:** `fresh-gate` PASS four times between 18:05Z and 18:15Z (cycles `…180517Z`, `…180810Z`,
+  `…181025Z`, `…181320Z`); the run's step list is fmt, clippy, build, with no llamacpp step and no clang++/cmake work.
+- **Reddened with the orchestrator's own mutation:** appending
+  `clippy (llamacpp)|cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings` to gate-steps.txt took
+  criterion 2 to rc=1; the line was removed and the file confirmed byte-identical (`sha256sum -c` OK, `590a1637…`).
+- **Why four green gates produced no commit:** the plan row named `crates/pii-graph/src/journal.rs`,
+  `…/sched/dispatch.rs` and `…/tests/deadline_flush.rs` — a neighbour's files, with one criterion where the spec has
+  three. `git add` therefore staged nothing and the cycle's only remaining exit was to close the item as "satisfied by"
+  an unrelated commit. The row now carries the three paths the work touches and the three criteria verbatim.
+  A36-A40 all shared that copy-pasted paths column; `3d9bb05` corrects it.
