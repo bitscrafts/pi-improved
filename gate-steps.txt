@@ -24,7 +24,7 @@ clippy (hal-gpiod)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/
 # supervisor tests spawn — target/debug/pii, inside the export — never appears. Publish the binary where they
 # look while keeping the warm cache: a 48-minute cold build per gate run is not survivable, and the tests are
 # right to spawn the real binary.
-build|cargo build --workspace && mkdir -p target/debug && cp -f "${CARGO_TARGET_DIR:-target}/debug/pii" target/debug/pii
+build|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/build-gate" cargo build --workspace && mkdir -p target/debug && cp -f "${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/build-gate/debug/pii" target/debug/pii
 
 test (lib/bins/tests)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/test-gate cargo test --workspace --lib --bins --tests
 
