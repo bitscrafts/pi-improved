@@ -21,6 +21,7 @@ tokio = { workspace = true, features = ["rt", "time"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+pii-net = { path = "../pii-net", features = ["testing"] }
 
 [lints]
 workspace = true

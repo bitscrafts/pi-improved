@@ -121,14 +121,6 @@ impl NetService {
                 )));
             }
             *n += 1;
-            // A new connection opens a fresh byte window. Those counters live in this process-wide registry keyed by
-            // principal, so without a reset they are CUMULATIVE FOR THE LIFE OF THE PROCESS: a long-lived poller (the
-            // discord channel) exhausts its 16 MiB after a few hours and from then on every request is denied until the
-            // process restarts. Measured 2026-10-16: 25,301 + 18,614 `channel.poll.failed` refusals, the channel dead
-            // 3h29m after start, and nothing reported it. A single response larger than the window is still refused —
-            // the cap is per window, and this is where a window begins.
-            reg.bytes_in.insert(k.clone(), 0);
-            reg.bytes_out.insert(k.clone(), 0);
         }
         // Single exit path (D1): dial AND the TLS wrap that follows it are
         // folded into one `Result` before the match, so ANY failure after
@@ -154,6 +146,8 @@ impl NetService {
                     key: k,
                     inner: Arc::clone(&self.0),
                     deadline_ms: pinned.deadline_ms,
+                    sent: 0,
+                    received: 0,
                 };
                 let _ = conn.arm_deadline(&pinned, self.0.clock.as_ref());
                 Ok(conn)
