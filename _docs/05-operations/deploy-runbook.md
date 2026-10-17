@@ -90,3 +90,9 @@ unit), keeps what it replaced in `$PREFIX.rolledback-<epoch>/`, and prints each 
 
 ## In-process llama.cpp binding check (on demand, not in the gate)
 Run `cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings` by hand (needs clang, cmake, make, ninja; ~12 min of C++). The routine gate skips it: pii reaches models over HTTP (`llamacpp-server:`) and the feature is opt-in.
+
+## Gate tiers (spec 171)
+
+Per item the loop runs `bash quality-gate.sh --routine` (repo tree, warm `_tmp/gate-target`: minutes). Before a deploy
+run `bash quality-gate.sh --fresh` (the fresh-tree export, ~45 min); the deploy card's `gate` verdict must quote that
+run and say `mode=fresh` — a `mode=routine` verdict is not release evidence.

@@ -243,14 +243,14 @@ if [ -n "$GATE_ON" ]; then
     bash scripts/autonomy/control.sh ask "disk is down to ${FREE}M: the gate cannot run, so $ITEM cannot be committed. Reclaim with cargo clean (an operator action here)?" >/dev/null 2>&1 || true
     exit 13
   else
-    say "fresh-gate (this is the project's truth, not the worker's)"
+    say "routine gate (spec 171: repo tree, warm cache; --fresh is the release boundary, run before a deploy)"
     # A full export gate MEASURES ~45-48 min on this host (2026-10-16 22:53:33 → 23:41 = 47.5 min for the 14
     # steps): every export is a NEW source path (`fresh-gate-<pid>`), so cargo's fingerprints miss and the step
     # list recompiles the workspace. The old cap was 1780 s — shorter than every run since 2026-10-15 — so each
     # gated item ended `gate-failed` with its tree never judged. 3600 s leaves the measured run room and still
     # bounds a hang: every step also kills itself after QG_STALL_SECS=1800 with no output.
     GATE_TIMEOUT=${GATE_TIMEOUT:-3600}
-    ( export PATH="/usr/local/cargo/bin:$PATH"; CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
+    ( export PATH="/usr/local/cargo/bin:$PATH"; CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
     GTRC=$?
     if [ "$GTRC" -eq 0 ]; then
       python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "fresh-gate PASS (phase marked: gated)"
