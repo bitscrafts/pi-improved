@@ -55,3 +55,4 @@ A30	163-the-watch-reads-the-verdict.md	-	heal_detect reads the gate's recorded v
 A31	164-the-channel-survives-a-day.md	-	the byte budget proof, and the oversized response	cargo test -p pii-net --test budget_window	crates/pii-learn;crates/pii-cli;_docs/05-operations	quality-gate.sh
 A32	165-the-ingress-that-reads-nothing.md	-	bind an ingress only when it can read something	cargo test -p pii-server --test channel_wiring	crates/pii-learn;crates/pii-cli;_docs/05-operations	quality-gate.sh
 A33	166-the-reader-ingests.md	-	the incident lives in the store, with an id	cargo test -p pii-learn --test incidents_runtime_production	crates/pii-learn;crates/pii-cli;_docs/05-operations	quality-gate.sh
+A34	167-the-review-becomes-queue-rows.md	-	the review becomes queue rows (per 066)	python3 scripts/autonomy/plan_import.py --self-test	crates/pii-learn;crates/pii-cli;_docs/05-operations	quality-gate.sh
