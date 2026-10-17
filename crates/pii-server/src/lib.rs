@@ -72,6 +72,22 @@ pub struct EngineConfig {
     pub llama_host: Option<String>,
 }
 
+/// Where the daemon loads graphs from.
+///
+/// `<runtime_dir>/graphs` when it exists, else the `graphs` directory beside
+/// the store (where `deploy/install-pii.sh` puts them), else the runtime path.
+#[must_use]
+pub fn resolve_graph_dir(runtime_dir: &std::path::Path, store_path: &std::path::Path) -> PathBuf {
+    let runtime = runtime_dir.join("graphs");
+    if runtime.is_dir() {
+        return runtime;
+    }
+    match store_path.parent().map(|p| p.join("graphs")) {
+        Some(state) if state.is_dir() => state,
+        _ => runtime,
+    }
+}
+
 /// An executing or completed run.
 pub struct RunHandle {
     /// Cancel token the node contexts observe.
