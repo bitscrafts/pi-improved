@@ -39,3 +39,10 @@ export CARGO_BUILD_JOBS CMAKE_BUILD_PARALLEL_LEVEL
 # Run coverage deliberately, at the release boundary, not per item.
 : "${QG_SKIP_COVERAGE:=1}"
 export QG_SKIP_COVERAGE
+
+# THE ITEM BOUNDARY RUNS THE QUICK GATE. Measured 2026-10-17: the full gate costs ~105 MINUTES per item while the
+# implementation it verifies takes 41 SECONDS. The full list (workspace tests, coverage, doctests, the seven xtask
+# scans) belongs to the COMMIT and RELEASE boundaries, where paying it once buys something. The quick list is fmt,
+# clippy and build — minutes. Set GATE_STEPS=gate-steps.txt deliberately when a full run is intended.
+: "${GATE_STEPS:=gate-steps-quick.txt}"
+export GATE_STEPS

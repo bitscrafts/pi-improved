@@ -1,0 +1,3 @@
+fmt|cargo fmt --all --check
+clippy|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/clippy-gate cargo clippy --workspace --all-targets -- -D warnings
+build|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/build-gate" cargo build --workspace && mkdir -p target/debug && cp -f "${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/build-gate/debug/pii" target/debug/pii

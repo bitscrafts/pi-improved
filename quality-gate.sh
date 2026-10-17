@@ -11,6 +11,11 @@
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-$(nproc)}"
 set -uo pipefail
 
+# The step list is selectable: routine items use gate-steps-quick.txt (fmt, clippy, build — minutes); the
+# commit and release boundaries use the full gate-steps.txt (workspace tests, coverage, doctests, scans).
+: "${GATE_STEPS:=gate-steps.txt}"
+export GATE_STEPS
+
 export PATH=/usr/local/cargo/bin:$PATH
 cd "$(dirname "$0")" || exit 1
 
@@ -33,7 +38,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in '' | '#'*) continue ;; esac
     run_step "${line%%|*}" "${line#*|}" || status=1
     steps=$((steps + 1))
-done <gate-steps.txt
+done <"$GATE_STEPS"
 
 # An empty or unreadable list must never read as green.
 if [ "$steps" -eq 0 ]; then
