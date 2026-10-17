@@ -503,7 +503,14 @@ fn on_finished(
     run_id: &str,
     terminal: &WireTerminal,
 ) {
-    let cron_name = ctx.cron_runs.lock().remove(run_id);
+    // Spec 179: a run parked on its timer journals `Finished{Suspended}`; it is not over, and
+    // re-arming here started a new run every CRON_MIN_REARM. Stay tracked until it truly ends.
+    let parked = matches!(terminal, WireTerminal::Suspended { .. });
+    let cron_name = if parked {
+        None
+    } else {
+        ctx.cron_runs.lock().remove(run_id)
+    };
     if let Some(name) = cron_name {
         let entry = ctx.cron.lock().get(&name).cloned();
         if let Some(entry) = entry {
