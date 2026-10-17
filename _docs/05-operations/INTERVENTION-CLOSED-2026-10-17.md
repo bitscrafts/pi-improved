@@ -1,4 +1,12 @@
-# INTERVENTION CLOSED — pi-improved, 2026-10-17
+# INTERVENTION NOT CLOSED YET - 2026-10-17
+
+**CORRECTION, same day. This file was written as a closure and the closure was premature. NOTHING IS CLOSED WHILE ANY ITEM
+IS STILL TO BE IMPLEMENTED.**
+
+Outstanding at the time of this correction: **166-the-reader-ingests** is being implemented right now (the loop re-opened
+it after a false closure), **A12** is held, and rows **A35 168, A37 172, A38 173, A39 169, A40 171** are queued. The
+verdict and the facts below are TRUE and verified; they are not a closure, and this file is misleading until its name stops
+saying closed.
 
 **Verdict: the product is production-ready and deployed; the loop that maintains it converged today, and the
 intervention is closed with two recorded non-blockers.**
