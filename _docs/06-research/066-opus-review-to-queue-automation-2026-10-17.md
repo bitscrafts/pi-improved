@@ -83,7 +83,7 @@ spec_slug: the-barrier-is-a-deadline
 files: crates/pii-graph/src/journal.rs; crates/pii-graph/src/sched/dispatch.rs; crates/pii-graph/tests/deadline_flush.rs
 criteria: cargo test -p pii-graph --test write_amp; cargo test -p pii-graph --test deadline_flush
 evidence: crates/pii-graph/tests/write_amp.rs:87 "a run costs {per_run}/100 commits; expected ~2"
-evidence: crates/pii-graph/src/journal.rs:45 "pub const DEFAULT_BATCH: usize = 16;"
+evidence: crates/pii-graph/src/journal.rs:46 "pub const DEFAULT_BATCH: usize = 16;"
 body: <the item's requirement text, quoted verbatim into the spec's Requirement section>
 ```
 ````
@@ -107,7 +107,7 @@ A34  _docs/06-research/065-…md  065-Q1  block_sha256=<12>  crates/pii-graph/te
 
 **Rules that make a stale citation fail loudly:**
 - **At import:** a missing file, a line past EOF, or text not on that line is refused. If the text is found on
-  another line, the refusal names it, e.g. `moved: journal.rs:45 -> :46`.
+  another line, the refusal names it, e.g. `moved: journal.rs:46 -> :46`.
 - **At pick:** `state.py pick` re-checks the row's provenance before returning it. This is cheap: file reads and
   hashes. If the block's sha changed (the review was edited), an anchor broke, or the generated spec no longer
   equals its render, then `OUTCOME=plan-error`, which `cycle.sh:60-63` already treats as "NOT an empty queue".
@@ -122,7 +122,7 @@ A34  _docs/06-research/065-…md  065-Q1  block_sha256=<12>  crates/pii-graph/te
 > **Measured while writing this section (C-run):**
 > - 065 cites `write_amp.rs:85` for the budget's message. At HEAD it is at **:87**, and `:85` is the `assert!(` line,
 >   so that citation was wrong from the start.
-> - 064's `journal.rs:45` for `DEFAULT_BATCH` is right **at HEAD**. In the working tree it reads `:46`, because A28's
+> - 064's `journal.rs:46` for `DEFAULT_BATCH` is right **at HEAD**. In the working tree it reads `:46`, because A28's
 >   worker has uncommitted edits in `crates/pii-graph` (`git status`; A28 is `needs-review`, `last=gate-failed`).
 >
 > Two rules follow:
@@ -193,7 +193,7 @@ queue.
 | R2 | a new `id` whose `spec_slug` equals an existing spec's | `duplicate spec slug: the-barrier-is-a-deadline (specs/167-…)` |
 | R3 | a block with no `evidence:` line | `no evidence: 065-Q9` |
 | R4 | an anchor whose file does not exist | `evidence missing: crates/x/y.rs` |
-| R5 | an anchor whose text is now on another line (the fixture inserts one line above it) | `moved: journal.rs:45 -> :46` (the case from Q2, as it would read once A28's edit lands) |
+| R5 | an anchor whose text is now on another line (the fixture inserts one line above it) | `moved: journal.rs:46 -> :46` (the case from Q2, as it would read once A28's edit lands) |
 | R6 | an anchor whose text is gone | `stale: write_amp.rs:87 no longer reads "…"` |
 | R7 | `class: mechanical` with `files: deploy/install-pii.sh` | **escalate** (exit 3): one `questions.md` line, plan unchanged |
 | R8 | `class: mechanical` with `files: crates/pii-graph/tests/write_amp.rs` | **escalate** (exit 3) |

@@ -79,7 +79,7 @@ path:
 1. **D1:** the production runner silently builds a second copy of xtask in a target the gate does not warm (M5, M8).
 2. **D2:** a runner timeout is recorded as a **reproducible gate failure**, with a heal-ledger row and escalation
    to the human gate (`heal.rs:53, :60, :140-163`).
-3. **D3:** write-behind hides `NodeStarted` for as long as the node runs (`journal.rs:45`).
+3. **D3:** write-behind hides `NodeStarted` for as long as the node runs (`journal.rs:46`).
 
 Load only moves the cold build from 73 s to 100 s or more. The 60 s stall bound is crossed either way.
 

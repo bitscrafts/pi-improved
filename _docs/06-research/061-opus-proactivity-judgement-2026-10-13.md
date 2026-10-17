@@ -14,7 +14,7 @@ on a branch, then **one permission** (the deploy card).
 **Measured contradictions to my own drafts (all C-run/C-read by the reviewer):**
 - `reconcile_boot` (`crates/pii-server/src/engine/session_durability.rs:300-324`, called at `cmd_daemon.rs:417`)
   already marks `Running` runs `Failed` — so 143's premise was false; and the killed-daemon crash it tested left
-  **no record at all** because the journal buffers 16 events before writing (`pii-graph/src/journal.rs:45`).
+  **no record at all** because the journal buffers 16 events before writing (`pii-graph/src/journal.rs:46`).
 - 143's four criteria pass on unchanged HEAD; 144's three do, and its fourth (`deps-check | tail -1 | grep -qv FAIL`)
   can never pass, because `deps-check` prints nothing on success.
 - Every incident on this machine is an exact-match string (551 rows, 11 distinct values) — a model judge buys
@@ -88,7 +88,7 @@ Its premise is wrong twice, and all four of its criteria pass with no change.
 |---|---|---|
 | "nothing on start-up looks for" a run left `Running` | `reconcile_boot` (`crates/pii-server/src/engine/session_durability.rs:300-324`) marks every `Running` run `Failed` with "interrupted by daemon restart". It is called at daemon start (`crates/pii-cli/src/cmd_daemon.rs:417`) and tested (`crates/pii-server/tests/session.rs:142`). It never auto-resumes, by decision G8. Its write result is discarded with `let _ =` (`:315`). | C-read |
 | "pii persists run records; it does not persist the step" | Steps are journalled (`NodeStarted`/`NodeFinished`, `crates/pii-abi/src/journal.rs:80-87`). A resume already marks a node left mid-flight with `NodeInterrupted` (`journal.rs:122-129`), tested in `crates/pii-graph/tests/resume.rs:177-185`. | C-read |
-| "stays `Running` for ever" | Killed with `kill -9` 1 s and again 15 s into a 30 s node, then restarted: `run 'r000000000001' is unknown to this daemon (not in flight, not stored)`. The run never reached the store because the journal buffers up to **16 events** before writing (`DEFAULT_BATCH`, `crates/pii-graph/src/journal.rs:45`). The real defect is a crash that leaves **no record at all**, not a zombie. | C-run |
+| "stays `Running` for ever" | Killed with `kill -9` 1 s and again 15 s into a 30 s node, then restarted: `run 'r000000000001' is unknown to this daemon (not in flight, not stored)`. The run never reached the store because the journal buffers up to **16 events** before writing (`DEFAULT_BATCH`, `crates/pii-graph/src/journal.rs:46`). The real defect is a crash that leaves **no record at all**, not a zombie. | C-run |
 | its criteria test the change | On unchanged HEAD all four pass: pii-server lib, pii-store, clippy, and `grep Interrupted` (already present at `journal.rs:127`). | C-run |
 | the held implementation | It sweeps `runs_by_status(Running)` (`recovery.rs:45` on the held branch). That set is empty in the measured crash, so it would pass its own tests and miss the real case. | C-read |
 

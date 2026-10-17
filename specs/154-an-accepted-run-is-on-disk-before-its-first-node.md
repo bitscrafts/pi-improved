@@ -5,7 +5,7 @@
 The Opus 061 judgement measured the real defect behind the durability question (C-run, C-read): killing the daemon
 1 s and 15 s into a 30 s node leaves **no record at all** — `pii run get` answers "unknown to this daemon".
 The reason is that the run's journal buffers up to **16 events** before writing (`DEFAULT_BATCH`,
-`crates/pii-graph/src/journal.rs:45`), so a crash in the first moments loses the whole run. What exists today
+`crates/pii-graph/src/journal.rs:46`), so a crash in the first moments loses the whole run. What exists today
 (`reconcile_boot`, `crates/pii-server/src/engine/session_durability.rs:300-324`, called at
 `crates/pii-cli/src/cmd_daemon.rs:417`) can only reconcile runs that are **in the store**, and it discards its own
 write result with `let _ =` (`:315`).
