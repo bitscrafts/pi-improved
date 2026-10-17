@@ -87,3 +87,6 @@ Stops the unit if running, **moves** the newest `$PREFIX.old-<epoch>/` contents 
 unit), keeps what it replaced in `$PREFIX.rolledback-<epoch>/`, and prints each file restored. Then
 `systemctl --user daemon-reload && systemctl --user restart pii`. Exercised in a scratch prefix by
 `bash scripts/checks/deploy-dry-run.sh` (last line `DRY-RUN OK`).
+
+## In-process llama.cpp binding check (on demand, not in the gate)
+Run `cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings` by hand (needs clang, cmake, make, ninja; ~12 min of C++). The routine gate skips it: pii reaches models over HTTP (`llamacpp-server:`) and the feature is opt-in.

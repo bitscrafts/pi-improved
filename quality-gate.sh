@@ -5,10 +5,6 @@
 # CI-equivalent fresh-tree run (NOT part of this chain; recompiles the workspace):
 #   cargo xtask fresh-gate [--worktree] [--overlay src=dest]  (spec 84)
 
-# The llamacpp step builds llama.cpp (C++) from source. Measured 2026-10-16: with no job setting it ran only
-# 4 clang++ on a 32-core host, which is why a cold gate took 25+ minutes and then hit its timeout. nproc is
-# the parallelism this machine actually has.
-export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-$(nproc)}"
 set -uo pipefail
 
 # The step list is selectable: routine items use gate-steps-quick.txt (fmt, clippy, build — minutes); the
