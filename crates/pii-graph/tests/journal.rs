@@ -267,3 +267,41 @@ fn failed_flush_loses_no_events_and_seqs_stay_contiguous() {
     let seqs: Vec<u64> = journal.iter().map(|(s, _)| *s).collect();
     assert_eq!(seqs, vec![0, 1, 2, 3], "no lost event, contiguous seqs");
 }
+
+/// The time-scoped in-flight barrier: a start flushed within the window costs no
+/// extra transaction; once the window has elapsed the pending start is made durable.
+#[test]
+fn flush_if_stale_waits_for_the_window() {
+    let (store, run, obs, bb) = fixture();
+    let jr = Journaler::with_batch(
+        &store,
+        Arc::clone(&obs) as Arc<dyn Observer>,
+        run_header(&run),
+        bb,
+        1_000_000,
+    );
+    let window = std::time::Duration::from_millis(150);
+    jr.append(&RunEvent::NodeStarted {
+        node: NodeId::from("a"),
+        at_ms: 0,
+    })
+    .unwrap();
+    let txns = store.write_txn_count();
+    jr.flush_if_stale(window).unwrap();
+    assert_eq!(store.write_txn_count(), txns, "inside the window: no flush");
+    assert!(store.read_journal(&run).unwrap().is_empty());
+    std::thread::sleep(window * 2);
+    jr.flush_if_stale(window).unwrap();
+    assert_eq!(
+        store.write_txn_count(),
+        txns + 1,
+        "past the window: one flush"
+    );
+    assert_eq!(store.read_journal(&run).unwrap().len(), 1);
+    jr.flush_if_stale(window).unwrap();
+    assert_eq!(
+        store.write_txn_count(),
+        txns + 1,
+        "nothing pending: no flush"
+    );
+}

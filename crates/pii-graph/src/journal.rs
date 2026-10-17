@@ -27,6 +27,7 @@
 //! guardrail: durability does not matter for a run that never finishes).
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use parking_lot::{Mutex, RwLock};
 
@@ -56,6 +57,9 @@ struct JournalState {
     /// update (e.g. `set_status` called right after an `append` that itself
     /// already flushed and drained `pending` at the batch/snapshot boundary).
     header_dirty: bool,
+    /// When the store last took this run's events (construction counts: the
+    /// accepted run is flushed right after it).
+    last_flush: Instant,
 }
 
 /// Appends run events to the store in bounded write-behind batches, advancing
@@ -133,6 +137,7 @@ impl<'a> Journaler<'a> {
                 last_seq,
                 pending: Vec::new(),
                 header_dirty: false,
+                last_flush: Instant::now(),
             }),
             bb,
             batch: batch.max(1),
@@ -255,8 +260,31 @@ impl<'a> Journaler<'a> {
         st.header = header;
         st.pending.clear();
         st.header_dirty = false;
+        st.last_flush = Instant::now();
         st.last_seq = st.header.seq.saturating_sub(1);
         Ok(st.last_seq)
+    }
+
+    /// Time since the store last took this run's events.
+    #[must_use]
+    pub fn since_flush(&self) -> Duration {
+        self.state.lock().last_flush.elapsed()
+    }
+
+    /// The in-flight barrier, scoped by time: flushes only when events are
+    /// pending and the last flush is at least `window` old, so a run pays at
+    /// most one transaction per window rather than one per node start.
+    ///
+    /// # Errors
+    /// Returns [`PiiError::Internal`] on a redb or serialisation failure.
+    pub fn flush_if_stale(&self, window: Duration) -> Result<(), PiiError> {
+        {
+            let st = self.state.lock();
+            if st.pending.is_empty() || st.last_flush.elapsed() < window {
+                return Ok(());
+            }
+        }
+        self.flush().map(|_| ())
     }
 
     /// Snapshots the blackboard at the most recently flushed seq (used

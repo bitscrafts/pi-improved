@@ -10,6 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use parking_lot::RwLock;
 
@@ -156,6 +157,31 @@ pub fn build_node_input(
     }
 }
 
+/// How long a node's start may sit unflushed while the node runs (D3).
+const START_DURABLE_WITHIN: Duration = Duration::from_secs(2);
+
+/// Runs `f`; if it outlives the window since the last flush, a watcher makes
+/// the pending `NodeStarted` durable. A fast node finishes first and costs no
+/// transaction.
+fn run_with_barrier<T>(env: &Env<'_>, f: impl FnOnce() -> T) -> T {
+    let (done, wait) = std::sync::mpsc::channel::<()>();
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            let left = START_DURABLE_WITHIN.saturating_sub(env.jr.since_flush());
+            if matches!(
+                wait.recv_timeout(left),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ) && let Err(e) = env.jr.flush_if_stale(START_DURABLE_WITHIN)
+            {
+                env.jr.report_flush_failure(&e);
+            }
+        });
+        let out = f();
+        drop(done);
+        out
+    })
+}
+
 /// Runs one node (with retries) on the calling thread, journaling every
 /// attempt. Used both by parallel workers and the sequential partition.
 // Kept as one function for reviewability of the retry/backoff and the four
@@ -227,7 +253,7 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
                 error: e.to_string(),
             };
         }
-        let result = run_caught(env, &ns.id, || node.run(&ctx, input));
+        let result = run_with_barrier(env, || run_caught(env, &ns.id, || node.run(&ctx, input)));
         let dur_ms = ctx.elapsed_ms().saturating_sub(at_ms);
         match result {
             Ok(outcome @ (Outcome::Next { .. } | Outcome::Suspend { .. })) => {
