@@ -7,7 +7,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 fn pick(dir: &std::path::Path) -> Output {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -16,6 +16,8 @@ fn pick(dir: &std::path::Path) -> Output {
         .arg("pick")
         .env("PII_PLAN", dir.join("plan.tsv"))
         .env("PII_STATE", dir.join("state.json"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("python3 spawns")
         .wait_with_output()
@@ -27,11 +29,18 @@ fn fixture(states: &[(&str, &str)]) -> tempfile::TempDir {
     let mut plan = String::new();
     let mut st = serde_json::Map::new();
     for (id, status) in states {
-        let _ = std::fmt::Write::write_fmt(&mut plan, format_args!("{id}\tspec.md\t-\ttitle {id}\t-\t-\t0\n"));
+        let _ = std::fmt::Write::write_fmt(
+            &mut plan,
+            format_args!("{id}\tspec.md\t-\ttitle {id}\t-\t-\t0\n"),
+        );
         st.insert((*id).into(), serde_json::json!({ "status": status }));
     }
     std::fs::write(dir.path().join("plan.tsv"), plan).unwrap();
-    std::fs::write(dir.path().join("state.json"), serde_json::Value::Object(st).to_string()).unwrap();
+    std::fs::write(
+        dir.path().join("state.json"),
+        serde_json::Value::Object(st).to_string(),
+    )
+    .unwrap();
     dir
 }
 
@@ -43,8 +52,15 @@ fn a_parked_head_does_not_freeze_the_queue() {
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "{stderr}");
-        assert_eq!(stdout.split('\t').next().unwrap(), "P2", "head {head} must be skipped: {stdout}");
-        assert!(stderr.contains("H1") && stderr.contains("skip"), "the skipped row is named: {stderr}");
+        assert_eq!(
+            stdout.split('\t').next().unwrap(),
+            "P2",
+            "head {head} must be skipped: {stdout}"
+        );
+        assert!(
+            stderr.contains("H1") && stderr.contains("skip"),
+            "the skipped row is named: {stderr}"
+        );
     }
 }
 
