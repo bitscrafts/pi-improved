@@ -28,7 +28,7 @@ clippy (hal-gpiod)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/
 # right to spawn the real binary.
 build|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/build-gate" cargo build --workspace && mkdir -p target/debug && cp -f "${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/build-gate/debug/pii" target/debug/pii
 
-test (lib/bins/tests)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/test-gate cargo test --workspace --lib --bins --tests
+test (lib/bins/tests)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/test-gate cargo test -j 2 --workspace --lib --bins --tests
 
 # F-01: doctests build each lib WITHOUT cfg(test); sharing target/debug/deps with the step above can
 # pick a stale rlib hash (E0463). Own CARGO_TARGET_DIR so it always builds its own libs.
