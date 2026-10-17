@@ -19,9 +19,10 @@ use crate::incident::IncidentConfig;
 /// Event that marks a start attempt (emitted before the daemon is ready).
 const START_MARK: &str = pii_observe::names::DAEMON_SANDBOX_IN_FORCE;
 /// Kinds whose repetition is a refusal incident.
-const REFUSALS: [&str; 2] = [
+const REFUSALS: [&str; 3] = [
     pii_observe::names::RUN_START_REFUSED,
     pii_observe::names::WORKER_REQUEST_REFUSED,
+    pii_observe::names::CHANNEL_POLL_FAILED,
 ];
 
 /// One incident opened from the runtime log.
