@@ -18,7 +18,7 @@
 set -uo pipefail
 OUT="$(mktemp)"; ERR="$(mktemp)"
 trap 'rm -f "$OUT" "$ERR"' EXIT
-timeout 180 claude -p "Reply with exactly: PONG55" --max-turns 1 --output-format json >"$OUT" 2>"$ERR"
+timeout 180 claude -p "Reply with exactly: PONG55" --model haiku --max-turns 1 --output-format json >"$OUT" 2>"$ERR"
 RC=$?
 BODY="$(cat "$OUT" 2>/dev/null || true)"
 ERRTXT="$(cat "$ERR" 2>/dev/null || true)"
