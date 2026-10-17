@@ -383,12 +383,23 @@ async fn run_daemon(
         }
     };
 
+    let graph_dir = pii_server::resolve_graph_dir(&runtime_dir, &store_path);
+    if !graph_dir.starts_with(&runtime_dir) {
+        log.event(
+            &Event::new("daemon", Level::Warn, "daemon.graphs_fallback")
+                .field(
+                    "looked_in",
+                    runtime_dir.join("graphs").display().to_string(),
+                )
+                .field("using", graph_dir.display().to_string()),
+        );
+    }
     let engine_cfg = EngineConfig {
         store_path,
         workspace,
         model,
         sandbox,
-        graph_dir: runtime_dir.join("graphs"),
+        graph_dir,
         route_policy: cfg.evolve.routing.clone(),
         tiers: cfg.model_tier.clone(),
         session_runs_cap: cfg.core.session_runs_cap(),
