@@ -22,6 +22,7 @@ pub fn spawn_run(
     session_id: String,
     extra_input: Option<serde_json::Value>,
 ) -> Result<(), PiiError> {
+    require_runtime()?;
     let cancel = pii_core::CancelToken::new();
     engine.register_run(&run_id, cancel.clone());
     let bridge = BridgeObserver {
@@ -68,7 +69,7 @@ pub fn spawn_run(
     );
     // Spec 115 R4: the lifecycle clock starts when the run is accepted.
     let accepted = std::time::Instant::now();
-    tokio::task::spawn_blocking(move || {
+    tokio::runtime::Handle::current().spawn_blocking(move || {
         // F5: merge any extra graph input (test_command/workspace) into the
         // run input so verify-fix graphs receive their params.
         let mut input = serde_json::json!({ "prompt": prompt, "session": session_id });
@@ -123,6 +124,14 @@ pub fn spawn_run(
         engine.unregister_run(&run_id.to_string());
     });
     Ok(())
+}
+
+/// Spec 178: a start from a plain thread (the cron re-arm) is refused by name,
+/// not left to panic inside `spawn_blocking` and crash-loop the supervisor.
+fn require_runtime() -> Result<(), PiiError> {
+    tokio::runtime::Handle::try_current()
+        .map(drop)
+        .map_err(|_| PiiError::Invalid("spawn_run called outside a Tokio runtime".into()))
 }
 
 /// Runs the graph, or refuses it by name when a promotion quarantines it (spec 125).
