@@ -2,6 +2,20 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-17 12:20Z — the gate was red on a committed formatting diff, so every item was being parked for a defect none of them could fix
+
+- **Named, with the file.** `cargo fmt --all --check` (the gate's own `fmt` step, `gate-steps.txt:6`) failed on
+  `xtask/src/fresh_gate.rs:168` — the `if why.is_empty() { … } else { why }` arm written on one line inside the
+  `git archive` error message. The file was **committed and clean** (`git status --porcelain` empty for it), so
+  the failure was a property of HEAD, not of any worker's tree: `19024ce` (04:32 today) is an ancestor of HEAD.
+- **Measured damage.** Eight of today's `cycle-*` logs carry `FAIL: fmt`; the 12:00Z cycle (item A22/155) failed
+  it while its own three dirty paths were rustfmt-clean, and its resumed worker had returned rc=0 with no tree
+  change at all. A step that fails on committed code parks every item in the queue regardless of its work.
+- **Fix** (`3ada006`, formatting only, one file): `cargo fmt -p xtask`, re-checked with `cargo fmt --all --check`
+  → rc=0 on the live tree, WIP included. No assertion, criterion or test touched.
+- **Not claimed:** that the 12:00Z cycle passes — its `fmt` FAIL is already recorded, so A22 gets one more
+  attempt; the acceptance is the next cycle's gate reaching `fmt` green and then the item's own criteria.
+
 ## 2026-10-17 00:15Z — no gated item could close: the export's gate built `pii` into a cache while three tests looked for it in the tree
 
 - **The blocker of both parked rows, named.** A22 (155) and A27 (160) were parked `gate-failed`; the gate's own
