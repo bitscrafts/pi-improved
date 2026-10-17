@@ -486,7 +486,10 @@ fn start_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, e: &CronEntry) {
 /// Re-arms a cron entry whose run finished, after [`CRON_MIN_REARM`].
 fn rearm_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, entry: CronEntry) {
     let (engine, ctx) = (Arc::clone(engine), Arc::clone(ctx));
+    // Spec 178: the re-arm thread has no runtime of its own; enter the reactive loop's.
+    let rt = tokio::runtime::Handle::current();
     std::thread::spawn(move || {
+        let _guard = rt.enter();
         std::thread::sleep(CRON_MIN_REARM);
         start_cron(&engine, &ctx, &entry);
     });
