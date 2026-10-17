@@ -35,6 +35,16 @@
   (`d6226ff`) was about the four `GateResult` constructions instead. Marked `#[allow(clippy::too_many_lines)]`
   with a reason, which is what this file already does at line 625 and what 20 other cohesive tests do — the
   test itself is untouched.
+- **A third blocker: the loop's own gate budget was shorter than the gate.** `cycle.sh` capped `fresh-gate` at
+  `timeout 1780`, while a full export gate on this host measures ~45-48 min (2026-10-16 22:53:33 → 23:41 =
+  47.5 min for all 14 steps; every export is a NEW source path, `fresh-gate-<pid>`, so cargo's fingerprints miss
+  and the step list recompiles the workspace). The last `fresh-gate PASS` the loop recorded is 2026-10-15 00:49;
+  every run since ended mid-compile — which is what "gate-failed" on A22/A27 really was. The cap is now
+  `GATE_TIMEOUT` (default 3600 s) **and a killed gate is no longer a verdict**: rc 124 records `gate-timeout`,
+  increments no attempt and leaves the `worker-ok` marker, so the item is retried at verify. That is §2 of the
+  decision taken on 2026-10-14 (`DECISION-fresh-worktrees-and-a-resumable-gate-build.md`), never implemented
+  until now. **Owed, and it is the convoy's root:** §1 of that same decision — a *fixed* export path so the
+  compiler cache genuinely resumes (that is the difference between ~48 min and minutes per gate run).
 - **Queue:** A22 and A27 are back to `status=needs-review`, `last=worker-ok …`, so the next cycles resume at
   verify (no worker is paid twice) now that the tree is clean and the gate can be green. Both stay one
   `fresh-gate` away from `done-satisfied` — their work is already committed (`7debbdf`, and 160's in HEAD).

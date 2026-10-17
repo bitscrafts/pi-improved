@@ -237,8 +237,26 @@ if [ -n "$GATE_ON" ]; then
     exit 13
   else
     say "fresh-gate (this is the project's truth, not the worker's)"
-    if ( export PATH="/usr/local/cargo/bin:$PATH"; CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout 1780 cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
-    then python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "fresh-gate PASS (phase marked: gated)"; else
+    # A full export gate MEASURES ~45-48 min on this host (2026-10-16 22:53:33 → 23:41 = 47.5 min for the 14
+    # steps): every export is a NEW source path (`fresh-gate-<pid>`), so cargo's fingerprints miss and the step
+    # list recompiles the workspace. The old cap was 1780 s — shorter than every run since 2026-10-15 — so each
+    # gated item ended `gate-failed` with its tree never judged. 3600 s leaves the measured run room and still
+    # bounds a hang: every step also kills itself after QG_STALL_SECS=1800 with no output.
+    GATE_TIMEOUT=${GATE_TIMEOUT:-3600}
+    ( export PATH="/usr/local/cargo/bin:$PATH"; CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" cargo run -q -p xtask -- fresh-gate --worktree ) >>"$LOG" 2>&1
+    GTRC=$?
+    if [ "$GTRC" -eq 0 ]; then
+      python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "fresh-gate PASS (phase marked: gated)"
+    elif [ "$GTRC" -eq 124 ]; then
+      # A KILLED gate is not a verdict. Decided 2026-10-14 (DECISION-fresh-worktrees-and-a-resumable-gate-build.md
+      # §2): a timeout gets its own outcome, because "FAILED" must mean the tree is wrong, and a gate that says
+      # FAILED while the tree is fine is the same lie as a check that passes while its path is broken. Attempts
+      # are NOT incremented and the marker keeps the next cycle at VERIFY, so a slow host costs a retry — never a
+      # worker re-dispatch (which would re-bill a paid run) and never a park dressed as a code failure.
+      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=worker-ok; gate-timeout after ${GATE_TIMEOUT}s — the gate was KILLED, not failed; retried at verify"
+      say "fresh-gate TIMED OUT after ${GATE_TIMEOUT}s — NOT MEASURED, not a failure; the item is retried at verify"
+      echo "OUTCOME=gate-timeout ITEM=$ITEM SECS=$GATE_TIMEOUT"; exit 14
+    else
       python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-failed
       say "fresh-gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
     fi
