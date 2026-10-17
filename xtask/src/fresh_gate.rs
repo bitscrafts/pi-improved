@@ -146,7 +146,11 @@ fn copy_into(src: &Path, dest: &Path) -> Result<(), String> {
 
 /// `git archive HEAD | tar -x -C dir` — reads the repo, never touches the tree.
 fn export_head(root: &Path, dir: &Path) -> Result<(), String> {
-    let status = Command::new("bash")
+    // NAME THE REASON. This step died three times tonight with the bare message "git archive failed", and that message is
+    // why 161 parked: the export works by hand (RC=0), so the failure is environmental - a missing destination, a git
+    // ownership complaint, a lock - and the caller could not tell which. Capture git's and tar's own words and pass them
+    // on; a step that can only say FAIL is the same defect as a node that emits no event.
+    let out = Command::new("bash")
         .args([
             "-c",
             "set -o pipefail; git -C \"$1\" archive HEAD | tar -x -C \"$2\"",
@@ -154,12 +158,20 @@ fn export_head(root: &Path, dir: &Path) -> Result<(), String> {
         ])
         .arg(root)
         .arg(dir)
-        .status()
+        .output()
         .map_err(|e| format!("export: {e}"))?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| "git archive failed".to_string())
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr);
+        let why = why.trim();
+        return Err(format!(
+            "git archive failed (rc={:?}, root={}, dir={}): {}",
+            out.status.code(),
+            root.display(),
+            dir.display(),
+            if why.is_empty() { "no stderr from git or tar" } else { why }
+        ));
+    }
+    Ok(())
 }
 
 fn overlay_worktree(root: &Path, dir: &Path) -> Result<(), String> {
