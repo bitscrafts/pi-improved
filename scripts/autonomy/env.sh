@@ -30,3 +30,12 @@ export FRESH_GATE_TARGET="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-t
 : "${CARGO_BUILD_JOBS:=8}"
 : "${CMAKE_BUILD_PARALLEL_LEVEL:=8}"
 export CARGO_BUILD_JOBS CMAKE_BUILD_PARALLEL_LEVEL
+
+# THE COVERAGE BUILD IS OUT OF ROUTINE RUNS — measured 2026-10-17: `coverage-floor` builds the whole workspace WITH
+# COVERAGE INSTRUMENTATION, 960 seconds for one step, and it is the single most expensive build a Rust project can
+# produce. Coverage is a property of a RELEASE, not of an item: an implementation is 41 seconds and was being wrapped in a
+# release-grade pipeline on every attempt, which is how a night produced one closure instead of a dozen. The gate's own
+# step honours this switch and says so loudly when it skips ("SKIPPED: coverage-floor ... the floor was NOT measured").
+# Run coverage deliberately, at the release boundary, not per item.
+: "${QG_SKIP_COVERAGE:=1}"
+export QG_SKIP_COVERAGE

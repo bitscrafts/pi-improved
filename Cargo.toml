@@ -104,6 +104,13 @@ panic = "abort"
 strip = true
 overflow-checks = true
 
+# MEASURED 2026-10-17: the dev profile kept FULL debuginfo, which is where the size and much of the time of every gate
+# build went — one night produced 42 GB of artefacts and a single step took 960 seconds. Line tables only: a panic still
+# reports file:line, which is what we read, and both the compile and the artefacts shrink sharply. Changing the profile
+# invalidates the caches once; every build after that is faster.
+[profile.dev]
+debug = 1
+
 # A perf-tuned profile for local benchmarking (kept separate from release so
 # the size-optimised release stays the shipped artifact).
 [profile.perf]
