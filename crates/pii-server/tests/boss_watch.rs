@@ -1017,3 +1017,86 @@ kind = "data"
         "a timeout must NEVER be recorded as a detection, got {ports:?}"
     );
 }
+
+/// Spec 163: `heal_detect` routes on the gate's RECORDED verdicts (`_tmp/gate/verdicts.jsonl`) and spawns nothing. Each
+/// fixture file is one workspace; the caps are EMPTY, so a runner that tried to exec would be denied, not merely slow.
+#[test]
+fn heal_detect_routes_on_recorded_verdicts_and_spawns_nothing() {
+    use pii_graph::node::NodeFactory as _;
+    use pii_server::node_kinds::nodes::heal::VerdictRunner;
+
+    let now_ms = Ctx::root(CapSet::empty(), Budget::unlimited()).now_ms();
+    let line = |ts_ms: u64, pass: bool, failing: &[&str]| {
+        serde_json::json!({"rev": "abc", "ts_ms": ts_ms, "pass": pass, "failing_tests": failing})
+            .to_string()
+    };
+    let day = 24 * 60 * 60 * 1000;
+    let cases: Vec<(&str, Option<Vec<String>>, &str)> = vec![
+        (
+            "pass",
+            Some(vec![
+                line(now_ms - 2000, false, &["a"]),
+                line(now_ms - 1000, true, &[]),
+            ]),
+            "ok",
+        ),
+        (
+            "repeat",
+            Some(vec![
+                line(now_ms - 2000, false, &["a"]),
+                line(now_ms - 1000, false, &["a"]),
+            ]),
+            "detected",
+        ),
+        (
+            "single",
+            Some(vec![line(now_ms - 1000, false, &["a"])]),
+            "inconclusive",
+        ),
+        (
+            "changed",
+            Some(vec![
+                line(now_ms - 2000, false, &["a"]),
+                line(now_ms - 1000, false, &["b"]),
+            ]),
+            "inconclusive",
+        ),
+        (
+            "stale",
+            Some(vec![line(now_ms - 2 * day, true, &[])]),
+            "inconclusive",
+        ),
+        ("absent", None, "inconclusive"),
+    ];
+    for (name, lines, want) in cases {
+        let ws = scratch(&format!("verdict-{name}-{}", std::process::id()));
+        if let Some(lines) = lines {
+            std::fs::create_dir_all(ws.join("_tmp/gate")).unwrap();
+            std::fs::write(ws.join("_tmp/gate/verdicts.jsonl"), lines.join("\n") + "\n").unwrap();
+        }
+        let heals = Arc::new(pii_store::heal::HealStore::open(&ws.join("heal.redb")).unwrap());
+        let f = HealFactory {
+            heals: Arc::clone(&heals),
+            runner: Arc::new(VerdictRunner {
+                workspace: ws.clone(),
+            }),
+        };
+        let node = f.build(&serde_json::json!({"gate": "fresh-gate"})).unwrap();
+        let input = pii_abi::NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::Value::Null,
+            nodes: serde_json::json!({}),
+        };
+        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+        let out = node.run(&ctx, &input).unwrap();
+        assert!(
+            matches!(&out, pii_abi::Outcome::Next { port, .. } if port.as_str() == want),
+            "{name}: want {want}, got {out:?}"
+        );
+        assert_eq!(
+            heals.list_attempts().unwrap().len(),
+            usize::from(want == "detected"),
+            "{name}: ledger rows"
+        );
+    }
+}

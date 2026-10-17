@@ -68,6 +68,80 @@ impl GateRunner for CargoXtaskRunner {
     }
 }
 
+/// The production runner (spec 163): reads the recorded gate verdict, spawns nothing, needs no `PROC`.
+///
+/// The file is `_tmp/gate/verdicts.jsonl`, one JSON object per line: `{ts_ms, pass, failing_tests}`.
+///
+/// - newest verdict passed → pass;
+/// - newest AND the one before it failed with the same failing set → fail (reproduced across two gate runs);
+/// - anything else — no file, no verdict inside [`VERDICT_MAX_AGE_MS`], or a single unconfirmed failure — is reported as
+///   `timed_out` (inconclusive): absence of evidence is never recorded as a broken tree.
+#[derive(Debug, Clone)]
+pub struct VerdictRunner {
+    /// Workspace whose `_tmp/gate/verdicts.jsonl` is read.
+    pub workspace: std::path::PathBuf,
+}
+
+/// A verdict older than this is stale: the watch says so instead of vouching for the tree.
+const VERDICT_MAX_AGE_MS: u64 = 24 * 60 * 60 * 1000;
+
+fn inconclusive(why: &str) -> GateResult {
+    GateResult {
+        pass: false,
+        detail: String::from(why),
+        timed_out: true,
+    }
+}
+
+impl GateRunner for VerdictRunner {
+    fn run_gate(&self, ctx: &Ctx, _gate: &str) -> Result<GateResult, PiiError> {
+        let path = self.workspace.join("_tmp/gate/verdicts.jsonl");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return Ok(inconclusive("stale: no recorded gate verdict"));
+        };
+        let mut recent = text
+            .lines()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .rev();
+        let Some(newest) = recent.next() else {
+            return Ok(inconclusive("stale: no recorded gate verdict"));
+        };
+        let ts = newest
+            .get("ts_ms")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        if ctx.now_ms().saturating_sub(ts) > VERDICT_MAX_AGE_MS {
+            return Ok(inconclusive(
+                "stale: newest gate verdict is older than 24 h",
+            ));
+        }
+        let passed = |v: &serde_json::Value| {
+            v.get("pass").and_then(serde_json::Value::as_bool) == Some(true)
+        };
+        if passed(&newest) {
+            return Ok(GateResult {
+                pass: true,
+                detail: String::new(),
+                timed_out: false,
+            });
+        }
+        let failing = |v: &serde_json::Value| v.get("failing_tests").cloned().unwrap_or_default();
+        match recent.next() {
+            Some(prev) if !passed(&prev) && failing(&prev) == failing(&newest) => Ok(GateResult {
+                pass: false,
+                detail: truncate(&format!(
+                    "gate failed in two consecutive runs: {}",
+                    failing(&newest)
+                )),
+                timed_out: false,
+            }),
+            _ => Ok(inconclusive(
+                "unconfirmed: one failed gate verdict, not yet reproduced",
+            )),
+        }
+    }
+}
+
 fn truncate(s: &str) -> String {
     s.chars().take(512).collect()
 }
@@ -92,8 +166,8 @@ impl NodeFactory for HealFactory {
     }
 
     fn required_caps(&self) -> CapKind {
-        // PROC only — never FS_WRITE (guardrail: read-only detection).
-        CapKind::PROC
+        // Reads a recorded verdict and spawns nothing: no PROC, and never FS_WRITE (spec 163).
+        CapKind::empty()
     }
 
     fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {

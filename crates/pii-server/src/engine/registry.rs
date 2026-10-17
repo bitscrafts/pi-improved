@@ -50,7 +50,7 @@ pub fn registry(
     reg.register(Arc::new(nodes::gate::GateFactory { approvals }));
     reg.register(Arc::new(nodes::heal::HealFactory {
         heals: Arc::clone(&heals),
-        runner: Arc::new(nodes::heal::CargoXtaskRunner {
+        runner: Arc::new(nodes::heal::VerdictRunner {
             workspace: cfg.workspace.clone(),
         }),
     }));
@@ -206,7 +206,7 @@ pub fn lint_registry_with_log(
             let heals = Arc::new(heals);
             reg.register(Arc::new(nodes::heal::HealFactory {
                 heals: Arc::clone(&heals),
-                runner: Arc::new(nodes::heal::CargoXtaskRunner {
+                runner: Arc::new(nodes::heal::VerdictRunner {
                     workspace: workspace.to_path_buf(),
                 }),
             }));
