@@ -82,6 +82,10 @@ pub const MEMORY_ARCHIVE_REFUSED: &str = "memory.archive_refused";
 pub const MEMORY_RESTORED: &str = "memory.restored";
 /// Event: an operator-facing CLI failure (startup, daemon connect, graph error).
 pub const CLI_FAILURE: &str = "cli.failure";
+/// Event: a cron entry could not be started (`cron`, `graph`, `error`; spec 177).
+pub const CRON_START_REFUSED: &str = "cron.start.refused";
+/// Event: a channel message was received but its run could not be started (`channel`, `graph`, `error`; spec 177).
+pub const CHANNEL_RUN_REFUSED: &str = "channel.run.refused";
 /// Event: a channel poll failed.
 pub const CHANNEL_POLL_FAILED: &str = "channel.poll.failed";
 /// Event: a channel send failed.
