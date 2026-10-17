@@ -31,7 +31,9 @@ use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 
 const TRIAGE: &str = include_str!("../../../graphs/discord-triage.toml");
-const DIGEST: &str = include_str!("../../../graphs/discord-digest.toml");
+/// The shipped digest starts at a `timer` (spec 176), which suspends a direct run; this test
+/// measures the digest's body, so it enters at the node the timer feeds.
+const DIGEST_SHIPPED: &str = include_str!("../../../graphs/discord-digest.toml");
 const REMEMBER: &str = include_str!("../../../examples/memory-remember.toml");
 
 /// A post node with its own caps removed, under a graph that grants `post`.
@@ -116,9 +118,22 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Daemon>, Arc<Recorder>) {
     let hello = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase2/hello.json");
     std::fs::create_dir_all(dir.join("ws")).unwrap();
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
+    let digest = DIGEST_SHIPPED
+        .replacen("entry = \"tick\"", "entry = \"devices\"", 1)
+        .replacen(
+            "[[node]]\nid = \"tick\"\nkind = \"timer\"\ncron = \"0 9 * * *\"\n\n",
+            "",
+            1,
+        )
+        .replacen(
+            "[[edge]]\nfrom = \"tick\"\nport = \"fired\"\nto = \"devices\"\nkind = \"data\"\n\n",
+            "",
+            1,
+        );
+    assert!(!digest.contains("kind = \"timer\""), "timer not stripped");
     for (n, g) in [
         ("discord-triage", TRIAGE),
-        ("discord-digest", DIGEST),
+        ("discord-digest", digest.as_str()),
         ("remember", REMEMBER),
         ("post-denied", NODE_DENIED),
         ("post-nogrant", NO_GRANT),

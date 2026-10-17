@@ -13,8 +13,13 @@
 # To run it daily, put a `timer` node with a cron expression in front (F5.8) and carry `to`
 # in the `[[cron]]` section's `input`. Never put a secret in `template`: it is posted verbatim.
 name = "discord-digest"
-entry = "devices"
+entry = "tick"
 caps = ["memory_read", "post"]
+
+[[node]]
+id = "tick"
+kind = "timer"
+cron = "0 9 * * *"
 
 [[node]]
 id = "devices"
@@ -51,6 +56,12 @@ value = { text = "", outcome = "digest input refused: devices" }
 id = "refused_lessons"
 kind = "transform"
 value = { text = "", outcome = "digest input refused: lessons" }
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "devices"
+kind = "data"
 
 [[edge]]
 from = "devices"

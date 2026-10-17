@@ -151,6 +151,19 @@ impl Daemon {
 
         let mut cron = BTreeMap::new();
         for c in &cfg.cron {
+            // Spec 176: a non-timer entry would re-run the instant it finishes.
+            if let Ok(spec) = engine.load_spec(&c.graph) {
+                let entry_kind = spec.node(&spec.entry).map(|n| n.kind.as_str());
+                if entry_kind != Some("timer") {
+                    return Err(PiiError::Invalid(format!(
+                        "cron '{}': graph '{}' must start at a timer node (entry is {}); \
+                         it would re-run as fast as it finishes",
+                        c.name,
+                        c.graph,
+                        entry_kind.unwrap_or("missing"),
+                    )));
+                }
+            }
             cron.insert(
                 c.name.clone(),
                 CronEntry {
