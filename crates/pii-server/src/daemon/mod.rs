@@ -235,12 +235,7 @@ impl Daemon {
     pub fn start_cron_entries(&self) {
         let entries: Vec<CronEntry> = self.ctx.cron.lock().values().cloned().collect();
         for e in entries {
-            if let Ok(run_id) = self.engine.start_run(&e.graph, &e.input) {
-                self.ctx
-                    .cron_runs
-                    .lock()
-                    .insert(run_id.to_string(), e.name.clone());
-            }
+            start_cron(&self.engine, &self.ctx, &e);
         }
     }
 
@@ -463,6 +458,40 @@ fn react(
     }
 }
 
+/// Minimum delay before a finished cron run is re-armed: a graph that finishes at
+/// once (or a start that keeps failing) must not re-arm in a hot loop (spec 177).
+const CRON_MIN_REARM: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Starts one cron firing; a refusal is a `cron.start.refused` event (spec 177).
+fn start_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, e: &CronEntry) {
+    match engine.start_run(&e.graph, &e.input) {
+        Ok(run_id) => {
+            ctx.cron_runs
+                .lock()
+                .insert(run_id.to_string(), e.name.clone());
+        }
+        Err(err) => engine.log().event(
+            &pii_observe::Event::new(
+                "cron",
+                pii_observe::Level::Error,
+                pii_observe::names::CRON_START_REFUSED,
+            )
+            .field("cron", e.name.as_str())
+            .field("graph", e.graph.as_str())
+            .field("error", err.to_string()),
+        ),
+    }
+}
+
+/// Re-arms a cron entry whose run finished, after [`CRON_MIN_REARM`].
+fn rearm_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, entry: CronEntry) {
+    let (engine, ctx) = (Arc::clone(engine), Arc::clone(ctx));
+    std::thread::spawn(move || {
+        std::thread::sleep(CRON_MIN_REARM);
+        start_cron(&engine, &ctx, &entry);
+    });
+}
+
 /// Reacts to a terminal run (F5.8/F6.5): starts the next cron firing, or
 /// replies on the channel that started this run.
 fn on_finished(
@@ -474,10 +503,8 @@ fn on_finished(
     let cron_name = ctx.cron_runs.lock().remove(run_id);
     if let Some(name) = cron_name {
         let entry = ctx.cron.lock().get(&name).cloned();
-        if let Some(entry) = entry
-            && let Ok(new_run) = engine.start_run(&entry.graph, &entry.input)
-        {
-            ctx.cron_runs.lock().insert(new_run.to_string(), name);
+        if let Some(entry) = entry {
+            rearm_cron(engine, ctx, entry);
         }
     }
     let channel_run = ctx.channel_runs.lock().remove(run_id);

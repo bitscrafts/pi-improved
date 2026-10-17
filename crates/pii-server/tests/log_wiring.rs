@@ -258,3 +258,16 @@ async fn a_detached_observer_fan_out_logs_nothing_and_the_run_still_finishes() {
         log.events()
     );
 }
+
+/// Spec 177: a cron entry that cannot start is an event, not a silence.
+#[test]
+fn a_cron_entry_that_cannot_start_is_reported() {
+    let dir = scratch("logw-cron-refused");
+    std::fs::create_dir_all(dir.path().join("graphs")).unwrap();
+    let cfg = "[[cron]]\nname = \"nightly\"\ngraph = \"no-such-graph\"\n";
+    let (d, log) = daemon_with_log(dir.path(), cfg);
+    d.start_cron_entries();
+    let ev = log.events_named(names::CRON_START_REFUSED);
+    assert_eq!(ev.len(), 1, "{:?}", log.events());
+    assert!(d.ctx.cron_runs.lock().is_empty());
+}

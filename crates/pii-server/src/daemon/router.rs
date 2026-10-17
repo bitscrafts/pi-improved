@@ -117,8 +117,21 @@ fn poll_once(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, name: &str) {
         if channel.kind() == "mqtt" {
             add_mqtt_fields(&mut input, &msg);
         }
-        let Ok(run_id) = engine.start_run(&graph, &input) else {
-            continue;
+        let run_id = match engine.start_run(&graph, &input) {
+            Ok(id) => id,
+            Err(err) => {
+                engine.log().event(
+                    &pii_observe::Event::new(
+                        "channel",
+                        pii_observe::Level::Error,
+                        pii_observe::names::CHANNEL_RUN_REFUSED,
+                    )
+                    .field("channel", name)
+                    .field("graph", graph.as_str())
+                    .field("error", err.to_string()),
+                );
+                continue;
+            }
         };
         let _ = ctx.channel_store.advance(name, msg.cursor, run_id.as_str());
         ctx.channel_runs
