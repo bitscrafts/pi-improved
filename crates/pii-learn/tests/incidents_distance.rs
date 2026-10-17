@@ -83,3 +83,44 @@ fn since_excludes_older_incidents() {
     let since = pii_learn::incident::parse_iso("2026-10-01T00:00:00Z").unwrap();
     assert!(measure_distance(d.path(), since).incidents.is_empty());
 }
+
+#[test]
+fn an_act_recorded_in_the_operator_log_counts_and_an_untouched_incident_stays_zero() {
+    let d = store(concat!(
+        r#"{"fingerprint":"hot","first_seen":"2026-10-10T10:00:00Z","opened_at":"2026-10-10T10:10:00Z"}"#,
+        "\n",
+        r#"{"fingerprint":"cold","first_seen":"2026-10-10T10:00:00Z","opened_at":"2026-10-10T10:10:00Z"}"#,
+        "\n"
+    ));
+    std::fs::write(
+        d.path().join("operator-acts.log"),
+        "2026-10-10T10:05:00Z | human | deploy-card | incident=hot rev=r1 approved\n\
+         2026-10-10T11:00:00Z | human | pause | -\n",
+    )
+    .unwrap();
+    let r = measure_distance(d.path(), 0);
+    assert_eq!(
+        (r.incidents[0].acts, r.incidents[0].h_pre),
+        (Some(1), Some(true))
+    );
+    assert_eq!(
+        (r.incidents[1].acts, r.incidents[1].h_pre),
+        (Some(0), Some(false))
+    );
+}
+
+#[test]
+fn an_act_line_with_an_unreadable_timestamp_is_named_not_imputed() {
+    let d = store(concat!(
+        r#"{"fingerprint":"hot","first_seen":"2026-10-10T10:00:00Z","opened_at":"2026-10-10T10:10:00Z"}"#,
+        "\n"
+    ));
+    std::fs::write(
+        d.path().join("operator-acts.log"),
+        "garbage | human | resume | hot\n",
+    )
+    .unwrap();
+    let r = measure_distance(d.path(), 0);
+    assert_eq!(r.incidents[0].acts, None);
+    assert!(render(&r).contains("NOT COMPUTABLE hot"));
+}

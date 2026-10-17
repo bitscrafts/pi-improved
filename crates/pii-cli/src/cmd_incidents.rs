@@ -7,7 +7,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use pii_learn::distance::{measure_distance, render};
+use pii_learn::distance::{OPERATOR_ACTS_FILE, measure_distance_with_acts, render};
 use pii_learn::incident::{IncidentConfig, iso, parse_iso, scan_incidents};
 use pii_learn::incident_runtime::scan_runtime as scan_runtime_full;
 use pii_learn::incident_store::{ingest, show as show_stored};
@@ -90,10 +90,14 @@ fn distance(root: Option<PathBuf>, since: Option<&str>) -> ExitCode {
         return usage();
     };
     let root = root.unwrap_or_else(|| PathBuf::from("_tmp/autonomy/logs"));
+    let acts = std::env::var_os("PII_ACTS").map_or_else(
+        || PathBuf::from("_tmp/autonomy").join(OPERATOR_ACTS_FILE),
+        PathBuf::from,
+    );
     let _ = write!(
         std::io::stdout(),
         "{}",
-        render(&measure_distance(&root, since))
+        render(&measure_distance_with_acts(&root, since, &acts))
     );
     ExitCode::SUCCESS
 }

@@ -3,7 +3,9 @@
 //! Per incident in `incidents.jsonl`: **`H_pre`** (an operator act earlier than
 //! the card), **L** (first evidence → opened) and **A** (operator acts). The
 //! card is `card_at` when recorded, else the incident's `opened_at`. Operator
-//! acts are the optional `operator_acts` array; an absent array is zero acts.
+//! acts are the lines of the operator's own record, `operator-acts.log`
+//! (`<ts> | <actor> | <act> | <item…>`), whose item names the incident's
+//! fingerprint, plus the optional `operator_acts` array; none is zero acts.
 //! A missing or unparseable timestamp is named and counted, never imputed.
 //! Read-only: nothing here writes the store.
 
@@ -11,6 +13,34 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::incident::{INCIDENTS_FILE, parse_iso};
+
+/// The operator's own record, written by every operator act.
+pub const OPERATOR_ACTS_FILE: &str = "operator-acts.log";
+
+/// One act line: its timestamp (`None` when unreadable) and the text naming the item.
+struct Act {
+    at: Option<i64>,
+    item: String,
+}
+
+fn parse_acts(text: &str) -> Vec<Act> {
+    text.lines()
+        .filter_map(|l| {
+            let (at, rest) = l.split_once('|')?;
+            Some(Act {
+                at: parse_iso(at.trim()),
+                item: rest.to_owned(),
+            })
+        })
+        .collect()
+}
+
+fn names(item: &str, fingerprint: &str) -> bool {
+    !fingerprint.is_empty()
+        && item
+            .split(|c: char| c.is_whitespace() || matches!(c, '|' | '=' | ','))
+            .any(|w| w == fingerprint)
+}
 
 /// One incident's three numbers; `None` is NOT COMPUTABLE.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +68,7 @@ fn ts(v: &serde_json::Value, key: &str) -> Option<i64> {
     parse_iso(v.get(key)?.as_str()?)
 }
 
-fn measure_one(v: &serde_json::Value) -> Distance {
+fn measure_one(v: &serde_json::Value, recorded: &[Act]) -> Distance {
     let text = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_owned();
     let opened = ts(v, "opened_at");
     let card = if v.get("card_at").is_some() {
@@ -46,7 +76,13 @@ fn measure_one(v: &serde_json::Value) -> Distance {
     } else {
         opened
     };
-    let acts: Option<Vec<i64>> = v.get("operator_acts").map_or_else(
+    let fp = v.get("fingerprint").and_then(|x| x.as_str()).unwrap_or("");
+    let own: Option<Vec<i64>> = recorded
+        .iter()
+        .filter(|a| names(&a.item, fp))
+        .map(|a| a.at)
+        .collect();
+    let inline: Option<Vec<i64>> = v.get("operator_acts").map_or_else(
         || Some(Vec::new()),
         |a| {
             a.as_array().and_then(|a| {
@@ -56,6 +92,10 @@ fn measure_one(v: &serde_json::Value) -> Distance {
             })
         },
     );
+    let acts = own.zip(inline).map(|(mut a, b)| {
+        a.extend(b);
+        a
+    });
     let h_pre = acts
         .as_ref()
         .zip(card)
@@ -80,12 +120,19 @@ fn measure_one(v: &serde_json::Value) -> Distance {
 /// placed in a window, so it is kept and reported NOT COMPUTABLE.
 #[must_use]
 pub fn measure_distance(root: &Path, since: i64) -> DistanceReport {
+    measure_distance_with_acts(root, since, &root.join(OPERATOR_ACTS_FILE))
+}
+
+/// [`measure_distance`] reading the operator's acts from `acts` (a missing file is no acts).
+#[must_use]
+pub fn measure_distance_with_acts(root: &Path, since: i64, acts: &Path) -> DistanceReport {
+    let recorded = parse_acts(&std::fs::read_to_string(acts).unwrap_or_default());
     let text = std::fs::read_to_string(root.join(INCIDENTS_FILE)).unwrap_or_default();
     let incidents = text
         .lines()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .filter(|v| ts(v, "opened_at").is_none_or(|o| o >= since))
-        .map(|v| measure_one(&v))
+        .map(|v| measure_one(&v, &recorded))
         .collect();
     DistanceReport { incidents }
 }
