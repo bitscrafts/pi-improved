@@ -16,6 +16,7 @@ pub mod distance;
 mod extract;
 pub mod incident;
 pub mod incident_runtime;
+pub mod incident_store;
 mod learner;
 mod promote;
 mod scan;
