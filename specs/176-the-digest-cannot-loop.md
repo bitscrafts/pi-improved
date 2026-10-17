@@ -9,7 +9,7 @@
 Give the digest graph a timer node with cron = "0 9 * * *". AND make the daemon REFUSE at start any [[cron]] whose graph entry is not a timer, naming the entry - config.rs:457 documents that precondition and nothing enforces it.
 
 ## Exit Criteria
-- [ ] grep -c kind = timer graphs/discord-digest.toml
+- [ ] cargo test -p pii-server --test daemon_graphs (a cron whose graph entry is not a timer must be refused at start, named)
 - [ ] cargo test -p pii-server --test daemon_graphs
 
 ## Guardrails
