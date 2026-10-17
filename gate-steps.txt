@@ -12,7 +12,9 @@ clippy|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-ta
 
 # Spec 89 (N4): `llamacpp` is off in every other step, so its provider and required-features tests
 # would be compiled by no step. Compile + lint only; real-model tests stay #[ignore]d. Own target dir.
-clippy (llamacpp)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/llamacpp-gate cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings
+# clippy (llamacpp) REMOVED from the routine gate 2026-10-17 (A36/spec 170): 720 SECONDS measured per run,
+# for an in-process binding the product never uses - pii reaches models over HTTP (`llamacpp-server:`).
+# On demand only: cargo clippy -p pii-model --features llamacpp --all-targets -- -D warnings
 
 # Spec 121 (R6): the real GPIO backend (`hal-gpiod`) is compiled and linted so it cannot rot; NEVER run
 # (no /dev/gpiochip* here). Own target dir.
