@@ -168,7 +168,11 @@ fn export_head(root: &Path, dir: &Path) -> Result<(), String> {
             out.status.code(),
             root.display(),
             dir.display(),
-            if why.is_empty() { "no stderr from git or tar" } else { why }
+            if why.is_empty() {
+                "no stderr from git or tar"
+            } else {
+                why
+            }
         ));
     }
     Ok(())
