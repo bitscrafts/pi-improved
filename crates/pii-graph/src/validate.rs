@@ -92,6 +92,25 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
         }
     }
 
+    // V10 a node that can block on a process must bound itself (spec 162)
+    for n in &spec.nodes {
+        let spawns = reg
+            .factory(&n.kind)
+            .is_ok_and(|f| f.effects().contains(pii_abi::Effects::SPAWNS_PROC));
+        if spawns
+            && n.cfg
+                .get("timeout_ms")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+                == 0
+        {
+            errors.push(format!(
+                "V10: node '{}' spawns a process and requires a positive 'timeout_ms'",
+                n.id
+            ));
+        }
+    }
+
     // V3 bounded cycles
     let cycle = find_cycle_error(spec);
     if let Some(msg) = &cycle {

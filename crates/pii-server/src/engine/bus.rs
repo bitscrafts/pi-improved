@@ -93,9 +93,11 @@ pub fn map_event(run_id: &RunId, ev: &RunEvent) -> Option<Event> {
             run_id: run_id.to_string(),
             graph: graph.clone(),
         },
-        // Neither TickStarted nor NodeInterrupted (J1 audit marker) has a
-        // wire event — both are journalled-only.
-        RunEvent::TickStarted { .. } | RunEvent::NodeInterrupted { .. } => return None,
+        // TickStarted, NodeInterrupted (J1 audit marker) and NodeProgress
+        // (spec 162 heartbeat) have no wire event — all journalled-only.
+        RunEvent::TickStarted { .. }
+        | RunEvent::NodeInterrupted { .. }
+        | RunEvent::NodeProgress { .. } => return None,
         RunEvent::Suspended { reason, key, .. } => Event::RunSuspended {
             run_id: run_id.to_string(),
             key: key.0.clone(),

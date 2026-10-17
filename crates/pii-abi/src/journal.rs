@@ -109,6 +109,18 @@ pub enum RunEvent {
         /// 1-based attempt number.
         attempt: u32,
     },
+    /// A heartbeat from a node that can block on a process: it is alive and
+    /// has been running `elapsed_ms`, its child having used `child_cpu_ms` of
+    /// CPU. Journal/audit only — `replay` treats it as a no-op — so a wedged
+    /// node (elapsed grows, cpu flat) reads differently from a working one.
+    NodeProgress {
+        /// The node id.
+        node: NodeId,
+        /// Milliseconds since the node began executing.
+        elapsed_ms: u64,
+        /// CPU milliseconds consumed by the node's child process.
+        child_cpu_ms: u64,
+    },
     /// A node was cancelled (not failed).
     NodeCancelled {
         /// The node id.
