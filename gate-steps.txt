@@ -20,7 +20,11 @@ clippy (hal-gpiod)|CARGO_TARGET_DIR=target/hal-gate cargo clippy -p pii-hal --fe
 
 # pii-worker's supervisor integration tests spawn the real `pii` binary at target/debug/pii (a fixed
 # path), so it must exist before `cargo test` runs.
-build|cargo build --workspace
+# The warm cache (FRESH_GATE_TARGET) builds the workspace OUTSIDE the export, so the fixed path the pii-worker
+# supervisor tests spawn — target/debug/pii, inside the export — never appears. Publish the binary where they
+# look while keeping the warm cache: a 48-minute cold build per gate run is not survivable, and the tests are
+# right to spawn the real binary.
+build|cargo build --workspace && mkdir -p target/debug && cp -f "${CARGO_TARGET_DIR:-target}/debug/pii" target/debug/pii
 
 test (lib/bins/tests)|cargo test --workspace --lib --bins --tests
 
