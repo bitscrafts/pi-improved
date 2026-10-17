@@ -46,7 +46,14 @@ BRIEF="$LOGD/brief-$TAG.md"
 cat > "$BRIEF" <<EOF
 # Implement spec $TAG (follow the spec file as the CONTRACT)
 Read $SPEC and execute it exactly: TDD (RED observed before GREEN), minimal diffs.
-CONTEXT - do NOT run the gate yourself: the loop runs fmt/clippy(-D warnings)/workspace tests AFTER you and
+CONTEXT - do NOT run the whole WORKSPACE gate yourself: the loop runs it AFTER you and quality-gate.sh is the arbiter.
+BUT YOU MUST RUN THE CHEAP HALF BEFORE YOU DECLARE DONE, because the gate is the first thing that will see your code
+otherwise and every lint error it finds parks the item:
+    cargo fmt --all
+    cargo clippy -p <each crate you touched> --all-targets -- -D warnings
+Paste that clippy output in your report. Seconds, not the 10+ minutes the workspace gate costs - measured 2026-10-17:
+four rows parked with a banned std::process::Command::output, a format!(..) appended to a String, and an over-long doc
+comment, all of which clippy-on-the-touched-crates reports instantly.
 quality-gate.sh is the arbiter. Running the whole workspace gate inside your turn costs 10+ minutes of wall clock per
 attempt and writes no code at all - measured 2026-10-15: three attempts at one spec took 1h40m each for exactly that
 reason. Run ONLY the tests your spec names (e.g. cargo test -p <crate> --test <name>), keep your turn short, and leave

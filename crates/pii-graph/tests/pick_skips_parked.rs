@@ -2,6 +2,9 @@
 //! dispatches the next dispatchable row; when every row is parked it still answers NONE.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+// Test SCAFFOLDING: this drives state.py as a black box, exactly as worktree_join_containment.rs does, so the
+// process call is the harness and not the tool the crate restricts.
+#![allow(clippy::disallowed_methods)]
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -13,7 +16,9 @@ fn pick(dir: &std::path::Path) -> Output {
         .arg("pick")
         .env("PII_PLAN", dir.join("plan.tsv"))
         .env("PII_STATE", dir.join("state.json"))
-        .output()
+        .spawn()
+        .expect("python3 spawns")
+        .wait_with_output()
         .expect("python3 runs")
 }
 
@@ -22,7 +27,7 @@ fn fixture(states: &[(&str, &str)]) -> tempfile::TempDir {
     let mut plan = String::new();
     let mut st = serde_json::Map::new();
     for (id, status) in states {
-        plan.push_str(&format!("{id}\tspec.md\t-\ttitle {id}\t-\t-\t0\n"));
+        let _ = std::fmt::Write::write_fmt(&mut plan, format_args!("{id}\tspec.md\t-\ttitle {id}\t-\t-\t0\n"));
         st.insert((*id).into(), serde_json::json!({ "status": status }));
     }
     std::fs::write(dir.path().join("plan.tsv"), plan).unwrap();
