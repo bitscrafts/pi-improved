@@ -64,7 +64,17 @@ done
 
 # ---- 1: build ----
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
-  (cd "$REPO" && cargo build --release -p pii-cli -p pii-mcp -p pii-web -p pii-evolve)
+  # Build from a CLEAN EXPORT of HEAD, never from the working tree.
+  # Measured 2026-10-17 on three consecutive deploys: building in the repo shipped binaries that reported
+  # "<rev>-dirty" whenever any path was uncommitted — including a worker's leftover — so the revision the deploy card
+  # must quote exactly carried a suffix meaning "this is not the commit you verified". The gate already builds this way
+  # (xtask/src/fresh_gate.rs: git archive); the installer now does too.
+  EXPORT="$(mktemp -d "${TMPDIR:-/tmp}/pii-install-XXXXXX")" || abort "cannot create a clean export directory"
+  git -C "$REPO" archive HEAD | tar -x -C "$EXPORT" || abort "git archive HEAD failed — is $REPO a git checkout?"
+  (cd "$EXPORT" && cargo build --release -p pii-cli -p pii-mcp -p pii-web -p pii-evolve) \
+    || abort "release build failed inside the clean export of $(git -C "$REPO" rev-parse --short HEAD)"
+  BIN_SRC="$EXPORT/target/release"
+  echo "BUILT FROM EXPORT: $(git -C "$REPO" rev-parse --short HEAD) (working-tree changes excluded)"
 fi
 for b in "${BINS[@]}" "${STAGED[@]}"; do
   [ -x "$BIN_SRC/$b" ] || abort "built binary $BIN_SRC/$b missing"
