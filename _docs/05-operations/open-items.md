@@ -77,6 +77,17 @@ version**; disabling it is the user's host action. `ollama-cloud` is a *cloud ac
 a separate question.
 **Next:** the user names where a Dockerfile/quadlet should live, or confirms systemd-only.
 
+### 9b. The routine gate runs no tests
+The per-item gate is `quality-gate.sh --routine`, whose step list is `gate-steps-quick.txt`: **fmt, clippy, build**.
+`test (lib/bins/tests)` lives in `gate-steps.txt` (the commit and release boundary), so an item can regress the
+workspace suite and still be recorded as "gate green". Measured 2026-10-18: `03e729a` (179's real fix, committed
+by a cycle as a leftover) left `daemon::lag::tests::lagged_run_finished_still_starts_next_cron_firing` and
+`…reactive_loop_lag_rearms_cron_chain_for_lost_run_finished` red at `HEAD` — `cargo test -p pii-server --lib`
+= **127 passed, 2 failed** — and no cycle noticed for 1.5 h because no cycle ran the suite.
+**Next:** measure one warm `cargo test --workspace` against `_tmp/gate-target` (minutes?), then decide whether the
+routine gate gains a `test (lib)` step or the item boundary gains a cheaper "the crates the diff touches" step.
+Recorded as spec 183's cause; the gate change itself is not authored yet because the cost is unmeasured.
+
 ### 9a. The gate certifies the tree it sits in, not the tree it commits
 `067 §Q1` decided the item boundary runs the quick gate **in place** and the release boundary runs `fresh-gate`.
 The hole that decision leaves was measured twice on 2026-10-17: `7f98624` (175) committed a call to

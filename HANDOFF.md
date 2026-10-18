@@ -2,6 +2,33 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-18 00:40Z — the queue was empty and the tree was red in three places: a stale lock, two files over the line gate, and two lib tests
+
+- **What the tick found, all on a clean tree** (`git status --porcelain` empty at `dbe600a`): `cargo metadata
+  --locked` fails on a clean export of HEAD (rc=101, `pii-channels` declared `pii-net` as a dev-dependency and the
+  committed lock never listed it); `cargo run -q -p xtask -- lint-files` exits 1 naming
+  `crates/pii-server/src/daemon/mod.rs` (468) and `crates/pii-cli/src/cmd_daemon.rs` (461) against the 450-line
+  gate; `cargo test -p pii-server --lib` = **127 passed, 2 failed** in `daemon::lag::tests`.
+- **The regression has a commit.** `03e729a` carries 179's real fix (committed by a cycle as "leftover") and keeps
+  a cron run tracked until it truly ends; the two lag tests that expect the next scheduled firing after a lagged
+  `run_finished` went red. Spec 183 reconciles the two contracts — one run per occurrence **and** the next
+  occurrence still starts — instead of choosing a side.
+- **Why nothing caught it for 1.5 h.** The item gate is `--routine`, i.e. `gate-steps-quick.txt`: fmt, clippy,
+  build. Tests, `lint-files` and coverage are in `gate-steps.txt`, the release boundary. Both holes are now open
+  items (9b: the routine gate runs no tests; 9a: the gate certifies the tree it sits in, not the tree it commits).
+- **Closed by this tick, with proofs.** The stale lock (`32f8747`, `--locked` rc=101 → rc=0 on the same export);
+  the installer now builds from a clean export of HEAD so a shipped revision is not `<rev>-dirty` (`c98ced8`,
+  syntax and archive contents checked, no full deploy run); the selftest row that asserted the parked skip instead
+  of the missing-spec guard (`c4f5770`, 30/4 → **32/2**, the two remaining being the documented paused/question
+  rows); 180's closure with the read-path mutation red at request 487 and the write path carried as 181
+  (`b22457d`); two queue rows authored and committed (`dbe600a`, and 183 first in the order).
+- **The selftest, measured twice:** `30 passed, 4 failed` before the row fix, `32 passed, 2 failed` after —
+  `VERDICT: FAILURES ABOVE` both times, the residue being `paused -> the tick says so (once)` and `an open
+  question is carried to the phone`, the pair the skill documents as non-hermetic. The `PAUSED` path itself was
+  measured live during the tick (the operator switch was flipped by the orchestrator and one dry tick printed
+  `pii autonomy · PAUSED` correctly).
+
+
 ## 2026-10-17 18:22Z — A36/170 closed after four green gates produced no commit: the plan row named a neighbour's files
 
 - **The item.** The routine gate no longer builds llama.cpp: `clippy (llamacpp)` measured 720 s of C++ per run for a
