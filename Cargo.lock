@@ -1948,6 +1948,7 @@ dependencies = [
  "parking_lot",
  "pii-abi",
  "pii-core",
+ "pii-net",
  "pii-observe",
  "rumqttc",
  "serde",
