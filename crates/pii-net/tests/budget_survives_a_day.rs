@@ -154,3 +154,51 @@ fn a_response_larger_than_the_window_is_still_refused() {
         "want byte-budget denial, got {err}"
     );
 }
+
+/// A responder that drains each connection to EOF, so a large client write never
+/// blocks on a full socket buffer.
+fn sink(connections: usize) -> Responder {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        for _ in 0..connections {
+            let Ok((mut s, _)) = listener.accept() else {
+                return;
+            };
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                while let Ok(n) = std::io::Read::read(&mut s, &mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    Responder { addr }
+}
+
+/// Two connections on one grant, each writing under the window but together over
+/// it: a counter shared across the grant would refuse the second.
+#[test]
+fn a_write_window_is_spent_per_connection() {
+    let fake = sink(2);
+    let svc = service(&fake, WINDOW);
+    let ctx = net_ctx();
+    let target = Target {
+        host: String::from("fake.local"),
+        port: fake.addr.port(),
+    };
+    let payload = vec![b'x'; 700 * 1024];
+    let mut a = svc
+        .connect(&ctx, &target, "http:fake.local", 5_000, Scheme::Http)
+        .unwrap();
+    let mut b = svc
+        .connect(&ctx, &target, "http:fake.local", 5_000, Scheme::Http)
+        .unwrap();
+    for (name, c) in [("first", &mut a), ("second", &mut b)] {
+        if let Err(e) = c.write_all(&payload) {
+            panic!("{name} connection refused: {e}");
+        }
+    }
+}
