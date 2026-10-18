@@ -35,7 +35,7 @@ use pii_core::Clock as _;
 use pii_proto::event::Event;
 
 use crate::Engine;
-use cron::{on_finished, start_cron};
+use cron::on_finished;
 use status::{ChannelRuntime, CronEntry, DaemonContext};
 
 /// Attaches the daemon context to `engine`, and (spec 125) records the
@@ -238,7 +238,7 @@ impl Daemon {
     pub fn start_cron_entries(&self) {
         let entries: Vec<CronEntry> = self.ctx.cron.lock().values().cloned().collect();
         for e in entries {
-            start_cron(&self.engine, &self.ctx, &e);
+            cron::arm_cron(&self.engine, &self.ctx, &e);
         }
     }
 
