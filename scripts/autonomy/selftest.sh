@@ -55,6 +55,10 @@ echo "== 4. the cycle's guards (no dispatch, no money)"
 PATH=$BIN:$PATH DRY=1 bash scripts/autonomy/cycle.sh >/dev/null 2>&1; row "DRY=1 -> 0 without dispatching" 0 $?
 # the cycle's exit code IS its outcome (the interface): assert the code, not a grep through a pipe
 # (a pipe under `pipefail` returns the first non-zero command, so `if ... | grep` reads a 6 as "no match")
+# X1 is left at needs-review by the set/get row above, and pick skips parked/needs-review rows (spec 169), so the
+# row would assert the PARKED skip instead of the missing-spec guard: measured 2026-10-18, expected=6 actual=0.
+# Put it back to the state a plan row has before any dispatch; the assertion itself is unchanged.
+PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py set X1 status=pending >/dev/null
 PII_PLAN=$T/plan.tsv PATH=$BIN:$PATH bash scripts/autonomy/cycle.sh >/dev/null 2>&1; row "a plan row with no spec -> rc 6" 6 $?
 row "the spec number is derived from the filename" "134" "$(printf '%s' '134-x.md' | sed -E 's/^([0-9]+).*/\1/')"
 
