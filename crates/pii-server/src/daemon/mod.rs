@@ -196,6 +196,7 @@ impl Daemon {
             timer_store: Arc::clone(&wheel),
             cron: Mutex::new(cron),
             cron_runs: Mutex::new(BTreeMap::new()),
+            cron_last_start: Mutex::new(BTreeMap::new()),
             channel_runs: Mutex::new(BTreeMap::new()),
             crashes_dir: runtime_dir.join("crashes"),
             config_path,
@@ -464,6 +465,9 @@ const CRON_MIN_REARM: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Starts one cron firing; a refusal is a `cron.start.refused` event (spec 177).
 fn start_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, e: &CronEntry) {
+    ctx.cron_last_start
+        .lock()
+        .insert(e.name.clone(), std::time::Instant::now());
     match engine.start_run(&e.graph, &e.input) {
         Ok(run_id) => {
             ctx.cron_runs
@@ -483,14 +487,26 @@ fn start_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, e: &CronEntry) {
     }
 }
 
-/// Re-arms a cron entry whose run finished, after [`CRON_MIN_REARM`].
+/// Re-arms a cron entry whose run finished: at once when its last firing started at least
+/// [`CRON_MIN_REARM`] ago (spec 183), else after the remainder of that interval.
 fn rearm_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, entry: CronEntry) {
+    let wait = ctx
+        .cron_last_start
+        .lock()
+        .get(&entry.name)
+        .map_or(std::time::Duration::ZERO, |t| {
+            CRON_MIN_REARM.saturating_sub(t.elapsed())
+        });
+    if wait.is_zero() {
+        start_cron(engine, ctx, &entry);
+        return;
+    }
     let (engine, ctx) = (Arc::clone(engine), Arc::clone(ctx));
     // Spec 178: the re-arm thread has no runtime of its own; enter the reactive loop's.
     let rt = tokio::runtime::Handle::current();
     std::thread::spawn(move || {
         let _guard = rt.enter();
-        std::thread::sleep(CRON_MIN_REARM);
+        std::thread::sleep(wait);
         start_cron(&engine, &ctx, &entry);
     });
 }
@@ -640,6 +656,7 @@ mod tests {
             timer_store: Arc::new(TimerWheel::open(&dir.join("ctx-timer.redb")).unwrap()),
             cron: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             cron_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+            cron_last_start: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             crashes_dir: dir.join("crashes"),
             config_path: dir.join("config.toml"),
