@@ -2,6 +2,36 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-18 18:30Z — 187 verified by hand (criteria + mutation), the selftest re-read, and 070 §5's instrument authored as 188
+
+- **A54/187 verified independently of the worker report.** On the committed tree (`18691a2`) both criteria are
+  green (`cron_arming_is_idempotent` 1 passed; `cron.rearmed` present). The orchestrator's own mutation — the
+  dedupe in `arm_cron` replaced by `let existing: Option<String> = None;` — reddens the criterion's own test:
+  `four starts armed more than one run`, `left: 4`, `right: 1`. The three files were restored byte-identical
+  (`sha256sum -c` OK) and re-ran green on those bytes. Recorded in the spec's `## Closure` (`38bb2b6`).
+- **Pitfall measured while restoring it:** `cp -p` keeps the file's original mtime, which is *older* than the
+  mutated build artifact, so cargo reuses the mutated binary and prints a **false red** on a file whose sha256
+  already matches. `touch` the restored file before the green re-run.
+- **The production half of 187 is still open and is a deploy measurement, not code.** The deployed binary still
+  holds **4** suspended digest runs for `cron_entries: 1`, so 2026-10-19 09:00 UTC is expected to execute four.
+  It closes when a redeployed binary reads armed == `cron_entries` after restarts and the occurrence produces
+  exactly one run.
+- **Selftest:** `RESULT: 32 passed, 2 failed`, `VERDICT: FAILURES ABOVE` — the documented pair
+  (`paused -> the tick says so (once)`, `an open question is carried to the phone`). Cause diagnosed, not assumed:
+  with the operator switch paused and no cycle in flight, a tick printed `pii autonomy · PAUSED — PAUSED by
+  human at …`, so the row failed through `tick.sh`'s **in-flight** branch (a cycle held the lock during the
+  selftest), not through the switch or the gateway.
+- **The queue was empty (53/53 rows done), so 070 §1/§5 re-supplied it.** Authored
+  `specs/188-a-run-names-the-deploy-that-produced-it.md` and row **A55**: run headers carry
+  `{revision, process_start_ms, created_ms}` (serde-default, so the 1,850 existing rows still decode), and
+  `pii health` gains a `since_deploy` block **read from the store** keyed by the running revision, with
+  `unattributed` counted rather than absorbed. The plan row's verify column was diffed against the spec's Exit
+  Criteria before committing (5 commands, verbatim) — and the fifth was rewritten from `;` to `&&` after the diff
+  showed a `;` inside one criterion would have made its first grep non-binding.
+- **Next:** `state.py pick` returns **A55**, so the next tick dispatches it. After it: 070 §5's remaining two
+  bullets (posted/post_refused read from the store, the per-cron `runs_per_occurrence` assertion), then the
+  deploy-boundary measurements 070 §1 steps 2–6 (occurrence, soak, cards per install), which need the host.
+
 ## 2026-10-18 06:35Z — the suite is red at HEAD and has been since 179: a full-suite measurement found it, spec 184 is first in the queue
 
 - **The queue was empty; a measurement refilled it.** To answer open-items §9b (the routine gate runs no tests)
