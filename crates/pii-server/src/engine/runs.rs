@@ -193,13 +193,22 @@ fn refuse_start(engine: &Engine, run_id: &RunId, graph: &str, err: &PiiError) ->
     if !matches!(engine.store.get_run(run_id), Ok(None)) {
         return false;
     }
-    let header = pii_abi::RunHeader {
+    let mut header = pii_abi::RunHeader {
         run: run_id.clone(),
         graph: graph.to_owned(),
         status: pii_abi::RunStatus::Failed,
         seq: 0,
         dur_ms: 0,
+        revision: String::new(),
+        process_start_ms: 0,
+        created_ms: 0,
     };
+    {
+        use pii_core::Clock as _;
+        engine
+            .store
+            .stamp_origin(&mut header, pii_core::SystemClock.now_ms());
+    }
     fail_run(engine, header, graph, err);
     true
 }
@@ -749,6 +758,9 @@ mod tests {
             status: RunStatus::Running,
             seq: 0,
             dur_ms: 0,
+            revision: String::new(),
+            process_start_ms: 0,
+            created_ms: 0,
         };
         store
             .append_event(
@@ -790,6 +802,9 @@ mod tests {
             status: RunStatus::Running,
             seq: 0,
             dur_ms: 0,
+            revision: String::new(),
+            process_start_ms: 0,
+            created_ms: 0,
         };
         store
             .append_event(
@@ -955,6 +970,9 @@ mod tests {
             status: RunStatus::Running,
             seq: 0,
             dur_ms: 0,
+            revision: String::new(),
+            process_start_ms: 0,
+            created_ms: 0,
         };
         engine
             .store

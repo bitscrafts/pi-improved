@@ -220,6 +220,7 @@ impl Engine {
     #[allow(clippy::too_many_lines)] // reason: one linear wiring of the engine's shared resources
     pub fn new(cfg: EngineConfig) -> Result<Arc<Self>, PiiError> {
         let store = Arc::new(pii_store::Store::open(&cfg.store_path)?);
+        store.set_origin(daemon::since_deploy::process_origin());
         let log = Arc::new(pii_observe::SwitchObserver::new());
         store.set_observer(log.clone());
         let sibling = |name: &str| -> PathBuf {

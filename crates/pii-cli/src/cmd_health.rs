@@ -62,6 +62,19 @@ fn render(v: &serde_json::Value) -> String {
             txt(m, "/policy"),
         );
     }
+    if v.pointer("/since_deploy").is_some() {
+        out.push_str("since_deploy:\n");
+        for k in ["revision", "runs", "armed", "unattributed"] {
+            let _ = writeln!(out, "  {k}: {}", txt(v, &format!("/since_deploy/{k}")));
+        }
+        for k in ["running", "suspended", "succeeded", "failed"] {
+            let _ = writeln!(
+                out,
+                "  runs_by_status.{k}: {}",
+                txt(v, &format!("/since_deploy/runs_by_status/{k}"))
+            );
+        }
+    }
     out.push_str("counts:\n");
     for (k, _) in v
         .pointer("/counts")

@@ -27,7 +27,7 @@ mod tables;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunStatus};
+use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunOrigin, RunStatus};
 use redb::{Database, ReadableDatabase, ReadableTable};
 use tables::{
     GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_BY_STATUS, RUN_JOURNAL, RUN_SNAPSHOT, SESSION,
@@ -79,6 +79,9 @@ pub struct Store {
     fail_get_graph_for_test: std::sync::atomic::AtomicBool,
     /// Set once by [`Store::set_observer`].
     observer: std::sync::OnceLock<std::sync::Arc<dyn pii_observe::Observer>>,
+    /// What the process owning this handle is (spec 188): stamped onto every
+    /// header [`Store::stamp_origin`] is asked to name.
+    origin: parking_lot::RwLock<RunOrigin>,
 }
 
 const RUN_COUNTER_KEY: &str = "run_counter";
@@ -174,7 +177,45 @@ impl Store {
             fail_get_run_for_test: std::sync::atomic::AtomicBool::new(false),
             fail_get_graph_for_test: std::sync::atomic::AtomicBool::new(false),
             observer: std::sync::OnceLock::new(),
+            origin: parking_lot::RwLock::new(RunOrigin::default()),
         })
+    }
+
+    /// Sets the origin (build revision, process start) this handle stamps onto
+    /// new runs. Built once per process by the caller; passed down as data.
+    pub fn set_origin(&self, origin: RunOrigin) {
+        *self.origin.write() = origin;
+    }
+
+    /// Stamps `header` with this handle's origin and the acceptance time.
+    pub fn stamp_origin(&self, header: &mut RunHeader, created_ms: u64) {
+        let origin = self.origin.read().clone();
+        header.revision = origin.revision;
+        header.process_start_ms = origin.process_start_ms;
+        header.created_ms = created_ms;
+    }
+
+    /// Visits every run header in one pass over the run table, without
+    /// materialising them all.
+    ///
+    /// # Errors
+    /// Returns [`PiiError::Internal`] on a redb or decode failure.
+    pub fn for_each_run_header(&self, mut f: impl FnMut(RunHeader)) -> Result<(), PiiError> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| PiiError::store_op("begin_read", "db", e))?;
+        let table = read
+            .open_table(RUN)
+            .map_err(|e| PiiError::store_op("open", "run", e))?;
+        let iter = table
+            .iter()
+            .map_err(|e| PiiError::store_op("iter", "run", e))?;
+        for item in iter {
+            let (_, v) = item.map_err(|e| PiiError::store_op("read", "run", e))?;
+            f(from_bytes(v.value())?);
+        }
+        Ok(())
     }
 
     /// Number of redb write transactions opened by the append path (monotonic).
@@ -693,6 +734,9 @@ mod tests {
             status: RunStatus::Running,
             seq: 0,
             dur_ms: 0,
+            revision: String::new(),
+            process_start_ms: 0,
+            created_ms: 0,
         };
         let e1 = RunEvent::Started {
             graph: "g".to_string(),

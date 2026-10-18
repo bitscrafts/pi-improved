@@ -37,6 +37,25 @@ pub struct RunHeader {
     pub seq: u64,
     /// Wall-clock duration in milliseconds (0 while running).
     pub dur_ms: u32,
+    /// Build revision of the binary that accepted the run; empty on rows
+    /// written before spec 188 (counted as unattributed, never as a deploy).
+    #[serde(default)]
+    pub revision: String,
+    /// Epoch ms at which the accepting process started (one value per process).
+    #[serde(default)]
+    pub process_start_ms: u64,
+    /// Epoch ms at which the run was accepted.
+    #[serde(default)]
+    pub created_ms: u64,
+}
+
+/// What the running process is: the origin every run it accepts is stamped with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunOrigin {
+    /// Build revision of the running binary.
+    pub revision: String,
+    /// Epoch ms at which this process started.
+    pub process_start_ms: u64,
 }
 
 /// Terminal disposition of a finished run.
@@ -199,4 +218,21 @@ pub enum RunEvent {
         /// The child run's id.
         child_run: RunId,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::RunHeader;
+
+    #[test]
+    fn an_old_header_still_decodes() {
+        let old = r#"{"run":"r0001","graph":"g","status":"Succeeded","seq":3,"dur_ms":9}"#;
+        let h: RunHeader = serde_json::from_str(old).unwrap();
+        assert_eq!(h.revision, "");
+        assert_eq!(h.process_start_ms, 0);
+        assert_eq!(h.created_ms, 0);
+        assert_eq!(h.seq, 3);
+    }
 }

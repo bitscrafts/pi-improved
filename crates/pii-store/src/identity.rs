@@ -299,6 +299,9 @@ mod tests {
             status: pii_abi::RunStatus::Running,
             seq: 0,
             dur_ms: 0,
+            revision: String::new(),
+            process_start_ms: 0,
+            created_ms: 0,
         };
         let ev = pii_abi::RunEvent::Started {
             graph: "g".to_owned(),

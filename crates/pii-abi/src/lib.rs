@@ -22,5 +22,5 @@ pub use failover::{classify, classify_provider, FailoverReason, Origin, Provider
 pub use failover::ALL;
 pub use http::{HttpMethod, HttpRequest, HttpResponse};
 pub use ids::{NodeId, PortName, RunId};
-pub use journal::{RunEvent, RunHeader, RunStatus, Terminal};
+pub use journal::{RunEvent, RunHeader, RunOrigin, RunStatus, Terminal};
 pub use node::{FailurePayload, NodeInput, NodeMeta, Outcome, ResumeKey, SuspendReason};

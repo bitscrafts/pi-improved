@@ -381,6 +381,8 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     drop((workers, channels));
     out.rss_bytes_per_run = rss_gauge(engine, counts.runs, out.rss_kb);
     out.counts = counts;
+    out.since_deploy =
+        super::since_deploy::since_deploy(&engine.store, REVISION).unwrap_or_default();
     out.subsystems = reports.into_iter().map(wire).collect();
 }
 

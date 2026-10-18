@@ -19,6 +19,7 @@ pub mod router;
 #[cfg(test)]
 mod sanction_tests;
 pub mod scheduler;
+pub mod since_deploy;
 pub mod status;
 mod suspend;
 
@@ -784,6 +785,9 @@ mod tests {
             status: RunStatus::Suspended,
             seq: 0,
             dur_ms: 0,
+            revision: String::new(),
+            process_start_ms: 0,
+            created_ms: 0,
         };
         engine
             .store

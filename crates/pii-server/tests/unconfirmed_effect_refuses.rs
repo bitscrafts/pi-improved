@@ -57,6 +57,9 @@ async fn unconfirmed_effect_refuses() {
         status: RunStatus::Running,
         seq: 0,
         dur_ms: 0,
+        revision: String::new(),
+        process_start_ms: 0,
+        created_ms: 0,
     };
     for ev in [
         RunEvent::Started {

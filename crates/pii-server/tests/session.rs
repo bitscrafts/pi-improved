@@ -127,6 +127,9 @@ fn boot_reconciles_running_runs() {
         status: RunStatus::Running,
         seq: 0,
         dur_ms: 0,
+        revision: String::new(),
+        process_start_ms: 0,
+        created_ms: 0,
     };
     engine
         .store

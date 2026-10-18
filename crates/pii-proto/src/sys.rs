@@ -329,4 +329,40 @@ pub struct StatusResult {
     /// 0 until enough runs separate the window ends. Additive.
     #[serde(default)]
     pub rss_bytes_per_run: u64,
+    /// Runs the store attributes to the running revision (spec 188). Additive.
+    #[serde(default)]
+    pub since_deploy: SinceDeploy,
+}
+
+/// Run counts by status (spec 188).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RunsByStatus {
+    /// Runs executing.
+    pub running: u64,
+    /// Runs suspended.
+    pub suspended: u64,
+    /// Runs succeeded.
+    pub succeeded: u64,
+    /// Runs failed.
+    pub failed: u64,
+}
+
+/// What the store holds for the running revision, read from run headers (spec 188).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SinceDeploy {
+    /// The running binary's revision.
+    #[serde(default)]
+    pub revision: String,
+    /// Runs whose header names this revision.
+    #[serde(default)]
+    pub runs: u64,
+    /// `runs` split by status.
+    #[serde(default)]
+    pub runs_by_status: RunsByStatus,
+    /// Suspended runs for this revision (compare with `counts.cron_entries`).
+    #[serde(default)]
+    pub armed: u64,
+    /// Runs with no revision on the header (written before spec 188); never in `runs`.
+    #[serde(default)]
+    pub unattributed: u64,
 }

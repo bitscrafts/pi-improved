@@ -81,7 +81,8 @@ pub struct Journaler<'a> {
 }
 
 impl<'a> Journaler<'a> {
-    /// A journaler for a fresh run whose header starts at seq 0, `Running`.
+    /// A journaler for a fresh run whose header starts at seq 0, `Running`,
+    /// stamped with the store's origin and `created_ms` (spec 188).
     #[must_use]
     pub fn fresh(
         store: &'a Store,
@@ -89,20 +90,20 @@ impl<'a> Journaler<'a> {
         run: RunId,
         graph_hash: String,
         bb: Arc<RwLock<Blackboard>>,
+        created_ms: u64,
     ) -> Self {
-        Self::with_batch(
-            store,
-            obs,
-            RunHeader {
-                run,
-                graph: graph_hash,
-                status: RunStatus::Running,
-                seq: 0,
-                dur_ms: 0,
-            },
-            bb,
-            DEFAULT_BATCH,
-        )
+        let mut header = RunHeader {
+            run,
+            graph: graph_hash,
+            status: RunStatus::Running,
+            seq: 0,
+            dur_ms: 0,
+            revision: String::new(),
+            process_start_ms: 0,
+            created_ms: 0,
+        };
+        store.stamp_origin(&mut header, created_ms);
+        Self::with_batch(store, obs, header, bb, DEFAULT_BATCH)
     }
 
     /// A journaler that adopts a persisted header (resume continues the seq).

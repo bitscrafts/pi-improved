@@ -93,6 +93,7 @@ pub fn run_with_validate(
         run_id.clone(),
         graph_hash,
         Arc::clone(&bb),
+        ctx.now_ms(),
     );
     jr.append(&RunEvent::Started {
         graph: spec.name.clone(),
