@@ -21,7 +21,14 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
-    let rev = git(&["rev-parse", "--short=12", "HEAD"]).filter(|r| !r.is_empty());
+    // A CLEAN EXPORT HAS NO .git, and the installer deliberately builds from one so a dirty working tree cannot reach
+    // the shipped binary. It therefore HANDS the revision in. Measured 2026-10-18: the first export-built binary
+    // reported "unknown" while being correctly built from 136b23e — a stamp that cannot name its commit is no use to a
+    // deploy card whose whole purpose is to quote it.
+    let rev = std::env::var("PII_BUILD_REVISION")
+        .ok()
+        .filter(|r| !r.trim().is_empty())
+        .or_else(|| git(&["rev-parse", "--short=12", "HEAD"]).filter(|r| !r.is_empty()));
     let dirty =
         git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
     let revision = rev.map_or_else(

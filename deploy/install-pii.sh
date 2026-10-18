@@ -71,6 +71,9 @@ if [ "${SKIP_BUILD:-0}" != 1 ]; then
   # (xtask/src/fresh_gate.rs: git archive); the installer now does too.
   EXPORT="$(mktemp -d "${TMPDIR:-/tmp}/pii-install-XXXXXX")" || abort "cannot create a clean export directory"
   git -C "$REPO" archive HEAD | tar -x -C "$EXPORT" || abort "git archive HEAD failed — is $REPO a git checkout?"
+  # The export has no .git, so build.rs cannot read the revision from it: hand it in explicitly.
+  # Measured 2026-10-18 — the first export-built binary reported "unknown" for a build correctly made from 136b23e.
+  export PII_BUILD_REVISION="$(git -C "$REPO" rev-parse --short=12 HEAD)"
   (cd "$EXPORT" && cargo build --release -p pii-cli -p pii-mcp -p pii-web -p pii-evolve) \
     || abort "release build failed inside the clean export of $(git -C "$REPO" rev-parse --short HEAD)"
   BIN_SRC="$EXPORT/target/release"
