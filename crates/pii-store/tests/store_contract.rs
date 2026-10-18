@@ -35,6 +35,9 @@ fn header(run: &RunId) -> RunHeader {
         status: RunStatus::Running,
         seq: 0,
         dur_ms: 0,
+        revision: String::new(),
+        process_start_ms: 0,
+        created_ms: 0,
     }
 }
 
@@ -140,4 +143,29 @@ fn graph_body_is_content_addressed() {
     assert_eq!(k1, k2, "same bytes must hash to the same key");
     let got = store.get_graph(&k1).unwrap().unwrap();
     assert_eq!(got, body);
+}
+
+#[test]
+fn a_header_stamped_by_the_store_reads_back_from_a_fresh_handle() {
+    let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "stamp-").unwrap();
+    let path = dir.path().join("store.redb");
+    let run = RunId::from("r000000000777");
+    {
+        let store = Store::open(&path).unwrap();
+        store.set_origin(pii_abi::RunOrigin {
+            revision: "abc123".into(),
+            process_start_ms: 4242,
+        });
+        let mut h = header(&run);
+        store.stamp_origin(&mut h, 1000);
+        store.append_event(&mut h, &started("g")).unwrap();
+    }
+    let fresh = Store::open(&path).unwrap();
+    let got = fresh.get_run(&run).unwrap().unwrap();
+    assert_eq!(got.revision, "abc123");
+    assert_eq!(got.process_start_ms, 4242);
+    assert_eq!(got.created_ms, 1000);
+    let mut seen = 0;
+    fresh.for_each_run_header(|_| seen += 1).unwrap();
+    assert_eq!(seen, 1);
 }

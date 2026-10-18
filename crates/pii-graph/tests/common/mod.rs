@@ -192,6 +192,9 @@ pub fn seed_run(store: &pii_store::Store, spec: &GraphSpec, events: &[pii_abi::R
         status: pii_abi::RunStatus::Running,
         seq: 0,
         dur_ms: 0,
+        revision: String::new(),
+        process_start_ms: 0,
+        created_ms: 0,
     };
     let started = pii_abi::RunEvent::Started {
         graph: spec.name.clone(),
