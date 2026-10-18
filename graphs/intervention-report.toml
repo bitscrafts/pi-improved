@@ -1,0 +1,71 @@
+# intervention-report.toml — document and report an intervention, AS A GRAPH.
+#
+# The rule (user, 2026-10-18): "everything is a graph". So the report is not a document someone remembers to write — it is
+# a run: recall what actually happened, have a worker turn it into a dated report, gate the report on the sections that
+# make it honest, post it, and store it so the NEXT intervention starts from evidence instead of from memory.
+#
+# Needs: a [[channel]] named "discord", and a run whose input carries `to` (the forum id) and `topic`.
+# Shape: timer → memory(recall) → worker(write) → gate → post → memory(record)
+#
+# NOTE: field names below follow the digest graph's style and must be checked against the node schemas before this runs;
+# a graph that fails to load must REFUSE (176/177), not silently do nothing.
+
+[graph]
+name = "intervention-report"
+description = "Turn an intervention's own events into a dated report, gate it, post it, remember it."
+
+[[node]]
+id = "start"
+kind = "timer"
+cron = "0 21 * * *"            # 18:00 local (UTC-3), end of the working day
+
+[[node]]
+id = "evidence"
+kind = "memory"
+op = "search"                  # recall the intervention's items: decisions, measurements, failures, commits
+query = "$.input.topic"
+limit = 40
+
+[[node]]
+id = "write"
+kind = "worker"
+depends_on = ["evidence"]
+agent = "pi"                   # free first; Claude only when the ladder escalates (spec 183)
+model = "deepseek-v4-flash"
+workdir = "/projects/pi-improved"
+brief = """
+Write a dated intervention report in Markdown from the evidence below. Use exactly these sections, in this order:
+
+  # <topic> — <date>
+  ## What was claimed vs what was measured   (every claim carries its number; flag any claim you cannot source)
+  ## Closed                                  (each item with the commit or command that proves it)
+  ## Open                                    (each item with what unblocks it)
+  ## Defects found while working             (each with the log line or command that shows it)
+  ## Costs                                   (model spend, wall clock, builds, people-hours)
+  ## Lessons                                 (each tied to the evidence above)
+
+Rules: never invent a number — if the evidence lacks one write "not measured" and say why. Quote log lines verbatim.
+Do not summarise away a failure. If two sources disagree, say both and name which is measured.
+"""
+
+[[node]]
+id = "check"
+kind = "gate"
+depends_on = ["write"]
+# A report that fails its own gate is still posted — labelled as failed. Silence is the defect this project keeps paying for.
+command = "test $(grep -c '^## ' report.md) -ge 6 && ! grep -qiE 'TODO|TBD|XXX' report.md"
+
+[[node]]
+id = "post"
+kind = "post"
+depends_on = ["write", "check"]
+channel = "discord"
+to = "$.input.to"
+text = "$.nodes.write.output"
+
+[[node]]
+id = "record"
+kind = "memory"
+depends_on = ["post"]
+op = "put"
+text = "$.nodes.write.output"
