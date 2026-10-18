@@ -77,6 +77,19 @@ version**; disabling it is the user's host action. `ollama-cloud` is a *cloud ac
 a separate question.
 **Next:** the user names where a Dockerfile/quadlet should live, or confirms systemd-only.
 
+### 9a. The gate certifies the tree it sits in, not the tree it commits
+`067 §Q1` decided the item boundary runs the quick gate **in place** and the release boundary runs `fresh-gate`.
+The hole that decision leaves was measured twice on 2026-10-17: `7f98624` (175) committed a call to
+`pii_server::resolve_graph_dir`, a function that existed only in the uncommitted working tree, so `HEAD` did not
+build `pii-cli` (`069 §0.1`, rc=101); and `HEAD`'s `Cargo.lock` was stale for a committed `pii-channels`
+dev-dependency, so `cargo metadata --locked` fails on a clean export of `HEAD` (rc=101 measured 2026-10-18, rc=0
+once the lock was committed). Both passed the loop's gate because it ran on the dirty tree.
+**Next:** a spec where the commit step gates the tree it is about to commit — `git archive HEAD` plus `--overlay`
+of the staged paths, which `xtask fresh_gate` already supports — and refuses the commit on red. Not authored yet
+because the cost is unmeasured (a cold export build per item) and `067 §Q3` asks for caches keyed by source root:
+measure one overlay gate, then decide between gating the whole pending tree and gating only the crates the item
+touches.
+
 ### 9. Smaller filed items
 - the two audit trails should be unified — see #1;
 - ~~a CLI `learn revert` racing the daemon's sweep (filed with 125)~~ — closed by spec 149: a daemon-owned store takes the revert as a request; without one the CLI applies it directly under a cross-process writer lock (`learn/.writer.lock`) and prints `path=direct`;
