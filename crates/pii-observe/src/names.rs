@@ -10,6 +10,8 @@ pub const GRAPH_NODE_DEAD: &str = "graph.node.dead";
 pub const GRAPH_JOIN_UNSATISFIABLE: &str = "graph.join.unsatisfiable";
 /// Metric: width of an executed batch.
 pub const GRAPH_BATCH_WIDTH: &str = "graph.batch.width";
+/// Event: a replay found an effect started and never confirmed; it refuses (spec 186).
+pub const EFFECT_UNKNOWN: &str = "effect.unknown";
 /// Event: a durable-store write failed.
 pub const STORE_PERSIST_ERROR: &str = "store.persist.error";
 /// Event: a capability was denied.
@@ -348,6 +350,7 @@ pub const ALL: &[&str] = &[
     GRAPH_NODE_DEAD,
     GRAPH_JOIN_UNSATISFIABLE,
     GRAPH_BATCH_WIDTH,
+    EFFECT_UNKNOWN,
     STORE_PERSIST_ERROR,
     CORE_CAP_DENIED,
     HEALTH_STATE_CHANGED,

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use pii_abi::{NodeId, PiiError, ResumeKey, RunEvent, RunId, Terminal};
+use pii_abi::{NodeId, PiiError, ResumeKey, RunEvent, RunId, RunStatus, Terminal};
 use pii_core::Ctx;
 
 use crate::blackboard::Blackboard;
@@ -31,15 +31,80 @@ use crate::spec::GraphSpec;
 /// [`crate::node::GraphNode::on_resume`] (spec 30 D1) rather than a fresh
 /// `run()` — a fired timer resumes to `Next` instead of re-suspending.
 ///
+/// Spec 186: a journal holding an effect started and never confirmed is
+/// REFUSED (`effect.unknown`) before anything is appended; a confirmed effect
+/// whose `NodeFinished` never landed is completed from the journal, not re-run.
+///
 /// # Errors
 /// Returns [`PiiError::NotFound`] for an unknown run or graph body,
-/// [`PiiError::Invalid`] for a cyclic spec, and store errors from journaling.
+/// [`PiiError::Invalid`] for a cyclic spec or an unknown effect, and store
+/// errors from journaling.
 pub fn resume(
     store: &pii_store::Store,
     reg: &NodeRegistry,
     ctx: &Ctx,
     run_id: &RunId,
     resume_key: Option<&ResumeKey>,
+) -> Result<Terminal, PiiError> {
+    resume_with(store, reg, ctx, run_id, resume_key, None)
+}
+
+/// Re-runs ONE node of a recorded run (spec 186, `pii run retry --node`).
+///
+/// Its earlier events become history, its previous output stays on the
+/// blackboard as input, every other node is replayed from the journal
+/// untouched. This is the operator's explicit acceptance of an `effect.unknown`.
+///
+/// # Errors
+/// As [`resume`], plus [`PiiError::NotFound`] when the graph has no such node.
+pub fn retry(
+    store: &pii_store::Store,
+    reg: &NodeRegistry,
+    ctx: &Ctx,
+    run_id: &RunId,
+    node: &NodeId,
+) -> Result<Terminal, PiiError> {
+    resume_with(store, reg, ctx, run_id, None, Some(node))
+}
+
+/// Closes a run as failed with the operator's reason (spec 186,
+/// `pii run abandon`). Appends; never rewrites. Idempotent callers get a
+/// second `Finished` event, which is the record of the second call.
+///
+/// # Errors
+/// [`PiiError::NotFound`] for an unknown run; store errors from journaling.
+pub fn abandon(
+    store: &pii_store::Store,
+    ctx: &Ctx,
+    run_id: &RunId,
+    reason: &str,
+) -> Result<(), PiiError> {
+    let header = store
+        .get_run(run_id)?
+        .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
+    let bb = Arc::new(RwLock::new(Blackboard::new(serde_json::Value::Null)));
+    let jr = Journaler::adopt(store, ctx.observer().clone(), header, bb);
+    let terminal = Terminal::Failure {
+        error: format!("abandoned: {reason}"),
+    };
+    let bytes = serde_json::to_vec(&terminal)
+        .map_err(|e| PiiError::Internal(format!("terminal serde: {e}")))?;
+    jr.append(&RunEvent::Finished {
+        terminal,
+        output_hash: pii_store::hash(&bytes),
+    })?;
+    jr.set_status(RunStatus::Failed);
+    jr.flush()?;
+    Ok(())
+}
+
+fn resume_with(
+    store: &pii_store::Store,
+    reg: &NodeRegistry,
+    ctx: &Ctx,
+    run_id: &RunId,
+    resume_key: Option<&ResumeKey>,
+    retry_node: Option<&NodeId>,
 ) -> Result<Terminal, PiiError> {
     let header = store
         .get_run(run_id)?
@@ -49,7 +114,8 @@ pub fn resume(
         .ok_or_else(|| PiiError::NotFound(format!("graph body '{}'", header.graph)))?;
     let spec = GraphSpec::from_json(&spec_bytes)?;
     validate_for_exec(&spec, reg)?;
-    let journal = store.read_journal(run_id)?;
+    let mut journal = store.read_journal(run_id)?;
+    let (ledger, prev_output) = preflight(&spec, &journal, retry_node)?;
 
     // Recover the run input from the content-addressed store.
     let input = journal
@@ -66,12 +132,18 @@ pub fn resume(
 
     let bb = Arc::new(RwLock::new(Blackboard::new(input.clone())));
     let jr = Journaler::adopt(store, ctx.observer().clone(), header, Arc::clone(&bb));
+    append_prelude(&jr, &ledger, retry_node)?;
+    jr.flush()?;
+    journal = crate::effect::effective(&store.read_journal(run_id)?);
 
     // Replay the journal: rebuild state, blackboard, and completion order.
     let mut st = RunState::from_spec(&spec);
     let mut fin: Vec<FinishedNode> = Vec::new();
     let mut failure: Option<String> = None;
     let mut suspended: BTreeMap<NodeId, ResumeKey> = BTreeMap::new();
+    if let (Some(n), Some(v)) = (retry_node, prev_output) {
+        bb.write().record(n.as_str(), v);
+    }
     replay(
         &journal,
         &spec,
@@ -130,4 +202,58 @@ pub fn resume(
         resume_keys: &suspended,
     };
     engine.tick_loop(&mut st, &mut fin, &mut failure)
+}
+
+/// Checks a resume/retry against the journal BEFORE anything is appended
+/// (spec 186): an unknown retry node, or an effect started and never
+/// confirmed, is refused. Returns the effect ledger and, for a retry, the
+/// node's previous output.
+fn preflight(
+    spec: &GraphSpec,
+    journal: &[(u64, RunEvent)],
+    retry_node: Option<&NodeId>,
+) -> Result<(crate::effect::Ledger, Option<serde_json::Value>), PiiError> {
+    if let Some(n) = retry_node
+        && !spec.nodes.iter().any(|s| &s.id == n)
+    {
+        return Err(PiiError::NotFound(format!("node '{n}' not in graph")));
+    }
+    let ledger = crate::effect::scan(journal);
+    if retry_node.is_none()
+        && let Some(refused) = crate::effect::refusal(&ledger)
+    {
+        return Err(refused);
+    }
+    let prev_output = retry_node.and_then(|n| {
+        journal.iter().rev().find_map(|(_, ev)| match ev {
+            RunEvent::NodeFinished { node, value, .. } if node == n => Some(value.clone()),
+            _ => None,
+        })
+    });
+    Ok((ledger, prev_output))
+}
+
+/// Appends the replay's own record: the retry marker, or the `NodeFinished`
+/// of every effect that was confirmed but never finished (reused, not re-run).
+fn append_prelude(
+    jr: &Journaler<'_>,
+    ledger: &crate::effect::Ledger,
+    retry_node: Option<&NodeId>,
+) -> Result<(), PiiError> {
+    if let Some(n) = retry_node {
+        jr.append(&RunEvent::NodeRetried { node: n.clone() })?;
+        return Ok(());
+    }
+    for (node, (port, value)) in &ledger.orphans {
+        let value_hash = pii_store::hash(&serde_json::to_vec(value).unwrap_or_default());
+        jr.append(&RunEvent::NodeFinished {
+            node: node.clone(),
+            port: port.clone(),
+            value: value.clone(),
+            value_hash,
+            at_ms: 0,
+            dur_ms: 0,
+        })?;
+    }
+    Ok(())
 }

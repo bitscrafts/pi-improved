@@ -239,6 +239,7 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         };
     }
 
+    let is_effect = env.reg.factory(&ns.kind).is_ok_and(|f| f.is_effect());
     let max_retries = ns.retry.max;
     let mut attempt: u32 = 1;
     loop {
@@ -253,8 +254,29 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
                 error: e.to_string(),
             };
         }
+        // Spec 186: an effect node's key is durable BEFORE it acts.
+        let effect_key = if is_effect {
+            match start_effect(env, &ns.id, input) {
+                Ok(key) => Some(key),
+                Err(error) => return DispatchOutcome::Failed { error },
+            }
+        } else {
+            None
+        };
         let result = run_with_barrier(env, || run_caught(env, &ns.id, || node.run(&ctx, input)));
         let dur_ms = ctx.elapsed_ms().saturating_sub(at_ms);
+        if let (Some(key), Ok(Outcome::Next { port, value })) = (&effect_key, &result)
+            && let Err(e) = env.jr.append(&RunEvent::EffectConfirmed {
+                node: ns.id.clone(),
+                key: key.clone(),
+                port: port.clone(),
+                value: value.clone(),
+            })
+        {
+            return DispatchOutcome::Failed {
+                error: e.to_string(),
+            };
+        }
         match result {
             Ok(outcome @ (Outcome::Next { .. } | Outcome::Suspend { .. })) => {
                 return journal_next_or_suspend(env, node.as_ref(), &ns.id, outcome, at_ms, dur_ms);
@@ -291,6 +313,20 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
             }
         }
     }
+}
+
+/// Journals the effect node's idempotency key and makes it durable before the
+/// effect runs (spec 186). Returns the key.
+fn start_effect(env: &Env<'_>, id: &NodeId, input: &NodeInput) -> Result<String, String> {
+    let key = crate::effect::idempotency_key(env.run, id, &crate::effect::input_digest(input));
+    env.jr
+        .append(&RunEvent::EffectStarted {
+            node: id.clone(),
+            key: key.clone(),
+        })
+        .and_then(|_| env.jr.flush())
+        .map_err(|e| e.to_string())?;
+    Ok(key)
 }
 
 /// Spec 135: runs a node, turning a panic into a named failure. The panic is

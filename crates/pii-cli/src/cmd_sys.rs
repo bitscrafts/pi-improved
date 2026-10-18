@@ -29,9 +29,13 @@ pub(crate) fn cmd_run_ctl(args: &mut std::env::ArgsOs) -> ExitCode {
         Some("ls") => run_ls(args),
         Some("start") => run_start(args),
         Some("get") => run_get(args),
+        Some("resume") => run_replay(args, "resume"),
+        Some("retry") => run_replay(args, "retry"),
+        Some("abandon") => run_replay(args, "abandon"),
         _ => {
             eprintln!(
-                "usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]|get <run_id>}}"
+                "usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]|get <run_id>\
+                 |resume <run_id>|retry <run_id> --node <id>|abandon <run_id> --reason <text>}}"
             );
             ExitCode::from(2)
         }
@@ -130,6 +134,56 @@ fn run_get(args: &mut std::env::ArgsOs) -> ExitCode {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(2)
+    }
+}
+
+/// `pii run resume <id> | retry <id> --node N | abandon <id> --reason T`
+/// (spec 186): replay is an operator action with an id, never automatic.
+fn run_replay(args: &mut std::env::ArgsOs, verb: &str) -> ExitCode {
+    let Some(id) = next_str(args) else {
+        eprintln!("usage: pii run {verb} <run_id> ...");
+        return ExitCode::from(2);
+    };
+    let (mut node, mut reason) = (None, None);
+    while let Some(a) = next_str(args) {
+        match a.as_str() {
+            "--node" => node = next_str(args),
+            "--reason" => reason = next_str(args),
+            _ => {}
+        }
+    }
+    let (method, params) = match verb {
+        "resume" => (Method::RunResume, serde_json::json!({"run_id": id})),
+        "retry" => {
+            let Some(n) = node else {
+                eprintln!("usage: pii run retry <run_id> --node <node_id>");
+                return ExitCode::from(2);
+            };
+            (
+                Method::RunRetry,
+                serde_json::json!({"run_id": id, "node": n}),
+            )
+        }
+        _ => {
+            let Some(r) = reason else {
+                eprintln!("usage: pii run abandon <run_id> --reason <text>");
+                return ExitCode::from(2);
+            };
+            (
+                Method::RunAbandon,
+                serde_json::json!({"run_id": id, "reason": r}),
+            )
+        }
+    };
+    match run_call(method, params) {
+        Ok(v) => {
+            println!("{v}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            fail("sys", &e);
+            ExitCode::from(2)
+        }
     }
 }
 

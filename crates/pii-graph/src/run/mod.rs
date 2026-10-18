@@ -33,7 +33,7 @@ use crate::run_helpers::{build_nodes, fresh_tokens, validate_for_exec};
 use crate::sched::state::RunState;
 use crate::spec::GraphSpec;
 
-pub use resume::resume;
+pub use resume::{abandon, resume, retry};
 
 /// Runs a graph to a terminal disposition, journaling every event to the
 /// store under `run_id`.
