@@ -10,6 +10,24 @@
 # Run:  bash scripts/deploy-negative-control.sh
 set -uo pipefail
 cd /projects/pi-improved || exit 1
+
+# HARD RULE: never touch git while an agent is working.
+# Measured 2026-10-18: this control ran `git add`/`git commit` while the loop's row-182 worker was in flight, so the clean
+# export of HEAD did not compile (main.rs referenced two files the worker had not committed yet) and the control's verdict
+# was meaningless — "FIX FAILED" over an install that had correctly refused and changed nothing.
+# The loop holds _tmp/autonomy/lock for the whole cycle, so taking that lock is the only honest way to ask "is anyone in?".
+if flock -n -E 75 _tmp/autonomy/lock true 2>/dev/null; then
+  :
+else
+  echo "REFUSING (exit 75): the autonomy loop holds its lock — an agent is working. Nothing was changed." >&2
+  echo "  wait for the cycle to end; check with: ps -eo pid,etime,args | grep '[c]ycle.sh'" >&2
+  exit 75
+fi
+if [ -n "$(git status --porcelain | head -1)" ]; then
+  echo "REFUSING (exit 75): the working tree is not clean — an agent may be mid-work. Nothing was changed." >&2
+  git status --porcelain | head -6 >&2
+  exit 75
+fi
 . scripts/autonomy/env.sh 2>/dev/null
 export XDG_RUNTIME_DIR=/run/user/0
 HOST=mvcorrea@10.10.10.217

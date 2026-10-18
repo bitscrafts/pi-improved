@@ -10,6 +10,7 @@ mod cli_util;
 mod cmd_backup;
 mod cmd_ctl;
 mod cmd_daemon;
+mod cmd_daemon_flags;
 mod cmd_deploy_card;
 mod cmd_entity;
 mod cmd_health;
