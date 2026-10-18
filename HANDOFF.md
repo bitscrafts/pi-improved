@@ -2,6 +2,35 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-18 06:35Z — the suite is red at HEAD and has been since 179: a full-suite measurement found it, spec 184 is first in the queue
+
+- **The queue was empty; a measurement refilled it.** To answer open-items §9b (the routine gate runs no tests)
+  the orchestrator timed the suite the release boundary runs, on a clean tree at `136b23e`: `cargo test -j 2
+  --workspace --lib --bins --tests` = **293 s cold** (the `test-gate` cache is keyed to the export's source root,
+  so it had nothing for the repo tree), one crate scoped = **96 s**. Affordable, so 9b's cost question is closed.
+- **That run is red.** `crates/pii-server/tests/cron_runtime.rs:92`
+  `a_finished_cron_run_is_started_again_inside_the_runtime` fails deterministically — reproduced alone twice,
+  15.1 s and 15.3 s, *"the cron was started 1 time(s); the re-arm never ran a second"*. Its 15 s ceiling encodes
+  the pre-179 behaviour: `03e729a` (179's parked rule, `cron.rs:71-78`) deliberately does **not** re-arm a run
+  suspended on its timer, so the next run can only start at the next minute boundary. Before that commit the
+  re-arm fired every 1 s — the 516-runs-in-four-minutes defect — so the test passed by asserting the bug.
+- **Why no gate saw it, again.** The item gate is `--routine` (fmt, clippy, build). A50/183's verify was two
+  named commands, both still green. The file belongs to `test (lib/bins/tests)` in `gate-steps.txt`, so
+  `quality-gate.sh --fresh` — the gate a deploy card must quote — is red at HEAD, which is a deploy blocker, not
+  a test detail.
+- **Authored and committed alone:** spec 184 (`specs/184-the-runtime-rearm-waits-for-the-next-occurrence.md`)
+  and row **A51** at the head of `scripts/autonomy/plan.tsv`. Its exit criteria are 183's siblings
+  (`--test cron_runtime`, `--test timer_no_refire`, `--lib`); its guardrail refuses the false green of re-arming
+  a suspended run to make the test pass, and tells the worker to STOP and report if the second start genuinely
+  never comes within one occurrence.
+- **Selftest:** `32 passed, 2 failed`, `VERDICT: FAILURES ABOVE` — the documented pair
+  (`paused -> the tick says so (once)`, `an open question is carried to the phone`), and the `PAUSED` live path
+  was probed by hand in the same tick (a dry tick with a PAUSED control printed
+  `pii autonomy · PAUSED — …`), so the switch is intact and the rows are the non-hermetic ones.
+- **Next:** the watchdog/cron tick dispatches A51 (a test repair, not a product change). When it lands, the
+  release boundary is green again and the next spec is 9b's — the item gate gaining a test step, with the
+  measured numbers above as its budget — followed by 9a (gating the tree it commits).
+
 ## 2026-10-18 00:40Z — the queue was empty and the tree was red in three places: a stale lock, two files over the line gate, and two lib tests
 
 - **What the tick found, all on a clean tree** (`git status --porcelain` empty at `dbe600a`): `cargo metadata

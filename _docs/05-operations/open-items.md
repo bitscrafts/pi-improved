@@ -88,6 +88,22 @@ by a cycle as a leftover) left `daemon::lag::tests::lagged_run_finished_still_st
 routine gate gains a `test (lib)` step or the item boundary gains a cheaper "the crates the diff touches" step.
 Recorded as spec 183's cause; the gate change itself is not authored yet because the cost is unmeasured.
 
+**Measured 2026-10-18 06:18–06:25Z** (orchestrator, clean tree, HEAD `136b23e`): `cargo test -j 2 --workspace
+--lib --bins --tests` with `CARGO_TARGET_DIR=_tmp/gate-target/test-gate` took **293 s (4.9 min)** and paid a
+**cold** build — that cache is keyed to the export's source root, so the routine gate, which runs in the repo
+tree, would build once into a new `test-repo-gate` dir before it is warm; scoped to one crate,
+`cargo test -j 2 -p pii-server --lib --bins` took **96 s**. Neither is the 45-minute figure that blocked a
+per-item test step, so the cost question is answered: a diff-scoped test step is affordable, a full-suite one is
+affordable once warm. The gate change still needs its own spec.
+
+**And that run found the suite RED at HEAD.** `crates/pii-server/tests/cron_runtime.rs:92`
+`a_finished_cron_run_is_started_again_inside_the_runtime` fails deterministically (twice, alone in 15.1 s and
+15.3 s): *"the cron was started 1 time(s); the re-arm never ran a second"*. It has been red since `03e729a`
+(179's parked rule: a run suspended on its timer is not re-armed) — its 15 s ceiling encodes the pre-179
+behaviour that produced 516 runs in four minutes — and it is a step of `gate-steps.txt`, so
+`quality-gate.sh --fresh`, the gate a deploy card must quote, is **red at HEAD**. Authored as spec 184 / row A51,
+which is now first in the queue.
+
 ### 9a. The gate certifies the tree it sits in, not the tree it commits
 `067 §Q1` decided the item boundary runs the quick gate **in place** and the release boundary runs `fresh-gate`.
 The hole that decision leaves was measured twice on 2026-10-17: `7f98624` (175) committed a call to
