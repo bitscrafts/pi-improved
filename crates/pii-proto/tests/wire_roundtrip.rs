@@ -36,6 +36,8 @@ const METHODS: &[(Method, &str)] = &[
     (Method::RunList, "run.list"),
     (Method::RunCancel, "run.cancel"),
     (Method::RunResume, "run.resume"),
+    (Method::RunRetry, "run.retry"),
+    (Method::RunAbandon, "run.abandon"),
     (Method::RunTrace, "run.trace"),
     (Method::GraphApply, "graph.apply"),
     (Method::GraphGet, "graph.get"),

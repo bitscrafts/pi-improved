@@ -340,3 +340,50 @@ pub(crate) fn run_resume(engine: &Arc<Engine>, req: &Request) -> Response {
         Err(e) => err_code(|c, m| err(req, c, m), &e),
     }
 }
+
+/// `run.retry { run_id, node }`: re-run ONE node of a recorded run (spec 186).
+/// The operator's explicit acceptance of an `effect.unknown`.
+pub(crate) fn run_retry(engine: &Arc<Engine>, req: &Request) -> Response {
+    let (Some(run_id), Some(node)) = (
+        req.params.get("run_id").and_then(|v| v.as_str()),
+        req.params.get("node").and_then(|v| v.as_str()),
+    ) else {
+        return err(
+            req,
+            ErrorCode::InvalidParams,
+            "run.retry needs 'run_id' and 'node'",
+        );
+    };
+    match crate::engine::runs::spawn_resume_node(
+        Arc::clone(engine),
+        RunId::from(run_id),
+        None,
+        Some(pii_abi::NodeId::from(node)),
+    ) {
+        Ok(()) => value_response(req, Some(serde_json::json!({"retried": node})), |c, m| {
+            err(req, c, m)
+        }),
+        Err(e) => err_code(|c, m| err(req, c, m), &e),
+    }
+}
+
+/// `run.abandon { run_id, reason }`: close a run as failed with the reason
+/// recorded (spec 186).
+pub(crate) fn run_abandon(engine: &Arc<Engine>, req: &Request) -> Response {
+    let (Some(run_id), Some(reason)) = (
+        req.params.get("run_id").and_then(|v| v.as_str()),
+        req.params.get("reason").and_then(|v| v.as_str()),
+    ) else {
+        return err(
+            req,
+            ErrorCode::InvalidParams,
+            "run.abandon needs 'run_id' and 'reason'",
+        );
+    };
+    match crate::engine::runs::abandon_run(engine, &RunId::from(run_id), reason) {
+        Ok(()) => value_response(req, Some(serde_json::json!({"abandoned": true})), |c, m| {
+            err(req, c, m)
+        }),
+        Err(e) => err_code(|c, m| err(req, c, m), &e),
+    }
+}

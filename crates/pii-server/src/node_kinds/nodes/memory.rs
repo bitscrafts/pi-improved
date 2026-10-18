@@ -26,6 +26,10 @@ impl NodeFactory for MemoryFactory {
         "memory"
     }
 
+    fn is_effect(&self) -> bool {
+        true
+    }
+
     fn effects(&self) -> pii_abi::Effects {
         pii_abi::Effects::MUTATES_EXTERNAL
     }

@@ -163,6 +163,35 @@ pub enum RunEvent {
         /// Hash of the terminal output.
         output_hash: String,
     },
+    /// An effect node (`post`, `memory put`, `spawn`, `hal`) is about to act:
+    /// its idempotency key, journaled and made durable BEFORE the effect
+    /// (spec 186). A key started and never confirmed means the effect may or
+    /// may not have happened — replay reports `effect.unknown`.
+    EffectStarted {
+        /// The effect node.
+        node: NodeId,
+        /// Idempotency key: hash of (run id, node id, input digest).
+        key: String,
+    },
+    /// The effect node's effect is done; carries the output so a replay that
+    /// crashed before `NodeFinished` reuses it instead of acting again.
+    EffectConfirmed {
+        /// The effect node.
+        node: NodeId,
+        /// The key recorded by the matching `EffectStarted`.
+        key: String,
+        /// The port the node took.
+        port: PortName,
+        /// The value it produced.
+        value: serde_json::Value,
+    },
+    /// Operator action (`pii run retry`): the node's earlier terminal events
+    /// are history; the node runs again. The journal is append-only, so replay
+    /// honours this marker rather than the journal being rewritten.
+    NodeRetried {
+        /// The node being re-run.
+        node: NodeId,
+    },
     /// A `spawn` node launched a child run (spec 32 R1): the parent→child
     /// link `pii graph trace` shows alongside the spawning node's own
     /// `NodeFinished`.

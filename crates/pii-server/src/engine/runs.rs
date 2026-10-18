@@ -235,6 +235,43 @@ fn fail_run(engine: &Engine, mut header: pii_abi::RunHeader, graph: &str, err: &
     );
 }
 
+/// Closes a recorded run as `Failed` with the operator's `reason` (spec 186).
+///
+/// Appended to the journal, broadcast on the bus, visible to `run.list` beside
+/// the successful runs. A run still in flight in this process is refused.
+///
+/// # Errors
+/// [`PiiError::NotFound`] for an unknown run, [`PiiError::Invalid`] for one in
+/// flight, store errors from journaling.
+pub fn abandon_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), PiiError> {
+    let header = engine
+        .store
+        .get_run(run_id)?
+        .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
+    if engine.is_in_flight(run_id.as_str()) {
+        return Err(PiiError::Invalid(format!(
+            "run '{run_id}' is in flight; cancel it before abandoning"
+        )));
+    }
+    let mut header = header;
+    header.status = pii_abi::RunStatus::Failed;
+    let terminal = pii_abi::Terminal::Failure {
+        error: format!("abandoned: {reason}"),
+    };
+    let output_hash = serde_json::to_vec(&terminal)
+        .map(|b| pii_store::hash(&b))
+        .unwrap_or_default();
+    let finished = pii_abi::RunEvent::Finished {
+        terminal,
+        output_hash,
+    };
+    engine.store.append_event(&mut header, &finished)?;
+    if let Some(ev) = crate::engine::bus::map_event(run_id, &finished) {
+        engine.bus.broadcast(ev);
+    }
+    Ok(())
+}
+
 /// Continues a suspended run (F5.5/F5.9/F5.10: timer fire, approval resolve).
 ///
 /// Runs on a blocking thread and returns at once, mirroring [`spawn_run`]'s
@@ -251,6 +288,24 @@ pub fn spawn_resume(
     engine: Arc<Engine>,
     run_id: RunId,
     resume_key: Option<ResumeKey>,
+) -> Result<(), PiiError> {
+    spawn_resume_node(engine, run_id, resume_key, None)
+}
+
+/// [`spawn_resume`], or with `retry_node` set a re-run of that ONE node.
+///
+/// Spec 186, `pii run retry`: the operator's explicit acceptance of an
+/// `effect.unknown`, so the unknown-effect refusal does not apply to it.
+///
+/// # Errors
+/// As [`spawn_resume`].
+// Kept as one function: the recoveries below are one refusal sequence (spec 78).
+#[allow(clippy::too_many_lines)]
+pub fn spawn_resume_node(
+    engine: Arc<Engine>,
+    run_id: RunId,
+    resume_key: Option<ResumeKey>,
+    retry_node: Option<pii_abi::NodeId>,
 ) -> Result<(), PiiError> {
     // Spec 78: every recovery below FAILS the resume on error (a confined
     // run whose scope or budget cannot be read must never start), and the
@@ -289,6 +344,17 @@ pub fn spawn_resume(
         );
         fail_run(&engine, header, &spec.name, &denied);
         return Err(denied);
+    }
+    // Spec 186: an effect started and never confirmed is unknown. Refuse
+    // HERE, synchronously; the run is left for the operator (retry/abandon).
+    if retry_node.is_none() {
+        let journal = engine
+            .store
+            .read_journal(&run_id)
+            .map_err(|e| refuse("journal unreadable", &e))?;
+        if let Some(unknown) = pii_graph::effect::refusal(&pii_graph::effect::scan(&journal)) {
+            return Err(unknown);
+        }
     }
     let limits = spec.limits;
     let (max_tokens, max_tool_calls, max_micro_usd, max_wall_ms) = (
@@ -334,13 +400,19 @@ pub fn spawn_resume(
         cancel,
     );
     tokio::task::spawn_blocking(move || {
-        let terminal = match pii_graph::run::resume(
-            &engine.store,
-            &engine.reg,
-            &ctx,
-            &run_id,
-            resume_key.as_ref(),
-        ) {
+        let result = retry_node.as_ref().map_or_else(
+            || {
+                pii_graph::run::resume(
+                    &engine.store,
+                    &engine.reg,
+                    &ctx,
+                    &run_id,
+                    resume_key.as_ref(),
+                )
+            },
+            |node| pii_graph::run::retry(&engine.store, &engine.reg, &ctx, &run_id, node),
+        );
+        let terminal = match result {
             Ok(t) => Some(t),
             Err(e) => {
                 #[allow(clippy::print_stderr)]

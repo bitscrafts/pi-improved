@@ -51,6 +51,12 @@ pub enum Method {
     /// Resume a suspended run.
     #[serde(rename = "run.resume")]
     RunResume,
+    /// Re-run one node of a recorded run (spec 186).
+    #[serde(rename = "run.retry")]
+    RunRetry,
+    /// Close a run as failed with a reason (spec 186).
+    #[serde(rename = "run.abandon")]
+    RunAbandon,
     /// Run journal trace.
     #[serde(rename = "run.trace")]
     RunTrace,
@@ -137,6 +143,8 @@ impl std::fmt::Display for Method {
             Self::RunList => "run.list",
             Self::RunCancel => "run.cancel",
             Self::RunResume => "run.resume",
+            Self::RunRetry => "run.retry",
+            Self::RunAbandon => "run.abandon",
             Self::RunTrace => "run.trace",
             Self::GraphApply => "graph.apply",
             Self::GraphGet => "graph.get",
@@ -183,6 +191,8 @@ impl std::str::FromStr for Method {
             "run.list" => Self::RunList,
             "run.cancel" => Self::RunCancel,
             "run.resume" => Self::RunResume,
+            "run.retry" => Self::RunRetry,
+            "run.abandon" => Self::RunAbandon,
             "run.trace" => Self::RunTrace,
             "graph.apply" => Self::GraphApply,
             "graph.get" => Self::GraphGet,

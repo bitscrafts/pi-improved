@@ -628,6 +628,12 @@ impl Engine {
         self.runs.lock().remove(run_id);
     }
 
+    /// True while this process holds a live handle for `run_id`.
+    #[must_use]
+    pub fn is_in_flight(&self, run_id: &str) -> bool {
+        self.runs.lock().contains_key(run_id)
+    }
+
     /// Trips a run's cancel token (idempotent, F2.7).
     pub fn cancel(&self, run_id: &str) {
         if let Some(h) = self.runs.lock().get(run_id) {

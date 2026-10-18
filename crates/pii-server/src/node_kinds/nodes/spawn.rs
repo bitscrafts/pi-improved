@@ -89,6 +89,10 @@ impl NodeFactory for SpawnFactory {
         "spawn"
     }
 
+    fn is_effect(&self) -> bool {
+        true
+    }
+
     fn effects(&self) -> Effects {
         Effects::MUTATES_EXTERNAL
     }

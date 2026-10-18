@@ -47,6 +47,12 @@ pub trait NodeFactory: Send + Sync {
     fn required_caps(&self) -> CapKind;
     /// Static effect classification.
     fn effects(&self) -> Effects;
+    /// True for an EFFECT kind (`post`, `memory put`, `spawn`, `hal`): the
+    /// scheduler journals its idempotency key before the effect and confirms
+    /// it after (spec 186), so a replay never repeats it.
+    fn is_effect(&self) -> bool {
+        false
+    }
     /// Builds a node instance for a config.
     ///
     /// # Errors

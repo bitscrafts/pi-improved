@@ -143,6 +143,8 @@ pub fn dispatch(
         Method::LearnRevert => crate::engine::learn_methods::learn_revert(engine, req),
         Method::LearnSweep => crate::engine::learn_methods::learn_sweep(engine, req),
         Method::RunResume => crate::engine::methods::run_resume(engine, req),
+        Method::RunRetry => crate::engine::methods::run_retry(engine, req),
+        Method::RunAbandon => crate::engine::methods::run_abandon(engine, req),
         Method::SessionInterrupt => {
             let sid = req
                 .params

@@ -13,6 +13,7 @@
 
 pub mod blackboard;
 pub mod cron;
+pub mod effect;
 pub mod expr;
 pub mod journal;
 pub mod node;
