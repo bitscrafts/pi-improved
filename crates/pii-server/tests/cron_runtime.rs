@@ -56,34 +56,33 @@ async fn a_finished_cron_run_is_started_again_inside_the_runtime() {
     let handles = d.spawn_background();
     d.start_cron_entries();
 
-    // The first firing ends at once; the SECOND is started by the re-arm thread.
-    let end = Instant::now() + Duration::from_secs(15);
+    // The first firing ends at once and parks on its timer (spec 179: it stays tracked).
+    // The SECOND run starts when the next occurrence fires: up to 60 s for `* * * * *`.
+    let count = || {
+        [
+            pii_abi::RunStatus::Failed,
+            pii_abi::RunStatus::Running,
+            pii_abi::RunStatus::Suspended,
+            pii_abi::RunStatus::Succeeded,
+        ]
+        .into_iter()
+        .map(|s| d.engine.store.runs_by_status(s).unwrap().len())
+        .sum::<usize>()
+    };
+    let end = Instant::now() + Duration::from_secs(75);
     let mut started = 0;
     while Instant::now() < end {
-        started = d
-            .engine
-            .store
-            .runs_by_status(pii_abi::RunStatus::Failed)
-            .unwrap()
-            .len()
-            + d.engine
-                .store
-                .runs_by_status(pii_abi::RunStatus::Running)
-                .unwrap()
-                .len()
-            + d.engine
-                .store
-                .runs_by_status(pii_abi::RunStatus::Suspended)
-                .unwrap()
-                .len()
-            + d.engine
-                .store
-                .runs_by_status(pii_abi::RunStatus::Succeeded)
-                .unwrap()
-                .len();
+        started = count();
         if started >= 2 {
             break;
         }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // Spec 179 at the runtime level: one occurrence starts one run, not one per re-arm.
+    let settle = Instant::now() + Duration::from_secs(6);
+    let mut after = started;
+    while Instant::now() < settle {
+        after = count();
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     for h in handles {
@@ -92,5 +91,11 @@ async fn a_finished_cron_run_is_started_again_inside_the_runtime() {
     assert!(
         started >= 2,
         "the cron was started {started} time(s); the re-arm never ran a second"
+    );
+    assert_eq!(
+        after,
+        started,
+        "a further 6 s started {} more run(s); a parked run must not be re-armed",
+        after - started
     );
 }
