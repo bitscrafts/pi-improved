@@ -18,3 +18,5 @@ A daemon start MUST NOT arm a second run for a cron entry that already has a sus
 - Do NOT weaken the gate, a budget or any existing control to make this pass.
 - Do NOT test this on the live daemon: every restart arms another copy. The proof runs on a SCRATCH daemon on a scratch store.
 - Do NOT delete a suspended run silently: cancelling one is an event.
+- `start_cron_entries` is in crates/pii-server/src/daemon/mod.rs, which sits near the 450-line gate (spec 182): put the new logic in daemon/cron.rs and keep mod.rs's line count where it is.
+- The commit takes only crates/pii-server/src/daemon, crates/pii-server/tests and crates/pii-observe/src/names.rs. If the fix needs a file outside those, STOP and say so — a file left out of the commit is a HEAD that does not build (cabf634).
