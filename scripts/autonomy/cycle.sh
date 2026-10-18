@@ -94,6 +94,16 @@ if [ ! -f "specs/$SPEC" ]; then
   say "NO SPEC at specs/$SPEC — the agent must AUTHOR it before this cycle can spend anything"
   echo "OUTCOME=needs-spec ITEM=$ITEM TITLE=$TITLE"; exit 6
 fi
+# A spec NUMBER must resolve to exactly ONE file. The dispatcher resolves `ls specs/<N>-*.md | head -1` and
+# session.sh recover keys the resume handle by that same number, so two specs sharing a number send the item to
+# the WRONG file and resume ANOTHER item's finished session. Measured 2026-10-18: item A52 (183-the-worker-node)
+# was dispatched as 183-the-lagged-chain — already committed — resumed its 10-turn session, spent $0.37, changed
+# nothing, and then failed verify on its own criterion. A duplicate number is a plan defect: refuse before spending.
+NDUP=$(ls specs/"$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')"-*.md 2>/dev/null | wc -l)
+if [ "$NDUP" -ne 1 ]; then
+  say "spec number in $SPEC matches $NDUP files under specs/ — the dispatcher would pick the first and recover another item's session; refusing"
+  echo "OUTCOME=plan-error ITEM=$ITEM SPEC=$SPEC DUPLICATE-NUMBER"; exit 4
+fi
 if [ -n "$BRIEF" ] && [ "$BRIEF" != "-" ] && [ ! -f "$BRIEF" ]; then
   say "NO BRIEF at $BRIEF"; echo "OUTCOME=needs-brief ITEM=$ITEM"; exit 6
 fi
