@@ -159,6 +159,10 @@ pub const TRAJECTORY_PRUNED: &str = "trajectory.pruned";
 pub const TRAJECTORY_OVER_BUDGET: &str = "trajectory.over_budget";
 /// Event: a run's start was refused after its id was handed out; the run is failed, not lost (`run`, `error`).
 pub const RUN_START_REFUSED: &str = "run.start.refused";
+/// Event: an operator cancelled a not-running run (`run`, `reason`).
+pub const RUN_CANCELLED: &str = "run.cancelled";
+/// Event: a cancel was refused because a node is executing (`run`, `node`).
+pub const RUN_CANCEL_REFUSED: &str = "run.cancel_refused";
 /// Event: boot reconciliation closed a run a crash left `Running` (`run`, `reason`).
 pub const RUN_RECONCILED: &str = "run.reconciled";
 /// Event: a node panicked; the run is failed, the daemon survives (`run`, `node`, `message`).

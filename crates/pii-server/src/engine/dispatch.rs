@@ -91,6 +91,9 @@ pub fn dispatch(
             let list = engine.session_list();
             value_response(req, serde_json::to_value(list).ok(), err)
         }
+        Method::RunCancel if req.params.get("reason").is_some() => {
+            crate::engine::methods::run_cancel(engine, req)
+        }
         Method::RunCancel => {
             if let Some(rid) = req.params.get("run_id").and_then(|v| v.as_str()) {
                 engine.cancel(rid);

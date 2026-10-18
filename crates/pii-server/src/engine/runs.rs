@@ -253,20 +253,33 @@ fn fail_run(engine: &Engine, mut header: pii_abi::RunHeader, graph: &str, err: &
 /// [`PiiError::NotFound`] for an unknown run, [`PiiError::Invalid`] for one in
 /// flight, store errors from journaling.
 pub fn abandon_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), PiiError> {
+    close_failed(
+        engine,
+        run_id,
+        format!("abandoned: {reason}"),
+        "cancel it before abandoning",
+    )
+}
+
+/// Appends a `Failure` terminal with `error` to a recorded run that is not in flight.
+fn close_failed(
+    engine: &Engine,
+    run_id: &RunId,
+    error: String,
+    in_flight_hint: &str,
+) -> Result<(), PiiError> {
     let header = engine
         .store
         .get_run(run_id)?
         .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
     if engine.is_in_flight(run_id.as_str()) {
         return Err(PiiError::Invalid(format!(
-            "run '{run_id}' is in flight; cancel it before abandoning"
+            "run '{run_id}' is in flight; {in_flight_hint}"
         )));
     }
     let mut header = header;
     header.status = pii_abi::RunStatus::Failed;
-    let terminal = pii_abi::Terminal::Failure {
-        error: format!("abandoned: {reason}"),
-    };
+    let terminal = pii_abi::Terminal::Failure { error };
     let output_hash = serde_json::to_vec(&terminal)
         .map(|b| pii_store::hash(&b))
         .unwrap_or_default();
@@ -279,6 +292,75 @@ pub fn abandon_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), 
         engine.bus.broadcast(ev);
     }
     Ok(())
+}
+
+/// Cancels a run that is not executing (spec 189): closes it as `Failed` with
+/// `cancelled: <reason>` on the record and emits `run.cancelled`.
+///
+/// A run with a node executing is refused (`run.cancel_refused` names the node):
+/// cancellation never abandons work half-done.
+///
+/// # Errors
+/// [`PiiError::NotFound`] for an unknown run, [`PiiError::Invalid`] for a run that
+/// already finished or whose node is executing, store errors from journaling.
+pub fn cancel_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), PiiError> {
+    let header = engine
+        .store
+        .get_run(run_id)?
+        .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
+    if matches!(
+        header.status,
+        pii_abi::RunStatus::Succeeded | pii_abi::RunStatus::Failed
+    ) {
+        return Err(PiiError::Invalid(format!(
+            "run '{run_id}' already finished"
+        )));
+    }
+    if engine.is_in_flight(run_id.as_str()) {
+        let node = executing_node(engine, run_id)?;
+        engine.log().event(
+            &pii_observe::Event::new(
+                "engine",
+                pii_observe::Level::Warn,
+                pii_observe::names::RUN_CANCEL_REFUSED,
+            )
+            .field("run", run_id.as_str())
+            .field("node", node.as_str())
+            .in_run(pii_observe::RunId(run_id.to_string())),
+        );
+        return Err(PiiError::Invalid(format!(
+            "run '{run_id}' is executing node '{node}'; cancel refused"
+        )));
+    }
+    close_failed(engine, run_id, format!("cancelled: {reason}"), "refused")?;
+    engine.log().event(
+        &pii_observe::Event::new(
+            "engine",
+            pii_observe::Level::Info,
+            pii_observe::names::RUN_CANCELLED,
+        )
+        .field("run", run_id.as_str())
+        .field("reason", reason)
+        .in_run(pii_observe::RunId(run_id.to_string())),
+    );
+    Ok(())
+}
+
+/// The node a run's journal shows started and not yet ended (empty if none).
+fn executing_node(engine: &Engine, run_id: &RunId) -> Result<String, PiiError> {
+    use pii_abi::RunEvent;
+    let mut open: Vec<String> = Vec::new();
+    for (_, ev) in engine.store.read_journal(run_id)? {
+        match ev {
+            RunEvent::NodeStarted { node, .. } => open.push(node.to_string()),
+            RunEvent::NodeFinished { node, .. }
+            | RunEvent::NodeFailed { node, .. }
+            | RunEvent::NodeCancelled { node }
+            | RunEvent::NodeDead { node } => open.retain(|n| *n != node.to_string()),
+            _ => {}
+        }
+    }
+    Ok(open.pop().unwrap_or_default())
 }
 
 /// Continues a suspended run (F5.5/F5.9/F5.10: timer fire, approval resolve).

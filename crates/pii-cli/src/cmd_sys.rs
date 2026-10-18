@@ -32,10 +32,11 @@ pub(crate) fn cmd_run_ctl(args: &mut std::env::ArgsOs) -> ExitCode {
         Some("resume") => run_replay(args, "resume"),
         Some("retry") => run_replay(args, "retry"),
         Some("abandon") => run_replay(args, "abandon"),
+        Some("cancel") => run_replay(args, "cancel"),
         _ => {
             eprintln!(
                 "usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]|get <run_id>\
-                 |resume <run_id>|retry <run_id> --node <id>|abandon <run_id> --reason <text>}}"
+                 |resume <run_id>|retry <run_id> --node <id>|abandon <run_id> --reason <text>|cancel <run_id> --reason <text>}}"
             );
             ExitCode::from(2)
         }
@@ -166,13 +167,15 @@ fn run_replay(args: &mut std::env::ArgsOs, verb: &str) -> ExitCode {
         }
         _ => {
             let Some(r) = reason else {
-                eprintln!("usage: pii run abandon <run_id> --reason <text>");
+                eprintln!("usage: pii run {verb} <run_id> --reason <text>");
                 return ExitCode::from(2);
             };
-            (
-                Method::RunAbandon,
-                serde_json::json!({"run_id": id, "reason": r}),
-            )
+            let method = if verb == "cancel" {
+                Method::RunCancel
+            } else {
+                Method::RunAbandon
+            };
+            (method, serde_json::json!({"run_id": id, "reason": r}))
         }
     };
     match run_call(method, params) {
