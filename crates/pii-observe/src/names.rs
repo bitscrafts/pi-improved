@@ -60,6 +60,8 @@ pub const WORKER_REQUEST_REFUSED: &str = "worker.request.refused";
 /// Event: a worker reload finished (`worker`, `old_pid`, `new_pid`, `in_flight_at_start`,
 /// `queued_flushed`, `aborted`); `0`/`0`/`0` means nothing was in flight.
 pub const WORKER_RELOAD_COMPLETED: &str = "worker.reload.completed";
+/// Event: a coding-agent worker refused to start (`agent`, `model`, `reason`); nothing was spawned (spec 185).
+pub const WORKER_START_REFUSED: &str = "worker.start.refused";
 /// Event: a memory search completed.
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.
@@ -370,6 +372,7 @@ pub const ALL: &[&str] = &[
     WORKER_STATE_CHANGED,
     WORKER_REQUEST_REFUSED,
     WORKER_RELOAD_COMPLETED,
+    WORKER_START_REFUSED,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,
     MEMORY_ENTITY_WRITTEN,
