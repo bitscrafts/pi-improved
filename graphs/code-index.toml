@@ -1,0 +1,59 @@
+# code-index.toml — pii indexes its own codebase, AS A GRAPH.
+#
+# User directive 2026-10-19: "the graphify feature! initially indexing its own codebase" and "the respective graphs must
+# also be modified accordingly". So the index is not only a script: it is a scheduled graph, like every other capability.
+#
+# Measured before writing: entities=1415 in memory.redb after scripts/pii-index-code.py indexed 23 crates, and
+# relationships=0 — because `pii memory link` accepts no arguments in this build (it prints the entity usage), so nothing
+# can connect a module to its functions yet and the graph lane stays inactive. This graph therefore does the part that is
+# possible today (a timed index pass plus a recorded snapshot) and its gate refuses to claim success while links are absent.
+#
+# Shape: timer → index(worker) → gate(entities>0 and relationships>0?) → memory(record)
+# NOTE: field names mirror the digest and intervention-report graphs; a graph that fails to load must REFUSE (176/177).
+
+[graph]
+name = "code-index"
+description = "Index this repository into pii's own memory graph, on a schedule, and record what was indexed."
+
+[[node]]
+id = "start"
+kind = "timer"
+cron = "0 3 * * *"                 # 00:00 local (UTC-3): the idle window, when indexing costs no one any waiting
+
+[[node]]
+id = "index"
+kind = "worker"
+depends_on = ["start"]
+agent = "claude"
+model = "claude-haiku-5-5"         # mechanical work: run the indexer, report counts. No judgement needed.
+workdir = "/projects/pi-improved"
+brief = """
+Run the codebase indexer and report its counts. Do not edit source.
+
+    uv run scripts/pii-index-code.py --max 3000
+
+Then report exactly, with the numbers the tool printed:
+  entities_created · entities_failed · crates_scanned
+  and the entity totals from:  pii memory tiers
+If relationships is still 0, say so plainly: the graph lane cannot expand a query without links, and
+`pii memory link` is not wired in this build.
+Do not invent a number. Do not commit.
+"""
+
+[[node]]
+id = "gate"
+kind = "gate"
+depends_on = ["index"]
+require = ["entities_created", "crates_scanned", "relationships"]
+brief = """
+The report must contain all three counts and must state relationships explicitly, even when it is zero.
+A report claiming the codebase is indexed while relationships=0 is FALSE and must be failed by this gate.
+"""
+
+[[node]]
+id = "record"
+kind = "memory"
+depends_on = ["gate"]
+op = "put"
+text = "$.nodes.index.output"      # the snapshot becomes knowledge the next run can diff against
+kind_tag = "code-index"
