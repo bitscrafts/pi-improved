@@ -209,7 +209,7 @@ else
   # REVIEW ROWS (user directive 2026-10-19: "an opus analysis must also be put in the queue, positioned before the items
   # that matter"). A row whose spec is specs/review-* is dispatched to the opus reviewer in plan mode, never to a coder.
   case "$SPEC" in
-    specs/review-*)
+    specs/216-*|specs/review-*)
       say "review row: dispatching the reviewer for $SPEC"
       ( bash scripts/autonomy/review-row.sh "$N" ) >>"$LOG" 2>&1
       RC=$?
