@@ -28,10 +28,11 @@ pub fn process_origin() -> RunOrigin {
         .clone()
 }
 
-/// Counts the runs in `store` whose header names `revision`, in one pass over
-/// the run table. A header with no revision is `unattributed` and never counts
-/// as any deploy's.
+/// Counts the runs in `store` whose header names `revision`, with their starts.
 ///
+/// One pass over the run table also yields the distinct process starts and the
+/// hard deaths among them. A header with no revision is `unattributed` and never
+/// counts as any deploy's.
 /// # Errors
 /// Returns [`PiiError`] when the run table cannot be read.
 pub fn since_deploy(store: &Store, revision: &str) -> Result<SinceDeploy, PiiError> {
@@ -40,11 +41,17 @@ pub fn since_deploy(store: &Store, revision: &str) -> Result<SinceDeploy, PiiErr
         ..SinceDeploy::default()
     };
     let mut ours: Vec<(RunId, String)> = Vec::new();
+    let mut starts: BTreeSet<u64> = BTreeSet::new();
+    let mut running_starts: Vec<u64> = Vec::new();
     store.for_each_run_header(|h| {
         if h.revision.is_empty() {
             out.unattributed += 1;
         } else if h.revision == revision {
             out.runs += 1;
+            starts.insert(h.process_start_ms);
+            if h.status == RunStatus::Running {
+                running_starts.push(h.process_start_ms);
+            }
             ours.push((h.run.clone(), h.graph.clone()));
             let by = &mut out.runs_by_status;
             match h.status {
@@ -56,6 +63,10 @@ pub fn since_deploy(store: &Store, revision: &str) -> Result<SinceDeploy, PiiErr
         }
     })?;
     out.armed = out.runs_by_status.suspended;
+    out.starts = starts.len() as u64;
+    if let Some(newest) = starts.last() {
+        out.hard_deaths = running_starts.iter().filter(|s| *s < newest).count() as u64;
+    }
     for (run, graph) in &ours {
         match run_posts(store, run, graph) {
             Some((posted, refused)) => {

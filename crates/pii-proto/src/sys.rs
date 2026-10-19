@@ -374,4 +374,10 @@ pub struct SinceDeploy {
     /// Runs of this revision whose posts could not be counted (spec 190).
     #[serde(default)]
     pub unreadable: u64,
+    /// Distinct process starts that wrote a run of this revision (spec 192); `0` when none did.
+    #[serde(default)]
+    pub starts: u64,
+    /// Runs still `running` whose process start is older than the newest of this revision (spec 192).
+    #[serde(default)]
+    pub hard_deaths: u64,
 }

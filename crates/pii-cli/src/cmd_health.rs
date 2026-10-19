@@ -72,6 +72,8 @@ fn render(v: &serde_json::Value) -> String {
             "posted",
             "post_refused",
             "unreadable",
+            "starts",
+            "hard_deaths",
         ] {
             let _ = writeln!(out, "  {k}: {}", txt(v, &format!("/since_deploy/{k}")));
         }
@@ -150,6 +152,17 @@ mod tests {
             "runs: 3",
             "0.1.0",
         ] {
+            assert!(text.contains(needle), "missing {needle} in:\n{text}");
+        }
+    }
+
+    #[test]
+    fn since_deploy_prints_starts_and_hard_deaths() {
+        let v = serde_json::json!({
+            "since_deploy": {"revision": "abc", "starts": 3, "hard_deaths": 1}
+        });
+        let text = render(&v);
+        for needle in ["starts: 3", "hard_deaths: 1"] {
             assert!(text.contains(needle), "missing {needle} in:\n{text}");
         }
     }
