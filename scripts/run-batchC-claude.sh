@@ -75,7 +75,7 @@ EOF
 RESUME_ARGS=()
 if [ -n "$RESUME_SID" ]; then RESUME_ARGS=(--resume "$RESUME_SID"); echo "== RESUMING session $RESUME_SID"; fi
 stdbuf -oL -eL claude "${RESUME_ARGS[@]}" -p "$(cat "$BRIEF")" \
-  --permission-mode bypassPermissions --model sonnet \
+  --permission-mode bypassPermissions --model "${CLAUDE_MODEL:-sonnet}" \
   --output-format stream-json --verbose --include-partial-messages \
   --disallowedTools 'Edit(specs/**) Write(specs/**)' \
   >"$LOG" 2>"$LOG.err"
