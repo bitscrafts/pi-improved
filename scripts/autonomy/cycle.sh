@@ -206,7 +206,14 @@ else
     echo "OUTCOME=parked-attempt-cap ITEM=$ITEM"; exit 11
   fi
   say "dispatching spec number $N"
-  ( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
+  # WORKER SELECTION (user directive 2026-10-19: "dont implement it as the anthropic quota will exaust").
+  # PII_WORKER=pi (default) dispatches to ollama-cloud through scripts/run-batchC-pi.sh — the Claude account is untouched.
+  # PII_WORKER=claude is the opt-in escalation, and only when the window is known open.
+  if [ "${PII_WORKER:-pi}" = "claude" ]; then
+    ( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
+  else
+    ( ALLOW_DIRTY=1 bash scripts/run-batchC-pi.sh "$N" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
+  fi
   WRC=$?
   NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
   say "worker rc=$WRC session=${NEWSID:-none}"
