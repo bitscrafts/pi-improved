@@ -187,14 +187,62 @@ pub(crate) fn cmd_memory(args: &mut std::env::ArgsOs) -> ExitCode {
             )
         }
         Some("consolidate") => print_result(Method::MemoryConsolidate, serde_json::json!({})),
+        Some("learn") => cmd_learn(args),
         Some(
             sub @ ("entity" | "link" | "neighbours" | "compact" | "show" | "tiers" | "archive"
             | "restore"),
         ) => crate::cmd_entity::cmd_entity(sub, args),
         _ => {
             eprintln!(
-                "usage: pii memory {{search|put|consolidate|entity|link|neighbours|compact|show|tiers|archive|restore}} ..."
+                "usage: pii memory {{search|put|learn|consolidate|entity|link|neighbours|compact|show|tiers|archive|restore}} ..."
             );
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// `pii memory learn --run R --status S --reason T [--graph G] [--attempts N] [--session S]
+/// [--commit C]`: one outcome becomes one memory document. The key is run + status + reason, so a
+/// retried row is reported `unchanged`. A failure is a `memory.learn.failed` event on stderr.
+fn cmd_learn(args: &mut std::env::ArgsOs) -> ExitCode {
+    let (mut run, mut status, mut reason) = (None, None, None);
+    let mut graph = String::from("-");
+    let mut attempts = String::from("-");
+    let mut session = String::from("-");
+    let mut commit = String::from("-");
+    while let Some(a) = next_str(args) {
+        let value = next_str(args);
+        match (a.as_str(), value) {
+            ("--run", v) => run = v,
+            ("--status", v) => status = v,
+            ("--reason", v) => reason = v,
+            ("--graph", Some(v)) => graph = v,
+            ("--attempts", Some(v)) => attempts = v,
+            ("--session", Some(v)) => session = v,
+            ("--commit", Some(v)) => commit = v,
+            _ => {}
+        }
+    }
+    let (Some(run), Some(status), Some(reason)) = (run, status, reason) else {
+        eprintln!(
+            "usage: pii memory learn --run R --status S --reason T [--graph G] [--attempts N] [--session S] [--commit C]"
+        );
+        return ExitCode::from(2);
+    };
+    let text = format!(
+        "outcome run={run} graph={graph} status={status} attempts={attempts} session={session} commit={commit} reason={reason}"
+    );
+    let key = format!("learn:{run}:{status}:{reason}");
+    match run_call(
+        Method::MemoryPut,
+        serde_json::json!({"text": text, "key": key}),
+    ) {
+        Ok(v) => {
+            println!("{v}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("memory.learn.failed run={run} status={status}: {e}");
             ExitCode::from(2)
         }
     }
