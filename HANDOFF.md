@@ -2,6 +2,42 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 00:55Z — 189 verified by hand (criteria + mutation + byte-identical restore), and 070 §5's second half authored as 190
+
+- **A56/189 verified independently of the worker report, on the committed tree (`4182856`).** Both criteria green:
+  `cargo test -p pii-cli --test run_cancel` → `1 passed; 0 failed`, rc=0; `run.cancelled` present in
+  `crates/pii-observe/src/names.rs:163` and emitted by `cancel_run` (`runs.rs:340`), so the constant is read by
+  the live path, not only by a test. The orchestrator's own mutation — `runs.rs:319`
+  `if engine.is_in_flight(...)` → `if false && …`, the executing-node refusal bypassed — reddens it:
+  **rc=101**, `timed out waiting for a refusal naming the executing node`, `0 passed; 1 failed`. Restored with
+  `cp` + `touch`, `sha256sum` identical before and after (`be463cd5…`), re-ran green on those bytes (`e64a476`).
+- **Two traps measured while doing it, both now written into the spec's Closure.** (1) The naive mutation string
+  matched **two** sites (275 `close_failed`, 319 `cancel_run`); the edit aborted on a count assertion and the
+  untouched tree still ran green — a green from a mutation that never landed certifies nothing. (2) A panicking
+  `run_cancel` leaves its scratch daemon alive holding the harness's stdout pipe, so `cargo test | tail` hangs
+  after the binary exits (twice; both killed by exact pid, never by pattern).
+- **The queue was empty (54/54 rows done) and 059's ranked list is spent**: F2 is closed by spec 135's
+  `run_caught` at the node boundary, F3 by the `refusals_seen` event wait in `daemon/mod.rs`, F4 substantively by
+  the per-pid scratch in both `pii-memory` tests (its literal `grep 'fn db() '` gate is a naming proxy that is now
+  a false positive), F5 by 138's daemon-only promote, F6 by 0 `env::temp_dir()` sites, F7 by the `net_covers`
+  check at channel wiring. So the queue was refilled from **070 §5**, which is newer and is what 187-189 followed.
+- **Authored `specs/190-the-post-counts-survive-the-deploy.md` + row A57** — 070 §5's second bullet:
+  `since_deploy` gains `posted`/`post_refused` (and `unreadable`) counted **from the store only**, by resolving
+  the `post` nodes out of the run's stored graph body (`GRAPH_BODY`) and reading that run's journal
+  (`RUN_JOURNAL`), with the duplicate case counted as neither. Both facts are already on disk, so no new table —
+  the criterion is a restart reading the same numbers, and the control is `duplicate: true` not counting.
+  The row's verify column was diffed against `## Exit Criteria` programmatically: 4 criteria → 4 commands, no
+  `;` inside a criterion. `state.py pick` returns **A57**, so the next tick dispatches it.
+- **Selftest:** `RESULT: 32 passed, 2 failed`, `VERDICT: FAILURES ABOVE` — exactly the documented pair
+  (`paused -> the tick says so (once)`, `an open question is carried to the phone`), with the gateway **up**
+  (`Gateway is running (PID: 73)`) and no cycle holding the lock after the run, so it is the in-flight branch of
+  `tick.sh`, not the operator switch.
+- **Next:** A57/190 (posts read from the store, one scratch daemon and a restart). Then 070 §5's third bullet —
+  `starts`/`hard_deaths` and the per-cron `runs_per_occurrence == 1` assertion — then 070 §1 steps 2-6, which need
+  the host (the 09:00 UTC occurrence is the first of them).
+- **Left alone, deliberately:** `scripts/retire-stale-and-rearm.sh` is untracked in the tree (22:01Z) — an
+  operator script for the live host, not this repo's work. Not committed, not removed.
+
 ## 2026-10-18 18:30Z — 187 verified by hand (criteria + mutation), the selftest re-read, and 070 §5's instrument authored as 188
 
 - **A54/187 verified independently of the worker report.** On the committed tree (`18691a2`) both criteria are
