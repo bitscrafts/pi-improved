@@ -54,6 +54,16 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-cli/tests/tui_failure_logged.rs",
     "crates/pii-evolve/tests/launcher.rs",
     "crates/pii-net/tests/accept_pool.rs",
+    // Test-only loopback fakes that serve a real TCP/TLS peer so a close (or a
+    // refusal) can be INJECTED at the socket; the net calls under test stay
+    // inside pii-net. Same sanctioned class as spec 118's test files: the
+    // close_notify, byte-budget and Discord adapter tests landed after 118
+    // without a fresh gate run, which is why they were never reviewed here.
+    "crates/pii-channels/tests/discord.rs",
+    "crates/pii-net/src/service/conn_close_tests.rs",
+    "crates/pii-net/tests/budget_survives_a_day.rs",
+    "crates/pii-net/tests/budget_window.rs",
+    "crates/pii-net/tests/stream_close_is_eof.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

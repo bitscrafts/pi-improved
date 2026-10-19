@@ -37,6 +37,7 @@ pub mod methods;
 mod reconcile_tests;
 pub mod refusal;
 pub mod registry;
+pub mod run_scope;
 pub mod runs;
 pub mod session_durability;
 pub mod subscribe;

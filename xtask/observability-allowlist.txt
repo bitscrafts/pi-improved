@@ -8,7 +8,7 @@ crates/pii-cli/src/cmd_oneshot.rs  # pre-existing at spec 98 seed  # 4
 crates/pii-cli/src/cmd_run.rs  # pre-existing at spec 98 seed  # 2
 crates/pii-cli/src/cmd_sandbox_exec.rs  # pre-existing at spec 98 seed  # 3
 crates/pii-cli/src/cmd_soak.rs  # pre-existing at spec 98 seed  # 3
-crates/pii-cli/src/cmd_sys.rs  # pre-existing at spec 98 seed  # 4
+crates/pii-cli/src/cmd_sys.rs  # spec 186 added the replay verbs (resume/retry/abandon/cancel) to this dispatcher  # 8
 crates/pii-cli/src/cmd_trace.rs  # pre-existing at spec 98 seed  # 12
 crates/pii-cli/src/main.rs  # pre-existing at spec 98 seed  # 12
 crates/pii-cli/src/ndjson.rs  # pre-existing at spec 98 seed  # 2
