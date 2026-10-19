@@ -86,7 +86,17 @@ print("\n".join(seen))' "$INCF")
       bash scripts/autonomy/incident-fix.sh "$FP" 2>&1 | tee -a "$LOG"
     done
   fi
-  say "queue empty — nothing pending"; echo "OUTCOME=queue-empty"; exit 0
+  # THE QUEUE-END BRIEF (2026-10-19, user request: "I do also need a brief on queue end! saying what the session did!").
+  # Emitted HERE, at the moment the queue empties, because a brief produced on request is a brief nobody reads when it
+  # matters. It states the counts, the rows that are NOT done, and the commits — and it writes a dated artefact, so the
+  # session ends with a file rather than a paragraph in a terminal.
+  BRIEF="_docs/05-operations/QUEUE-BRIEF-$(date -u +%Y-%m-%dT%H%M%SZ).md"
+  mkdir -p _docs/05-operations
+  bash scripts/autonomy/queue-brief.sh > "$BRIEF" 2>/dev/null || echo "queue brief: FAILED to generate" >> "$BRIEF"
+  say "queue empty — nothing pending"
+  say "queue brief: $BRIEF"
+  say "$(grep -c '^  A' "$BRIEF" 2>/dev/null || echo 0) row(s) NOT done — listed in the brief"
+  echo "OUTCOME=queue-empty"; exit 0
 fi
 # A tab is IFS whitespace, so read merges consecutive tabs and an empty column shifts every later field (measured
 # 2026-10-15: A25's empty gate put its session id into ATTEMPTS, the done-arithmetic failed, and the item was
