@@ -15,6 +15,7 @@ mod cmd_deploy_card;
 mod cmd_entity;
 mod cmd_health;
 mod cmd_incidents;
+mod cmd_index;
 mod cmd_learn;
 mod cmd_loop;
 mod cmd_metrics;
@@ -34,7 +35,7 @@ mod ndjson;
 use crate::cli_util::fail;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|link|neighbours|compact|show|tiers|archive|restore} ... | pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii deploy-card {render|approve|refuse} --card <file> | pii loop {emit|events} ... | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|link|neighbours|compact|show|tiers|archive|restore} ... | pii index code [--root <dir>] [--max N] | pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii deploy-card {render|approve|refuse} --card <file> | pii loop {emit|events} ... | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]
@@ -155,6 +156,9 @@ fn main() -> ExitCode {
     }
     if cmd == "worker" {
         return cmd_ctl::cmd_worker(&mut args);
+    }
+    if cmd == "index" {
+        return cmd_index::cmd_index(&mut args);
     }
     if cmd == "memory" {
         return cmd_ctl::cmd_memory(&mut args);

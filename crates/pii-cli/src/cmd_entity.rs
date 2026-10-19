@@ -13,7 +13,7 @@ use crate::cmd_ctl::next_str;
 
 const USAGE: &str = "usage: pii memory entity add --kind K --name N --source S... [--attr k=v]... [--dir D]\n       \
 pii memory entity show <id> [--dir D]\n       pii memory entity list {--kind K|--name N} [--limit N] [--dir D]\n       \
-pii memory link <from-id> <to-id> --kind K --source S... [--attr k=v]... [--dir D]\n       \
+pii memory link <from-id> <to-id> {--kind|--rel} K [--source S]... [--attr k=v]... [--dir D]\n       \
 pii memory neighbours <id> [--depth N] [--limit N] [--dir D]\n       pii memory compact [--dir D]\n\
 sources are run:<id>, file:<path> or actor:<name>; --dir defaults to the runtime dir; \
 caps: --max-entities --max-relationships --max-provenance --max-depth --max-results --max-bytes;\n\
@@ -56,7 +56,7 @@ fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
     while let Some(a) = next_str(args) {
         match a.as_str() {
             "--dir" => o.dir = Some(PathBuf::from(next_str(args)?)),
-            "--kind" => o.kind = Some(next_str(args)?),
+            "--kind" | "--rel" => o.kind = Some(next_str(args)?),
             "--name" => o.name = Some(next_str(args)?),
             "--source" => o.sources.push(next_str(args)?),
             "--attr" => {
@@ -162,12 +162,16 @@ pub(crate) fn cmd_entity(sub: &str, args: &mut std::env::ArgsOs) -> ExitCode {
             let (Some(from), Some(to), Some(kind)) = (pos(0), pos(1), o.kind.clone()) else {
                 return usage();
             };
+            let mut sources = o.sources.clone();
+            if sources.is_empty() {
+                sources.push(String::from("actor:cli"));
+            }
             let input = RelationshipInput {
                 from: from.to_owned(),
                 to: to.to_owned(),
                 kind,
                 attributes: o.attrs.iter().cloned().collect(),
-                provenance: o.sources.clone(),
+                provenance: sources,
             };
             store
                 .put_relationship(input)

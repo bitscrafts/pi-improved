@@ -39,8 +39,7 @@ Run the codebase indexer and report its counts. Do not edit source.
 Then report exactly, with the numbers the tool printed:
   entities_created · entities_failed · crates_scanned
   and the entity totals from:  pii memory tiers
-If relationships is still 0, say so plainly: the graph lane cannot expand a query without links, and
-`pii memory link` is not wired in this build.
+If relationships is 0, say so plainly: the graph lane cannot expand a query without links.
 Do not invent a number. Do not commit.
 """
 
