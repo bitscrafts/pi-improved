@@ -85,6 +85,44 @@ impl TimerWheel {
             .map_err(|e| PiiError::Internal(format!("timer: commit put: {e}")))
     }
 
+    /// Removes every entry naming `run` in ONE write txn (spec 196); returns
+    /// how many went. Zero is a normal answer. Other runs' entries are untouched.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn remove_run(&self, run: &str) -> Result<u64, PiiError> {
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| PiiError::Internal(format!("timer: begin_write: {e}")))?;
+        let mut removed = 0_u64;
+        {
+            let mut t = write
+                .open_table(TIMER_WHEEL)
+                .map_err(|e| PiiError::Internal(format!("timer: open table: {e}")))?;
+            let mut mine = Vec::new();
+            for row in t
+                .iter()
+                .map_err(|e| PiiError::Internal(format!("timer: iter: {e}")))?
+            {
+                let Ok(row) = row else { continue };
+                let (fire_at, r) = row.0.value();
+                if r == run {
+                    mine.push(fire_at);
+                }
+            }
+            for fire_at in mine {
+                t.remove((fire_at, run))
+                    .map_err(|e| PiiError::Internal(format!("timer: remove: {e}")))?;
+                removed += 1;
+            }
+        }
+        write
+            .commit()
+            .map_err(|e| PiiError::Internal(format!("timer: commit remove: {e}")))?;
+        Ok(removed)
+    }
+
     /// The earliest `fire_at_ms` still pending (`None` when empty).
     ///
     /// # Errors
@@ -148,18 +186,18 @@ mod tests {
 
     use super::TimerWheel;
 
-    fn scratch() -> std::path::PathBuf {
+    fn scratch(name: &str) -> std::path::PathBuf {
         let dir = std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/_tmp/phase3/timertest"
         ));
         let _ = std::fs::create_dir_all(dir);
-        dir.join(format!("tw-{}.redb", std::process::id()))
+        dir.join(format!("tw-{name}-{}.redb", std::process::id()))
     }
 
     #[test]
     fn timer_wheel_take_due_is_atomic() {
-        let path = scratch();
+        let path = scratch("atomic");
         let w = TimerWheel::open(&path).unwrap();
         w.put_timer(100, "r1", "k1").unwrap();
         w.put_timer(200, "r2", "k2").unwrap();
@@ -172,6 +210,32 @@ mod tests {
         assert_eq!(w.take_due(150).unwrap().len(), 0);
         let due2 = w.take_due(250).unwrap();
         assert_eq!(due2.len(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_removed_timer_does_not_fire() {
+        let path = scratch("removed");
+        let w = TimerWheel::open(&path).unwrap();
+        w.put_timer(100, "r1", "k").unwrap();
+        assert_eq!(w.remove_run("r1").unwrap(), 1);
+        assert!(w.take_due(101).unwrap().is_empty());
+        // Control 4: an empty wheel is intact and removal of nothing is not an error.
+        assert_eq!(w.remove_run("r1").unwrap(), 0);
+        assert!(w.take_due(1_000).unwrap().is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn another_run_s_timer_survives_the_removal() {
+        let path = scratch("survives");
+        let w = TimerWheel::open(&path).unwrap();
+        w.put_timer(100, "r1", "k1").unwrap();
+        w.put_timer(100, "r2", "k2").unwrap();
+        assert_eq!(w.remove_run("r1").unwrap(), 1);
+        let due = w.take_due(101).unwrap();
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(due.first().unwrap().run, "r2");
         let _ = std::fs::remove_file(&path);
     }
 }

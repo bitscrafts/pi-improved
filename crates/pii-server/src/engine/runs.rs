@@ -333,6 +333,11 @@ pub fn cancel_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), P
         )));
     }
     close_failed(engine, run_id, format!("cancelled: {reason}"), "refused")?;
+    // Spec 196: a cancelled run's schedule dies with it; zero is normal (most runs have no timer).
+    let disarmed = match engine.daemon_ctx() {
+        Some(ctx) => ctx.timer_store.remove_run(run_id.as_str())?,
+        None => 0,
+    };
     engine.log().event(
         &pii_observe::Event::new(
             "engine",
@@ -341,6 +346,7 @@ pub fn cancel_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), P
         )
         .field("run", run_id.as_str())
         .field("reason", reason)
+        .field("disarmed", disarmed)
         .in_run(pii_observe::RunId(run_id.to_string())),
     );
     Ok(())
@@ -415,6 +421,26 @@ pub fn spawn_resume_node(
         .get_run(&run_id)
         .map_err(|e| refuse("run header unreadable", &e))?
         .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
+    // Spec 196: a finished run is never resumed (a cancelled run's timer used to re-run it).
+    if matches!(
+        header.status,
+        pii_abi::RunStatus::Succeeded | pii_abi::RunStatus::Failed
+    ) {
+        let status = format!("{:?}", header.status);
+        engine.log().event(
+            &pii_observe::Event::new(
+                "engine",
+                pii_observe::Level::Warn,
+                pii_observe::names::RUN_RESUME_REFUSED,
+            )
+            .field("run", run_id.as_str())
+            .field("status", status.as_str())
+            .in_run(pii_observe::RunId(run_id.to_string())),
+        );
+        return Err(PiiError::Invalid(format!(
+            "resume {run_id}: refused (run already finished: {status})"
+        )));
+    }
     let graph_bytes = engine
         .store
         .get_graph(&header.graph)

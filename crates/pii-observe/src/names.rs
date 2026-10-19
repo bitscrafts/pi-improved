@@ -165,6 +165,10 @@ pub const RUN_START_REFUSED: &str = "run.start.refused";
 pub const RUN_CANCELLED: &str = "run.cancelled";
 /// Event: a cancel was refused because a node is executing (`run`, `node`).
 pub const RUN_CANCEL_REFUSED: &str = "run.cancel_refused";
+/// Event: a resume of a finished run was refused, e.g. a due timer outliving a cancel (`run`, `status`).
+pub const RUN_RESUME_REFUSED: &str = "run.resume.refused";
+/// Event: the scheduler's resume of a due timer was refused (`run`, `key`, `error`).
+pub const TIMER_RESUME_REFUSED: &str = "timer.resume.refused";
 /// Event: boot reconciliation closed a run a crash left `Running` (`run`, `reason`).
 pub const RUN_RECONCILED: &str = "run.reconciled";
 /// Event: a node panicked; the run is failed, the daemon survives (`run`, `node`, `message`).

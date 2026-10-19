@@ -88,7 +88,21 @@ impl Scheduler {
         for d in due {
             let run_id = RunId::from(d.run.as_str());
             let key = ResumeKey(d.key.clone());
-            let _ = crate::engine::runs::spawn_resume(Arc::clone(&self.engine), run_id, Some(key));
+            if let Err(e) =
+                crate::engine::runs::spawn_resume(Arc::clone(&self.engine), run_id, Some(key))
+            {
+                // Refusals are loud (spec 177/196): a due timer must not vanish in silence.
+                self.engine.log().event(
+                    &pii_observe::Event::new(
+                        "scheduler",
+                        pii_observe::Level::Warn,
+                        pii_observe::names::TIMER_RESUME_REFUSED,
+                    )
+                    .field("run", d.run.as_str())
+                    .field("key", d.key.as_str())
+                    .field("error", e.to_string().as_str()),
+                );
+            }
         }
     }
 }
