@@ -118,3 +118,15 @@ Two harness lessons from this pass, both mine, both cost time:
 **The verdict is still not earned, and cannot be tonight**: step 2 closes at 12:16Z at the earliest, and step 6
 is seven days from whenever step 2 first passes on a deployed binary that carries the fixes.
 
+## E2 and E3 re-run independently (10:36Z, scripts/exercise-e2-e3-graphs.sh)
+
+Both rows above were the earlier pass's ad-hoc runs; this pass re-ran them as one script, on two scratch
+daemons, and printed the event lines:
+
+- **E3 PASS** — `{"kind":"cron.start.refused","fields":{"cron":"typo","graph":"no-such-graph",
+  "error":"not found: graph 'no-such-graph'"}}`, the daemon stayed healthy, and the refusal named the graph.
+- **E2 PASS** — `{"kind":"daemon.graphs_fallback","fields":{"looked_in":"…/run/graphs",
+  "using":"…/state/graphs"}}`, the daemon stayed healthy, and a cli-channel message still started a run
+  through the fallen-back directory (runs=1). First attempt at this failed for a harness reason worth
+  recording: the graph must EXIST in the fallback for "runs continue" to mean anything — a name that exists
+  nowhere is refused, correctly, and proves nothing about the fallback.
