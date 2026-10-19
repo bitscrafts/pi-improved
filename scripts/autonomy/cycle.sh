@@ -208,8 +208,10 @@ else
   say "dispatching spec number $N"
   # REVIEW ROWS (user directive 2026-10-19: "an opus analysis must also be put in the queue, positioned before the items
   # that matter"). A row whose spec is specs/review-* is dispatched to the opus reviewer in plan mode, never to a coder.
+  # SPEC is the FILENAME, not a path (measured 2026-10-19: the specs/216-* pattern never matched and a coding worker was
+  # dispatched onto a review spec). Match both forms so this cannot recur.
   case "$SPEC" in
-    specs/216-*|specs/review-*)
+    *review-*|*216-*|specs/review-*|specs/216-*)
       say "review row: dispatching the reviewer for $SPEC"
       ( bash scripts/autonomy/review-row.sh "$N" ) >>"$LOG" 2>&1
       RC=$?
