@@ -204,7 +204,10 @@ pub fn reply(ctx: &Arc<DaemonContext>, channel: &str, chat: &str, text: &str) {
         return;
     };
     let rctx = channel_ctx(&ctx.channels_scope, channel, &c.egress_hosts());
-    if c.send(&rctx, chat, text).is_err() {
+    // A rate limit carries its own pause: a second dial would land in the same closed window.
+    if let Err(e) = c.send(&rctx, chat, text)
+        && pii_channels::retry_after_ms(&e).is_none()
+    {
         let _ = c.send(&rctx, chat, text);
     }
 }
