@@ -147,10 +147,7 @@ impl Channel for DiscordChannel {
         };
         let resp = self.transport.request(ctx, &req)?;
         if !resp.is_success() {
-            return Err(PiiError::Unavailable(format!(
-                "discord: poll status {}",
-                resp.status
-            )));
+            return Err(self.refusal("poll", &resp));
         }
         let msgs: Vec<DiscordMessage> = serde_json::from_slice(&resp.body)
             .map_err(|e| PiiError::Unavailable(format!("discord: bad poll body: {e}")))?;

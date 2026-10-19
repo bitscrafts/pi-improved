@@ -162,6 +162,31 @@ pub fn is_auth_rejected(e: &PiiError) -> bool {
     matches!(e, PiiError::Invalid(m) if m.contains(AUTH_REJECTED))
 }
 
+/// The pause a provider asked for, in ms: reads `"retry_after":<secs>` (Discord's JSON body) or
+/// `retry_after=<secs>s` from the error text, clamped to `1..=600_000`. `None` when absent or
+/// unparseable.
+#[must_use]
+pub fn retry_after_ms(e: &PiiError) -> Option<u64> {
+    let text = match e {
+        PiiError::Unavailable(m) | PiiError::Invalid(m) => m.as_str(),
+        _ => return None,
+    };
+    let rest = ["\"retry_after\":", "retry_after="]
+        .iter()
+        .find_map(|key| text.split_once(key).map(|(_, r)| r))?;
+    let rest = rest.trim_start();
+    let end = rest
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(rest.len());
+    let secs: f64 = rest.get(..end)?.parse().ok()?;
+    if !secs.is_finite() {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let ms = (secs * 1000.0).round().min(1.0e9) as u64;
+    Some(ms.clamp(1, 600_000))
+}
+
 /// Replaces every occurrence of `secret` in `text` (a token embedded in a URL
 /// that a transport error echoed back must not reach logs).
 #[must_use]
@@ -171,4 +196,24 @@ pub fn scrub(text: &str, secret: &str) -> String {
     } else {
         text.replace(secret, "***")
     }
+}
+
+// Top level so the spec's `--exact` filter names it without a module path.
+#[cfg(test)]
+#[test]
+fn the_retry_after_token_is_read_from_a_real_refusal() {
+    let real = PiiError::Unavailable(String::from(
+        r#"discord: forum post status 429: {"message":"You are being rate limited.","retry_after":132.176,"global":false}"#,
+    ));
+    assert_eq!(retry_after_ms(&real), Some(132_176));
+    let poll_form = PiiError::Unavailable(String::from("discord: poll retry_after=1.5s"));
+    assert_eq!(retry_after_ms(&poll_form), Some(1_500));
+    let old = PiiError::Unavailable(String::from("unavailable: discord: poll status 429"));
+    assert_eq!(retry_after_ms(&old), None);
+    let junk = PiiError::Unavailable(String::from(r#"{"retry_after":"soon"}"#));
+    assert_eq!(retry_after_ms(&junk), None);
+    let huge = PiiError::Unavailable(String::from(r#"{"retry_after":99999}"#));
+    assert_eq!(retry_after_ms(&huge), Some(600_000));
+    let tiny = PiiError::Unavailable(String::from(r#"{"retry_after":0}"#));
+    assert_eq!(retry_after_ms(&tiny), Some(1));
 }

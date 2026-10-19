@@ -28,6 +28,8 @@ pub fn spawn_all(
             let engine = Arc::clone(engine);
             let ctx = Arc::clone(ctx);
             tokio::spawn(async move {
+                let interval = interval_ms.max(10);
+                let mut consecutive: u32 = 0;
                 loop {
                     // `poll_once` is fully synchronous (the `Channel` trait
                     // is blocking) and a channel poll may block on network
@@ -38,15 +40,41 @@ pub fn spawn_all(
                     let eng = Arc::clone(&engine);
                     let ctx2 = Arc::clone(&ctx);
                     let name2 = name.clone();
-                    let _ = tokio::task::spawn_blocking(move || {
-                        poll_once(&eng, &ctx2, &name2);
-                    })
-                    .await;
-                    tokio::time::sleep(Duration::from_millis(interval_ms.max(10))).await;
+                    let failure =
+                        tokio::task::spawn_blocking(move || poll_once(&eng, &ctx2, &name2))
+                            .await
+                            .ok()
+                            .and_then(Result::err);
+                    // Spec 194: the pause follows what the provider said, not the bare interval.
+                    consecutive = if failure.is_some() {
+                        consecutive.saturating_add(1)
+                    } else {
+                        0
+                    };
+                    let text = failure.map(|e| e.to_string());
+                    let pause = poll_pause(text.as_deref(), consecutive, interval);
+                    tokio::time::sleep(Duration::from_millis(pause)).await;
                 }
             })
         })
         .collect()
+}
+
+/// The longest the poll loop ever sleeps between polls (spec 194).
+const MAX_POLL_PAUSE_MS: u64 = 300_000;
+
+/// How long the loop sleeps after a poll (spec 194): the interval after a success
+/// (`err_text` `None`); after a failure, the larger of the interval and the provider's
+/// `retry_after`, else `interval * 2^min(consecutive-1, 4)`; never above 300 s.
+pub(crate) fn poll_pause(err_text: Option<&str>, consecutive: u32, interval_ms: u64) -> u64 {
+    let Some(text) = err_text else {
+        return interval_ms.min(MAX_POLL_PAUSE_MS);
+    };
+    let asked = pii_channels::retry_after_ms(&pii_abi::PiiError::Unavailable(text.to_owned()));
+    let wait = asked.unwrap_or_else(|| {
+        interval_ms.saturating_mul(1u64 << consecutive.saturating_sub(1).min(4))
+    });
+    interval_ms.max(wait).min(MAX_POLL_PAUSE_MS)
 }
 
 pub(crate) fn channel_ctx(
@@ -95,20 +123,27 @@ pub(crate) fn channel_ctx(
     )
 }
 
-fn poll_once(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, name: &str) {
+fn poll_once(
+    engine: &Arc<Engine>,
+    ctx: &Arc<DaemonContext>,
+    name: &str,
+) -> Result<(), pii_abi::PiiError> {
     let Some((channel, graph)) = ctx
         .channels
         .lock()
         .get(name)
         .map(|c| (Arc::clone(&c.channel), c.graph.clone()))
     else {
-        return;
+        return Ok(());
     };
     let cursor = ctx.channel_store.get(name).ok().flatten().map(|c| c.cursor);
     let rctx = channel_ctx(&ctx.channels_scope, name, &channel.egress_hosts());
-    let Ok(incoming) = channel.poll(&rctx, cursor) else {
-        let _ = ctx.channel_store.record_error(name);
-        return;
+    let incoming = match channel.poll(&rctx, cursor) {
+        Ok(incoming) => incoming,
+        Err(e) => {
+            let _ = ctx.channel_store.record_error(name);
+            return Err(e);
+        }
     };
     for msg in incoming {
         let mut input = serde_json::json!({
@@ -143,6 +178,7 @@ fn poll_once(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, name: &str) {
             run_id: run_id.to_string(),
         });
     }
+    Ok(())
 }
 
 /// The MQTT mapping (spec 117 R1a): `topic` is the message topic and `payload`
@@ -177,7 +213,7 @@ pub fn reply(ctx: &Arc<DaemonContext>, channel: &str, chat: &str, text: &str) {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::channel_ctx;
+    use super::{channel_ctx, poll_pause};
 
     /// Phase 5.0 D2: the channel fs scope is `<channels_scope>/<name>`,
     /// derived from the daemon's runtime dir — never a hardcoded literal.
@@ -240,6 +276,41 @@ mod tests {
         let rctx = channel_ctx(scope, "c", &cli.egress_hosts());
         assert!(!rctx.caps().net_hosts.permits("discord.com:443"));
         assert!(!rctx.caps().net_hosts.permits(""));
+    }
+
+    #[test]
+    fn an_error_without_retry_after_uses_the_capped_backoff() {
+        let want = [1000, 2000, 4000, 8000, 16000, 16000];
+        for (i, w) in want.iter().enumerate() {
+            let c = u32::try_from(i).unwrap() + 1;
+            assert_eq!(poll_pause(Some("unavailable: boom"), c, 1000), *w, "c={c}");
+        }
+        for c in 1..=20 {
+            assert!(poll_pause(Some("x"), c, 1000) <= 300_000);
+            assert!(poll_pause(Some("x"), c, 200_000) <= 300_000);
+            assert!(poll_pause(Some(r#""retry_after":600"#), c, 1000) <= 300_000);
+        }
+    }
+
+    #[test]
+    fn a_success_returns_to_the_interval() {
+        assert_eq!(poll_pause(Some("x"), 7, 1200), 16 * 1200);
+        assert_eq!(poll_pause(None, 0, 1200), 1200);
+    }
+
+    #[test]
+    fn retry_after_wins_over_the_backoff_and_never_undercuts_the_interval() {
+        let t = r#"discord: poll status 429: {"retry_after":132.176}"#;
+        assert_eq!(poll_pause(Some(t), 1, 1200), 132_176);
+        assert_eq!(poll_pause(Some(r#""retry_after":0.001"#), 1, 1200), 1200);
+    }
+
+    #[test]
+    fn the_pre_fix_error_text_produces_no_pace() {
+        assert_eq!(
+            poll_pause(Some("unavailable: discord: poll status 429"), 1, 1200),
+            1200
+        );
     }
 
     // ---- poll_on_blocking_thread (TDD: poll must not starve tokio) ----
