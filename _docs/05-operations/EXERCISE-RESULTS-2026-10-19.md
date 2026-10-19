@@ -102,3 +102,19 @@ Two harness lessons from this pass, both mine, both cost time:
 - A plan row's `paths` column must name every path a change can ripple into (test module beside the file,
   the other crate's tests). Two rows committed green gates over dirty trees whose HEAD alone would have been
   red (`46fa5830` is the follow-up commit that put it right). open-items 9a, measured twice.
+
+## 070 §1, its seven steps, as of 2026-10-19 10:30Z
+
+| # | step | tonight's reading | verdict |
+|---|---|---|---|
+| 1 | one cron entry, one armed run | `suspended` = 1 = `cron_entries` after a `kill -9` restart (E1) and after every change tonight; spec 187's scratch proof stands | **PASS** |
+| 2 | the occurrence itself: exactly one digest | the 09:00Z slot fired FOUR runs — all four had been cancelled on 10-18 (spec 196). The graph now fires at 12:00Z; the occurrence is being watched live (`scripts/checks/digest-occurrence-1200Z.sh`, evidence below) | **PENDING — measured at 12:16Z** |
+| 3 | production stops being the test bench | 13 `daemon.started` in 24 h vs 2 installs (was 85 vs 6). Two of the thirteen are tonight's deliberate `kill -9` (E1) and its restart | **RED (improved)** |
+| 4 | a recorded full gate on the deployed revision, from a clean export | `cargo run -q -p xtask -- fresh-gate` on HEAD `9045484` → `PASS: build`, `quality-gate: ALL PASS`, `fresh-gate: PASS`, export `git archive`d from HEAD (deleted by the tool on success). Caveat: the shared target dir was warm, so the build line is not a from-scratch compile proof | **PASS (with that caveat)** |
+| 5 | a card for every install | 11 aside dirs (`/root/.local/bin.old-*`, `pii.old-*`) vs 3 cards on disk | **RED** |
+| 6 | the soak: 7 days from the store | not started; the earliest honest start is after a deploy carrying 193 (the occurrence witness) and 196 | **NOT STARTED** |
+| 7 | the `pii-mcp` swap | `pii-mcp.new` staged, not swapped; no probe data tonight | **UNCHANGED** |
+
+**The verdict is still not earned, and cannot be tonight**: step 2 closes at 12:16Z at the earliest, and step 6
+is seven days from whenever step 2 first passes on a deployed binary that carries the fixes.
+
