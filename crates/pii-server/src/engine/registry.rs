@@ -72,6 +72,20 @@ pub fn registry(
     reg
 }
 
+/// Registers the queue graph's `select`, `judge` and `record` kinds over `store` (spec 208). The store is the one
+/// source of truth for the development queue; the nodes never read `plan.tsv`.
+pub fn register_queue_nodes(
+    reg: &mut NodeRegistry,
+    store: Arc<pii_store::queue::QueueStore>,
+    memory: Option<Arc<pii_store::MemStore>>,
+) {
+    reg.register(Arc::new(nodes::queue::SelectFactory {
+        store: Arc::clone(&store),
+    }));
+    reg.register(Arc::new(nodes::queue::JudgeFactory));
+    reg.register(Arc::new(nodes::queue::RecordFactory { store, memory }));
+}
+
 /// Registers `remember`/`recall` over a fresh, empty hub and returns it (spec 126). The daemon
 /// fills the hub; a lint registry never does, because lint never executes a node.
 pub fn register_entity_nodes(reg: &mut NodeRegistry) -> Arc<pii_memory::entity::EntityHub> {
@@ -128,6 +142,21 @@ fn register_lint_channel_kinds(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe
 #[must_use]
 pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
     lint_registry_with_log(workspace, runtime_dir, Arc::new(pii_observe::NullObserver))
+}
+
+/// The lint registry's queue kinds, over a lint-only store under `runtime_dir` (spec 208).
+fn register_lint_queue_nodes(reg: &mut NodeRegistry, runtime_dir: &std::path::Path) {
+    match pii_store::queue::QueueStore::open(&runtime_dir.join("lint-queue.redb")) {
+        Ok(queue) => register_queue_nodes(reg, Arc::new(queue), None),
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!(
+                    "lint_registry: select/record unavailable (queue store: {e}); those nodes will fail lint as unknown kind"
+                );
+            }
+        }
+    }
 }
 
 /// [`lint_registry`] whose `sop` nodes report to `log` — what `pii sop run`
@@ -200,6 +229,7 @@ pub fn lint_registry_with_log(
             }
         }
     }
+    register_lint_queue_nodes(&mut reg, runtime_dir);
     // S0.2: `heal_detect` is a server-owned kind like `gate`/`memory`; the
     // lint registry registers it with a cargo-xtask runner so
     // `graphs/starter/heal-watch.toml` lints (lint never executes nodes).

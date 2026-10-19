@@ -9,6 +9,7 @@ _repos/
 lint-heal.redb
 lint-approval.redb
 lint-memory.redb
+lint-queue.redb
 
 # graphify code knowledge graph (local, regenerate with: graphify extract . --code-only)
 graphify-out/

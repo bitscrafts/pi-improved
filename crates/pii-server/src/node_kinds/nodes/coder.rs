@@ -94,6 +94,19 @@ fn texts(cfg: &serde_json::Value, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The verdict of a node with no criteria of its own (spec 208): a clean exit hands on to a downstream `judge`,
+/// and a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.
+fn deferred_verdict(code: i32, pid: u32, agent: &str, model: &str) -> Outcome {
+    if code == 0 {
+        Outcome::Next {
+            port: PortName::from("ok"),
+            value: serde_json::json!({ "pid": pid, "rc": code, "criteria": [], "deferred": true }),
+        }
+    } else {
+        refused_port(agent, model, &format!("worker exited {code}"))
+    }
+}
+
 /// The `err` port a refusal routes to: the scheduler never retries a refusal (spec 207 R6).
 fn refused_port(agent: &str, model: &str, reason: &str) -> Outcome {
     Outcome::Next {
@@ -123,16 +136,34 @@ impl CoderNode {
     }
 }
 
+/// The node's config, with `spec` taken from the item `select` claimed when the config does not name one (spec 208):
+/// the queue graph is static, so the item it dispatches is only known at run time.
+fn with_selected_spec(cfg: &serde_json::Value, input: &NodeInput) -> serde_json::Value {
+    let mut cfg = cfg.clone();
+    let selected = input
+        .nodes
+        .get("select")
+        .and_then(|v| v.get("item"))
+        .and_then(|i| i.get("spec"))
+        .cloned();
+    if let (Some(map), Some(spec)) = (cfg.as_object_mut(), selected) {
+        map.entry("spec").or_insert(spec);
+    }
+    cfg
+}
+
 impl GraphNode for CoderNode {
-    fn run(&self, ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
-        let agent = text(&self.cfg, "agent").unwrap_or_default();
-        let model = text(&self.cfg, "model").unwrap_or_default();
-        let (spec, brief) = match (WorkerSpec::from_cfg(&self.cfg), text(&self.cfg, "brief")) {
+    fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
+        let cfg = with_selected_spec(&self.cfg, input);
+        let cfg = &cfg;
+        let agent = text(cfg, "agent").unwrap_or_default();
+        let model = text(cfg, "model").unwrap_or_default();
+        let (spec, brief) = match (WorkerSpec::from_cfg(cfg), text(cfg, "brief")) {
             (Ok(spec), Some(brief)) if !spec.spec.is_empty() => (spec, brief),
             (Err(e), _) => return Ok(self.refuse(&agent, &model, &format!("{e}"))),
             _ => return Ok(self.refuse(&agent, &model, "no spec or no brief")),
         };
-        let env = self.pass_env(&texts(&self.cfg, "env_pass"));
+        let env = self.pass_env(&texts(cfg, "env_pass"));
         let dispatch = match plan(&spec, &brief, &env, "direct", self.log.as_ref()) {
             Ok(dispatch) => dispatch,
             Err(e) => return Ok(refused_port(&agent, &model, &format!("{e}"))),
@@ -149,8 +180,8 @@ impl GraphNode for CoderNode {
         let pid = child.pid();
         self.log.event(
             &Event::new("coder", Level::Info, names::CODER_SPAWNED)
-                .field("agent", agent)
-                .field("model", model)
+                .field("agent", agent.clone())
+                .field("model", model.clone())
                 .field("pid", i64::from(pid))
                 .field("argv", argv.join(" ")),
         );
@@ -176,9 +207,15 @@ impl GraphNode for CoderNode {
             }
         };
 
+        // No criteria configured: the verdict is deferred to a downstream `judge` node (spec 208). A clean exit
+        // hands on; a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.
+        if texts(cfg, "criteria").is_empty() {
+            return Ok(deferred_verdict(code, pid, &agent, &model));
+        }
+
         // The criteria decide. The first failing criterion stops the run and names itself in the verdict.
         let mut runs = Vec::new();
-        for command in texts(&self.cfg, "criteria") {
+        for command in texts(cfg, "criteria") {
             let shell = ["/bin/sh".to_owned(), "-c".to_owned(), command.clone()];
             let rc = ctx
                 .proc()?

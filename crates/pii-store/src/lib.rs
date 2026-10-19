@@ -16,6 +16,7 @@ pub mod compact;
 pub mod heal;
 mod identity;
 pub mod mem;
+pub mod queue;
 pub mod session;
 #[cfg(test)]
 mod stamp_tests;

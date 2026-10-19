@@ -1,0 +1,63 @@
+# Spec 208: the development queue as a graph. `select` gates the next work item (blocked and empty are reported
+# apart, and a blocked select ends the run on its own port with the edge it waits on); `dispatch` is a coder
+# node that works the selected item's spec; `judge` runs the item's criteria; `record` writes the verdict to the
+# item's status in the queue store. A worker never commits: that stays an operator act.
+name = "queue"
+entry = "select"
+caps = ["spawn", "proc"]
+
+[[node]]
+id = "select"
+kind = "select"
+
+[[node]]
+id = "dispatch"
+kind = "coder"
+caps = ["spawn", "proc"]
+agent = "pi"
+model = "deepseek-v4-flash"
+workdir = "/projects/pi-improved"
+brief = "Implement the spec named above. Follow it as the contract. Do not commit."
+env_pass = ["PATH", "HOME"]
+
+[[node]]
+id = "judge"
+kind = "judge"
+caps = ["proc"]
+workdir = "/projects/pi-improved"
+
+[[node]]
+id = "record"
+kind = "record"
+# Any one verdict arrives: a judge pass, a judge failure, or a refused dispatch. These ports are exclusive.
+join = "any"
+
+[[edge]]
+from = "select"
+port = "ok"
+to = "dispatch"
+kind = "data"
+
+[[edge]]
+from = "dispatch"
+port = "ok"
+to = "judge"
+kind = "data"
+
+[[edge]]
+from = "dispatch"
+port = "err"
+to = "record"
+kind = "data"
+
+[[edge]]
+from = "judge"
+port = "ok"
+to = "record"
+kind = "data"
+
+[[edge]]
+from = "judge"
+port = "fail"
+to = "record"
+kind = "data"

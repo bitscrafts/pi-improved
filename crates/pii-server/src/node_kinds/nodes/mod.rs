@@ -15,6 +15,7 @@ pub mod heal;
 pub mod memory;
 pub mod mqtt;
 pub mod post;
+pub mod queue;
 pub mod sop;
 pub mod spawn;
 pub mod wasm;

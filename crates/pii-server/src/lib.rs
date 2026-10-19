@@ -232,6 +232,7 @@ impl Engine {
             "approval.redb",
         ))?);
         let heals = Arc::new(pii_store::heal::HealStore::open(&sibling("heal.redb"))?);
+        let queue = Arc::new(pii_store::queue::QueueStore::open(&sibling("queue.redb"))?);
         let memory = Arc::new(pii_store::MemStore::open(&sibling("memory.redb"))?);
         let workers = Arc::new(parking_lot::Mutex::new(BTreeMap::<
             String,
@@ -272,6 +273,11 @@ impl Engine {
             Arc::clone(&spawn_engine),
             log.clone(),
             Arc::clone(&tiers),
+        );
+        engine::registry::register_queue_nodes(
+            &mut reg,
+            Arc::clone(&queue),
+            Some(Arc::clone(&memory)),
         );
         reg.register(Arc::new(node_kinds::nodes::mqtt::MqttFactory {
             hub: Arc::clone(&mqtt),
