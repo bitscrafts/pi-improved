@@ -91,5 +91,41 @@ Three facts about the path, read in the tree today (not assumed):
 
 ## Closure
 
-(To be filled by the orchestrator after independent verification: the criteria's own output, the mutation's
-red output, the byte-identical restore, and what this does and does not close in the E5 row.)
+**Verified 2026-10-19 09:25Z by the orchestrator, independently of the worker's report, on the committed tree
+(`0c1ded6`, gate ALL PASS), and EXERCISED live on a scratch daemon.**
+
+*The criteria, run by hand:*
+
+- `cargo test -p pii-channels --lib the_retry_after_token_is_read_from_a_real_refusal -- --exact` → `1 passed`.
+- `cargo test -p pii-server --test poll_backoff` → `1 passed` (the loop test, driving `spawn_all`).
+- `cargo test -p pii-channels` → all green (the parser test is `#[test]` at crate root so `--exact` names it).
+- `grep -q 'fn retry_after_ms' crates/pii-channels/src/lib.rs` → rc=0.
+
+*Reddened by the orchestrator's own mutations, each compiling, each restored byte-identical:*
+
+- **(a)** `poll_once`'s error arm forced to `return Ok(())` (the failure dropped) → `a_429_with_retry_after_
+  paces_the_next_poll` FAILED (`test result: FAILED. 0 passed; 1 failed`).
+- **(b)** the loop forced to `sleep(interval)` and ignore the computed pause → the same test FAILED.
+- **(c)** `retry_after_ms` forced to `return None` → `the_retry_after_token_is_read_from_a_real_refusal`
+  FAILED.
+
+Restored with `git checkout --` and verified by `sha256sum -c` (`router.rs f4d4a502…`, `lib.rs fd4313a7…`
+both OK), `touch`ed, criteria re-ran green, tree clean.
+
+*Exercised live — the A/B that makes the criterion behavioural (`scripts/exercise-e5-poll-retry-after.sh`,
+scratch daemon, fake Discord answering 429 with `retry_after: 2`, `poll_interval_ms = 100`, nothing repaired
+by the harness):*
+
+- **pre-fix binary** (`/root/.local/bin/pii`, the deployed `121fb6d`): **72 polls in 7 s**, gaps `103–107 ms`,
+  error text `unavailable: discord: poll status 429` — the exact hammering the E5 row measured in production
+  (22 polls in 3 min at the shipped 1.2 s interval).
+- **fixed binary** (`target/release/pii`, `0c1ded6`): **4 polls in 7 s**, gaps `2004 / 2076 / 2081 ms`, error
+  carries `{"retry_after": 2}` — the poll waits for what the provider asked.
+
+*What this closes, and what it does not.* The E5 residual "a 429 is polled again in ~1.2 s" is closed for every
+channel that names a `retry_after`, and the error now keeps the provider's reason (bounded + scrubbed) the way
+the send path already did. It does NOT change the incident half (already working: one incident per poll
+burst), does NOT pace the send path (that is E6 / spec 195), and the FIX IS NOT DEPLOYED — the deployed binary
+is still `121fb6d`, so production keeps the old behaviour until a card carries `0c1ded6` or later to the host
+(070 §1 step 5's rule: a card for every install). The `record_error` counter keeps its cumulative meaning;
+pacing is process-local by R3's design and by the correction recorded in the Overview.

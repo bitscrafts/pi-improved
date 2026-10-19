@@ -34,6 +34,13 @@ STILL FAILING, both by construction: E5 (the poll path parses no Retry-After; er
 but never read) and E6 (nothing reads retry_after to pace outbound sends). E7's committed tests are
 green and the historical 57k denials predate the per-connection fix.
 
+**Updated 2026-10-19 09:30Z:** **E5 is FIXED and exercised** (spec 194, commit `0c1ded6`): the poll error
+keeps Discord's body and the router's pause follows it — the scratch A/B reads 72 polls/7 s at ~104 ms on the
+deployed binary vs 4 polls at 2004–2081 ms for a requested 2000 on the fixed one. The fix is NOT deployed
+(the host still runs `121fb6d`). **E6 remains the one open matrix defect** (spec 195, row A61). A new
+production finding is recorded in the results file: four runs cancelled on 10-18 executed and posted at
+09:00Z today (spec 196, row A63).
+
 ## The three findings the first exercise produced
 
 1. `channel.poll.failed` × 6,672 — the inbound channel cannot read; the cursor never advances.
