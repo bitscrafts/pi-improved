@@ -75,12 +75,35 @@ impl Rig {
     }
 
     /// `SAMPLES` timed calls of a fresh request each; returns (median, max).
-    fn measure(&self, label: &str, mut mk: impl FnMut(usize) -> Request) -> (Duration, Duration) {
+    fn measure(&self, label: &str, mk: impl FnMut(usize) -> Request) -> (Duration, Duration) {
+        self.measure_expecting(label, None, mk)
+    }
+
+    /// [`Rig::measure`] for a call that resumes the already finished run: spec 196 refuses
+    /// that loudly, and the refusal is still an inline answer worth timing.
+    fn measure_refused(
+        &self,
+        label: &str,
+        mk: impl FnMut(usize) -> Request,
+    ) -> (Duration, Duration) {
+        self.measure_expecting(label, Some("already finished"), mk)
+    }
+
+    fn measure_expecting(
+        &self,
+        label: &str,
+        refusal: Option<&str>,
+        mut mk: impl FnMut(usize) -> Request,
+    ) -> (Duration, Duration) {
         let mut v: Vec<Duration> = Vec::new();
         for i in 0..SAMPLES {
             let (d, resp) = self.time(&mk(i));
             let body = serde_json::to_string(&resp).unwrap();
-            assert!(!body.contains("\"error\""), "{label} failed: {body}");
+            let expected = refusal.is_some_and(|r| body.contains(r));
+            assert!(
+                expected || !body.contains("\"error\""),
+                "{label} failed: {body}"
+            );
             if i == 0 {
                 eprintln!("RESP {label}: {body}");
             }
@@ -213,13 +236,13 @@ async fn inline_handlers_measured_and_succeed() {
     );
     push(
         "run.resume",
-        rig.measure("run.resume", |_| {
+        rig.measure_refused("run.resume", |_| {
             req(Method::RunResume, serde_json::json!({"run_id": rid}))
         }),
     );
     push(
         "approve.resolve",
-        rig.measure("approve.resolve", |i| {
+        rig.measure_refused("approve.resolve", |i| {
             let id = format!("appr-{i}");
             crate::daemon::approvals::request(&rig.engine, &id, &rid, "n", "p", "go?").unwrap();
             req(
