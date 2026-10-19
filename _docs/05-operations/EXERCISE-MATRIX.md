@@ -34,6 +34,16 @@ STILL FAILING, both by construction: E5 (the poll path parses no Retry-After; er
 but never read) and E6 (nothing reads retry_after to pace outbound sends). E7's committed tests are
 green and the historical 57k denials predate the per-connection fix.
 
+**Updated 2026-10-19 15:00Z (15:00 pass):** the standing-state contradiction ("diagnostic kind" never printed)
+is resolved by measurement: the diagnostic never shipped — the string exists only in a source comment,
+`git log --all -S` finds no commit carrying it, and revision 4182856b's `conn.rs` read arm is the
+unconditional pre-fix `map_err` that produced the 04:54Z error. Live E1 re-killed (returned in ≈7.3 s, armed
+run unchanged), 187 re-run ("187 HOLDS"), E2/E3 re-run as scripts, E8 re-round-tripped with a fresh nonce —
+all PASS. E5/E6 live-log reading AFTER both fixes: zero Discord 429 mentions and zero retry_after complaints
+since the 07:07Z deploy (all 56 / all 3,672 pre-deploy; last poll.failed with a 429 is 04:35:39Z) — the
+burden is historical, and both fixes await the next deploy card. Full table in the results file, "The 15:00
+pass".
+
 **Updated 2026-10-19 10:10Z:** **E6 is FIXED and exercised too** (spec 195, commit `05b3474`, in the tree, not
 deployed): a send that is refused is paced by the `retry_after` it carries, per channel, and `reply()` no longer
 double-dials. Live A/B, one harness, fake Discord 429-once: the deployed binary dialled 2→3→4 times across three

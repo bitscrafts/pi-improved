@@ -2,6 +2,46 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 15:00Z — the "diagnostic kind" contradiction resolved by measurement; every exercise fresh; the queue is empty
+
+State: tree clean at `6aad6d8` (docs only, uncommitted in `_docs/`) · no cycle in flight · queue EMPTY
+(pick NONE; A55–A58, A63, A64 done, A65 retired) · deployed `121fb6de67e1` (sha256 4f13db5a…) · pair:
+cron_entries 1, suspended 1 (r000000004356, wheel tick 1792497600000 = 12:00:00Z 10-20) · repo build
+`fd5753e3d7114c05fe22ecbf43c18b1558fa5743c3b80508a4d691621b5467cc` (rev stamp f6b1e18c74a6c).
+
+- **The contradiction ("diagnostic kind" compiled in but never printed) is RESOLVED — no patch was needed.**
+  Three measurements: (1) the live log has ZERO `net: read: peer closed` since the 07:07Z deploy — the last
+  occurrence is 04:54:29Z, pre-deploy; (2) `grep -ac "diagnostic kind"` on BOTH deployed binaries (old and
+  current) = 0, and `git log --all -S"diagnostic kind" -- conn.rs` finds no commit — the string lives only
+  in a source COMMENT (conn.rs:192) about an already-removed diagnostic; (3) revision 4182856b's conn.rs
+  read arm is the bare `map_err` (verified via `git show 4182856b:…`), so the 12:30Z premise "a diagnostic is
+  compiled into the deployed binary" was stale drift: that binary never carried one. The 191 fix IS deployed
+  and the PONG bar was met by the deployed binary itself (run r000000004356, overnight results).
+- **The bar re-met on the current tree**: fresh `cargo clean -p pii-net -p pii-cli -p pii-server` +
+  rebuild printed `Compiling pii-net`, and `./target/release/pii -p "Reply with exactly: PONG-GLM"
+  --model openai:glm-5.3-flash` → run r000000004357, rc=0: complete PONG-GLM, zero "net: read" in
+  node_finished, `run_finished` success with NO output.error. Deterministic build: touch+rebuild =
+  byte-identical sha256. `"diagnostic kind"` occurrences in the binary: 0.
+- **Exercises re-run fresh (12:49–12:55Z), all PASS**: E1 (killed live pid 2665559 at 12:49:09Z; systemd
+  returned pid 2871308, `daemon.started` 12:49:16Z ≈ 7.3 s; suspended list byte-identical), 187
+  (re-run: "187 HOLDS — four starts, one armed run"), E2+E3 (scripts re-run: fallback + named refusal),
+  E8 (fresh nonce, lanes bm25+vector, degraded:false, doc eca0d69f). Details and evidence lines:
+  `_docs/05-operations/EXERCISE-RESULTS-2026-10-19.md` § "The 15:00 pass".
+- **E5/E6 live reading AFTER the fixes (the 070 trap check)**: Discord 429 mentions 63 total, 56
+  pre-deploy (last 04:35:39Z) and **7 since the 12:00Z occurrence, all 12:48:06–12:48:34Z** — a single
+  ~28 s burst of `unavailable: discord: poll status 429` (no retry_after token in the text: the deployed
+  binary predates 194) that then stopped on its own; the next poll succeeded and the occurrence's post had
+  already landed at 12:00:02Z. retry_after complaints 3,672, all pre-deploy; one read-timeout poll.failed at
+  11:24:08Z. The counts are mostly pre-fix history and the burst rate is one 7-poll burst per ~5 h, but the
+  deployed binary still lacks 194/195's pacing code — its quiet is Discord's, not the fix's. Next deploy
+  card carries them.
+- 12:00Z occurrence (measured by the 12:30Z beat and re-read now): r4353 posted one 94-byte digest at
+  12:00:02.007Z; wheel re-armed to r4356 for +24 h exactly; step 2 of 070 §1 PASSED.
+
+Next: the only work left is uncommitted docs (`git status` shows `_docs/…` modified after the next commit)
+and the operator-side items: a deploy card carrying 194/195/196/193 into the deployed binary, the 7-day soak
+start once that deploy lands, the pii-mcp swap, and the installer-card backfill (070 §1 step 5, RED).
+
 ## 2026-10-19 12:30Z — the queue was blocked by a duplicate spec number; 196 verified by hand; the 12:00Z occurrence scored
 
 State: tree clean at `4b85793` · no cycle in flight · queue: A64 pending (spec 197), A65 retired, 12:00Z

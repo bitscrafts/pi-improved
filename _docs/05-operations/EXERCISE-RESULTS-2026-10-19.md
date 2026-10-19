@@ -130,3 +130,83 @@ daemons, and printed the event lines:
   through the fallen-back directory (runs=1). First attempt at this failed for a harness reason worth
   recording: the graph must EXIST in the fallback for "runs continue" to mean anything — a name that exists
   nowhere is refused, correctly, and proves nothing about the fallback.
+
+## The 12:00Z occurrence — scored (12:16Z)
+
+One transition out of suspended (`r000000004353`), one `channel.posted` (94 bytes, 12:00:02.007Z), no second
+run at +6 or +16 min, re-armed to 1 (`r000000004356`), `posted` 0→1, `post_refused` +0. **Step 2 of 070 §1
+PASSES**: the first occurrence on the corrected 12:00Z knob produced exactly one digest. The store journal's
+`Finished` entry carries `terminal: Success` and the wheel holds the next tick at `1792497600000` =
+**12:00:00Z 2026-10-20**, exactly +24 h.
+
+## The 15:00 pass — the contradiction resolved by measurement, and every exercise re-run fresh (2026-10-19 12:45–12:55Z)
+
+Context at pickup: the overnight pass had already (a) measured the deployed binary stale and swapped in
+`4f13db5a…` (revision stamp `121fb6de67e1`, built from HEAD at the time), (b) run E1–E12, and (c) scored the
+12:00Z occurrence. This pass answers the remaining standing-state contradiction, re-runs the live-daemon
+exercises against the now-current tree, and adds the two measurements the standing state asked for.
+
+### The "diagnostic kind" contradiction — resolved: the diagnostic never shipped
+
+The standing state said a live run prints `unavailable: net: read: peer closed connection without sending
+TLS close_notify` while a diagnostic compiled into the binary ("string 'diagnostic kind'",
+`crates/pii-net/src/service/conn.rs`) never appears. Measured, not assumed, three ways:
+
+1. **The live process never carried the error text since its start.** The daemon serving this pass started
+   07:14Z (pid 2665559) and its log contains **zero** occurrences of `net: read: peer closed`. The
+   last such error in the whole log is `ts_ms 1792394069` (04:54:29Z) — the pre-deploy binary
+   (4182856b…), which is exactly what spawned the contradiction.
+2. **The diagnostic string never existed in ANY shipped artifact.** `grep -ac "diagnostic kind"` on the
+   previous deployed binary (`pii.old-1792393586`) = 0; on the current binary = 0.
+   `git log --all -S"diagnostic kind" -- crates/pii-net/src/service/conn.rs` = no commit. The string
+   appears only in a code COMMENT (conn.rs:192) describing an already-removed diagnostic.
+3. **The 04:54Z error text came from the pre-fix read arm**: revision `4182856b`'s conn.rs read is an
+   unconditional `.map_err(|e| …"net: read: {e}")` — no `UnexpectedEof`/`close_notify` arm, no diagnostic
+   print. The premise "diagnostic compiled into the binary" was stale handoff drift, measured false.
+
+**Therefore: nothing left to patch; the fix was already deployed.** Requirement: "Measure first, patch
+second" — measured; the site the standing state pointed at does not fire because it does not exist.
+
+### Task 2 — rebuild with proof of compile, and the PONG bar re-met on a fresh run
+
+`cargo clean -p pii-net -p pii-cli -p pii-server` then rebuild: `Compiling pii-net v0.1.0`, `Compiling
+pii-server`, `Compiling pii-cli`, `Finished release` rc=0. Deterministic: force-`touch` + rebuild produces
+the byte-identical sha256 `fd5753e3d7114c05fe22ecbf43c18b1558fa5743c3b80508a4d691621b5467cc`. Revision
+stamp in the binary `PII_TRAJECTORY_DIRf6b1e18c74a6c`; `"diagnostic kind"` occurrences in the binary: **0**
+(removed; task 2's "confirm removal" is satisfied by the source diff + the binary grep).
+
+`pii -p "Reply with exactly: PONG-GLM" --model openai:glm-5.3-flash` (pii.env exported) → run **r000000004357**,
+rc=0, ~1.4 s: full "PONG-GLM" (deltas "P" + "ONG-GLM"), `"net: read"` in node_finished: **0**,
+`"close_notify"`: 0, `run_finished` = `terminal.kind=success` with **no `output.error` field**.
+All three bar conditions: MET on the fd5753e3 build.
+
+Note on `pii health`: it printed `0.1.0 (121fb6de67e1)` — that is the DEPLOYED binary's revision. The deployed
+binary carries the conn.rs close_notify fix (spec 191) and the deployed PONG (run r000000004356) already
+passed the bar (overnight results); the fd5753e3 tree-only build re-proves the bar with today's tree.
+Swapping the deployed binary again tonight would need its own card (spec 197's rule) and is deferred to
+the operator.
+
+### Task 3 — the queue is EMPTY
+
+`state.py pick` → `NONE`. Row statuses (state.py list): A55 done (1e0883c), A56 done (97a6cdb), A57 done
+(64f4d95), A58 done (1c41bd1), A63 done (5a6445e), A64 done (6aad6d8), A65 retired. **No open work.**
+
+### Exercise verdicts, all re-measured 12:49–12:55Z
+
+| id | injected | pii did by itself | verdict | evidence |
+|----|----------|-------------------|---------|----------|
+| E1 | `kill -9` the LIVE daemon (pid 2665559, literal argv-verified pid, 12:49:09Z) | systemd returned it: new pid 2871308, `daemon.started` logged ts 12:49:16Z (≈7.3 s return), suspended list before/after byte-identical (r000000004356) | PASS | `/projects/_tmp/e1-before.json` == `/projects/_tmp/e1-after.json`; pii.log `daemon.started pid 2871308` |
+| 187 | four hard restarts on a SCRATCH daemon (`scripts/exercise-187-restarts.sh`, re-run) | armed held at 1 across starts 1–4; verdict line "187 HOLDS — four starts, one armed run" | PASS | workspace `/projects/_tmp/exercise187-dxeDld` |
+| E2 | graphs dir missing on a scratch daemon (script re-run) | `daemon.graphs_fallback{"looked_in":…/run/graphs,"using":…/state/graphs}`; a run still started | PASS | script output 2026-10-19 12:50Z |
+| E3 | broken cron graph on a scratch daemon | `cron.start.refused{"cron":"typo","graph":"no-such-graph","error":"not found: graph 'no-such-graph'"}` | PASS | same output |
+| E8 | `pii memory put "ember-vellum-morrow-…"` on the LIVE daemon, then search | hit on lanes `bm25+vector`, `degraded:false`; doc id eca0d69f31587375789bfc939f5eda50 | PASS | `/projects/_tmp/e8-put.json`, `/projects/_tmp/e8-search.json` |
+| E6/E5 record | none injected; log read AFTER the fixes | poll.failed total 6,825 by 12:55Z: 6,817 pre-deploy (last read-timeout 11:24:08Z) + **8 since the 07:07Z deploy** — 1 read-timeout (os error 11, 11:24:08Z) and **7 Discord-429 polls in one ~28 s burst at 12:48:06–12:48:34Z** (right before my E1 kill) with NO retry_after token in the text (the deployed binary predates 194), which then stopped on its own. Discord 429 mentions: 56 pre-deploy + 7 in that burst. retry_after complaints: 3,672 pre-deploy, 0 since. egress.denied: 6,656 historical, last 10-17 03:46Z, none since either fix. So: the deployed poll cadence still re-polls a 429 at ~4–7 s (pre-194 behaviour, LIVE, not historical) and the burst self-heals only because the 429 clears; 194/195 are in the tree and NOT deployed — the next deploy card carries them | **E5/E6 behaviour: LIVE (pre-fix cadence) but quiet-scale** — one 7-poll burst per ~5 h, self-extinguishing; all the 4-figure burdens are historical | numbers above read from pii.log by timestamp filter |
+
+**Pair check** (task 5, after every change): `run ls --status suspended` length = 1 = cron_entries
+(r000000004356, armed for 12:00:00Z 2026-10-20 in the wheel — verified present, `tick:1792497600000`),
+after build, PONG run, E1 kill/restart, E8, and the E2/E3 scratch runs. No duplicate ever appeared;
+no cancel was needed.
+
+Still not "production ready" (unchanged from the 10:30Z table): step 6 (the 7-day soak) not started; the
+deployed stamp `121fb6de67e1` predates specs 194/195 (their fixes live only in the repo tree until the next
+deploy card); spec 197's installer is committed but not installed.
