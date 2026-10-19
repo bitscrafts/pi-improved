@@ -1,31 +1,18 @@
-# Plan: write the review to `_docs/06-research/076-opus-skills-hooks-fragments-categories-2026-10-19.md`
-
-## Context
-Brief 075 asks for an adversarial review of specs 210–213 and the graph-category idea before any of it is built.
-I did the review read-only. Plan mode allows writing only this file, so the review text is below, and the single
-action after approval is: **write the section "DELIVERABLE" verbatim to the path above**. Nothing else under the
-repo changes. No commit (the brief doesn't ask for one).
-
-Verification after writing: `test -f <path> && grep -c '^| ' <path>` (the tables are there); `git status --short`
-shows exactly one new untracked file beyond the snapshot taken at session start.
-
----
-
-# DELIVERABLE
-
 # 076 — Review: skills, hooks, fragments, installed-graph verbs, graph categories
 
-Reviewed 2026-10-19 against `0e91b2d` plus the uncommitted working tree. Read-only. Verdicts: ACCEPT / REJECT / AMEND.
+Reviewed 2026-10-19 against HEAD `ba809ff` (working tree clean). Read-only. Verdicts: ACCEPT / REJECT / AMEND.
 Line refs are to the working tree unless marked `HEAD:`.
 
 ## 0. Stop first (two findings that change the order of work)
 
 | claim | evidence | verdict |
 |---|---|---|
-| "Specified, committed, and NOT to be built until the review lands" | `scripts/autonomy/plan.tsv` queues A78–A81 (210–213) for the autonomy loop; the working tree already holds an uncommitted spec-210 build: `crates/pii-cli/src/cmd_skill.rs` (494 lines), `tests/skill_list_and_explain.rs`, `tests/skill_edit_keeps_the_pin.rs`, plus edits to `pii-memory/src/doc.rs` and `pii-store/src/mem/{read,write}.rs`, `tables.rs` (new `mem_evidence` table) | **REJECT.** The loop is building these specs right now. Pause A78–A81 in `plan.tsv` before anything else; otherwise this review lands after the code does. |
+| "Specified, committed, and NOT to be built until the review lands" | `scripts/autonomy/plan.tsv` queues A78–A81 (210–213) for the autonomy loop; HEAD `ba809ff` (titled "leftover from the previous item") already holds an unreviewed spec-210 build: `crates/pii-cli/src/cmd_skill.rs` (494 lines), `tests/skill_list_and_explain.rs`, `tests/skill_edit_keeps_the_pin.rs`, plus edits to `pii-memory/src/doc.rs` and `pii-store/src/mem/{read,write}.rs`, `tables.rs` (new `mem_evidence` table). `git show --stat ba809ff` lists 11 files, 940 insertions. | **REJECT.** The loop is building these specs right now. Pause A78–A81 in `plan.tsv` before anything else; otherwise this review lands after the code does. |
 | That uncommitted build is "skills verbs only" | It also changes how **every** stored doc is decoded. `HEAD:doc.rs` `decode_kind` read `b.get(1)` and `created_of` read `b[3..11]`; `encode` writes `[kind_u8, created_u64_le, text]` (`doc.rs:159-167`). So at HEAD, kind came from the low byte of `created_ms`, and `created_ms` from shifted bytes. The working tree fixes both (`doc.rs:132-157`). Callers: `search.rs:139,143` (kind→decay λ, created→recency). | **AMEND.** This is a real, separate fix to ranking and decay for all 279 live docs. It is hidden inside a skills spec, with no test on the search path. Split it into its own spec with a regression test: a stored Skill doc decodes as Skill, and `created_ms` round-trips. Commit it first. |
 
 ## 1. Premises in the brief that are WRONG
+
+Found WRONG (REJECT): P1, P2, P7, P8, P11, P12, plus the "19 repo graphs" count inside P6. Found partly wrong (AMEND): P3, P4, P5, P6, P9, P10. None found correct without qualification.
 
 | # | premise (where) | evidence | verdict |
 |---|---|---|---|
@@ -34,7 +21,7 @@ Line refs are to the working tree unless marked `HEAD:`.
 | P3 | "pii installs nothing; podman is the tool (209, done)" (brief §4) | Coder `criteria` run **on the host** as `/bin/sh -c <string>` in the graph's `workdir` (`coder.rs:389-394`). The demo criteria are `cargo test …` (`graphs/coder-demo.toml`), which needs a host toolchain. No repo graph uses `container_image`, so every coder node takes the deprecated host path (209 req 1). | **AMEND.** 209 moved the *agent* into podman. The *verdict* still runs host shell taken from graph text. Say "agent spawn is podman-capable". Don't say "pii runs nothing on the host". |
 | P4 | "Sop (spec 113) already proves the weaving primitive" (brief §1.2, 211, 212) | The SOP weave is a **source→source compiler**: pure text generation, no maps, no clock, same bytes on every run (`pii-graph/src/sop/compile.rs:1-8`). Its output is a graph TOML you can print (`cmd_sop.rs` `compile`), hash, lint and diff. The `sop` node itself weaves nothing (`sop.rs:1-10`). The specs propose a **load-time in-memory rewrite** that no file shows. | **AMEND.** Sop proves compile-time weaving with a printable artefact. Keep that property: weaving must produce a graph text that `pii graph show --woven` prints byte-for-byte, and the run must store that text. |
 | P5 | "`pii graph` = lint\|show\|run\|resume\|trace" | `check` is a hidden alias of `lint` (`pii-cli/src/main.rs:229`). 211/212/A75 all use `graph check`. | AMEND (minor). Name `check` in USAGE, or switch the specs to `lint`. |
-| P6 | "repo carries 19 → sets already diverged" | `find graphs -name '*.toml' \| wc -l` = **18** (6 top-level + 12 `starter/`). The 3 installed files are **byte-identical** to the repo copies (sha256 `ce7445f0962b`, `cff9e7983043`, `de1b1e430cce` both sides). The installer ships 2 (`deploy/install-pii.sh:68`). `intervention-report` was copied by hand. | **AMEND.** Membership differs; content does not. Real drift today is 0. The real gap is "an installed graph with no installer record", which is a provenance problem, not a hash problem. |
+| P6 | "repo carries 19 → sets already diverged" | `find graphs -name '*.toml' \| wc -l` = **18** (6 top-level + 12 `starter/`), not 19. The 3 installed files are **byte-identical** to the repo copies (sha256 `ce7445f0962b`, `cff9e7983043`, `de1b1e430cce` both sides). The installer loop copies **every** top-level `graphs/*.toml` (`deploy/install-pii.sh:180-190`); `GRAPH_NAMES` (`:68`) is only the two the generated config names. So `intervention-report` is installer-shipped, not hand-copied (the earlier draft said otherwise). | **REJECT** the count of 19; **AMEND** the divergence claim. Membership differs; content does not. Real drift today is 0. The real gap is that an installed graph is not recorded as an installer or edit event, which is a provenance problem, not a hash problem. |
 | P7 | User tier lives at `~/.local/state/pii/graphs` | That is the directory the **installer** writes and the daemon loads (`pii-server/src/lib.rs:80-89`, `install-pii.sh:68-69`). | **REJECT.** The "user" tier as placed is the install target, so a reinstall overwrites operator edits. The table puts system and user in the same directory. |
 | P8 | "System graphs: `queue`, `code-index`, `heal`, triage" | None of them is installed on lnx (`ls /root/.local/state/pii/graphs` shows 3 discord/report graphs). The only graph that ships inside the binary today is `DEFAULT_TOML`, and a file **shadows** it: `load_spec` tries `graph_dir/<name>.toml` first and falls back to the built-in (`lib.rs:612-618`). | **REJECT.** The system tier is empty in production, and today's only built-in is overridable. That is the opposite of the proposed precedence. |
 | P9 | "Today a name resolves to one file" | True within one dir, but there is already a silent dir-level precedence: `<runtime>/graphs` if it exists, else `<store-parent>/graphs` (`lib.rs:80-89`). | AMEND. That first-match fallback is the precedent the tier model would multiply. It should become a reading (§3 Q2). |
@@ -45,6 +32,8 @@ Line refs are to the working tree unless marked `HEAD:`.
 ## 2. The seven questions
 
 ### Q1 — Three tiers (system immutable / user / project)?
+
+VERDICT: AMEND — two tiers (`shipped`, `local`); project is a source, not a load tier.
 
 **Verdict: AMEND → two tiers now (`shipped`, `local`), project is a *source* not a tier.**
 
@@ -61,6 +50,8 @@ Line refs are to the working tree unless marked `HEAD:`.
 
 ### Q2 — Resolution when a name exists twice; how list/explain PROVE which file ran
 
+VERDICT: REJECT precedence — a duplicate name is a load refusal; provenance comes from the run journal, not the directory.
+
 **Verdict: REJECT precedence; a duplicate name is a load REFUSAL. Proof comes from the journal, not the directory.**
 
 | claim | evidence | verdict |
@@ -74,6 +65,8 @@ Line refs are to the working tree unless marked `HEAD:`.
 **Smallest spec change:** 213 req 1 gains `source` and both labelled hashes. A new 213 req 7: "`explain --run <id>` reads `Started.{source,file_sha256,woven}`; a run without them prints `provenance: not recorded (pre-213 run)`."
 
 ### Q3 — Weaving vs event bus; at what scale does weaving become unreadable, what breaks first?
+
+VERDICT: AMEND — weave only `run.start` and `node.before`; `run.end` becomes an engine terminal step; `node.after` and `gate.refuse` are dropped. No event bus.
 
 **Verdict: AMEND. Weave PRE surfaces only. Readability is not what breaks first; edge semantics break at N=1.**
 
@@ -95,6 +88,8 @@ Event bus: REJECT for PRE (blocking needs to be in the graph). For POST, the bus
 
 ### Q4 — "A skill is prose OR a subgraph": one concept or two?
 
+VERDICT: REJECT the single concept — two concepts (skill: recalled prose; fragment: pinned, explicitly attached graph). A hook is a fragment attached at a PRE surface, not a third kind.
+
 **Verdict: TWO. And a hook is not a third: it is the second one attached at a PRE surface.**
 
 | name | is | selected by | lives in | executes? | for |
@@ -109,6 +104,8 @@ Why they cannot be one: recall is non-deterministic, and memory consolidates kin
 **Smallest spec change:** 210 drops `body: subgraph`. 211 is rewritten as "hooks are fragment attaches" and merged into 212. The reference doc §8.2 recommendation is withdrawn.
 
 ### Q5 — What must never be allowed in a user-tier (local) graph?
+
+VERDICT: AMEND — a graph may request capabilities, never grant them; grant-set changes come from daemon config, and `graph edit` refuses widening.
 
 **Verdict: a graph may REQUEST capabilities; it may never GRANT them. Today it grants itself.**
 
@@ -132,6 +129,8 @@ Measured: `GraphSpec.caps` is declared in the graph file itself (`spec.rs:153-15
 **Smallest spec change:** 213 req 4 gains "f. refuse if the new file's effective grant set (caps ∪ env_pass ∪ net ∪ image ∪ criteria ∪ workdir) exceeds the old one's, naming each addition". A new spec, before any of 210–213 ships: "criteria are names from config, not shell".
 
 ### Q6 — What a cheap worker would implement wrongly from specs 210–213 alone
+
+VERDICT: AMEND — 210–213 contain two self-contradictions (211:40 vs 211:69-77; 211:37-38 vs 211:77) and several unstated choices; fold the fixes in before any build.
 
 | spec | gap / contradiction | evidence | what the worker will do | fix |
 |---|---|---|---|---|
@@ -160,6 +159,8 @@ Measured: `GraphSpec.caps` is declared in the graph file itself (`spec.rs:153-15
 
 ### Q7 — What must NOT be claimed until a coder node has run in production on lnx
 
+VERDICT: ACCEPT — each claim below stays unmade until the named lnx journal reading exists.
+
 | do not claim | because | the reading that would permit it |
 |---|---|---|
 | "pii can use a skill" / "skills work" | no Skill doc exists in production (P1); no node consumes one | a production journal where a coder run's brief names a skill id + `PIN ok` |
@@ -181,11 +182,11 @@ Measured: `GraphSpec.caps` is declared in the graph file itself (`spec.rs:153-15
 | three load directories | **no** — a registry per tier | AMEND to one dir + binary (Q1) |
 | fragments woven into the host run | yes, if budget/caps are host's and V2 runs on the woven spec | ACCEPT with Q6 fixes |
 | `run.end` as an engine terminal step | yes — same run, same budget, same journal | ACCEPT (Q3) |
-| `mem_evidence` new table (uncommitted) | borderline — evidence already exists as `Doc.evidence` (`doc.rs:51-52`) but is not encoded by `encode` (`doc.rs:159-167`) | AMEND: persist `Doc.evidence` in the doc codec or say why a side table; don't leave two evidence fields |
+| `mem_evidence` new table (in `ba809ff`) | borderline — evidence already exists as `Doc.evidence` (`doc.rs:51-52`) but is not encoded by `encode` (`doc.rs:159-167`) | AMEND: persist `Doc.evidence` in the doc codec or say why a side table; don't leave two evidence fields |
 
 ## 4. Recommended order (replaces A78→A81)
 
-1. Pause A78–A81 in `plan.tsv`; park the uncommitted 210 build as-is for review (do not discard).
+1. Pause A78–A81 in `plan.tsv`; keep the 210 build at `ba809ff` as-is for review (do not revert or discard).
 2. **Decode fix** as its own spec + regression test (§0).
 3. **Criteria are named, not shell** + grant ceiling in daemon config (Q5). Highest risk, smallest change.
 4. **213** with Q2 provenance (`source`, two labelled hashes, `explain --run`), armed-run wording (P10), escalation refusal (Q5), installer via `edit`.
