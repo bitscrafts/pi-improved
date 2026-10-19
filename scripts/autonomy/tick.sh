@@ -31,13 +31,24 @@ say_once() { # say_once <key> <line...>   — print only when <key> differs from
 #    paid worker is in flight (HARD RULE 0f).
 # the check must not fire when the tool is not on PATH (a test's minimal environment made the tick believe the
 # gateway was down and exit before it could report anything — measured 2026-10-13)
-if command -v hermes >/dev/null 2>&1 && ! hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
+# A SINGLE probe is a coin toss under load: measured 2026-10-19, 2 of 25 probes failed while a cargo test ran,
+# and every false negative cost the whole beat — no cycle was dispatched from 09:12Z to 10:15Z while the
+# gateway was up the entire time. Probe three times, two seconds apart, before believing it is down.
+gw_up() {
+  local i
+  for i in 1 2 3; do
+    hermes gateway status 2>/dev/null | grep -q 'Gateway is running' && return 0
+    [ "$i" -lt 3 ] && sleep 2
+  done
+  return 1
+}
+if command -v hermes >/dev/null 2>&1 && ! gw_up; then
   if ps -eo cmd | grep -qE '[c]laude -p|[r]un-batchC'; then
     say_once "gw-dead-worker" "pii autonomy · the gateway is down but a worker is in flight — not restarting it now (0f)"
   else
     setsid nohup hermes gateway run >/root/.hermes/logs/gateway-restart.log 2>&1 </dev/null &
     sleep 12
-    if hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
+    if gw_up; then
       say_once "gw-up" "pii autonomy · the gateway was down and is running again (it delivers these messages)"
     else
       say_once "gw-still-down" "pii autonomy · the gateway is down and would not start — messages cannot be delivered"
