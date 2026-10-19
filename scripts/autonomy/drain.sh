@@ -39,6 +39,16 @@ for i in $(seq 1 "$MAX"); do
     "")          break ;;
   esac
   ITEM=$(printf '%s' "$P" | cut -f1)
+  SPEC=$(printf '%s' "$P" | cut -f2)
+  # A spec that says it is superseded or not queued must never be dispatched again. Measured 2026-10-19: 144 (the judge node)
+  # carries "RESEARCH - NOT QUEUED FOR IMPLEMENTATION" and "SUPERSEDED ... do not implement", and the queue re-dispatched it
+  # twice, spending a worker turn to be told by the file itself that it should not be built.
+  if [ -f "specs/$SPEC" ] && grep -qiE 'SUPERSEDED|NOT QUEUED FOR IMPLEMENTATION' "specs/$SPEC"; then
+    reason=$(grep -m1 -oiE 'SUPERSEDED|NOT QUEUED FOR IMPLEMENTATION' "specs/$SPEC")
+    python3 scripts/autonomy/state.py set "$ITEM" status=skipped "last=spec says $reason - never dispatch it again" >/dev/null 2>&1
+    echo "drain: $ITEM retired without dispatch — $SPEC says $reason"
+    continue
+  fi
   say "drain: [$i] $ITEM"
   OUT=$(bash scripts/autonomy/cycle.sh 2>&1 | tail -1)
   say "        $OUT"
