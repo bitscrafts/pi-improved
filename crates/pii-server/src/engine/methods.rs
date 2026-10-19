@@ -281,7 +281,12 @@ pub(crate) fn memory_put(engine: &Arc<Engine>, req: &Request) -> Response {
     let now_ms = pii_core::SystemClock.now_ms();
     // G2.5/G2.8 (spec 09 v2): use the shared `write_fact` helper so the
     // vector lane gets real data (the old inline path wrote `vector: None`).
-    let rows = write_fact(text, concepts, importance, now_ms);
+    let mut rows = write_fact(text, concepts, importance, now_ms);
+    // Spec 206: a caller may name the fact it means (an outcome's run, status and reason), so a
+    // retried row addresses the document it already wrote even if other fields of the text moved.
+    if let Some(key) = req.params.get("key").and_then(serde_json::Value::as_str) {
+        rows.id = pii_memory::doc::id_of(key);
+    }
     // Spec 205: a doc's id is the hash of its text, so a put the store already holds is reported
     // as `unchanged` and not rewritten. The store is the ledger, not a file beside it.
     let unchanged = matches!(engine.memory.doc(&rows.id), Ok(Some(_)));
