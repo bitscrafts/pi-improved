@@ -2,6 +2,38 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 12:30Z — the queue was blocked by a duplicate spec number; 196 verified by hand; the 12:00Z occurrence scored
+
+State: tree clean at `4b85793` · no cycle in flight · queue: A64 pending (spec 197), A65 retired, 12:00Z
+occurrence scored · deployed `121fb6de67e1` untouched · gateway PID 73 (3d13h, never restarted).
+
+- **The loop had stopped dispatching for four beats** (11:30, 12:00, 12:22 and the 12:15 agent tick), all
+  `OUTCOME=plan-error ... DUPLICATE-NUMBER`: A64's spec was `191-…` and A65's `192-…`, numbers two committed
+  rows already own, and the dispatcher resolves a spec by number, so A64 would have run 191's finished file and
+  recovered its session (`05150e0`). A64 now points at **197**, whose criteria drive the real installer twice —
+  no card → refusal naming both expected paths (7- and 12-char keyings, because every card on this host is
+  7-char while the binary reports 12), card present → no refusal — instead of `grep -q card-`, which a comment
+  satisfies. A65 **retires**: 196 shipped `remove_run` + cancel disarm (`runs.rs:338`) and its closure records
+  the scratch-daemon exercise (pre-fix 2 executed and posted, post-fix 0/0), so the row's premise ("196 only
+  addressed the arming side") was wrong and dispatching it would re-buy closed work.
+- **196 re-verified on the committed tree with a mutation of my own** (`f6dc0f1`): 4 timer tests, 3
+  `cancel_disarms_the_timer` tests, 133 `pii-server --lib` tests green; `cancel_run`'s `remove_run` call
+  replaced by `0u64` reddens **only** the resurrection test (`left: ["r-cancel","r-other"]`) while both
+  controls stay green; original bytes written back, `touch` applied, sha256 identical before/after, green again.
+- **The 12:00Z digest occurrence PASSES step 2 of 070 §1** (`c17852c`, `4b85793`): one transition out of
+  suspended (`r000000004353`), no second run at +6 or +16 min, armed back to 1 (`r000000004356`), `posted`
+  0→1, `post_refused` +0. The harness needed two fixes to say so: its verdict step died on `ARG_MAX` (270 KB
+  run list as one argv) and it counted a firing as a new row when the store updates the armed run in place.
+- **Selftest 32 passed, 2 failed — and the cause is measured, not the documented one.** During the run my own
+  `cargo test -p pii-server --lib` had the box loaded, all three `hermes gateway status` probes failed, and
+  `tick.sh` took its gateway branch (L48) — which exits before the pause branch (L91) and before the question
+  branch (L114). Its restart attempt was refused by the CLI (`gateway-restart.log`, 12:26:22Z: "Gateway is
+  running (PID 73) … use --replace"), so **no gateway was restarted**; both rows pass when re-run on a quiet
+  box (PAUSED printed, "30 open question(s)" printed). The open defect is the probe count: three probes two
+  seconds apart is still not enough under a build, and one wasted beat follows.
+
+Next: the next beat dispatches **A64 / spec 197** (the installer refuses without a deploy card).
+
 ## 2026-10-19 10:25Z — four specs landed and exercised; the loop's own heartbeat is starving (open)
 
 State: deployed `121fb6de67e1` (untouched all pass) · tree `9045484` (+ cycle.sh lock-age fix) · gate on HEAD
