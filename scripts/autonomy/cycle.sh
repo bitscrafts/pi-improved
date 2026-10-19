@@ -218,6 +218,8 @@ else
       say "reviewer rc=$RC"
       ;;
     *)
+  # NOTE (2026-10-19): the quota test below matches the CLI's OWN error shapes, not the words "quota"/"rate limit" anywhere
+# in a log — a brief that QUOTES the user's directive about the quota produced two false requeues tonight (A80, A82).
   # WORKER SELECTION (user directive 2026-10-19: "dont implement it as the anthropic quota will exaust").
   # PII_WORKER=pi (default) dispatches to ollama-cloud through scripts/run-batchC-pi.sh — the Claude account is untouched.
   # PII_WORKER=claude is the opt-in escalation, and only when the window is known open.
@@ -252,7 +254,7 @@ else
   # QUOTA IS NOT A FAILURE (user rule 2026-10-19: "eventually it will exaust, let it run to the end then put it again on
   # the queue"). A spend/rate limit must not park the row for a person: capture the reset the CLI itself printed, put the
   # row BACK on the queue with its attempts and session intact, and let the next pass resume it.
-  if [ -n "${WLOG:-}" ] && grep -qiE 'spend limit|usage limit|rate limit|resets at|quota' "$WLOG" 2>/dev/null; then
+  if [ -n "${WLOG:-}" ] && grep -qiE "you've hit your (session|weekly|monthly|usage) limit|\"rate_limit_error\"|\"type\":\"rate_limit\"|resets [0-9]{1,2}:[0-9]{2}" "$WLOG" 2>/dev/null; then
     RESET=$(grep -oiE '(resets? (at )?[^.,;]{0,40})' "$WLOG" 2>/dev/null | head -1)
     python3 scripts/autonomy/state.py set "$ITEM" status=pending attempts="$ATTEMPTS" \
       "last=requeued: provider limit hit (${RESET:-reset time not printed}) — resume the same session, do not restart" >/dev/null 2>&1
