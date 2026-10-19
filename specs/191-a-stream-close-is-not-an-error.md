@@ -37,3 +37,27 @@ which the last finished node took a non-`ok` port carrying `{"error": ...}` and 
 - Do NOT weaken the gate, a budget or any existing control to make this pass.
 - Do NOT make a truncated answer look complete: keep the frames received, say the stream ended, never invent tokens.
 - Do NOT special-case ollama-cloud; the same rule must hold for any provider.
+- The criterion's test must drive the production path (`NetService::request_streaming`, or `Conn::read` from
+  inside the crate). A test that re-states the guard in its own body verifies nothing: measured 2026-10-19, an
+  interrupted worker's `tests/stream_close_is_eof.rs` carried the mapping as `if false && (…)` and passed
+  whichever way the real code was written.
+- A green `cargo test` is not a green gate: that same file returned rc=0 while the tree's clippy step reported
+  31 errors. `bash quality-gate.sh --routine` is the authority, and the item is not done until it is green.
+
+## Closure
+
+**Partial, 2026-10-19 (orchestrator).** An interrupted worker left the net-layer half in the tree: `Conn::read`
+maps an abrupt TLS close to `Ok(0)`, and `conn_close_tests.rs` drives the real `Conn::read` over a real TLS
+socket (both its cases pass). The item is NOT done, on two measured counts:
+
+- `cargo test -p pii-net --test stream_close_is_eof` returned `2 passed; 0 failed`, rc=0 — but that test does
+  not drive the production path (it mirrors the guard behind `if false`), and the same tree fails
+  `quality-gate.sh` with 31 clippy errors in that file. A verify that passes on a gate-red, self-referential
+  test is a false green, not progress.
+- Requirement 3 (a success terminal must not carry an error) is unimplemented: `pii-graph`'s
+  `terminal_determination` still returns `Success` with the last node's value when that node took the `err`
+  port. The spec's second criterion named `pii-model`, which composes no terminal at all; it is corrected
+  above to `pii-graph`, the crate that does, with the requirement unchanged.
+
+The work is committed as a work-in-progress (not as done) and the item is back in the queue with a brief at
+`_tmp/autonomy/briefs/191-stream-close.md`.
