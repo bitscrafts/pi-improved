@@ -13,7 +13,7 @@ swapped in and daemon restarted 07:07:22Z (old binary aside at `/root/.local/bin
 
 | # | Injected | What pii did by itself | Verdict | Evidence |
 |---|----------|------------------------|---------|----------|
-| E1 | `kill -9` the LIVE daemon (pid 2638247) | lnx systemd restarted it in ≤14 s: new pid 2642220; `daemon.started` logged (pid 2642220); the armed cron run stayed EXACTLY 1 (`r000000004129`) across the death — before/after lists byte-identical | PASS | `run ls --status suspended` before == after (1 row); pii.log last line ending the old process is a bare close (no `daemon.stopped` — a hard death leaves none), next line `daemon.started … pid 2642220`; unit `active` |
+| E1 | `kill -9` the LIVE daemon (pid 2638247) | lnx systemd restarted it: new pid 2642220; `daemon.started` logged (pid 2642220); the armed cron run stayed EXACTLY 1 (`r000000004129`) across the death — before/after lists byte-identical | PASS | `run ls --status suspended` before == after (1 row); pii.log last line ending the old process is a bare close (no `daemon.stopped` — a hard death leaves none), next line `daemon.started … pid 2642220`; unit `active`. **Latency corrected by re-reading the log 2026-10-19 09:05Z**: the old process's last line is 07:13:18.597Z and the replacement's start marker 07:13:50.225Z — the log supports an upper bound of **31.7 s**, not the `≤14 s` written here earlier (that was the harness's own wait, not a measurement). The mechanism claim stands; the latency figure did not carry. |
 | 187 | four hard kills on a SCRATCH daemon | every restart found the suspended run and kept ONE armed run (it grew to 4 under the pre-187 binary) | PASS | `scripts/exercise-187-restarts.sh`: *"VERDICT: 187 HOLDS — four starts, one armed run"*; workspace kept at `/projects/_tmp/exercise187-WRHfTv` |
 | E2 | the runtime-graphs symlink REMOVED (installed `<state>/graphs` left); then a hard kill; then, additionally, BOTH graph paths moved away | daemon logged `daemon.graphs_fallback` naming the installed path (`using":"…/ex19-VWAYFn/graphs"`), armed the same ONE run again (`cron.rearmed` ×1, no duplicate), kept answering health with NO graph path at all, refusing each cron start by name | PASS | `scripts/exercise-2026-10-19.sh` run 2: fallback=1, armed_after=1, rearmed=1; E2-EXTRA: health answered with both paths gone |
 | E3 | a `[[cron]]` naming graph `no-such-graph` (scratch) | `cron.start.refused` at arm time naming cron `broken` and graph `no-such-graph` (`not found: graph 'no-such-graph'`); the good cron stayed armed (suspended=1) | PASS | same run, event line quoted in the script output; control: no fallback event while the runtime path existed (false-positive control) |
@@ -34,6 +34,34 @@ Honest residue:
 - E5/E6 remain the two OPEN defects: one incident per poll-outage (E5's incident half) and
   reading `retry_after` for real pace (E6). Paths: `crates/pii-channels/src/discord.rs`,
   `crates/pii-channels/src/router` (poll loop), incident scan (`pii incidents scan --source runtime`).
+
+## A production finding at 09:00Z — observed, not injected (2026-10-19 09:05Z)
+
+Four digest runs that had been CANCELLED on 2026-10-18 executed at **09:00:01.9–09:00:02.5Z today** and each
+posted a 94-byte digest to the forum (`channel.posted` ×4, `run=r000000004129/4161/4193/4225`, destination
+`1558589728671146105`; all four now `succeeded`, `dur_ms` 1.9–2.5 s, measured with `pii run ls` at 09:05Z).
+`run.cancelled` ×4 was in the log from the day before, and the only suspended run is r000000004353 (12:00Z).
+
+Mechanism, read in the tree: `cancel_run` (`crates/pii-server/src/engine/runs.rs:306-347`) closes the run and
+emits `run.cancelled` but never touches the timer wheel; `pii_store::timer::TimerWheel` has `put_timer` /
+`next_timer` / `take_due` and **no removal**; `scheduler.rs:87-91` takes the due entry and calls
+`spawn_resume(...)` with `let _ =`, so a resume of a terminal run is neither refused nor reported. A cancel is
+therefore only a list operation: the schedule survives it, and at the instant it fires the run again.
+
+Two consequences worth separating. (1) **The user's forum received four duplicate digests this morning** — the
+four posts are the evidence, and nothing can unpost them. (2) **`since_deploy` reads `posted: 0`** for this
+event: those runs predate spec 188 and carry an empty revision, so they land in `unattributed` (1,850) and
+the store-only counter cannot see their posts. A zero `posted` with `unattributed > 0` means "no post by
+THIS revision", not "no post left the host" — the operator must read both numbers together.
+
+Filed as **spec 196 / row A63** (`a cancelled run's timer does not fire it`): the wheel gains `remove_run`,
+`cancel_run` disarms and reports `disarmed=<n>`, and a resume of a terminal run is refused with a named
+`run.resume.refused` event instead of a swallowed `let _ =`. The 12:00Z run (r4353) is untouched and is the
+intended occurrence observed separately (`_tmp/occ-watch/`).
+
+E1's latency figure is corrected above (31.7 s from the log, not ≤14 s). E8 re-verified by reading the
+artifacts (`put.json` id == the bm25+vector hit, `degraded:false`). 187/E2/E3/E9/E10/E12 scripts were checked
+byte-identical to `d0858a6`, so their recorded outputs belong to the committed harnesses, not to drift.
 
 ## The digest timing correction (measured, then fixed)
 
