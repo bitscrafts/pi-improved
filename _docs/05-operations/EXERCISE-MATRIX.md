@@ -60,7 +60,10 @@ the results file: four runs cancelled on 10-18 executed and posted at 09:00Z tod
 deployed binary now; no Discord 429 window has occurred since the restart, so their post-fix live
 behaviour is pending one burst (the pre-fix A/B remains the red arm). The PONG bar was re-met on the
 deployed artifact — run `r000000004417`, `succeeded`, no `net: read`, no `output.error`. Pair: suspended
-1 = cron_entries 1. The open-defect column is empty; what remains is soak time.
+1 = cron_entries 1. The open-defect column is empty; what remains is soak time. On the deployed revision,
+E8/187/196/E10 were re-run on scratch daemons as well (187 "four starts, one armed run"; 196 "0 executed";
+E10 one firing and one +24 h re-arm) — evidence in the results file, § "Exercises re-run on the deployed
+revision".
 
 ## The three findings the first exercise produced
 

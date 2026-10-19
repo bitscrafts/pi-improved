@@ -233,6 +233,24 @@ HEAD` export and installed revision **`420fe8a7e946`** (sha256 `b4deb82dcce91a46
   is **deployed but not yet observed live**; the pre-fix A/B remains the red arm and the next burst is the
   observation to read.
 
+### Exercises re-run on the deployed revision (14:36–14:45Z)
+
+The deploy replaced the artifact, and spec 196 touched the timer wheel, so the wheel's two directions were
+measured again on `/root/.local/bin/pii` (revision `420fe8a7e946`), each on its own scratch daemon:
+
+| id | injected | pii did by itself | verdict | evidence |
+|----|----------|-------------------|---------|----------|
+| E8 | `memory put` of a fresh nonce `newton-143612-driftwood`, then `memory search` | doc `651e5a5ab35bde9ce81b47befff93641` is the top hit, lanes `bm25+vector`, `degraded:false` | PASS | `_tmp/e8-deployed.json` |
+| 187 | four hard restarts on a scratch daemon | armed stayed 1 at every start; verdict line printed | PASS | `/projects/_tmp/exercise187-WsUdG8` |
+| 196 | arm a timer, cancel it, remove the `[[cron]]`, wait past the instant | **0 executed**, 2 failed-without-executing, **0 posts** — nothing fired | PASS | `/projects/_tmp/ex196-Q8WfdN` |
+| E10 | the timer node's cron set two minutes ahead | one terminal run + exactly one re-arm at `+86400000 ms` (1792420920000 → 1792507320000) | PASS | `/projects/_tmp/ex19e10-pZAGWI` |
+
+E10's terminal run is `failed` by the harness's design: its scratch channel points at the nonce destination
+`"scratch"` with no token, so the post cannot land; the wheel, not the post, is what that exercise asserts.
+E1 was deliberately NOT re-killed after the deploy — the returning mechanism is systemd and the binary does
+not carry it, and a third kill today would distort 070 §3's start count; today's 12:49Z E1 measurement stands
+as the proof.
+
 Still not "production ready": the soak window (070 §1 step 6) can only start at this deploy — 14:34Z,
 2026-10-19 — because it is the first binary that carries the occurrence witness (spec 193); its first counted
 occurrence is 2026-10-20 12:00Z, so the earliest honest closing date is **2026-10-27 12:00Z**. Step 3's

@@ -22,6 +22,11 @@ done or retired) · deployed **`420fe8a7e946`** (sha256 `b4deb82d…`, installed
   behaviour is pending one burst. The pre-fix A/B stays the red arm.
 - 070 §1 step 6's soak window starts at this deploy; first counted occurrence 2026-10-20 12:00Z, earliest
   honest close 2026-10-27 12:00Z. Step 2 is the only 070 line that can be called PASS so far.
+- **Four exercises re-run on the deployed revision, because the wheel changed:** E8 (fresh nonce, top hit,
+  bm25+vector, degraded false), 187 ("four starts, one armed run"), 196 ("0 executed" at a cancelled
+  instant, 0 posts), E10 (one firing, one re-arm at +24 h exactly). All PASS; evidence in the results file.
+  E1 was not re-killed: systemd returns the daemon regardless of the binary, and a third kill today would
+  only distort 070 §3's start count. `daemon.started` in the last 24 h: 11.
 
 ## 2026-10-19 15:00Z — the "diagnostic kind" contradiction resolved by measurement; every exercise fresh; the queue is empty
 
