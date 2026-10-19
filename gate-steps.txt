@@ -34,25 +34,25 @@ test (doc)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gat
 # Needs cargo-llvm-cov + the llvm-tools component; their absence is a FAIL, not a skip. Own target dir.
 # QG_SKIP_COVERAGE=1 skips ONLY this step and says so LOUDLY (a fresh-gate export cannot fit the ~18G
 # instrumented build on a small volume). It is NEVER implied: unset means the floor is measured.
-coverage-floor|if [ "${QG_SKIP_COVERAGE:-0}" = "1" ]; then echo "SKIPPED: coverage-floor (QG_SKIP_COVERAGE=1 — the floor was NOT measured in this run;"; echo "         the repo gate enforces it by default and this line is the record that it was skipped)"; else cargo llvm-cov --workspace --lib --bins --tests --json --summary-only --output-path target/coverage-summary.json >/dev/null && cargo run -q -p xtask -- coverage-floor target/coverage-summary.json; fi
+coverage-floor|if [ "${QG_SKIP_COVERAGE:-0}" = "1" ]; then echo "SKIPPED: coverage-floor (QG_SKIP_COVERAGE=1 — the floor was NOT measured in this run,"; echo "         the repo gate enforces it by default and this line is the record that it was skipped)"; else cargo llvm-cov --workspace --lib --bins --tests --json --summary-only --output-path target/coverage-summary.json >/dev/null && CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- coverage-floor target/coverage-summary.json; fi
 
 # 450-effective-line file gate (spec 67, Fix 1): pure text scan; also enforced here for pidag runs.
-lint-files|cargo run -q -p xtask -- lint-files
+lint-files|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- lint-files
 
 # Spec 96: tempdir_in on a crate-local `_tmp` must be preceded by create_dir_all / tmp_scratch (N1 class).
-lint-scratch|cargo run -q -p xtask -- lint-scratch
+lint-scratch|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- lint-scratch
 
 # Spec 98: every crate uses the pii-observe seam (or a named exemption), no new raw prints, registry in ALL.
-lint-observability|cargo run -q -p xtask -- lint-observability
+lint-observability|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- lint-observability
 
 # Spec 72 (D3 fix): every declared-capability seed needle has a REAL external caller.
-reachability-check|cargo run -q -p xtask -- reachability-check
+reachability-check|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- reachability-check
 
 # Spec 118: the repo's five dependency invariants. A failure to run is a FAIL, never a skip.
-deps-check|cargo run -q -p xtask -- deps-check
+deps-check|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- deps-check
 
 # Spec 118: sockets/name resolution only in the allowlisted files.
-net-check|cargo run -q -p xtask -- net-check
+net-check|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- net-check
 
 # Spec 118: backticked repo paths in HANDOFF.md must exist. Offline and deterministic.
-doc-drift-check|cargo run -q -p xtask -- doc-drift-check
+doc-drift-check|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/tools-gate" cargo run -q -p xtask -- doc-drift-check
