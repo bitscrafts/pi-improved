@@ -64,7 +64,15 @@ fn render(v: &serde_json::Value) -> String {
     }
     if v.pointer("/since_deploy").is_some() {
         out.push_str("since_deploy:\n");
-        for k in ["revision", "runs", "armed", "unattributed"] {
+        for k in [
+            "revision",
+            "runs",
+            "armed",
+            "unattributed",
+            "posted",
+            "post_refused",
+            "unreadable",
+        ] {
             let _ = writeln!(out, "  {k}: {}", txt(v, &format!("/since_deploy/{k}")));
         }
         for k in ["running", "suspended", "succeeded", "failed"] {

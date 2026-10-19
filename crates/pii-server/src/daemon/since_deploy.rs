@@ -3,7 +3,10 @@
 
 use std::sync::OnceLock;
 
-use pii_abi::{PiiError, RunOrigin, RunStatus};
+use std::collections::BTreeSet;
+
+use pii_abi::{NodeId, PiiError, RunEvent, RunId, RunOrigin, RunStatus};
+use pii_graph::spec::GraphSpec;
 use pii_proto::sys::SinceDeploy;
 use pii_store::Store;
 
@@ -36,11 +39,13 @@ pub fn since_deploy(store: &Store, revision: &str) -> Result<SinceDeploy, PiiErr
         revision: revision.to_owned(),
         ..SinceDeploy::default()
     };
+    let mut ours: Vec<(RunId, String)> = Vec::new();
     store.for_each_run_header(|h| {
         if h.revision.is_empty() {
             out.unattributed += 1;
         } else if h.revision == revision {
             out.runs += 1;
+            ours.push((h.run.clone(), h.graph.clone()));
             let by = &mut out.runs_by_status;
             match h.status {
                 RunStatus::Running => by.running += 1,
@@ -51,5 +56,45 @@ pub fn since_deploy(store: &Store, revision: &str) -> Result<SinceDeploy, PiiErr
         }
     })?;
     out.armed = out.runs_by_status.suspended;
+    for (run, graph) in &ours {
+        match run_posts(store, run, graph) {
+            Some((posted, refused)) => {
+                out.posted += posted;
+                out.post_refused += refused;
+            }
+            None => out.unreadable += 1,
+        }
+    }
     Ok(out)
+}
+
+/// `(posted, refused)` for one run, from its stored graph body and journal;
+/// `None` when either cannot be read. A duplicate post counts as neither.
+fn run_posts(store: &Store, run: &RunId, graph: &str) -> Option<(u64, u64)> {
+    let body = store.get_graph(graph).ok()??;
+    let spec = GraphSpec::from_json(&body).ok()?;
+    let post_nodes: BTreeSet<&NodeId> = spec
+        .nodes
+        .iter()
+        .filter(|n| n.kind == "post")
+        .map(|n| &n.id)
+        .collect();
+    if post_nodes.is_empty() {
+        return Some((0, 0));
+    }
+    let (mut posted, mut refused) = (0, 0);
+    for (_, ev) in store.read_journal(run).ok()? {
+        match ev {
+            RunEvent::NodeFinished { node, value, .. }
+                if post_nodes.contains(&node)
+                    && value.get("duplicate").and_then(serde_json::Value::as_bool)
+                        != Some(true) =>
+            {
+                posted += 1;
+            }
+            RunEvent::NodeFailed { node, .. } if post_nodes.contains(&node) => refused += 1,
+            _ => {}
+        }
+    }
+    Some((posted, refused))
 }

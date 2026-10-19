@@ -365,4 +365,13 @@ pub struct SinceDeploy {
     /// Runs with no revision on the header (written before spec 188); never in `runs`.
     #[serde(default)]
     pub unattributed: u64,
+    /// Posts this revision made, counted from the store (spec 190); a duplicate is not one.
+    #[serde(default)]
+    pub posted: u64,
+    /// Posts this revision attempted that were refused (spec 190).
+    #[serde(default)]
+    pub post_refused: u64,
+    /// Runs of this revision whose posts could not be counted (spec 190).
+    #[serde(default)]
+    pub unreadable: u64,
 }
