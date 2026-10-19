@@ -57,5 +57,29 @@ still marked `running` whose process start no longer exists.
 
 ## Closure
 
-(To be filled by the orchestrator after independent verification: the criteria's own output, the mutation's red
-output, the byte-identical restore, and what this does and does not close in 070 §5.)
+**Verified 2026-10-19 08:47Z by the orchestrator, independently of the worker's report, on the committed tree
+(`121fb6d`).**
+
+*The two criteria, run by hand:*
+
+- `cargo test -p pii-server --test since_deploy_starts 2>&1 | grep -q 'test result: ok. 3 passed'` → rc=0
+  (`ok. 3 passed; 0 failed` printed).
+- `cargo test -p pii-cli --bins since_deploy_prints_starts_and_hard_deaths 2>&1 | grep -q 'test result: ok.
+  1 passed'` → rc=0 (`ok. 1 passed; 0 failed … 55 filtered out` printed).
+
+*The controls hold in the committed tests, not only in prose:* `an_older_process_leaving_a_running_run_is_
+a_hard_death` (starts 2, hard_deaths 1), `the_newest_process_own_running_run_and_a_suspended_run_are_not_
+hard_deaths` (a `running` run of the NEWEST start plus a `suspended` run of an older one both stay out —
+hard_deaths remains 1 — so a healthy in-flight run and an armed digest can never read as deaths),
+`other_revisions_and_unattributed_headers_move_neither_number`. The "no runs reads 0, never 1" requirement
+is its own assertion (`assert_eq!(counts(&store, "abc123"), (0, 0))` before any seed).
+
+*Live agreement measured 08:40Z against the production store.* The running revision reads `starts 3,
+hard_deaths 0` with `runs 5` — the 3 starts are the 07:07Z deploy session's own processes (hard-deploy
+restarts), 0 hard deaths is correct because nothing died mid-run, and the armed digest run is `suspended`,
+excluded from deaths by the control above.
+
+*What this closes, and what it does not.* The store can now answer "how many processes wrote this revision,
+and which runs a dead one left in flight" from headers alone — the 1,850-runs-by-10-unidentifiable-processes
+shape can never recur unattributed. It does NOT build the per-cron `runs_per_occurrence == 1` assertion
+(070 §5 bullet 3, excluded from 188/190/192 by their scope boundaries) — that remains the open item.

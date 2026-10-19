@@ -107,5 +107,29 @@ Four armed digest runs are on disk again for `cron_entries: 1`; the next occurre
 
 ## Closure
 
-(To be filled by the orchestrator after independent verification: the criteria's own output, the mutation's red
-output, the byte-identical restore, and what this does and does not close in 070 §1.)
+**Verified 2026-10-19 08:47Z by the orchestrator, independently of the worker's report, on the committed tree
+(`121fb6d`; the item landed and shipped in the same revision the store now names).**
+
+*The criteria, run by hand:*
+
+- `cargo test -p pii-server --test run_attribution` → `test result: ok. 5 passed; 0 failed`, rc=0.
+- `cargo test -p pii-store --test store_contract` → `test result: ok. 6 passed; 0 failed`, rc=0.
+- `cargo test -p pii-server --lib` → `test result: ok. 129 passed; 0 failed`, rc=0.
+- `grep -q 'since_deploy' crates/pii-proto/src/sys.rs && grep -q 'since_deploy' crates/pii-cli/src/cmd_health.rs`
+  → rc=0 (both constants are in the live paths: the status block and the renderer that prints it).
+- `quality-gate.sh` on the cycle's own run → ALL PASS (06:44Z per the plan's record; the closure commit touches
+  only this spec, so the tree at `121fb6d` is the measured tree).
+
+*The live store agrees with the reader, not with a counter.* Against `/root/.local/state/pii/store.redb` at
+08:40Z the running daemon's `since_deploy` reads: `runs 5 (succeeded 4, suspended 1), starts 3, hard_deaths 0,
+armed 1, unattributed 1850, unreadable 0`. The 3 starts are real (the 07:07Z deploy restarted with the wheel
+re-arming across processes); the 1,850 unattributed are yesterday's `?`-revision occurrence, correctly counted
+OUT of this deploy rather than folded into any zero. `pii run ls --status suspended` (1) equals `cron_entries`
+(1) — the pairing, live.
+
+*What this closes, and what it does not.* A run record now names `{revision, process_start_ms, created_ms}`
+and every `since_deploy` number is read from those headers with a fresh handle (`since_deploy_survives_
+a_restart`, `a_header_without_a_revision_is_never_this_deploy`, `two_runs_of_one_process_share_their_start`).
+This is 070 §5's FIRST bullet only. The bullet's second half (`posted`/`post_refused`) is spec 190, the
+process-liveness pair (`starts`/`hard_deaths`) is spec 192, and the *per-cron `runs_per_occurrence == 1`
+assertion* (third bullet) remains unbuilt — excluded by the scope boundary below and still open.

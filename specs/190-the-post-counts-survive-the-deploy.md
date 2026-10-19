@@ -112,5 +112,33 @@ the running revision: `{runs_by_status, posted, post_refused, starts, hard_death
 
 ## Closure
 
-(To be filled by the orchestrator after independent verification: the criteria's own output, the mutation's red
-output, the byte-identical restore, and what this does and does not close in 070 §1/§5.)
+**Verified 2026-10-19 08:47Z by the orchestrator, independently of the worker's report, on the committed tree
+(`121fb6d`).**
+
+*The four criteria, run by hand:*
+
+- `cargo test -p pii-server --test since_deploy_posts` → `test result: ok. 6 passed; 0 failed`, rc=0.
+- `cargo test -p pii-server --lib` → `test result: ok. 129 passed; 0 failed`, rc=0.
+- `cargo test -p pii-proto --lib` → `test result: ok. 7 passed; 0 failed`, rc=0.
+- `grep -c 'post_refused' crates/pii-proto/src/sys.rs` → 1 (the field is on the wire type).
+
+*The near-miss controls are real, not named.* The committed battery carries every control the TDD Contract
+demanded, including the ones a lazy version would omit: `a_duplicate_post_is_not_counted_twice` (a post node
+finishing with `duplicate: true` moves NEITHER counter — the counter cannot be "any NodeFinished on a post
+node"), `posts_of_another_revision_are_not_this_deploy` (two revisions with one posting run each read 1 at
+their own revision, never 2 — the counter cannot be "any posting run"), `posts_survive_the_process` (the
+count is read back from a freshly-opened store handle after the writer is dropped — the in-memory hub is not
+an input), and `an_unreadable_run_is_counted_not_silently_dropped` (a run with no graph body reads
+`unreadable == 1`, never `posted == 0` presented as good).
+
+*Live agreement measured 08:40Z.* The running daemon (revisão `121fb6de67e1`) reads against the production
+store: `posted 0, post_refused 0, unreadable 0` — correct, because zero posts have been *attempted* by this
+revision (the 1,836 refusals in the rotating log are yesterday's revision's work, correctly outside since-
+deploy, visible in `unattributed: 1850`).
+
+*What this closes, and what it does not.* `pii health` now reports what a deploy *did* from the store, so the
+09:00-class false green (counter said 1, store held 1,836) cannot happen again. It does NOT build the per-cron
+`runs_per_occurrence == 1` assertion (excluded by the scope boundary, next spec), and it does not touch the
+post path's behaviour — events, idempotence and refusals are unchanged (this spec adds a reader, not a
+writer). The E6 defect (nothing READS `retry_after` to pace a refused post) also stays open: counting a
+refusal is not pacing one.
