@@ -29,8 +29,13 @@ occurrence scored · deployed `121fb6de67e1` untouched · gateway PID 73 (3d13h,
   `tick.sh` took its gateway branch (L48) — which exits before the pause branch (L91) and before the question
   branch (L114). Its restart attempt was refused by the CLI (`gateway-restart.log`, 12:26:22Z: "Gateway is
   running (PID 73) … use --replace"), so **no gateway was restarted**; both rows pass when re-run on a quiet
-  box (PAUSED printed, "30 open question(s)" printed). The open defect is the probe count: three probes two
-  seconds apart is still not enough under a build, and one wasted beat follows.
+  box (PAUSED printed, "30 open question(s)" printed).
+  The numbers, because they are the finding: one `hermes gateway status` costs **7.9 s** here, the gateway
+  process (`PID 73`, up 3d13h) was alive the whole time, and the same probe on a quiet box returns
+  `Gateway is running` in 8 s and the tick reaches its dispatch branch. So the beat does not need a restart of
+  anything — it needs a cheaper authority than three RPC probes: a live `hermes gateway run` process, or a
+  `timeout` per probe. **Open, not fixed here** (editing `tick.sh` under a live loop is the DO-NOT-REPEAT 2.15
+  class, and this lane was the load).
 
 Next: the next beat dispatches **A64 / spec 197** (the installer refuses without a deploy card).
 
