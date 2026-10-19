@@ -1578,3 +1578,23 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
   (r000000004356, 12:00Z 2026-10-20 tick verified) after every change.
 - NOT deployed: everything from 306001d on. The next install card can quote mode=fresh with a
   surviving log — the first time that sentence is honest.
+
+## 2026-10-19T18:25Z — A75/207: the cut worker's session is recorded, the row now carries all five criteria
+
+- The 429 at 17:50:24Z (`usage_limit_reached`, five_hour, resets 21:10Z) cut the spec-207 worker immediately
+  after it wrote `crates/pii-server/src/node_kinds/nodes/coder.rs` (tool result 17:50:23.989Z). The tree kept
+  the work but no state row carried the handle, so the next cycle would have committed it as a "leftover" and
+  re-bought the spec. The handle is now on row A75 as a PENDING row — `state.py pick` returns it as the ninth
+  field, so the cycle dispatches `--resume 2909739a` and skips the leftover branch (a non-empty resume id is
+  what takes that path).
+- Remaining work is named in `_tmp/autonomy/briefs/continue-A75-207.md` and set as the row's brief: `pub mod
+  coder;` was never declared in `nodes/mod.rs` (the file is not compiled today), `CoderFactory` is registered
+  nowhere in `engine/registry.rs`, and `graphs/coder-demo.toml` does not exist — criterion 5 cannot pass yet.
+- Row A75's verify column carried 2 of spec 207's 5 Exit Criteria: the `coder_env_passes_names_only` test, the
+  `coder.spawned` grep and the demo-graph check would never have run. All five are copied now, diffed against
+  `## Exit Criteria` programmatically (5 criteria -> 5 commands, none containing the `;` separator). `graphs`
+  added to the row's commit paths.
+- A76/208 is next and has the same defect (2 of 5), plus two criteria written as prose rather than commands
+  (`pii run start queue` journal, `grep -c 'plan.tsv'` is 0) and both `graphs/queue.toml` and
+  `graphs/coder-demo.toml` missing. Fix the spec so each criterion is a command before its row is dispatched;
+  do not copy the prose into the row.
