@@ -34,3 +34,15 @@ Honest residue:
 - E5/E6 remain the two OPEN defects: one incident per poll-outage (E5's incident half) and
   reading `retry_after` for real pace (E6). Paths: `crates/pii-channels/src/discord.rs`,
   `crates/pii-channels/src/router` (poll loop), incident scan (`pii incidents scan --source runtime`).
+
+## The digest timing correction (measured, then fixed)
+
+The standing state said the digest was armed for 09:00 LOCAL = 12:00 UTC. The store journal proved
+otherwise: the wheel entry for run r000000004129 carried `timer:…:tick:1792400400000` = **09:00:00Z**
+— the GRAPH's timer-node cron (`0 9 * * *`, UTC) is the knob; `[[cron]] schedule` in pii.toml is a
+display mirror (graph comment line 13 already said so). The config's `schedule = "0 12 * * *"` had
+been recording the intent while the graph fired six hours early. Fix: `graphs/discord-digest.toml`
+timer node now `cron = "0 12 * * *"` (with the reason in a comment), installed copy updated, daemon
+restarted, the stale 09:00Z armed run cancelled (`r000000004129 --reason "stale duplicate"`), and the
+fresh armed run r000000004353 verified in the wheel for `1792411200000` = 12:00:00Z. Final pair:
+cron_entries = 1, suspended = 1 (r000000004353 only). Committed as d0858a6.
