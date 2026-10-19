@@ -228,10 +228,11 @@ HEAD` export and installed revision **`420fe8a7e946`** (sha256 `b4deb82dcce91a46
   `terminal.kind=success` with **no `output.error` field**. Log lines containing `net: read` since the
   14:34:08Z start: **0**. `grep -ac "diagnostic kind"` on the deployed binary: **0**.
 - **Pair after the change:** `run ls --status suspended` = 1 (r000000004356) = `cron_entries` 1.
-- **E5/E6 status after the deploy:** the deployed binary now carries 194/195. No Discord 429 window has
-  occurred since 14:34Z, so the post-fix behaviour (poll error carrying `retry_after`, the router pacing)
-  is **deployed but not yet observed live**; the pre-fix A/B remains the red arm and the next burst is the
-  observation to read.
+- **E5/E6 status after the deploy:** the deployed binary now carries 194/195, and both fixes were measured
+  on it in a two-arm A/B against the previous binary (rows below): E5 72→4 polls with `retry_after` in the
+  text, E6 two paced refusals then one post where the old binary double-dialled. The remaining live
+  observation is a REAL Discord 429 window — none has occurred since 14:34Z, so that line is still owed to
+  the log; it is no longer owed to the code.
 
 ### Exercises re-run on the deployed revision (14:36–14:45Z)
 
@@ -244,6 +245,8 @@ measured again on `/root/.local/bin/pii` (revision `420fe8a7e946`), each on its 
 | 187 | four hard restarts on a scratch daemon | armed stayed 1 at every start; verdict line printed | PASS | `/projects/_tmp/exercise187-WsUdG8` |
 | 196 | arm a timer, cancel it, remove the `[[cron]]`, wait past the instant | **0 executed**, 2 failed-without-executing, **0 posts** — nothing fired | PASS | `/projects/_tmp/ex196-Q8WfdN` |
 | E10 | the timer node's cron set two minutes ahead | one terminal run + exactly one re-arm at `+86400000 ms` (1792420920000 → 1792507320000) | PASS | `/projects/_tmp/ex19e10-pZAGWI` |
+| E5 | a fake Discord answering every poll 429 `retry_after: 2`; one harness, two binary arms | deployed `420fe8a7e946`: **4 polls in 7 s**, gaps 2005/2081/2006 ms, error text carries Discord's body; old `121fb6d`: **72 polls**, gaps 103–106 ms, text `poll status 429` only | PASS | `/projects/_tmp/ex194-WCbcV1` (new), `ex194-osSL1W` (control) |
+| E6 | a fake Discord refusing the first dial with `retry_after`; same two arms | deployed: two `post_refused` lines `paced by the provider for 2480 ms` / `1875 ms`, then ONE `channel.posted`; old: run 2 dialled again inside the window (2→3), nothing paced | PASS | `/projects/_tmp/ex195-aHuCEE` (new), `ex195-Nx84d5` (control) |
 
 E10's terminal run is `failed` by the harness's design: its scratch channel points at the nonce destination
 `"scratch"` with no token, so the post cannot land; the wheel, not the post, is what that exercise asserts.

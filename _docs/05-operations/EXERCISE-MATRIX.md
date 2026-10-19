@@ -55,15 +55,16 @@ refusals. **No matrix defect remains open.** Both fixes and spec 193's occurrenc
 own card, and until then the host's behaviour is the pre-fix behaviour. A new production finding is recorded in
 the results file: four runs cancelled on 10-18 executed and posted at 09:00Z today (spec 196, row A63).
 
-**Updated 2026-10-19 14:40Z (post-deploy):** revision `420fe8a7e946` is DEPLOYED (sha `b4deb82d…`,
-14:34:08Z), carrying specs 193/194/195/196. E5's poll pacing and E6's send pacing are therefore in the
-deployed binary now; no Discord 429 window has occurred since the restart, so their post-fix live
-behaviour is pending one burst (the pre-fix A/B remains the red arm). The PONG bar was re-met on the
-deployed artifact — run `r000000004417`, `succeeded`, no `net: read`, no `output.error`. Pair: suspended
-1 = cron_entries 1. The open-defect column is empty; what remains is soak time. On the deployed revision,
-E8/187/196/E10 were re-run on scratch daemons as well (187 "four starts, one armed run"; 196 "0 executed";
-E10 one firing and one +24 h re-arm) — evidence in the results file, § "Exercises re-run on the deployed
-revision".
+**Updated 2026-10-19 14:50Z (post-deploy):** revision `420fe8a7e946` is DEPLOYED (sha `b4deb82d…`,
+14:34:08Z), carrying specs 193/194/195/196. E5's poll pacing and E6's send pacing are in the deployed
+binary, and both were measured ON it with a two-arm A/B against the pre-deploy binary (E5: 72 polls at
+104 ms → 4 polls at ~2005 ms with `retry_after` in the text; E6: double-dial → two paced refusals then one
+post). What is still owed is one REAL Discord 429 window in the log; none has occurred since the restart.
+The PONG bar was re-met on the deployed artifact — run `r000000004417`, `succeeded`, no `net: read`, no
+`output.error`. Pair: suspended 1 = cron_entries 1. The open-defect column is empty; what remains is soak
+time. On the deployed revision, E8/187/196/E10 were re-run on scratch daemons as well (187 "four starts,
+one armed run"; 196 "0 executed"; E10 one firing and one +24 h re-arm) — evidence in the results file,
+§ "Exercises re-run on the deployed revision".
 
 ## The three findings the first exercise produced
 

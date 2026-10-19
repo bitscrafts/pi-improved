@@ -27,6 +27,10 @@ done or retired) · deployed **`420fe8a7e946`** (sha256 `b4deb82d…`, installed
   instant, 0 posts), E10 (one firing, one re-arm at +24 h exactly). All PASS; evidence in the results file.
   E1 was not re-killed: systemd returns the daemon regardless of the binary, and a third kill today would
   only distort 070 §3's start count. `daemon.started` in the last 24 h: 11.
+- **E5 and E6 measured on the deployed binary** in a two-arm A/B against the previous one: E5 went from 72
+  polls at 104 ms to 4 at ~2005 ms with Discord's `retry_after` in the error text; E6 went from a
+  double-dial inside the window to two `paced by the provider` refusals and one post. The only line still
+  owed is a real 429 window in the production log.
 
 ## 2026-10-19 15:00Z — the "diagnostic kind" contradiction resolved by measurement; every exercise fresh; the queue is empty
 
