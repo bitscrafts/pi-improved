@@ -136,11 +136,14 @@ TOML
 if [ "$HAVE_CHANNEL" = 1 ]; then
   cat >> "$TMPCONF" <<TOML
 
-# ONE daily digest. \`schedule\` is the display mirror; firing is driven by the graph's timer node.
+# ONE daily digest at 12:00Z = 09:00 Brazil (UTC-3). `schedule` is the display mirror; firing is
+# driven by the graph's timer node, which carries the same 12:00Z knob (measured 2026-10-19: the
+# mirror and the timer node must say the same hour, and the name must match what a replaced
+# install already recorded — a re-install regresses the operator truth otherwise).
 [[cron]]
-name = "daily-digest"
+name = "digest"
 graph = "discord-digest"
-schedule = "0 9 * * *"
+schedule = "0 12 * * *"
 input = { to = "$PII_DISCORD_CHANNEL_ID" }
 TOML
 fi
