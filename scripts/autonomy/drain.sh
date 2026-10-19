@@ -60,6 +60,9 @@ for i in $(seq 1 "$MAX"); do
   esac
 done
 
+# Keep pii's memory in step with the record: idempotent, so a pass with nothing new writes nothing.
+uv run scripts/pii-ingest.py --only specs >/dev/null 2>&1 || true
+
 echo "drain: closed $done_n row(s) this firing"
 if [ "$(python3 scripts/autonomy/state.py pick 2>/dev/null | head -1)" = "" ]; then
   BRIEF="_docs/05-operations/QUEUE-BRIEF-$(date -u +%Y-%m-%dT%H%M%SZ).md"
