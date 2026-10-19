@@ -17,19 +17,19 @@ Landed tonight, each with its own closure and a live A/B against the deployed bi
 - **196** (`5a6445e`) the 09:00Z defect: a cancelled run's wheel entry is removed, and a resume of a finished
   run is refused loudly. Deployed: two cancelled runs executed and posted at their instant. Fixed: 0 / 0.
 
-**OPEN, first thing tomorrow: the loop's heartbeat.** No tick-dispatched cycle since 09:11:59Z; every beat
-enters `tick.sh:34`'s gateway branch — `hermes gateway status` fails inside the tick's environment (20/20
-succeed interactively), the restart is refused because PID 73 already runs ("Use `--replace`"), the second
-probe fails too, and the tick says `gw-still-down` and exits. Cycles dispatched by hand (09:41, 09:49, 10:17)
-ran normally: A61/A62/A63 all landed. Evidence: `_tmp/autonomy/last-reported` == `gw-still-down`;
-`/root/.hermes/logs/gateway-restart.log` tail; the newest tick-start log is `cycle-20261019T091159Z.log`.
-Next step is not a patch: reproduce the tick's env (its `command -v hermes`, HOME, PATH) and make the gateway
-check non-fatal to dispatch — the gateway is the notification channel, not a precondition for a cycle.
+**FIXED 10:30Z — the loop's heartbeat.** It had dispatched nothing since 09:11:59Z: every beat entered
+`tick.sh`'s gateway branch, because the single `hermes gateway status | grep` probe fails under load —
+measured tonight, 2 of 25 probes failed while a cargo test ran (8%), and each false negative restarted a
+gateway that was already running, re-probed once, failed again, said `gw-still-down` and exited the beat.
+`tick.sh` now probes three times, two seconds apart (`aba39bc`); five dry ticks under the same load all
+reached "would start", and the watchdog's own next beat dispatched a cycle by itself at 10:30:35Z
+(`cycle-20261019T103035Z.log`, `OUTCOME=queue-empty`) — the first self-dispatched cycle in 78 minutes.
+A genuine outage still stops the beat, which is the intended behaviour.
 
 Also fixed en route: `cycle.sh` now touches the lock file when a cycle starts holding it, so
 `control.sh`'s "IN FLIGHT for N min" stops reading the file's creation age (it said 6073 min while the lock was
-free). Two harness lessons are in the results file: rebuild the binary AFTER the commit under test, and name
-every path a row can ripple into.
+free, `58afb50`). Two harness lessons are in the results file: rebuild the binary AFTER the commit under test,
+and name every path a row can ripple into.
 
 ## 2026-10-19 09:05Z — four cancelled runs posted today; the cancel verb does not disarm the wheel
 
