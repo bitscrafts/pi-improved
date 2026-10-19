@@ -2,6 +2,27 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 14:45Z — the first deploy carrying 193/194/195/196 landed, and the bar was re-met on it
+
+State: tree clean at `420fe8a` except docs · no cycle in flight · queue EMPTY (pick NONE; A54–A65 all
+done or retired) · deployed **`420fe8a7e946`** (sha256 `b4deb82d…`, installed 14:33, daemon restarted
+14:34:08Z) · pair: cron_entries 1 = suspended 1 (r000000004356, wheel tick 1792497600000 = 12:00:00Z 10-20).
+
+- **The installer ran with a card** (`_tmp/deploy/card-420fe8a7e946.json`) and built from a clean export.
+  Its config rewrite puts `[core] model = llamacpp-server:granite-4.2-3b` back (install-pii.sh:118), so the
+  daemon's default model is the local one again; the digest graph has no model node and `--model` still
+  overrides. Recorded so the next reader does not call it a regression by surprise.
+- **A check raced the install and read `cron_entries: 0`/`cron ls []`** while the config was still being
+  written (config mtime 14:34, daemon start 14:33:36). After the unit's restart the same commands read
+  `[digest, 0 12 * * *]`, cron_entries 1. The false reading is in the results file with its cause.
+- **PONG bar re-met on the deployed artifact**: run `r000000004417`, rc 0, 2.43 s, complete PONG-GLM,
+  `node_finished` without `net: read`, `run_finished` `terminal.kind=success` and no `output.error`;
+  zero `net: read` lines in the log since 14:34:08Z; `"diagnostic kind"` in the deployed binary: 0.
+- **E5/E6**: 194/195 are now in the DEPLOYED binary; no 429 window since the restart, so the post-fix live
+  behaviour is pending one burst. The pre-fix A/B stays the red arm.
+- 070 §1 step 6's soak window starts at this deploy; first counted occurrence 2026-10-20 12:00Z, earliest
+  honest close 2026-10-27 12:00Z. Step 2 is the only 070 line that can be called PASS so far.
+
 ## 2026-10-19 15:00Z — the "diagnostic kind" contradiction resolved by measurement; every exercise fresh; the queue is empty
 
 State: tree clean at `6aad6d8` (docs only, uncommitted in `_docs/`) · no cycle in flight · queue EMPTY

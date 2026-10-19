@@ -207,6 +207,33 @@ the operator.
 after build, PONG run, E1 kill/restart, E8, and the E2/E3 scratch runs. No duplicate ever appeared;
 no cancel was needed.
 
-Still not "production ready" (unchanged from the 10:30Z table): step 6 (the 7-day soak) not started; the
-deployed stamp `121fb6de67e1` predates specs 194/195 (their fixes live only in the repo tree until the next
-deploy card); spec 197's installer is committed but not installed.
+## 14:30–14:40Z — the deploy landed, and the bar was re-met on the DEPLOYED artifact
+
+The orchestrator's installer (card `_tmp/deploy/card-420fe8a7e946.json`) built from a clean `git archive
+HEAD` export and installed revision **`420fe8a7e946`** (sha256 `b4deb82dcce91a46…`), carrying specs
+193/194/195/196. The daemon restarted 14:34:08Z and posted its verification line naming that revision.
+
+- **A check of mine raced the install and read a false state.** At 14:33–14:34Z `health --json` said
+  `cron_entries: 0` and `cron ls` = `[]` while the installer was still writing the config (config mtime
+  14:34, daemon start 14:33:36 — the daemon had started from the pre-install file). After the unit's own
+  restart, the same commands read `cron ls` = `[digest, 0 12 * * *]`, `cron_entries: 1`. Recorded because
+  it is exactly the "suspect the check first" case: the config was never missing its cron table.
+- The installer rewrites `[core] model` to `llamacpp-server:granite-4.2-3b` from the production example
+  (`deploy/install-pii.sh:118`) — so the deployed default model changed from the hand-edited
+  `openai:glm-5.3-flash`. The digest graph is timer → recall ×2 → post (no model node), so the digest is
+  unaffected, and an explicit `--model` still wins (used below). Flagged for the operator, not hidden.
+- **PONG bar, re-met on the deployed binary:** `pii -p "Reply with exactly: PONG-GLM" --model
+  openai:glm-5.3-flash` (pii.env exported) → run **r000000004417**, rc 0, 2.43 s, complete `PONG-GLM`
+  (`run get` status `succeeded`), `node_finished` carries no `net: read`, `run_finished` is
+  `terminal.kind=success` with **no `output.error` field**. Log lines containing `net: read` since the
+  14:34:08Z start: **0**. `grep -ac "diagnostic kind"` on the deployed binary: **0**.
+- **Pair after the change:** `run ls --status suspended` = 1 (r000000004356) = `cron_entries` 1.
+- **E5/E6 status after the deploy:** the deployed binary now carries 194/195. No Discord 429 window has
+  occurred since 14:34Z, so the post-fix behaviour (poll error carrying `retry_after`, the router pacing)
+  is **deployed but not yet observed live**; the pre-fix A/B remains the red arm and the next burst is the
+  observation to read.
+
+Still not "production ready": the soak window (070 §1 step 6) can only start at this deploy — 14:34Z,
+2026-10-19 — because it is the first binary that carries the occurrence witness (spec 193); its first counted
+occurrence is 2026-10-20 12:00Z, so the earliest honest closing date is **2026-10-27 12:00Z**. Step 3's
+stop-being-the-test-bench tally and step 5's card-vs-aside-dir count need the same window to mean anything.
