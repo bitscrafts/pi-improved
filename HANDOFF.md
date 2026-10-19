@@ -2,6 +2,33 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 09:05Z — four cancelled runs posted today; the cancel verb does not disarm the wheel
+
+- **Measured on the live daemon (`121fb6de67e1`), not injected**: r000000004129/4161/4193/4225 — cancelled on
+  10-18 — executed at **09:00:01.923–09:00:02.537Z today** and each posted a 94-byte digest to the forum
+  (`channel.posted` ×4, destination `1558589728671146105`); all four are now `succeeded` (`dur_ms` 1.9–2.5 s,
+  `seq` 25). Only r000000004353 (12:00Z) remains suspended. The user's forum received four duplicate digests.
+- **Mechanism**: `cancel_run` closes the run and emits `run.cancelled` but never touches the timer wheel;
+  `TimerWheel` has `put_timer`/`next_timer`/`take_due` and **no removal**; `scheduler.rs:87-91` resumes a due
+  entry with `let _ =`, so a resume of a terminal run is neither refused nor reported. Cancel is a list
+  operation only. Filed as **spec 196 / row A63** (queued behind A60–A62).
+- **Second finding**: `since_deploy.posted` reads 0 for those four posts — the runs predate spec 188 (empty
+  revision) and land in `unattributed` (1,850). A zero `posted` with `unattributed > 0` means "no post by THIS
+  revision", not "no post left the host".
+- **Also this morning**: E1's latency figure corrected to the **31.7 s** upper bound the log supports (last
+  line 07:13:18.597Z → start marker 07:13:50.225Z), not the `≤14 s` written earlier (that was the harness
+  wait). E5/E6 remain open and are now **specs 194/195 (rows A60/A61)**; 070 §5's last instrument is **spec
+  193 (row A62)**; the cancel defect is spec 196. All four rows carry their criteria verbatim (checked
+  programmatically against the specs).
+- **The 12:00Z occurrence is armed and watched**: `scripts/checks/digest-occurrence-1200Z.sh` writes
+  snapshots A (11:59:30Z) / B (+90 s) / C (+6 min) / D (+16 min) to `_tmp/occ-watch/` and computes the 070 §1
+  step-2 verdict from run-set arithmetic (fired == 1, no second run, armed back to 1, posted +1, refused +0).
+  It injects nothing.
+- **Verified by hand this morning**: the PONG-GLM bar on the deployed binary (run r000000004355: complete
+  text, no `net: read` in `node_finished`, `run_finished` success with empty `output.error`); the
+  `since_deploy` battery (6+3+1+5+6+7+129 tests green); E8's artifacts; the exercise scripts byte-identical
+  to `d0858a6`.
+
 ## 2026-10-19 06:55Z — 191 verified by hand (two mutations, byte-identical restores), and the loop's own false green recorded
 
 - **A58/191 done and verified independently of the worker report.** Committed `1c41bd1` (gate `ALL PASS`).
