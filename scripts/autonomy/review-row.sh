@@ -23,7 +23,11 @@ before=$(git status --porcelain | wc -l)
 bash /root/.hermes/skills/research/opus-review/scripts/run-opus-review.sh /projects/pi-improved "$BRIEF" "$WORKDIR" 2>&1 | tail -6
 # the deliverable may land in the workdir (plan mode) — copy it where the spec says
 # plan mode names its file opus-review-plan-<ts>.md, not 07x-…: take the NEWEST .md in the workdir, whatever its name.
-for c in $(ls -t "$WORKDIR"/*.md 2>/dev/null | head -1); do [ -f "$c" ] && case "$(basename "$c")" in mkdir -p "$(dirname "$DELIV")"; cp -n "$c" "$DELIV" 2>/dev/null && echo "copied $(basename "$c") -> $DELIV";; esac; done
+NEWEST=$(ls -t "$WORKDIR"/*.md 2>/dev/null | head -1)
+if [ -n "$NEWEST" ] && [ "$NEWEST" != "$BRIEF" ]; then
+  mkdir -p "$(dirname "$DELIV")"
+  cp -n "$NEWEST" "$DELIV" 2>/dev/null && echo "copied $(basename "$NEWEST") -> $DELIV"
+fi
 after=$(git status --porcelain | wc -l)
 echo "tree delta: $before -> $after dirty paths"
 [ -f "$DELIV" ] && echo "DELIVERABLE PRESENT: $DELIV" || { echo "DELIVERABLE MISSING: $DELIV"; exit 5; }
