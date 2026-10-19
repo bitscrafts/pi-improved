@@ -23,6 +23,12 @@ for b in pii pii-web pii-evolve pii-mcp; do printf '#!/bin/sh\necho new-%s\n' "$
 export PREFIX="$S/bin" CONFIG_DIR="$S/cfg" STATE_DIR="$S/state" RUNTIME_DIR="$S/run" UNIT_DIR="$S/units"
 export SKIP_BUILD=1 BIN_SRC="$S/src" SYSTEMCTL=true
 export PII_DISCORD_TOKEN=dry-run-not-a-token PII_DISCORD_CHANNEL_ID=123456789
+# Spec 197: the install refuses without a deploy card for the revision about to be built. Every install
+# in this check — including the one whose llama host is unreachable — needs one, so the precondition that
+# fires is the one the case is about. The card is planted in a scratch card dir, not the operator's.
+export DEPLOY_CARD_DIR="$S/cards"; mkdir -p "$DEPLOY_CARD_DIR"
+REV7="$(git -C "$REPO" rev-parse --short=7 HEAD)"; REV12="$(git -C "$REPO" rev-parse --short=12 HEAD)"
+printf '{"note":"planted by deploy-dry-run.sh"}\n' > "$DEPLOY_CARD_DIR/card-$REV7.json"
 
 # 1. precondition failure: aborts before moving anything, names the host
 if LLAMA_HOST=http://127.0.0.1:1/v1 bash "$REPO/deploy/install-pii.sh" >"$S/pre.out" 2>&1; then fail "unreachable llama host did not abort"; fi
