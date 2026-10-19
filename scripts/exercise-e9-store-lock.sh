@@ -52,3 +52,10 @@ cut -c1-260 "$W/daemon.log"
 echo "--- event.log (store lines) ---"
 grep -i "store" "$W/event.log" 2>/dev/null | head -4 | cut -c1-260
 echo "SUMMARY: E9_up=$UP (expected 0 — a locked store must be a loud refusal, not a running daemon)"
+# a summary without a verdict is not an exercise result: say it in words, and only over a daemon that the
+# harness actually started and watched (the refusal path never reaches health, so the check is the log line)
+if [ "$UP" = "0" ] && grep -qi "cannot acquire lock" "$W/daemon.log" "$W/event.log" 2>/dev/null; then
+  echo "E9 PASS — the daemon refused the locked store by name instead of running against it"
+else
+  echo "E9 FAIL — up=$UP; the refusal line is missing from daemon.log/event.log"
+fi
