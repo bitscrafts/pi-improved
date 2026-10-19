@@ -115,13 +115,13 @@ impl Channel for Flaky {
 }
 
 fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Daemon>, Arc<Recorder>) {
-    let hello = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase2/hello.json");
-    std::fs::create_dir_all(dir.join("ws")).unwrap();
-    std::fs::create_dir_all(dir.join("graphs")).unwrap();
     // Strip the timer node structurally, by id — never by its cron literal: the knob is operator
     // truth and moves (measured 2026-10-19: this fixture hardcoded `0 9 * * *`, the digest moved
     // to 12:00Z, the strip no-op'd and six e2e tests failed with "timer not stripped").
     const TIMER_MARKER: &str = "\u{0}stripped-timer\u{0}";
+    let hello = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase2/hello.json");
+    std::fs::create_dir_all(dir.join("ws")).unwrap();
+    std::fs::create_dir_all(dir.join("graphs")).unwrap();
     let digest = DIGEST_SHIPPED
         .replacen("entry = \"tick\"", "entry = \"devices\"", 1)
         .replacen("[[node]]\nid = \"tick\"", TIMER_MARKER, 1);
