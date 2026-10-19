@@ -120,3 +120,42 @@ Before 196 that call returned `{"resumed":true}` and re-ran the finished run.
 resumed by its own timer. *What it does not close:* `pii run cancel` is still not a way to stop a scheduled
 cron — the next occurrence is armed by design (the exercise had to remove the `[[cron]]` to isolate the
 question), and that is spec 186's territory, not this one's.
+
+## Closure — independent re-verification, 2026-10-19 12:35Z (orchestrator)
+
+Re-ran the criteria on the committed tree (`5a6445e`, HEAD `f845cb0`), not on any worker's report:
+
+| criterion | result |
+|---|---|
+| `cargo test -p pii-store --lib timer` | ok — 4 passed, 0 failed |
+| `cargo test -p pii-server --test cancel_disarms_the_timer` | ok — 3 passed, 0 failed |
+| `grep -q 'fn remove_run' crates/pii-store/src/timer.rs` | rc=0 (`timer.rs:93`) |
+| `cargo test -p pii-server --lib` | ok — 133 passed, 0 failed, 1 ignored |
+
+**The mutation is the orchestrator's, not the worker's.** `runs.rs:338`,
+`Some(ctx) => ctx.timer_store.remove_run(run_id.as_str())?,` was replaced by
+`Some(ctx) => { let _ = &ctx; 0u64 }` — cancel keeps closing the run and stops disarming the wheel:
+
+```
+test a_cancelled_run_s_timer_does_not_resurrect_it ... FAILED
+test a_due_timer_for_a_finished_run_is_refused_loudly ... ok
+test a_suspended_run_still_fires_when_not_cancelled ... ok
+assertion `left == right` failed: the cancelled run's entry must be gone, another run's intact
+  left: ["r-cancel", "r-other"]   right: ["r-other"]
+test result: FAILED. 2 passed; 1 failed
+```
+
+Exactly one test reddens and **both controls stay green**, so the criterion is the cancellation and not a
+general break. Restored: the original bytes written back, `touch` applied (a `cp -p` restore would have left
+the stale mutated binary in place and produced a false red — spec 187's lesson), and `sha256sum` before and
+after both
+`7c6189c25179cb255496ab657028823996918eb58cf52b032efa84ea0d4c0ad0`; `git status --porcelain` for the path
+empty; re-ran green (3 passed, 0 failed).
+
+Test count did not move: `5a6445e` adds `crates/pii-server/tests/cancel_disarms_the_timer.rs` (220 lines,
+3 tests) and deletes no test file.
+
+*What this closes:* the cancellation side is proven on this tree, with a red of my own making and both
+controls holding. *What it does not close:* nothing here runs against the **deployed** binary in production
+terms — the exercise used the pre-fix deployed binary as the control on a scratch daemon, which is the
+strongest evidence available without arming the live digest.
