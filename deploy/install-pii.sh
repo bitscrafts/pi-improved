@@ -41,6 +41,7 @@ case "$SCOPE" in
   *) echo "ABORT: SCOPE must be user or system, got '$SCOPE'" >&2; exit 2 ;;
 esac
 BIN_SRC="${BIN_SRC:-$REPO/target/release}"
+DEPLOY_CARD_DIR="${DEPLOY_CARD_DIR:-$REPO/_tmp/deploy}"   # spec 197: overridable for the check only
 BINS=(pii pii-web pii-evolve)   # swapped in place
 STAGED=(pii-mcp)                # installed as <name>.new only: the pii-mcp swap is a separate step (runbook)
 TS="$(date +%s)"
@@ -48,6 +49,13 @@ TS="$(date +%s)"
 abort() { echo "ABORT (nothing was changed): $*" >&2; exit 1; }
 
 # ---- R3: preconditions, before anything is built or moved ----
+# Spec 197 (070 step 5): no install without the deploy card for the revision about to be built.
+# Cards are keyed by the 7-char short revision; the binary reports 12. Either keying passes.
+REV7="$(git -C "$REPO" rev-parse --short=7 HEAD)" || abort "cannot read HEAD of $REPO — is it a git checkout?"
+REV12="$(git -C "$REPO" rev-parse --short=12 HEAD)"
+if [ ! -s "$DEPLOY_CARD_DIR/card-$REV7.json" ] && [ ! -s "$DEPLOY_CARD_DIR/card-$REV12.json" ]; then
+  abort "no deploy card for revision $REV7: expected $DEPLOY_CARD_DIR/card-$REV7.json or $DEPLOY_CARD_DIR/card-$REV12.json"
+fi
 command -v curl >/dev/null || abort "curl not found"
 curl -sf --max-time 5 "${LLAMA_HOST%/}/models" >/dev/null \
   || abort "llama.cpp host ${LLAMA_HOST} does not answer GET ${LLAMA_HOST%/}/models"
