@@ -52,6 +52,7 @@ for i in $(seq 1 "$MAX"); do
   say "drain: [$i] $ITEM"
   OUT=$(bash scripts/autonomy/cycle.sh 2>&1 | tail -1)
   say "        $OUT"
+  bash scripts/autonomy/learn.sh "$ITEM" >/dev/null 2>&1 || true
   case "$OUT" in
     *OUTCOME=done*|*OUTCOME=done-satisfied*) done_n=$((done_n + 1)) ;;
     *OUTCOME=queue-empty*|*OUTCOME=paused*|*OUTCOME=locked*) break ;;
