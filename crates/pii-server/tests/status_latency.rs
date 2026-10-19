@@ -8,7 +8,7 @@
     clippy::indexing_slicing
 )]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,14 +28,33 @@ system = "s"
 "#;
 
 fn engine_in(dir: &Path) -> Arc<Engine> {
-    let hello = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .unwrap()
-        .join("fixtures/phase2/hello.json");
     std::fs::create_dir_all(dir.join("ws")).unwrap();
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
     std::fs::write(dir.join("graphs/ungranted.toml"), UNGRANTED).unwrap();
+    // Five turns, one per model-calling run below: the engine holds ONE
+    // provider for its whole life, and the scripted provider hands out turn n
+    // on call n from one shared counter — a one-turn fixture left runs 2..5
+    // failing with "scripted provider exhausted" (measured 2026-10-19; the
+    // shared fixtures/phase2/hello.json serves other tests one turn each and
+    // must not grow).
+    let five_turns: Vec<String> = (0..6)
+        .map(|_| {
+            serde_json::json!({
+                "text": "hello from the scripted fixture",
+                "tool_calls": [],
+                "tokens_in": 3,
+                "tokens_out": 5
+            })
+            .to_string()
+        })
+        .collect();
+    let fixture = dir.join("five-turns.json");
+    std::fs::write(
+        &fixture,
+        format!("{{\"turns\": [{}]}}", five_turns.join(",")),
+    )
+    .unwrap();
+    let hello = fixture;
     Engine::new(EngineConfig {
         workspace: dir.join("ws"),
         store_path: dir.join("store.redb"),
