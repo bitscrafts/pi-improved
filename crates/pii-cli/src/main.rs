@@ -221,16 +221,17 @@ fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
     let sub = sub.to_str().map_or_else(|| "?".to_owned(), str::to_owned);
     // Consume the positional ONLY for the two file-driven subcommands — an
     // unconditional args.next() here would eat `graph run`'s <file.toml>.
-    if sub == "lint" || sub == "show" {
+    // `check` is the spec-207 name for `lint`: the same static validation.
+    if sub == "lint" || sub == "check" || sub == "show" {
         let Some(file_arg) = args.next() else {
             eprintln!("usage: pii graph {sub} <file.toml>");
             return ExitCode::from(2);
         };
         let file = file_arg.into_string().unwrap_or_default();
-        return if sub == "lint" {
-            cmd_graph_lint(&file)
-        } else {
+        return if sub == "show" {
             cmd_graph_show(&file)
+        } else {
+            cmd_graph_lint(&file)
         };
     }
     match sub.as_str() {

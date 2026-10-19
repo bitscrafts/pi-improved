@@ -58,6 +58,7 @@ pub fn registry(
     reg.register(Arc::new(nodes::sop::SopFactory {
         log: Arc::clone(&log),
     }));
+    reg.register(Arc::new(nodes::coder::CoderFactory::new(Arc::clone(&log))));
     reg.register(Arc::new(nodes::memory::MemoryFactory {
         store: memory,
         log,
@@ -148,6 +149,7 @@ pub fn lint_registry_with_log(
         log: Arc::clone(&log),
     }));
     drop(register_entity_nodes(&mut reg));
+    reg.register(Arc::new(nodes::coder::CoderFactory::new(Arc::clone(&log))));
     reg.register(Arc::new(nodes::sop::SopFactory { log }));
     reg.register(Arc::new(nodes::worker::WorkerFactory {
         pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<

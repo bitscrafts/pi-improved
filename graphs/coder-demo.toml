@@ -1,0 +1,39 @@
+# Spec 207 demo: one `coder` node spawns the pi agent on a spec, and its verdict is the run of its criteria.
+# Only the NAMES in env_pass are copied from the daemon's environment; no credential value lives in this file.
+name = "coder-demo"
+entry = "code"
+caps = ["spawn", "proc"]
+
+[[node]]
+id = "code"
+kind = "coder"
+caps = ["spawn", "proc"]
+agent = "pi"
+model = "deepseek-v4-flash"
+workdir = "/projects/pi-improved"
+spec = "specs/207-the-coder-node-spawns-an-agent.md"
+brief = "Implement the spec named above. Follow it as the contract."
+env_pass = ["PATH", "HOME"]
+criteria = ["cargo test -p pii-server --test coder_spawns_a_process"]
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+[[node]]
+id = "refused"
+kind = "transform"
+value = "refused"
+
+[[edge]]
+from = "code"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "code"
+port = "err"
+to = "refused"
+kind = "data"

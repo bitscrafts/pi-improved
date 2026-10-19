@@ -36,10 +36,15 @@ pub struct ChildProc {
 }
 
 impl ChildProc {
+    fn spawn(argv: &[String], cwd: &Path, env: &[(String, String)]) -> Result<Self, PiiError> {
+        Self::launch(argv, cwd, scrubbed_env(&live_env(), env))
+    }
+
+    /// Starts `argv` with exactly `env` as its environment (spec 207): nothing is inherited.
     #[allow(clippy::disallowed_methods)] // reason: ProcCap::spawn_child is
     // the second sanctioned Command site (spec F1.5); the supervisor needs
     // piped stdio and the live handle for kill/try_wait.
-    fn spawn(argv: &[String], cwd: &Path, env: &[(String, String)]) -> Result<Self, PiiError> {
+    fn launch(argv: &[String], cwd: &Path, env: Vec<(String, String)>) -> Result<Self, PiiError> {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
 
@@ -49,18 +54,14 @@ impl ChildProc {
         let mut cmd = Command::new(argv0);
         cmd.args(argv.get(1..).unwrap_or(&[]))
             .current_dir(cwd)
-            // F2 (spec 13): scrubbed env, with the supervisor's extra pairs.
             .env_clear()
-            .envs(scrubbed_env(&live_env(), env))
+            .envs(env)
             // F3 (spec 13): own process group so a supervisor kill can reap
             // the whole tree, not just the direct child.
             .process_group(0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        for (k, v) in env {
-            cmd.env(k, v);
-        }
         let child = cmd
             .spawn()
             .map_err(|e| PiiError::Internal(format!("spawn {argv0}: {e}")))?;
@@ -96,7 +97,7 @@ impl ChildProc {
     pub fn try_wait(&mut self) -> Result<Option<i32>, PiiError> {
         self.inner
             .try_wait()
-            .map(|s| s.and_then(|st| st.code()))
+            .map(|s| s.map(exit_code))
             .map_err(|e| PiiError::Internal(format!("try_wait: {e}")))
     }
 
@@ -109,7 +110,7 @@ impl ChildProc {
         loop {
             match self.inner.try_wait() {
                 Err(e) => return Err(PiiError::Internal(format!("wait: {e}"))),
-                Ok(Some(st)) => return Ok(st.code()),
+                Ok(Some(st)) => return Ok(Some(exit_code(st))),
                 Ok(None) => {
                     if Instant::now() >= deadline {
                         return Ok(None);
@@ -133,6 +134,15 @@ impl ChildProc {
         let _ = self.inner.wait();
         Ok(())
     }
+}
+
+/// The code of a finished child. A signal death is `128 + signal` (the shell's convention), so a finished child
+/// is never mistaken for a running one by a poll loop.
+fn exit_code(st: std::process::ExitStatus) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    st.code()
+        .or_else(|| st.signal().map(|s| 128 + s))
+        .unwrap_or(1)
 }
 
 /// Result of a completed child process.
@@ -191,6 +201,27 @@ impl ProcCap<'_> {
         cwd: &Path,
         env: &[(String, String)],
     ) -> Result<ChildProc, PiiError> {
+        self.spawn_gate(argv)?;
+        ChildProc::spawn(argv, cwd, env)
+    }
+
+    /// Like [`ProcCap::spawn_child`], but the child's environment is exactly `env` (spec 207): no variable
+    /// is inherited from the daemon, not even the scrub's allowlist.
+    ///
+    /// # Errors
+    /// Same as [`ProcCap::spawn_child`].
+    pub fn spawn_child_exact(
+        &self,
+        argv: &[String],
+        cwd: &Path,
+        env: &[(String, String)],
+    ) -> Result<ChildProc, PiiError> {
+        self.spawn_gate(argv)?;
+        ChildProc::launch(argv, cwd, env.to_vec())
+    }
+
+    /// The `SPAWN` kind and `proc_argv0` scope checks shared by the spawn sites.
+    fn spawn_gate(&self, argv: &[String]) -> Result<(), PiiError> {
         self.ctx.check()?;
         if !self.ctx.caps().kinds.contains(CapKind::SPAWN) {
             return Err(self.ctx.deny("spawn"));
@@ -201,7 +232,7 @@ impl ProcCap<'_> {
         if !self.ctx.caps().proc_argv0.permits(argv0.as_str()) {
             return Err(self.ctx.deny("spawn"));
         }
-        ChildProc::spawn(argv, cwd, env)
+        Ok(())
     }
 }
 

@@ -108,6 +108,30 @@ pub fn node_capset(root_caps: &CapSet, graph_bits: u32, node_bits: u32) -> CapSe
     cs
 }
 
+/// The program scope of a node of `kind` (spec 207).
+///
+/// The run's scope is the ceiling. A program a kind is granted (a coder node's
+/// agent binary) is reachable only from that kind; every other program the run
+/// admits stays reachable from every kind. The grant never widens past `root`.
+#[must_use]
+pub fn node_proc_argv0(
+    reg: &crate::node::NodeRegistry,
+    kind: &str,
+    root: &pii_core::ArgvScope,
+) -> pii_core::ArgvScope {
+    let claimed = reg.proc_grants();
+    let mut allowed: Vec<String> = root
+        .allowed()
+        .iter()
+        .filter(|p| !claimed.contains(p))
+        .cloned()
+        .collect();
+    if let Ok(factory) = reg.factory(kind) {
+        allowed.extend(factory.proc_argv0_grant());
+    }
+    root.intersect(&pii_core::ArgvScope::new(allowed))
+}
+
 /// Builds the join payload for a node: an object keyed by source node id
 /// holding the value of every `Fired` inbound Data edge. A node with no
 /// inbound Data edges gets the run input.
@@ -203,7 +227,8 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
             error: format!("node '{}' has no input", ns.id),
         };
     };
-    let caps = node_capset(env.root.caps(), env.spec.caps, ns.caps);
+    let mut caps = node_capset(env.root.caps(), env.spec.caps, ns.caps);
+    caps.proc_argv0 = node_proc_argv0(env.reg, &ns.kind, &env.root.caps().proc_argv0);
     let ctx = env.root.child_with_token(
         Principal::GraphNode {
             run: env.run.clone(),

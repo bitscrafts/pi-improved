@@ -6,6 +6,7 @@
 
 pub mod agent_worker;
 pub mod classify;
+pub mod coder;
 pub mod crash;
 pub mod entity;
 pub mod gate;

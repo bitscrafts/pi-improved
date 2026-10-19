@@ -53,6 +53,11 @@ pub trait NodeFactory: Send + Sync {
     fn is_effect(&self) -> bool {
         false
     }
+    /// Program paths this kind's nodes may exec beyond the run scope (spec 207: a coder node's agent binary).
+    /// Granted to that kind's nodes only; empty by default.
+    fn proc_argv0_grant(&self) -> Vec<String> {
+        Vec::new()
+    }
     /// Builds a node instance for a config.
     ///
     /// # Errors
@@ -87,6 +92,15 @@ impl NodeRegistry {
         self.map
             .get(kind)
             .ok_or_else(|| PiiError::NotFound(format!("unknown node kind '{kind}'")))
+    }
+
+    /// Every program path a registered kind is granted (spec 207): withheld from every other kind.
+    #[must_use]
+    pub fn proc_grants(&self) -> Vec<String> {
+        self.map
+            .values()
+            .flat_map(|f| f.proc_argv0_grant())
+            .collect()
     }
 
     /// Registers an additional factory (custom kinds; tests, plugins).

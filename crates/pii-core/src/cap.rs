@@ -148,6 +148,12 @@ macro_rules! string_scope {
                 }
                 Self(out)
             }
+
+            /// The allowed prefixes, in order.
+            #[must_use]
+            pub fn allowed(&self) -> &[String] {
+                &self.0
+            }
         }
     };
 }

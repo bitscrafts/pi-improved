@@ -64,6 +64,8 @@ pub const WORKER_REQUEST_REFUSED: &str = "worker.request.refused";
 pub const WORKER_RELOAD_COMPLETED: &str = "worker.reload.completed";
 /// Event: a coding-agent worker refused to start (`agent`, `model`, `reason`); nothing was spawned (spec 185).
 pub const WORKER_START_REFUSED: &str = "worker.start.refused";
+/// Event: a coder node spawned its agent (`agent`, `model`, `pid`, `argv`); the argv names the session (spec 207).
+pub const CODER_SPAWNED: &str = "coder.spawned";
 /// Event: a memory search completed.
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.
