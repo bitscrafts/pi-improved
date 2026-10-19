@@ -15,6 +15,7 @@ pub mod blackboard;
 pub mod cron;
 pub mod effect;
 pub mod expr;
+pub mod fragment;
 pub mod journal;
 pub mod node;
 pub mod nodes;

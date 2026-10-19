@@ -1,0 +1,26 @@
+# Spec 212 fragment: a blocking guard. It refuses a run whose input asks for podman and passes every other run.
+# Attach it by name with a sha256 pin. It may attach at a pre surface (run.start, node.before) because it may block.
+name = "podman-guard"
+
+[fragment]
+name = "podman-guard"
+inputs = ["$.input.runtime"]
+outputs = ["ok", "refuse"]
+may_block = true
+
+[[node]]
+id = "check"
+kind = "route"
+on = "$.input.runtime"
+rules = [{ eq = "podman", port = "refuse" }, { port = "ok" }]
+
+[[node]]
+id = "refuse"
+kind = "refuse"
+reason = "podman is refused by the guard"
+
+[[edge]]
+from = "check"
+port = "refuse"
+to = "refuse"
+kind = "data"

@@ -235,6 +235,40 @@ impl super::GraphNode for WaitNode {
     }
 }
 
+/// `refuse` (spec 212): fails the run by name. `hook` is stamped by the weave
+/// from the attach id; `reason` is declared by the fragment.
+pub struct RefuseNode {
+    hook: String,
+    reason: String,
+}
+
+impl RefuseNode {
+    /// Builds from cfg; both fields default to a placeholder rather than failing.
+    ///
+    /// # Errors
+    /// Never fails today; the `Result` keeps the factory signature uniform.
+    pub fn new(cfg: &serde_json::Value) -> Result<Self, PiiError> {
+        let field = |key: &str, default: &str| {
+            cfg.get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or(default)
+                .to_owned()
+        };
+        Ok(Self {
+            hook: field("hook", "unnamed"),
+            reason: field("reason", "refused"),
+        })
+    }
+}
+
+impl super::GraphNode for RefuseNode {
+    fn run(&self, _ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
+        Ok(Outcome::Fail {
+            error: format!("run.refused{{hook={}, reason={}}}", self.hook, self.reason),
+        })
+    }
+}
+
 /// `timer` (F5.6): cfg `{ in_ms: u64 }` or `{ cron: "<5 fields>" }`.
 ///
 /// Returns

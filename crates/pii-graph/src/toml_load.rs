@@ -41,6 +41,15 @@ pub fn load_toml_with_registry(
 ) -> Result<GraphSpec, PiiError> {
     let doc: Table =
         toml::from_str(src).map_err(|e| PiiError::Invalid(format!("graph toml parse: {e}")))?;
+    // Spec 212: an attach is only inlined by `fragment::weave`. Loading it here would
+    // run the graph without its guard, so refuse instead of skipping it silently.
+    if doc.contains_key("attach") {
+        return Err(PiiError::Invalid(
+            "fragment.attach.unwoven: this graph attaches fragments; load it through \
+             fragment::weave (pii graph check), never directly"
+                .into(),
+        ));
+    }
 
     let name = get_str(&doc, "name", "missing 'name'")?;
 

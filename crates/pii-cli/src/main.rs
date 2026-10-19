@@ -45,6 +45,10 @@ pub fn version_line() -> String {
     format!("pii {}", env!("CARGO_PKG_VERSION"))
 }
 
+/// `pii graph {lint|check} <file.toml>` — static validation (spec 207 names it
+/// `check`). A host graph is woven from its `fragments/` directory first (spec
+/// 212), and every inlined node is printed with its surface, order and origin. A
+/// fragment file is checked on its own contract instead.
 fn cmd_graph_lint(path: &str) -> ExitCode {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
@@ -54,11 +58,25 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
         }
     };
     let reg = pii_server::lint_registry(std::path::Path::new("."), std::path::Path::new("."));
-    let spec = match pii_graph::load_toml_with_registry(&src, &reg) {
-        Ok(s) => s,
-        Err(e) => {
-            fail("graph", &e);
-            return ExitCode::from(2);
+    let is_fragment = pii_graph::fragment::declares_fragment(&src);
+    let (spec, inlined) = if is_fragment {
+        match pii_graph::fragment::check_fragment(&src, &reg) {
+            Ok(fragment) => (fragment.spec, Vec::new()),
+            Err(e) => {
+                fail("graph", &e);
+                return ExitCode::from(2);
+            }
+        }
+    } else {
+        let dir = std::path::Path::new(path)
+            .parent()
+            .map_or_else(|| "fragments".into(), |p| p.join("fragments"));
+        match pii_graph::fragment::weave(&src, &dir, &reg) {
+            Ok(woven) => (woven.spec, woven.sequence),
+            Err(e) => {
+                fail("graph", &e);
+                return ExitCode::from(2);
+            }
         }
     };
     match pii_graph::validate(&spec, &reg) {
@@ -68,6 +86,17 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
             }
             if warnings.is_empty() {
                 println!("{path}: OK");
+            }
+            for i in &inlined {
+                println!(
+                    "  {:<10} order {:>3}  {}  woven-from: {}  hook: {}",
+                    i.surface, i.order, i.node, i.origin, i.attach
+                );
+            }
+            if is_fragment {
+                for n in &spec.nodes {
+                    println!("  fragment node  {}  kind {}", n.id, n.kind);
+                }
             }
             ExitCode::SUCCESS
         }

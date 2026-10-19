@@ -72,7 +72,7 @@ pub struct NodeRegistry {
 }
 
 impl NodeRegistry {
-    /// Builds the registry with the five built-in kinds.
+    /// Builds the registry with the six built-in kinds.
     #[must_use]
     pub fn builtin() -> Self {
         let mut map: BTreeMap<&'static str, Arc<dyn NodeFactory>> = BTreeMap::new();
@@ -81,6 +81,7 @@ impl NodeRegistry {
         map.insert("emit", Arc::new(EmitFactory));
         map.insert("wait", Arc::new(WaitFactory));
         map.insert("timer", Arc::new(TimerFactory));
+        map.insert("refuse", Arc::new(RefuseFactory));
         Self { map }
     }
 
@@ -247,6 +248,34 @@ impl NodeFactory for TimerFactory {
 
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
         Ok(Box::new(crate::nodes::TimerNode::new(cfg)?))
+    }
+}
+
+/// Built-in factory for the `refuse` node kind (spec 212): a blocking hook's
+/// refusal. It has no ports, so nothing follows it; the run fails by name.
+#[allow(non_camel_case_types)]
+#[doc = "Built-in factory for the `refuse` node kind."]
+pub struct RefuseFactory;
+
+impl NodeFactory for RefuseFactory {
+    fn kind(&self) -> &'static str {
+        "refuse"
+    }
+
+    fn effects(&self) -> Effects {
+        Effects::PURE
+    }
+
+    fn required_caps(&self) -> CapKind {
+        CapKind::empty()
+    }
+
+    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(Vec::new())
+    }
+
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        Ok(Box::new(crate::nodes::RefuseNode::new(cfg)?))
     }
 }
 
