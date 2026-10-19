@@ -64,3 +64,40 @@ mqtt · wasm`.
 
 Nothing in this document is queued. The related open work is A77 (spec 209 — pii installs nothing, podman is the tool),
 which is the prerequisite for a coder node that could consume a skill, and 207/208 which are committed at `b2e2206`.
+
+## 7. Can a skill embed scripts and templates? (user question, 2026-10-19)
+
+**Definition agreed the same day: from now on, "skill" means `DocKind::Skill`.** No other meaning is intended in this repo.
+
+Measured shape of a memory document (`pii-memory/src/doc.rs`): `id · layer · kind · text · concepts · importance ·
+created_ms · last_used_ms · evidence: Option<(String, u64)> · archived`. There is **no attachment field, no binary, no
+executable slot** — a document is TEXT plus concepts, importance and an evidence pointer.
+
+So the answer has three parts.
+
+### 7.1 Yes, as text — and that is retrievable
+A skill's body can contain fenced blocks: instructions, a shell snippet, a template, a diff. Because bm25 and the vector
+lane index the text, a search for "template for a Rust spec" finds the skill and returns the fenced block with it.
+`concepts` is the cheap tag surface: `concepts = ["skill/template/rust-spec", "trigger/dispatch"]`.
+
+### 7.2 What must NOT be done
+Memory text must never be EXECUTED verbatim:
+- a document has no digest pinning, so any later `put` silently rewrites what would run;
+- `evidence` is an optional pointer, not an integrity check;
+- an edit to memory would change behaviour with no commit, no gate and no review — the opposite of every rule this project
+  spent a week learning (1,846 runs from an unaudited path; 4 posts from cancelled runs).
+
+### 7.3 The shape that keeps both properties
+| part | lives where | why |
+|---|---|---|
+| intent, instructions, selection | `DocKind::Skill` document | recall drives selection; it is data, and it decays |
+| the script / template itself | a file in the repo (or a mounted volume) named by `evidence` | it is versioned by git, reviewable in a diff, and hashable |
+| the pin | one line in the skill body: `script: <path> sha256=<hex>` | the coder node verifies the hash before running; a drifted file is a REFUSAL |
+| variants | separate `Skill` docs linked by an entity relationship | retrieval can pull the template alone; `pii memory link` + `neighbours` already do this |
+
+The executable copy is therefore **never memory**: memory holds the skill's meaning and its pin, the repo holds the bytes,
+and the coder node (inside podman, per spec 209) is the only thing allowed to run them — with the digest in the journal.
+
+### 7.4 The rule in one sentence
+> A skill may EMBED text (instructions, templates, snippets) and may REFERENCE scripts; it may never be the place a script is
+> executed from, and every referenced script carries a sha256 pin verified before it runs.
