@@ -100,6 +100,18 @@ ASIDE2="$(ls -d "$S/bin".old-* | tail -1)"
 grep -q 'edited by the dry-run' "$ASIDE2"/*discord-triage.toml || fail "edited graph not moved into $ASIDE2"
 cmp -s "$REPO/graphs/discord-triage.toml" "$S/state/graphs/discord-triage.toml" || fail "re-install did not restore the repo graph"
 
+# 6. the operator's [core].model survives a re-install (measured 2026-10-19: an install regressed
+#    the running daemon's model to the template default — the aside'd config said
+#    openai:glm-5.3-flash per operator directive, the live config came back granite-4.2-3b).
+#    The template's model is the FRESH-install default; a replaced install must carry it forward.
+sed -i 's|^model = .*|model = "openai:glm-5.3-flash"   # operator choice|' "$S/cfg/pii.toml"
+sleep 1
+bash "$REPO/deploy/install-pii.sh" > "$S/install4.out" 2>&1 || { cat "$S/install4.out"; fail "re-install (model carry) failed"; }
+ASIDE3="$(ls -d "$S/bin".old-* | tail -1)"
+grep -q 'openai:glm-5.3-flash' "$ASIDE3/pii.toml" || fail "operator model not in the aside'd config before re-install"
+grep -q '^model = "openai:glm-5.3-flash"' "$S/cfg/pii.toml" || fail "re-install regressed the operator's model"
+grep -q 'carried forward by install-pii.sh' "$S/cfg/pii.toml" || fail "operator model carried without its provenance note"
+
 # 5. spec 157: no credentials is a state, not an abort: install succeeds, writes no pii.env, no cron
 sleep 1
 S2="$S/nocreds"

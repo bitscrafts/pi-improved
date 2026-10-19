@@ -113,9 +113,20 @@ if [ -e "$CONF" ]; then
   mkdir -p "$ASIDE"
   mv "$CONF" "$ASIDE/pii.toml"
 fi
+# The template's model is the FRESH-install default only. A re-install replaces a config the
+# operator may have edited, and regressing it to the template default would silently demote the
+# daemon to a model the operator moved off (measured 2026-10-19: a re-install swapped a running
+# openai:glm-5.3-flash for the template's llamacpp-server default). Carry the replaced config's
+# model forward; keep the template default for a first install.
+PRIOR_MODEL=""
+MODEL_NOTE=""
+if [ -e "$ASIDE/pii.toml" ]; then
+  PRIOR_MODEL="$(sed -n 's|^model = "\([^"]*\)".*$|\1|p' "$ASIDE/pii.toml" | head -1)"
+  [ -n "$PRIOR_MODEL" ] && MODEL_NOTE="   # carried forward by install-pii.sh from the replaced config"
+fi
 TMPCONF="$(mktemp "$CONFIG_DIR/pii.toml.XXXXXX")"
 sed \
-  -e "s|^model = .*|model = \"llamacpp-server:granite-4.2-3b\"|" \
+  -e "s|^model = .*|model = \"${PRIOR_MODEL:-llamacpp-server:granite-4.2-3b}\"${MODEL_NOTE}|" \
   -e "s|^runtime_dir = .*|runtime_dir = \"$RUNTIME_DIR\"|" \
   -e "s|^# trajectory_dir = .*|trajectory_dir = \"$STATE_DIR/trajectory\"|" \
   -e "s|^log_file = .*|log_file = \"$STATE_DIR/pii.log\"|" \
