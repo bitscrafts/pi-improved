@@ -23,8 +23,15 @@ finished as success while carrying that error.
 4. The behaviour is identical for every hosted provider (openai, anthropic, gemini): this is the net layer, not a quirk.
 
 ## Exit Criteria
-- [ ] cargo test -p pii-net --test stream_close_is_eof
-- [ ] cargo test -p pii-model --test success_carries_no_error
+- [ ] `cargo test -p pii-net --test stream_close_is_eof`
+- [ ] `cargo test -p pii-graph --test success_carries_no_error`
+
+Note on criterion 2 (2026-10-19, orchestrator): it was written against `pii-model`, which holds provider wire
+code and composes no terminal — the crate that decides a run's terminal is `pii-graph`
+(`run/run_helpers.rs::terminal_determination`), so the criterion could never have been satisfied there. The
+requirement is unchanged; only the crate that must prove it is corrected. The test drives a real graph run in
+which the last finished node took a non-`ok` port carrying `{"error": ...}` and asserts the terminal is not a
+`success` that carries that error.
 
 ## Guardrails
 - Do NOT weaken the gate, a budget or any existing control to make this pass.
