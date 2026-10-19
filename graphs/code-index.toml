@@ -3,10 +3,14 @@
 # User directive 2026-10-19: "the graphify feature! initially indexing its own codebase" and "the respective graphs must
 # also be modified accordingly". So the index is not only a script: it is a scheduled graph, like every other capability.
 #
-# Measured before writing: entities=1415 in memory.redb after scripts/pii-index-code.py indexed 23 crates, and
-# relationships=0 — because `pii memory link` accepts no arguments in this build (it prints the entity usage), so nothing
-# can connect a module to its functions yet and the graph lane stays inactive. This graph therefore does the part that is
-# possible today (a timed index pass plus a recorded snapshot) and its gate refuses to claim success while links are absent.
+# PRODUCTION-DEPENDENCY NOTE (user rule 2026-10-19: companion scripts are fine in DEVELOPMENT, but production must be
+# reviewed for them). This graph is the PRODUCTION form: it calls the VERB `pii index code`, never a script.
+#   · until spec 204 lands that verb, this graph must NOT be installed on the host: the worker brief below would fail, and a
+#     graph that cannot run is worse than an absent graph.
+#   · the dev-time equivalent is a script run by hand (scripts are dev-only and never shipped: the installer builds three
+#     binaries from a clean export).
+# Measured before writing: entities=1415 in memory.redb from a python indexer, relationships=0 — because `pii memory link`
+# accepts no arguments in this build, so nothing connects a module to its symbols and the graph lane stays inactive.
 #
 # Shape: timer → index(worker) → gate(entities>0 and relationships>0?) → memory(record)
 # NOTE: field names mirror the digest and intervention-report graphs; a graph that fails to load must REFUSE (176/177).
@@ -30,7 +34,7 @@ workdir = "/projects/pi-improved"
 brief = """
 Run the codebase indexer and report its counts. Do not edit source.
 
-    uv run scripts/pii-index-code.py --max 3000
+    pii index code --max 3000        # the VERB (spec 204). No python, no shell, nothing outside the binary.
 
 Then report exactly, with the numbers the tool printed:
   entities_created · entities_failed · crates_scanned
