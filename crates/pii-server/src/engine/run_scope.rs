@@ -1,8 +1,9 @@
-//! A run's scope and capability set (F2.3, specs 20/31/107): the helpers
-//! `spawn_run`/`spawn_resume` call while building the run's [`pii_core::Ctx`],
-//! split out of `runs.rs` so each file keeps its own concern. Here: the
-//! observer stack, the `scope_root` recovery/validation and the root
-//! capability set. Nothing here spawns, journals or broadcasts.
+//! A run's scope and capability set (F2.3, specs 20/31/107).
+//!
+//! The helpers `spawn_run`/`spawn_resume` call these while building the run's
+//! [`pii_core::Ctx`], split out of `runs.rs` so each file keeps its own
+//! concern. Here: the observer stack, the `scope_root` recovery/validation and
+//! the root capability set. Nothing here spawns, journals or broadcasts.
 
 use std::sync::Arc;
 

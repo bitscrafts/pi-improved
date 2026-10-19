@@ -550,8 +550,6 @@ pub fn spawn_resume_node(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use pii_core::Ctx;
-    use std::path::PathBuf;
-    use tempfile::Builder;
 
     mod crash {
         use super::*;
