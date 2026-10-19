@@ -34,12 +34,17 @@ def bump(field):
 
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+    def note(self, m):
+        import time
+        open(str(STATE) + ".reqs", "a").write(f"{int(time.time()*1000)} {m} {self.path}\n")
     def do_GET(self):
+        self.note("GET")
         # the poll endpoint wants an ARRAY; the shape probe wants a channel object
         body = b"[]" if self.path.split("?")[0].endswith("/messages") else json.dumps({"type": 0}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
         self.wfile.write(body)
     def do_POST(self):
+        self.note("POST")
         bump("posts")
         try: first = json.load(open(STATE)).get("posts", 1) == 1
         except Exception: first = True
@@ -118,16 +123,18 @@ if ! up; then
 fi
 echo "daemon up (pid $PID); fake Discord on 127.0.0.1:$PORT (first post 429 retry_after=1, then 200)"
 
-printf '%s\n' '{"text":"hello one","user":"u","chat":"c1"}' >> "$W/run/channels/inbox/inbox.txt"; sleep 0.6
+printf '%s\n' '{"text":"hello one","user":"u","chat":"c1","cursor":1}' >> "$W/run/channels/inbox/inbox.txt"; sleep 0.6
 D1=$(dials)
-printf '%s\n' '{"text":"hello two","user":"u","chat":"c1"}' >> "$W/run/channels/inbox/inbox.txt"; sleep 0.5
+printf '%s\n' '{"text":"hello two","user":"u","chat":"c1","cursor":2}' >> "$W/run/channels/inbox/inbox.txt"; sleep 0.5
 D2=$(dials)
 sleep 2.3
-printf '%s\n' '{"text":"hello three","user":"u","chat":"c1"}' >> "$W/run/channels/inbox/inbox.txt"; sleep 1.2
+printf '%s\n' '{"text":"hello three","user":"u","chat":"c1","cursor":3}' >> "$W/run/channels/inbox/inbox.txt"; sleep 1.2
 D3=$(dials); OK=$(delivered)
 sleep 0.5
 D4=$(dials)
 
+echo "--- runs the daemon started ---"
+PII_RUNTIME_DIR="$W/run" "$PII" run ls 2>/dev/null || echo "(run ls unavailable)"
 kill -9 "$PID" 2>/dev/null; kill -9 "$FAKE" 2>/dev/null
 
 echo "dials after run1=$D1 | after run2 (inside the 1 s window)=$D2 | after run3 (+1.4 s)=$D3 | settled=$D4 | delivered=$OK"
