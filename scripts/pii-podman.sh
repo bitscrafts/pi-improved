@@ -13,6 +13,11 @@
 #   rm <container>                  remove
 #   inspect <container>             digest, status, labels
 #   gc                              remove every label-matching container in "exited" state
+#   images                          images present, with digests (fix triage starts here)
+#   pull <img@sha256:…>             fetch a pinned image — fetching an artefact, NOT installing on the host
+#   exec <container> <cmd…>         run a command inside a pii-labelled container only
+#   restart <container>             restart a pii-labelled container
+#   probe <img@sha256:…> <cmd…>     one-shot diagnostic container, network none, output only — the heal ladder's first act
 #
 # Guardrails enforced here, not by the caller:
 #   · never --privileged, never --userns=host, never a bind of /var/run/docker.sock or /run/podman
@@ -80,8 +85,40 @@ case "$verb" in
     echo "$ids" | xargs -r "$PODMAN" rm -f
     ;;
 
+  images)
+    need; exec "$PODMAN" images --digests --format '{{.Repository}}:{{.Tag}} {{.Digest}}'
+    ;;
+
+  pull)
+    need; img=${1:?usage: pull <image@sha256:…>}
+    case "$img" in *@sha256:*) : ;; *) die "pull by digest only (got '$img')" ;; esac
+    exec "$PODMAN" pull "$img"
+    ;;
+
+  exec)
+    need; c=${1:?usage: exec <container> <cmd…>}; shift || true
+    [ "$#" -gt 0 ] || die "exec needs a command"
+    "$PODMAN" inspect --format '{{index .Config.Labels "io.pii"}}' "$c" 2>/dev/null | grep -qx 1 \
+      || die "'$c' is not a pii container (label io.pii=1 missing) — refusing to exec into it"
+    exec "$PODMAN" exec "$c" "$@"
+    ;;
+
+  restart)
+    need; c=${1:?usage: restart <container>}
+    "$PODMAN" inspect --format '{{index .Config.Labels "io.pii"}}' "$c" 2>/dev/null | grep -qx 1 \
+      || die "'$c' is not a pii container — refusing to restart it"
+    exec "$PODMAN" restart "$c"
+    ;;
+
+  probe)
+    need; img=${1:?usage: probe <image@sha256:…> <cmd…>}; shift || true
+    case "$img" in *@sha256:*) : ;; *) die "probe image must be pinned by digest" ;; esac
+    [ "$#" -gt 0 ] || die "probe needs a command"
+    exec "$PODMAN" run --rm --label "$LABEL" --network none --security-opt no-new-privileges "$img" "$@"
+    ;;
+
   *)
-    echo "usage: pii-podman.sh {ps|run|logs|stop|rm|inspect|gc} …" >&2
+    echo "usage: pii-podman.sh {ps|run|logs|stop|rm|inspect|gc|images|pull|exec|restart|probe} …" >&2
     exit 64
     ;;
 esac
