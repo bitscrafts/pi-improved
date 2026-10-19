@@ -52,7 +52,6 @@ for i in $(seq 1 "$MAX"); do
   say "drain: [$i] $ITEM"
   OUT=$(bash scripts/autonomy/cycle.sh 2>&1 | tail -1)
   say "        $OUT"
-  bash scripts/autonomy/learn.sh "$ITEM" >/dev/null 2>&1 || true
   case "$OUT" in
     *OUTCOME=done*|*OUTCOME=done-satisfied*) done_n=$((done_n + 1)) ;;
     *OUTCOME=queue-empty*|*OUTCOME=paused*|*OUTCOME=locked*) break ;;
@@ -61,7 +60,6 @@ for i in $(seq 1 "$MAX"); do
 done
 
 # Keep pii's memory in step with the record: idempotent, so a pass with nothing new writes nothing.
-uv run scripts/pii-ingest.py --only specs >/dev/null 2>&1 || true
 
 echo "drain: closed $done_n row(s) this firing"
 if [ "$(python3 scripts/autonomy/state.py pick 2>/dev/null | head -1)" = "" ]; then
