@@ -90,7 +90,9 @@ print("\n".join(seen))' "$INCF")
   # Emitted HERE, at the moment the queue empties, because a brief produced on request is a brief nobody reads when it
   # matters. It states the counts, the rows that are NOT done, and the commits — and it writes a dated artefact, so the
   # session ends with a file rather than a paragraph in a terminal.
-  BRIEF="_docs/05-operations/QUEUE-BRIEF-$(date -u +%Y-%m-%dT%H%M%SZ).md"
+  # One file per HOUR, overwritten each pass. Measured 2026-10-19: the drain loop asked 40 times and left 33 near-identical
+  # briefs in _docs, which is file spam dressed as reporting. A brief summarises the session, not the iteration.
+  BRIEF="_docs/05-operations/QUEUE-BRIEF-$(date -u +%Y-%m-%dT%H).md"
   mkdir -p _docs/05-operations
   bash scripts/autonomy/queue-brief.sh > "$BRIEF" 2>/dev/null || echo "queue brief: FAILED to generate" >> "$BRIEF"
   say "queue empty — nothing pending"
