@@ -66,6 +66,10 @@ pub const WORKER_RELOAD_COMPLETED: &str = "worker.reload.completed";
 pub const WORKER_START_REFUSED: &str = "worker.start.refused";
 /// Event: a coder node spawned its agent (`agent`, `model`, `pid`, `argv`); the argv names the session (spec 207).
 pub const CODER_SPAWNED: &str = "coder.spawned";
+/// Event: a coder node's image is absent or has no digest (`image`, `reason`); nothing was started (spec 209).
+pub const CODER_IMAGE_MISSING: &str = "coder.image.missing";
+/// Event: a coder node ran on the host because it names no `container_image` (`agent`); deprecated (spec 209).
+pub const CODER_HOST_SPAWN_DEPRECATED: &str = "coder.host_spawn.deprecated";
 /// Event: a memory search completed.
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.
@@ -390,6 +394,8 @@ pub const ALL: &[&str] = &[
     WORKER_REQUEST_REFUSED,
     WORKER_RELOAD_COMPLETED,
     WORKER_START_REFUSED,
+    CODER_IMAGE_MISSING,
+    CODER_HOST_SPAWN_DEPRECATED,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,
     MEMORY_ENTITY_WRITTEN,
