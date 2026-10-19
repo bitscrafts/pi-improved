@@ -89,7 +89,10 @@ stdbuf -oL -eL "$CLAUDE_BIN" "${RESUME_ARGS[@]}" -p "$(cat "$BRIEF")" \
   >"$LOG" 2>"$LOG.err" &
 CLAUDE_PID=$!
 for _ in $(seq 1 900); do
-  SID=$(grep -ao '"session_id":"[^"]*"' "$LOG" 2>/dev/null | head -1 | cut -d'"' -f4)
+  # `|| true`: this script runs under set -e, and grep returns 1 until the first session_id appears — which killed the
+  # watcher (rc=1) and orphaned a claude that then ran to completion. Measured 2026-10-19 21:56Z: worker end_turn, $0.82,
+  # dispatcher rc=1.
+  SID=$(grep -ao '"session_id":"[^"]*"' "$LOG" 2>/dev/null | head -1 | cut -d'"' -f4 || true)
   if [ -n "${SID:-}" ]; then printf '%s\n' "$SID" > "$LOGD/session-$TAG.txt"; echo "== session handle captured at dispatch: $SID"; break; fi
   kill -0 "$CLAUDE_PID" 2>/dev/null || break
   sleep 1
