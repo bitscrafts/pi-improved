@@ -41,7 +41,8 @@ fn fail(msg: &str) -> ExitCode {
 }
 
 /// Cuts `s` to at most `max` bytes on a char boundary.
-fn clip(s: &str, max: usize) -> String {
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn clip(s: &str, max: usize) -> String {
     let mut out = String::new();
     for c in s.chars() {
         if out.len() + c.len_utf8() > max {
@@ -55,7 +56,11 @@ fn clip(s: &str, max: usize) -> String {
 /// `pii index code ...`.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn cmd_index(args: &mut std::env::ArgsOs) -> ExitCode {
-    if next_str(args).as_deref() != Some("code") {
+    let verb = next_str(args);
+    if verb.as_deref() == Some("docs") {
+        return crate::cmd_index_docs::cmd_docs(args);
+    }
+    if verb.as_deref() != Some("code") {
         let _ = writeln!(std::io::stderr(), "{USAGE}");
         return ExitCode::from(2);
     }
