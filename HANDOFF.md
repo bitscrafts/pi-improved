@@ -2,6 +2,43 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 06:55Z — 191 verified by hand (two mutations, byte-identical restores), and the loop's own false green recorded
+
+- **A58/191 done and verified independently of the worker report.** Committed `1c41bd1` (gate `ALL PASS`).
+  Criteria by hand: `cargo test -p pii-net --test stream_close_is_eof` → `2 passed`, rc=0;
+  `cargo test -p pii-graph --test success_carries_no_error` → `2 passed`, rc=0. One mutation per criterion:
+  the `conn.rs` guard arm forced off (`if false && (kind == UnexpectedEof || …close_notify)`) reddens
+  criterion 1 at **rc=101**; `success_or_carried_error`'s filter forced to `false` (the pre-fix shape) reddens
+  criterion 2 at **rc=101**, its control staying green. Both files restored byte-identical (`conn.rs`
+  `a2634ca2…`, `run_helpers.rs` `f4622380…`, the pre-mutation hashes), touched, re-run green, tree clean.
+- **Three defects the lane found and fixed before that commit, all in the spec/plan, not the code.**
+  (1) The spec number **190 was used twice** (`190-the-post-counts…` and `190-a-stream-close…`), and the cycle
+  refuses with `OUTCOME=plan-error DUPLICATE-NUMBER` before dispatch — the item sat parked from 04:30 to 05:45
+  against a duplicate nobody looked at. Renumbered to `specs/191-…` (`273a1de`).
+  (2) That spec's second criterion named **`pii-model`**, which composes no terminal at all; the terminal is
+  composed in `pii-graph/src/run/run_helpers.rs::terminal_determination`, so the criterion could never pass.
+  Corrected to `cargo test -p pii-graph --test success_carries_no_error`, requirement unchanged, correction
+  recorded in the spec.
+  (3) The plan row carried **one** criterion where the spec has two, and `pii-model` in its paths; the row now
+  carries both commands (2 criteria → 2 commands, no `;` inside a criterion) and the tests directories.
+- **A green verify over a red gate, measured.** The interrupted worker's first pass returned `2 passed` from
+  `cargo test -p pii-net --test stream_close_is_eof` while `quality-gate.sh` reported **31 clippy errors** in
+  that same file — and the test's first case re-stated the guard as `if false && (…)`, i.e. it verified a copy
+  of the logic, not the logic. That half was committed as a **work-in-progress** (`c2cb2fd`, message says not
+  done), its own finding recorded in the spec, and the item was re-queued with a corrective brief
+  (`_tmp/autonomy/briefs/191-stream-close.md`). The worker's second pass rewrote the test onto
+  `NetService`'s path; the orchestrator's guard mutation now reddens it, which is the proof it reaches the code.
+- **Disk was the next wall: `OUTCOME=gate-skipped-disk` at 12,423 MB free (needs 20,000).** `cargo clean` on
+  the repo's own `target/` reclaimed **94.8 GiB** (13 GB → 103 GB free); the gate's own `_tmp/gate-target` cache
+  was left alone, so the re-run was warm and passed on the first attempt.
+- **Selftest:** `RESULT: 32 passed, 2 failed`, `VERDICT: FAILURES ABOVE` — the documented pair
+  (`paused -> the tick says so (once)`, `an open question is carried to the phone`) with
+  `Gateway is running (PID: 73)`, so it is `tick.sh`'s early-branch structure, not the operator switch.
+- **Next:** the queue is empty (56/56 rows done) and 059's ranked list is long spent; 070 §5's first bullet is
+  what 190 covered, its second is 191. The next item to author is 070 §5's remaining bullets —
+  `starts`/`hard_deaths` and the per-cron `runs_per_occurrence == 1` assertion — then 070 §1 steps 2-6, which
+  need the host.
+
 ## 2026-10-19 00:55Z — 189 verified by hand (criteria + mutation + byte-identical restore), and 070 §5's second half authored as 190
 
 - **A56/189 verified independently of the worker report, on the committed tree (`4182856`).** Both criteria green:

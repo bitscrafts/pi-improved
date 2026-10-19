@@ -61,3 +61,34 @@ socket (both its cases pass). The item is NOT done, on two measured counts:
 
 The work is committed as a work-in-progress (not as done) and the item is back in the queue with a brief at
 `_tmp/autonomy/briefs/191-stream-close.md`.
+
+**Closed, 2026-10-19 06:40Z — verified by the orchestrator, independently of the worker's report.**
+
+Committed as `1c41bd1`. The worker's second pass rewrote the integration test to drive `NetService`'s path
+(the dead `read_to_deadline_shape` and the `if false` mirror are gone) and added
+`crates/pii-graph/tests/success_carries_no_error.rs`.
+
+*The two criteria, run by hand on the committed tree, before any mutation:*
+
+- `cargo test -p pii-net --test stream_close_is_eof` → `2 passed; 0 failed`, rc=0.
+- `cargo test -p pii-graph --test success_carries_no_error` → `2 passed; 0 failed`, rc=0.
+- `quality-gate.sh --routine` (the cycle's own run, 06:40Z) → `quality-gate: ALL PASS`.
+
+*Reddened by the orchestrator's own mutations, one per criterion:*
+
+- Criterion 1: `conn.rs`'s guard arm forced off (`if false && (kind == UnexpectedEof || …contains
+  close_notify)`) → `an_abrupt_tls_close_after_a_full_answer_is_end_of_stream_not_error` FAILED, rc=101. So
+  the integration test does reach the real `Conn::read`; it is not a re-statement of the guard.
+- Criterion 2: `success_or_carried_error`'s filter forced to `false` (the pre-fix shape: always `Success`) →
+  `a_last_node_on_the_err_port_is_not_a_success_carrying_its_error` FAILED, rc=101. The control
+  (`a_genuinely_successful_run_is_still_a_success_with_its_value`) stayed green in both runs.
+
+*Restored byte-identical, then re-run:* `crates/pii-net/src/service/conn.rs` sha256
+`a2634ca2f997be1c7b08cd7d34db43b7c90085f75dfcb142d3033b806d1a6d4a`, `crates/pii-graph/src/run_helpers.rs`
+sha256 `f462238001a246066fb5d7125d3950036ea3aa856690ee9a694769db8751c964` — both equal to their pre-mutation
+hashes — with `cargo test` green again on each; the tree was clean (`git status --porcelain` empty) afterwards.
+
+What this closes and does not: the peer-close behaviour is the net layer's, so every provider inherits it;
+requirement 3 is enforced where the terminal is composed (`terminal_determination`), so a last node finishing
+on a non-`ok` port with `{"error": …}` now fails the run rather than reporting success. It does not change
+what a node emits, and it does not re-measure the original live occurrence against ollama-cloud.
