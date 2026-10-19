@@ -5,7 +5,7 @@ use pii_abi::PiiError;
 use redb::{ReadableDatabase, ReadableTable};
 
 use crate::mem::{MemStore, PutRows};
-use crate::tables::{MEM_DF, MEM_DOC, MEM_EDGE, MEM_LAYER, MEM_TERM, MEM_VEC};
+use crate::tables::{MEM_DF, MEM_DOC, MEM_EDGE, MEM_EVIDENCE, MEM_LAYER, MEM_TERM, MEM_VEC};
 
 impl MemStore {
     /// Inserts one doc with all its index rows **in a single write txn**
@@ -79,6 +79,31 @@ impl MemStore {
         }
         // df: one per distinct term.
         self.bump_df(&rows.id)
+    }
+
+    /// Records the evidence of one doc (spec 210): `(reference, ms)`, replacing any earlier record.
+    /// The doc's own bytes are not touched.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn set_evidence(&self, id: &str, reference: &str, ms: u64) -> Result<(), PiiError> {
+        let mut bytes = ms.to_le_bytes().to_vec();
+        bytes.extend_from_slice(reference.as_bytes());
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| PiiError::Internal(format!("memstore: begin_write: {e}")))?;
+        {
+            let mut table = write
+                .open_table(MEM_EVIDENCE)
+                .map_err(|e| PiiError::Internal(format!("memstore: open mem_evidence: {e}")))?;
+            table
+                .insert(id, bytes.as_slice())
+                .map_err(|e| PiiError::Internal(format!("memstore: put evidence: {e}")))?;
+        }
+        write
+            .commit()
+            .map_err(|e| PiiError::Internal(format!("memstore: commit evidence: {e}")))
     }
 
     fn doc_exists(&self, id: &str) -> Result<bool, PiiError> {

@@ -5,7 +5,9 @@ use pii_abi::PiiError;
 use redb::{ReadableDatabase, ReadableTable};
 
 use crate::mem::{MemStore, Posting};
-use crate::tables::{MEM_ARCHIVE, MEM_DF, MEM_DOC, MEM_EDGE, MEM_LAYER, MEM_TERM, MEM_VEC};
+use crate::tables::{
+    MEM_ARCHIVE, MEM_DF, MEM_DOC, MEM_EDGE, MEM_EVIDENCE, MEM_LAYER, MEM_TERM, MEM_VEC,
+};
 
 impl MemStore {
     /// Stored layer tag for one doc (`None` when absent or never written —
@@ -248,6 +250,54 @@ impl MemStore {
         write
             .commit()
             .map_err(|e| PiiError::Internal(format!("memstore: commit archive: {e}")))
+    }
+
+    /// Evidence recorded for one doc by [`MemStore::set_evidence`] (`None` when never recorded).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn evidence(&self, id: &str) -> Result<Option<(String, u64)>, PiiError> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| PiiError::Internal(format!("memstore: begin_read: {e}")))?;
+        let table = read
+            .open_table(MEM_EVIDENCE)
+            .map_err(|e| PiiError::Internal(format!("memstore: open mem_evidence: {e}")))?;
+        let Some(bytes) = table.get(id).ok().flatten() else {
+            return Ok(None);
+        };
+        let bytes = bytes.value();
+        let Some((ms, reference)) = bytes.split_first_chunk::<8>() else {
+            return Ok(None);
+        };
+        Ok(Some((
+            String::from_utf8_lossy(reference).into_owned(),
+            u64::from_le_bytes(*ms),
+        )))
+    }
+
+    /// Every archived doc id, in key order (the `--all` view of a skill listing).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn archived_ids(&self) -> Result<Vec<String>, PiiError> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| PiiError::Internal(format!("memstore: begin_read: {e}")))?;
+        let table = read
+            .open_table(MEM_ARCHIVE)
+            .map_err(|e| PiiError::Internal(format!("memstore: open mem_archive: {e}")))?;
+        let mut out = Vec::new();
+        for row in table
+            .iter()
+            .map_err(|e| PiiError::Internal(format!("memstore: iter mem_archive: {e}")))?
+        {
+            let Ok(row) = row else { continue };
+            out.push(String::from(row.0.value()));
+        }
+        Ok(out)
     }
 
     /// Archived doc bytes (`None` when absent).

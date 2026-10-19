@@ -13,7 +13,9 @@ use std::path::Path;
 use pii_abi::PiiError;
 use redb::{Database, ReadableDatabase, ReadableTable};
 
-use crate::tables::{MEM_ARCHIVE, MEM_DF, MEM_DOC, MEM_EDGE, MEM_META, MEM_TERM, MEM_VEC};
+use crate::tables::{
+    MEM_ARCHIVE, MEM_DF, MEM_DOC, MEM_EDGE, MEM_EVIDENCE, MEM_META, MEM_TERM, MEM_VEC,
+};
 
 /// The memory index store (F4.2). All keys are strings; values are codec
 /// bytes or counts. Open/commit happens inside each method — no transaction
@@ -88,6 +90,7 @@ impl MemStore {
                 "mem_edge",
                 "mem_meta",
                 "mem_archive",
+                "mem_evidence",
             ];
             write.open_table(MEM_DOC).map_err(|e| err("mem_doc", e))?;
             write.open_table(MEM_TERM).map_err(|e| err("mem_term", e))?;
@@ -98,6 +101,9 @@ impl MemStore {
             write
                 .open_table(MEM_ARCHIVE)
                 .map_err(|e| err("mem_archive", e))?;
+            write
+                .open_table(MEM_EVIDENCE)
+                .map_err(|e| err("mem_evidence", e))?;
             let _ = names;
             write
                 .commit()

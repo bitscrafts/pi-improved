@@ -66,6 +66,11 @@ pub(crate) const MEM_ARCHIVE: TableDefinition<'_, &str, &[u8]> =
 /// tag. Absent for pre-existing docs; readers fall back to L1.
 pub(crate) const MEM_LAYER: TableDefinition<'_, &str, u8> = TableDefinition::new("mem_layer");
 
+/// Skill evidence (additive, spec 210): doc id -> `ms` as u64 LE, then the reference bytes. The
+/// `(commit-or-file, ms)` a `pii skill edit` recorded; absent for a doc never edited through it.
+pub(crate) const MEM_EVIDENCE: TableDefinition<'_, &str, &[u8]> =
+    TableDefinition::new("mem_evidence");
+
 /// Timer wheel `(fire_at_ms, run_id)` -> resume key (F5.5).
 pub(crate) const TIMER_WHEEL: TableDefinition<'_, (u64, &str), &str> =
     TableDefinition::new("timer_wheel");

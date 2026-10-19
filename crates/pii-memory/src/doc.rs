@@ -126,15 +126,15 @@ fn blake3_text(text: &str) -> [u8; 32] {
     }
     out
 }
-/// Decodes the `DocKind` byte from a stored doc payload (kind, layer,
-/// `created_ms` are packed ahead of the text; see `encode`).
+/// Decodes the `DocKind` byte from a stored doc payload (kind byte first, then `created_ms`, then
+/// the text; see `encode`).
 #[must_use]
 pub fn decode_kind(bytes: Option<Vec<u8>>) -> DocKind {
     let Some(b) = bytes else { return DocKind::Atom };
-    if b.len() < 2 {
+    if b.len() < 9 {
         return DocKind::Atom;
     }
-    match b.get(1) {
+    match b.first() {
         Some(&1) => DocKind::Scene,
         Some(&2) => DocKind::Persona,
         Some(&3) => DocKind::Skill,
@@ -150,7 +150,7 @@ pub fn created_of(bytes: Option<Vec<u8>>) -> u64 {
         return 0;
     }
     u64::from_le_bytes(
-        b.get(3..11)
+        b.get(1..9)
             .and_then(|s| s.try_into().ok())
             .unwrap_or([0; 8]),
     )
@@ -176,32 +176,32 @@ pub fn write_fact(
     importance: f32,
     now_ms: u64,
 ) -> pii_store::mem::PutRows {
+    let doc = Doc::new(Layer::L1, DocKind::Atom, text, concepts, importance, now_ms);
+    rows_for(&doc)
+}
+
+/// Builds the index rows for any doc, under its own `id` (the shared write path of [`write_fact`]
+/// and `pii skill edit`, which keeps a skill's id while it replaces the body).
+#[must_use]
+pub fn rows_for(doc: &Doc) -> pii_store::mem::PutRows {
     use crate::embed::Embedder as _;
-    let doc = Doc::new(
-        Layer::L1,
-        DocKind::Atom,
-        text,
-        concepts.clone(),
-        importance,
-        now_ms,
-    );
-    let toks = crate::tokenize(text);
+    let toks = crate::tokenize(&doc.text);
     let mut terms: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
     for t in &toks {
         *terms.entry(t.clone()).or_insert(0) += 1;
     }
     // Trigram vector (offline, dims 256) quantised to i8 + scale.
     let vec = crate::embed::TrigramEmbedder
-        .embed(&[String::from(text)])
+        .embed(std::slice::from_ref(&doc.text))
         .ok()
         .and_then(|vs| vs.first().cloned())
         .map(|v| crate::quant::quantise(&v));
     pii_store::mem::PutRows {
         id: doc.id.clone(),
-        doc: encode(&doc),
+        doc: encode(doc),
         terms: terms.into_iter().collect(),
         vector: vec,
-        edges: concepts.into_iter().map(|c| (c, 1u64)).collect(),
+        edges: doc.concepts.iter().map(|c| (c.clone(), 1u64)).collect(),
         dl: u32::try_from(toks.len()).unwrap_or(u32::MAX),
         layer: layer_byte(doc.layer),
     }
@@ -214,6 +214,16 @@ pub fn layer_byte(layer: Layer) -> u8 {
         Layer::L1 => 0,
         Layer::L2 => 1,
         Layer::L3 => 2,
+    }
+}
+
+/// Inverse of [`layer_byte`]; an unknown tag reads as L1 (the atom layer).
+#[must_use]
+pub fn layer_of_byte(tag: u8) -> Layer {
+    match tag {
+        1 => Layer::L2,
+        2 => Layer::L3,
+        _ => Layer::L1,
     }
 }
 

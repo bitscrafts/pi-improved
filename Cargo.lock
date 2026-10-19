@@ -1976,6 +1976,7 @@ dependencies = [
  "pii-uds",
  "pii-worker",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
 ]
