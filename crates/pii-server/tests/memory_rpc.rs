@@ -123,3 +123,41 @@ async fn memory_put_search_consolidate_round_trip() {
 
     client.shutdown();
 }
+
+/// Spec 205: the store, not a file beside it, knows what it holds. A put of text the store
+/// already has reports `unchanged: true` and the same id; a new text reports no `unchanged`.
+#[tokio::test]
+async fn a_put_of_text_the_store_already_holds_is_reported_unchanged() {
+    let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "memory-unchanged-")
+        .expect("tempdir");
+    let engine = engine_in(dir.path());
+    let stream = pii_server::engine::loopback::spawn_loopback(engine);
+    let (r, w) = tokio::io::split(stream);
+    let (client, _hello) = pii_proto::client::Client::connect(r, w, client_info())
+        .await
+        .expect("connect");
+    let text = "PII-SPEC 205 | status=no-row | the record is ingested by a verb";
+
+    let first = client
+        .call(Method::MemoryPut, serde_json::json!({"text": text}))
+        .await
+        .expect("first memory.put");
+    assert_ne!(
+        first.get("unchanged"),
+        Some(&serde_json::json!(true)),
+        "{first}"
+    );
+
+    let second = client
+        .call(Method::MemoryPut, serde_json::json!({"text": text}))
+        .await
+        .expect("second memory.put");
+    assert_eq!(
+        second.get("unchanged"),
+        Some(&serde_json::json!(true)),
+        "{second}"
+    );
+    assert_eq!(second.get("id"), first.get("id"));
+
+    client.shutdown();
+}

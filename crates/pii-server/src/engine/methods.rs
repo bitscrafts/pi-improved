@@ -282,10 +282,20 @@ pub(crate) fn memory_put(engine: &Arc<Engine>, req: &Request) -> Response {
     // G2.5/G2.8 (spec 09 v2): use the shared `write_fact` helper so the
     // vector lane gets real data (the old inline path wrote `vector: None`).
     let rows = write_fact(text, concepts, importance, now_ms);
-    match engine.memory.put(&rows) {
-        Ok(()) => value_response(req, Some(serde_json::json!({"id": rows.id})), |c, m| {
-            err(req, c, m)
-        }),
+    // Spec 205: a doc's id is the hash of its text, so a put the store already holds is reported
+    // as `unchanged` and not rewritten. The store is the ledger, not a file beside it.
+    let unchanged = matches!(engine.memory.doc(&rows.id), Ok(Some(_)));
+    let stored = if unchanged {
+        Ok(())
+    } else {
+        engine.memory.put(&rows)
+    };
+    match stored {
+        Ok(()) => value_response(
+            req,
+            Some(serde_json::json!({"id": rows.id, "unchanged": unchanged})),
+            |c, m| err(req, c, m),
+        ),
         Err(e) => err_code(|c, m| err(req, c, m), &e),
     }
 }
