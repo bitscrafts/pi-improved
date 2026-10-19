@@ -19,6 +19,9 @@ use pii_core::Ctx;
 
 use crate::Channel;
 
+mod pace;
+use pace::Pacer;
+
 /// Longest error text the hub passes on (a provider body can be large).
 pub const MAX_ERROR_BYTES: usize = 600;
 /// Idempotence keys remembered before the oldest is forgotten.
@@ -97,6 +100,8 @@ impl KeyLog {
 pub struct ChannelHub {
     slots: Mutex<BTreeMap<String, Slot>>,
     keys: Mutex<KeyLog>,
+    /// Not-before instants from providers' `retry_after` (spec 195).
+    paced_until: Pacer,
     posted: AtomicU64,
     refused: AtomicU64,
 }
@@ -170,6 +175,13 @@ impl ChannelHub {
         {
             return Ok(PostOutcome::Duplicate);
         }
+        if let Some(ms) = self.paced_until.remaining_ms(req.channel) {
+            self.release(key.as_deref());
+            return Err(PiiError::Unavailable(format!(
+                "channel {}: paced by the provider for {ms} ms",
+                req.channel
+            )));
+        }
         let (to, text) = (req.to.to_owned(), req.text.to_owned());
         let tag = req.tag.map(str::to_owned);
         let (tx, rx) = std::sync::mpsc::channel();
@@ -183,8 +195,12 @@ impl ChannelHub {
             return Err(PiiError::Internal(format!("post: cannot start send: {e}")));
         }
         match rx.recv_timeout(Duration::from_millis(req.timeout_ms)) {
-            Ok(Ok(())) => Ok(PostOutcome::Posted),
+            Ok(Ok(())) => {
+                self.paced_until.observe(req.channel, Ok(()));
+                Ok(PostOutcome::Posted)
+            }
             Ok(Err(e)) => {
+                self.paced_until.observe(req.channel, Err(&e));
                 // A definite failure: nothing was delivered, so the retry may post.
                 self.release(key.as_deref());
                 Err(bound_error(e))
