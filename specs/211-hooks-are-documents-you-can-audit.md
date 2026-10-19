@@ -64,3 +64,14 @@ disabled silently, or that runs on an event nobody enforces, is a hook of no use
 
 ## Depends on
 - 210 (the same list/show/explain/edit surface, plus the pin verification helper) — the two share one audit path.
+
+## Implementation shape (added 2026-10-19 after the design question)
+Hooks are **woven into the graph at load time as nodes**, not dispatched through an event bus — the `sop` node kind (spec 113)
+already proves the weaving pattern exists in this codebase. Concretely:
+- `node.before` → a gate-shaped node on the incoming edge (its `err` port is the block)
+- `node.after` → an observe node on the outgoing edge (cannot block, by construction rather than by validation)
+- `run.start` / `run.end` → the first and last nodes of the run
+- `gate.refuse` → handled on the gate's own `err` port
+
+`graph check` MUST print every woven node with its origin `woven-from: hook/<id>`, or the graph stops being the truth. A hook
+whose pin drifted fails at LOAD, not at fire.

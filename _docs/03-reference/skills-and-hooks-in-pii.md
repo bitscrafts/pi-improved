@@ -101,3 +101,52 @@ and the coder node (inside podman, per spec 209) is the only thing allowed to ru
 ### 7.4 The rule in one sentence
 > A skill may EMBED text (instructions, templates, snippets) and may REFERENCE scripts; it may never be the place a script is
 > executed from, and every referenced script carries a sha256 pin verified before it runs.
+
+## 8. Hooks as nodes, skills as subgraphs (user question, 2026-10-19)
+
+### 8.1 A hook SHOULD be a node — a woven one, not an event bus
+pii already contains the mechanism: the `sop` node kind (spec 113) exists to "weave the bookkeeping nodes around each step".
+That is a hook implemented as nodes, and it is strictly better than an event listener because:
+
+| property | woven node | event bus |
+|---|---|---|
+| visible in the graph | yes — `graph check` shows it | no — implicit |
+| can block | yes, a pre-node with an `err` port | only if the runtime enforces it |
+| journalled | yes, its own start/finish | only if code remembers to emit |
+| refuses loudly | yes, at load time | at fire time, if at all |
+
+**Recommendation:** a hook is a DOCUMENT (config: event, mode, pin — spec 211) that the loader WEAVES into the graph as a
+node at the named surface, at load time. `node.before` becomes a gate-shaped node on the incoming edge; `node.after` becomes
+an observe node on the outgoing edge; `run.start`/`run.end` become the first and last nodes. The `gate.refuse` surface is the
+`err` port of an existing gate.
+
+Consequences, all good: hooks inherit the journal, the ports, the capability scope and `--network none` for free; a hook whose
+pin drifted fails at LOAD (before anything runs) instead of vanishing at fire; and "which hooks run on this node" is answered
+by reading the graph, not by reading a config file nobody audits.
+
+The cost: weaving changes the graph the operator wrote, so `graph check` must PRINT the woven nodes and their origin
+(`woven-from: hook/<id>`), or the graph stops being the truth.
+
+### 8.2 A skill SHOULD be able to BE a subgraph
+The podman skill's heal ladder — probe → inspect → act → verify → clean — is already a graph, not a paragraph. So a skill has
+two possible bodies:
+
+- **prose + snippets** (today): instructions a coder node reads and follows. Cheap, flexible, unverifiable in structure.
+- **a subgraph** (new): a `.toml` in the repo, pinned by sha256 in the skill body exactly like a script, instantiated by a
+  `subgraph`/`graph` node with the skill's inputs. Then "explain the skill" can print the STEPS, and "use the skill" runs a
+  graph whose nodes are journalled and gated.
+
+**Recommendation:** keep `DocKind::Skill` as the selection + explanation surface, and let its body pin EITHER a script OR a
+subgraph file. Same rule as §7: memory holds the meaning and the hash, the repo holds the bytes, the coder/subgraph node runs
+them.
+
+### 8.3 The one thing neither may become
+A second scheduler. A hook woven into a graph is still executed by pii's scheduler; a skill that is a subgraph is still one run
+with one budget. The moment a skill or hook acquires its own timer and its own store, this project relives 2026-10-17: one cron
+entry, four armed copies, 1,846 runs at one occurrence.
+
+### 8.4 What this changes in the queued specs
+- **211 (hooks)**: the event names stay as the DECLARATION surface, but the implementation shape is weaving into the graph at
+  load time, with `graph check` printing every woven node and its `woven-from: hook/<id>` origin.
+- **210 (skills)**: `explain` gains one line — `body: prose` or `body: subgraph <path> sha256=…` — so the reader knows whether
+  the skill describes work or RUNS work.
