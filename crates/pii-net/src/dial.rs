@@ -59,6 +59,10 @@ pub fn dial_tls(
     let config = CONFIG.get_or_init(|| {
         let mut roots = RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        #[cfg(feature = "testing")]
+        for der in extra_roots().lock().iter() {
+            let _ = roots.add(der.clone());
+        }
         Arc::new(
             ClientConfig::builder()
                 .with_root_certificates(roots)
@@ -70,6 +74,22 @@ pub fn dial_tls(
     let conn = ClientConnection::new(Arc::clone(config), name)
         .map_err(|e| PiiError::Unavailable(format!("net: tls handshake setup: {e}")))?;
     Ok(StreamOwned::new(conn, stream))
+}
+
+#[cfg(feature = "testing")]
+fn extra_roots() -> &'static parking_lot::Mutex<Vec<rustls::pki_types::CertificateDer<'static>>> {
+    static ROOTS: parking_lot::Mutex<Vec<rustls::pki_types::CertificateDer<'static>>> =
+        parking_lot::Mutex::new(Vec::new());
+    &ROOTS
+}
+
+/// Test seam (feature `testing`): trusts one extra root for `dial_tls`.
+///
+/// Adds a trust anchor only — verification stays ON. Call it before the
+/// first `dial_tls` of the process (the config is cached).
+#[cfg(feature = "testing")]
+pub fn trust_test_root(der: rustls::pki_types::CertificateDer<'static>) {
+    extra_roots().lock().push(der);
 }
 
 /// Milliseconds remaining before the shared deadline (§4.3.4).

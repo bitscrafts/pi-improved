@@ -201,19 +201,31 @@ pub(crate) fn terminal_determination(
                 .is_some_and(|e| e.kind == EdgeKind::Data && e.port == f.port)
         });
         if !has_out {
-            return Terminal::Success {
-                output: f.value.clone(),
-            };
+            return success_or_carried_error(f);
         }
     }
     if let Some(last) = fin.last() {
-        return Terminal::Success {
-            output: last.value.clone(),
-        };
+        return success_or_carried_error(last);
     }
     Terminal::Success {
         output: serde_json::Value::Null,
     }
+}
+
+/// A success terminal must not carry an error (spec 191): a final node that
+/// left on a non-`ok` port with an `error` in its value failed the run.
+fn success_or_carried_error(f: &FinishedNode) -> Terminal {
+    let carried = f
+        .value
+        .get("error")
+        .filter(|_| f.port.as_str() != "ok")
+        .map(|e| e.as_str().map_or_else(|| e.to_string(), str::to_owned));
+    carried.map_or_else(
+        || Terminal::Success {
+            output: f.value.clone(),
+        },
+        |error| Terminal::Failure { error },
+    )
 }
 
 pub(crate) fn terminal_status(terminal: &Terminal) -> RunStatus {

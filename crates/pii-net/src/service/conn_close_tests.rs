@@ -1,8 +1,17 @@
 //! Unit-level control (inside pii-net, where `Conn` is constructible):
-//! a rustls server sends a COMPLETE response then drops WITHOUT close_notify;
+//! a rustls server sends a COMPLETE response then drops WITHOUT `close_notify`;
 //! `Conn::read` itself — the production read — must turn that close into
 //! end-of-stream (`Ok(0)`), and a close before any byte must stay an error.
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    // reason: the test serves its own loopback peer; grants do not apply to
+    // the test's own listener, as in tests/budget_window.rs.
+    clippy::disallowed_methods
+)]
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
@@ -11,8 +20,6 @@ use std::thread;
 
 use crate::SystemClock;
 use crate::clock::Clock as _;
-use crate::grant::GrantStore as _;
-use crate::resolve::Resolver as _;
 use pii_abi::PiiError;
 
 use super::conn::{Conn, Stream};
@@ -94,22 +101,17 @@ fn client_conn(server: std::net::TcpStream) -> Conn {
     }
 }
 
-fn serving() -> (std::thread::JoinHandle<()>, TcpListener) {
+fn serving() -> (thread::JoinHandle<()>, TcpListener) {
     let l = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let h = serve_abrupt_tlsTcp(l.try_clone().expect("clone"));
+    let h = serve_abrupt_tls(l.try_clone().expect("clone"));
     (h, l)
-}
-
-fn serve_abrupt_tlsTcp(l: TcpListener) -> thread::JoinHandle<()> {
-    serve_abrupt_tls(l)
 }
 
 fn serve_abrupt_tls(l: TcpListener) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let Ok((s, _)) = l.accept() else { return };
-        let cert = match rcgen::generate_simple_self_signed(vec!["localhost".into()]) {
-            Ok(c) => c,
-            Err(_) => return,
+        let Ok(cert) = rcgen::generate_simple_self_signed(vec!["localhost".into()]) else {
+            return;
         };
         let der = cert.cert.der().clone();
         let ckey = cert.signing_key.serialize_der();
@@ -128,13 +130,12 @@ fn serve_abrupt_tls(l: TcpListener) -> thread::JoinHandle<()> {
         let mut got = false;
         for _ in 0..50 {
             match tls.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") => {
+                Ok(n) if n > 0 && buf[..n].windows(4).any(|w| w == b"\r\n\r\n") => {
                     got = true;
                     break;
                 }
-                Ok(_) => continue,
-                Err(_) => break,
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
             }
         }
         if !got {
@@ -161,8 +162,8 @@ fn client_ready(port: u16) -> Conn {
 
 #[test]
 fn conn_read_maps_an_abrupt_tls_close_after_a_full_answer_to_end_of_stream() {
-    let (srv, _l) = serving();
-    let port = _l.local_addr().expect("p").port();
+    let (srv, l) = serving();
+    let port = l.local_addr().expect("p").port();
     let mut conn = client_ready(port);
     // write the request head through the PRODUCTION write path
     conn.write_all(b"POST /v1/chat/completions HTTP/1.1\r\nHost: localhost\r\n\r\n")
