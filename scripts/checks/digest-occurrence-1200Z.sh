@@ -57,9 +57,13 @@ say ''
 say "after: posted=$D_POSTED post_refused=$D_REFUSED armed=$D_ARMED"
 
 # --- the verdict, computed from the run lists (set arithmetic, not counters) ---
-python3 - "$OUT" "$A_RUNS" "$A_POSTED" "$A_REFUSED" "$A_ARMED" "$D_POSTED" "$D_REFUSED" "$D_ARMED" <<'PY' >> "$OUT"
+# The run list is ~270 KB of JSON: passing it as one argv exceeded ARG_MAX on 2026-10-19 and the verdict step
+# died with "Argument list too long" while every snapshot was already on disk. Hand it over as a file.
+printf '%s' "$A_RUNS" > "$OUT.runsA.json"
+python3 - "$OUT" "$OUT.runsA.json" "$A_POSTED" "$A_REFUSED" "$A_ARMED" "$D_POSTED" "$D_REFUSED" "$D_ARMED" <<'PY' >> "$OUT"
 import json, sys
-out, before = sys.argv[1], sys.argv[2]
+out = sys.argv[1]
+before = open(sys.argv[2]).read()
 posted0, ref0, armed0, posted1, ref1, armed1 = sys.argv[3:]
 
 def rows(raw):
@@ -102,23 +106,28 @@ def tally(label):
     term = {k: v for k, v in new.items() if v in ("succeeded", "failed")}
     susp = {k: v for k, v in new.items() if v == "suspended"}
     run = {k: v for k, v in new.items() if v == "running"}
-    return new, term, susp, run
+    # A FIRED run does not appear as a new row: the store updates the armed run IN PLACE when its timer fires
+    # (measured 2026-10-19: r000000004353 suspended at 11:59 -> succeeded at 12:01, same row). So "fired" is a
+    # STATUS TRANSITION out of suspended, and the only legitimately new row is the next occurrence's re-arm.
+    fired = {k: v for k, v in seen[label].items() if v in ("succeeded", "failed") and base.get(k) == "suspended"}
+    return new, term, susp, run, fired
 
 for label in ("B", "C", "D"):
-    new, term, susp, running = tally(label)
-    print(f"\n{label}: new rows={len(new)} terminal={len(term)} suspended(re-arm)={len(susp)} running={len(running)}")
+    new, term, susp, running, fired = tally(label)
+    print(f"\n{label}: fired={sorted(fired)} new rows={len(new)} terminal={len(term)} suspended(re-arm)={len(susp)} running={len(running)}")
     for k, v in sorted(new.items()):
         print(f"  {k}  {v}")
 
-b_new, b_term, b_susp, b_run = tally("B")
-d_new, d_term, d_susp, d_run = tally("D")
+b_new, b_term, b_susp, b_run, b_fired = tally("B")
+d_new, d_term, d_susp, d_run, d_fired = tally("D")
+c_fired, c_term = tally("C")[4], tally("C")[1]
 print(f"\nstore counters: posted {posted0} -> {posted1} (delta {int(posted1 or 0) - int(posted0 or 0)}); "
       f"post_refused {ref0} -> {ref1} (delta {int(ref1 or 0) - int(ref0 or 0)}); armed {armed0} -> {armed1}")
 
 checks = {
-    "exactly one digest run FIRED (terminal rows == 1)": len(b_term) == 1,
-    "no second run appeared by +6 min": len(tally("C")[1]) == 1,
-    "no second run appeared by +16 min": len(d_term) == 1,
+    "exactly one digest run FIRED (one transition out of suspended)": len(b_fired) == 1,
+    "no second run appeared by +6 min": len(c_fired) == 1 and len(c_term) == 0,
+    "no second run appeared by +16 min": len(d_fired) == 1 and len(d_term) == 0,
     "armed count unchanged at 1": str(armed1) == "1",
     "exactly one new post (posted +1)": int(posted1 or 0) - int(posted0 or 0) == 1,
     "no refused post (post_refused +0)": int(ref1 or 0) - int(ref0 or 0) == 0,
