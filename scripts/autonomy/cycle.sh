@@ -206,6 +206,16 @@ else
     echo "OUTCOME=parked-attempt-cap ITEM=$ITEM"; exit 11
   fi
   say "dispatching spec number $N"
+  # REVIEW ROWS (user directive 2026-10-19: "an opus analysis must also be put in the queue, positioned before the items
+  # that matter"). A row whose spec is specs/review-* is dispatched to the opus reviewer in plan mode, never to a coder.
+  case "$SPEC" in
+    specs/review-*)
+      say "review row: dispatching the reviewer for $SPEC"
+      ( bash scripts/autonomy/review-row.sh "$N" ) >>"$LOG" 2>&1
+      RC=$?
+      say "reviewer rc=$RC"
+      ;;
+    *)
   # WORKER SELECTION (user directive 2026-10-19: "dont implement it as the anthropic quota will exaust").
   # PII_WORKER=pi (default) dispatches to ollama-cloud through scripts/run-batchC-pi.sh — the Claude account is untouched.
   # PII_WORKER=claude is the opt-in escalation, and only when the window is known open.
@@ -214,6 +224,8 @@ else
   else
     ( ALLOW_DIRTY=1 bash scripts/run-batchC-pi.sh "$N" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
   fi
+      ;;
+  esac
   WRC=$?
   NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
   say "worker rc=$WRC session=${NEWSID:-none}"
