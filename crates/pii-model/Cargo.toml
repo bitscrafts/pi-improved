@@ -25,6 +25,8 @@ llamacpp = ["dep:llama-cpp-2"]
 tempfile = { workspace = true }
 parking_lot = { workspace = true }
 pii-net = { path = "../pii-net", features = ["testing"] }
+rcgen = "0.14.10"
+rustls = { version = "0.23.44", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 
 [lints]
 workspace = true

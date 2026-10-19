@@ -2104,6 +2104,8 @@ dependencies = [
  "pii-core",
  "pii-net",
  "pii-observe",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "tempfile",
