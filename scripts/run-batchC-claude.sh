@@ -71,6 +71,8 @@ background processes, no /loop, no scheduling. If budget runs out mid-work, writ
 COMPLETE handoff envelope (done/remaining/next-start) to $LOGD/HANDOFF-$TAG.md and stop
 honestly — never compress the work to fake completion. Final line: SPEC-DONE $N criteria=<p>/<t> with every criterion command + exit code listed.
 EOF
+CLAUDE_BIN="$(command -v claude || echo /root/.local/bin/claude)"
+export PATH="/root/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 [ -n "$EXTRA_BRIEF" ] && { printf '\n\n' >> "$BRIEF"; cat "$EXTRA_BRIEF" >> "$BRIEF"; }
 RESUME_ARGS=()
 if [ -n "$RESUME_SID" ]; then RESUME_ARGS=(--resume "$RESUME_SID"); echo "== RESUMING session $RESUME_SID"; fi
@@ -78,7 +80,9 @@ if [ -n "$RESUME_SID" ]; then RESUME_ARGS=(--resume "$RESUME_SID"); echo "== RES
 # a worker cut by a session limit left NO session id behind and the retry re-derived everything it had already paid for.
 # The id is present in the stream from the first event, so it is written the moment it appears — before the worker finishes,
 # and therefore before anything can kill it.
-stdbuf -oL -eL claude "${RESUME_ARGS[@]}" -p "$(cat "$BRIEF")" \
+CLAUDE_BIN="$(command -v claude || echo /root/.local/bin/claude)"
+export PATH="/root/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+stdbuf -oL -eL "$CLAUDE_BIN" "${RESUME_ARGS[@]}" -p "$(cat "$BRIEF")" \
   --permission-mode bypassPermissions --model "${CLAUDE_MODEL:-sonnet}" \
   --output-format stream-json --verbose --include-partial-messages \
   --disallowedTools 'Edit(specs/**) Write(specs/**)' \
