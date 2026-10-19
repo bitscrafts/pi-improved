@@ -245,6 +245,19 @@ pub fn run(args: &[String]) -> Result<(), String> {
     }
     let opts = parse(args)?;
     let root = workspace_root();
+    // The runner must never again export out of its own corpse: a cached xtask
+    // once carried a dead export's manifest dir as the root (measured 2026-10-19:
+    // `git archive` refused with `cannot change to /projects/_tmp/fresh-gate-*`),
+    // so refuse loudly here, before anything is created, when the resolved root
+    // holds no .git. A message naming the root keeps the cause diagnosable.
+    if !root.join(".git").is_dir() {
+        return Err(format!(
+            "fresh-gate refused: workspace root {} holds no .git — this binary was \
+             probably built inside an export; rebuild xtask from the repo before running \
+             fresh-gate",
+            root.display()
+        ));
+    }
     let base = PathBuf::from(BASE);
     let dir = base.join(format!("{PREFIX}{}", std::process::id()));
     std::fs::create_dir_all(&base).map_err(|e| format!("mkdir {BASE}: {e}"))?;
