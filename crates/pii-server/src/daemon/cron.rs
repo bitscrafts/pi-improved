@@ -22,6 +22,16 @@ pub(super) fn start_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, e: &Cro
             ctx.cron_runs
                 .lock()
                 .insert(run_id.to_string(), e.name.clone());
+            engine.log().event(
+                &pii_observe::Event::new(
+                    "cron",
+                    pii_observe::Level::Info,
+                    pii_observe::names::CRON_FIRED,
+                )
+                .field("cron", e.name.as_str())
+                .field("graph", e.graph.as_str())
+                .field("run", run_id.to_string()),
+            );
         }
         Err(err) => engine.log().event(
             &pii_observe::Event::new(

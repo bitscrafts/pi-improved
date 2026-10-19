@@ -271,3 +271,31 @@ fn a_cron_entry_that_cannot_start_is_reported() {
     assert_eq!(ev.len(), 1, "{:?}", log.events());
     assert!(d.ctx.cron_runs.lock().is_empty());
 }
+
+/// Spec 193: a started cron entry is one `cron.fired` naming the entry and the run, and no refusal.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_started_cron_entry_is_one_firing() {
+    let dir = scratch("logw-cron-fired");
+    std::fs::create_dir_all(dir.path().join("graphs")).unwrap();
+    let tick = "name = \"tick\"\nentry = \"t\"\n\n[[node]]\nid = \"t\"\nkind = \"timer\"\nin_ms = 3600000\n";
+    std::fs::write(dir.path().join("graphs/tick.toml"), tick).unwrap();
+    let cfg = "[[cron]]\nname = \"nightly\"\ngraph = \"tick\"\n";
+    let (d, log) = daemon_with_log(dir.path(), cfg);
+    d.start_cron_entries();
+    let ev = log.events_named(names::CRON_FIRED);
+    assert_eq!(ev.len(), 1, "{:?}", log.events());
+    assert_eq!(
+        ev[0].fields.get("cron"),
+        Some(&serde_json::json!("nightly"))
+    );
+    let run = d
+        .ctx
+        .cron_runs
+        .lock()
+        .keys()
+        .next()
+        .cloned()
+        .expect("a tracked run");
+    assert_eq!(ev[0].fields.get("run"), Some(&serde_json::json!(run)));
+    assert!(log.events_named(names::CRON_START_REFUSED).is_empty());
+}

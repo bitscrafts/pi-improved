@@ -90,6 +90,8 @@ pub const CLI_FAILURE: &str = "cli.failure";
 pub const CRON_START_REFUSED: &str = "cron.start.refused";
 /// Event: a start found a suspended run already armed for a cron entry and kept it (`cron`, `graph`, `run`; spec 187).
 pub const CRON_REARMED: &str = "cron.rearmed";
+/// Event: a cron entry started a run (`cron`, `graph`, `run`; spec 193).
+pub const CRON_FIRED: &str = "cron.fired";
 /// Event: a channel message was received but its run could not be started (`channel`, `graph`, `error`; spec 177).
 pub const CHANNEL_RUN_REFUSED: &str = "channel.run.refused";
 /// Event: a channel poll failed.
@@ -393,6 +395,7 @@ pub const ALL: &[&str] = &[
     MEMORY_ARCHIVE_REFUSED,
     MEMORY_RESTORED,
     CLI_FAILURE,
+    CRON_FIRED,
     CHANNEL_POLL_FAILED,
     CHANNEL_SEND_FAILED,
     CHANNEL_AUTH_REJECTED,

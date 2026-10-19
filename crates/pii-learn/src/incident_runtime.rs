@@ -5,11 +5,12 @@
 //! builder-loop reader of spec 150, selected explicitly; no model, and the log
 //! is only ever read: the file is read whole into memory, nothing is written.
 //!
-//! Four anomalies open an incident: an unexpected restart (`daemon.started`
+//! Five anomalies open an incident: an unexpected restart (`daemon.started`
 //! with no `daemon.stopped` since the last one), a start that did not reach
 //! ready (a start marker not followed by `daemon.started`), a run with no
 //! terminal event whose last record is older than the window at the log's end,
-//! and one refusal repeated `threshold` times inside the window.
+//! one refusal repeated `threshold` times inside the window, and one cron
+//! firing repeated inside the window (spec 193).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -160,6 +161,7 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
     let mut out = Vec::new();
     let mut runs: BTreeMap<String, Run> = BTreeMap::new();
     let mut refusals: BTreeMap<&'static str, Vec<i64>> = BTreeMap::new();
+    let mut firings: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     let mut log_end = i64::MIN;
     let mut starting: Option<i64> = None;
     let mut running: Option<i64> = None;
@@ -194,6 +196,10 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
             starting = None;
         } else if let Some(r) = REFUSALS.iter().find(|r| **r == kind) {
             refusals.entry(r).or_default().push(ts);
+        } else if kind == pii_observe::names::CRON_FIRED
+            && let Some(cron) = cron_of(line)
+        {
+            firings.entry(cron).or_default().push(ts);
         }
         if let Some(id) = run {
             let r = runs.entry(id).or_insert(Run {
@@ -237,6 +243,22 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
             ));
         }
     }
+    // Spec 193: the assertion is `runs_per_occurrence == 1`, so a second firing in a window is the defect.
+    let twice = IncidentConfig {
+        threshold: 2,
+        ..cfg.clone()
+    };
+    for (cron, ts) in firings {
+        for (first, last, n, opened) in clusters(ts, &twice) {
+            out.push(mk(
+                format!("cron-occurrence-multiplied:{cron}"),
+                n,
+                first,
+                last,
+                opened,
+            ));
+        }
+    }
     out.sort_by(|a, b| (a.opened_at, &a.fingerprint).cmp(&(b.opened_at, &b.fingerprint)));
     Ok(RuntimeScan {
         incidents: out,
@@ -269,6 +291,13 @@ fn clusters(mut ts: Vec<i64>, cfg: &IncidentConfig) -> Vec<(i64, i64, u64, i64)>
         cluster.extend(t);
     }
     out
+}
+
+/// The `cron` field of one log line, if it names one.
+fn cron_of(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let f = v.get("fields")?.get("cron")?.as_str()?;
+    Some(f.to_owned())
 }
 
 /// `(kind, unix milliseconds, run id)` of one log line; `None` if it is not an event.
