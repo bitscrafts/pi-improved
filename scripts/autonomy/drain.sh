@@ -17,6 +17,11 @@
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 . scripts/autonomy/env.sh 2>/dev/null
+# THE WORKER IS DECLARED HERE, so the scheduled dispatcher is self-sufficient (user, 2026-10-19: "it should be automatic").
+# claude + haiku is the implementation workhorse; a closed window makes cycle.sh return OUTCOME=window-closed and the NEXT
+# firing of this dispatcher resumes automatically once the reset has passed — no hand-made one-shot needed.
+export PII_WORKER="${PII_WORKER:-claude}"
+export CLAUDE_MODEL="${CLAUDE_MODEL:-claude-haiku-5-5}"
 MAX=${MAX_CYCLES:-8}
 QUIET=${PII_DRAIN_QUIET:-0}
 ST=_tmp/autonomy/control
