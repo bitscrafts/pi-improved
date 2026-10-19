@@ -1555,3 +1555,26 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
   and its idle-host control as exit criteria, then re-queue A22 and A27 (their sessions on disk are the resume
   handles — do not re-derive). Disk is still the wall behind A22's criterion 5: `/projects` 95% used.
 
+
+## 2026-10-19 (15:30Z-c19:20Z, overnight cron) — the first completed full fresh-gate PASS, three latent reds landed, one install regression reverted
+
+- The gate story that stood at 15:11Z is corrected: the "green rerun keeps its log" claim (0841daf)
+  pointed at a log that does not exist; the surviving 13:15Z/13:25Z logs end mid-heartbeat with no
+  verdict, so NO completed full fresh-gate PASS existed on disk before tonight. The 15:30Z "ALL
+  PASS" was a quick-list run (3 steps). Measured by reading the logs, not the claims.
+- Tonight's full boundary (GATE_STEPS=gate-steps.txt, --fresh) found and landed three latent reds
+  that fail-fast had been hiding: status_latency's one-turn scripted fixture (red at HEAD all
+  along; 306001d), the protected-path scanner stale site (bc79e2f), the export-rebuilds-runner's-
+  cache defect that made a later gate die at `git archive` (1f7edb9). First completed 13/13 ALL
+  PASS: gate-fresh-20261019-1815Z-full.log (bc79e2f), re-confirmed on 1f7edb9
+  (gate-fresh-20261019-1900Z-confirm.log). Docs truth-passed in the matrix/results files.
+- The deploy's install regression was measured from the aside dir (openai:glm-5.3-flash ->
+  template granite), fixed RED-first in the dry-run, and carried forward by install-pii.sh
+  (4d54970); the live config was restored by hand and the daemon restarted 16:04:26Z with
+  `openai` in_force and the PONG bar re-met (r000000004449). E4's harness was measuring the
+  daemon's socket, not the injected host — corrected with a control arm (3a9a307).
+- Exercises re-run (187/E2/E3/E8/E9/E10/196 fresh, all PASS; E4 PASS on the corrected harness;
+  E1 deliberately not re-killed; E5/E6 stand at their 15:00Z/15:10Z live closures). Pair 1=1
+  (r000000004356, 12:00Z 2026-10-20 tick verified) after every change.
+- NOT deployed: everything from 306001d on. The next install card can quote mode=fresh with a
+  surviving log — the first time that sentence is honest.

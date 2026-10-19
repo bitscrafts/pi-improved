@@ -282,3 +282,81 @@ the acceptance is LIVE-proved; E6 (send pacing) has its A/B proof from 14:4x and
 429-on-send window, which only Discord can supply.
 
 Pair after reading (15:02Z): suspended = 1 (r000000004356) = cron_entries 1; no duplicate ever appeared.
+
+## The 15:30–17:45Z pass — the gate story corrected at its root, three latent reds landed, and every exercise re-run (overnight cron)
+
+What this pass found, and the order it found it in, is itself the finding: the matrix's step-4 claim
+("gate re-measured ALL PASS on d27abfd with the log PRESERVED at gate-fresh-20261019-d27abfd.log")
+was wrong in both halves. No file of that name exists; every surviving log is timestamped, and the
+two that predate 13:33Z end mid-heartbeat (killed during test compilation, no verdict lines), while
+13:33Z/14:47Z read FAILED. **No completed full fresh-gate PASS existed on disk before tonight.**
+The green claims after 14:47Z were quick-list runs (env.sh defaults GATE_STEPS to
+gate-steps-quick.txt — fmt/clippy/build only), one of which I initially read as a boundary PASS
+because its verdict said "fresh-gate: PASS" while its log header said mode=routine and it ran
+exactly 3 steps in 37 s. Suspecting the check first, three times, cost the pass its shape.
+
+1. **status_latency was red at HEAD all along** (not an export artifact — reproduced in the repo
+   tree): its five model-calling runs share ONE engine and the scripted provider hands out turn n
+   on call n from one counter, so the one-turn hello.json left runs 2–5 failing with "scripted
+   provider exhausted" (measured run-by-run: r1 succeeded, r2–r5 failed). It had never been
+   *observed* red because cargo's fail-fast test order stopped at earlier failing binaries, and no
+   full gate run completed. Fix: the test writes a six-turn fixture beside its scratch
+   (306001d). Shared hello.json untouched — a dozen tests depend on its single turn.
+2. **The protected-path scanner named a file the wiring had left** (xtask
+   real_protected_paths_are_wired UNWIRED on engine/runs.rs): 420fe8a moved the run-scope helpers
+   to run_scope.rs and carried PROTECTED_RELATIVE_PATHS enforcement along without updating the
+   scanner's site list. Surfaced only after (1) stopped blocking the fail-fast order. Fix: the
+   scan names the module that holds the wiring (bc79e2f).
+3. **The fresh gate could poison its own runner cache**: inside the export, the eight tools steps
+   ran bare `cargo run -p xtask` with no target pinning, rebuilding the export-stamped xtask over
+   the warm debug slot the OUTER runner executes from; once that stamp was a dead export, the next
+   runner's `git archive` refused with "cannot change to /projects/_tmp/fresh-gate-3219884" —
+   reproduced twice. Fix: the tools steps pin their own CARGO_TARGET_DIR and the export refuses a
+   non-git root (1f7edb9), so the stale stamp cannot reach the export's archive.
+4. **E4's harness was measuring the wrong live path**: a bare `pii -p` prefers the daemon's UDS
+   socket (cmd_oneshot.rs:143–152, F5.6), so the scratch dead-host PII_CONFIG was never read and
+   the "PASS" ran against the daemon's own provider (measured: a dummy listener on the injected
+   port saw zero dials; the acceptance only met with `--connect loopback`). The harness now drives
+   the engine it tests and carries a control arm over the real host that must succeed for the
+   verdict to mean anything (3a9a307).
+5. **The 14:34Z install regressed the operator's model**: pre-deploy aside config said
+   `openai:glm-5.3-flash` (+ operator comment); the re-install wrote the template default
+   `llamacpp-server:granite-4.2-3b` — the digest-hour class again (49f29f7), on a different key.
+   RED first in the dry-run ("re-install regressed the operator's model"), then the installer
+   carries the replaced config's model forward with a provenance comment (4d54970), and the live
+   config was restored by hand + daemon restarted 16:04:26Z (openai in_force at
+   ts 1792424280883; PONG bar re-met r000000004449 before and r000000004450-class after).
+
+**The release boundary is now honestly green**: `GATE_STEPS=gate-steps.txt bash quality-gate.sh
+--fresh` → ALL PASS, 13/13 steps, first completed full fresh-gate PASS log on disk at
+`_tmp/autonomy/gate-fresh-20261019-1815Z-full.log` (HEAD bc79e2f, export 3268559), and CONFIRMED
+again after the last commit at `_tmp/autonomy/gate-fresh-20261019-1900Z-confirm.log` (HEAD 1f7edb9,
+export 3311497, GATE_RC=0; coverage-floor loudly SKIPPED inside the export per its own preamble —
+the repo gate enforces the floor and the skip is the record). HEAD carrying 3a9a307 differs from
+the confirmed HEAD only by that exercise script (no product code).
+
+Exercise re-runs on tonight's tree/daemon (rule of the exercises held — inject and observe only):
+
+| id | injected | pii did by itself | verdict | evidence |
+|----|----------|-------------------|---------|----------|
+| E1 | not re-killed (deliberate: 070 §3 start count; twice today is enough) | — | stands at its 12:49Z PASS | matrix |
+| 187 | four hard kills on a scratch daemon | armed held 1 at every start; "187 HOLDS — four starts, one armed run" | PASS | /projects/_tmp/exercise187-SQxODF |
+| E2 | graphs dir missing (scratch) | `daemon.graphs_fallback` + run started (1) | PASS | /projects/_tmp/exe2-6cf0rm |
+| E3 | broken cron graph (scratch) | `cron.start.refused` naming `no-such-graph`, daemon stayed up | PASS | /projects/_tmp/exe3-jNmORK |
+| E8 | memory put with nonce cron-oct19-1792425852-quartz (LIVE daemon) | top hit doc cca7cf666a815efe59d8ea6c6f8a969c, lanes bm25+vector, degraded:false | PASS | /projects/pi-improved/_tmp/e8c-search.json |
+| E9 | store file lock held by a foreign process (scratch) | `cli.failure` naming the store: "Database already open. Cannot acquire lock."; up=0 | PASS | /projects/_tmp/ex19e9-WdiRVP |
+| E10 | timer-node cron two minutes ahead (scratch) | one terminal + one re-arm at +86400000 ms exactly; rows=2 through +115 s | PASS | /projects/_tmp/ex19e10-R2UugM |
+| 196 | arm, cancel, drop the cron, wait past the instant (scratch) | 0 executed, 0 posts, 2 failed-without-executing | PASS | /projects/_tmp/ex196-voojHx |
+| E4 | dead llama host via scratch PII_CONFIG + --connect loopback, with a control arm | refusal `unavailable: net: no address reachable for 127.0.0.1` in <1 s (rc 1); control PONGed 3 lines over the real host | PASS (harness corrected) | /projects/_tmp/ex19e4-* |
+| E5/E6 | not re-injected; real 429 window already measured at 15:00Z on 420fe8a7e946 | — | stand CLOSED | matrix, § 15:10Z |
+
+PAIR — after every change (model restore + restart, PONG runs, memory put/search, each scratch
+exercise, each commit): `run ls --status suspended` length = 1 = cron_entries 1, run
+r000000004356 armed for 12:00:00Z 2026-10-20. No duplicate ever appeared; nothing cancelled.
+
+Still not "production ready", unchanged in kind: 070 §1 step 2's next occurrence is 2026-10-20
+12:00Z (step-2's first pass on the *current* deployed binary 420fe8a7e946 stands from today's
+12:16Z); step 6's seven-day soak can start only from the NEXT deploy carrying 306001d/bc79e2f/
+1f7edb9/4d54970 — none of which are in the deployed binary; the deployed binary was built from a
+tree whose full fresh gate was, by the evidence above, never completed green. The gate is green
+NOW on HEAD; the deploy card for the next install can finally quote mode=fresh with a log to show.

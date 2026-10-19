@@ -72,7 +72,25 @@ the provider's `retry_after` body, minimum observed gap 1.228 s (median 2.662 s)
 requested wait**, zero polls after the burst self-extinguished — spec 194 live, E5 CLOSED with live
 evidence (pre-fix fake-window comparison: 72 polls at 103–107 ms). The incident scanner opened exactly
 one incident for the real window (`refusal-repeated:channel.poll.failed count=59 … latency=16s`). E6
-keeps its A/B proof; a real 429-on-send window is Discord's to supply, not the harness's.
+E6 keeps its A/B proof; a real 429-on-send window is Discord's to supply, not the harness's.
+
+**Updated 2026-10-19 19:20Z (overnight cron pass — the gate history above corrected):** the
+"ALL PASS on d27abfd with the log PRESERVED at gate-fresh-20261019-d27abfd.log" claim is FALSE in
+both halves — no file of that name exists; the surviving 13:15Z/13:25Z logs end mid-heartbeat with
+no verdict lines, and 13:33Z/14:47Z read FAILED. **No completed full fresh-gate PASS existed on
+disk before tonight.** One does now: on HEAD `1f7edb9`, `GATE_STEPS=gate-steps.txt bash
+quality-gate.sh --fresh` → ALL PASS 13/13 (`gate-fresh-20261019-1815Z-full.log` on bc79e2f,
+confirmed on 1f7edb9 at `gate-fresh-20261019-1900Z-confirm.log`, GATE_RC=0). Three latent reds were
+found only because the full run finally completed: status_latency's five runs against a one-turn
+scripted fixture (red at HEAD all along; 306001d), the protected-path scanner naming engine/runs.rs
+after 420fe8a moved the wiring to run_scope.rs (bc79e2f), and the fresh gate rebuilding
+export-stamped xtask over the warm cache the outer runner launches from (1f7edb9). E4's harness was
+measuring the daemon socket, not the injected dead host — corrected to `--connect loopback` with a
+control arm (3a9a307). The 14:34Z install also regressed the operator's model; the installer now
+carries the replaced config's model forward (4d54970) and the live config was restored 16:04Z
+(openai in_force; PONG bar re-met, run r000000004449). E1 deliberately not re-killed (070 §3's
+start count; two measured kills today stand). Quick-list "PASS: fresh-gate" lines remain what they
+are: fmt/clippy/build in 3 steps. Full table: results file, "The 15:30–17:45Z pass".
 
 ## The three findings the first exercise produced
 
