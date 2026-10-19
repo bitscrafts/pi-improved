@@ -19,7 +19,10 @@ caps = ["memory_read", "post"]
 [[node]]
 id = "tick"
 kind = "timer"
-cron = "0 9 * * *"
+# UTC. The daily digest is 09:00 Brazil (UTC-3) = 12:00Z. THIS node's cron is the knob
+# that drives firing (measured 2026-10-19: `[[cron]] schedule` in pii.toml is a display
+# mirror; the timer-node suspended run and the wheel carry THIS value).
+cron = "0 12 * * *"
 
 [[node]]
 id = "devices"

@@ -19,6 +19,9 @@ mkdir -p "$W/graphs" "$W/run"
 cp graphs/discord-digest.toml "$W/graphs/" 2>/dev/null || true
 
 cat > "$W/pii.toml" <<CFG
+[core]
+model = "openai:glm-5.3-flash"
+
 [[channel]]
 name = "discord"
 kind = "discord"
@@ -32,6 +35,8 @@ input = { to = "scratch" }
 CFG
 
 start() {
+  # hosted model = credentials from the operator's env file, never a config value
+  set -a; . /root/.config/pii/pii.env 2>/dev/null; set +a
   PII_RUNTIME_DIR="$W/run" "$PII" daemon --store "$W/store.redb" --workspace "$W" --config "$W/pii.toml" --foreground \
     >> "$W/daemon.log" 2>&1 &
   echo $!

@@ -26,6 +26,14 @@ E1 PASS · E2 PASS · E3 PASS · E8 PASS · E10 PASS (179: +0 runs in 60 s with 
 E4, E5, E6, E7, E9, E11 NOT YET EXERCISED — and E5/E6 already show symptoms without a fault being injected:
     channel.poll.failed 6,672 · channel.egress.denied 6,656 · discord 429 retry_after=132s × 1,836
 
+## 2026-10-19 overnight pass (see EXERCISE-RESULTS-2026-10-19.md)
+
+E1 PASS · E2 PASS · E3 PASS · E4 PASS · E8 PASS · E9 PASS · E10 PASS (real knob = the timer node's
+cron; `[[cron]] schedule` is a display mirror) · E11 PASS · E12 PASS (121fb6de67e1 from a dirty tree)
+STILL FAILING, both by construction: E5 (the poll path parses no Retry-After; error backoff recorded
+but never read) and E6 (nothing reads retry_after to pace outbound sends). E7's committed tests are
+green and the historical 57k denials predate the per-connection fix.
+
 ## The three findings the first exercise produced
 
 1. `channel.poll.failed` × 6,672 — the inbound channel cannot read; the cursor never advances.
