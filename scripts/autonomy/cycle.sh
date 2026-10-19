@@ -235,6 +235,16 @@ else
   fi
   python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC
   [ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
+  # QUOTA IS NOT A FAILURE (user rule 2026-10-19: "eventually it will exaust, let it run to the end then put it again on
+  # the queue"). A spend/rate limit must not park the row for a person: capture the reset the CLI itself printed, put the
+  # row BACK on the queue with its attempts and session intact, and let the next pass resume it.
+  if [ -n "${WLOG:-}" ] && grep -qiE 'spend limit|usage limit|rate limit|resets at|quota' "$WLOG" 2>/dev/null; then
+    RESET=$(grep -oiE '(resets? (at )?[^.,;]{0,40})' "$WLOG" 2>/dev/null | head -1)
+    python3 scripts/autonomy/state.py set "$ITEM" status=pending attempts="$ATTEMPTS" \
+      "last=requeued: provider limit hit (${RESET:-reset time not printed}) — resume the same session, do not restart" >/dev/null 2>&1
+    say "QUOTA: $ITEM back on the queue — ${RESET:-reset unknown}"
+    echo "OUTCOME=requeued-quota ITEM=$ITEM SESSION=$RECOVER"; exit 0
+  fi
   python3 scripts/autonomy/state.py set "$ITEM" last=worker-ok "session=${NEWSID:-}"
 fi
 
