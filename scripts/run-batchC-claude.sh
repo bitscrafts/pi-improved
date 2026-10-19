@@ -74,12 +74,23 @@ EOF
 [ -n "$EXTRA_BRIEF" ] && { printf '\n\n' >> "$BRIEF"; cat "$EXTRA_BRIEF" >> "$BRIEF"; }
 RESUME_ARGS=()
 if [ -n "$RESUME_SID" ]; then RESUME_ARGS=(--resume "$RESUME_SID"); echo "== RESUMING session $RESUME_SID"; fi
+# RESUME HANDLE AT DISPATCH (measured gap, 2026-10-19): the handle used to be written only from the final `result` event, so
+# a worker cut by a session limit left NO session id behind and the retry re-derived everything it had already paid for.
+# The id is present in the stream from the first event, so it is written the moment it appears — before the worker finishes,
+# and therefore before anything can kill it.
 stdbuf -oL -eL claude "${RESUME_ARGS[@]}" -p "$(cat "$BRIEF")" \
   --permission-mode bypassPermissions --model "${CLAUDE_MODEL:-sonnet}" \
   --output-format stream-json --verbose --include-partial-messages \
   --disallowedTools 'Edit(specs/**) Write(specs/**)' \
-  >"$LOG" 2>"$LOG.err"
-RC=$?
+  >"$LOG" 2>"$LOG.err" &
+CLAUDE_PID=$!
+for _ in $(seq 1 900); do
+  SID=$(grep -ao '"session_id":"[^"]*"' "$LOG" 2>/dev/null | head -1 | cut -d'"' -f4)
+  if [ -n "${SID:-}" ]; then printf '%s\n' "$SID" > "$LOGD/session-$TAG.txt"; echo "== session handle captured at dispatch: $SID"; break; fi
+  kill -0 "$CLAUDE_PID" 2>/dev/null || break
+  sleep 1
+done
+wait "$CLAUDE_PID"; RC=$?
 python3 - "$LOG" <<'PY' > "$LOGD/session-$TAG.txt"
 import json,sys
 last=None
