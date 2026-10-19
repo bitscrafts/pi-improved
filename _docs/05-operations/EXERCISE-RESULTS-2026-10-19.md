@@ -24,16 +24,20 @@ swapped in and daemon restarted 07:07:22Z (old binary aside at `/root/.local/bin
 | E12 | a DIRTY working tree (untracked exercise scripts, modified docs) while the release is built from `git archive HEAD` with a fully dirty tree | the export-built binary was stamped with the clean 12-hex revision `121fb6de67e1` — the archive string appears in the binary and NO `-dirty` suffix exists (0 occurrences; the stamp source is `PII_BUILD_REVISION` from the export, `crates/pii-server/build.rs:28`) — the shipped revision names its commit | PASS | `/tmp/e12export-bzKjlg/` build: `PII_TRAJECTORY_DIR6da454ccd9f5…` in strings; `grep -c dirty` = 0; deploy-time precedent measured on the same revision at install (health: `revision: 121fb6de67e1`) |
 | E4 | the llama base URL pointed at a dead loopback port (connection refused in ms; the real llama server untouched, via a scratch `PII_CONFIG`) | the run TERMINATED BY ITSELF in 0 s (rc=1, the 90 s timeout never fired) with a refusal naming the fault: `unavailable: net: no address reachable for 127.0.0.1`, a clean failure terminal — no hang, no crash loop | PASS | `scripts/exercise-e4-provider-refusal.sh` (twice, second with the fixed detector); output quoted in the script output |
 | E5 | none needed (symptom already live: Discord poll returns 429 on its own) | the inbound channel logs `channel.poll.failed`, keeps the cursor, never crashes — AND the runtime scanner DOES open ONE incident per burst: `refusal-repeated:channel.poll.failed count=22 first=07:11:48Z last=07:14:57Z latency=7s` (5 bursts total in the log). TWO residuals keep it FAIL: (a) the poll error text carries no `Retry-After` (`unavailable: discord: poll status 429`, discord.rs:149-154) so a 429 is polled again in ~1.2 s; (b) the error backoff never leaves the store — `record_error` bumps a counter (`crates/pii-store/src/channel.rs:125`) that `router.rs` never reads back | **FIXED + EXERCISED 09:25Z (spec 194, `0c1ded6`); not deployed** — the poll error now carries Discord's body (`discord: poll status 429: {...\"retry_after\": 2...}`) and the router pauses for `retry_after` | `scripts/exercise-e5-poll-retry-after.sh` A/B, same harness both arms: deployed `121fb6d` = **72 polls in 7 s**, gaps 103–107 ms, no token in the text; fixed `0c1ded6` = **4 polls in 7 s**, gaps 2004/2076/2081 ms for a requested 2000, token present. Residual (b) CORRECTED: `record_error`'s counter IS read — by `daemon/status.rs` as `ChannelStatus.errors` (cumulative); pacing is process-local by design, spec 194 R3 |
-| E6 | none (symptom already live: forum post 429) | outbound records `channel.send.failed` + `channel.post_refused` with Discord's `retry_after:132.176` IN THE ERROR TEXT, 0 since the deploy — but only `reply()`'s blind one-retry exists (`router.rs:171`); nothing READS `retry_after` to pace the sender, so "backoff respects retry_after" is not met by construction | **FAIL (historical ×1836, mechanism still unbuilt)** | 1836 × send.failed + 1836 × post_refused, last 10-18 09:02:49Z; `retry_after` in `crates/`: error text only |
+| E6 | none (symptom already live: forum post 429) | outbound records `channel.send.failed` + `channel.post_refused` with Discord's `retry_after:132.176` IN THE ERROR TEXT, 0 since the deploy — but only `reply()`'s blind one-retry exists (`router.rs:171`); nothing READS `retry_after` to pace the sender, so "backoff respects retry_after" is not met by construction | **PASS (after spec 195)** — A/B on one harness: the deployed pre-fix binary dialled 2→3→4 times across the three runs (3 delivered, 0 paced); the fixed tree dialled 1→1→2 (1 delivered, 2 paced refusals, `paced by the provider for 2480 ms`) | `_tmp/ex195-*/state.json` + `event.log`; spec 195 Closure table; `scripts/exercise-e6-send-pacing.sh` |
 | E7 | none observed live this pass | denial is per-connection in the shipping code (grant window 16 MiB in/out per connection, `crates/pii-server/src/daemon/config.rs:698`); committed tests prove an oversized response denied while later posts succeed, and that concurrent connections cannot spend each other's window — 6/6 green on the deployed tree. Historical `channel.egress.denied` (57,284, last 10-17 03:46Z) predates the per-connection fix | PASS (tests) / historical burden cleared | `cargo test -p pii-net --test budget_survives_a_day --test budget_window`: `ok. 4 passed` + `ok. 2 passed` |
 
 Honest residue:
 - The stray doc `1299bfbf0ab382c160af572b95cae4f2` (text "--help") was written into the live memory
   store by an accidental `memory put --help` (positional arg) this morning; no delete verb exists.
   Left as-is and disclosed here rather than hidden.
-- E5/E6 remain the two OPEN defects: one incident per poll-outage (E5's incident half) and
-  reading `retry_after` for real pace (E6). Paths: `crates/pii-channels/src/discord.rs`,
-  `crates/pii-channels/src/router` (poll loop), incident scan (`pii incidents scan --source runtime`).
+- E5 and E6 were the two OPEN defects at the start of this pass; both now have a spec, a committed fix with
+  criteria green by hand, and a live A/B against the deployed pre-fix binary (E5 = spec 194 `0c1ded6`, E6 =
+  spec 195 `05b3474`). NEITHER IS DEPLOYED: the binary carrying them needs its own card. The 12:00Z
+  occurrence runs on `121fb6de67e1` and is not affected by either.
+- E5's incident half was already live and is unchanged; E6's "post still lands" is proved only for windows
+  shorter than the post node's own timeout — a 132 s window still fails the run and waits for the next
+  occurrence (a deliberate bound, spec 195's Closure).
 
 ## A production finding at 09:00Z — observed, not injected (2026-10-19 09:05Z)
 
@@ -74,3 +78,27 @@ timer node now `cron = "0 12 * * *"` (with the reason in a comment), installed c
 restarted, the stale 09:00Z armed run cancelled (`r000000004129 --reason "stale duplicate"`), and the
 fresh armed run r000000004353 verified in the wheel for `1792411200000` = 12:00:00Z. Final pair:
 cron_entries = 1, suspended = 1 (r000000004353 only). Committed as d0858a6.
+
+## The 09:00Z finding's fix, exercised against the deployed binary (10:05Z)
+
+Spec 196 (`5a6445e`) removes the run's wheel entry when the run is cancelled AND refuses a resume of a
+finished run loudly. `scripts/exercise-196-past-the-instant.sh` replays the production shape from scratch:
+arm one timer run a few minutes ahead, cancel it, drop the `[[cron]]` from the config so nothing can re-arm,
+restart, and watch the clock.
+
+| binary | runs that executed at the instant | posts |
+|---|---|---|
+| deployed `121fb6de67e1` (pre-fix) | 2 | 2 |
+| this tree, post-196 | 0 | 0 |
+
+So the defect the live daemon produced at 09:00Z is reproducible on a scratch store with the deployed
+binary, and absent with the fix. Spec 193 (`65588c3`) was exercised on the same kind of scratch daemon: the
+log carried exactly one `cron.fired` naming the cron entry, the graph and the armed run.
+
+Two harness lessons from this pass, both mine, both cost time:
+- An exercise binary must be rebuilt AFTER the commit it is meant to test. Twice tonight `target/release/pii`
+  was older than the fix under test, and the "failure" it reported was pre-fix behaviour — the check
+  disagreed with production because the check was reading the wrong artefact.
+- A plan row's `paths` column must name every path a change can ripple into (test module beside the file,
+  the other crate's tests). Two rows committed green gates over dirty trees whose HEAD alone would have been
+  red (`46fa5830` is the follow-up commit that put it right). open-items 9a, measured twice.

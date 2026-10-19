@@ -79,5 +79,27 @@ and clusters repeated refusals by kind. What it cannot see today is a FIRING: th
 
 ## Closure
 
-(To be filled by the orchestrator after independent verification: the criteria's own output, the mutation's
-red output, the byte-identical restore, and what this does and does not close in 070 §5.)
+**Verified 2026-10-19 09:47Z by the orchestrator on the committed tree (`65588c3`), and EXERCISED live
+(`scripts/exercise-193-196-live.sh`).**
+
+*The criteria, run by hand:* `cargo test -p pii-learn --test incidents_runtime_cron` → `test result: ok` (6
+passed); `cargo test -p pii-observe --lib` → ok (58); `cargo test -p pii-server --test log_wiring` → ok (10);
+`grep -c CRON_FIRED crates/pii-observe/src/names.rs` → 2.
+
+*Exercised:* a scratch daemon with one `[[cron]]` armed a timer run; the event log carried exactly ONE
+`cron.fired` naming `"cron":"ticker"` and `"run":"r000000000001"` — the run the store reports suspended. The
+reader half is the unit battery's: one firing silent, a firing plus a re-arm silent, two firings 24 h apart
+silent, two firings 3 s apart ONE incident `cron-occurrence-multiplied:ticker` with count 2, and a copy of the
+real pre-event log opens none.
+
+*What this closes:* 070 §5's third bullet — a multiplied occurrence is now a named incident with a count,
+instead of a fact nobody looked at. *What it does not close:* the rule only sees firings the deployed binary
+emits; yesterday's 1,846-run storm has no `cron.fired` lines to cluster (it predates the event), so the
+historical evidence stays where it is (the run table, `070` §3). The reader is a log reader: a firing whose
+event line is rotated away within the window is invisible — the window (30 min) is far smaller than the log's
+rotation, so this is a bound to keep in mind rather than a live hole.
+
+## Closure placeholder — the deployed bar
+
+193 is in the tree, not in the deployed binary. The 12:00Z occurrence will NOT emit `cron.fired` (the
+deployed binary predates it); the first occurrence that does is the first one after a deploy carrying 193.

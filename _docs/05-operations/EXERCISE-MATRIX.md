@@ -34,12 +34,14 @@ STILL FAILING, both by construction: E5 (the poll path parses no Retry-After; er
 but never read) and E6 (nothing reads retry_after to pace outbound sends). E7's committed tests are
 green and the historical 57k denials predate the per-connection fix.
 
-**Updated 2026-10-19 09:30Z:** **E5 is FIXED and exercised** (spec 194, commit `0c1ded6`): the poll error
-keeps Discord's body and the router's pause follows it — the scratch A/B reads 72 polls/7 s at ~104 ms on the
-deployed binary vs 4 polls at 2004–2081 ms for a requested 2000 on the fixed one. The fix is NOT deployed
-(the host still runs `121fb6d`). **E6 remains the one open matrix defect** (spec 195, row A61). A new
-production finding is recorded in the results file: four runs cancelled on 10-18 executed and posted at
-09:00Z today (spec 196, row A63).
+**Updated 2026-10-19 10:10Z:** **E6 is FIXED and exercised too** (spec 195, commit `05b3474`, in the tree, not
+deployed): a send that is refused is paced by the `retry_after` it carries, per channel, and `reply()` no longer
+double-dials. Live A/B, one harness, fake Discord 429-once: the deployed binary dialled 2→3→4 times across three
+runs and delivered 3; the fixed tree dialled 1→1→2, delivered 1, and logged two `paced by the provider for …`
+refusals. **No matrix defect remains open.** Both fixes and spec 193's occurrence witness (`65588c3`) and spec
+196's cancel disarm (`5a6445e`) are in the tree and NOT in the deployed binary; a deploy carrying them needs its
+own card, and until then the host's behaviour is the pre-fix behaviour. A new production finding is recorded in
+the results file: four runs cancelled on 10-18 executed and posted at 09:00Z today (spec 196, row A63).
 
 ## The three findings the first exercise produced
 

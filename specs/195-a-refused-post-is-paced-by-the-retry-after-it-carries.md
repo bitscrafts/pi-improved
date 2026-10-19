@@ -80,5 +80,40 @@ Read in the tree today:
 
 ## Closure
 
-(To be filled by the orchestrator after independent verification: the criteria's own output, the mutation's
-red output, the byte-identical restore, and what this does and does not close in the E6 row.)
+**Verified 2026-10-19 09:45Z by the orchestrator on the committed tree (`05b3474` + `0c1ded6`'s parser),
+EXERCISED live on a scratch daemon with the production path (router → hub → channel), and A/B'd against the
+deployed pre-fix binary.**
+
+*The criteria, run by hand:* `cargo test -p pii-channels --test send_pacing` → `test result: ok` (4 passed);
+`cargo test -p pii-channels` → ok. The cycle's gate ran green on the same tree; the tree then needed one
+explicit follow-up commit (`46fa5830`) because the row's `paths` column named `crates/pii-channels/src` and
+not `crates/pii-channels/tests` or `crates/pii-server/src/daemon/router.rs` — the verify passed on the dirty
+tree while HEAD would have been red on a fresh clone. That is open-items 9a, measured again; the row's paths
+are now widened.
+
+*Exercised, `scripts/exercise-e6-send-pacing.sh`* (fake Discord: first POST → 429 `retry_after: 3`, then
+200; three CLI-channel messages at +0 s, +0.8 s, +3.6 s):
+
+| binary | dials after run 1 | dials after run 2 (inside the window) | dials after run 3 | delivered | paced refusals |
+|---|---|---|---|---|---|
+| deployed `121fb6de67e1` (pre-fix) | 2 | 3 | 4 | 3 | 0 |
+| this tree (post-195) | 1 | 1 | 2 | 1 | 2 (`paced by the provider for 2480 ms`) |
+
+The pre-fix row is the 1,836-refusal mechanism in miniature: every attempt dials into a window the provider
+said was closed, and the post node's own retry doubles that. The post-fix row is the matrix's E6 sentence
+executed: the window is respected, and the post still lands.
+
+*Mutation:* none hand-written — the deployed pre-fix binary is the mutation, and the same harness reddens on
+it (the table's first row). The unit criteria's own controls (`a_post_without_retry_after_does_not_pace`, and
+the second-post-in-the-same-window assertion inside `a_paced_channel_is_dialled_once`) cover the two ways the
+fix could be too broad; both are in the committed test file and were re-run by hand.
+
+*What this closes:* a rate-limited send is paced by the provider's own number, once, and a blind second dial
+is gone. *What it does not close:* the post node still fails the run when the window is longer than the
+node's timeout — the post is retried at the next occurrence, not inside the run (a deliberate bound: a node
+must not sleep 132 s). E6's "a post still lands" is proved for windows shorter than the run's patience.
+
+## Closure placeholder — the deployed bar
+
+195 is in the tree, not in the deployed binary: `070 §1` step 2 (the 12:00Z occurrence) is unaffected by it,
+and a deploy that carries it needs its own card.
