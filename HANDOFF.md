@@ -2,6 +2,35 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 10:25Z — four specs landed and exercised; the loop's own heartbeat is starving (open)
+
+State: deployed `121fb6de67e1` (untouched all pass) · tree `9045484` (+ cycle.sh lock-age fix) · gate on HEAD
+= `fresh-gate: PASS` · pair: cron_entries 1, suspended 1 (r000000004353, armed for 12:00:00Z).
+
+Landed tonight, each with its own closure and a live A/B against the deployed binary as the control:
+- **194** (E5, `0c1ded6`) a rate-limited poll waits for the provider's number. Deployed: 72 polls/7 s at
+  ~104 ms. Fixed: 4 polls at 2004-2081 ms for a requested 2000.
+- **195** (E6, `05b3474`) a refused send is paced once per channel, `reply()` no longer double-dials.
+  Deployed: 2-3-4 dials, 3 delivered. Fixed: 1-1-2, 1 delivered, 2 paced refusals.
+- **193** (`65588c3`) `cron.fired` + the reader's `cron-occurrence-multiplied` rule. Exercised: one event
+  naming entry, graph and run.
+- **196** (`5a6445e`) the 09:00Z defect: a cancelled run's wheel entry is removed, and a resume of a finished
+  run is refused loudly. Deployed: two cancelled runs executed and posted at their instant. Fixed: 0 / 0.
+
+**OPEN, first thing tomorrow: the loop's heartbeat.** No tick-dispatched cycle since 09:11:59Z; every beat
+enters `tick.sh:34`'s gateway branch — `hermes gateway status` fails inside the tick's environment (20/20
+succeed interactively), the restart is refused because PID 73 already runs ("Use `--replace`"), the second
+probe fails too, and the tick says `gw-still-down` and exits. Cycles dispatched by hand (09:41, 09:49, 10:17)
+ran normally: A61/A62/A63 all landed. Evidence: `_tmp/autonomy/last-reported` == `gw-still-down`;
+`/root/.hermes/logs/gateway-restart.log` tail; the newest tick-start log is `cycle-20261019T091159Z.log`.
+Next step is not a patch: reproduce the tick's env (its `command -v hermes`, HOME, PATH) and make the gateway
+check non-fatal to dispatch — the gateway is the notification channel, not a precondition for a cycle.
+
+Also fixed en route: `cycle.sh` now touches the lock file when a cycle starts holding it, so
+`control.sh`'s "IN FLIGHT for N min" stops reading the file's creation age (it said 6073 min while the lock was
+free). Two harness lessons are in the results file: rebuild the binary AFTER the commit under test, and name
+every path a row can ripple into.
+
 ## 2026-10-19 09:05Z — four cancelled runs posted today; the cancel verb does not disarm the wheel
 
 - **Measured on the live daemon (`121fb6de67e1`), not injected**: r000000004129/4161/4193/4225 — cancelled on

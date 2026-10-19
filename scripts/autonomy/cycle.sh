@@ -9,6 +9,10 @@ if [ -z "${PII_CYCLE_LOCKED:-}" ]; then
   [ "$rc" = 75 ] && { echo "OUTCOME=locked ITEM=-"; exit 5; }
   exit "$rc"
 fi
+# The age control.sh reports ("IN FLIGHT for N min") is the lock FILE's mtime, and flock never updates it: on
+# 2026-10-19 it read 6073 min while the lock was free, were it believed. Touch it at the moment this process
+# starts holding the lock, so the number means the age of THIS hold and nothing else.
+touch "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" 2>/dev/null || true
 # cycle.sh — ONE unit of autonomous work, from probe to commit-or-park.
 #
 # What it does, in order, and why in that order:
