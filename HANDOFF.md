@@ -2,6 +2,34 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-19 15:35Z — HEAD failed the fresh gate; the deployed revision predates the repair; the real 429 window closed E5 live
+
+State: tree clean at `d27abfd` · no cycle in flight · queue EMPTY (pick NONE) · deployed **`420fe8a7e946`**
+(14:34:08Z) — it predates this pass's two gate-repair commits, so the deployed behaviour is unchanged by
+them; both commits touch test-module imports/doc order and the e2e harness's const placement only · pair:
+cron_entries 1 = suspended 1 (r000000004356, wheel 12:00:00Z 10-20).
+
+- **The fresh gate FAILED on HEAD `3ce83eb`'s parents — measured, twice** (`fresh-gate-3121579`,
+  `fresh-gate-3135092`, exports kept): clippy under the gate's `-D warnings` flags the two dead test
+  imports in `engine/runs.rs` and the over-long first doc paragraph in `run_scope.rs`, then
+  `items_after_statements` in `tests/post_e2e.rs`. All three sites repaired at the site
+  (`3ce83eb`, `d27abfd`; post_e2e still 6 passed / 2 ignored) and **`fresh-gate: PASS` re-measured on
+  `d27abfd`**, log kept at `_tmp/autonomy/gate-fresh-20261019-d27abfd.log`.
+- **The consequences are recorded, not hidden:** (a) the results file's 070 §1 step-4 "PASS" was earned on
+  a gate log that no longer exists on disk — the retention deletes successful exports and the
+  `_tmp/autonomy/gate-fresh-*.log` files seen at 14:50Z are gone — so that PASS is now UNAUDITABLE and the
+  step is re-marked with today's logged rerun; (b) the deployed `420fe8a7e946` carries the lint drift, so
+  "the gate was green on the deployed revision" was true only of an unverifiable run. Next deploy card
+  should be cut from ≥ `d27abfd`.
+- **The real Discord 429 window arrived and E5 is CLOSED with live evidence**: 59 `channel.poll.failed`
+  at 14:36:35–14:44:48Z on the deployed fix, every error text carrying Discord's `retry_after` body,
+  minimum gap 1.228 s / median 2.662 s (pre-fix harness arm: 72 polls at 103–107 ms), zero gaps below the
+  requested wait, burst self-extinguished, and the incident scanner opened exactly ONE incident for it
+  (`refusal-repeated:channel.poll.failed count=59 … latency=16s`, `pii incidents scan --source runtime`,
+  15:06Z). E6's A/B stands; a real 429-on-send window is Discord's to supply.
+- 070 §1: step 2 PASS (12:00Z occurrence, one digest, one re-arm); step 4 PASS again, this time with a
+  preserved log; step 6 soak earliest honest close 2026-10-27 12:00Z.
+
 ## 2026-10-19 14:45Z — the first deploy carrying 193/194/195/196 landed, and the bar was re-met on it
 
 State: tree clean at `420fe8a` except docs · no cycle in flight · queue EMPTY (pick NONE; A54–A65 all

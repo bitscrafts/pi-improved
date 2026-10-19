@@ -110,7 +110,7 @@ Two harness lessons from this pass, both mine, both cost time:
 | 1 | one cron entry, one armed run | `suspended` = 1 = `cron_entries` after a `kill -9` restart (E1) and after every change tonight; spec 187's scratch proof stands | **PASS** |
 | 2 | the occurrence itself: exactly one digest | the 09:00Z slot fired FOUR runs — all four had been cancelled on 10-18 (spec 196). The graph now fires at 12:00Z; the occurrence is being watched live (`scripts/checks/digest-occurrence-1200Z.sh`, evidence below) | **PENDING — measured at 12:16Z** |
 | 3 | production stops being the test bench | 13 `daemon.started` in 24 h vs 2 installs (was 85 vs 6). Two of the thirteen are tonight's deliberate `kill -9` (E1) and its restart | **RED (improved)** |
-| 4 | a recorded full gate on the deployed revision, from a clean export | `cargo run -q -p xtask -- fresh-gate` on HEAD `9045484` → `PASS: build`, `quality-gate: ALL PASS`, `fresh-gate: PASS`, export `git archive`d from HEAD (deleted by the tool on success). Caveat: the shared target dir was warm, so the build line is not a from-scratch compile proof | **PASS (with that caveat)** |
+| 4 | a recorded full gate on the deployed revision, from a clean export | **CORRECTED 15:30Z**: the first "PASS" here was earned on a gate log that no longer exists on disk (successful exports delete themselves; the `gate-fresh-*.log` files seen at 14:50Z are gone), and a re-run exposed that HEAD `e8b09a5` actually FAILED the fresh gate — three clippy sites under `-D warnings`. The lints are repaired (`3ce83eb`, `d27abfd`) and the gate re-measured ALL PASS on `d27abfd` with the log PRESERVED at `_tmp/autonomy/gate-fresh-20261019-d27abfd.log`. The deployed `420fe8a7e946` predates the repair | **PASS (again), now auditable — the earlier claim downgraded to unauditable** |
 | 5 | a card for every install | 11 aside dirs (`/root/.local/bin.old-*`, `pii.old-*`) vs 3 cards on disk | **RED** |
 | 6 | the soak: 7 days from the store | not started; the earliest honest start is after a deploy carrying 193 (the occurrence witness) and 196 | **NOT STARTED** |
 | 7 | the `pii-mcp` swap | `pii-mcp.new` staged, not swapped; no probe data tonight | **UNCHANGED** |
@@ -258,3 +258,27 @@ Still not "production ready": the soak window (070 §1 step 6) can only start at
 2026-10-19 — because it is the first binary that carries the occurrence witness (spec 193); its first counted
 occurrence is 2026-10-20 12:00Z, so the earliest honest closing date is **2026-10-27 12:00Z**. Step 3's
 stop-being-the-test-bench tally and step 5's card-vs-aside-dir count need the same window to mean anything.
+
+## The REAL Discord 429 window arrived — measured on the deployed fix (15:00Z)
+
+The one line still owed to the log ("one REAL Discord 429 window since the 14:34Z restart") is now paid:
+Discord itself rate-limited the poller at 14:36:35Z (burst of 5) and again 14:40:58–14:44:48Z (54 polls),
+**59 `channel.poll.failed` total since the deploy**, every one carrying the provider's body
+(`unavailable: discord: poll status 429: {"message": "You are being rate limited.", "retry_after": 0.3…}`).
+Measured on the deployed `420fe8a7e946`, this is spec 194's pacing on a REAL window, not the fake harness:
+
+| window | polls | gaps (s, min/median) | gaps below requested retry_after (≥0.3 s) |
+|---|---|---|---|
+| pre-fix `121fb6d` (fake harness, 07:xx) | 72 in 7 s | 0.103–0.107 | 71/72 |
+| deployed `420fe8a7e946` (real, 14:36–14:44Z) | 59 in two bursts | **1.228 / 2.662**, max 243 | **0** |
+
+The burst self-extinguished at 14:44:48Z — zero polls in the 18 minutes after — with no harness action
+whatsoever (the rule of the exercises held: only observed). The incident scanner read on this SAME log:
+exactly **one** incident for the whole real window — `refusal-repeated:channel.poll.failed count=59
+first=14:36:35Z last=14:44:48Z latency=16s` (`pii incidents scan --source runtime --log pii.log`,
+15:06Z) — the same one-per-burst shape the scanner showed on every earlier burst, now on a real one.
+E5's error-text half of
+the acceptance is LIVE-proved; E6 (send pacing) has its A/B proof from 14:4x and still lacks a real
+429-on-send window, which only Discord can supply.
+
+Pair after reading (15:02Z): suspended = 1 (r000000004356) = cron_entries 1; no duplicate ever appeared.

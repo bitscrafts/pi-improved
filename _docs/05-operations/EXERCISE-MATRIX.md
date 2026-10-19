@@ -66,6 +66,14 @@ time. On the deployed revision, E8/187/196/E10 were re-run on scratch daemons as
 one armed run"; 196 "0 executed"; E10 one firing and one +24 h re-arm) — evidence in the results file,
 § "Exercises re-run on the deployed revision".
 
+**Updated 2026-10-19 15:10Z (the real 429 window, read):** Discord rate-limited the poller for real at
+14:36:35–14:44:48Z on the deployed `420fe8a7e946`: 59 `channel.poll.failed`, every error text carrying
+the provider's `retry_after` body, minimum observed gap 1.228 s (median 2.662 s), **zero gaps below the
+requested wait**, zero polls after the burst self-extinguished — spec 194 live, E5 CLOSED with live
+evidence (pre-fix fake-window comparison: 72 polls at 103–107 ms). The incident scanner opened exactly
+one incident for the real window (`refusal-repeated:channel.poll.failed count=59 … latency=16s`). E6
+keeps its A/B proof; a real 429-on-send window is Discord's to supply, not the harness's.
+
 ## The three findings the first exercise produced
 
 1. `channel.poll.failed` × 6,672 — the inbound channel cannot read; the cursor never advances.
