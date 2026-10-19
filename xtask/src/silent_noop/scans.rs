@@ -233,7 +233,10 @@ pub(crate) fn scan_protected_paths(root: &Path, violations: &mut Vec<String>) ->
     }
     let sites: &[(&str, &str)] = &[
         (
-            "crates/pii-server/src/engine/runs.rs",
+            // 420fe8a moved the run-scope helpers (run_caps among them) out of
+            // runs.rs into their own module; the wiring moved with them, so the
+            // chokepoint this scan must see is now the module that holds it.
+            "crates/pii-server/src/engine/run_scope.rs",
             "run_caps fs_write deny wiring",
         ),
         (
