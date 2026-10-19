@@ -182,8 +182,27 @@ impl Conn {
     // read-modify-write of the cumulative byte report.
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, PiiError> {
         let grant = self.grant();
-        let n = std::io::Read::read(&mut self.stream, buf)
-            .map_err(|e| PiiError::Unavailable(format!("net: read: {e}")))?;
+        // A peer that closes without a TLS close_notify is END OF STREAM, not a failure.
+        // rustls surfaces that as an io error reading "peer closed connection without sending TLS close_notify", and hosted
+        // providers do it routinely after the last frame — measured 2026-10-18 against ollama-cloud: a complete answer was
+        // truncated and reported as "unavailable: net: read: ..." because a normal close was read as a fault.
+        // A close that arrives BEFORE any byte of this read is still an error: silence is not an answer.
+        // (2026-10-19, measured: under a guard-disabled mutation the error reaching this arm is io
+        // ErrorKind::UnexpectedEof, text "peer closed connection without sending TLS close_notify" — exactly the
+        // shape the arm maps; the arm above is the measured match, not a guess. The diagnostic
+        // that proved this was removed after the measurement.)
+        let n = match std::io::Read::read(&mut self.stream, buf) {
+            Ok(n) => n,
+            Err(e)
+                if e.kind() == std::io::ErrorKind::UnexpectedEof
+                    || e.to_string().contains("close_notify") =>
+            {
+                0
+            }
+            // Any other read error (timeout, reset, budget-independent faults)
+            // stays an error: only a peer close becomes end-of-stream.
+            Err(e) => return Err(PiiError::Unavailable(format!("net: read: {e}"))),
+        };
         self.received = self.received.saturating_add(n as u64);
         {
             let mut reg = self.inner.registry.lock();

@@ -2,6 +2,8 @@
 //! `Arc`, so the connection registry and byte counters never multiply.
 
 mod conn;
+#[cfg(test)]
+mod conn_close_tests;
 mod dechunk;
 mod http;
 mod observe;
