@@ -171,7 +171,6 @@ pub(super) fn splice_run_end(
 }
 
 /// Whether `src` is a fragment file (it declares a `[fragment]` table) rather than a host graph.
-#[must_use]
 pub(super) fn parse_attaches(doc: &Table) -> Result<Vec<Attach>, PiiError> {
     let items = match doc.get("attach") {
         None => return Ok(Vec::new()),
