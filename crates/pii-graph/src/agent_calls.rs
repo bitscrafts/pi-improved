@@ -101,6 +101,8 @@ pub struct CallSummary {
     pub matched: bool,
     /// The reason of a `worker.start.refused` the node journalled; a refusal carries no pid (spec 221 R2).
     pub refused: Option<String>,
+    /// The node's own last outcome was a failure that will not retry (spec 224 R4).
+    pub failed: bool,
 }
 
 /// Folds `node`'s agent-call observations out of `journal`. Nothing the node returned is consulted.
@@ -110,10 +112,15 @@ pub fn call_summary(journal: &[(u64, RunEvent)], node: &NodeId) -> CallSummary {
     let mut spawned_pids: Vec<i64> = Vec::new();
     for (_, event) in journal {
         match event {
-            RunEvent::NodeFinished { node: n, .. } | RunEvent::NodeFailed { node: n, .. }
-                if n == node =>
-            {
+            RunEvent::NodeFinished { node: n, .. } if n == node => {
                 out.executed = true;
+                out.failed = false;
+            }
+            RunEvent::NodeFailed {
+                node: n, retryable, ..
+            } if n == node => {
+                out.executed = true;
+                out.failed = !retryable;
             }
             RunEvent::NodeObserved {
                 node: n,
@@ -180,10 +187,11 @@ pub fn call_verdict(
                 .get("expect_spawn")
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true);
-            if expects {
-                silent.get_or_insert(&node.id);
-            } else {
+            if !expects {
                 expected_none = true;
+            } else if !calls.failed {
+                // Spec 224 R4: a node that failed on its own account keeps its reason; only a success is judged here.
+                silent.get_or_insert(&node.id);
             }
         }
     }

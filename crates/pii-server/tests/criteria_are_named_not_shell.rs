@@ -120,10 +120,10 @@ fn shell_string_is_refused_and_never_executed() {
     let (terminal, events) =
         run_coder_graph(bin.path(), &fields(work.path(), &format!("\"{shell}\"")));
 
-    let Terminal::Success { output } = &terminal else {
-        panic!("the refusal routes to the err port, got {terminal:?}");
+    let Terminal::Failure { error } = &terminal else {
+        panic!("the refusal fails the node and the run (spec 224), got {terminal:?}");
     };
-    assert!(output.to_string().contains("criteria.unknown"), "{output}");
+    assert!(error.contains("criteria.unknown"), "{error}");
     assert!(
         !work.path().join("pwned.txt").exists(),
         "the shell string was executed"
@@ -146,9 +146,9 @@ fn shell_string_is_refused_and_never_executed() {
     assert!(!events.iter().any(|e| e.kind == names::CODER_SPAWNED));
 }
 
-/// The refusal reaches the `err` port, not a scheduler retry.
+/// The refusal fails the node (spec 224), not a value on the `err` port and not a scheduler retry.
 #[test]
-fn unknown_criterion_routes_to_err() {
+fn unknown_criterion_fails_the_node() {
     let bin = fake_bin("exit 0");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "named-work-").unwrap();
     let log = Arc::new(Rec::default());
@@ -169,8 +169,8 @@ fn unknown_criterion_routes_to_err() {
     };
     let ctx = root_ctx(bin.path());
     match node.run(&ctx, &input).unwrap() {
-        Outcome::Next { port, .. } => assert_eq!(port.as_str(), "err"),
-        other => panic!("expected the err port, got {other:?}"),
+        Outcome::Fail { error } => assert!(error.contains("criteria.unknown"), "{error}"),
+        other => panic!("expected the node to fail, got {other:?}"),
     }
     assert!(!work.path().join("pwned.txt").exists());
 }

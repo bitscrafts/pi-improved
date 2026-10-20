@@ -262,7 +262,8 @@ impl CoderNode {
         refused_port(agent, model, reason)
     }
 
-    /// Journals a criterion the table does not name (spec 215), then routes it to `err`. Nothing was spawned.
+    /// Journals a criterion the table does not name (spec 215), then fails the node with it (spec 224). Nothing was
+    /// spawned.
     fn refuse_criterion(&self, criterion: &str, agent: &str, model: &str) -> Outcome {
         self.log.event(
             &Event::new("coder", Level::Warn, names::CRITERIA_UNKNOWN)
@@ -270,11 +271,9 @@ impl CoderNode {
                 .field("agent", agent.to_owned())
                 .field("model", model.to_owned()),
         );
-        refused_port(
-            agent,
-            model,
-            &format!("criteria.unknown: '{criterion}' is not in the criteria table"),
-        )
+        Outcome::Fail {
+            error: format!("criteria.unknown: '{criterion}' is not in the criteria table"),
+        }
     }
 
     /// Each name in the node's `criteria` with its fixed argv; the first name the table lacks is the error.

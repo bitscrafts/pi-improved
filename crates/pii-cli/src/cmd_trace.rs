@@ -303,6 +303,8 @@ struct NodeLine {
     refusal: Option<Refusal>,
     /// The `<fragment>#<node>` origin of a woven node (spec 219 R4).
     woven_from: Option<String>,
+    /// The error the node failed with, when the journal shows it failing (spec 224 R2).
+    failure: Option<String>,
 }
 
 /// A `worker.start.refused` a node journalled: the scope's or the node's own reason, and the image digest slot.
@@ -404,9 +406,9 @@ fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
                     &woven,
                 ));
             }
-            RunEvent::NodeFailed { node, .. } => {
+            RunEvent::NodeFailed { node, error, .. } => {
                 let start = started.get(&node.to_string()).copied().unwrap_or_default();
-                lines.push(line(
+                let mut failed = line(
                     *seq,
                     node.to_string(),
                     start,
@@ -414,7 +416,9 @@ fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
                     &observed,
                     &refusals,
                     &woven,
-                ));
+                );
+                failed.failure = Some(error.clone());
+                lines.push(failed);
             }
             _ => {}
         }
@@ -438,6 +442,7 @@ fn line(
         calls: calls.unwrap_or_default(),
         refusal: refusals.get(&node).cloned(),
         woven_from: woven.get(&node).cloned(),
+        failure: None,
         node,
         start_ms,
         dur_ms,
@@ -469,12 +474,14 @@ fn trace_line(line: &NodeLine) -> String {
         .or_else(|| refusal.map(|r| digest8(&r.image_digest)))
         .unwrap_or("-");
     let crit = exit.map_or_else(|| "-".to_owned(), |e| format!("{}/{}", e.passed, e.run));
-    // Spec 223 R2: a refused node names its refusal, not an empty `pid=-`.
+    // Spec 223 R2: a refused node names its refusal, not an empty `pid=-`. Spec 224 R2: a failed node names its
+    // error, cut to 80 characters.
     let fail = exit
         .map(|e| e.first_failure.as_str())
         .filter(|f| !f.is_empty())
         .or_else(|| refusal.map(|r| r.reason.as_str()).filter(|r| !r.is_empty()))
-        .unwrap_or("-");
+        .or_else(|| line.failure.as_deref().filter(|f| !f.is_empty()))
+        .map_or_else(|| "-".to_owned(), |f| f.chars().take(80).collect());
     let rc = exit.map_or_else(|| "-".to_owned(), |e| e.rc.to_string());
     let woven = line
         .woven_from
@@ -699,6 +706,10 @@ fn print_run(verb: &str, run: &str, loaded: &Loaded) -> ExitCode {
         )];
         for line in &lines {
             sentences.extend(line.calls.iter().map(|c| explain_call(&line.node, c)));
+            // Spec 224 R3: the failing node's reason, in full.
+            if let Some(error) = &line.failure {
+                sentences.push(format!("{} failed: {error}.", line.node));
+            }
         }
         let _ = writeln!(out, "{}", sentences.join(" "));
         let _ = writeln!(out, "{}", loaded.source.marker());
