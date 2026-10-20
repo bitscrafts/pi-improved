@@ -1659,3 +1659,14 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
 - Still true and unclaimed: no daemon on lnx has journalled `coder.spawned` for a container path; the
   coder demo on `/tmp/pii-ws-3aQWp1` is blocked until A98 lands and M0 prints PASS with
   `coder.spawned`+`coder.exited` for one pid.
+
+## 2026-10-20T11:45Z — M0 live on lnx (r210/r211) reached only the 229 gate: the deployed build is df0fdae
+
+- The lnx daemon is `pii 0.1.0 (df0fdae16366)`; its live `grant_policy` still lists only spec 228's three
+  state dirs. Both live runs therefore refuse at `open 2048 locks in /libpod_rootless_lock_1000`, which
+  spec 229 fixes — nothing from 229 on is deployed. The next install card must quote 229's `/dev/shm`
+  clause, and M0 must be re-run after it.
+- Two defects measured in that same trace line: `fail=` cut mid-word (no structured source exists —
+  `--reason` is an unknown flag, rc 2), and `image=missing` printed for a node the runtime never answered
+  (the image is present, digest `sha256:2684dee9…`). Filed as spec 231 / row A99. The M0 script now marks
+  a boundary-length reason `[clipped-80]` rather than passing a clip off as the measurement.
