@@ -21,6 +21,13 @@
 # starts with `channels: []` (spec 157).
 set -euo pipefail
 
+# PATH, set inside the script: measured 2026-10-20, the release build inside the clean export died with
+# "cargo: command not found" because a non-interactive shell does not carry the caller's PATH. A deploy script that only
+# works when the invoker happens to have cargo on PATH is not re-runnable (HARD RULE 0d).
+export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:${PATH:-}"
+export CARGO_HOME="${CARGO_HOME:-/usr/local/cargo}"
+export RUSTUP_HOME="${RUSTUP_HOME:-/usr/local/rustup}"
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCOPE="${SCOPE:-user}"
 LLAMA_HOST="${LLAMA_HOST:-http://10.10.10.217:8082/v1}"
