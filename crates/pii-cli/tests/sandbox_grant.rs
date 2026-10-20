@@ -98,6 +98,34 @@ fn workspace_profile_still_allows_reads_outside_the_workspace() {
     assert_eq!(rc(&run(&r, "workspace", "cat /etc/passwd > /dev/null")), 0);
 }
 
+/// Spec 229 R1: the workspace grant includes `/dev/shm` (podman's rootless lock dir), and the
+/// grant is the shm directory only: a write beside it in the same child still fails.
+#[test]
+fn workspace_profile_allows_a_write_inside_dev_shm_and_denies_dev_outside_it() {
+    let r = rig();
+    let shm = PathBuf::from("/dev/shm").join(format!("pii-229-probe-{}", std::process::id()));
+    let target = r.outside.join("shm-denied.txt");
+    let o = run(
+        &r,
+        "workspace",
+        &format!(
+            "echo x > {} && echo x > ran.txt; echo x > {}",
+            shm.display(),
+            target.display()
+        ),
+    );
+    let shm_written = shm.exists();
+    let _ = std::fs::remove_file(&shm);
+    assert!(
+        shm_written,
+        "a write inside /dev/shm must succeed: {}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(r.ws.join("ran.txt").exists(), "child did not run: {o:?}");
+    assert_ne!(rc(&o), 0, "a write outside the grant must still be denied");
+    assert!(!target.exists(), "the file must not have been created");
+}
+
 #[test]
 fn off_profile_control_permits_the_write_the_workspace_profile_denies() {
     let r = rig();
@@ -108,7 +136,7 @@ fn off_profile_control_permits_the_write_the_workspace_profile_denies() {
 }
 
 /// Spec 228 R1: the pinned grant text names the container runtime's state dirs. The
-/// assertion reads pii-tools' SOURCE via include_str so the test can never drift from a
+/// assertion reads pii-tools' SOURCE via `include_str` so the test can never drift from a
 /// stale copy of the text: the string it checks is the string that ships.
 #[test]
 fn the_pinned_grant_names_the_podman_state_dirs() {

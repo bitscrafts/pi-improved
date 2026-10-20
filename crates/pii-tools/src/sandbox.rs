@@ -209,16 +209,19 @@ fn rw_paths(workspace: &Path, extra_rw: &[PathBuf]) -> Vec<(PathBuf, bool)> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::{SandboxProfileName, grant_policy, parse_profile, podman_state_dirs, profile_name};
+    use super::{
+        SandboxProfileName, env_var, grant_policy, parse_profile, podman_state_dirs, profile_name,
+    };
 
     #[test]
     fn podman_state_dirs_are_the_three_runtime_state_locations() {
         // No set_var from a test (edition-2024 unsafe): read what the process carries.
         let dirs = podman_state_dirs();
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
-        let xdg = std::env::var("XDG_RUNTIME_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| std::path::PathBuf::from(home.clone()).join(".run"));
+        let home = env_var("HOME").unwrap_or_else(|| "/root".into());
+        let xdg = env_var("XDG_RUNTIME_DIR").map_or_else(
+            || std::path::PathBuf::from(home.clone()).join(".run"),
+            std::path::PathBuf::from,
+        );
         assert_eq!(
             dirs,
             vec![
