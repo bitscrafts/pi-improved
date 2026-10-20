@@ -11,6 +11,7 @@ use pii_core::Clock as _;
 use pii_memory::doc::{
     Doc, DocKind, Layer, created_of, decode_kind, decode_text, layer_byte, layer_of_byte, rows_for,
 };
+use pii_memory::skill::{pick, slug_of};
 use pii_store::MemStore;
 use sha2::{Digest as _, Sha256};
 
@@ -191,13 +192,6 @@ fn pin_summary(root: &Path, pins: &[Pin]) -> &'static str {
     }
 }
 
-/// The slug is the first non-empty line after the `PII-SKILL` marker.
-fn slug_of(text: &str) -> &str {
-    let mut lines = text.lines();
-    lines.by_ref().find(|l| l.trim() == "PII-SKILL");
-    lines.map(str::trim).find(|l| !l.is_empty()).unwrap_or("-")
-}
-
 fn short_id(id: &str) -> &str {
     id.get(..12).unwrap_or(id)
 }
@@ -301,18 +295,7 @@ fn list(args: &mut std::env::ArgsOs) -> ExitCode {
 /// Resolves `<id|slug>`: an exact id or slug wins; else a unique id prefix. Several candidates
 /// are refused with the list, so an ambiguous name never picks one silently.
 fn resolve(found: &[Skill], key: &str) -> Result<Skill, ExitCode> {
-    let named: Vec<&Skill> = found
-        .iter()
-        .filter(|s| s.id == key || slug_of(&s.text) == key)
-        .collect();
-    let picked: Vec<&Skill> = if named.is_empty() {
-        found
-            .iter()
-            .filter(|s| !key.is_empty() && s.id.starts_with(key))
-            .collect()
-    } else {
-        named
-    };
+    let picked = pick(found, key, |s| (s.id.as_str(), s.text.as_str()));
     match picked.as_slice() {
         [] => Err(fail(&format!("no skill matches {key}"))),
         [one] => Ok((*one).clone()),

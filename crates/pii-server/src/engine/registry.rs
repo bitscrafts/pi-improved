@@ -34,6 +34,7 @@ pub fn registry(
     spawn_engine: nodes::spawn::SpawnEngineHandle,
     log: Arc<dyn pii_observe::Observer>,
     tiers: Arc<crate::tiers::TierTable>,
+    podman: std::path::PathBuf,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     if let Some(ceiling) = cfg.grant_ceiling {
@@ -61,7 +62,20 @@ pub fn registry(
     reg.register(Arc::new(nodes::sop::SopFactory {
         log: Arc::clone(&log),
     }));
-    reg.register(Arc::new(nodes::coder::CoderFactory::new(Arc::clone(&log))));
+    // Spec 227 R2: the coder's pinned skills come from the same store the memory nodes use, and each run's skill
+    // files are written beside it, outside the project.
+    let store_dir = cfg
+        .store_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    reg.register(Arc::new(
+        nodes::coder::CoderFactory::new(Arc::clone(&log))
+            .with_podman(podman)
+            .with_skills(Arc::new(nodes::coder_skills::StoreSkills::new(Arc::clone(
+                &memory,
+            ))))
+            .with_runs_dir(store_dir.join("runs")),
+    ));
     reg.register(Arc::new(nodes::memory::MemoryFactory {
         store: memory,
         log,
@@ -144,22 +158,40 @@ fn register_lint_channel_kinds(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe
 /// string that only exists in this checkout.
 #[must_use]
 pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
-    lint_registry_with_log(workspace, runtime_dir, Arc::new(pii_observe::NullObserver))
+    lint_registry_with_log(
+        workspace,
+        runtime_dir,
+        Arc::new(pii_observe::StderrObserver),
+    )
 }
 
 /// The lint registry's queue kinds, over a lint-only store under `runtime_dir` (spec 208).
-fn register_lint_queue_nodes(reg: &mut NodeRegistry, runtime_dir: &std::path::Path) {
+fn register_lint_queue_nodes(
+    reg: &mut NodeRegistry,
+    runtime_dir: &std::path::Path,
+    log: &Arc<dyn pii_observe::Observer>,
+) {
     match pii_store::queue::QueueStore::open(&runtime_dir.join("lint-queue.redb")) {
         Ok(queue) => register_queue_nodes(reg, Arc::new(queue), None),
-        Err(e) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!(
-                    "lint_registry: select/record unavailable (queue store: {e}); those nodes will fail lint as unknown kind"
-                );
-            }
-        }
+        Err(e) => store_unavailable(log, "queue", &e),
     }
+}
+
+/// Reports a lint store that did not open: its kinds fail lint as unknown (spec 227 R7).
+fn store_unavailable(
+    log: &Arc<dyn pii_observe::Observer>,
+    store: &'static str,
+    err: &impl std::fmt::Display,
+) {
+    log.event(
+        &pii_observe::Event::new(
+            "lint",
+            pii_observe::Level::Warn,
+            pii_observe::names::LINT_STORE_UNAVAILABLE,
+        )
+        .field("store", store)
+        .field("reason", err.to_string()),
+    );
 }
 
 /// [`lint_registry`] whose `sop` nodes report to `log` — what `pii sop run`
@@ -181,8 +213,9 @@ pub fn lint_registry_with_log(
         log: Arc::clone(&log),
     }));
     drop(register_entity_nodes(&mut reg));
+    // Spec 227 R2: lint never reads the store, so the coder keeps `NoSkills` here; only the daemon's registry
+    // supplies the store.
     reg.register(Arc::new(nodes::coder::CoderFactory::new(Arc::clone(&log))));
-    reg.register(Arc::new(nodes::sop::SopFactory { log }));
     reg.register(Arc::new(nodes::worker::WorkerFactory {
         pool: Arc::new(parking_lot::Mutex::new(BTreeMap::<
             String,
@@ -203,36 +236,22 @@ pub fn lint_registry_with_log(
     // B2 (opus review): these opens are best-effort (lint must still work
     // when the runtime dir isn't writable), but a failure here means
     // `gate`/`memory` graphs will fail lint with `unknown kind` rather than
-    // silently validating against an empty capset — surfaced via the
-    // eprintln below instead of vanishing.
+    // silently validating against an empty capset — surfaced as a
+    // `lint.store.unavailable` event instead of vanishing.
     match pii_store::approval::ApprovalStore::open(&runtime_dir.join("lint-approval.redb")) {
         Ok(approvals) => reg.register(Arc::new(nodes::gate::GateFactory {
             approvals: Arc::new(approvals),
         })),
-        Err(e) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!(
-                    "lint_registry: gate unavailable (approval store: {e}); 'gate' nodes will fail lint as unknown kind"
-                );
-            }
-        }
+        Err(e) => store_unavailable(&log, "gate", &e),
     }
     match pii_store::MemStore::open(&runtime_dir.join("lint-memory.redb")) {
         Ok(memory) => reg.register(Arc::new(nodes::memory::MemoryFactory {
             store: Arc::new(memory),
             log: Arc::new(pii_observe::NullObserver),
         })),
-        Err(e) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!(
-                    "lint_registry: memory unavailable (mem store: {e}); 'memory' nodes will fail lint as unknown kind"
-                );
-            }
-        }
+        Err(e) => store_unavailable(&log, "memory", &e),
     }
-    register_lint_queue_nodes(&mut reg, runtime_dir);
+    register_lint_queue_nodes(&mut reg, runtime_dir, &log);
     // S0.2: `heal_detect` is a server-owned kind like `gate`/`memory`; the
     // lint registry registers it with a cargo-xtask runner so
     // `graphs/starter/heal-watch.toml` lints (lint never executes nodes).
@@ -247,15 +266,9 @@ pub fn lint_registry_with_log(
             }));
             reg.register(Arc::new(nodes::heal::HealRecordFactory { heals }));
         }
-        Err(e) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!(
-                    "lint_registry: heal_detect unavailable (heal store: {e}); 'heal_detect' nodes will fail lint as unknown kind"
-                );
-            }
-        }
+        Err(e) => store_unavailable(&log, "heal_detect", &e),
     }
+    reg.register(Arc::new(nodes::sop::SopFactory { log }));
     reg
 }
 

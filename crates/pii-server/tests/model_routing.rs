@@ -142,6 +142,7 @@ async fn route_decision_is_journaled() {
         Arc::new(parking_lot::Mutex::new(None)),
         Arc::new(pii_observe::NullObserver),
         Arc::clone(&engine.tiers),
+        pii_server::node_kinds::nodes::coder_container::PODMAN_BIN.into(),
     );
     // Subscribe to the engine's REAL bus before running (F21 pattern).
     let mut live = engine.bus.subscribe();

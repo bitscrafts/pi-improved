@@ -327,6 +327,7 @@ impl Engine {
             Arc::clone(&spawn_engine),
             log.clone(),
             Arc::clone(&tiers),
+            node_kinds::nodes::coder_container::PODMAN_BIN.into(),
         );
         engine::registry::register_queue_nodes(
             &mut reg,

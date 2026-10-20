@@ -77,6 +77,7 @@ fn run_coder_graph(
     reg.register(Arc::new(
         CoderFactory::with_env(bin.to_path_buf(), env, log.clone())
             .with_podman(podman.to_path_buf())
+            .with_runs_dir(store_dir.path().join("runs"))
             .with_criteria(BTreeMap::from([(
                 String::from("ran-file"),
                 vec![

@@ -13,6 +13,7 @@ mod observe;
 pub mod quant;
 pub mod rrf;
 pub mod search;
+pub mod skill;
 pub mod tokenize;
 pub mod vector;
 

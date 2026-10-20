@@ -7,7 +7,9 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use pii_store::MemStore;
 use sha2::{Digest, Sha256};
 
 /// The skill text the store holds, by name. The daemon supplies the memory store behind this; [`NoSkills`] holds
@@ -23,6 +25,32 @@ pub struct NoSkills;
 impl SkillSource for NoSkills {
     fn skill_text(&self, _name: &str) -> Option<String> {
         None
+    }
+}
+
+/// The daemon's skill source: the memory store's `DocKind::Skill` documents, named as `pii skill show` names them.
+///
+/// A name the store does not hold, or one that names more than one skill, is `None` (spec 227 R1).
+pub struct StoreSkills {
+    store: Arc<MemStore>,
+}
+
+impl StoreSkills {
+    /// A source over `store`, which the daemon's registry also hands to the memory nodes.
+    #[must_use]
+    pub fn new(store: Arc<MemStore>) -> Self {
+        Self { store }
+    }
+}
+
+impl SkillSource for StoreSkills {
+    fn skill_text(&self, name: &str) -> Option<String> {
+        let docs = pii_memory::skill::live(&self.store).ok()?;
+        let picked = pii_memory::skill::pick(&docs, name, |d| (d.0.as_str(), d.1.as_str()));
+        match picked.as_slice() {
+            [one] => Some(one.1.clone()),
+            _ => None,
+        }
     }
 }
 

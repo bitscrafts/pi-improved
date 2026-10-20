@@ -73,6 +73,7 @@ fn a_coder_run_installs_nothing() {
     reg.register(Arc::new(
         CoderFactory::with_env(bin.path().to_path_buf(), BTreeMap::new(), log.clone())
             .with_podman(podman.clone())
+            .with_runs_dir(store_dir.path().join("runs"))
             .with_criteria(ran_file_criteria()),
     ));
     let src = format!(

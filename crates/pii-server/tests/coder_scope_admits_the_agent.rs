@@ -49,7 +49,8 @@ fn image_run_scope_admits_podman_and_the_agent() {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(
         CoderFactory::with_env(bin.path().to_path_buf(), BTreeMap::new(), log.clone())
-            .with_podman(podman.clone()),
+            .with_podman(podman.clone())
+            .with_runs_dir(store_dir.path().join("runs")),
     ));
     let src = format!(
         "name = \"coder-image\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/223-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"pii-coder:1\"\n",

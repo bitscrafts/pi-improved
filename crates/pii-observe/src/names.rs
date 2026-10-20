@@ -102,6 +102,8 @@ pub const MEMORY_ARCHIVE_REFUSED: &str = "memory.archive_refused";
 pub const MEMORY_RESTORED: &str = "memory.restored";
 /// Event: an operator-facing CLI failure (startup, daemon connect, graph error).
 pub const CLI_FAILURE: &str = "cli.failure";
+/// Event: a lint registry's store could not be opened, so its kinds fail lint as unknown (`store`, `reason`) (spec 227 R7).
+pub const LINT_STORE_UNAVAILABLE: &str = "lint.store.unavailable";
 /// Event: a cron entry could not be started (`cron`, `graph`, `error`; spec 177).
 pub const CRON_START_REFUSED: &str = "cron.start.refused";
 /// Event: a start found a suspended run already armed for a cron entry and kept it (`cron`, `graph`, `run`; spec 187).
@@ -418,6 +420,12 @@ pub const ALL: &[&str] = &[
     MEMORY_ARCHIVE_REFUSED,
     MEMORY_RESTORED,
     CLI_FAILURE,
+    LINT_STORE_UNAVAILABLE,
+    CODER_SPAWNED,
+    CODER_EXITED,
+    CODER_ENV_NAMES,
+    CODER_ENV_REFUSED,
+    SKILL_DRIFT,
     CRON_START_REFUSED,
     CRON_REARMED,
     CRON_FIRED,

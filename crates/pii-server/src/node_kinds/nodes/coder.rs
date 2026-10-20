@@ -118,7 +118,7 @@ impl CoderFactory {
         self
     }
 
-    /// Replaces the skill source; production keeps [`NoSkills`], so a pinned skill refuses until the store is wired.
+    /// Replaces the skill source. The daemon's registry passes the store (`StoreSkills`); the default is [`NoSkills`].
     #[must_use]
     pub fn with_skills(mut self, skills: Arc<dyn SkillSource>) -> Self {
         self.skills = skills;
@@ -261,14 +261,6 @@ fn session_of(argv: &[String]) -> String {
         .unwrap_or_default()
 }
 
-/// A fresh env-file path under the temp dir, unique within this process. The file is created with `create_new`,
-/// so an existing path is an error, never overwritten.
-fn env_file_path() -> PathBuf {
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("pii-coder-{}-{seq}.env", std::process::id()))
-}
-
 impl CoderNode {
     /// Reports an agent-call event to the contract log, and to the run's context so the engine journals it (spec 217).
     fn observe(&self, ctx: &Ctx, event: &Event) {
@@ -387,7 +379,10 @@ impl CoderNode {
             Err(reason) => return Ok(Launch::Refused(reason)),
         };
 
-        let env_file = env_file_path();
+        let env_file = match self.env_file_path() {
+            Ok(path) => path,
+            Err(reason) => return Ok(Launch::Refused(reason)),
+        };
         let pairs: Vec<(String, String)> = env.into_iter().collect();
         if let Err(e) = coder_container::write_env_file(&env_file, &pairs) {
             return Ok(Launch::Refused(format!("env file: {e}")));
@@ -450,6 +445,19 @@ impl CoderNode {
         coder_skills::materialise(&run_dir, skills)
             .map(Some)
             .map_err(|e| format!("skills: {e}"))
+    }
+
+    /// A fresh env-file path under the runs dir, unique within this process (spec 227 R6). The file is created with
+    /// `create_new`, so an existing path is an error, never overwritten. No runs dir is a refusal: the secrets have
+    /// nowhere private to go.
+    fn env_file_path(&self) -> Result<PathBuf, String> {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let Some(runs) = &self.runs_dir else {
+            return Err(String::from("env file: no runs directory is configured"));
+        };
+        std::fs::create_dir_all(runs).map_err(|e| format!("env file: {e}"))?;
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        Ok(runs.join(format!("pii-coder-{}-{seq}.env", std::process::id())))
     }
 
     /// The network a container run gets: `none`, unless the graph declares a grant (spec 209).
