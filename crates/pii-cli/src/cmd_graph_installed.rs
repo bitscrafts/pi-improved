@@ -130,11 +130,14 @@ pub(crate) fn cmd_show(name: &str, args: &mut std::env::ArgsOs) -> ExitCode {
         Ok(n) => n,
         Err(e) => return error(e),
     };
-    let dir = match installed_dir(&o) {
+    let dirs = match installed_dirs(&o) {
         Ok(d) => d,
         Err(code) => return code,
     };
-    match std::fs::read_to_string(dir.join(format!("{name}.toml"))) {
+    let Some(path) = pii_server::find_graph(&dirs, &name) else {
+        return error(pii_server::graph_not_found(&name, &dirs));
+    };
+    match std::fs::read_to_string(&path) {
         Ok(src) => {
             print!("{src}");
             ExitCode::SUCCESS
@@ -189,27 +192,37 @@ fn one_name(o: &Opts) -> Result<String, ExitCode> {
     }
 }
 
-/// The default installed dir: the runtime graphs dir the daemon reads, else the installer's state
-/// dir. The runtime entry is a symlink into the state dir and exists only while the daemon runs.
-fn default_installed_dir() -> Option<PathBuf> {
-    let runtime = pii_uds::runtime_dir("default").map(|r| r.join("graphs"));
-    if runtime.as_ref().is_some_and(|p| p.is_dir()) {
-        return runtime;
+/// The directories graphs are read from, in the order the daemon searches them: the one `--dir`
+/// names, else the same search `run start` makes (`pii_server::graph_search_dirs`) over the runtime
+/// graphs dir and the daemon's default store. Canonical, so a runtime symlink resolves to the state
+/// dir it names. The runtime entry is a symlink into the state dir and exists only while the daemon runs.
+fn installed_dirs(o: &Opts) -> Result<Vec<PathBuf>, ExitCode> {
+    if let Some(dir) = &o.dir {
+        let dir = std::fs::canonicalize(dir)
+            .map_err(|e| error(format!("no installed graphs at {}: {e}", dir.display())))?;
+        return Ok(vec![dir]);
     }
-    pii_core::env_var("HOME")
-        .map(|h| PathBuf::from(h).join(".local/state/pii/graphs"))
-        .filter(|p| p.is_dir())
-        .or(runtime)
+    let dirs: Vec<PathBuf> = pii_uds::runtime_dir("default")
+        .map(|r| {
+            let store = o.store.clone().unwrap_or_else(|| r.join("store.redb"));
+            pii_server::graph_search_dirs(&r.join("graphs"), &store)
+        })
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|d| std::fs::canonicalize(d).ok())
+        .collect();
+    if dirs.is_empty() {
+        return Err(error("no installed graphs dir (use --dir)"));
+    }
+    Ok(dirs)
 }
 
-/// The installed directory, canonical so a runtime symlink resolves to the state dir it names.
+/// The directory a write goes to: the first of [`installed_dirs`].
 fn installed_dir(o: &Opts) -> Result<PathBuf, ExitCode> {
-    let dir = o.dir.clone().or_else(default_installed_dir);
-    let Some(dir) = dir else {
-        return Err(error("no installed graphs dir (use --dir)"));
-    };
-    std::fs::canonicalize(&dir)
-        .map_err(|e| error(format!("no installed graphs at {}: {e}", dir.display())))
+    installed_dirs(o)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| error("no installed graphs dir (use --dir)"))
 }
 
 fn repo_dir(o: &Opts) -> PathBuf {
@@ -360,20 +373,27 @@ fn effect_of(kind: &str) -> Option<&'static str> {
 
 /// `pii graph list`: one row per installed graph (every repo graph under `--all`).
 fn list(o: &Opts) -> ExitCode {
-    let installed = match installed_dir(o) {
+    let installed = match installed_dirs(o) {
+        Ok(d) => d,
+        Err(code) => return code,
+    };
+    let primary = match installed_dir(o) {
         Ok(d) => d,
         Err(code) => return code,
     };
     let repo = repo_dir(o);
     let reg = registry();
-    let mut names = match graph_files(&installed) {
-        Ok(n) => n,
-        Err(e) => return error(e),
-    };
+    let mut names = BTreeSet::new();
+    for dir in &installed {
+        match graph_files(dir) {
+            Ok(n) => names.extend(n),
+            Err(e) => return error(e),
+        }
+    }
     if o.all {
         names.extend(graph_files(&repo).unwrap_or_default());
     }
-    let armed = suspended_runs(&store_path(o, &installed));
+    let armed = suspended_runs(&store_path(o, &primary));
     if let Err(e) = &armed {
         eprintln!("armed runs unknown: {e}");
     }
@@ -396,12 +416,16 @@ fn list(o: &Opts) -> ExitCode {
 /// The row for one name, from whichever of its two copies exists; `None` when neither does.
 fn row_of(
     name: &str,
-    installed: &Path,
+    installed: &[PathBuf],
     repo: &Path,
     reg: &NodeRegistry,
     armed: &Result<Vec<Suspended>, String>,
 ) -> Option<Row> {
-    let inst = std::fs::read_to_string(installed.join(format!("{name}.toml"))).ok();
+    let inst_path = pii_server::find_graph(installed, name);
+    let inst = inst_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok());
+    let inst_dir = inst_path.as_deref().and_then(Path::parent).unwrap_or(repo);
     let rep = std::fs::read_to_string(repo.join(format!("{name}.toml"))).ok();
     let (shown, drift) = match (&inst, &rep) {
         (Some(i), Some(r)) if sha256_hex(i.as_bytes()) == sha256_hex(r.as_bytes()) => {
@@ -422,7 +446,7 @@ fn row_of(
     Some(Row {
         name: name.to_owned(),
         sha: sha256_hex(shown.as_bytes()),
-        checked: check(shown, &fragments_dir(installed, repo), reg),
+        checked: check(shown, &fragments_dir(inst_dir, repo), reg),
         armed,
         drift,
     })
@@ -498,19 +522,22 @@ fn explain(o: &Opts) -> ExitCode {
         Ok(n) => n,
         Err(code) => return code,
     };
-    let installed = match installed_dir(o) {
+    let installed = match installed_dirs(o) {
         Ok(d) => d,
         Err(code) => return code,
     };
     let repo = repo_dir(o);
-    let path = installed.join(format!("{name}.toml"));
+    let Some(path) = pii_server::find_graph(&installed, &name) else {
+        return error(pii_server::graph_not_found(&name, &installed));
+    };
     let src = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => return error(format!("{name} is not installed: {e}")),
     };
+    let dir = path.parent().unwrap_or(repo.as_path());
     let reg = registry();
     let sha = sha256_hex(src.as_bytes());
-    let checked = match check(&src, &fragments_dir(&installed, &repo), &reg) {
+    let checked = match check(&src, &fragments_dir(dir, &repo), &reg) {
         Ok(c) => c,
         Err(e) => return error(format!("{name} does not load: {e}")),
     };

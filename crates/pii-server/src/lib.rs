@@ -90,6 +90,58 @@ pub fn resolve_graph_dir(runtime_dir: &std::path::Path, store_path: &std::path::
     }
 }
 
+/// The directories a graph name is looked up in, in order: `primary`, the `graphs` dir beside the
+/// store, then the installer's state dir under `$HOME`. A dir listed twice is searched once.
+///
+/// This is the one search: the daemon's `run start` and the CLI's `graph` verbs both read it.
+#[must_use]
+pub fn graph_search_dirs(primary: &std::path::Path, store_path: &std::path::Path) -> Vec<PathBuf> {
+    let home = pii_core::env_var("HOME").map(|h| PathBuf::from(h).join(".local/state/pii/graphs"));
+    let beside = store_path.parent().map(|p| p.join("graphs"));
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for dir in std::iter::once(primary.to_path_buf())
+        .chain(beside)
+        .chain(home)
+    {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
+}
+
+/// The graph file a name resolves to: the first search dir that holds `<name>.toml`.
+#[must_use]
+pub fn find_graph(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    dirs.iter()
+        .map(|d| d.join(format!("{name}.toml")))
+        .find(|p| p.is_file())
+}
+
+/// The refusal for a name no search dir holds: every dir searched, and how many graphs it holds.
+#[must_use]
+pub fn graph_not_found(name: &str, dirs: &[PathBuf]) -> PiiError {
+    let searched: Vec<String> = dirs
+        .iter()
+        .map(|d| format!("{} ({})", d.display(), toml_count(d)))
+        .collect();
+    PiiError::NotFound(format!("graph '{name}' — searched {}", searched.join(" ")))
+}
+
+/// The `.toml` files a dir holds, not counting dotfiles; a dir that cannot be read holds none.
+fn toml_count(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir).map_or(0, |entries| {
+        entries
+            .filter_map(Result::ok)
+            .filter(|e| {
+                let file = e.file_name();
+                let file = file.to_string_lossy();
+                !file.starts_with('.') && file.ends_with(".toml")
+            })
+            .count()
+    })
+}
+
 /// An executing or completed run.
 pub struct RunHandle {
     /// Cancel token the node contexts observe.
@@ -597,8 +649,8 @@ impl Engine {
         Ok(run_id)
     }
 
-    /// Loads a graph by name: `graph_dir/<name>.toml`, falling back to the
-    /// built-in `default` agent graph.
+    /// Loads a graph by name: the first of [`graph_search_dirs`] that holds
+    /// `<name>.toml`, falling back to the built-in `default` agent graph.
     ///
     /// Uses `self.reg` (B2, opus review) — the SAME registry that will
     /// actually execute the graph — so each node's default caps match what
@@ -609,20 +661,21 @@ impl Engine {
     /// `pii-graph`'s built-in one.
     ///
     /// # Errors
-    /// [`PiiError::NotFound`] when neither exists; loader errors otherwise.
+    /// [`PiiError::NotFound`] naming every dir searched; loader errors otherwise.
     pub fn load_spec(&self, name: &str) -> Result<GraphSpec, PiiError> {
-        let path = self.cfg.graph_dir.join(format!("{name}.toml"));
-        if path.exists() {
+        let dirs = graph_search_dirs(&self.cfg.graph_dir, &self.cfg.store_path);
+        if let Some(path) = find_graph(&dirs, name) {
             let src = std::fs::read_to_string(&path)
                 .map_err(|e| PiiError::Internal(format!("read {}: {e}", path.display())))?;
             // Spec 219: a graph that attaches fragments is woven here, before it is validated or run.
-            let fragments = self.cfg.graph_dir.join("fragments");
+            let dir = path.parent().unwrap_or(&self.cfg.graph_dir);
+            let fragments = dir.join("fragments");
             return pii_graph::fragment::load_host(&src, &fragments, &self.reg).map(|w| w.spec);
         }
         if name == "default" {
             return pii_graph::load_toml_with_registry(engine::registry::DEFAULT_TOML, &self.reg);
         }
-        Err(PiiError::NotFound(format!("graph '{name}'")))
+        Err(graph_not_found(name, &dirs))
     }
 
     /// Registers a spawned run's cancel token.
