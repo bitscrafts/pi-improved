@@ -12,15 +12,17 @@
 # The graph is copied into the daemon's graphs dir under its own name; an existing file of that name is moved
 # aside to a dated backup, never overwritten or deleted.
 #
+# On lnx (the podman host): PII_BIN=~/.local/bin/pii PII_GRAPHS_DIR=/run/user/1000/pii/graphs
+# PII_LOG=~/pii.log PII_WORK=/tmp/m0-work PII_SPEC=<path to spec 226 on lnx> bash scripts/m0...
 # Run: bash scripts/m0-daemon-starts-a-container.sh
 set -uo pipefail
 PII=${PII_BIN:-pii}
 GRAPH_NAME=m0-daemon-starts-a-container
 GRAPHS=${PII_GRAPHS_DIR:-/root/.local/state/pii/graphs}
 LOG=${PII_LOG:-/root/.local/state/pii/pii.log}
-WORK=/projects/_tmp/m0-work
+WORK=${PII_WORK:-/projects/_tmp/m0-work}
 TS=$(date -u +%Y%m%dT%H%M%SZ)
-EVID=$(mktemp -d "/projects/_tmp/m0-evidence-$TS-XXXX") || { echo "M0 FAILED 1 mktemp failed"; exit 1; }
+EVID=$(mktemp -d "${PII_EVID_ROOT:-/projects/_tmp}/m0-evidence-$TS-XXXX") || { echo "M0 FAILED 1 mktemp failed"; exit 1; }
 
 tail_of() { tail -c 300 "$1" 2>/dev/null | tr '\n' ' '; }
 
@@ -29,6 +31,7 @@ command -v jq >/dev/null 2>&1 || { echo "M0 FAILED 127 jq not on PATH"; exit 0; 
 
 # 1. The graph: the template is kept beside this script's evidence; the daemon reads it from GRAPHS.
 mkdir -p "$WORK" || { echo "M0 FAILED 1 cannot create $WORK"; exit 0; }
+
 cat > "$EVID/$GRAPH_NAME.toml" <<'GRAPH'
 # Spec 226 M0: one coder node whose only action is a container start. Measurement only.
 name = "m0-daemon-starts-a-container"
@@ -41,8 +44,8 @@ kind = "coder"
 caps = ["spawn", "proc"]
 agent = "pi"
 model = "m0"
-workdir = "/projects/_tmp/m0-work"
-spec = "/projects/pi-improved/specs/226-m0-the-daemon-can-start-a-container.md"
+workdir = "__WORKDIR__"
+spec = "__SPEC__"
 brief = "M0: start the image and exit. The container runs the image's entrypoint; no agent work."
 env_pass = []
 container_image = "localhost/pii-agent:1"
@@ -69,6 +72,7 @@ port = "err"
 to = "refused"
 kind = "data"
 GRAPH
+sed -i "s|__WORKDIR__|$WORK|; s|__SPEC__|${PII_SPEC:-/projects/pi-improved/specs/226-m0-the-daemon-can-start-a-container.md}|" "$EVID/$GRAPH_NAME.toml"
 dst="$GRAPHS/$GRAPH_NAME.toml"
 if [ -e "$dst" ] && ! cmp -s "$dst" "$EVID/$GRAPH_NAME.toml"; then
   mv "$dst" "$dst.old-$TS" || { echo "M0 FAILED 1 cannot move aside $dst"; exit 0; }
