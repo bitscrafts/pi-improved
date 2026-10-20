@@ -110,13 +110,18 @@ TRACE_RC=$?
 grep -F "$RUN" "$LOG" > "$EVID/journal.ndjson" 2>/dev/null
 echo "run=$RUN status=${STATUS:-unknown} trace_rc=$TRACE_RC evidence=$EVID" >&2
 
-# 4. The verdict, from the journal lines only.
+# 4. The verdict, from the daemon's own trace and the journal lines.
+# The trace is the daemon's reply (via=daemon); its fail= field carries the node's exact refusal,
+# which is where podman's stderr lands (spec 228 R2). A log grep alone cannot carry it: the
+# daemon's worker.start.refused lines name no run id (measured 2026-10-20 on lnx).
+TRACE_FAIL=$(grep -oE 'fail=.+' "$EVID/trace.txt" | head -1 | sed -E 's/^fail=//; s/ rc=-.*$//; s/[[:space:]]+$//')
 SPAWN=$(grep '"kind":"coder.spawned"' "$EVID/journal.ndjson" | head -1)
 PID=$(printf '%s\n' "$SPAWN" | JQ -r '.fields.pid // empty' 2>/dev/null)
 if [ -n "$PID" ] && [ "$PID" -gt 0 ] 2>/dev/null; then
   echo "M0 PASS $PID"; exit 0
 fi
-REFUSAL=$(grep -iE 'refused|denied|landlock|EACCES|EPERM|sandbox' "$EVID/journal.ndjson" | head -1 | python3 -I -c '
+REFUSAL="${TRACE_FAIL:-}"
+[ -n "$REFUSAL" ] || REFUSAL=$(grep -iE 'refused|denied|landlock|EACCES|EPERM|sandbox' "$EVID/journal.ndjson" | head -1 | python3 -I -c '
 import json, sys
 l = sys.stdin.read().strip()
 if not l:

@@ -25,9 +25,17 @@ def main() -> int:
         data = open(files[0]).read()
     else:
         data = sys.stdin.read()
-    try:
-        obj = json.loads(data)
-    except Exception:
+    obj = None
+    for line in data.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            break
+        except Exception:
+            continue
+    if obj is None:
         return 4
     if path == ".":
         print(json.dumps(obj))
