@@ -227,7 +227,7 @@ fn skill_of(
         store.doc(id)
     };
     let raw = Some(bytes.ok().flatten()?);
-    if decode_kind(raw.clone()) != DocKind::Skill {
+    if decode_kind(raw.clone()) != Ok(DocKind::Skill) {
         return None;
     }
     Some(Skill {
