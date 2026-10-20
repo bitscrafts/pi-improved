@@ -657,10 +657,14 @@ impl GraphNode for CoderNode {
         let (code, pid, dur_ms, stop) = match launch {
             Launch::Exited { code, pid, dur_ms } => (code, pid, dur_ms, stop_reason(code)),
             // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`. No spawn ran, so an
-            // image node's digest slot reads `missing` (spec 223 R3).
+            // image node's digest slot says what the probe found (spec 223 R3, 231 R2): `missing` when the runtime said
+            // the image is absent, `probe-failed` when it could not answer.
             Launch::Refused(refusal) => {
                 self.journal_refusal(&refusal);
-                let digest = image.as_ref().map(|_| "missing");
+                let digest = image.as_ref().map(|_| match refusal {
+                    Refusal::Image { .. } => "missing",
+                    Refusal::Runtime { .. } | Refusal::Other(_) => "probe-failed",
+                });
                 return Ok(self.refuse_with(ctx, &agent, &model, &refusal.reason(), digest));
             }
         };

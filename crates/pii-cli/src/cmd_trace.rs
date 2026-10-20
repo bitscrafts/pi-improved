@@ -449,13 +449,44 @@ fn line(
     }
 }
 
-/// The first eight hex digits of an image digest, or `-` when the run recorded none.
+/// The first eight hex digits of an image digest, or `-` when the run recorded none. The two words a refusal journals in
+/// place of a digest pass through whole (spec 231 R2): `missing` (the runtime said the image is absent) and
+/// `probe-failed` (the runtime could not answer).
 fn digest8(digest: &str) -> &str {
+    if matches!(digest, "missing" | "probe-failed") {
+        return digest;
+    }
     let hex = digest.strip_prefix("sha256:").unwrap_or(digest);
     if hex.is_empty() {
         return "-";
     }
     hex.get(..8).unwrap_or(hex)
+}
+
+/// The node's failure or refusal string, uncut (spec 223 R2, 224 R2): the first criterion that failed, else the refusal's
+/// reason, else the node's error. `None` when the node says none.
+fn fail_text(line: &NodeLine) -> Option<&str> {
+    let exit = line.calls.last().and_then(|c| c.exit.as_ref());
+    exit.map(|e| e.first_failure.as_str())
+        .filter(|f| !f.is_empty())
+        .or_else(|| {
+            line.refusal
+                .as_ref()
+                .map(|r| r.reason.as_str())
+                .filter(|r| !r.is_empty())
+        })
+        .or_else(|| line.failure.as_deref().filter(|f| !f.is_empty()))
+}
+
+/// The failure or refusal of the node's latest trace line, in full (spec 231 R1). `no-failure` when it has none.
+fn full_reason(journal: &[(u64, RunEvent)], node: &str) -> String {
+    node_lines(journal)
+        .iter()
+        .rev()
+        .find(|line| line.node == node)
+        .and_then(fail_text)
+        .unwrap_or("no-failure")
+        .to_owned()
 }
 
 /// One trace line (spec 217 R6). The duration falls back to the call's own when the node failed without one.
@@ -474,14 +505,8 @@ fn trace_line(line: &NodeLine) -> String {
         .or_else(|| refusal.map(|r| digest8(&r.image_digest)))
         .unwrap_or("-");
     let crit = exit.map_or_else(|| "-".to_owned(), |e| format!("{}/{}", e.passed, e.run));
-    // Spec 223 R2: a refused node names its refusal, not an empty `pid=-`. Spec 224 R2: a failed node names its
-    // error, cut to 80 characters.
-    let fail = exit
-        .map(|e| e.first_failure.as_str())
-        .filter(|f| !f.is_empty())
-        .or_else(|| refusal.map(|r| r.reason.as_str()).filter(|r| !r.is_empty()))
-        .or_else(|| line.failure.as_deref().filter(|f| !f.is_empty()))
-        .map_or_else(|| "-".to_owned(), |f| f.chars().take(80).collect());
+    // Spec 224 R2: a failed node's error is cut to 80 characters on this line; `pii run trace --reason` prints it whole.
+    let fail = fail_text(line).map_or_else(|| "-".to_owned(), |f| f.chars().take(80).collect());
     let rc = exit.map_or_else(|| "-".to_owned(), |e| e.rc.to_string());
     let woven = line
         .woven_from
@@ -739,22 +764,32 @@ fn print_run(verb: &str, run: &str, loaded: &Loaded) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// `pii run trace <run_id> | explain <run_id> [--db <path>]` (spec 217 R6–R7, spec 220). The daemon answers first;
-/// the store (`--db`, else `$PII_RUNTIME_DIR/store.redb`) is read only when no daemon is reachable.
+/// `pii run trace <run_id> | explain <run_id> [--db <path>]` (spec 217 R6–R7, spec 220), and `pii run trace <run_id>
+/// --reason <node>` (spec 231 R1). The daemon answers first; the store (`--db`, else `$PII_RUNTIME_DIR/store.redb`) is
+/// read only when no daemon is reachable.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn cmd_run_observed(verb: &str, args: &mut std::env::ArgsOs) -> ExitCode {
-    let usage = format!("usage: pii run {verb} <run_id> [--db <path>]");
+    let usage = if verb == "trace" {
+        "usage: pii run trace <run_id> [--db <path>] [--reason <node>]".to_owned()
+    } else {
+        format!("usage: pii run {verb} <run_id> [--db <path>]")
+    };
     let Some(run) = args.next().and_then(|a| a.into_string().ok()) else {
         return usage_error("missing <run_id>", &usage);
     };
     let mut db = None;
+    let mut reason = None;
     while let Some(flag) = next_value_or_none(args) {
-        if flag != "--db" {
-            return usage_error(&format!("unknown flag {flag}"), &usage);
-        }
-        match next_value(args, "--db", &usage) {
-            Ok(path) => db = Some(PathBuf::from(path)),
-            Err(code) => return code,
+        match flag.as_str() {
+            "--db" => match next_value(args, "--db", &usage) {
+                Ok(path) => db = Some(PathBuf::from(path)),
+                Err(code) => return code,
+            },
+            "--reason" if verb == "trace" => match next_value(args, "--reason", &usage) {
+                Ok(node) => reason = Some(node),
+                Err(code) => return code,
+            },
+            _ => return usage_error(&format!("unknown flag {flag}"), &usage),
         }
     }
     let loaded = if let Some(outcome) = read_via_daemon(&run) {
@@ -768,9 +803,13 @@ pub(crate) fn cmd_run_observed(verb: &str, args: &mut std::env::ArgsOs) -> ExitC
         };
         read_via_store(&run, &db)
     };
-    match loaded {
-        Ok(loaded) => print_run(verb, &run, &loaded),
-        Err(code) => code,
+    match (loaded, reason) {
+        (Ok(loaded), Some(node)) => {
+            println!("{}", full_reason(&loaded.journal, &node));
+            ExitCode::SUCCESS
+        }
+        (Ok(loaded), None) => print_run(verb, &run, &loaded),
+        (Err(code), _) => code,
     }
 }
 

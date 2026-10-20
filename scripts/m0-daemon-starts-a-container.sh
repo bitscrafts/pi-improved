@@ -122,12 +122,16 @@ PID=$(printf '%s\n' "$SPAWN" | JQ -r '.fields.pid // empty' 2>/dev/null)
 if [ -n "$PID" ] && [ "$PID" -gt 0 ] 2>/dev/null; then
   echo "M0 PASS $PID"; exit 0
 fi
-REFUSAL="${TRACE_FAIL:-}"
-# `pii run trace` cuts `fail=` to 80 characters (spec 224 R2) and the daemon answers no --reason query
-# (measured 2026-10-20: "unknown flag --reason", rc 2), so a reason at the boundary is a clip, not the
-# runtime's whole sentence. Say so rather than present it as the measurement (spec 231 R3).
-if [ -n "$REFUSAL" ] && [ "${#REFUSAL}" -ge 80 ]; then
-  REFUSAL="$REFUSAL [clipped-80: trace cuts fail=; full reason pending A99]"
+# The verdict reason is the daemon's structured reply (spec 231 R1): `pii run trace --reason` prints the node's
+# string whole. `fail=` on the display line is cut at 80 characters (spec 224 R2), so it is only the fallback,
+# and a fallback at the boundary is said to be a clip rather than presented as the measurement (spec 231 R3).
+REFUSAL=$("$PII" run trace "$RUN" --reason code 2>/dev/null)
+[ "$REFUSAL" = "no-failure" ] && REFUSAL=""
+if [ -z "$REFUSAL" ]; then
+  REFUSAL="${TRACE_FAIL:-}"
+  if [ -n "$REFUSAL" ] && [ "${#REFUSAL}" -ge 80 ]; then
+    REFUSAL="$REFUSAL [clipped-80: the structured reply was empty; fail= is cut at 80]"
+  fi
 fi
 [ -n "$REFUSAL" ] || REFUSAL=$(grep -iE 'refused|denied|landlock|EACCES|EPERM|sandbox' "$EVID/journal.ndjson" | head -1 | python3 -I -c '
 import json, sys

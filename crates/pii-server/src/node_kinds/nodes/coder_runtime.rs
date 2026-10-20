@@ -164,9 +164,18 @@ impl ContainerRuntime for PodmanCli {
         ];
         let digest = match ctx.proc()?.run(&probe, &workdir, PROBE_TIMEOUT) {
             Ok(out) if out.exit_code == 0 => String::from_utf8_lossy(&out.stdout).trim().to_owned(),
-            Ok(out) => {
+            // Spec 231 R2: podman said the image is absent, or said nothing at all (spec 228). Any other words are the
+            // runtime failing to answer, not an absent image.
+            Ok(out) if probe_says_absent(&out.stderr) => {
                 return Ok(Launch::Refused(Refusal::Image {
                     image: req.image.to_owned(),
+                    reason: probe_reason(&out.stderr),
+                }));
+            }
+            Ok(out) => {
+                return Ok(Launch::Refused(Refusal::Runtime {
+                    socket: podman,
+                    status: None,
                     reason: probe_reason(&out.stderr),
                 }));
             }
@@ -528,6 +537,13 @@ fn message(body: &str) -> String {
         .and_then(|v| v.get("message").and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_else(|| body.split_whitespace().collect::<Vec<_>>().join(" "));
     text.chars().take(240).collect()
+}
+
+/// Whether a failed probe's stderr says the image is absent, or says nothing (spec 228 R2, spec 231 R2). Podman's
+/// absence words are `no such image` and `image not known`.
+fn probe_says_absent(stderr: &[u8]) -> bool {
+    let said = String::from_utf8_lossy(stderr).to_lowercase();
+    said.trim().is_empty() || said.contains("no such image") || said.contains("image not known")
 }
 
 /// Podman's own stderr from a failed probe, collapsed to one line and cut to its last 240 characters (spec 228 R2).

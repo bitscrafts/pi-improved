@@ -113,6 +113,9 @@ fn missing_image_refuses_on_the_err_port() {
 /// reach the journal verbatim. The fake fails exactly the way the sandboxed daemon's podman did, and the
 /// event must carry that stderr — the journal may never replace the runtime's failure with an invented
 /// "image not present; build it outside pii".
+///
+/// Spec 231 R2: a lock refusal is not an absent image. Podman did not say the image is missing, so the
+/// refusal is `coder.runtime.unavailable` and the image slot reads `probe-failed` (M0, run r000000000210).
 #[test]
 fn the_refusal_quotes_podmans_stderr_verbatim() {
     let bin = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-bin-").unwrap();
@@ -127,27 +130,17 @@ fn the_refusal_quotes_podmans_stderr_verbatim() {
     let (port, events) = refuse_outcome(&podman, work.path());
     assert_eq!(port, "err");
     let said = "Error: acquiring runtime init lock: open /run/user/1000/libpod/tmp/alive.lck: permission denied";
-    let ev = image_missing(&events);
-    assert_eq!(
-        ev.fields
-            .get("probe_stderr")
-            .and_then(serde_json::Value::as_str),
-        Some(said),
-        "the journal carries podman's words: {ev:?}"
+    assert!(
+        !events.iter().any(|e| e.kind == names::CODER_IMAGE_MISSING),
+        "a runtime that refused its lock did not say the image is absent: {events:?}"
     );
+    let ev = events
+        .iter()
+        .find(|e| e.kind == names::CODER_RUNTIME_UNAVAILABLE)
+        .expect("coder.runtime.unavailable journalled");
     assert_eq!(
         ev.fields.get("reason").and_then(serde_json::Value::as_str),
         Some(said),
         "the refusal clause is podman's stderr itself: {ev:?}"
-    );
-    assert!(
-        !events.iter().any(|e| {
-            e.kind == names::CODER_IMAGE_MISSING
-                && e.fields
-                    .get("reason")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|r| r.contains("image not present"))
-        }),
-        "the invented cause is gone: {events:?}"
     );
 }

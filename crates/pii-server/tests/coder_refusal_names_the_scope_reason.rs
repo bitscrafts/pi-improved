@@ -98,6 +98,14 @@ fn scope_refusal_names_its_reason_and_the_run_is_refused() {
         reason.contains(&denial),
         "reason names the scope: {reason} vs {denial}"
     );
+    // Spec 231 R2: refused before the runtime answered, so the slot is `probe-failed`, never `missing`.
     let digest = format!("{:?}", refused.fields.get("image_digest"));
-    assert!(digest.contains("missing"), "no digest was probed: {digest}");
+    assert!(
+        digest.contains("probe-failed"),
+        "no digest was probed: {digest}"
+    );
+    assert!(
+        !digest.contains("missing"),
+        "a refusal before the runtime is not an absent image: {digest}"
+    );
 }
