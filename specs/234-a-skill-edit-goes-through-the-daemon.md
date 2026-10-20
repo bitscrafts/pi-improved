@@ -87,4 +87,22 @@ R5. `lint-observability` stays green; `cmd_skill.rs`'s budget line is amended wi
 
 ## Closure
 
-(empty — nothing closed without measurement)
+Independently verified 2026-10-20 by the orchestrator on a clean detached worktree of `622826e` (own target dir,
+so the uncommitted coder.rs/lib.rs split in the main tree did not take part):
+
+- criteria 1-6 green: skill_edit_through_the_daemons_store 1/0, skill_put_through_the_daemon 1/0,
+  skill_edit_keeps_the_pin 1/0, skill_list_and_explain 4/0, wire_roundtrip 12/0, lint-observability 0 findings
+  (172/173 raw prints); `cargo fmt --all -- --check` rc=0.
+- mutations of `crates/pii-memory/src/skill.rs::edit` (sha256 89e3f576…ec3f8 before, `sha256sum -c` OK after
+  restore + touch, test green again):
+  M1 drop the `NoMarker` refusal -> the daemon test reddens (L321); the CLI pin test stays green (it does not
+  cover the marker, the daemon test is the one that guards R2's marker half).
+  M2 drop the `DropsPin` refusal -> both red (daemon L314, CLI L96).
+  M3 drop `doc.id.clone_from(&old.id)` -> both red (daemon L227, CLI L121).
+- criterion 7 was RED at `622826e`: clippy -D warnings fails compiling pii-graph on `double_must_use` at
+  `crates/pii-graph/src/fragment/splice.rs:175`, a `#[must_use]` that arrived in leftover commit `171b7ae`, not
+  in this spec's diff. That is the cycle's `gate-failed`; the commit message's "clippy zero on four crates" was
+  not true of the tree. Removing that one attribute (committed alone just before this closure) makes
+  clippy on pii-graph/proto/server/cli/memory --all-targets rc=0, and pii-graph's tests stay 110/0.
+- criterion 8 (lnx live: `via daemon`, old pin refuses `skill.drift`, new pin journals `coder.spawned`) is NOT
+  measured here; it needs a deploy of this tree and is carried by row A95 (spec 227 criterion 7).
