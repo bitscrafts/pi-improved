@@ -98,7 +98,7 @@ impl MemorySearcher {
         let now = ctx.now_ms();
         let mut hits = Vec::with_capacity(fused.len());
         for (doc, score) in fused.into_iter().take(k) {
-            let kind = self.kind_of(&doc);
+            let kind = self.kind_of(&doc)?;
             let created = self.created_of(&doc);
             #[allow(clippy::cast_precision_loss)] // reason: age in days
             let age_days = now.saturating_sub(created) as f32 / 86_400_000.0;
@@ -135,8 +135,9 @@ impl MemorySearcher {
         pii_observe::Health::health(self.store.as_ref())
     }
 
-    fn kind_of(&self, id: &str) -> crate::doc::DocKind {
+    fn kind_of(&self, id: &str) -> Result<crate::doc::DocKind, PiiError> {
         crate::doc::decode_kind(self.store.doc(id).ok().flatten())
+            .map_err(|e| PiiError::Internal(format!("memory doc {id}: {e}")))
     }
 
     fn created_of(&self, id: &str) -> u64 {

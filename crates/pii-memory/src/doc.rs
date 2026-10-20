@@ -126,19 +126,53 @@ fn blake3_text(text: &str) -> [u8; 32] {
     }
     out
 }
-/// Decodes the `DocKind` byte from a stored doc payload (kind byte first, then `created_ms`, then
-/// the text; see `encode`).
-#[must_use]
-pub fn decode_kind(bytes: Option<Vec<u8>>) -> DocKind {
-    let Some(b) = bytes else { return DocKind::Atom };
-    if b.len() < 9 {
-        return DocKind::Atom;
+/// Why a stored doc payload has no decodable kind (spec 214).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecodeError {
+    /// The kind byte is not a known `DocKind` discriminant.
+    UnknownKind {
+        /// The byte as stored.
+        byte: u8,
+    },
+    /// The payload is shorter than the 9-byte header.
+    Truncated {
+        /// The payload length as stored.
+        len: usize,
+    },
+}
+
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownKind { byte } => write!(f, "unknown doc kind byte 0x{byte:02x}"),
+            Self::Truncated { len } => write!(f, "doc payload is {len} bytes, header is 9"),
+        }
     }
-    match b.first() {
-        Some(&1) => DocKind::Scene,
-        Some(&2) => DocKind::Persona,
-        Some(&3) => DocKind::Skill,
-        _ => DocKind::Atom,
+}
+
+impl std::error::Error for DecodeError {}
+
+/// Decodes the `DocKind` byte from a stored doc payload (see `encode`).
+///
+/// An absent payload has no kind to refuse and reads as `Atom`; an unknown byte is a refusal,
+/// never a default.
+///
+/// # Errors
+/// [`DecodeError::Truncated`] when the payload is under 9 bytes, and
+/// [`DecodeError::UnknownKind`] when the kind byte is not a known discriminant.
+pub fn decode_kind(bytes: Option<Vec<u8>>) -> Result<DocKind, DecodeError> {
+    let Some(b) = bytes else {
+        return Ok(DocKind::Atom);
+    };
+    if b.len() < 9 {
+        return Err(DecodeError::Truncated { len: b.len() });
+    }
+    match b.first().copied().unwrap_or_default() {
+        0 => Ok(DocKind::Atom),
+        1 => Ok(DocKind::Scene),
+        2 => Ok(DocKind::Persona),
+        3 => Ok(DocKind::Skill),
+        byte => Err(DecodeError::UnknownKind { byte }),
     }
 }
 
