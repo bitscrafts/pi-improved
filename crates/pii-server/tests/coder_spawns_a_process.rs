@@ -13,6 +13,7 @@ use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx};
 use pii_graph::NodeRegistry;
 use pii_observe::{Event, Observer, names};
 use pii_server::node_kinds::nodes::coder::{CoderFactory, agent_binaries};
+use pii_server::node_kinds::nodes::criteria;
 
 #[derive(Default)]
 struct Rec(Mutex<Vec<Event>>);
@@ -38,8 +39,25 @@ fn root_ctx(bin: &Path) -> Ctx {
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
     let mut argv0 = vec![String::from("/bin/sh")];
     argv0.extend(agent_binaries(bin));
+    argv0.extend(criteria::programs(&criteria_table()));
     caps.proc_argv0 = ArgvScope::new(argv0);
     Ctx::root(caps, Budget::unlimited())
+}
+
+/// Spec 215: the named criteria these tests use; each name is a fixed argv, never a shell string.
+fn criteria_table() -> BTreeMap<String, Vec<String>> {
+    BTreeMap::from([
+        (
+            "ran-file".to_owned(),
+            vec![
+                "/usr/bin/test".to_owned(),
+                "-f".to_owned(),
+                "ran.txt".to_owned(),
+            ],
+        ),
+        ("green".to_owned(), vec!["/bin/true".to_owned()]),
+        ("red".to_owned(), vec!["/bin/false".to_owned()]),
+    ])
 }
 
 /// Runs a one-node `coder` graph through the real scheduler and returns the terminal and the events.
@@ -53,11 +71,9 @@ fn run_coder_graph(
     let store = pii_store::Store::open(&store_dir.path().join("store.redb")).unwrap();
     let log = Arc::new(Rec::default());
     let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(CoderFactory::with_env(
-        bin.to_path_buf(),
-        env,
-        log.clone(),
-    )));
+    reg.register(Arc::new(
+        CoderFactory::with_env(bin.to_path_buf(), env, log.clone()).with_criteria(criteria_table()),
+    ));
     let src = format!(
         "name = \"coder-test\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\n{node_fields}\n"
     );
@@ -84,7 +100,7 @@ fn coder_spawns_pi_and_passes_on_green_criteria() {
     let bin = fake_bin("echo ran > \"$PWD/ran.txt\"");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-work-").unwrap();
     let fields = format!(
-        "agent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"test -f ran.txt\"]\n",
+        "agent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"ran-file\"]\n",
         work.path().display()
     );
     let (terminal, events, _) = run_coder_graph(bin.path(), &fields, BTreeMap::new());
@@ -120,12 +136,12 @@ fn failing_criterion_fails_the_node_and_names_it() {
     let bin = fake_bin("exit 0");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-work-").unwrap();
     let fields = format!(
-        "agent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"false-criterion-xyz\"]\n",
+        "agent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"red\"]\n",
         work.path().display()
     );
     let (terminal, _, _) = run_coder_graph(bin.path(), &fields, BTreeMap::new());
     match terminal {
-        Terminal::Failure { error } => assert!(error.contains("false-criterion-xyz"), "{error}"),
+        Terminal::Failure { error } => assert!(error.contains("red"), "{error}"),
         other => panic!("expected failure naming the criterion, got {other:?}"),
     }
 }
@@ -137,7 +153,7 @@ fn missing_credentials_is_a_refusal_on_the_err_port() {
     let bin = fake_bin("touch \"$PWD/spawned.txt\"");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-work-").unwrap();
     let fields = format!(
-        "agent = \"claude\"\nmodel = \"haiku-5-5\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"true\"]\n",
+        "agent = \"claude\"\nmodel = \"haiku-5-5\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"green\"]\n",
         work.path().display()
     );
     let (terminal, events, _) = run_coder_graph(bin.path(), &fields, BTreeMap::new());

@@ -68,6 +68,8 @@ pub const WORKER_START_REFUSED: &str = "worker.start.refused";
 pub const CODER_SPAWNED: &str = "coder.spawned";
 /// Event: a coder node's image is absent or has no digest (`image`, `reason`); nothing was started (spec 209).
 pub const CODER_IMAGE_MISSING: &str = "coder.image.missing";
+/// Event: a coder node's criterion is not in the named table (`criterion`); nothing was spawned (spec 215).
+pub const CRITERIA_UNKNOWN: &str = "criteria.unknown";
 /// Event: a coder node ran on the host because it names no `container_image` (`agent`); deprecated (spec 209).
 pub const CODER_HOST_SPAWN_DEPRECATED: &str = "coder.host_spawn.deprecated";
 /// Event: a memory search completed.
@@ -396,6 +398,7 @@ pub const ALL: &[&str] = &[
     WORKER_START_REFUSED,
     CODER_IMAGE_MISSING,
     CODER_HOST_SPAWN_DEPRECATED,
+    CRITERIA_UNKNOWN,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,
     MEMORY_ENTITY_WRITTEN,

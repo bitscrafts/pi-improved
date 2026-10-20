@@ -27,6 +27,7 @@ fn scratch(name: &str) -> PathBuf {
 
 fn engine_in(dir: &std::path::Path) -> Arc<Engine> {
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fixture_path().display()),

@@ -24,6 +24,7 @@ text = "hello"
 fn engine_in(dir: &std::path::Path) -> Arc<Engine> {
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
         model: format!(

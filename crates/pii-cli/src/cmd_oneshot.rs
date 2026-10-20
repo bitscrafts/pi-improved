@@ -171,6 +171,7 @@ async fn run_over_loopback(
     std::fs::create_dir_all(&store_dir)
         .map_err(|e| format!("mkdir {}: {e}", store_dir.display()))?;
     let cfg = EngineConfig {
+        grant_ceiling: None,
         workspace: a.workspace.clone(),
         store_path: store_dir.join("store.redb"),
         model: model.to_owned(),

@@ -118,6 +118,7 @@ async fn route_decision_is_journaled() {
     let dir = scratch("journaled");
     let fixture = fixture_dir().join("assistant.json");
     let engine = pii_server::Engine::new(pii_server::EngineConfig {
+        grant_ceiling: None,
         workspace: dir.clone(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fixture.display()),
@@ -180,6 +181,7 @@ async fn route_decision_is_journaled() {
 
 fn engine_cfg_of(engine: &Arc<pii_server::Engine>) -> pii_server::EngineConfig {
     pii_server::EngineConfig {
+        grant_ceiling: None,
         workspace: engine.cfg.workspace.clone(),
         store_path: engine.cfg.store_path.clone(),
         model: engine.cfg.model.clone(),

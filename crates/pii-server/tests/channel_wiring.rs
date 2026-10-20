@@ -44,6 +44,7 @@ fn build(
     std::fs::create_dir_all(dir.join("ws")).unwrap();
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.join("ws"),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello.display()),

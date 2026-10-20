@@ -43,6 +43,7 @@ fn engine_in(dir: &Path) -> Arc<Engine> {
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
     std::fs::write(dir.join("graphs/ungranted.toml"), UNGRANTED).unwrap();
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.join("ws"),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello().display()),

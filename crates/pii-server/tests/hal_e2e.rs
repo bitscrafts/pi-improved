@@ -98,6 +98,7 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Daemon>, Arc<Recorder>) {
         std::fs::write(dir.join(format!("graphs/{n}.toml")), g).unwrap();
     }
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.join("ws"),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello.display()),
@@ -325,6 +326,7 @@ fn an_unknown_backend_or_a_bad_scope_entry_is_refused_at_daemon_build() {
         let hello =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase2/hello.json");
         let engine = Engine::new(EngineConfig {
+            grant_ceiling: None,
             workspace: dir.path().join("ws"),
             store_path: dir.path().join("store.redb"),
             model: format!("scripted:{}", hello.display()),

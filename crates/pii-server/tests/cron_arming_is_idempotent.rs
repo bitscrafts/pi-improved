@@ -62,6 +62,7 @@ async fn n_restarts_leave_one_armed_run_per_cron_entry() {
     let workspace = dir.join("ws");
     std::fs::create_dir_all(&workspace).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace,
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello().display()),

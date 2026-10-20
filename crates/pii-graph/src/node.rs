@@ -69,6 +69,8 @@ pub trait NodeFactory: Send + Sync {
 #[derive(Default)]
 pub struct NodeRegistry {
     map: BTreeMap<&'static str, Arc<dyn NodeFactory>>,
+    /// Spec 215: the most capability any node or graph may request; `None` admits everything.
+    ceiling: Option<CapKind>,
 }
 
 impl NodeRegistry {
@@ -82,7 +84,20 @@ impl NodeRegistry {
         map.insert("wait", Arc::new(WaitFactory));
         map.insert("timer", Arc::new(TimerFactory));
         map.insert("refuse", Arc::new(RefuseFactory));
-        Self { map }
+        Self { map, ceiling: None }
+    }
+
+    /// Caps what any node or graph may request: a graph asking beyond `ceiling` is refused at load (spec 215).
+    #[must_use]
+    pub fn with_grant_ceiling(mut self, ceiling: CapKind) -> Self {
+        self.ceiling = Some(ceiling);
+        self
+    }
+
+    /// The grant ceiling, if one is configured.
+    #[must_use]
+    pub fn grant_ceiling(&self) -> Option<CapKind> {
+        self.ceiling
     }
 
     /// Looks up a factory by kind.

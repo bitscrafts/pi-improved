@@ -280,6 +280,13 @@ async fn run_daemon(
                 .field("using", graph_dir.display().to_string()),
         );
     }
+    let grant_ceiling = match cfg.grant_ceiling() {
+        Ok(ceiling) => ceiling,
+        Err(e) => {
+            fail("daemon", e.to_string());
+            return ExitCode::from(2);
+        }
+    };
     let engine_cfg = EngineConfig {
         store_path,
         workspace,
@@ -290,6 +297,7 @@ async fn run_daemon(
         tiers: cfg.model_tier.clone(),
         session_runs_cap: cfg.core.session_runs_cap(),
         llama_host: cfg.llama.host.clone(),
+        grant_ceiling,
     };
     let engine = match Engine::new(engine_cfg) {
         Ok(e) => e,

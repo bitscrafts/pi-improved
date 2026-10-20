@@ -52,7 +52,11 @@ fn fake_podman(dir: &Path, images: &[&str]) -> PathBuf {
 fn root_ctx(bin: &Path, podman: &Path) -> Ctx {
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
-    let mut argv0 = vec![String::from("/bin/sh"), podman.display().to_string()];
+    let mut argv0 = vec![
+        String::from("/bin/sh"),
+        podman.display().to_string(),
+        String::from("/usr/bin/test"),
+    ];
     argv0.extend(agent_binaries(bin));
     caps.proc_argv0 = ArgvScope::new(argv0);
     Ctx::root(caps, Budget::unlimited())
@@ -72,7 +76,15 @@ fn run_coder_graph(
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(
         CoderFactory::with_env(bin.to_path_buf(), env, log.clone())
-            .with_podman(podman.to_path_buf()),
+            .with_podman(podman.to_path_buf())
+            .with_criteria(BTreeMap::from([(
+                String::from("ran-file"),
+                vec![
+                    String::from("/usr/bin/test"),
+                    String::from("-f"),
+                    String::from("ran.txt"),
+                ],
+            )])),
     ));
     let src = format!(
         "name = \"coder-podman\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\n{node_fields}\n"
@@ -112,7 +124,7 @@ fn run_line(lines: &[String]) -> String {
 /// A coder node whose agent runs in `image`; the workdir is `work`, the env pass is `PII_TEST_KEY`.
 fn container_fields(image: &str, work: &Path) -> String {
     format!(
-        "agent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{image}\"\nenv_pass = [\"PII_TEST_KEY\"]\ncriteria = [\"test -f ran.txt\"]\n",
+        "agent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{image}\"\nenv_pass = [\"PII_TEST_KEY\"]\ncriteria = [\"ran-file\"]\n",
         work.display()
     )
 }
@@ -225,7 +237,7 @@ fn host_path_announces_itself() {
     let podman = bin.path().join("podman");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-work-").unwrap();
     let fields = format!(
-        "agent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncriteria = [\"test -f ran.txt\"]\n",
+        "agent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncriteria = [\"ran-file\"]\n",
         work.path().display()
     );
     let (terminal, events) = run_coder_graph(bin.path(), &podman, &fields, BTreeMap::new());

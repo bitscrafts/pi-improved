@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 fn engine_in(dir: &Path, fixture: &Path) -> Arc<Engine> {
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fixture.display()),
@@ -96,6 +97,7 @@ fn survive_daemon_restart() {
     // Drop the engine (daemon restart). The decision lives in the store.
     let dir2 = dir.clone();
     let engine2 = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir2,
         store_path,
         model: format!("scripted:{}", fixture.display()),

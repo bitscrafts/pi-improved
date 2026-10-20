@@ -35,6 +35,27 @@ bitflags! {
 }
 
 impl CapKind {
+    /// The `snake_case` name of each capability set here, in declaration order (spec 215 refusals name them).
+    #[must_use]
+    pub fn names(self) -> Vec<&'static str> {
+        const ALL: [(CapKind, &str); 10] = [
+            (CapKind::FS_READ, "fs_read"),
+            (CapKind::FS_WRITE, "fs_write"),
+            (CapKind::NET, "net"),
+            (CapKind::PROC, "proc"),
+            (CapKind::HW, "hw"),
+            (CapKind::SECRETS, "secrets"),
+            (CapKind::MEMORY_WRITE, "memory_write"),
+            (CapKind::SPAWN, "spawn"),
+            (CapKind::MEMORY_READ, "memory_read"),
+            (CapKind::POST, "post"),
+        ];
+        ALL.iter()
+            .filter(|(kind, _)| self.contains(*kind))
+            .map(|(_, name)| *name)
+            .collect()
+    }
+
     /// Parses a `snake_case` capability name.
     ///
     /// # Errors

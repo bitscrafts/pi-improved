@@ -102,6 +102,7 @@ async fn run_tui(
         let store_dir = workspace.join(".pii");
         let _ = std::fs::create_dir_all(&store_dir);
         let cfg = EngineConfig {
+            grant_ceiling: None,
             workspace: workspace.clone(),
             store_path: store_dir.join("store.redb"),
             model: pii_core::env_var("PII_MODEL")

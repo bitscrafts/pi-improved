@@ -47,6 +47,18 @@ fn fake_podman(dir: &Path, image: &str) -> std::path::PathBuf {
     podman
 }
 
+/// Spec 215: the one named criterion this test uses, a fixed argv that checks the fake agent's file.
+fn ran_file_criteria() -> BTreeMap<String, Vec<String>> {
+    BTreeMap::from([(
+        String::from("ran-file"),
+        vec![
+            String::from("/usr/bin/test"),
+            String::from("-f"),
+            String::from("ran.txt"),
+        ],
+    )])
+}
+
 #[test]
 fn a_coder_run_installs_nothing() {
     let image = "pii-coder:prebuilt";
@@ -60,16 +72,21 @@ fn a_coder_run_installs_nothing() {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(
         CoderFactory::with_env(bin.path().to_path_buf(), BTreeMap::new(), log.clone())
-            .with_podman(podman.clone()),
+            .with_podman(podman.clone())
+            .with_criteria(ran_file_criteria()),
     ));
     let src = format!(
-        "name = \"coder-no-install\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{image}\"\ncriteria = [\"test -f ran.txt\"]\n",
+        "name = \"coder-no-install\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{image}\"\ncriteria = [\"ran-file\"]\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
-    let mut argv0 = vec![String::from("/bin/sh"), podman.display().to_string()];
+    let mut argv0 = vec![
+        String::from("/bin/sh"),
+        podman.display().to_string(),
+        String::from("/usr/bin/test"),
+    ];
     argv0.extend(agent_binaries(bin.path()));
     caps.proc_argv0 = ArgvScope::new(argv0);
     let run_id = store.next_run_id().unwrap();

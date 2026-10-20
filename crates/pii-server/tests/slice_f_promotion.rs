@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 fn engine_in(dir: &Path, fixture: &str) -> Arc<Engine> {
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{fixture}"),

@@ -56,6 +56,7 @@ mod cron_refusal {
         std::fs::create_dir_all(dir.join("ws")).unwrap();
         std::fs::write(dir.join("graphs").join(format!("{graph}.toml")), body).unwrap();
         let engine = Engine::new(EngineConfig {
+            grant_ceiling: None,
             workspace: dir.join("ws"),
             store_path: dir.join("store.redb"),
             model: format!(

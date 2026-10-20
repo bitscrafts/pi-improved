@@ -246,6 +246,8 @@ pub fn load_toml_with_registry(
         entry
     };
 
+    check_grant_ceiling(caps, &nodes, registry.grant_ceiling())?;
+
     Ok(GraphSpec {
         name: name.to_string(),
         caps,
@@ -254,6 +256,37 @@ pub fn load_toml_with_registry(
         entry,
         limits,
     })
+}
+
+/// Spec 215: refuses a graph, or any node in it, that requests a capability beyond the registry's ceiling. The
+/// message names the node (or the graph), the capabilities over the line, and the ceiling itself.
+fn check_grant_ceiling(
+    caps: u32,
+    nodes: &[NodeSpec],
+    ceiling: Option<CapKind>,
+) -> Result<(), PiiError> {
+    let Some(ceiling) = ceiling else {
+        return Ok(());
+    };
+    let over = |bits: u32| CapKind::from_bits_retain(bits) & !ceiling;
+    let refuse = |who: &str, excess: CapKind| {
+        Err(PiiError::Invalid(format!(
+            "graph.grant.ceiling: {who} requests {} beyond the ceiling {}",
+            excess.names().join(","),
+            ceiling.names().join(",")
+        )))
+    };
+    let graph_excess = over(caps);
+    if !graph_excess.is_empty() {
+        return refuse("graph", graph_excess);
+    }
+    for node in nodes {
+        let excess = over(node.caps);
+        if !excess.is_empty() {
+            return refuse(&format!("node '{}'", node.id), excess);
+        }
+    }
+    Ok(())
 }
 
 /// Remaining (non-reserved) keys in a node table become its `cfg` JSON.

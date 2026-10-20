@@ -33,6 +33,7 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Engine>, PathBuf) {
     let workspace = dir.join("ws");
     std::fs::create_dir_all(&workspace).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace,
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fixtures_hello().display()),

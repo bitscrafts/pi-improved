@@ -81,6 +81,7 @@ fn engine_in(dir: &std::path::Path) -> Arc<Engine> {
 /// graph asked for 1 ms (doc 064, and the comment the test has carried since it was written).
 fn engine_in_at(dir: &std::path::Path, graph_dir: PathBuf) -> Arc<Engine> {
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fixture_path().display()),

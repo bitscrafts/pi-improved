@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 fn engine_in(dir: &Path, fixture: &str) -> Arc<Engine> {
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{fixture}"),
@@ -205,6 +206,7 @@ async fn session_runs_capped_with_lru_eviction() {
     let fixture = fixture_in(&dir);
     let cap = 8usize;
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.clone(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{fixture}"),

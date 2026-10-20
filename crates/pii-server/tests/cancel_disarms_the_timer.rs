@@ -34,6 +34,7 @@ fn engine_in(dir: &Path) -> Arc<Engine> {
     let workspace = dir.join("ws");
     std::fs::create_dir_all(&workspace).unwrap();
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace,
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello().display()),

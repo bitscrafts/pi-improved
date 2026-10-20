@@ -56,6 +56,7 @@ fn engine_in(dir: &Path) -> Arc<Engine> {
     .unwrap();
     let hello = fixture;
     Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.join("ws"),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello.display()),

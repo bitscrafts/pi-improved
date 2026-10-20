@@ -363,6 +363,7 @@ mod tests {
             .expect("workspace root")
             .join("fixtures/phase2/hello.json");
         let engine = Engine::new(EngineConfig {
+            grant_ceiling: None,
             workspace: dir.path().to_path_buf(),
             store_path: dir.path().join("store.redb"),
             model: format!("scripted:{}", fixtures_hello.display()),

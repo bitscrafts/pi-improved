@@ -49,6 +49,7 @@ fn daemon_in(dir: &Path, config_text: &str) -> Arc<Daemon> {
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
     std::fs::write(dir.join("graphs/echo.toml"), GRAPH).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.join("ws"),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello().display()),

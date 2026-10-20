@@ -36,6 +36,7 @@ fn scratch_daemon() -> (tempfile::TempDir, Arc<Daemon>, Arc<Recorder>) {
     let workspace = dir.join("ws");
     std::fs::create_dir_all(&workspace).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace,
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello().display()),

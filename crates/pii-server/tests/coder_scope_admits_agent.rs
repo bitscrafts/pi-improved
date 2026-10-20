@@ -29,6 +29,7 @@ fn root_caps(bin: &std::path::Path) -> CapSet {
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
     let mut argv0 = vec![String::from("/bin/sh")];
     argv0.extend(agent_binaries(bin));
+    argv0.push(String::from("/usr/bin/test"));
     caps.proc_argv0 = ArgvScope::new(argv0);
     caps
 }
@@ -47,13 +48,20 @@ fn coder_node_scope_admits_its_agent_binary() {
     let store = pii_store::Store::open(&store_dir.path().join("store.redb")).unwrap();
     let log = Arc::new(Rec::default());
     let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(CoderFactory::with_env(
-        bin.path().to_path_buf(),
-        BTreeMap::new(),
-        log.clone(),
-    )));
+    let criteria = BTreeMap::from([(
+        String::from("ran-file"),
+        vec![
+            String::from("/usr/bin/test"),
+            String::from("-f"),
+            String::from("ran.txt"),
+        ],
+    )]);
+    reg.register(Arc::new(
+        CoderFactory::with_env(bin.path().to_path_buf(), BTreeMap::new(), log.clone())
+            .with_criteria(criteria),
+    ));
     let src = format!(
-        "name = \"coder-scope\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"test -f ran.txt\"]\n",
+        "name = \"coder-scope\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"ran-file\"]\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();
@@ -85,14 +93,22 @@ fn non_coder_node_cannot_exec_the_agent_binary() {
     let run_scope = ArgvScope::new({
         let mut v = vec![String::from("/bin/sh")];
         v.extend(agent_binaries(&bin));
+        v.push(String::from("/usr/bin/test"));
         v
     });
     let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(CoderFactory::with_env(
-        bin,
-        BTreeMap::new(),
-        Arc::new(Rec::default()),
-    )));
+    let criteria = BTreeMap::from([(
+        String::from("ran-file"),
+        vec![
+            String::from("/usr/bin/test"),
+            String::from("-f"),
+            String::from("ran.txt"),
+        ],
+    )]);
+    reg.register(Arc::new(
+        CoderFactory::with_env(bin, BTreeMap::new(), Arc::new(Rec::default()))
+            .with_criteria(criteria),
+    ));
     let agent_pi = format!("{AGENT_BIN_DIR}/pi");
     let argv = vec![agent_pi.clone(), String::from("-p")];
     let spawn = |scope: ArgvScope| {

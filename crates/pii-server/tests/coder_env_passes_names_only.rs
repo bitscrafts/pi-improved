@@ -29,15 +29,24 @@ fn child_sees_only_the_named_env_pass_variables() {
         (String::from("PII_TEST_KEY"), String::from("passed-value")),
         (String::from("OTHER_API_KEY"), String::from("secret-value")),
     ]);
+    let criteria = BTreeMap::from([(
+        String::from("env-file"),
+        vec![
+            String::from("/usr/bin/test"),
+            String::from("-f"),
+            String::from("env.out"),
+        ],
+    )]);
     let factory =
-        CoderFactory::with_env(bin.path().to_path_buf(), daemon_env, Arc::new(NullObserver));
+        CoderFactory::with_env(bin.path().to_path_buf(), daemon_env, Arc::new(NullObserver))
+            .with_criteria(criteria);
     let cfg = serde_json::json!({
         "agent": "pi",
         "model": "m",
         "brief": "b",
         "spec": "specs/207-x.md",
         "workdir": work.path().display().to_string(),
-        "criteria": ["test -f env.out"],
+        "criteria": ["env-file"],
         "env_pass": ["PII_TEST_KEY"],
     });
     let node = pii_graph::node::NodeFactory::build(&factory, &cfg).unwrap();
@@ -47,6 +56,7 @@ fn child_sees_only_the_named_env_pass_variables() {
     caps.proc_argv0 = ArgvScope::new(vec![
         String::from("/bin/sh"),
         bin.path().join("pi").display().to_string(),
+        String::from("/usr/bin/test"),
     ]);
     let ctx = Ctx::root(caps, Budget::unlimited());
     let input = NodeInput {

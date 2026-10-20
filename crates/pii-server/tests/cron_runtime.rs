@@ -35,6 +35,7 @@ async fn a_finished_cron_run_is_started_again_inside_the_runtime() {
     let workspace = dir.join("ws");
     std::fs::create_dir_all(&workspace).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace,
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello().display()),

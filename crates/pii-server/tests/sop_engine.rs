@@ -42,6 +42,7 @@ fn rig(prefix: &str) -> Rig {
     std::fs::write(ws.join("Cargo.toml"), "[package]\nversion = \"0.1.0\"\n").unwrap();
     let model = root().join("fixtures/sop/cut-release-model.json");
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: ws.clone(),
         store_path: tmp.path().join("store.redb"),
         model: format!("scripted:{}", model.display()),

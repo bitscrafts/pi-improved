@@ -42,6 +42,7 @@ async fn a_daily_timer_is_one_run_over_a_window_far_longer_than_its_re_arm() {
     let workspace = dir.join("ws");
     std::fs::create_dir_all(&workspace).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace,
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", hello().display()),

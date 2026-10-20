@@ -43,6 +43,7 @@ fn setup(dir: &std::path::Path, channel: Arc<dyn Channel>) -> (Arc<Engine>, Arc<
     let fixture = dir.join("fixture-empty.json");
     std::fs::write(&fixture, r#"{"turns":[]}"#).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.to_path_buf(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fixture.display()),
