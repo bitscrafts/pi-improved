@@ -42,6 +42,18 @@ new has to be invented — one adapter and two call sites.
 6. The per-spawn env file stops using `std::env::temp_dir()` (`coder.rs:269`, red under `lint-scratch`): it is
    created under the same runs dir, `create_new` as today, and the existing "second spawn never reuses a path"
    test still passes unchanged.
+7. `lint-observability` is green on the WHOLE tree, and that is in scope here. Measured by the orchestrator on
+   HEAD `90cd395` (a clean worktree, none of this item's WIP): the lint was already RED with 11 findings that
+   earlier items (217, 219, 225 and the CLI commands) left behind, so criterion 6 could not pass on any work
+   this spec asked for. The first attempt (session `32d50491`) met criteria 1-5 and failed only here, with the
+   same 11 findings. Clear each one by its cause, never by loosening the lint:
+   - `crates/pii-observe/src/names.rs`: `CODER_SPAWNED`, `CODER_EXITED`, `CODER_ENV_NAMES`, `CODER_ENV_REFUSED`,
+     `SKILL_DRIFT` are missing from `ALL` - add them (the unit test that checks `ALL` for duplicates must stay).
+   - raw print macros over budget in `crates/pii-cli/src/{cmd_ctl.rs, cmd_graph_installed.rs, cmd_project.rs,
+     cmd_skill.rs, main.rs}` and `crates/pii-server/src/engine/registry.rs`: a CLI command's stdout IS its
+     product, so a budget line in `xtask/observability-allowlist.txt` (`path  # reason  # N`) with a real reason
+     is the expected fix there; a print in the daemon (`registry.rs`) that reports an event goes through the
+     pii-observe seam instead. Do NOT change `xtask/src/lint_observability.rs`.
 
 ## TDD Contract
 - `crates/pii-server/tests/live_registry_supplies_the_skill_source.rs` builds the node kind through
@@ -76,6 +88,8 @@ new has to be invented — one adapter and two call sites.
   to a spawn with no skills — a refusal is a result.
 - Do NOT leave a second naming rule behind: if `pii skill show` and `StoreSkills` disagree about what a skill is
   named, fix the shared resolver, not both copies.
+- Do NOT edit the lint, its exemption registry, or a budget without a `# reason` that a reader can check: R7 is
+  cleared by fixing the findings, not by moving the bar.
 - Do NOT close this on the seven unit criteria alone. Criterion 7 is live and needs a deploy; until it is
   measured the item is `needs-review`, and if M0 (spec 226) still refuses the container start, that is the
   reason, stated as such.
