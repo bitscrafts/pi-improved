@@ -9,20 +9,24 @@
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use pii_abi::PiiError;
 use pii_core::Ctx;
 use serde_json::{Value, json};
 
-use super::coder_container::{self, CONTAINER_WORKDIR, ContainerRun, SKILL_DIRS};
+use super::coder_container::{CONTAINER_WORKDIR, SKILL_DIRS};
+use super::coder_runtime_util::{dechunk, message};
+
+/// The elapsed-ms helper the coder node reports durations with (kept at this path for callers).
+pub(crate) use super::coder_runtime_util::elapsed_ms;
+pub use super::coder_runtime_cli::PodmanCli;
 
 /// How often a running child or container is checked for cancellation and the run's deadline.
 const POLL: Duration = Duration::from_millis(50);
 
 /// How long the image probe may run before the node refuses (spec 209).
-const PROBE_TIMEOUT: Duration = Duration::from_mins(1);
+pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_mins(1);
 
 /// What a launch came to: the exit code, pid and duration of a run that ended, or the refusal that stopped it
 /// before anything ran.
@@ -129,97 +133,6 @@ pub trait ContainerRuntime {
         req: &Request<'_>,
         spawned: &mut dyn FnMut(&Spawn),
     ) -> Result<Launch, PiiError>;
-}
-
-/// The spec 209 runtime: the image is probed, then `podman run` is spawned as a child process.
-pub struct PodmanCli {
-    /// The podman binary the run execs.
-    pub podman: PathBuf,
-    /// The daemon's PATH and HOME: the only environment podman itself is given.
-    pub env: Vec<(String, String)>,
-    /// The runs directory the env file is written under; `None` is a refusal once the image has been probed.
-    pub runs_dir: Option<PathBuf>,
-}
-
-impl ContainerRuntime for PodmanCli {
-    fn name(&self) -> &'static str {
-        "cli"
-    }
-
-    fn run(
-        &self,
-        ctx: &Ctx,
-        req: &Request<'_>,
-        spawned: &mut dyn FnMut(&Spawn),
-    ) -> Result<Launch, PiiError> {
-        let podman = self.podman.display().to_string();
-        let workdir = PathBuf::from(req.workdir);
-        let probe = [
-            podman.clone(),
-            "image".to_owned(),
-            "inspect".to_owned(),
-            "--format".to_owned(),
-            "{{.Digest}}".to_owned(),
-            req.image.to_owned(),
-        ];
-        let digest = match ctx.proc()?.run(&probe, &workdir, PROBE_TIMEOUT) {
-            Ok(out) if out.exit_code == 0 => String::from_utf8_lossy(&out.stdout).trim().to_owned(),
-            // Spec 231 R2: podman said the image is absent, or said nothing at all (spec 228). Any other words are the
-            // runtime failing to answer, not an absent image.
-            Ok(out) if probe_says_absent(&out.stderr) => {
-                return Ok(Launch::Refused(Refusal::Image {
-                    image: req.image.to_owned(),
-                    reason: probe_reason(&out.stderr),
-                }));
-            }
-            Ok(out) => {
-                return Ok(Launch::Refused(Refusal::Runtime {
-                    socket: podman,
-                    status: None,
-                    reason: probe_reason(&out.stderr),
-                }));
-            }
-            Err(e) => return Ok(Launch::Refused(Refusal::Other(format!("{e}")))),
-        };
-        if digest.is_empty() {
-            return Ok(Launch::Refused(Refusal::Image {
-                image: req.image.to_owned(),
-                reason: "image has no digest; pin it by digest".to_owned(),
-            }));
-        }
-        let env_file = match env_file_path(self.runs_dir.as_deref()) {
-            Ok(path) => path,
-            Err(reason) => return Ok(Launch::Refused(Refusal::Other(reason))),
-        };
-        if let Err(e) = coder_container::write_env_file(&env_file, req.env) {
-            return Ok(Launch::Refused(Refusal::Other(format!("env file: {e}"))));
-        }
-        let env_file_str = env_file.display().to_string();
-        let run = ContainerRun {
-            podman: &podman,
-            image: req.image,
-            workdir: req.workdir,
-            env_file: &env_file_str,
-            network: req.network,
-            run_id: req.run_id,
-            skills_dir: req.skills_dir,
-        };
-        let run_argv = coder_container::run_argv(&run, req.agent_argv);
-        let result = wait_child(ctx, &run_argv, &workdir, &self.env, &mut |pid| {
-            spawned(&Spawn {
-                runtime: "cli",
-                image: req.image.to_owned(),
-                image_digest: digest.clone(),
-                container: String::new(),
-                pid,
-                argv: run_argv.clone(),
-                env_names: env_names(&self.env),
-            });
-        });
-        // The env file holds the secrets: it goes on every path, once podman has had its read.
-        let _ = std::fs::remove_file(&env_file);
-        result
-    }
 }
 
 /// The podman REST API runtime (spec 230).
@@ -528,96 +441,6 @@ fn parse_reply(raw: &[u8]) -> Result<(u16, String), String> {
     Ok((status, String::from_utf8_lossy(&body).into_owned()))
 }
 
-/// The payload of a chunked body: each chunk's size line, its bytes, and a CRLF, up to the zero-size chunk.
-fn dechunk(mut rest: &[u8]) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    loop {
-        let eol = rest
-            .windows(2)
-            .position(|w| w == b"\r\n")
-            .ok_or("a chunk size line is unterminated")?;
-        let size_line = String::from_utf8_lossy(rest.get(..eol).unwrap_or_default()).into_owned();
-        let size = size_line
-            .split(';')
-            .next()
-            .and_then(|s| usize::from_str_radix(s.trim(), 16).ok())
-            .ok_or_else(|| format!("a chunk size is not hex: {size_line:?}"))?;
-        rest = rest.get(eol + 2..).unwrap_or_default();
-        if size == 0 {
-            return Ok(out);
-        }
-        let chunk = rest.get(..size).ok_or("a chunk is truncated")?;
-        out.extend_from_slice(chunk);
-        rest = rest.get(size + 2..).unwrap_or_default();
-    }
-}
-
-/// The runtime's own message from an error body, or the body itself, collapsed to one line and cut to 240 chars.
-fn message(body: &str) -> String {
-    let text = serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| v.get("message").and_then(Value::as_str).map(str::to_owned))
-        .unwrap_or_else(|| body.split_whitespace().collect::<Vec<_>>().join(" "));
-    text.chars().take(240).collect()
-}
-
-/// Whether a failed probe's stderr says the image is absent, or says nothing (spec 228 R2, spec 231 R2). Podman's
-/// absence words are `no such image` and `image not known`.
-fn probe_says_absent(stderr: &[u8]) -> bool {
-    let said = String::from_utf8_lossy(stderr).to_lowercase();
-    said.trim().is_empty() || said.contains("no such image") || said.contains("image not known")
-}
-
-/// Podman's own stderr from a failed probe, collapsed to one line and cut to its last 240 characters (spec 228 R2).
-/// The absence clause stands alone only when podman said nothing at all.
-fn probe_reason(stderr: &[u8]) -> String {
-    let collapsed = String::from_utf8_lossy(stderr)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let tail: String = collapsed.chars().rev().take(240).collect::<String>();
-    let tail = tail.chars().rev().collect::<String>();
-    if tail.is_empty() {
-        "image inspect failed with no stderr".to_owned()
-    } else {
-        tail
-    }
-}
-
-/// A fresh env-file path under the runs dir, unique within this process (spec 227 R6).
-///
-/// The file is created later with `create_new`, so an existing path is an error, never overwritten. No runs dir is a
-/// refusal: the secrets have nowhere private to go.
-///
-/// # Errors
-/// The reason string when no runs dir is configured or it cannot be created.
-pub fn env_file_path(runs_dir: Option<&Path>) -> Result<PathBuf, String> {
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let Some(runs) = runs_dir else {
-        return Err(String::from("env file: no runs directory is configured"));
-    };
-    std::fs::create_dir_all(runs).map_err(|e| format!("env file: {e}"))?;
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    Ok(runs.join(format!("pii-coder-{}-{seq}.env", std::process::id())))
-}
-
-/// The names of an environment, never its values.
-fn env_names(env: &[(String, String)]) -> Vec<String> {
-    env.iter().map(|(name, _)| name.clone()).collect()
-}
-
-/// Milliseconds since `started`, saturating: a duration never wraps negative.
-#[must_use]
-pub fn elapsed_ms(started: Instant) -> i64 {
-    i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)
-}
-
-/// Spawns `argv` with exactly `env` in `workdir`, and waits for it.
-///
-/// `spawned` is called with the pid before the wait. The output is drained so a chatty child cannot block. A cancelled
-/// or timed-out run kills the child and returns the error.
-///
-/// # Errors
 /// [`PiiError`] when the node lacks the spawn capability, the spawn fails, or the run's context ends first.
 pub fn wait_child(
     ctx: &Ctx,
