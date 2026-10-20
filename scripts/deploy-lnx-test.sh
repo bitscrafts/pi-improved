@@ -41,7 +41,9 @@ for d in glob.glob("/proc/[0-9]*"):
         env=open(d+"/environ","rb").read()
         cmd=open(d+"/cmdline","rb").read()
     except Exception: continue
-    if b"pii daemon" in cmd and b"PII_RUNTIME_DIR=/run/user/1000/pii" in env:
+    # match the HOST binary path, not an env var: the lnx daemon does not export PII_RUNTIME_DIR, and the containerised
+    # production daemon runs /root/.local/bin/pii — matching "pii daemon" alone is what stopped production earlier tonight.
+    if b"/home/mvcorrea/.local/bin/pii" in cmd and b"daemon" in cmd:
         pid=d.rsplit("/",1)[-1]; break
 if pid:
     print("stopping daemon pid", pid); os.kill(int(pid), signal.SIGTERM); time.sleep(2)
