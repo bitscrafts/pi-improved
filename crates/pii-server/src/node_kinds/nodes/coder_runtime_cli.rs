@@ -7,7 +7,9 @@ use pii_abi::PiiError;
 use pii_core::Ctx;
 
 use super::coder_container::{self, ContainerRun};
-use super::coder_runtime::{ContainerRuntime, Launch, PROBE_TIMEOUT, Refusal, Request, Spawn, wait_child};
+use super::coder_runtime::{
+    ContainerRuntime, Launch, PROBE_TIMEOUT, Refusal, Request, Spawn, wait_child,
+};
 use super::coder_runtime_util::{env_file_path, env_names, probe_reason, probe_says_absent};
 
 /// The spec 209 runtime: the image is probed, then `podman run` is spawned as a child process.

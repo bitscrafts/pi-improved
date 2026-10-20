@@ -18,9 +18,9 @@ use serde_json::{Value, json};
 use super::coder_container::{CONTAINER_WORKDIR, SKILL_DIRS};
 use super::coder_runtime_util::{dechunk, message};
 
-/// The elapsed-ms helper the coder node reports durations with (kept at this path for callers).
-pub(crate) use super::coder_runtime_util::elapsed_ms;
 pub use super::coder_runtime_cli::PodmanCli;
+/// The elapsed-ms helper the coder node reports durations with (kept at this path for callers).
+pub use super::coder_runtime_util::elapsed_ms;
 
 /// How often a running child or container is checked for cancellation and the run's deadline.
 const POLL: Duration = Duration::from_millis(50);
@@ -441,6 +441,8 @@ fn parse_reply(raw: &[u8]) -> Result<(u16, String), String> {
     Ok((status, String::from_utf8_lossy(&body).into_owned()))
 }
 
+/// # Errors
+/// Returns [`PiiError`] when the child cannot be spawned or the wait fails.
 /// [`PiiError`] when the node lacks the spawn capability, the spawn fails, or the run's context ends first.
 pub fn wait_child(
     ctx: &Ctx,

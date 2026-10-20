@@ -2,8 +2,8 @@
 //! image-probe verdicts, the env file path and the child wait. Split out of `coder_runtime.rs`
 //! by the 450-line gate; the runtime's types stay there.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use serde_json::Value;
@@ -71,7 +71,7 @@ pub(super) fn probe_reason(stderr: &[u8]) -> String {
 ///
 /// # Errors
 /// The reason string when no runs dir is configured or it cannot be created.
-pub(crate) fn env_file_path(runs_dir: Option<&Path>) -> Result<PathBuf, String> {
+pub(super) fn env_file_path(runs_dir: Option<&Path>) -> Result<PathBuf, String> {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let Some(runs) = runs_dir else {
         return Err(String::from("env file: no runs directory is configured"));
@@ -88,6 +88,6 @@ pub(super) fn env_names(env: &[(String, String)]) -> Vec<String> {
 
 /// Milliseconds since `started`, saturating: a duration never wraps negative.
 #[must_use]
-pub(crate) fn elapsed_ms(started: Instant) -> i64 {
+pub fn elapsed_ms(started: Instant) -> i64 {
     i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)
 }
