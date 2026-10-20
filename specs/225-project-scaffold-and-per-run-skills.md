@@ -77,4 +77,25 @@ they build the factory the way production does not — the fake source answers w
 "asserted in a test, never read by the live path" trap (DO-NOT-REPEAT 1.50) and it is the reason this item is
 parked instead of closed on five green criteria.
 
+### 2026-10-20 18:17Z addendum — both premises above are now stale; one live reading remains
 
+Measured at HEAD `3258d1e`, by the orchestrator, after specs 227/230/233/234 landed:
+
+- **The live path does supply a `SkillSource` and a runs dir.** `crates/pii-server/src/engine/registry.rs:25`
+  (`registry(`, the daemon's own) builds `CoderFactory::new(log).with_podman(podman)
+  .with_skills(Arc::new(StoreSkills::new(memory))).with_runs_dir(store_dir.join("runs"))` at lines 72-77 —
+  spec 227 R2. Only `lint_registry*` (`:160`, `:200`) keeps `NoSkills`, deliberately and in a comment, because
+  lint never reads the store. `grep -rn 'with_skills(' crates --include=*.rs` now returns that registration,
+  not only the definitions in `coder.rs:129` and the tests.
+- **The spawn path has a reading.** Spec 230's M0 measured PASS on lnx (row A98: `coder.spawned` pid 3463854
+  through `podman.socket`, `coder.exited` the same pid), so "the daemon refuses the coder node at its `proc`
+  check before any podman invocation" no longer describes the shipped path; 231 and 232 followed it.
+- **A skill can be put into and edited in the daemon's store** — spec 233 (`3d32079`) and spec 234 (`622826e`),
+  so the drift half of criterion 6 has a way to create both pins without the redb lock.
+
+Criterion 6 is therefore measurable, and it is the SAME reading as spec 227's criterion 7 (row A95): one deploy
+of HEAD to lnx, one coder run pinning the stored skill (it must spawn, and `coder.spawned` must carry
+`skill=<name> sha256=<hex>`), then an edit of that document (the next run must refuse `skill.drift` before the
+spawn). Nothing is left to implement, so no workhorse is dispatched for it on this host — this host has no
+podman, so the criterion cannot be seen here at all. The row stays parked until that one deploy, and this
+paragraph is its brief.

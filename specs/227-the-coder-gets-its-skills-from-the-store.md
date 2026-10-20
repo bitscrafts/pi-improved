@@ -105,3 +105,16 @@ against the lnx daemon, pid 3539364, binary installed 2026-10-20T12:38:35:
   looks in `/run/user/1000/pii/default/memory.redb`, which is the wrong store
 The criterion stays as written, not weakened. Spec 233 (row A101) adds `pii skill add` through the daemon, and its
 live criterion runs this one. A95 stays `needs-review` until 233 is deployed and this criterion is measured.
+
+### 2026-10-20 18:17Z addendum — the three readings above are closed; criterion 7 needs one deploy, not code
+
+Both halves of the blocker named above now exist on the tree: `pii skill add` reads and writes the daemon's store
+(spec 233, `3d32079`) and `pii skill edit` changes a live skill's text through the daemon, keeping the pin and
+refusing a dropped script (spec 234, `622826e`). The daemon's registry also supplies the coder's skills from that
+same store — `crates/pii-server/src/engine/registry.rs:25`, lines 72-77 —
+so a pin can now be created, carried and drifted without touching redb under the running daemon.
+
+Criterion 7 is measurable in one deploy of HEAD to lnx, and it is the SAME reading as spec 225's criterion 6
+(row A94): a coder run pinning the stored skill spawns and journals the pin in `coder.spawned`, and an edited
+document makes the next run refuse `skill.drift` before the spawn. Nothing to implement; both rows wait on that
+deploy, and this paragraph is their shared brief.

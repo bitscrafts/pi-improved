@@ -2,6 +2,30 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-20 18:17Z — A94 and A95 collapsed into ONE reading; the loop is paused for the deps/gate fix
+
+State: HEAD `3258d1e` · no cycle in flight · control `PAUSED (paused for the deps/gate fix; user directive)`,
+rewritten 18:11:53Z · **watchdog was DEAD** (pid 2172486 gone, `ps` count 0) and was restarted this tick · the
+tree is dirty with the deps/gate lane's WIP (`daemon/identity.rs`, `lib.rs`, `tests/health_identity.rs`,
+`pii-store/src/queue.rs`, `xtask/src/deps.rs`, three scripts) — not swept, not committed.
+
+- **225's parking premise is stale, on both counts.** `crates/pii-server/src/engine/registry.rs:25` — the
+  daemon's own `registry(` — now builds `CoderFactory::new(log).with_podman(podman).with_skills(
+  StoreSkills::new(memory)).with_runs_dir(store_dir.join("runs"))` (lines 72-77, spec 227 R2); only
+  `lint_registry*` (`:160`, `:200`) keeps `NoSkills`, in a comment that says why. And the spawn path has a
+  reading: spec 230's M0 PASS on lnx, `coder.spawned` pid 3463854 through `podman.socket` (row A98). The
+  07:20Z entry's `registry.rs:64`/`:184` line references were true when read and are not true of this tree.
+- **227's blocker is closed too.** `pii skill add` (233, `3d32079`) and `pii skill edit` (234, `622826e`) go
+  through the daemon, so a pin can be created and drifted without the redb lock.
+- **So neither row needs code — both need the same deploy.** A94 criterion 6 and A95 criterion 7 are one
+  reading: deploy HEAD to lnx, run a coder pinning the stored skill (spawns, `coder.spawned` carries
+  `skill=<name> sha256=<hex>`), then edit that document (the next run refuses `skill.drift` before the spawn).
+  This host has no podman, so the criterion cannot be seen here at all. Both closures now carry that brief.
+- **selftest at 18:16Z: `RESULT: 34 passed, 0 failed` / `VERDICT: ALL MECHANISMS PASS`.**
+- **Worth keeping from the deps lane's WIP:** `cargo metadata` encodes a NORMAL dependency edge as
+  `"kind": null`, so the old `filter_map` over `dep_kinds` dropped it and `xtask check_confined` accepted
+  every production `rustls` edge — a gate that would certify the dependency it exists to refuse.
+
 ## 2026-10-20 07:20Z — both `needs-review` rows were ROW defects, not worker defects; 224 closed, 225 parked on M0 and unwired
 
 State: tree clean at `89eacc4` · no cycle in flight · queue EMPTY apart from A65/A71 (skipped), A79 (revoked)
