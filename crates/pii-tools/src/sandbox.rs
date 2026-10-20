@@ -45,7 +45,8 @@ pub fn grant_policy(p: SandboxProfileName) -> &'static str {
             "sandbox=workspace (landlock): WRITES confined to the workspace, store dir, \
              runtime dir, $TMPDIR, the container runtime state dirs \
              (HOME/.local/share/containers, XDG_RUNTIME_DIR/containers, XDG_RUNTIME_DIR/libpod \
-             -- podman's graph root and locks; spec 228) and /dev/{null,zero,urandom,tty}; \
+             -- podman's graph root and locks; spec 228) and /dev/shm (podman's rootless lock; \
+             spec 229), plus /dev/{null,zero,urandom,tty}; \
              READS are NOT confined (read-only access to / is granted, so /etc, /home and \
              every other readable path stay readable)"
         }
@@ -89,6 +90,11 @@ pub fn podman_state_dirs() -> Vec<PathBuf> {
         home.join(".local/share/containers"),
         xdg.join("containers"),
         xdg.join("libpod"),
+        // Podman's rootless lock file is /dev/shm/libpod_rootless_lock_<uid> (podman #16119).
+        // The profile grants /dev READ-ONLY, so this tmpfs must be named explicitly; without it
+        // podman's fallback base is empty and it fails at /libpod_rootless_lock_<uid>
+        // (measured on lnx 2026-10-20, M0 run r000000000209).
+        PathBuf::from("/dev/shm"),
     ];
     for d in &dirs {
         // reason: best-effort, same contract as writable_dirs: an uncreatable dir is simply
@@ -219,14 +225,15 @@ mod tests {
                 std::path::PathBuf::from(&home).join(".local/share/containers"),
                 xdg.join("containers"),
                 xdg.join("libpod"),
+                std::path::PathBuf::from("/dev/shm"),
             ],
-            "the grant is exactly the three documented dirs, nothing invented"
+            "the grant is exactly the documented dirs, nothing invented"
         );
         for d in &dirs {
             assert!(d.is_dir(), "created best-effort: {d:?}");
         }
         // Control: the helper must NOT grow arbitrary members.
-        assert_eq!(dirs.len(), 3);
+        assert_eq!(dirs.len(), 4);
     }
 
     #[test]
@@ -235,7 +242,8 @@ mod tests {
         assert!(
             ws.contains("HOME/.local/share/containers")
                 && ws.contains("XDG_RUNTIME_DIR/containers")
-                && ws.contains("XDG_RUNTIME_DIR/libpod"),
+                && ws.contains("XDG_RUNTIME_DIR/libpod")
+                && ws.contains("/dev/shm"),
             "{ws}"
         );
     }

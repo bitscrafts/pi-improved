@@ -122,6 +122,10 @@ fn the_pinned_grant_names_the_podman_state_dirs() {
             && src.contains("XDG_RUNTIME_DIR/libpod"),
         "the workspace grant must name podman's state dirs (spec 228)"
     );
+    assert!(
+        src.contains("/dev/shm"),
+        "the workspace grant must name podman's shm lock dir (spec 229)"
+    );
     // The clause is in the Workspace arm's grant text, not merely in a comment: the helper
     // that produces the dirs is referenced by the same module.
     assert!(
