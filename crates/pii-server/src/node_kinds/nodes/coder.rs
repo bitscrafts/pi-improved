@@ -19,19 +19,25 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
-use pii_core::{CapKind, Ctx, ObsEvent};
+use pii_abi::{Effects, Outcome, PiiError, PortName};
+use pii_core::{CapKind, Ctx};
 use pii_graph::node::{GraphNode, NodeFactory};
 use pii_observe::{Event, Level, Observer, names};
-use sha2::{Digest, Sha256};
 
-use super::agent_worker::{CriterionRun, Verdict, WorkerSpec, decide, plan};
-use super::coder_container::{self, CONTAINER_WORKDIR, PODMAN_BIN};
+use super::agent_worker::{CriterionRun, WorkerSpec};
+use super::coder_container::{self, PODMAN_BIN};
 use super::coder_runtime::{
     ContainerRuntime, Launch, PodmanApi, PodmanCli, Refusal, Request, Spawn, elapsed_ms, wait_child,
 };
-use super::coder_skills::{self, Drift, NoSkills, Rendered, SkillRefusal, SkillSource};
+use super::coder_skills::{self, Drift, NoSkills, Rendered, SkillSource};
 use super::criteria::{self, Table};
+
+mod graph_node;
+mod helpers;
+
+use self::helpers::{
+    argv_digest, journal, refused_port, session_of, skill_hashes, skill_names, text, texts,
+};
 
 /// Where the agent binaries live in production. A coder node may exec `pi` and `claude` from here, and nothing
 /// else new.
@@ -60,7 +66,7 @@ pub fn run_programs(bin_dir: &Path, podman: &Path, criteria: &Table) -> Vec<Stri
 }
 
 /// How long one criterion command may run before it is killed.
-const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);
+pub(super) const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);
 
 /// The one scope-checked criterion name (spec 232 R1): its argv runs in the node's workdir, so the
 /// node's workdir must be the run's scope root for the name to resolve.
@@ -157,105 +163,6 @@ struct CoderNode {
     runs_dir: Option<PathBuf>,
     runtime_socket: Option<PathBuf>,
     cfg: serde_json::Value,
-}
-
-fn text(cfg: &serde_json::Value, key: &str) -> Option<String> {
-    cfg.get(key)
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned)
-}
-
-fn texts(cfg: &serde_json::Value, key: &str) -> Vec<String> {
-    cfg.get(key)
-        .and_then(serde_json::Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The verdict of a node with no criteria of its own (spec 208): a clean exit hands on to a downstream `judge`,
-/// and a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.
-fn deferred_verdict(code: i32, pid: u32, agent: &str, model: &str) -> Outcome {
-    if code == 0 {
-        Outcome::Next {
-            port: PortName::from("ok"),
-            value: serde_json::json!({ "pid": pid, "rc": code, "criteria": [], "deferred": true }),
-        }
-    } else {
-        refused_port(agent, model, &format!("worker exited {code}"))
-    }
-}
-
-/// The `err` port a refusal routes to: the scheduler never retries a refusal (spec 207 R6).
-fn refused_port(agent: &str, model: &str, reason: &str) -> Outcome {
-    Outcome::Next {
-        port: PortName::from("err"),
-        value: serde_json::json!({ "agent": agent, "model": model, "reason": reason }),
-    }
-}
-
-/// A refusal `plan` already logged to the contract log: journalled for the run, then routed to `err` (spec 217 R5).
-fn refuse_planned(ctx: &Ctx, agent: &str, model: &str, reason: &str) -> Outcome {
-    journal(
-        ctx,
-        &Event::new("coder", Level::Warn, names::WORKER_START_REFUSED)
-            .field("agent", agent.to_owned())
-            .field("model", model.to_owned())
-            .field("reason", reason.to_owned()),
-    );
-    refused_port(agent, model, reason)
-}
-
-/// Reports an agent-call event to the run's context, where the engine records it in the journal (spec 217).
-fn journal(ctx: &Ctx, event: &Event) {
-    ctx.observer().event(&ObsEvent::NodeObserved {
-        kind: event.kind.to_owned(),
-        fields: serde_json::to_value(&event.fields).unwrap_or_default(),
-    });
-}
-
-/// The stop reason of a finished child (spec 217 R4). A signal death is `128 + signal`, so a code above 128 is
-/// `signalled`; any other code is the agent ending on its own.
-fn stop_reason(code: i32) -> &'static str {
-    if code > 128 { "signalled" } else { "end_turn" }
-}
-
-/// The sha256 of an argv as lowercase hex (spec 217 R3): identifies a call without journalling its arguments.
-fn argv_digest(argv: &[String]) -> String {
-    let digest = Sha256::digest(argv.join("\0").as_bytes());
-    format!("{digest:x}")
-}
-
-/// The pinned skills' names, comma-joined (spec 225 R7).
-fn skill_names(skills: &[Rendered]) -> String {
-    skills
-        .iter()
-        .map(|s| s.name.as_str())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-/// The pinned skills' sha256s, comma-joined, in the order of [`skill_names`] (spec 225 R7).
-fn skill_hashes(skills: &[Rendered]) -> String {
-    skills
-        .iter()
-        .map(|s| s.sha256.as_str())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-/// The session an agent was launched with: the value after `--session`, empty when the argv names none.
-fn session_of(argv: &[String]) -> String {
-    argv.iter()
-        .position(|a| a == "--session")
-        .and_then(|i| argv.get(i + 1))
-        .cloned()
-        .unwrap_or_default()
 }
 
 impl CoderNode {
@@ -599,138 +506,6 @@ impl CoderNode {
 
 /// The node's config, with `spec` taken from the item `select` claimed when the config does not name one (spec 208):
 /// the queue graph is static, so the item it dispatches is only known at run time.
-fn with_selected_spec(cfg: &serde_json::Value, input: &NodeInput) -> serde_json::Value {
-    let mut cfg = cfg.clone();
-    let selected = input
-        .nodes
-        .get("select")
-        .and_then(|v| v.get("item"))
-        .and_then(|i| i.get("spec"))
-        .cloned();
-    if let (Some(map), Some(spec)) = (cfg.as_object_mut(), selected) {
-        map.entry("spec").or_insert(spec);
-    }
-    cfg
-}
-
-impl GraphNode for CoderNode {
-    #[allow(clippy::too_many_lines)] // reason: the node's refusals, spawn and criteria decide in one linear sequence
-    fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        let cfg = with_selected_spec(&self.cfg, input);
-        let cfg = &cfg;
-        let agent = text(cfg, "agent").unwrap_or_default();
-        let model = text(cfg, "model").unwrap_or_default();
-        let (spec, brief) = match (WorkerSpec::from_cfg(cfg), text(cfg, "brief")) {
-            (Ok(spec), Some(brief)) if !spec.spec.is_empty() => (spec, brief),
-            (Err(e), _) => return Ok(self.refuse(ctx, &agent, &model, &format!("{e}"))),
-            _ => return Ok(self.refuse(ctx, &agent, &model, "no spec or no brief")),
-        };
-        // Spec 215: every criterion resolves to its fixed argv before anything spawns; an unknown name refuses.
-        let scope_root = input
-            .input
-            .get("scope_root")
-            .and_then(serde_json::Value::as_str);
-        let checks = match self.resolve_criteria(cfg, scope_root) {
-            Ok(checks) => checks,
-            Err(name) => return Ok(self.refuse_criterion(&name, &agent, &model)),
-        };
-        let env = self.pass_env(&texts(cfg, "env_pass"));
-        let image = text(cfg, "container_image").filter(|i| !i.is_empty());
-        // Spec 230: the runtime is named by graph data; an unknown name refuses before anything spawns.
-        let runtime = text(cfg, "container_runtime").unwrap_or_else(|| String::from("cli"));
-        if image.is_some() && runtime != "cli" && runtime != "socket" {
-            let reason = format!("container_runtime '{runtime}' is not cli or socket");
-            return Ok(self.refuse(ctx, &agent, &model, &reason));
-        }
-        // Spec 225 R4: every pinned skill is checked against the store before anything spawns.
-        let skills = match coder_skills::check(self.skills.as_ref(), cfg) {
-            Ok(skills) => skills,
-            Err(SkillRefusal::Drift(drift)) => {
-                return Ok(self.refuse_drift(ctx, &agent, &model, &drift));
-            }
-            Err(SkillRefusal::Invalid(reason)) => {
-                return Ok(self.refuse(ctx, &agent, &model, &reason));
-            }
-        };
-        if !skills.is_empty() && image.is_none() {
-            let reason =
-                "skills need a container_image: the host fallback cannot bind them read-only";
-            return Ok(self.refuse(ctx, &agent, &model, reason));
-        }
-        // Inside a container the workspace is at `/work`, so the planned session path must be too.
-        let planned = match &image {
-            Some(_) => WorkerSpec {
-                workdir: CONTAINER_WORKDIR.to_owned(),
-                ..spec.clone()
-            },
-            None => spec.clone(),
-        };
-        let dispatch = match plan(&planned, &brief, &env, "direct", self.log.as_ref()) {
-            Ok(dispatch) => dispatch,
-            Err(e) => return Ok(refuse_planned(ctx, &agent, &model, &format!("{e}"))),
-        };
-        let launch = if let Some(image) = &image {
-            self.launch_in_container(ctx, image, &spec, env, &dispatch.argv, &skills, &runtime)?
-        } else {
-            self.log.event(
-                &Event::new("coder", Level::Warn, names::CODER_HOST_SPAWN_DEPRECATED)
-                    .field("agent", agent.clone()),
-            );
-            self.launch_on_host(ctx, &dispatch.argv, &spec, env)?
-        };
-        let (code, pid, dur_ms, stop) = match launch {
-            Launch::Exited { code, pid, dur_ms } => (code, pid, dur_ms, stop_reason(code)),
-            // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`. No spawn ran, so an
-            // image node's digest slot says what the probe found (spec 223 R3, 231 R2): `missing` when the runtime said
-            // the image is absent, `probe-failed` when it could not answer.
-            Launch::Refused(refusal) => {
-                self.journal_refusal(&refusal);
-                let digest = image.as_ref().map(|_| match refusal {
-                    Refusal::Image { .. } => "missing",
-                    Refusal::Runtime { .. } | Refusal::Other(_) => "probe-failed",
-                });
-                return Ok(self.refuse_with(ctx, &agent, &model, &refusal.reason(), digest));
-            }
-        };
-        let workdir = PathBuf::from(&spec.workdir);
-
-        // The criteria decide. The first failing criterion stops the run and names itself in the verdict.
-        let mut runs = Vec::new();
-        for (command, argv) in checks {
-            let rc = ctx
-                .proc()?
-                .run(&argv, &workdir, CRITERION_TIMEOUT)?
-                .exit_code;
-            runs.push(CriterionRun { command, rc });
-            if rc != 0 {
-                break;
-            }
-        }
-        self.emit_exited(ctx, pid, code, dur_ms, stop, &runs);
-
-        // No criteria configured: the verdict is deferred to a downstream `judge` node (spec 208). A clean exit
-        // hands on; a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.
-        if texts(cfg, "criteria").is_empty() {
-            return Ok(deferred_verdict(code, pid, &agent, &model));
-        }
-
-        match decide(code, "", &runs) {
-            Verdict::Passed { criteria, .. } => Ok(Outcome::Next {
-                port: PortName::from("ok"),
-                value: serde_json::json!({
-                    "pid": pid,
-                    "rc": code,
-                    "criteria": criteria
-                        .iter()
-                        .map(|c| serde_json::json!({ "command": c.command, "rc": c.rc }))
-                        .collect::<Vec<_>>(),
-                }),
-            }),
-            Verdict::Failed { reason, .. } => Ok(Outcome::Fail { error: reason }),
-        }
-    }
-}
-
 impl NodeFactory for CoderFactory {
     fn kind(&self) -> &'static str {
         "coder"

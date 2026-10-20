@@ -204,7 +204,9 @@ async fn every_store_reports_a_real_format_version() {
     let names: Vec<_> = stores.iter().map(|s| s["name"].as_str().unwrap()).collect();
     assert_eq!(
         names,
-        ["main", "memory", "approval", "heal", "channel", "timer"]
+        [
+            "main", "memory", "approval", "heal", "queue", "channel", "timer"
+        ]
     );
     for s in stores {
         assert_eq!(

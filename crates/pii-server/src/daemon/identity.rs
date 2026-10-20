@@ -318,6 +318,11 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         ));
         out.stores
             .push(aux("heal", "heal.redb", engine.heals.format_version().ok()));
+        out.stores.push(aux(
+            "queue",
+            "queue.redb",
+            engine.queue.format_version().ok(),
+        ));
         if let Some(ctx) = ctx {
             out.stores.push(aux_store(
                 "channel",

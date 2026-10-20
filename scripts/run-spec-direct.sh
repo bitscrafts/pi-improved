@@ -12,6 +12,11 @@ set -a; [ -f /root/.hermes/.env ] && . /root/.hermes/.env; set +a
 # pin the worker lane INSIDE the script (never trust the caller's env)
 export PI_PROVIDER=ollama-cloud
 export PI_MODEL=glm-5.3-flash:cloud
+# HARD STOP (user 2026-10-20, until further notice): pi+glm must not be used.
+if [ "${PI_LANE_ENABLED:-0}" != "1" ]; then
+  echo "REFUSED: run-spec-direct.sh is the pi+glm lane, disabled until further notice (user 2026-10-20). Use the claude lane."
+  exit 77
+fi
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_OAUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true
 
 [ $# -ge 1 ] || { echo "usage: $0 <spec-number>..." >&2; exit 2; }

@@ -141,6 +141,14 @@ fn internal(op: &str, e: impl std::fmt::Display) -> PiiError {
 }
 
 impl QueueStore {
+    /// The persisted format version (spec 105), as the other stores report it.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn format_version(&self) -> Result<u64, PiiError> {
+        crate::identity::read_stamp(&self.db)
+    }
+
     /// Opens (creating if needed) the queue store at `path`.
     ///
     /// # Errors
@@ -160,6 +168,7 @@ impl QueueStore {
                 .map_err(|e| internal("open event table", e))?;
             write.commit().map_err(|e| internal("commit tables", e))?;
         }
+        crate::identity::stamp(&db, path)?;
         Ok(Self { db })
     }
 

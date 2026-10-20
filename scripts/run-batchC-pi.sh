@@ -16,6 +16,14 @@
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 
+# HARD STOP (user directive 2026-10-20, until further notice): the pi+glm lane is
+# not used. Refuse before anything is spent, unless the operator names the override.
+if [ "${PI_LANE_ENABLED:-0}" != "1" ]; then
+  echo "REFUSED: the pi+glm implementation lane is disabled (user directive 2026-10-20: pi+glm not to be used until further notice)."
+  echo "Use the claude lane (scripts/run-batchC-claude.sh). Override only with PI_LANE_ENABLED=1 and an explicit user instruction."
+  exit 77
+fi
+
 N=${1:?usage: run-batchC-pi.sh <spec-number> [--resume] [brief-file]}
 shift || true
 RESUME=0

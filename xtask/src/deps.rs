@@ -88,13 +88,18 @@ fn check_confined(metadata: &Value, dep: &str, allowed: &[&str], violations: &mu
             // Measured 2026-10-20: the resolve graph carries dep_kinds, and
             // pii-model's rustls is exactly `dev`; a blind node sweep would
             // have red every gate since the test landed (it went in ungated).
+            // `cargo metadata` encodes a NORMAL edge as `"kind": null` (live,
+            // 2026-10-20: pii-net's rustls is `[{"kind": null, ...}]`). A null
+            // kind is therefore a production edge and must count; only an
+            // explicit "dev" or "build"-only set is exempt. Dropping null via
+            // filter_map silently accepted every normal rustls edge.
             let kinds = d
                 .get("dep_kinds")
                 .and_then(Value::as_array)
                 .is_none_or(|ks| {
                     ks.iter()
-                        .filter_map(|k| k.get("kind").and_then(Value::as_str))
-                        .any(|k| k != "dev")
+                        .map(|k| k.get("kind").and_then(Value::as_str))
+                        .any(|k| k != Some("dev"))
                 });
             if name_of_id(d.get("pkg").and_then(Value::as_str).unwrap_or_default()) == dep && kinds
             {
