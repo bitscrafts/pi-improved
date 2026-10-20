@@ -273,6 +273,7 @@ fn run_list(
         pii_abi::RunStatus::Suspended,
         pii_abi::RunStatus::Succeeded,
         pii_abi::RunStatus::Failed,
+        pii_abi::RunStatus::Refused,
     ];
     let wanted: Vec<pii_abi::RunStatus> = match params.status {
         None => all.to_vec(),
@@ -282,6 +283,7 @@ fn run_list(
         Some(WireRunStatus::Suspended) => vec![pii_abi::RunStatus::Suspended],
         Some(WireRunStatus::Succeeded) => vec![pii_abi::RunStatus::Succeeded],
         Some(WireRunStatus::Failed) => vec![pii_abi::RunStatus::Failed],
+        Some(WireRunStatus::Refused) => vec![pii_abi::RunStatus::Refused],
     };
     let mut runs = Vec::new();
     for st in wanted {
@@ -339,6 +341,7 @@ fn run_header(engine: &Arc<Engine>, run_id: &RunId) -> Result<WireRunHeader, Pii
             pii_abi::RunStatus::Suspended => WireRunStatus::Suspended,
             pii_abi::RunStatus::Succeeded => WireRunStatus::Succeeded,
             pii_abi::RunStatus::Failed => WireRunStatus::Failed,
+            pii_abi::RunStatus::Refused => WireRunStatus::Refused,
         },
         seq: header.seq,
         dur_ms: header.dur_ms,
@@ -426,6 +429,7 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
                 pii_abi::RunStatus::Suspended => WireRunStatus::Suspended,
                 pii_abi::RunStatus::Succeeded => WireRunStatus::Succeeded,
                 pii_abi::RunStatus::Failed => WireRunStatus::Failed,
+                pii_abi::RunStatus::Refused => WireRunStatus::Refused,
             },
             seq: header.seq,
             dur_ms: header.dur_ms,

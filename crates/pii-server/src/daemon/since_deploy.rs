@@ -59,6 +59,7 @@ pub fn since_deploy(store: &Store, revision: &str) -> Result<SinceDeploy, PiiErr
                 RunStatus::Suspended => by.suspended += 1,
                 RunStatus::Succeeded => by.succeeded += 1,
                 RunStatus::Failed => by.failed += 1,
+                RunStatus::Refused => by.refused += 1,
             }
         }
     })?;

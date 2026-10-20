@@ -104,6 +104,9 @@ pub fn spawn_run(
                 None
             }
         };
+        // Spec 221: a run whose agent call was refused is journalled `Refused`, though its terminal may read success.
+        let refused = refused
+            || matches!(engine.store.get_run(&run_id), Ok(Some(h)) if h.status == pii_abi::RunStatus::Refused);
         engine
             .latency
             .record(outcome_word(terminal.as_ref(), refused), accepted.elapsed());
@@ -176,9 +179,9 @@ pub fn learn_now_secs() -> u64 {
 /// The latency-histogram outcome for a run's end (spec 115 R4).
 fn outcome_word(terminal: Option<&pii_abi::Terminal>, refused: bool) -> &'static str {
     match terminal {
+        _ if refused => "refused",
         Some(pii_abi::Terminal::Success { .. }) => "succeeded",
         Some(pii_abi::Terminal::Suspended { .. }) => "suspended",
-        None if refused => "refused",
         _ => "failed",
     }
 }
@@ -310,7 +313,7 @@ pub fn cancel_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), P
         .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}' not found")))?;
     if matches!(
         header.status,
-        pii_abi::RunStatus::Succeeded | pii_abi::RunStatus::Failed
+        pii_abi::RunStatus::Succeeded | pii_abi::RunStatus::Failed | pii_abi::RunStatus::Refused
     ) {
         return Err(PiiError::Invalid(format!(
             "run '{run_id}' already finished"
@@ -424,7 +427,7 @@ pub fn spawn_resume_node(
     // Spec 196: a finished run is never resumed (a cancelled run's timer used to re-run it).
     if matches!(
         header.status,
-        pii_abi::RunStatus::Succeeded | pii_abi::RunStatus::Failed
+        pii_abi::RunStatus::Succeeded | pii_abi::RunStatus::Failed | pii_abi::RunStatus::Refused
     ) {
         let status = format!("{:?}", header.status);
         engine.log().event(
