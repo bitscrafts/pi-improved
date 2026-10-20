@@ -209,7 +209,9 @@ else
   # REVIEW ROWS (user directive 2026-10-19: "an opus analysis must also be put in the queue, positioned before the items
   # that matter"). A row whose spec is specs/review-* is dispatched to the opus reviewer in plan mode, never to a coder.
   # A DEPLOY row is executed by the dispatcher, not by a coding worker: its spec carries `DEPLOY:` on its own line.
-  if grep -qE '^DEPLOY:' "$SPEC" 2>/dev/null; then
+  # SPEC is the FILENAME, so the file lives at specs/$SPEC — measured again 2026-10-20: grepping "$SPEC" found nothing, the
+  # DEPLOY branch never fired, and the row went down the worker path where its verify command ran a full install.
+  if grep -qE '^DEPLOY:' "specs/$SPEC" 2>/dev/null; then
     say "deploy row: running scripts/autonomy/deploy-row.sh for $SPEC"
     if bash scripts/autonomy/deploy-row.sh >"_tmp/autonomy/logs/deploy-$ITEM-$(date -u +%Y%m%dT%H%M%SZ).log" 2>&1; then
       echo "OUTCOME=deploy-run ITEM=$ITEM"
