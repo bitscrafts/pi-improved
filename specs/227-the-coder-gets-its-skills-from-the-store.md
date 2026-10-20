@@ -93,3 +93,15 @@ new has to be invented — one adapter and two call sites.
 - Do NOT close this on the seven unit criteria alone. Criterion 7 is live and needs a deploy; until it is
   measured the item is `needs-review`, and if M0 (spec 226) still refuses the container start, that is the
   reason, stated as such.
+
+## Closure
+Supervisor, 2026-10-20. Criteria 1-6 are green on the committed tree, per the orchestrator's row note. M0 now
+passes on lnx (spec 230, run r258), so the container start no longer blocks criterion 7. Criterion 7 is blocked
+by something else: production has no way to put a skill into the daemon's store. These readings were taken
+against the lnx daemon, pid 3539364, binary installed 2026-10-20T12:38:35:
+- a copy of `/run/user/1000/pii/memory.redb` holds zero skills (`pii skill list --all --dir <copy>` prints nothing)
+- outside tests, only `pii skill edit` constructs `DocKind::Skill`, and it edits an id that already exists
+- `pii skill` against the live dir fails with `Database already open. Cannot acquire lock.`; with no `--dir` it
+  looks in `/run/user/1000/pii/default/memory.redb`, which is the wrong store
+The criterion stays as written, not weakened. Spec 233 (row A101) adds `pii skill add` through the daemon, and its
+live criterion runs this one. A95 stays `needs-review` until 233 is deployed and this criterion is measured.
