@@ -27,7 +27,18 @@ EVID=$(mktemp -d "${PII_EVID_ROOT:-/projects/_tmp}/m0-evidence-$TS-XXXX") || { e
 tail_of() { tail -c 300 "$1" 2>/dev/null | tr '\n' ' '; }
 
 command -v "$PII" >/dev/null 2>&1 || { echo "M0 FAILED 127 $PII not on PATH"; exit 0; }
-command -v jq >/dev/null 2>&1 || { echo "M0 FAILED 127 jq not on PATH"; exit 0; }
+JQ() { if command -v jq >/dev/null 2>&1; then jq "$@"; else python3 -c 'import json,sys; args=sys.argv[1:]; data=sys.stdin.read(); obj=json.loads(data); mode=0
+if args and args[0]=="-r": mode=1; args=args[1:]
+path=(args[0] if args else ".").replace(" // empty","")
+if path==".":
+    print(json.dumps(obj)); sys.exit(0)
+cur=obj
+for part in path.strip(".").split("."):
+    if isinstance(cur,dict) and part in cur: cur=cur[part]
+    else: sys.exit(5)
+if isinstance(cur,(dict,list)): print(json.dumps(cur))
+else:
+    print("" if cur is None else (str(cur) if mode else json.dumps(cur)))' "$@"; fi; }
 
 # 1. The graph: the template is kept beside this script's evidence; the daemon reads it from GRAPHS.
 mkdir -p "$WORK" || { echo "M0 FAILED 1 cannot create $WORK"; exit 0; }
@@ -83,12 +94,12 @@ cp "$EVID/$GRAPH_NAME.toml" "$dst" || { echo "M0 FAILED 1 cannot install graph a
 if ! "$PII" run start "$GRAPH_NAME" --input '{}' > "$EVID/start.json" 2> "$EVID/start.err"; then
   echo "M0 FAILED $? $(tail_of "$EVID/start.err")"; exit 0
 fi
-RUN=$(jq -r '.run_id // empty' "$EVID/start.json" 2>/dev/null)
+RUN=$(JQ -r '.run_id // empty' "$EVID/start.json" 2>/dev/null)
 [ -n "$RUN" ] || { echo "M0 FAILED 2 no run_id in daemon reply: $(tail_of "$EVID/start.json")"; exit 0; }
 
 # 3. Wait for the run to settle (bounded), then take its journal from the daemon.
 for _ in $(seq 1 60); do
-  STATUS=$("$PII" run get "$RUN" 2>/dev/null | jq -r '.status // empty' 2>/dev/null)
+  STATUS=$("$PII" run get "$RUN" 2>/dev/null | JQ -r '.status // empty' 2>/dev/null)
   case "$STATUS" in succeeded|failed|refused|cancelled|abandoned) break ;; esac
   python3 -I -c 'import time; time.sleep(1)'
 done
@@ -100,11 +111,20 @@ echo "run=$RUN status=${STATUS:-unknown} trace_rc=$TRACE_RC evidence=$EVID" >&2
 
 # 4. The verdict, from the journal lines only.
 SPAWN=$(grep '"kind":"coder.spawned"' "$EVID/journal.ndjson" | head -1)
-PID=$(printf '%s\n' "$SPAWN" | jq -r '.fields.pid // empty' 2>/dev/null)
+PID=$(printf '%s\n' "$SPAWN" | JQ -r '.fields.pid // empty' 2>/dev/null)
 if [ -n "$PID" ] && [ "$PID" -gt 0 ] 2>/dev/null; then
   echo "M0 PASS $PID"; exit 0
 fi
-REFUSAL=$(grep -iE 'refused|denied|landlock|EACCES|EPERM|sandbox' "$EVID/journal.ndjson" | head -1 | jq -r '.kind + ": " + ((.fields // {}) | tostring)' 2>/dev/null | cut -c1-300)
+REFUSAL=$(grep -iE 'refused|denied|landlock|EACCES|EPERM|sandbox' "$EVID/journal.ndjson" | head -1 | python3 -I -c '
+import json, sys
+l = sys.stdin.read().strip()
+if not l:
+    sys.exit(0)
+try:
+    o = json.loads(l)
+except Exception:
+    sys.exit(0)
+print(str(o.get("kind", "")) + ": " + json.dumps(o.get("fields", {}))[:290])' 2>/dev/null)
 # A refusal is a measurement only when it names the syscall or the path it was refused on (spec 226 R3).
 if [ -n "$REFUSAL" ] && printf '%s' "$REFUSAL" | grep -qE '/[A-Za-z0-9_.-]+|execve|openat|landlock|mkdir|connect|bind'; then
   echo "M0 REFUSED $REFUSAL"; exit 0
