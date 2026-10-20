@@ -116,7 +116,21 @@ echo "run=$RUN status=${STATUS:-unknown} trace_rc=$TRACE_RC evidence=$EVID" >&2
 # The trace is the daemon's reply (via=daemon); its fail= field carries the node's exact refusal,
 # which is where podman's stderr lands (spec 228 R2). A log grep alone cannot carry it: the
 # daemon's worker.start.refused lines name no run id (measured 2026-10-20 on lnx).
+# coder.spawned / coder.exited name no run id either (measured 2026-10-20, run r212's journal grep
+# was empty while the trace carried spawned=pid exited=rc): the pid comes from the trace's
+# spawned= field, and PASS needs the log's spawn AND exit lines for that same pid.
 TRACE_FAIL=$(grep -oE 'fail=.+' "$EVID/trace.txt" | head -1 | sed -E 's/^fail=//; s/ rc=-.*$//; s/[[:space:]]+$//')
+SPAWNED=$(grep -oE '[0-9]+ code coder [0-9+]+ pid=[0-9]+' "$EVID/trace.txt" | head -1 | sed -E 's/.*pid=//')
+LOG_TAIL=$(tail -c 524288 "$LOG" 2>/dev/null)
+PID=$(printf '%s' "$SPAWNED" | grep -oE '[0-9]+')
+if [ -n "$PID" ]; then
+  printf '%s' "$LOG_TAIL" | grep '"kind":"coder.spawned"' | grep -F "\"pid\":$PID," | head -1 > "$EVID/spawn.ndjson"
+  printf '%s' "$LOG_TAIL" | grep '"kind":"coder.exited"'  | grep -F "\"pid\":$PID," | head -1 > "$EVID/exit.ndjson"
+  if [ -s "$EVID/spawn.ndjson" ] && [ -s "$EVID/exit.ndjson" ]; then
+    echo "M0 PASS $PID"; exit 0
+  fi
+fi
+# The journal grep by run id stays as the fallback source (an older daemon may name it).
 SPAWN=$(grep '"kind":"coder.spawned"' "$EVID/journal.ndjson" | head -1)
 PID=$(printf '%s\n' "$SPAWN" | JQ -r '.fields.pid // empty' 2>/dev/null)
 if [ -n "$PID" ] && [ "$PID" -gt 0 ] 2>/dev/null; then
