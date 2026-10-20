@@ -1,0 +1,34 @@
+# Containerfile.agent — the image a pii coder node runs its agent INSIDE.
+#
+# User directive (2026-10-20): "in the container you should install a coding agent. use a small image, install claude and
+# pi_agent_rust, rust and do the testing".
+#
+# pii installs nothing at RUN time (spec 209). This image is built ONCE, at deploy time, as a recorded act; a run only ever
+# names it — ideally by digest — and the journal records the digest that produced a verdict.
+#
+# Contents: pi (copied from the pidag-runner image, 23 MB static), node+npm (claude needs a JS runtime), the claude CLI,
+# and a Rust toolchain so an agent can build a Rust workspace inside the container it was given.
+FROM docker.io/library/debian:trixie
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_HOME=/usr/local/cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates git curl nodejs npm rustc cargo build-essential pkg-config libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# claude CLI: the same tool the orchestrator uses, installed globally so `claude -p` works inside a container
+RUN npm install -g @anthropic-ai/claude-code \
+ && npm cache clean --force \
+ && command -v claude
+
+# pi_agent_rust: copied from the runtime image that already carries it (no download, no build)
+COPY pi /usr/local/bin/pi
+RUN chmod +x /usr/local/bin/pi && pi --version
+
+# the agent works in a mounted workspace
+WORKDIR /work
+CMD ["/bin/sh", "-lc", "pi --version && claude --version && cargo --version"]
