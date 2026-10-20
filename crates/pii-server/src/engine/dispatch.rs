@@ -147,6 +147,7 @@ pub fn dispatch(
         Method::LearnSweep => crate::engine::learn_methods::learn_sweep(engine, req),
         Method::SkillPut => crate::engine::skill_methods::skill_put(engine, req),
         Method::SkillList => crate::engine::skill_methods::skill_list(engine, req),
+        Method::SkillEdit => crate::engine::skill_methods::skill_edit(engine, req),
         Method::RunResume => crate::engine::methods::run_resume(engine, req),
         Method::RunRetry => crate::engine::methods::run_retry(engine, req),
         Method::RunAbandon => crate::engine::methods::run_abandon(engine, req),

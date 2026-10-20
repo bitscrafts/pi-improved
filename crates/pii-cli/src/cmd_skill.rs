@@ -7,8 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use pii_core::Clock as _;
-use pii_memory::doc::{Doc, DocKind, Layer, layer_byte, layer_of_byte, rows_for};
-use pii_memory::skill::{AddError, Added, Listed, listing, pick, sha256_hex, slug_of};
+use pii_memory::doc::{Layer, layer_byte, layer_of_byte};
+use pii_memory::skill::{
+    AddError, Added, Edited, Listed, Pin, listing, pick, pins_of, sha256_hex, slug_of,
+};
 use pii_proto::method::Method;
 use pii_store::MemStore;
 
@@ -31,12 +33,6 @@ struct Opts {
     file: Option<PathBuf>,
     note: Option<String>,
     positional: Vec<String>,
-}
-
-/// One `script: <path> sha256=<hex>` line from a skill body. An empty `sha256` never matches.
-struct Pin {
-    path: String,
-    sha256: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -134,11 +130,6 @@ fn open_file(path: &Path) -> Result<MemStore, ExitCode> {
     MemStore::open(path).map_err(|e| fail(&e.to_string()))
 }
 
-/// Opens the store read-write, but only where one already exists.
-fn open(o: &Opts) -> Result<MemStore, ExitCode> {
-    open_file(&store_file(o)?)
-}
-
 /// Whether the daemon serves the store this command names (spec 233 R2). A command with no `--dir`, or the runtime
 /// dir itself, is the daemon's store. Any other `--dir` is a different store, and the daemon would answer for its own.
 fn daemon_serves(o: &Opts) -> bool {
@@ -163,39 +154,32 @@ fn ask_daemon(
     }
 }
 
-/// The skill documents the store holds, archived ones only when `with_archived` is set. The daemon answers when it
-/// serves the store (spec 233 R2); otherwise the store file is read directly.
+/// The skill documents the store holds, archived ones only when `with_archived` is set, with the source that answered
+/// them printed (spec 233 R2). The daemon answers when it serves the store; otherwise the store file is read directly.
 fn read_skills(o: &Opts, with_archived: bool) -> Result<Vec<Listed>, ExitCode> {
+    let (found, via) = fetch_skills(o, with_archived)?;
+    note_source(&via);
+    Ok(found)
+}
+
+/// The skill documents [`read_skills`] reads, and the source that answered them (`daemon`, or `store <path>`). Prints
+/// nothing, so a caller that reads and then writes can name the source once.
+fn fetch_skills(o: &Opts, with_archived: bool) -> Result<(Vec<Listed>, String), ExitCode> {
     let params = serde_json::json!({ "all": with_archived });
     if let Some(outcome) = ask_daemon(o, Method::SkillList, params) {
         let reply = outcome?;
-        note_source("daemon");
-        return serde_json::from_value(reply)
-            .map_err(|e| fail(&format!("the daemon's skill list does not decode: {e}")));
+        let found = serde_json::from_value(reply)
+            .map_err(|e| fail(&format!("the daemon's skill list does not decode: {e}")))?;
+        return Ok((found, String::from("daemon")));
     }
     let path = store_file(o)?;
     let store = open_file(&path)?;
-    note_source(&format!("store {}", path.display()));
-    listing(&store, with_archived).map_err(|e| fail(&e.to_string()))
+    let found = listing(&store, with_archived).map_err(|e| fail(&e.to_string()))?;
+    Ok((found, format!("store {}", path.display())))
 }
 
 fn current_root() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-}
-
-/// Every `script: <path> sha256=<hex>` line of a body, in order.
-fn pins_of(body: &str) -> Vec<Pin> {
-    body.lines()
-        .filter_map(|line| {
-            let mut parts = line.trim().strip_prefix("script:")?.split_whitespace();
-            let path = parts.next()?.to_owned();
-            let sha256 = parts
-                .find_map(|t| t.strip_prefix("sha256="))
-                .unwrap_or("")
-                .to_owned();
-            Some(Pin { path, sha256 })
-        })
-        .collect()
 }
 
 /// Hashes the pinned file on disk and compares it with the pin.
@@ -418,8 +402,9 @@ fn section_lines<'a>(text: &'a str, head: &str) -> Vec<&'a str> {
     out
 }
 
-/// `pii skill edit <id> --file <path> [--note <text>]`: replaces the body from a file, keeps the
-/// id, records `evidence = (file:<path>, ms)`. Refuses when the new body drops a pinned script.
+/// `pii skill edit <id> --file <path> [--note <text>]`: replaces the body from a file, keeps the id, records
+/// `evidence = (file:<path>, ms)`. Through the daemon when it serves the store (spec 234 R3), else into the store.
+/// Refuses when the new body drops a pinned script, and when it has no marker.
 fn edit(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(o) = parse(args) else {
         return usage();
@@ -427,69 +412,60 @@ fn edit(args: &mut std::env::ArgsOs) -> ExitCode {
     let (Some(id), Some(file)) = (o.positional.first().cloned(), o.file.clone()) else {
         return usage();
     };
-    let store = match open(&o) {
-        Ok(s) => s,
-        Err(code) => return code,
-    };
-    let found = match listing(&store, false) {
-        Ok(f) => f,
-        Err(e) => return fail(&e.to_string()),
-    };
-    let Some(old) = found.into_iter().find(|s| s.id == id) else {
-        return fail(&format!("no live skill with id {id}"));
-    };
     let new_text = match std::fs::read_to_string(&file) {
         Ok(t) => t,
         Err(e) => return fail(&format!("read {}: {e}", file.display())),
     };
-    let old_pins = pins_of(&old.text);
-    let new_pins = pins_of(&new_text);
-    let dropped: Vec<&str> = old_pins
+    // The body as it stands, for the pin status the command reports before the edit.
+    let (found, _) = match fetch_skills(&o, false) {
+        Ok(f) => f,
+        Err(code) => return code,
+    };
+    let old_pins = found
         .iter()
-        .filter(|p| !new_pins.iter().any(|n| n.path == p.path))
-        .map(|p| p.path.as_str())
-        .collect();
-    if !dropped.is_empty() {
-        return fail(&format!(
-            "refused: the edit would drop the pin for {}; de-pinning needs a NEW skill id; body unchanged",
-            dropped.join(", ")
-        ));
-    }
-
-    let now_ms = pii_core::SystemClock.now_ms();
-    let mut doc = Doc::new(
-        layer_of_byte(old.layer),
-        DocKind::Skill,
-        new_text.clone(),
-        old.concepts.clone(),
-        1.0,
-        old.created_ms,
+        .find(|s| s.id == id)
+        .map(|s| pins_of(&s.text))
+        .unwrap_or_default();
+    let source = format!("file:{}", file.display());
+    let params = serde_json::json!({ "id": id, "text": new_text, "source": source });
+    let edited = ask_daemon(&o, Method::SkillEdit, params).map_or_else(
+        || edit_in_store(&o, &id, &new_text, &source),
+        |outcome| {
+            outcome.and_then(|reply| {
+                note_source("daemon");
+                serde_json::from_value::<Edited>(reply)
+                    .map_err(|e| fail(&format!("the daemon's edit reply does not decode: {e}")))
+            })
+        },
     );
-    doc.id.clone_from(&old.id);
-    let mut rows = rows_for(&doc);
-    // The concept edges are already in the graph; re-putting them would add their weight again.
-    rows.edges.clear();
-    if let Err(e) = store.put(&rows) {
-        return fail(&e.to_string());
-    }
-    if let Err(e) = store.set_evidence(&id, &format!("file:{}", file.display()), now_ms) {
-        return fail(&e.to_string());
-    }
+    let edited = match edited {
+        Ok(e) => e,
+        Err(code) => return code,
+    };
 
     let root = current_root();
     println!(
         "edited {}: body {} -> {} bytes",
         short_id(&id),
-        old.text.len(),
-        new_text.len()
+        edited.bytes_before,
+        edited.bytes_after
     );
     println!(
         "pin before: {}  after: {}",
         pin_summary(&root, &old_pins),
-        pin_summary(&root, &new_pins)
+        pin_summary(&root, &pins_of(&new_text))
     );
     if let Some(note) = &o.note {
         println!("note: {note}");
     }
     ExitCode::SUCCESS
+}
+
+/// The store-direct half of `edit`, for when no daemon serves the store.
+fn edit_in_store(o: &Opts, id: &str, text: &str, source: &str) -> Result<Edited, ExitCode> {
+    let path = store_file(o)?;
+    let store = open_file(&path)?;
+    note_source(&format!("store {}", path.display()));
+    let now_ms = pii_core::SystemClock.now_ms();
+    pii_memory::skill::edit(&store, id, text, now_ms, source).map_err(|e| fail(&e.to_string()))
 }

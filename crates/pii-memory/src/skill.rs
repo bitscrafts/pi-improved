@@ -12,7 +12,9 @@ use pii_store::MemStore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::doc::{Doc, DocKind, Layer, created_of, decode_kind, decode_text, rows_for};
+use crate::doc::{
+    Doc, DocKind, Layer, created_of, decode_kind, decode_text, layer_of_byte, rows_for,
+};
 
 /// The slug is the first non-empty line after the `PII-SKILL` marker.
 #[must_use]
@@ -156,6 +158,31 @@ fn listed_of(
     })
 }
 
+/// One `script: <path> sha256=<hex>` line from a skill body. An empty `sha256` never matches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pin {
+    /// The script path, relative to the directory the pin is read from.
+    pub path: String,
+    /// The pinned sha256 as written in the body.
+    pub sha256: String,
+}
+
+/// Every `script: <path> sha256=<hex>` line of a body, in order.
+#[must_use]
+pub fn pins_of(body: &str) -> Vec<Pin> {
+    body.lines()
+        .filter_map(|line| {
+            let mut parts = line.trim().strip_prefix("script:")?.split_whitespace();
+            let path = parts.next()?.to_owned();
+            let sha256 = parts
+                .find_map(|t| t.strip_prefix("sha256="))
+                .unwrap_or("")
+                .to_owned();
+            Some(Pin { path, sha256 })
+        })
+        .collect()
+}
+
 /// The document [`add`] stored: its id, its slug, and the sha256 of its text (the pin a graph carries).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Added {
@@ -206,5 +233,116 @@ pub fn add(store: &MemStore, text: &str, layer: Layer, now_ms: u64) -> Result<Ad
         id: doc.id.clone(),
         slug,
         sha256: sha256_hex(doc.text.as_bytes()),
+    })
+}
+
+/// The document [`edit`] stored: its id (unchanged), its new slug, the sha256 of its new text (the pin a graph must
+/// move to), and the body's length before and after.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Edited {
+    /// The document id, which the edit keeps.
+    pub id: String,
+    /// The slug the new text names.
+    pub slug: String,
+    /// The sha256 of the new text.
+    pub sha256: String,
+    /// The old text's length in bytes.
+    pub bytes_before: u64,
+    /// The new text's length in bytes.
+    pub bytes_after: u64,
+}
+
+/// Why [`edit`] stored nothing (spec 234 R2).
+#[derive(Debug)]
+pub enum EditError {
+    /// No live skill document holds the id.
+    NoLive {
+        /// The id that was asked for.
+        id: String,
+    },
+    /// The new text has no `PII-SKILL` marker line.
+    NoMarker,
+    /// The new text drops a pin the old text carried. De-pinning needs a new skill id, which `add` makes.
+    DropsPin {
+        /// The script paths the old text pinned and the new text does not.
+        paths: Vec<String>,
+    },
+    /// The store failed.
+    Store(PiiError),
+}
+
+impl std::fmt::Display for EditError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoLive { id } => write!(f, "no live skill with id {id}"),
+            Self::NoMarker => {
+                f.write_str("the text has no PII-SKILL marker line, so it is not a skill")
+            }
+            Self::DropsPin { paths } => write!(
+                f,
+                "refused: the edit would drop the pin for {}; de-pinning needs a NEW skill id; body unchanged",
+                paths.join(", ")
+            ),
+            Self::Store(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+/// Replaces the text of a live skill, keeping its id.
+///
+/// The layer, concepts and creation time are kept. The concept edges are not re-put: they are already in the graph.
+/// `source` is recorded as the doc's evidence (spec 210). Refuses, and writes nothing, when no live skill holds `id`,
+/// when `new_text` has no marker, or when it drops a pin the old text carried (spec 234 R1, R2). `pii skill edit` and
+/// the daemon's `skill.edit` both call this.
+///
+/// # Errors
+/// See [`EditError`].
+pub fn edit(
+    store: &MemStore,
+    id: &str,
+    new_text: &str,
+    now_ms: u64,
+    source: &str,
+) -> Result<Edited, EditError> {
+    let old = listing(store, false)
+        .map_err(EditError::Store)?
+        .into_iter()
+        .find(|s| s.id == id)
+        .ok_or_else(|| EditError::NoLive { id: id.to_owned() })?;
+    if !is_skill(new_text) {
+        return Err(EditError::NoMarker);
+    }
+    let new_pins = pins_of(new_text);
+    let paths: Vec<String> = pins_of(&old.text)
+        .into_iter()
+        .filter(|p| !new_pins.iter().any(|n| n.path == p.path))
+        .map(|p| p.path)
+        .collect();
+    if !paths.is_empty() {
+        return Err(EditError::DropsPin { paths });
+    }
+
+    let bytes_before = u64::try_from(old.text.len()).unwrap_or(u64::MAX);
+    let mut doc = Doc::new(
+        layer_of_byte(old.layer),
+        DocKind::Skill,
+        new_text,
+        old.concepts,
+        1.0,
+        old.created_ms,
+    );
+    doc.id.clone_from(&old.id);
+    let mut rows = rows_for(&doc);
+    rows.edges.clear();
+    store.put(&rows).map_err(EditError::Store)?;
+    store
+        .set_evidence(id, source, now_ms)
+        .map_err(EditError::Store)?;
+    Ok(Edited {
+        id: old.id,
+        slug: slug_of(new_text).to_owned(),
+        sha256: sha256_hex(new_text.as_bytes()),
+        bytes_before,
+        bytes_after: u64::try_from(new_text.len()).unwrap_or(u64::MAX),
     })
 }

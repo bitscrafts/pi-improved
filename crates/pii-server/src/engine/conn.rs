@@ -224,6 +224,7 @@ fn is_heavy(method: Method) -> bool {
             | Method::LearnSweep
             | Method::SkillPut
             | Method::SkillList
+            | Method::SkillEdit
     )
 }
 

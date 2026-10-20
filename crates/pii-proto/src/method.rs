@@ -129,6 +129,9 @@ pub enum Method {
     /// List the skill documents in the daemon's store (spec 233 R2).
     #[serde(rename = "skill.list")]
     SkillList,
+    /// Change a live skill document's text in the daemon's store, keeping its id (spec 234 R1).
+    #[serde(rename = "skill.edit")]
+    SkillEdit,
 }
 
 impl std::fmt::Display for Method {
@@ -175,6 +178,7 @@ impl std::fmt::Display for Method {
             Self::LearnSweep => "learn.sweep",
             Self::SkillPut => "skill.put",
             Self::SkillList => "skill.list",
+            Self::SkillEdit => "skill.edit",
         })
     }
 }
@@ -225,6 +229,7 @@ impl std::str::FromStr for Method {
             "learn.sweep" => Self::LearnSweep,
             "skill.put" => Self::SkillPut,
             "skill.list" => Self::SkillList,
+            "skill.edit" => Self::SkillEdit,
             other => return Err(other.to_owned()),
         })
     }

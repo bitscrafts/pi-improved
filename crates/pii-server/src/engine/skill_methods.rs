@@ -1,4 +1,4 @@
-//! `skill.put` and `skill.list` (spec 233 R1, R2, R4).
+//! `skill.put`, `skill.list` (spec 233 R1, R2, R4) and `skill.edit` (spec 234 R1, R2).
 //!
 //! The daemon writes and reads its own memory store, the one the `coder` node's `StoreSkills` reads, so a skill put
 //! here is pinnable by the very next run, with no restart.
@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use pii_core::Clock as _;
 use pii_memory::doc::{Layer, layer_of_byte};
-use pii_memory::skill::{AddError, add, listing};
+use pii_memory::skill::{AddError, EditError, add, edit, listing};
 use pii_proto::{ErrorCode, Request, Response, RpcError};
 
 use crate::Engine;
@@ -44,6 +44,30 @@ pub(crate) fn skill_put(engine: &Arc<Engine>, req: &Request) -> Response {
             &format!("skill {slug} is already live as {id}; change it with pii skill edit"),
         ),
         Err(AddError::Store(e)) => err_code(err, &e),
+    }
+}
+
+/// `skill.edit {id, text, source?}`: changes the text of a live skill document, keeping its id. Answers `{id, slug,
+/// sha256, bytes_before, bytes_after}`. A text with no marker, a drop of a pinned script, or an id no live skill holds
+/// is refused and writes nothing. `source` is the evidence the edit records, `skill.edit` when absent.
+pub(crate) fn skill_edit(engine: &Arc<Engine>, req: &Request) -> Response {
+    let err = |c: ErrorCode, m: &str| Response::err(req.id.clone(), RpcError::new(c, m));
+    let Some(id) = req.params.get("id").and_then(serde_json::Value::as_str) else {
+        return err(ErrorCode::InvalidParams, "skill.edit needs 'id'");
+    };
+    let Some(text) = req.params.get("text").and_then(serde_json::Value::as_str) else {
+        return err(ErrorCode::InvalidParams, "skill.edit needs 'text'");
+    };
+    let source = req
+        .params
+        .get("source")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("skill.edit");
+    let now_ms = pii_core::SystemClock.now_ms();
+    match edit(&engine.memory, id, text, now_ms, source) {
+        Ok(edited) => value_response(req, serde_json::to_value(edited).ok(), err),
+        Err(EditError::Store(e)) => err_code(err, &e),
+        Err(e) => err(ErrorCode::InvalidParams, &e.to_string()),
     }
 }
 

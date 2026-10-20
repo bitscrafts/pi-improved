@@ -62,6 +62,7 @@ const METHODS: &[(Method, &str)] = &[
     (Method::LearnSweep, "learn.sweep"),
     (Method::SkillPut, "skill.put"),
     (Method::SkillList, "skill.list"),
+    (Method::SkillEdit, "skill.edit"),
 ];
 
 #[test]
