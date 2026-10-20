@@ -31,7 +31,9 @@ if ! grep -q RUNNING "$ST" 2>/dev/null; then
   echo "drain: control is not RUNNING — $(head -1 "$ST" 2>/dev/null || echo 'no control file')"
   exit 0
 fi
-if ! flock -n -E 75 _tmp/autonomy/lock true 2>/dev/null; then
+# WAIT for the lock instead of bailing on it (measured 2026-10-19: a */30 dispatcher that bailed instantly left the queue
+# idle for up to 30 minutes whenever a cycle from another source owned the lock; the queue's rule is that items drain).
+if ! flock -w "${PII_LOCK_WAIT:-120}" -E 75 _tmp/autonomy/lock true 2>/dev/null; then
   echo "drain: another cycle holds the lock — nothing started"
   exit 0
 fi
