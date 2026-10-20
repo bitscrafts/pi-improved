@@ -233,6 +233,13 @@ else
     *)
   # NOTE (2026-10-19): the quota test below matches the CLI's OWN error shapes, not the words "quota"/"rate limit" anywhere
 # in a log — a brief that QUOTES the user's directive about the quota produced two false requeues tonight (A80, A82).
+  # A row whose spec declares DEPLOY: must NEVER reach this point: if it did, the deploy branch above failed to match and
+  # the row would be dispatched as code and its verify command would run an install (measured 2026-10-20). Fail loudly.
+  if grep -qE '^DEPLOY:' "specs/$SPEC" 2>/dev/null; then
+    echo "OUTCOME=plan-error ITEM=$ITEM SPEC=$SPEC DEPLOY-ROW-REACHED-WORKER-PATH"
+    exit 1
+  fi
+
   # WORKER SELECTION (user directive 2026-10-19: "dont implement it as the anthropic quota will exaust").
   # PII_WORKER=pi (default) dispatches to ollama-cloud through scripts/run-batchC-pi.sh — the Claude account is untouched.
   # PII_WORKER=claude is the opt-in escalation, and only when the window is known open.
