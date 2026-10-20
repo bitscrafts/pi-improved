@@ -12,7 +12,7 @@ use pii_core::{ArgvScope, Budget, CapSet, Ctx};
 use pii_graph::NodeRegistry;
 use pii_graph::sched::dispatch::node_proc_argv0;
 use pii_observe::{Event, Observer, names};
-use pii_server::node_kinds::nodes::coder::{AGENT_BIN_DIR, CoderFactory, agent_binaries};
+use pii_server::node_kinds::nodes::coder::{CoderFactory, agent_bin_dir, agent_binaries};
 
 #[derive(Default)]
 struct Rec(Mutex<Vec<Event>>);
@@ -89,7 +89,7 @@ fn coder_node_scope_admits_its_agent_binary() {
 /// denial is checked at the spawn gate itself, so nothing is ever executed.
 #[test]
 fn non_coder_node_cannot_exec_the_agent_binary() {
-    let bin = std::path::PathBuf::from(AGENT_BIN_DIR);
+    let bin = agent_bin_dir().expect("agent binaries (pi, claude) on PATH");
     let run_scope = ArgvScope::new({
         let mut v = vec![String::from("/bin/sh")];
         v.extend(agent_binaries(&bin));
@@ -109,7 +109,11 @@ fn non_coder_node_cannot_exec_the_agent_binary() {
         CoderFactory::with_env(bin, BTreeMap::new(), Arc::new(Rec::default()))
             .with_criteria(criteria),
     ));
-    let agent_pi = format!("{AGENT_BIN_DIR}/pi");
+    let agent_pi = agent_bin_dir()
+        .expect("agent binaries on PATH")
+        .join("pi")
+        .display()
+        .to_string();
     let argv = vec![agent_pi.clone(), String::from("-p")];
     let spawn = |scope: ArgvScope| {
         let mut caps = CapSet::empty();

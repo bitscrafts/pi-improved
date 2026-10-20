@@ -14,7 +14,7 @@ workdir = "/projects/pi-improved"
 spec = "specs/207-the-coder-node-spawns-an-agent.md"
 brief = "Implement the spec named above. Follow it as the contract."
 env_pass = ["PATH", "HOME"]
-criteria = ["cargo test -p pii-server --test coder_spawns_a_process"]
+criteria = ["cargo:test:pii-server/coder_spawns_a_process"]
 
 [[node]]
 id = "done"

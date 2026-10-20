@@ -25,7 +25,7 @@ use pii_memory::doc::{Doc, DocKind, Layer, rows_for};
 use pii_model::ScriptedProvider;
 use pii_observe::{Event, Observer, names};
 use pii_server::engine::registry::registry;
-use pii_server::node_kinds::nodes::coder::{AGENT_BIN_DIR, agent_binaries};
+use pii_server::node_kinds::nodes::coder::{agent_bin_dir, agent_binaries};
 use pii_server::node_kinds::nodes::criteria;
 use pii_server::tiers::TierTable;
 use pii_server::{DEFAULT_SESSION_RUNS_CAP, EngineConfig};
@@ -76,7 +76,11 @@ fn root_ctx(podman: &Path) -> Ctx {
         podman.display().to_string(),
         String::from("/usr/bin/test"),
     ];
-    argv0.extend(agent_binaries(Path::new(AGENT_BIN_DIR)));
+    argv0.extend(agent_binaries(
+        agent_bin_dir()
+            .as_deref()
+            .expect("agent binaries (pi, claude) on PATH"),
+    ));
     argv0.extend(criteria::programs(&BTreeMap::new()));
     caps.proc_argv0 = ArgvScope::new(argv0);
     Ctx::root(caps, Budget::unlimited())

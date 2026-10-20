@@ -62,9 +62,9 @@ impl ChildProc {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let child = cmd
-            .spawn()
-            .map_err(|e| PiiError::Internal(format!("spawn {argv0}: {e}")))?;
+        let child = cmd.spawn().map_err(|e| {
+            PiiError::Internal(format!("spawn {argv0} (cwd {}): {e}", cwd.display()))
+        })?;
         Ok(Self { inner: child })
     }
 
@@ -312,7 +312,7 @@ fn run_child(
     // sanctioned Command site (spec F3.8); the timeout needs the child handle.
     let mut child = cmd
         .spawn()
-        .map_err(|e| PiiError::Internal(format!("spawn {argv0}: {e}")))?;
+        .map_err(|e| PiiError::Internal(format!("spawn {argv0} (cwd {}): {e}", cwd.display())))?;
     let drain = |pipe: std::process::ChildStdout| {
         std::thread::spawn(move || {
             let mut buf = Vec::new();

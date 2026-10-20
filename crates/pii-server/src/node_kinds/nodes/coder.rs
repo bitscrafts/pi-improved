@@ -39,9 +39,16 @@ use self::helpers::{
     argv_digest, journal, refused_port, session_of, skill_hashes, skill_names, text, texts,
 };
 
-/// Where the agent binaries live in production. A coder node may exec `pi` and `claude` from here, and nothing
-/// else new.
-pub const AGENT_BIN_DIR: &str = "/root/.local/bin";
+/// The agent binary directory: the first `PATH` entry holding both `pi` and `claude`.
+///
+/// Resolved at runtime, never a literal, so the spawn and the `proc` allowlist (`run_scope`) always agree.
+/// `None` when no entry holds both: the caller must refuse rather than guess a directory.
+#[must_use]
+pub fn agent_bin_dir() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .find(|dir| dir.join("pi").is_file() && dir.join("claude").is_file())
+}
 
 /// The agent program paths under `bin_dir`: the only programs a `coder` node may exec (spec 207).
 #[must_use]
@@ -86,12 +93,12 @@ pub struct CoderFactory {
 }
 
 impl CoderFactory {
-    /// The production factory: agents under [`AGENT_BIN_DIR`], podman at [`PODMAN_BIN`], names copied from this
-    /// process's environment.
+    /// The production factory: agents under [`agent_bin_dir`], podman at [`PODMAN_BIN`], names copied from this
+    /// process's environment. With no agent directory on `PATH` the factory has none, so a `coder` refuses.
     #[must_use]
     pub fn new(log: Arc<dyn Observer>) -> Self {
         Self::with_env(
-            PathBuf::from(AGENT_BIN_DIR),
+            agent_bin_dir().unwrap_or_default(),
             std::env::vars().collect(),
             log,
         )

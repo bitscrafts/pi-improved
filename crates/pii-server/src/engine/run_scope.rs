@@ -114,7 +114,7 @@ pub(super) fn run_caps(
     // spec 207/215: the run admits the agent binaries and the criteria table's programs; dispatch hands them only to
     // `coder` nodes.
     caps.proc_argv0 = pii_core::ArgvScope::new(crate::node_kinds::nodes::coder::run_programs(
-        std::path::Path::new(crate::node_kinds::nodes::coder::AGENT_BIN_DIR),
+        &crate::node_kinds::nodes::coder::agent_bin_dir().unwrap_or_default(),
         std::path::Path::new(crate::node_kinds::nodes::coder_container::PODMAN_BIN),
         &crate::node_kinds::nodes::criteria::production(),
     ));
