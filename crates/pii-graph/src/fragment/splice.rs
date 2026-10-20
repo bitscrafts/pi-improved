@@ -1,14 +1,20 @@
 //! The splice step: checked, loaded fragments inlined into the host graph (spec 212).
 
+use std::collections::HashSet;
+use std::path::{Component, Path, PathBuf};
+
 use pii_abi::{NodeId, PiiError, PortName};
+use toml::Table;
 
 use crate::spec::{Edge, EdgeKind, GraphSpec, NodeSpec};
 
 use super::check::{Attach, Link, Loaded, Piece};
-use super::weave::{Inlined, Woven};
+use super::check::{Fragment, check_fragment, sha256_hex};
+use super::shared::{PRE_SURFACES, SURFACES};
+use super::weave::Inlined;
 use crate::node::NodeRegistry;
 /// The run.start chain sits in front of the host's entry.
-fn splice_run_start(
+pub(super) fn splice_run_start(
     spec: &mut GraphSpec,
     loaded: &[Loaded],
     host: &[NodeId],
@@ -33,7 +39,7 @@ fn splice_run_start(
 }
 
 /// node.before and node.after, per host node in declaration order.
-fn splice_node_surfaces(
+pub(super) fn splice_node_surfaces(
     spec: &mut GraphSpec,
     loaded: &[Loaded],
     host: &[NodeId],
@@ -119,7 +125,7 @@ fn splice_after(
 }
 
 /// The run.end chain follows every host node that has no ok successor.
-fn splice_run_end(
+pub(super) fn splice_run_end(
     spec: &mut GraphSpec,
     loaded: &[Loaded],
     host: &[NodeId],
@@ -166,7 +172,7 @@ fn splice_run_end(
 
 /// Whether `src` is a fragment file (it declares a `[fragment]` table) rather than a host graph.
 #[must_use]
-fn parse_attaches(doc: &Table) -> Result<Vec<Attach>, PiiError> {
+pub(super) fn parse_attaches(doc: &Table) -> Result<Vec<Attach>, PiiError> {
     let items = match doc.get("attach") {
         None => return Ok(Vec::new()),
         Some(toml::Value::Array(items)) => items,
@@ -250,7 +256,7 @@ fn names(t: &Table, id: &str) -> Result<Vec<String>, PiiError> {
 }
 
 /// The host nodes an attach applies to: `["*"]` is every node, else the named ones.
-fn targets(a: &Attach, host: &[NodeId]) -> Result<Vec<NodeId>, PiiError> {
+pub(super) fn targets(a: &Attach, host: &[NodeId]) -> Result<Vec<NodeId>, PiiError> {
     if a.on.len() == 1 && a.on.first().map(String::as_str) == Some("*") {
         return Ok(host.to_vec());
     }
@@ -330,7 +336,11 @@ fn fragment_path(a: &Attach, dir: &Path) -> Result<PathBuf, PiiError> {
 
 /// Reads one fragment, refuses it on a pin drift before anything else, then
 /// runs its contract checks and the block rule for the attach's surface.
-fn load_fragment_file(a: &Attach, dir: &Path, reg: &NodeRegistry) -> Result<Fragment, PiiError> {
+pub(super) fn load_fragment_file(
+    a: &Attach,
+    dir: &Path,
+    reg: &NodeRegistry,
+) -> Result<Fragment, PiiError> {
     let path = fragment_path(a, dir)?;
     let bytes = std::fs::read(&path)
         .map_err(|e| PiiError::Invalid(format!("fragment {}: read: {e}", path.display())))?;
@@ -462,7 +472,7 @@ fn origin_of(n: &NodeSpec) -> String {
 }
 
 /// Refuses a woven graph whose namespaced ids collide with each other or with the host.
-fn check_unique(spec: &GraphSpec) -> Result<(), PiiError> {
+pub(super) fn check_unique(spec: &GraphSpec) -> Result<(), PiiError> {
     let mut seen: HashSet<&str> = HashSet::new();
     for n in &spec.nodes {
         if !seen.insert(n.id.as_str()) {

@@ -349,15 +349,17 @@ impl Engine<'_> {
         })
     }
 
-    /// Spec 221: the terminal and status this run ends with, once its coder calls are read back from the journal.
-    /// The journal is flushed first, so every observation the nodes made is in the store.
+    /// Spec 221: the terminal and status this run ends with, once its coder calls are read back from the run's
+    /// journal. The fold reads the durable prefix plus the events still buffered (the journaler's own view), so
+    /// no extra write transaction is spent: the run keeps its accepted-start and terminal writes only (measured
+    /// 2026-10-20, `deadline_flush::a_fast_node_costs_no_barrier_transaction` went red at 3, spec 221's flush was
+    /// the third).
     fn judged(
         &self,
         spec: &GraphSpec,
         terminal: Terminal,
     ) -> Result<(Terminal, RunStatus), PiiError> {
-        self.jr.flush()?;
-        let journal = self.jr.store().read_journal(self.run_id)?;
+        let journal = self.jr.events()?;
         Ok(crate::agent_calls::call_verdict(spec, &journal, terminal))
     }
 

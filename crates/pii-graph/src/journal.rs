@@ -266,6 +266,28 @@ impl<'a> Journaler<'a> {
         Ok(st.last_seq)
     }
 
+    /// The run's journal as this writer sees it: the durable prefix plus the events still
+    /// buffered, each with the seq it will land on. A read-only view — no write transaction,
+    /// and no flush (spec 221's verdict reads this instead of forcing the store durable first;
+    /// measured 2026-10-20: the forced flush was the third transaction of a coder-free run).
+    ///
+    /// # Errors
+    /// Returns [`PiiError`] when the durable prefix cannot be read.
+    pub fn events(&self) -> Result<Vec<(u64, RunEvent)>, PiiError> {
+        let (run, base, pending) = {
+            let st = self.state.lock();
+            (st.header.run.clone(), st.header.seq, st.pending.clone())
+        };
+        let mut out = self.store.read_journal(&run)?;
+        out.extend(
+            pending
+                .into_iter()
+                .enumerate()
+                .map(|(i, ev)| (base + i as u64, ev)),
+        );
+        Ok(out)
+    }
+
     /// Time since the store last took this run's events.
     #[must_use]
     pub fn since_flush(&self) -> Duration {

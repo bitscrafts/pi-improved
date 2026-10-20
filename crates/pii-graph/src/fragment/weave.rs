@@ -1,19 +1,19 @@
 //! The weave: fragment nodes spliced into a host graph at its surfaces (spec 212).
 
-use std::collections::HashSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
-use pii_abi::{NodeId, PiiError, PortName};
+use pii_abi::{NodeId, PiiError};
 use toml::Table;
 
 use crate::node::NodeRegistry;
-use crate::spec::{Edge, EdgeKind, GraphSpec, NodeSpec};
+use crate::spec::GraphSpec;
 use crate::toml_load::load_toml_with_registry;
 
-use super::check::check_fragment;
-use super::check::{Attach, Link, Loaded, Piece};
-use super::check::{Fragment, sha256_hex};
-use super::shared::{PRE_SURFACES, SURFACES};
+use super::check::Loaded;
+use super::splice::{
+    check_unique, load_fragment_file, parse_attaches, splice_node_surfaces, splice_run_end,
+    splice_run_start, targets,
+};
 
 /// One inlined node, with the surface and attach it came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +105,8 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::*;
+    use crate::fragment::check::Attach;
+    use crate::fragment::sha256_hex;
 
     #[test]
     fn sha256_matches_the_known_empty_digest() {
