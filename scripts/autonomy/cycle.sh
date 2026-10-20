@@ -208,6 +208,17 @@ else
   say "dispatching spec number $N"
   # REVIEW ROWS (user directive 2026-10-19: "an opus analysis must also be put in the queue, positioned before the items
   # that matter"). A row whose spec is specs/review-* is dispatched to the opus reviewer in plan mode, never to a coder.
+  # A DEPLOY row is executed by the dispatcher, not by a coding worker: its spec carries `DEPLOY:` on its own line.
+  if grep -qE '^DEPLOY:' "$SPEC" 2>/dev/null; then
+    say "deploy row: running scripts/autonomy/deploy-row.sh for $SPEC"
+    if bash scripts/autonomy/deploy-row.sh >"_tmp/autonomy/logs/deploy-$ITEM-$(date -u +%Y%m%dT%H%M%SZ).log" 2>&1; then
+      echo "OUTCOME=deploy-run ITEM=$ITEM"
+    else
+      echo "OUTCOME=deploy-failed ITEM=$ITEM"
+    fi
+    exit 0
+  fi
+
   # SPEC is the FILENAME, not a path (measured 2026-10-19: the specs/216-* pattern never matched and a coding worker was
   # dispatched onto a review spec). Match both forms so this cannot recur.
   case "$SPEC" in

@@ -1,5 +1,7 @@
 # Spec: the deploy that carries the coder node, named criteria and the call events
 
+DEPLOY: yes   <!-- the dispatcher runs scripts/autonomy/deploy-row.sh for this row, never a coder -->
+
 ## Overview
 A deploy is a queue row, not an act performed mid-work. Measured 2026-10-20: an install was started for a revision whose
 tree did not contain 215 (criteria as data) or 217 (an agent call is observable) — the installer builds from a git export,
