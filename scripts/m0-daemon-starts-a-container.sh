@@ -27,7 +27,7 @@ EVID=$(mktemp -d "${PII_EVID_ROOT:-/projects/_tmp}/m0-evidence-$TS-XXXX") || { e
 tail_of() { tail -c 300 "$1" 2>/dev/null | tr '\n' ' '; }
 
 command -v "$PII" >/dev/null 2>&1 || { echo "M0 FAILED 127 $PII not on PATH"; exit 0; }
-JQ() { if command -v jq >/dev/null 2>&1; then jq "$@"; else python3 -c 'import json,sys; args=sys.argv[1:]; data=sys.stdin.read(); obj=json.loads(data); mode=0
+JQ() { if command -v jq >/dev/null 2>&1; then jq "$@"; else python3 -c 'import json,sys; args=[a for a in sys.argv[1:]]; data=open(args[1]).read() if len(args)>1 else sys.stdin.read(); args=args[:1]; obj=json.loads(data); mode=0
 if args and args[0]=="-r": mode=1; args=args[1:]
 path=(args[0] if args else ".").replace(" // empty","")
 if path==".":
