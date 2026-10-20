@@ -15,7 +15,8 @@
 # Env: PII_IDLE_MIN (default 12) — how long without a worker before it counts as idle.
 set -uo pipefail
 export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
-cd /projects/pi-improved || { echo "QUEUE ALARM: cannot cd into /projects/pi-improved"; exit 0; }
+REPO="${PII_REPO:-/projects/pi-improved}"   # PII_REPO exists so the alarm can be TESTED on a fabricated queue
+cd "$REPO" || { echo "QUEUE ALARM: cannot cd into $REPO"; exit 0; }
 IDLE_MIN=${PII_IDLE_MIN:-12}
 
 control=$(head -1 _tmp/autonomy/control 2>/dev/null || echo RUNNING)
