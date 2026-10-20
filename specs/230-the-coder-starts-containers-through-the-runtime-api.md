@@ -17,6 +17,11 @@ container: `POST /containers/create` → id, `/start` → 204, `/wait` → 0, `/
 `DELETE` → 200. Landlock does not mediate `connect()`, so the socket is reachable while the domain stays
 intact. The container, not the landlock domain, becomes the isolation boundary.
 
+Review 078 §2.1 named this remedy ("podman over its API socket from an unconfined service") before it was
+measured, and predicted the direct path's failure from `no_new_privs`. The measurement refines the
+prediction: `no_new_privs` alone leaves podman working, so the discriminator is the landlock domain, and
+that is the part no grant reaches.
+
 This spec makes the coder node use that path.
 
 ## Requirements
