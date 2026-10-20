@@ -10,7 +10,6 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use parking_lot::RwLock;
 
@@ -20,6 +19,8 @@ use pii_core::{BudgetShare, CancelToken, CapKind, CapSet, Ctx, Principal};
 use crate::agent_calls::CallRecorder;
 use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
+
+use super::barrier::run_with_barrier;
 use crate::sched::state::{
     EdgeState, Readiness, RunState, apply_completion, apply_failed_or_cancelled, readiness,
 };
@@ -180,31 +181,6 @@ pub fn build_node_input(
         payload,
         nodes: serde_json::to_value(&bb.nodes).unwrap_or(serde_json::Value::Null),
     }
-}
-
-/// How long a node's start may sit unflushed while the node runs (D3).
-const START_DURABLE_WITHIN: Duration = Duration::from_secs(2);
-
-/// Runs `f`; if it outlives the window since the last flush, a watcher makes
-/// the pending `NodeStarted` durable. A fast node finishes first and costs no
-/// transaction.
-fn run_with_barrier<T>(env: &Env<'_>, f: impl FnOnce() -> T) -> T {
-    let (done, wait) = std::sync::mpsc::channel::<()>();
-    std::thread::scope(|s| {
-        s.spawn(move || {
-            let left = START_DURABLE_WITHIN.saturating_sub(env.jr.since_flush());
-            if matches!(
-                wait.recv_timeout(left),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-            ) && let Err(e) = env.jr.flush_if_stale(START_DURABLE_WITHIN)
-            {
-                env.jr.report_flush_failure(&e);
-            }
-        });
-        let out = f();
-        drop(done);
-        out
-    })
 }
 
 /// Runs one node (with retries) on the calling thread, journaling every

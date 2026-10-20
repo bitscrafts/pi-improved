@@ -4,6 +4,7 @@
 //! loop, dispatch with `cancel_losers`, and the blackboard land with the run
 //! entry point in a dedicated pass.
 
+pub mod barrier;
 pub mod dispatch;
 pub mod loop_helpers;
 pub mod state;
