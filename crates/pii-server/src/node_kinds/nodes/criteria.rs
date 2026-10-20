@@ -33,6 +33,13 @@ const PRODUCTION: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        // A criterion for any workspace the coder is pointed at: the named check runs `cargo test` in the node's workdir.
+        // Measured 2026-10-20: pointing a demo coder at a temp workspace failed with `criteria.unknown` because every name in
+        // this table was pii's own test — a node could only ever verify pii.
+        "cargo:test:workspace/all",
+        &["cargo", "test"],
+    ),
+    (
         "cargo:test:pii-server/grant_ceiling_refuses",
         &[
             "cargo",

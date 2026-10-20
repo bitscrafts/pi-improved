@@ -1,0 +1,43 @@
+# coder-fix.toml — the demonstration: a coder node spawns an agent inside a declared image and fixes a failing test.
+#
+# image: localhost/pii-agent:1 (debian:trixie + pi 0.1.23 + claude 2.1.304 + cargo/rustc 1.85.1), built on lnx at deploy time.
+# credentials: env_pass names them; the VALUES come from the daemon's environment (loaded from its 0600 pii.env), never from
+# this file. A run copies names, never values.
+name = "coder-fix"
+entry = "code"
+caps = ["spawn", "proc"]
+
+[[node]]
+id = "code"
+kind = "coder"
+caps = ["spawn", "proc"]
+agent = "pi"
+model = "glm-5.3-flash:cloud"
+container_image = "localhost/pii-agent:1"
+workdir = "/tmp/pii-ws-3aQWp1"
+spec = "/tmp/pii-ws-3aQWp1/SPEC.md"
+env_pass = ["PATH", "HOME", "OPENAI_API_KEY", "OPENAI_BASE_URL"]
+brief = "The Rust library in this workspace has a bug: src/lib.rs implements add() as a - b. Make `cargo test` pass. DO NOT modify or weaken the test in src/lib.rs - fix the implementation only. Run `cargo test` yourself and leave the tree with it green."
+criteria = ["cargo:test:workspace/all"]
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+[[node]]
+id = "refused"
+kind = "transform"
+value = "refused"
+
+[[edge]]
+from = "code"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "code"
+port = "err"
+to = "refused"
+kind = "data"
