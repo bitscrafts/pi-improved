@@ -242,6 +242,27 @@ impl ContainerRuntime for PodmanApi {
         req: &Request<'_>,
         spawned: &mut dyn FnMut(&Spawn),
     ) -> Result<Launch, PiiError> {
+        // Spec 232 R4: the digest the runtime will actually run, read before anything starts. An
+        // inspect failure refuses exactly like the CLI path's probe (spec 228 R2): podman's words,
+        // never a silent empty digest.
+        let digest = match self.json_call(
+            &mut || ctx.check(),
+            "GET",
+            &format!("/images/{}/json", req.image),
+            None,
+            "image inspect",
+            is_2xx,
+        )? {
+            Ok(value) => {
+                String::from("sha256:")
+                    + value
+                        .pointer("/Digest")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .trim_start_matches("sha256:")
+            }
+            Err(failure) => return Ok(self.refused(failure)),
+        };
         let created = self.json_call(
             &mut || ctx.check(),
             "POST",
@@ -261,7 +282,7 @@ impl ContainerRuntime for PodmanApi {
             };
             return Ok(self.refused(failure));
         };
-        let outcome = self.start_and_wait(ctx, req, &id, spawned);
+        let outcome = self.start_and_wait(ctx, req, &id, &digest, spawned);
         // Removed on every path, forcibly: a cancelled run's container is still running and must not be left.
         let _ = self.call(
             &mut || Ok(()),
@@ -280,6 +301,7 @@ impl PodmanApi {
         ctx: &Ctx,
         req: &Request<'_>,
         id: &str,
+        digest: &str,
         spawned: &mut dyn FnMut(&Spawn),
     ) -> Result<Launch, PiiError> {
         let started = Instant::now();
@@ -314,7 +336,7 @@ impl PodmanApi {
         spawned(&Spawn {
             runtime: "socket",
             image: req.image.to_owned(),
-            image_digest: String::new(),
+            image_digest: digest.to_owned(),
             container: id.to_owned(),
             pid,
             argv: req.agent_argv.to_vec(),

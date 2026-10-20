@@ -480,13 +480,31 @@ fn fail_text(line: &NodeLine) -> Option<&str> {
 
 /// The failure or refusal of the node's latest trace line, in full (spec 231 R1). `no-failure` when it has none.
 fn full_reason(journal: &[(u64, RunEvent)], node: &str) -> String {
-    node_lines(journal)
+    if let Some(text) = node_lines(journal)
         .iter()
         .rev()
         .find(|line| line.node == node)
         .and_then(fail_text)
-        .unwrap_or("no-failure")
-        .to_owned()
+    {
+        return text.to_owned();
+    }
+    // A node that took a non-fail port with no failure fields still carries its verdict in the
+    // finished event's value (measured 2026-10-20: run r258's coder node exited rc 1 and the run
+    // get line said `exited=1`, but `--reason` had nothing to quote). The value IS journalled, so
+    // quoting it stays a display of the journal, not of the node's self-report. A `verdict` key
+    // prints alone; any other value prints whole.
+    let last = journal.iter().rev().find_map(|(_, ev)| match ev {
+        RunEvent::NodeFinished { node: n, value, .. } if n.as_str() == node => Some(value.clone()),
+        _ => None,
+    });
+    let text = last.as_ref().and_then(serde_json::Value::as_str);
+    if let Some(t) = text.filter(|t| !t.is_empty()) {
+        return (*t).to_owned();
+    }
+    last.map_or_else(
+        || "no-failure".to_owned(),
+        |v| serde_json::to_string(&v).unwrap_or_else(|_| "no-failure".to_owned()),
+    )
 }
 
 /// One trace line (spec 217 R6). The duration falls back to the call's own when the node failed without one.
@@ -822,7 +840,7 @@ mod tests {
         clippy::indexing_slicing
     )]
 
-    use super::{node_lines, reason_for, trace_line};
+    use super::{full_reason, node_lines, reason_for, trace_line};
     use pii_abi::{NodeId, PortName, RunEvent};
 
     /// Spec 223 R2-R3: a refused coder node's trace line names the refusal and its image slot, never `pid=-` alone.
@@ -915,5 +933,25 @@ mod tests {
     fn trace_reason_missing_node_prints_no_failure() {
         let j = journal(vec![finished("n", "ok", serde_json::json!({}))]);
         assert_eq!(reason_for(&j, "missing"), "no-failure");
+    }
+
+    /// Spec 232 R3, measured on run r258: a coder node whose criteria are satisfied-but-empty
+    /// exits rc != 0, takes `ok` with a verdict value, and carries no failure field — the reason
+    /// reader had nothing to quote and the verdict lived only in the value. `--reason` now prints
+    /// the journalled value's verdict text.
+    #[test]
+    fn trace_reason_quotes_a_verdict_value_when_no_failure_fields_exist() {
+        let j = journal(vec![finished(
+            "code",
+            "ok",
+            serde_json::json!({"verdict": "failed", "reason": "agent rc 1", "pid": 3_463_854}),
+        )]);
+        assert_eq!(reason_for(&j, "code"), "no-failure");
+        // The fallback in full_reason quotes the value as journalled.
+        assert!(
+            full_reason(&j, "code").contains("agent rc 1"),
+            "{}",
+            full_reason(&j, "code")
+        );
     }
 }

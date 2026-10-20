@@ -91,6 +91,12 @@ fn serve(sock: &Path, fake: Fake) -> Arc<Mutex<Vec<String>>> {
 }
 
 fn answer(line: &str, fake: &Fake) -> (u16, String) {
+    if line.starts_with("GET /images/") && line.ends_with("/json HTTP/1.1") {
+        return (
+            200,
+            String::from("{\"Digest\":\"sha256:cafebabe00000000000000000000000000000000\"}"),
+        );
+    }
     if line == "POST /containers/create HTTP/1.1" {
         return (
             fake.create_status,
@@ -217,6 +223,13 @@ fn coder_starts_through_the_runtime_socket() {
         field(spawned, "runtime").and_then(serde_json::Value::as_str),
         Some("socket"),
         "the resolved runtime is named"
+    );
+    // Spec 232 R4: the runtime's own digest reaches the journal, so the trace's image slot
+    // carries what actually ran, never an empty string.
+    assert_eq!(
+        field(spawned, "image_digest").and_then(serde_json::Value::as_str),
+        Some("sha256:cafebabe00000000000000000000000000000000"),
+        "the digest the runtime inspected is journalled"
     );
     let exited = events
         .iter()

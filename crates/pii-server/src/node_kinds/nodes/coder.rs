@@ -62,6 +62,10 @@ pub fn run_programs(bin_dir: &Path, podman: &Path, criteria: &Table) -> Vec<Stri
 /// How long one criterion command may run before it is killed.
 const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);
 
+/// The one scope-checked criterion name (spec 232 R1): its argv runs in the node's workdir, so the
+/// node's workdir must be the run's scope root for the name to resolve.
+const WORKSPACE_CRITERION: &str = "cargo:test:workspace/all";
+
 /// Factory for `coder` nodes. The agent bin directory, the podman binary and the environment snapshot are fixed
 /// at construction: production uses [`CoderFactory::new`]; tests inject their own.
 pub struct CoderFactory {
@@ -301,14 +305,30 @@ impl CoderNode {
     }
 
     /// Each name in the node's `criteria` with its fixed argv; the first name the table lacks is the error.
+    /// The table is fixed, except one name the RESOLVE checks: `cargo:test:workspace/all` (spec 232 R1)
+    /// runs `cargo test` in whatever workdir the node names, so the node's `workdir` must be the run's
+    /// scope root (the run input's `scope_root`, absent = the daemon workspace the run already confined).
+    /// The fixed table cannot be extended by graph data; the checked name keeps the check honest.
     fn resolve_criteria(
         &self,
         cfg: &serde_json::Value,
+        scope_root: Option<&str>,
     ) -> Result<Vec<(String, Vec<String>)>, String> {
+        let workdir = text(cfg, "workdir").unwrap_or_default();
         texts(cfg, "criteria")
             .into_iter()
             .map(|name| match self.criteria.get(&name) {
-                Some(argv) => Ok((name.clone(), argv.clone())),
+                Some(argv) => {
+                    if name == WORKSPACE_CRITERION
+                        && scope_root.is_some_and(|root| {
+                            !Path::new(root).starts_with(&workdir)
+                                && !Path::new(&workdir).starts_with(root)
+                        })
+                    {
+                        return Err(name);
+                    }
+                    Ok((name.clone(), argv.clone()))
+                }
                 None => Err(name),
             })
             .collect()
@@ -606,7 +626,11 @@ impl GraphNode for CoderNode {
             _ => return Ok(self.refuse(ctx, &agent, &model, "no spec or no brief")),
         };
         // Spec 215: every criterion resolves to its fixed argv before anything spawns; an unknown name refuses.
-        let checks = match self.resolve_criteria(cfg) {
+        let scope_root = input
+            .input
+            .get("scope_root")
+            .and_then(serde_json::Value::as_str);
+        let checks = match self.resolve_criteria(cfg, scope_root) {
             Ok(checks) => checks,
             Err(name) => return Ok(self.refuse_criterion(&name, &agent, &model)),
         };
