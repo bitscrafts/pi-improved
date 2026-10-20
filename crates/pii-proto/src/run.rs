@@ -81,6 +81,10 @@ pub struct TraceResult {
     pub header: WireRunHeader,
     /// Journal events in order.
     pub events: Vec<SeqEvent>,
+    /// The journal as the store holds it: one `{"seq":<u64>,"event":<RunEvent>}` object per entry, in order
+    /// (spec 220 R3). Additive: absent from older daemons.
+    #[serde(default)]
+    pub journal: Vec<serde_json::Value>,
 }
 
 /// `graph.apply` params.

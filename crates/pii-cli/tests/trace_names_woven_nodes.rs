@@ -68,9 +68,11 @@ fn run_trace_names_the_woven_origin() {
     let db = dir.path().join("store.redb");
     record_run(&db);
 
+    // Its own runtime dir: a daemon on this host must not answer for the store this test names (spec 220).
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(["run", "trace", "run-woven", "--db"])
         .arg(&db)
+        .env("PII_RUNTIME_DIR", dir.path())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);

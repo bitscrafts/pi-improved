@@ -407,6 +407,10 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
         .get_run(run_id)?
         .ok_or_else(|| PiiError::NotFound(format!("run '{run_id}'")))?;
     let journal = engine.store.read_journal(run_id)?;
+    let raw = journal
+        .iter()
+        .map(|(seq, ev)| serde_json::json!({"seq": seq, "event": ev}))
+        .collect();
     let events = journal
         .into_iter()
         .filter_map(|(seq, ev)| {
@@ -427,6 +431,7 @@ fn trace(engine: &Arc<Engine>, run_id: &RunId) -> Result<TraceResult, PiiError> 
             dur_ms: header.dur_ms,
         },
         events,
+        journal: raw,
     })
 }
 

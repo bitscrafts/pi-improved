@@ -731,6 +731,12 @@
     "header": {
       "$ref": "#/$defs/WireRunHeader",
       "description": "Run header."
+    },
+    "journal": {
+      "default": [],
+      "description": "The journal as the store holds it: one `{\"seq\":<u64>,\"event\":<RunEvent>}` object per entry, in order\n(spec 220 R3). Additive: absent from older daemons.",
+      "items": true,
+      "type": "array"
     }
   },
   "required": [
