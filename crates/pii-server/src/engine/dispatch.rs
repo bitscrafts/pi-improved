@@ -355,7 +355,8 @@ fn graph_lint(engine: &Arc<Engine>, toml: &str) -> GraphLintResult {
         std::path::Path::to_path_buf,
     );
     let reg = crate::lint_registry(&engine.cfg.workspace, &runtime_dir);
-    match pii_graph::load_toml_with_registry(toml, &reg) {
+    let fragments = engine.cfg.graph_dir.join("fragments");
+    match pii_graph::fragment::load_host(toml, &fragments, &reg).map(|w| w.spec) {
         Ok(spec) => match pii_graph::validate(&spec, &reg) {
             Ok(warnings) => GraphLintResult {
                 ok: true,

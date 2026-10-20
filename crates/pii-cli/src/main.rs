@@ -72,7 +72,7 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
         let dir = std::path::Path::new(path)
             .parent()
             .map_or_else(|| "fragments".into(), |p| p.join("fragments"));
-        match pii_graph::fragment::weave(&src, &dir, &reg) {
+        match pii_graph::fragment::load_host(&src, &dir, &reg) {
             Ok(woven) => (woven.spec, woven.sequence),
             Err(e) => {
                 fail("graph", &e);

@@ -615,7 +615,9 @@ impl Engine {
         if path.exists() {
             let src = std::fs::read_to_string(&path)
                 .map_err(|e| PiiError::Internal(format!("read {}: {e}", path.display())))?;
-            return pii_graph::load_toml_with_registry(&src, &self.reg);
+            // Spec 219: a graph that attaches fragments is woven here, before it is validated or run.
+            let fragments = self.cfg.graph_dir.join("fragments");
+            return pii_graph::fragment::load_host(&src, &fragments, &self.reg).map(|w| w.spec);
         }
         if name == "default" {
             return pii_graph::load_toml_with_registry(engine::registry::DEFAULT_TOML, &self.reg);

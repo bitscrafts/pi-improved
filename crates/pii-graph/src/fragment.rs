@@ -100,6 +100,29 @@ pub fn weave(host_src: &str, fragments_dir: &Path, reg: &NodeRegistry) -> Result
     Ok(Woven { spec, sequence })
 }
 
+/// Loads a host graph for running or checking (spec 219).
+///
+/// A graph that attaches fragments is woven, so its pins are verified and its fragments inlined. Any other graph
+/// loads exactly as [`load_toml_with_registry`] loads it. Every caller that runs or checks a graph goes through
+/// here, so "check passed" and "run started" cannot disagree.
+///
+/// # Errors
+/// The errors of [`weave`] for a graph with attaches, else those of [`load_toml_with_registry`].
+pub fn load_host(
+    host_src: &str,
+    fragments_dir: &Path,
+    reg: &NodeRegistry,
+) -> Result<Woven, PiiError> {
+    let attaches = toml::from_str::<Table>(host_src).is_ok_and(|t| t.contains_key("attach"));
+    if attaches {
+        return weave(host_src, fragments_dir, reg);
+    }
+    Ok(Woven {
+        spec: load_toml_with_registry(host_src, reg)?,
+        sequence: Vec::new(),
+    })
+}
+
 /// The run.start chain sits in front of the host's entry.
 fn splice_run_start(
     spec: &mut GraphSpec,

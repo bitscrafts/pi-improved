@@ -99,6 +99,20 @@ pub fn run_with_validate(
         graph: spec.name.clone(),
         input_hash,
     })?;
+    // Spec 219 R4: each woven node is journalled with its origin before any node runs, so `run trace` names it.
+    for node in &spec.nodes {
+        if let Some(origin) = node
+            .cfg
+            .get("woven-from")
+            .and_then(serde_json::Value::as_str)
+        {
+            jr.append(&RunEvent::NodeObserved {
+                node: node.id.clone(),
+                kind: "woven".to_owned(),
+                fields: serde_json::json!({ "woven-from": origin }),
+            })?;
+        }
+    }
     // Spec 154: the accepted run (header + `Started`) is durable before the
     // first node executes — one synchronous write per run, not per event.
     jr.flush()?;

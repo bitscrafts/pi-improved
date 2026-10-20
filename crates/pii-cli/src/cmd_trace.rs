@@ -295,6 +295,8 @@ struct NodeLine {
     start_ms: i64,
     dur_ms: Option<i64>,
     calls: Vec<AgentCall>,
+    /// The `<fragment>#<node>` origin of a woven node (spec 219 R4).
+    woven_from: Option<String>,
 }
 
 fn str_field(fields: &serde_json::Value, key: &str) -> String {
@@ -348,11 +350,15 @@ fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
     let mut started: std::collections::BTreeMap<String, i64> = std::collections::BTreeMap::new();
     let mut observed: std::collections::BTreeMap<String, Vec<AgentCall>> =
         std::collections::BTreeMap::new();
+    let mut woven: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let mut lines = Vec::new();
     for (seq, event) in journal {
         match event {
             RunEvent::NodeStarted { node, at_ms } => {
                 started.insert(node.to_string(), i64::from(*at_ms));
+            }
+            RunEvent::NodeObserved { node, kind, fields } if kind == "woven" => {
+                woven.insert(node.to_string(), str_field(fields, "woven-from"));
             }
             RunEvent::NodeObserved { node, kind, fields } => {
                 observe_call(observed.entry(node.to_string()).or_default(), kind, fields);
@@ -369,11 +375,12 @@ fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
                     i64::from(*at_ms),
                     Some(i64::from(*dur_ms)),
                     &observed,
+                    &woven,
                 ));
             }
             RunEvent::NodeFailed { node, .. } => {
                 let start = started.get(&node.to_string()).copied().unwrap_or_default();
-                lines.push(line(*seq, node.to_string(), start, None, &observed));
+                lines.push(line(*seq, node.to_string(), start, None, &observed, &woven));
             }
             _ => {}
         }
@@ -387,12 +394,14 @@ fn line(
     start_ms: i64,
     dur_ms: Option<i64>,
     observed: &std::collections::BTreeMap<String, Vec<AgentCall>>,
+    woven: &std::collections::BTreeMap<String, String>,
 ) -> NodeLine {
     let calls = observed.get(&node).cloned();
     NodeLine {
         seq,
         kind: if calls.is_some() { "coder" } else { "-" },
         calls: calls.unwrap_or_default(),
+        woven_from: woven.get(&node).cloned(),
         node,
         start_ms,
         dur_ms,
@@ -424,8 +433,12 @@ fn trace_line(line: &NodeLine) -> String {
         .filter(|f| !f.is_empty())
         .unwrap_or("-");
     let rc = exit.map_or_else(|| "-".to_owned(), |e| e.rc.to_string());
+    let woven = line
+        .woven_from
+        .as_deref()
+        .map_or_else(String::new, |origin| format!(" woven-from: {origin}"));
     format!(
-        "{} {} {} {}+{} pid={pid} image={image} crit={crit} fail={fail} rc={rc}",
+        "{} {} {} {}+{} pid={pid} image={image} crit={crit} fail={fail} rc={rc}{woven}",
         line.seq, line.node, line.kind, line.start_ms, dur
     )
 }
