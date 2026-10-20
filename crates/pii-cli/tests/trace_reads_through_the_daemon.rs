@@ -64,6 +64,10 @@ fn start_daemon(dir: &Path) -> Daemon {
         .arg("--log-file")
         .arg(dir.join("daemon.log"))
         .env("PII_RUNTIME_DIR", dir)
+        // The daemon must not read the operator's ~/.pii/pii.toml: its [[cron]] entries arm at
+        // boot and park suspended runs in this scratch store (measured 2026-10-20: the failing
+        // "has 1 runs" count was 2-3, wall-clock dependent). A missing file is an empty config.
+        .env("PII_CONFIG", dir.join("pii.toml"))
         .env("PII_MODEL", format!("scripted:{}", model.display()))
         .stderr(std::process::Stdio::null())
         .spawn()
