@@ -9,7 +9,7 @@ crates/pii-cli/src/cmd_run.rs  # pre-existing at spec 98 seed  # 2
 crates/pii-cli/src/cmd_sandbox_exec.rs  # pre-existing at spec 98 seed  # 3
 crates/pii-cli/src/cmd_soak.rs  # pre-existing at spec 98 seed  # 3
 crates/pii-cli/src/cmd_sys.rs  # spec 186 added the replay verbs (resume/retry/abandon/cancel) to this dispatcher  # 8
-crates/pii-cli/src/cmd_trace.rs  # pre-existing at spec 98 seed  # 12
+crates/pii-cli/src/cmd_trace.rs  # the command's stdout is its product (spec 98 seed); spec 231 R1 added the --reason print, whose whole uncut string is the M0 script's verdict  # 13
 crates/pii-cli/src/main.rs  # the binary's stdout and stderr are its product (spec F5.5); the count grew past the seed's 12 as subcommands were added (spec 227 R7)  # 14
 crates/pii-cli/src/ndjson.rs  # pre-existing at spec 98 seed  # 2
 crates/pii-evolve/src/main.rs  # pre-existing at spec 98 seed  # 3
@@ -21,6 +21,6 @@ crates/pii-server/src/engine/inline_measure_tests.rs  # pre-existing at spec 98 
 crates/pii-server/src/engine/runs.rs  # pre-existing at spec 98 seed  # 2
 crates/pii-web/src/main.rs  # pre-existing at spec 98 seed  # 8
 crates/pii-cli/src/cmd_sop.rs  # new CLI surface (spec 113): compile/show print the graph on stdout; usage and SOP refusals go to stderr  # 8
-crates/pii-cli/src/cmd_skill.rs  # pii skill list/show/explain/edit print the skill store's answer on stdout, which is the command's product (spec 210, spec 227 R7)  # 22
+crates/pii-cli/src/cmd_skill.rs  # pii skill list/show/explain/edit print the skill store's answer on stdout, which is the command's product (spec 210, spec 227 R7); spec 233 R2 adds the add line on stdout and the via-source line on stderr  # 24
 crates/pii-cli/src/cmd_graph_installed.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7)  # 31
 crates/pii-cli/src/cmd_project.rs  # pii project init prints the scaffold it wrote on stdout, which is the command's product (spec 225, spec 227 R7)  # 7

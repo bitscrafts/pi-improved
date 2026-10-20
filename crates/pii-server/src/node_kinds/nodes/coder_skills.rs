@@ -5,12 +5,13 @@
 //! text is written into a directory for that run only, which the container binds read-only over `.pi/skills` and
 //! `.claude/skills`. Nothing is written into the project.
 
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use pii_store::MemStore;
-use sha2::{Digest, Sha256};
+
+/// The lowercase sha256 of `bytes` as hex: the one pin hash, shared with `pii skill add` (spec 233 R1).
+pub use pii_memory::skill::sha256_hex;
 
 /// The skill text the store holds, by name. The daemon supplies the memory store behind this; [`NoSkills`] holds
 /// nothing, so a pinned skill refuses as missing.
@@ -83,17 +84,6 @@ pub struct Rendered {
     pub sha256: String,
     /// The stored document text, exactly as the store holds it.
     pub text: String,
-}
-
-/// The lowercase sha256 of `bytes` as hex.
-#[must_use]
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
-            s
-        })
 }
 
 /// Reads the node's `skills` config (`[{ name, sha256 }, ...]`), checks each pin against `source`, and returns the

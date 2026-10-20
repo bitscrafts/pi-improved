@@ -123,6 +123,12 @@ pub enum Method {
     /// One promotion lifecycle pass (TTL, outcome windows); the daemon records it (spec 138).
     #[serde(rename = "learn.sweep")]
     LearnSweep,
+    /// Add a skill document to the daemon's store (spec 233 R1).
+    #[serde(rename = "skill.put")]
+    SkillPut,
+    /// List the skill documents in the daemon's store (spec 233 R2).
+    #[serde(rename = "skill.list")]
+    SkillList,
 }
 
 impl std::fmt::Display for Method {
@@ -167,6 +173,8 @@ impl std::fmt::Display for Method {
             Self::LearnPromote => "learn.promote",
             Self::LearnRevert => "learn.revert",
             Self::LearnSweep => "learn.sweep",
+            Self::SkillPut => "skill.put",
+            Self::SkillList => "skill.list",
         })
     }
 }
@@ -215,6 +223,8 @@ impl std::str::FromStr for Method {
             "learn.promote" => Self::LearnPromote,
             "learn.revert" => Self::LearnRevert,
             "learn.sweep" => Self::LearnSweep,
+            "skill.put" => Self::SkillPut,
+            "skill.list" => Self::SkillList,
             other => return Err(other.to_owned()),
         })
     }

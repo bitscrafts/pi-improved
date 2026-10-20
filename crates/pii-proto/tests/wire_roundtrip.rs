@@ -60,6 +60,8 @@ const METHODS: &[(Method, &str)] = &[
     (Method::LearnPromote, "learn.promote"),
     (Method::LearnRevert, "learn.revert"),
     (Method::LearnSweep, "learn.sweep"),
+    (Method::SkillPut, "skill.put"),
+    (Method::SkillList, "skill.list"),
 ];
 
 #[test]

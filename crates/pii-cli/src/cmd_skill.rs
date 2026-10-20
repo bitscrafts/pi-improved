@@ -1,23 +1,21 @@
-//! `pii skill {list|show|explain|edit}` (spec 210): the audit surface for `DocKind::Skill` documents.
-//! It reads and writes the memory store at `<dir>/memory.redb` and nothing else; a skill's pinned
-//! script is hashed where it lies (relative to the current directory) and never executed.
+//! `pii skill {list|show|explain|add|edit}` (spec 210, spec 233): the audit surface for `DocKind::Skill` documents.
+//! `list`, `show`, `explain` and `add` go through the running daemon when it serves the store they name (spec 233 R2),
+//! and read or write `<dir>/memory.redb` directly when none does. A skill's pinned script is hashed where it lies
+//! (relative to the current directory) and never executed.
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use pii_core::Clock as _;
-use pii_memory::doc::{
-    Doc, DocKind, Layer, created_of, decode_kind, decode_text, layer_byte, layer_of_byte, rows_for,
-};
-use pii_memory::skill::{pick, slug_of};
+use pii_memory::doc::{Doc, DocKind, Layer, layer_byte, layer_of_byte, rows_for};
+use pii_memory::skill::{AddError, Added, Listed, listing, pick, sha256_hex, slug_of};
+use pii_proto::method::Method;
 use pii_store::MemStore;
-use sha2::{Digest as _, Sha256};
 
-use crate::cmd_ctl::next_str;
+use crate::cmd_ctl::{CallError, next_str, run_call_typed};
 
-const USAGE: &str = "usage: pii skill list [--all] [--layer L1|L2|L3] [--dir D]\n       \
+const USAGE: &str = "usage: pii skill add --file <path> [--layer L1|L2|L3] [--dir D]\n       \
+pii skill list [--all] [--layer L1|L2|L3] [--dir D]\n       \
 pii skill show <id|slug> [--dir D]\n       pii skill explain <id|slug> [--dir D]\n       \
 pii skill edit <id> --file <path> [--note <text>] [--dir D]\n\
 --dir defaults to the runtime dir; the pin path is read relative to the current directory.";
@@ -33,17 +31,6 @@ struct Opts {
     file: Option<PathBuf>,
     note: Option<String>,
     positional: Vec<String>,
-}
-
-/// One skill document as the store holds it: the payload, plus its layer and concept tags.
-#[derive(Clone)]
-struct Skill {
-    id: String,
-    text: String,
-    layer: u8,
-    created_ms: u64,
-    concepts: Vec<String>,
-    archived: bool,
 }
 
 /// One `script: <path> sha256=<hex>` line from a skill body. An empty `sha256` never matches.
@@ -69,10 +56,11 @@ impl PinState {
     }
 }
 
-/// `pii skill {list|show|explain|edit} ...`.
+/// `pii skill {list|show|explain|add|edit} ...`.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn cmd_skill(args: &mut std::env::ArgsOs) -> ExitCode {
     match next_str(args).as_deref() {
+        Some("add") => add(args),
         Some("list") => list(args),
         Some("show") => show(args, false),
         Some("explain") => show(args, true),
@@ -124,9 +112,14 @@ fn fail(msg: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-/// Opens the store read-write, but only where one already exists: a mistyped `--dir` must not
-/// quietly create an empty memory file.
-fn open(o: &Opts) -> Result<MemStore, ExitCode> {
+/// Names the source that answered a read or a write (spec 233 R2): `via daemon`, or `via store <path>`.
+fn note_source(via: &str) {
+    eprintln!("via {via}");
+}
+
+/// The memory store file a command names: `--dir`, else the runtime dir, which is where the daemon keeps its store.
+/// It must already exist, so a mistyped `--dir` cannot quietly create an empty memory file.
+fn store_file(o: &Opts) -> Result<PathBuf, ExitCode> {
     let Some(dir) = o.dir.clone().or_else(|| pii_uds::runtime_dir("default")) else {
         return Err(fail("no store directory (use --dir)"));
     };
@@ -134,20 +127,60 @@ fn open(o: &Opts) -> Result<MemStore, ExitCode> {
     if !path.exists() {
         return Err(fail(&format!("no memory store at {}", path.display())));
     }
-    MemStore::open(&path).map_err(|e| fail(&e.to_string()))
+    Ok(path)
+}
+
+fn open_file(path: &Path) -> Result<MemStore, ExitCode> {
+    MemStore::open(path).map_err(|e| fail(&e.to_string()))
+}
+
+/// Opens the store read-write, but only where one already exists.
+fn open(o: &Opts) -> Result<MemStore, ExitCode> {
+    open_file(&store_file(o)?)
+}
+
+/// Whether the daemon serves the store this command names (spec 233 R2). A command with no `--dir`, or the runtime
+/// dir itself, is the daemon's store. Any other `--dir` is a different store, and the daemon would answer for its own.
+fn daemon_serves(o: &Opts) -> bool {
+    o.dir.is_none() || o.dir == pii_uds::runtime_dir("default")
+}
+
+/// Asks the running daemon through `method`. `None` when no daemon is reachable, so the caller reads the store.
+/// `Some(Err)` when the daemon answered with an error: that is the answer, and the store is never opened in its place,
+/// because the daemon holds it.
+fn ask_daemon(
+    o: &Opts,
+    method: Method,
+    params: serde_json::Value,
+) -> Option<Result<serde_json::Value, ExitCode>> {
+    if !daemon_serves(o) {
+        return None;
+    }
+    match run_call_typed(method, params) {
+        Ok(reply) => Some(Ok(reply)),
+        Err(CallError::Down(_)) => None,
+        Err(CallError::Failed(msg)) => Some(Err(fail(&msg))),
+    }
+}
+
+/// The skill documents the store holds, archived ones only when `with_archived` is set. The daemon answers when it
+/// serves the store (spec 233 R2); otherwise the store file is read directly.
+fn read_skills(o: &Opts, with_archived: bool) -> Result<Vec<Listed>, ExitCode> {
+    let params = serde_json::json!({ "all": with_archived });
+    if let Some(outcome) = ask_daemon(o, Method::SkillList, params) {
+        let reply = outcome?;
+        note_source("daemon");
+        return serde_json::from_value(reply)
+            .map_err(|e| fail(&format!("the daemon's skill list does not decode: {e}")));
+    }
+    let path = store_file(o)?;
+    let store = open_file(&path)?;
+    note_source(&format!("store {}", path.display()));
+    listing(&store, with_archived).map_err(|e| fail(&e.to_string()))
 }
 
 fn current_root() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
-            s
-        })
 }
 
 /// Every `script: <path> sha256=<hex>` line of a body, in order.
@@ -196,61 +229,53 @@ fn short_id(id: &str) -> &str {
     id.get(..12).unwrap_or(id)
 }
 
-/// `concept -> doc ids` read back as `doc id -> concepts`. The store keeps edges per concept, so
-/// one pass over them is the only way to ask a doc its concepts.
-fn concepts_by_doc(store: &MemStore) -> Result<BTreeMap<String, Vec<String>>, String> {
-    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for concept in store.concepts().map_err(|e| e.to_string())? {
-        for (doc, _) in store.edges(&concept).map_err(|e| e.to_string())? {
-            out.entry(doc).or_default().push(concept.clone());
-        }
-    }
-    Ok(out)
-}
-
-/// Builds a `Skill` from a stored payload; `None` when the payload is not a skill document.
-fn skill_of(
-    store: &MemStore,
-    concepts: &BTreeMap<String, Vec<String>>,
-    id: &str,
-    archived: bool,
-) -> Option<Skill> {
-    let bytes = if archived {
-        store.archived(id)
-    } else {
-        store.doc(id)
+/// `pii skill add --file <path> [--layer L] [--dir D]` (spec 233 R1): stores the file's text as one skill document,
+/// through the daemon when it serves the store, else into the store. Prints `added <id> <slug> sha256=<hex>`.
+fn add(args: &mut std::env::ArgsOs) -> ExitCode {
+    let Some(o) = parse(args) else {
+        return usage();
     };
-    let raw = Some(bytes.ok().flatten()?);
-    if decode_kind(raw.clone()) != Ok(DocKind::Skill) {
-        return None;
+    let Some(file) = o.file.clone() else {
+        return usage();
+    };
+    let text = match std::fs::read_to_string(&file) {
+        Ok(t) => t,
+        Err(e) => return fail(&format!("read {}: {e}", file.display())),
+    };
+    let layer = o.layer.unwrap_or_else(|| layer_byte(Layer::L3));
+    let params = serde_json::json!({ "text": text, "layer": layer });
+    let added = ask_daemon(&o, Method::SkillPut, params).map_or_else(
+        || add_to_store(&o, &text, layer),
+        |outcome| {
+            outcome.and_then(|reply| {
+                note_source("daemon");
+                serde_json::from_value::<Added>(reply)
+                    .map_err(|e| fail(&format!("the daemon's add reply does not decode: {e}")))
+            })
+        },
+    );
+    match added {
+        Ok(a) => {
+            println!("added {} {} sha256={}", a.id, a.slug, a.sha256);
+            ExitCode::SUCCESS
+        }
+        Err(code) => code,
     }
-    Some(Skill {
-        id: id.to_owned(),
-        text: decode_text(raw.clone()),
-        layer: store.layer(id).ok().flatten().unwrap_or(0),
-        created_ms: created_of(raw),
-        concepts: concepts.get(id).cloned().unwrap_or_default(),
-        archived,
-    })
 }
 
-/// Every skill in the store; archived ones only when asked.
-fn skills(store: &MemStore, with_archived: bool) -> Result<Vec<Skill>, String> {
-    let concepts = concepts_by_doc(store)?;
-    let mut out = Vec::new();
-    let live = store.doc_ids().map_err(|e| e.to_string())?;
-    out.extend(
-        live.iter()
-            .filter_map(|id| skill_of(store, &concepts, id, false)),
-    );
-    if with_archived {
-        let gone = store.archived_ids().map_err(|e| e.to_string())?;
-        out.extend(
-            gone.iter()
-                .filter_map(|id| skill_of(store, &concepts, id, true)),
-        );
-    }
-    Ok(out)
+/// The store-direct half of `add`, for when no daemon serves the store.
+fn add_to_store(o: &Opts, text: &str, layer: u8) -> Result<Added, ExitCode> {
+    let path = store_file(o)?;
+    let store = open_file(&path)?;
+    note_source(&format!("store {}", path.display()));
+    let now_ms = pii_core::SystemClock.now_ms();
+    pii_memory::skill::add(&store, text, layer_of_byte(layer), now_ms).map_err(|e| match e {
+        AddError::NoMarker => fail("the file has no PII-SKILL marker line, so it is not a skill"),
+        AddError::Taken { slug, id } => fail(&format!(
+            "skill {slug} is already live as {id}; change it with pii skill edit"
+        )),
+        AddError::Store(e) => fail(&e.to_string()),
+    })
 }
 
 /// `pii skill list [--all] [--layer L] [--dir D]`: one line per skill.
@@ -258,13 +283,9 @@ fn list(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(o) = parse(args) else {
         return usage();
     };
-    let store = match open(&o) {
-        Ok(s) => s,
-        Err(code) => return code,
-    };
-    let found = match skills(&store, o.all) {
+    let found = match read_skills(&o, o.all) {
         Ok(f) => f,
-        Err(e) => return fail(&e),
+        Err(code) => return code,
     };
     let root = current_root();
     for s in found
@@ -294,7 +315,7 @@ fn list(args: &mut std::env::ArgsOs) -> ExitCode {
 
 /// Resolves `<id|slug>`: an exact id or slug wins; else a unique id prefix. Several candidates
 /// are refused with the list, so an ambiguous name never picks one silently.
-fn resolve(found: &[Skill], key: &str) -> Result<Skill, ExitCode> {
+fn resolve(found: &[Listed], key: &str) -> Result<Listed, ExitCode> {
     let picked = pick(found, key, |s| (s.id.as_str(), s.text.as_str()));
     match picked.as_slice() {
         [] => Err(fail(&format!("no skill matches {key}"))),
@@ -323,13 +344,9 @@ fn show(args: &mut std::env::ArgsOs, explain: bool) -> ExitCode {
     let Some(key) = o.positional.first().cloned() else {
         return usage();
     };
-    let store = match open(&o) {
-        Ok(s) => s,
-        Err(code) => return code,
-    };
-    let found = match skills(&store, true) {
+    let found = match read_skills(&o, true) {
         Ok(f) => f,
-        Err(e) => return fail(&e),
+        Err(code) => return code,
     };
     let skill = match resolve(&found, &key) {
         Ok(s) => s,
@@ -414,10 +431,11 @@ fn edit(args: &mut std::env::ArgsOs) -> ExitCode {
         Ok(s) => s,
         Err(code) => return code,
     };
-    let Ok(concepts) = concepts_by_doc(&store) else {
-        return fail("cannot read the concept index");
+    let found = match listing(&store, false) {
+        Ok(f) => f,
+        Err(e) => return fail(&e.to_string()),
     };
-    let Some(old) = skill_of(&store, &concepts, &id, false) else {
+    let Some(old) = found.into_iter().find(|s| s.id == id) else {
         return fail(&format!("no live skill with id {id}"));
     };
     let new_text = match std::fs::read_to_string(&file) {

@@ -40,6 +40,7 @@ pub mod registry;
 pub mod run_scope;
 pub mod runs;
 pub mod session_durability;
+pub mod skill_methods;
 pub mod subscribe;
 pub mod tool;
 pub mod uds;
