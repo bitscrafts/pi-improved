@@ -1634,3 +1634,28 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
   (`pii run start queue` journal, `grep -c 'plan.tsv'` is 0) and both `graphs/queue.toml` and
   `graphs/coder-demo.toml` missing. Fix the spec so each criterion is a command before its row is dispatched;
   do not copy the prose into the row.
+
+## 2026-10-20T11:40Z — M0: the direct path is closed by a measured gate, the delegated path starts a container
+
+- Third gate measured on lnx, each run wrapped in the grant replica whose write-outside probe printed
+  `RESTRICT OK`: rootless podman cannot set up its user namespace inside the landlock domain. Chain:
+  `/dev/shm` lock (spec 229) → `cannot re-exec process to join the existing user namespace` (rc 1) →
+  with a fresh podman state, `newuidmap: write to uid_map failed: Operation not permitted` (rc 125).
+  Granting `/proc` read-write moves the failure from `open of uid_map: Permission denied` (EACCES) to
+  that write denial (EPERM); `unshare --user --map-root-user` succeeds with a rw grant on
+  `/proc/self`. Controls: no confinement → the same image runs, rc 0.
+- The working substrate, measured the same way: `podman.socket` is active on lnx, and a confined
+  process talked to `/run/user/1000/podman/podman.sock` and started the image — create → id,
+  start → 204, wait → 0, `"ExitCode":0`, delete → 200. Landlock does not mediate `connect()`.
+  The CLI's remote-client redirect was not used: the session's policy hook requires a human approval
+  for that form, and none was available.
+- Filed: spec `230-the-coder-starts-containers-through-the-runtime-api.md` + row A98 (the coder node
+  selects a `ContainerRuntime` by graph data; refusals named `coder.runtime.unavailable`; no grant is
+  added). `_docs/05-operations/M0-2026-10-20.md` carries the raw output.
+- Committed `cmd_sandbox_exec.rs`: `sandbox-exec` now applies the same podman state dirs as the daemon,
+  so the `workspace` profile means one thing in both places (the 229 automated pass had left the CLI
+  divergent). Criteria re-run here: pii-tools 38 passed, sandbox_grant 6 passed, clippy clean,
+  lint-observability 306 files / 0 findings.
+- Still true and unclaimed: no daemon on lnx has journalled `coder.spawned` for a container path; the
+  coder demo on `/tmp/pii-ws-3aQWp1` is blocked until A98 lands and M0 prints PASS with
+  `coder.spawned`+`coder.exited` for one pid.
