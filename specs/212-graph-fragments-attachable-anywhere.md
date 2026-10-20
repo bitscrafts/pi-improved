@@ -66,3 +66,25 @@ into "one graph per occurrence of a concern" — which is exactly the sprawl thi
 
 ## Depends on
 - 211 (hooks as woven nodes) — the fragment mechanism is the general form of what 211 needs for hooks.
+
+## Closure
+
+Independent verification, 2026-10-20, on the tree the worker left.
+
+- **e3e5bd4 does not build on its own.** `crates/pii-graph/src/fragment.rs:16` has `use sha2::{Digest, Sha256};`,
+  but the `sha2 = "0.10"` line in `crates/pii-graph/Cargo.toml` (and its `Cargo.lock` entry) was never committed,
+  and neither was either test file the criteria name (`crates/pii-graph/tests/fragments_attach.rs`,
+  `crates/pii-graph/tests/fragment_pin_and_nesting_refused.rs`) or the `[[attach]]` in `graphs/coder-demo.toml`
+  that criterion 4 reads. The cycle's verify and gate both ran on the dirty tree, so they were green while HEAD was
+  not. Cause: the plan row's commit paths were `crates/pii-graph/src;crates/pii-cli/src;graphs/fragments`, which
+  leaves out the tests directory, the manifest, the lockfile and the demo graph. The row's verify column also
+  dropped criteria 3 and 4.
+- The missing five paths went in as a separate commit straight after this verification.
+- Criteria on the full tree: `fragments_attach` 5 passed/0 failed; `fragment_pin_and_nesting_refused` 3 passed/0
+  failed; `graph check graphs/fragments/podman-guard.toml` rc=0 and lists `check` (route) and `refuse` (refuse);
+  `graph check graphs/coder-demo.toml` rc=0 and prints `guard.check woven-from: podman-guard#check` and
+  `guard.refuse woven-from: podman-guard#refuse` at `run.start`.
+- Mutation: `if actual != a.pin` in `load_fragment_file` changed to `if false && actual != a.pin`, which turns the
+  pin-drift refusal off. `fragment_pin_checked` FAILED (2 passed, 1 failed). The file was restored and touched;
+  its sha256 was `d4513bacb980aa39bf65858c5edfd2f00012a4ad4e675dcfcc11a5f92c2aba3b` before and after (identical),
+  and the re-run gave 3 passed/0 failed.
