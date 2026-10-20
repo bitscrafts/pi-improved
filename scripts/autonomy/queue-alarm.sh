@@ -26,8 +26,9 @@ STATE=_tmp/autonomy/alarm.state
 mkdir -p _tmp/autonomy 2>/dev/null
 
 # The alarm is a latch: this function is the ONLY place that writes it.
+FLAG=_tmp/autonomy/queue-stopped.flag   # read by the pre_llm_call hook, so the AGENT knows on its next turn — Discord is not the point
 remember() { printf '%s\n' "$1" > "$STATE" 2>/dev/null; }
-forget()   { : > "$STATE" 2>/dev/null; }
+forget()   { : > "$STATE" 2>/dev/null; rm -f "$FLAG" 2>/dev/null; }
 last()     { head -1 "$STATE" 2>/dev/null | cut -c1-200; }
 
 [ "${PII_ALARM_RESET:-0}" = "1" ] && forget
@@ -86,5 +87,6 @@ if [ "$(last)" = "$sig" ]; then
   exit 0                     # already reported this exact fault: BYPASS every further firing until it changes
 fi
 remember "$sig"
+printf 'QUEUE STOPPED %s: %s is dispatchable, no worker and no cycle alive, last cycle %s min ago.\n' "$(date -u +%FT%TZ)" "$row" "$age_min" >> "$FLAG"
 printf 'QUEUE STOPPED: %s is dispatchable, no worker and no cycle alive, last cycle log %s min ago. Reported once; further firings stay silent until this changes.\n' \
   "$row" "$age_min"
