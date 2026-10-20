@@ -36,6 +36,7 @@ fn fixture() -> Fixture {
     let fx = dir.join("fixture.json");
     std::fs::write(&fx, r#"{"turns":[]}"#).unwrap();
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.clone(),
         store_path: dir.join("store.redb"),
         model: format!("scripted:{}", fx.display()),

@@ -124,6 +124,7 @@ async fn rig() -> Rig {
         .tempdir_in(root)
         .expect("tempdir");
     let engine = Engine::new(EngineConfig {
+        grant_ceiling: None,
         workspace: dir.path().to_path_buf(),
         store_path: dir.path().join("store.redb"),
         model: format!(

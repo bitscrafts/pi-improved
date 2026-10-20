@@ -56,6 +56,8 @@ pub struct EngineConfig {
     pub graph_dir: PathBuf,
     /// `[evolve.routing]` step -> model policy (spec 28). Empty = no routing.
     pub route_policy: BTreeMap<String, String>,
+    /// Spec 215: the most capability any graph or node may request; `None` = no ceiling.
+    pub grant_ceiling: Option<pii_core::CapKind>,
     /// `[[model_tier]]` table (spec 114). Empty = no tiers.
     pub tiers: Vec<daemon::config::ModelTierSection>,
     /// Max runs retained per session in the in-memory `session_runs` index

@@ -471,6 +471,8 @@ pub struct CronSection {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
+    /// Spec 215: the capability names no graph or node may request beyond; empty = no ceiling.
+    pub grant_ceiling: Vec<String>,
     /// `[core]`.
     pub core: CoreSection,
     /// `[llama]` (spec 129).
@@ -501,6 +503,21 @@ pub struct Config {
 }
 
 impl Config {
+    /// The `grant_ceiling` names as one capability set; `None` when the config names none (spec 215).
+    ///
+    /// # Errors
+    /// [`PiiError::Invalid`] for an unknown capability name.
+    pub fn grant_ceiling(&self) -> Result<Option<pii_core::CapKind>, PiiError> {
+        if self.grant_ceiling.is_empty() {
+            return Ok(None);
+        }
+        let mut kinds = pii_core::CapKind::empty();
+        for name in &self.grant_ceiling {
+            kinds |= pii_core::CapKind::parse_kind(name)?;
+        }
+        Ok(Some(kinds))
+    }
+
     /// Loads and parses `path`.
     ///
     /// # Errors

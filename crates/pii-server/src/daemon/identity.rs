@@ -493,6 +493,7 @@ mod tests {
         let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "mount-").unwrap();
         let mk = |sandbox| {
             Engine::new(EngineConfig {
+                grant_ceiling: None,
                 workspace: dir.path().to_path_buf(),
                 store_path: dir.path().join(format!("{sandbox:?}.redb")),
                 model: format!(
@@ -535,6 +536,7 @@ mod tests {
         let mk = |name: &str| {
             std::fs::create_dir_all(dir.path().join(name)).unwrap();
             Engine::new(EngineConfig {
+                grant_ceiling: None,
                 workspace: dir.path().to_path_buf(),
                 store_path: dir.path().join(name).join("store.redb"),
                 model: format!(
@@ -566,6 +568,7 @@ mod tests {
     fn registry_is_pinned_by_name() {
         let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "registry-").unwrap();
         let engine = Engine::new(EngineConfig {
+            grant_ceiling: None,
             workspace: dir.path().to_path_buf(),
             store_path: dir.path().join("store.redb"),
             model: format!(
@@ -608,6 +611,7 @@ mod tests {
     fn a_polled_state_change_reaches_the_engine_log() {
         let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "hwatch-").unwrap();
         let engine = Engine::new(EngineConfig {
+            grant_ceiling: None,
             workspace: dir.path().to_path_buf(),
             store_path: dir.path().join("store.redb"),
             model: format!(

@@ -104,6 +104,7 @@ mod tests {
         let fixture = dir.join("fixture.json");
         std::fs::write(&fixture, r#"{"turns":[]}"#).unwrap();
         Engine::new(EngineConfig {
+            grant_ceiling: None,
             workspace: dir.to_path_buf(),
             store_path: dir.join("store.redb"),
             model: format!("scripted:{}", fixture.display()),

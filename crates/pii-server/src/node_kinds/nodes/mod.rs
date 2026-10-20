@@ -9,6 +9,7 @@ pub mod classify;
 pub mod coder;
 pub mod coder_container;
 pub mod crash;
+pub mod criteria;
 pub mod entity;
 pub mod gate;
 pub mod hal;

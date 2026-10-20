@@ -23,6 +23,7 @@ use pii_observe::{Event, Level, Observer, names};
 
 use super::agent_worker::{CriterionRun, Verdict, WorkerSpec, decide, plan};
 use super::coder_container::{self, CONTAINER_WORKDIR, ContainerRun, PODMAN_BIN};
+use super::criteria::{self, Table};
 
 /// Where the agent binaries live in production. A coder node may exec `pi` and `claude` from here, and nothing
 /// else new.
@@ -52,6 +53,7 @@ pub struct CoderFactory {
     bin_dir: PathBuf,
     env: BTreeMap<String, String>,
     podman: PathBuf,
+    criteria: Table,
     log: Arc<dyn Observer>,
 }
 
@@ -78,6 +80,7 @@ impl CoderFactory {
             bin_dir,
             env,
             podman: PathBuf::from(PODMAN_BIN),
+            criteria: criteria::production(),
             log,
         }
     }
@@ -88,6 +91,13 @@ impl CoderFactory {
         self.podman = podman;
         self
     }
+
+    /// Replaces the criteria table; production keeps [`criteria::production`] (spec 215).
+    #[must_use]
+    pub fn with_criteria(mut self, criteria: Table) -> Self {
+        self.criteria = criteria;
+        self
+    }
 }
 
 /// A built `coder` node. Its config is read at run time, so a bad config is a refusal, not a build error.
@@ -95,6 +105,7 @@ struct CoderNode {
     bin_dir: PathBuf,
     env: BTreeMap<String, String>,
     podman: PathBuf,
+    criteria: Table,
     log: Arc<dyn Observer>,
     cfg: serde_json::Value,
 }
@@ -163,6 +174,35 @@ impl CoderNode {
                 .field("reason", reason.to_owned()),
         );
         refused_port(agent, model, reason)
+    }
+
+    /// Journals a criterion the table does not name (spec 215), then routes it to `err`. Nothing was spawned.
+    fn refuse_criterion(&self, criterion: &str, agent: &str, model: &str) -> Outcome {
+        self.log.event(
+            &Event::new("coder", Level::Warn, names::CRITERIA_UNKNOWN)
+                .field("criterion", criterion.to_owned())
+                .field("agent", agent.to_owned())
+                .field("model", model.to_owned()),
+        );
+        refused_port(
+            agent,
+            model,
+            &format!("criteria.unknown: '{criterion}' is not in the criteria table"),
+        )
+    }
+
+    /// Each name in the node's `criteria` with its fixed argv; the first name the table lacks is the error.
+    fn resolve_criteria(
+        &self,
+        cfg: &serde_json::Value,
+    ) -> Result<Vec<(String, Vec<String>)>, String> {
+        texts(cfg, "criteria")
+            .into_iter()
+            .map(|name| match self.criteria.get(&name) {
+                Some(argv) => Ok((name.clone(), argv.clone())),
+                None => Err(name),
+            })
+            .collect()
     }
 
     /// Journals a refused image (spec 209). The image is never built or pulled here.
@@ -349,6 +389,11 @@ impl GraphNode for CoderNode {
             (Err(e), _) => return Ok(self.refuse(&agent, &model, &format!("{e}"))),
             _ => return Ok(self.refuse(&agent, &model, "no spec or no brief")),
         };
+        // Spec 215: every criterion resolves to its fixed argv before anything spawns; an unknown name refuses.
+        let checks = match self.resolve_criteria(cfg) {
+            Ok(checks) => checks,
+            Err(name) => return Ok(self.refuse_criterion(&name, &agent, &model)),
+        };
         let env = self.pass_env(&texts(cfg, "env_pass"));
         let image = text(cfg, "container_image").filter(|i| !i.is_empty());
         // Inside a container the workspace is at `/work`, so the planned session path must be too.
@@ -386,11 +431,10 @@ impl GraphNode for CoderNode {
 
         // The criteria decide. The first failing criterion stops the run and names itself in the verdict.
         let mut runs = Vec::new();
-        for command in texts(cfg, "criteria") {
-            let shell = ["/bin/sh".to_owned(), "-c".to_owned(), command.clone()];
+        for (command, argv) in checks {
             let rc = ctx
                 .proc()?
-                .run(&shell, &workdir, CRITERION_TIMEOUT)?
+                .run(&argv, &workdir, CRITERION_TIMEOUT)?
                 .exit_code;
             runs.push(CriterionRun { command, rc });
             if rc != 0 {
@@ -435,10 +479,11 @@ impl NodeFactory for CoderFactory {
         Ok(vec![PortName::from("ok"), PortName::from("err")])
     }
 
-    /// The host agents (the deprecated fallback) and podman: a coder node may exec those and nothing else new.
+    /// The host agents (the deprecated fallback), podman and the criteria table's programs: nothing else new.
     fn proc_argv0_grant(&self) -> Vec<String> {
         let mut grant = agent_binaries(&self.bin_dir);
         grant.push(self.podman.display().to_string());
+        grant.extend(criteria::programs(&self.criteria));
         grant
     }
 
@@ -447,6 +492,7 @@ impl NodeFactory for CoderFactory {
             bin_dir: self.bin_dir.clone(),
             env: self.env.clone(),
             podman: self.podman.clone(),
+            criteria: self.criteria.clone(),
             log: Arc::clone(&self.log),
             cfg: cfg.clone(),
         }))

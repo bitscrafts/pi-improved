@@ -657,6 +657,7 @@ mod tests {
         let fixture = dir.path().join("fixture.json");
         std::fs::write(&fixture, r#"{"turns":[]}"#).unwrap();
         let engine = crate::Engine::new(crate::EngineConfig {
+            grant_ceiling: None,
             workspace: dir.path().to_path_buf(),
             store_path: dir.path().join("store.redb"),
             model: format!("scripted:{}", fixture.display()),

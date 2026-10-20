@@ -17,6 +17,7 @@ use pii_store::Store;
 fn engine(prefix: &str) -> (tempfile::TempDir, Arc<crate::Engine>) {
     let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), prefix).unwrap();
     let engine = crate::Engine::new(crate::EngineConfig {
+        grant_ceiling: None,
         workspace: dir.path().to_path_buf(),
         store_path: dir.path().join("store.redb"),
         model: format!(

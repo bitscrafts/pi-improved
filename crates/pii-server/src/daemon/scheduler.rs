@@ -135,6 +135,7 @@ mod tests {
         ));
         let _ = std::fs::create_dir_all(dir);
         Engine::new(EngineConfig {
+            grant_ceiling: None,
             workspace: dir.to_path_buf(),
             store_path: scratch("store"),
             model: format!("scripted:{}", write_empty_fixture(&scratch("fixture.json"))),

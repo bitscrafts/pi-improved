@@ -36,6 +36,9 @@ pub fn registry(
     tiers: Arc<crate::tiers::TierTable>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
+    if let Some(ceiling) = cfg.grant_ceiling {
+        reg = reg.with_grant_ceiling(ceiling);
+    }
     reg.register(Arc::new(agent::AgentFactory {
         provider,
         workspace: cfg.workspace.clone(),
