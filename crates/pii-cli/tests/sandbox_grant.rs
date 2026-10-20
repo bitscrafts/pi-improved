@@ -106,3 +106,26 @@ fn off_profile_control_permits_the_write_the_workspace_profile_denies() {
     assert_eq!(rc(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
     assert!(target.exists());
 }
+
+/// Spec 228 R1: the pinned grant text names the container runtime's state dirs. The
+/// assertion reads pii-tools' SOURCE via include_str so the test can never drift from a
+/// stale copy of the text: the string it checks is the string that ships.
+#[test]
+fn the_pinned_grant_names_the_podman_state_dirs() {
+    let src = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../pii-tools/src/sandbox.rs"
+    ));
+    assert!(
+        src.contains("HOME/.local/share/containers")
+            && src.contains("XDG_RUNTIME_DIR/containers")
+            && src.contains("XDG_RUNTIME_DIR/libpod"),
+        "the workspace grant must name podman's state dirs (spec 228)"
+    );
+    // The clause is in the Workspace arm's grant text, not merely in a comment: the helper
+    // that produces the dirs is referenced by the same module.
+    assert!(
+        src.contains("pub fn podman_state_dirs"),
+        "the dirs come from the grant helper, not a comment"
+    );
+}

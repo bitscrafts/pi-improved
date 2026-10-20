@@ -326,7 +326,10 @@ impl CoderNode {
         self.log.event(
             &Event::new("coder", Level::Warn, names::CODER_IMAGE_MISSING)
                 .field("image", image.to_owned())
-                .field("reason", reason.to_owned()),
+                .field("reason", reason.to_owned())
+                // Spec 228 R2: podman's own words, trimmed to 240 chars, so the journal can
+                // never replace the runtime's failure with an invented cause.
+                .field("probe_stderr", reason.to_owned()),
         );
         Launch::Refused(reason.to_owned())
     }
@@ -366,9 +369,30 @@ impl CoderNode {
             "{{.Digest}}".to_owned(),
             image.to_owned(),
         ];
+        let probe_failed = |stderr: &[u8]| {
+            // Spec 228 R2: the refusal quotes podman's own words. The captured stderr exists
+            // (ProcOutput.stderr, pii-core childproc); discarding it made the journal invent a
+            // cause — measured 2026-10-20: "image not present" while the image WAS present and
+            // podman had died on its sandboxed state dirs (bolt_state.db / alive.lck EACCES).
+            let collapsed = String::from_utf8_lossy(stderr)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let tail: String = collapsed.chars().rev().take(240).collect::<String>();
+            let tail = tail.chars().rev().collect::<String>();
+            if tail.is_empty() {
+                // No stderr at all: only then may the absence clause stand on its own.
+                "image inspect failed with no stderr".to_owned()
+            } else {
+                tail
+            }
+        };
         let digest = match ctx.proc()?.run(&probe, &workdir, PROBE_TIMEOUT) {
             Ok(out) if out.exit_code == 0 => String::from_utf8_lossy(&out.stdout).trim().to_owned(),
-            Ok(_) => return Ok(self.refuse_image(image, "image not present; build it outside pii")),
+            Ok(out) => {
+                let reason = probe_failed(&out.stderr);
+                return Ok(self.refuse_image(image, &reason));
+            }
             Err(e) => return Ok(Launch::Refused(format!("{e}"))),
         };
         if digest.is_empty() {

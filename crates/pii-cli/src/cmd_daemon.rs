@@ -86,6 +86,10 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     if !matches!(sandbox, SandboxProfileName::Off) {
         let mut extra_rw = vec![store_parent.clone(), runtime_dir.clone()];
         extra_rw.extend(writable_dirs(&log, &cfg));
+        // Spec 228 R1: the container runtime keeps state outside every dir above (podman's
+        // graph root under HOME and runroot/locks under XDG_RUNTIME_DIR); without these the
+        // sandboxed daemon refuses a PRESENT image with a false "not present" (measured on lnx).
+        extra_rw.extend(pii_tools::sandbox::podman_state_dirs());
         if let Err(e) =
             pii_tools::sandbox::apply_workspace(&workspace, &extra_rw, std::path::Path::new("/etc"))
         {

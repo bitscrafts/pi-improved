@@ -43,9 +43,11 @@ pub fn grant_policy(p: SandboxProfileName) -> &'static str {
         }
         SandboxProfileName::Workspace => {
             "sandbox=workspace (landlock): WRITES confined to the workspace, store dir, \
-             runtime dir, $TMPDIR and /dev/{null,zero,urandom,tty}; READS are NOT confined \
-             (read-only access to / is granted, so /etc, /home and every other readable \
-             path stay readable)"
+             runtime dir, $TMPDIR, the container runtime state dirs \
+             (HOME/.local/share/containers, XDG_RUNTIME_DIR/containers, XDG_RUNTIME_DIR/libpod \
+             -- podman's graph root and locks; spec 228) and /dev/{null,zero,urandom,tty}; \
+             READS are NOT confined (read-only access to / is granted, so /etc, /home and \
+             every other readable path stay readable)"
         }
     }
 }
@@ -62,6 +64,38 @@ pub fn parse_profile(s: &str) -> Result<SandboxProfileName, PiiError> {
             "unknown sandbox profile '{other}' (off|workspace)"
         ))),
     }
+}
+
+/// The container runtime's state dirs, granted read-write beside the
+/// workspace (spec 228 R1).
+///
+/// Podman keeps its graph root and bolt DB under `HOME/.local/share/containers`
+/// and its runroot and locks under `XDG_RUNTIME_DIR/containers` and
+/// `XDG_RUNTIME_DIR/libpod`; the `workspace` profile granted none of them, so a
+/// sandboxed daemon could not even inspect a present image (measured on lnx
+/// 2026-10-20: `bolt_state.db` and `alive.lck` EACCES). Each dir is created
+/// best-effort: a dir that cannot exist cannot be granted, and podman then
+/// fails loudly on its own. `HOME` falls back to `/root` (the daemon's
+/// documented default).
+#[must_use]
+pub fn podman_state_dirs() -> Vec<PathBuf> {
+    let home = env_var("HOME")
+        .filter(|h| !h.is_empty())
+        .map_or_else(|| PathBuf::from("/root"), PathBuf::from);
+    let xdg = env_var("XDG_RUNTIME_DIR")
+        .filter(|d| !d.is_empty())
+        .map_or_else(|| home.join(".run"), PathBuf::from);
+    let dirs = vec![
+        home.join(".local/share/containers"),
+        xdg.join("containers"),
+        xdg.join("libpod"),
+    ];
+    for d in &dirs {
+        // reason: best-effort, same contract as writable_dirs: an uncreatable dir is simply
+        // not granted and the runtime's own failure names it.
+        let _ = std::fs::create_dir_all(d);
+    }
+    dirs
 }
 
 /// Applies the `workspace` profile process-wide and verifies enforcement
@@ -113,12 +147,29 @@ pub fn apply_workspace(
     if status.ruleset != RulesetStatus::FullyEnforced || !status.no_new_privs {
         return Err(unverifiable());
     }
-    // The probe MUST fail now; a success means confinement is not real.
+    // The out-grant probe MUST fail now; a success means confinement is not real.
     let probe = probe_dir.join(format!(".pii-sandbox-probe-{}", std::process::id()));
     if std::fs::write(&probe, b"probe").is_ok() {
         let _ = std::fs::remove_file(&probe);
         return Err(unverifiable());
     }
+    // R3 (spec 228) control beside it: a write INSIDE a granted dir MUST succeed. A grant
+    // whose every rule is inert (wrong fd, downgraded ruleset) passes the out-grant check
+    // while granting nothing; without this control the confinement could be empty by
+    // construction and every later refusal a coincidence.
+    let in_grant = extra_rw
+        .first()
+        .cloned()
+        .unwrap_or_else(|| workspace.join(".pii-in-grant-probe-dir"));
+    let _ = std::fs::create_dir_all(&in_grant);
+    let in_probe = in_grant.join(format!(".pii-sandbox-probe-in-{}", std::process::id()));
+    if std::fs::write(&in_probe, b"probe").is_err() {
+        return Err(PiiError::Internal(format!(
+            "sandbox: the in-grant probe could not write {} — the grant is inert",
+            in_probe.display()
+        )));
+    }
+    let _ = std::fs::remove_file(&in_probe);
     Ok(())
 }
 
@@ -152,7 +203,42 @@ fn rw_paths(workspace: &Path, extra_rw: &[PathBuf]) -> Vec<(PathBuf, bool)> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::{SandboxProfileName, grant_policy, parse_profile, profile_name};
+    use super::{SandboxProfileName, grant_policy, parse_profile, podman_state_dirs, profile_name};
+
+    #[test]
+    fn podman_state_dirs_are_the_three_runtime_state_locations() {
+        // No set_var from a test (edition-2024 unsafe): read what the process carries.
+        let dirs = podman_state_dirs();
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+        let xdg = std::env::var("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from(home.clone()).join(".run"));
+        assert_eq!(
+            dirs,
+            vec![
+                std::path::PathBuf::from(&home).join(".local/share/containers"),
+                xdg.join("containers"),
+                xdg.join("libpod"),
+            ],
+            "the grant is exactly the three documented dirs, nothing invented"
+        );
+        for d in &dirs {
+            assert!(d.is_dir(), "created best-effort: {d:?}");
+        }
+        // Control: the helper must NOT grow arbitrary members.
+        assert_eq!(dirs.len(), 3);
+    }
+
+    #[test]
+    fn grant_policy_names_the_podman_state_dirs() {
+        let ws = grant_policy(SandboxProfileName::Workspace);
+        assert!(
+            ws.contains("HOME/.local/share/containers")
+                && ws.contains("XDG_RUNTIME_DIR/containers")
+                && ws.contains("XDG_RUNTIME_DIR/libpod"),
+            "{ws}"
+        );
+    }
 
     #[test]
     fn grant_policy_states_the_real_read_and_write_rule() {
