@@ -101,7 +101,8 @@ pub fn map_event(run_id: &RunId, ev: &RunEvent) -> Option<Event> {
         | RunEvent::EffectStarted { .. }
         | RunEvent::EffectConfirmed { .. }
         | RunEvent::NodeRetried { .. }
-        | RunEvent::NodeProgress { .. } => return None,
+        | RunEvent::NodeProgress { .. }
+        | RunEvent::NodeObserved { .. } => return None,
         RunEvent::Suspended { reason, key, .. } => Event::RunSuspended {
             run_id: run_id.to_string(),
             key: key.0.clone(),

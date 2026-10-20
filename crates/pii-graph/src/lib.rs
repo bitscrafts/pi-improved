@@ -11,6 +11,7 @@
 // any new discard a hard failure. Intentional sites carry a named `allow`.
 #![warn(clippy::let_underscore_must_use)]
 
+pub mod agent_calls;
 pub mod blackboard;
 pub mod cron;
 pub mod effect;

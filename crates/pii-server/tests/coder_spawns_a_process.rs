@@ -65,7 +65,7 @@ fn run_coder_graph(
     bin: &Path,
     node_fields: &str,
     env: BTreeMap<String, String>,
-) -> (Terminal, Vec<Event>, PathBuf) {
+) -> (Terminal, Vec<Event>, tempfile::TempDir) {
     let store_dir =
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-store-").unwrap();
     let store = pii_store::Store::open(&store_dir.path().join("store.redb")).unwrap();
@@ -90,7 +90,7 @@ fn run_coder_graph(
     )
     .unwrap();
     let events = log.0.lock().clone();
-    (terminal, events, store_dir.path().to_path_buf())
+    (terminal, events, store_dir)
 }
 
 /// Spawns the fake `pi` through the node: the child runs, the criterion passes, the node succeeds, and the
@@ -103,7 +103,7 @@ fn coder_spawns_pi_and_passes_on_green_criteria() {
         "agent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"ran-file\"]\n",
         work.path().display()
     );
-    let (terminal, events, _) = run_coder_graph(bin.path(), &fields, BTreeMap::new());
+    let (terminal, events, store_dir) = run_coder_graph(bin.path(), &fields, BTreeMap::new());
 
     assert!(
         matches!(terminal, Terminal::Success { .. }),
@@ -113,6 +113,21 @@ fn coder_spawns_pi_and_passes_on_green_criteria() {
         work.path().join("ran.txt").exists(),
         "the agent process ran"
     );
+    // Spec 217: the engine journals the call's observations, spawn then exit, before the node's own report.
+    let store = pii_store::Store::open(&store_dir.path().join("store.redb")).unwrap();
+    let mut headers = Vec::new();
+    store.for_each_run_header(|h| headers.push(h)).unwrap();
+    let run = headers.first().expect("the run is stored");
+    let observed: Vec<String> = store
+        .read_journal(&run.run)
+        .unwrap()
+        .into_iter()
+        .filter_map(|(_, event)| match event {
+            pii_abi::RunEvent::NodeObserved { kind, .. } => Some(kind),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(observed, ["coder.spawned", "coder.exited"]);
     let spawned = events
         .iter()
         .find(|e| e.kind == names::CODER_SPAWNED)

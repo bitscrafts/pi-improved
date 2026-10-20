@@ -188,6 +188,12 @@ impl Store {
         *self.origin.write() = origin;
     }
 
+    /// The epoch ms at which the process that owns this handle started (spec 217: "since start" counts).
+    #[must_use]
+    pub fn process_start_ms(&self) -> u64 {
+        self.origin.read().process_start_ms
+    }
+
     /// Stamps `header` with this handle's origin and the acceptance time.
     pub fn stamp_origin(&self, header: &mut RunHeader, created_ms: u64) {
         let origin = self.origin.read().clone();

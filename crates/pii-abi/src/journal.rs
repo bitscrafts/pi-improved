@@ -175,6 +175,17 @@ pub enum RunEvent {
         /// Hash of the resumed input payload.
         payload_hash: String,
     },
+    /// An observation a node made about an agent call (spec 217), recorded by the engine from the node's own
+    /// events: `coder.spawned`, `coder.exited`, or `worker.start.refused`. The fields are the event's, never the
+    /// node's returned value.
+    NodeObserved {
+        /// The node that made the observation.
+        node: NodeId,
+        /// The observed event's kind, e.g. `coder.spawned`.
+        kind: String,
+        /// The observed event's fields.
+        fields: serde_json::Value,
+    },
     /// The run reached a terminal disposition.
     Finished {
         /// The terminal outcome.

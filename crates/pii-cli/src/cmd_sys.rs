@@ -29,13 +29,15 @@ pub(crate) fn cmd_run_ctl(args: &mut std::env::ArgsOs) -> ExitCode {
         Some("ls") => run_ls(args),
         Some("start") => run_start(args),
         Some("get") => run_get(args),
+        Some("trace") => crate::cmd_trace::cmd_run_observed("trace", args),
+        Some("explain") => crate::cmd_trace::cmd_run_observed("explain", args),
         Some("resume") => run_replay(args, "resume"),
         Some("retry") => run_replay(args, "retry"),
         Some("abandon") => run_replay(args, "abandon"),
         Some("cancel") => run_replay(args, "cancel"),
         _ => {
             eprintln!(
-                "usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]|get <run_id>\
+                "usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]|get <run_id>|trace <run_id> [--db P]|explain <run_id> [--db P]\
                  |resume <run_id>|retry <run_id> --node <id>|abandon <run_id> --reason <text>|cancel <run_id> --reason <text>}}"
             );
             ExitCode::from(2)

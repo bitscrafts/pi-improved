@@ -284,6 +284,17 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
             .map_or(0, |a| a.len() as u64),
         ..Counts::default()
     };
+    // Spec 217: agent-call totals come from the journal, so they survive a restart.
+    if let Ok(totals) =
+        pii_graph::agent_calls::store_totals(&engine.store, engine.store.process_start_ms())
+    {
+        counts.dispatches_total = totals.dispatches_total;
+        counts.refusals_total = totals.refusals_total;
+        counts.criteria_failures_total = totals.criteria_failures_total;
+        counts.orphans_total = totals.orphans_total;
+        counts.orphans_since_start = totals.orphans_since_start;
+        counts.agents_in_flight = totals.agents_in_flight;
+    }
     if let Some(i) = info {
         counts.runs = i.tables.get("run").copied().unwrap_or(0);
         counts.journal_events = i.tables.get("run_journal").copied().unwrap_or(0);

@@ -163,6 +163,24 @@ pub struct Counts {
     pub cron_entries: u64,
     /// Memory documents.
     pub memory_docs: u64,
+    /// Agent calls spawned, ever (spec 217).
+    #[serde(default)]
+    pub dispatches_total: u64,
+    /// Agent calls refused before any spawn (spec 217).
+    #[serde(default)]
+    pub refusals_total: u64,
+    /// Agent calls whose criteria did not all pass (spec 217).
+    #[serde(default)]
+    pub criteria_failures_total: u64,
+    /// Agent calls spawned in a run that ended with no exit recorded (spec 217).
+    #[serde(default)]
+    pub orphans_total: u64,
+    /// The orphans above that belong to this process's runs (spec 217).
+    #[serde(default)]
+    pub orphans_since_start: u64,
+    /// Agent calls spawned and not yet exited in a run still in progress (spec 217).
+    #[serde(default)]
+    pub agents_in_flight: u64,
     /// MQTT messages accepted from brokers (spec 117).
     #[serde(default)]
     pub mqtt_received: u64,

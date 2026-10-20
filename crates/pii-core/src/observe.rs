@@ -70,6 +70,14 @@ pub enum ObsEvent {
         /// Why it was closed.
         reason: String,
     },
+    /// An agent-call observation a node made (spec 217): `coder.spawned`, `coder.exited` or
+    /// `worker.start.refused`. The engine records it into the run journal as `RunEvent::NodeObserved`.
+    NodeObserved {
+        /// The observed event's kind.
+        kind: String,
+        /// The observed event's fields.
+        fields: serde_json::Value,
+    },
     /// A durable-store write failed outside the run journal (D3/D6, 026
     /// report 5.0.4) — e.g. a session append/snapshot. The Phase-1
     /// journaler has its own `Result` return for callers that check it
@@ -273,7 +281,8 @@ impl Observer for ContractObserver {
                     .field("reason", reason.as_str())
                     .in_run(pii_observe::RunId(run.clone())),
             ),
-            ObsEvent::Run(_) | ObsEvent::Journal { .. } => {}
+            // The coder logs its own event to the contract observer; the journal copy is the engine's (spec 217).
+            ObsEvent::Run(_) | ObsEvent::Journal { .. } | ObsEvent::NodeObserved { .. } => {}
         }
     }
 

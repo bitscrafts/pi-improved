@@ -17,6 +17,7 @@ use parking_lot::RwLock;
 use pii_abi::{NodeId, NodeInput, Outcome, PiiError, PortName, ResumeKey, RunEvent, RunId};
 use pii_core::{BudgetShare, CancelToken, CapKind, CapSet, Ctx, Principal};
 
+use crate::agent_calls::CallRecorder;
 use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
 use crate::sched::state::{
@@ -288,8 +289,21 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         } else {
             None
         };
-        let result = run_with_barrier(env, || run_caught(env, &ns.id, || node.run(&ctx, input)));
+        // Spec 217: the node's agent-call observations are journalled as the engine saw them, before its own
+        // NodeFinished; the node's returned value is never read for them.
+        let recorder = Arc::new(CallRecorder::new(ns.id.clone(), Arc::clone(ctx.observer())));
+        let node_ctx = ctx.observed_by(recorder.clone());
+        let result = run_with_barrier(env, || {
+            run_caught(env, &ns.id, || node.run(&node_ctx, input))
+        });
         let dur_ms = ctx.elapsed_ms().saturating_sub(at_ms);
+        for observation in recorder.take() {
+            if let Err(e) = env.jr.append(&observation) {
+                return DispatchOutcome::Failed {
+                    error: e.to_string(),
+                };
+            }
+        }
         if let (Some(key), Ok(Outcome::Next { port, value })) = (&effect_key, &result)
             && let Err(e) = env.jr.append(&RunEvent::EffectConfirmed {
                 node: ns.id.clone(),

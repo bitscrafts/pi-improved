@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
-use pii_core::{CapKind, Ctx};
+use pii_core::{CapKind, Ctx, ObsEvent};
 use pii_graph::node::{GraphNode, NodeFactory};
 use pii_observe::{Event, Level, Observer, names};
 use sha2::{Digest, Sha256};
@@ -163,6 +163,26 @@ enum Launch {
     Refused(String),
 }
 
+/// A refusal `plan` already logged to the contract log: journalled for the run, then routed to `err` (spec 217 R5).
+fn refuse_planned(ctx: &Ctx, agent: &str, model: &str, reason: &str) -> Outcome {
+    journal(
+        ctx,
+        &Event::new("coder", Level::Warn, names::WORKER_START_REFUSED)
+            .field("agent", agent.to_owned())
+            .field("model", model.to_owned())
+            .field("reason", reason.to_owned()),
+    );
+    refused_port(agent, model, reason)
+}
+
+/// Reports an agent-call event to the run's context, where the engine records it in the journal (spec 217).
+fn journal(ctx: &Ctx, event: &Event) {
+    ctx.observer().event(&ObsEvent::NodeObserved {
+        kind: event.kind.to_owned(),
+        fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+    });
+}
+
 /// The stop reason of a finished child (spec 217 R4). A signal death is `128 + signal`, so a code above 128 is
 /// `signalled`; any other code is the agent ending on its own.
 fn stop_reason(code: i32) -> &'static str {
@@ -198,9 +218,16 @@ fn env_file_path() -> PathBuf {
 }
 
 impl CoderNode {
+    /// Reports an agent-call event to the contract log, and to the run's context so the engine journals it (spec 217).
+    fn observe(&self, ctx: &Ctx, event: &Event) {
+        self.log.event(event);
+        journal(ctx, event);
+    }
+
     /// Journals a refusal the node decided itself, then routes it to `err`.
-    fn refuse(&self, agent: &str, model: &str, reason: &str) -> Outcome {
-        self.log.event(
+    fn refuse(&self, ctx: &Ctx, agent: &str, model: &str, reason: &str) -> Outcome {
+        self.observe(
+            ctx,
             &Event::new("coder", Level::Warn, names::WORKER_START_REFUSED)
                 .field("agent", agent.to_owned())
                 .field("model", model.to_owned())
@@ -349,10 +376,19 @@ impl CoderNode {
     }
 
     /// Journals a finished call (spec 217 R4). `runs` are the criteria that ran; none for a deferred verdict.
-    fn emit_exited(&self, pid: u32, rc: i32, dur_ms: i64, stop: &str, runs: &[CriterionRun]) {
+    fn emit_exited(
+        &self,
+        ctx: &Ctx,
+        pid: u32,
+        rc: i32,
+        dur_ms: i64,
+        stop: &str,
+        runs: &[CriterionRun],
+    ) {
         let failed = runs.iter().find(|r| r.rc != 0);
         let passed = runs.iter().filter(|r| r.rc == 0).count();
-        self.log.event(
+        self.observe(
+            ctx,
             &Event::new("coder", Level::Info, names::CODER_EXITED)
                 .field("pid", i64::from(pid))
                 .field("rc", i64::from(rc))
@@ -390,7 +426,8 @@ impl CoderNode {
         let mut child = ctx.proc()?.spawn_child_exact(argv, workdir, env_pairs)?;
         let pid = child.pid();
         let (image, image_digest) = container.unwrap_or_default();
-        self.log.event(
+        self.observe(
+            ctx,
             &Event::new("coder", Level::Info, names::CODER_SPAWNED)
                 .field("agent", spec.agent_name().to_owned())
                 .field("model", spec.model.clone())
@@ -425,7 +462,7 @@ impl CoderNode {
             }
             if let Err(e) = ctx.check() {
                 let _ = child.kill();
-                self.emit_exited(pid, -1, elapsed_ms(started), "killed", &[]);
+                self.emit_exited(ctx, pid, -1, elapsed_ms(started), "killed", &[]);
                 return Err(e);
             }
         };
@@ -462,8 +499,8 @@ impl GraphNode for CoderNode {
         let model = text(cfg, "model").unwrap_or_default();
         let (spec, brief) = match (WorkerSpec::from_cfg(cfg), text(cfg, "brief")) {
             (Ok(spec), Some(brief)) if !spec.spec.is_empty() => (spec, brief),
-            (Err(e), _) => return Ok(self.refuse(&agent, &model, &format!("{e}"))),
-            _ => return Ok(self.refuse(&agent, &model, "no spec or no brief")),
+            (Err(e), _) => return Ok(self.refuse(ctx, &agent, &model, &format!("{e}"))),
+            _ => return Ok(self.refuse(ctx, &agent, &model, "no spec or no brief")),
         };
         // Spec 215: every criterion resolves to its fixed argv before anything spawns; an unknown name refuses.
         let checks = match self.resolve_criteria(cfg) {
@@ -482,7 +519,7 @@ impl GraphNode for CoderNode {
         };
         let dispatch = match plan(&planned, &brief, &env, "direct", self.log.as_ref()) {
             Ok(dispatch) => dispatch,
-            Err(e) => return Ok(refused_port(&agent, &model, &format!("{e}"))),
+            Err(e) => return Ok(refuse_planned(ctx, &agent, &model, &format!("{e}"))),
         };
         let launch = if let Some(image) = &image {
             self.launch_in_container(ctx, image, &spec, env, &dispatch.argv)?
@@ -501,7 +538,7 @@ impl GraphNode for CoderNode {
                 stop,
             } => (code, pid, dur_ms, stop),
             // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`.
-            Launch::Refused(reason) => return Ok(self.refuse(&agent, &model, &reason)),
+            Launch::Refused(reason) => return Ok(self.refuse(ctx, &agent, &model, &reason)),
         };
         let workdir = PathBuf::from(&spec.workdir);
 
@@ -517,7 +554,7 @@ impl GraphNode for CoderNode {
                 break;
             }
         }
-        self.emit_exited(pid, code, dur_ms, stop, &runs);
+        self.emit_exited(ctx, pid, code, dur_ms, stop, &runs);
 
         // No criteria configured: the verdict is deferred to a downstream `judge` node (spec 208). A clean exit
         // hands on; a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.

@@ -342,8 +342,27 @@ impl Ctx {
         Ok(())
     }
 
-    /// The observer.
+    /// A context identical to this one, observed by `obs` instead. The engine uses it to record a node's agent-call
+    /// observations into the run journal (spec 217); every other field is shared with this context.
     #[must_use]
+    pub fn observed_by(&self, obs: Arc<dyn Observer>) -> Self {
+        Self {
+            inner: Arc::new(CtxInner {
+                cancel: self.inner.cancel.clone(),
+                started: self.inner.started,
+                deadline: self.inner.deadline,
+                deadline_ms: self.inner.deadline_ms,
+                clock: Arc::clone(&self.inner.clock),
+                budget: Arc::clone(&self.inner.budget),
+                caps: Arc::clone(&self.inner.caps),
+                principal: self.inner.principal.clone(),
+                trace: self.inner.trace.clone(),
+                obs,
+            }),
+        }
+    }
+
+    /// The observer.
     pub fn observer(&self) -> &Arc<dyn Observer> {
         &self.inner.obs
     }
