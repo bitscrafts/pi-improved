@@ -64,6 +64,19 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-net/tests/budget_survives_a_day.rs",
     "crates/pii-net/tests/budget_window.rs",
     "crates/pii-net/tests/stream_close_is_eof.rs",
+    // Spec 200: the provider-level close semantis test serves its own TLS loopback
+    // peer (rustls ServerConfig + TcpListener bind) so close_notify can be
+    // injected at the socket; pii-net's same-named test covers the transport
+    // half. Same sanctioned test-fake class as spec 118's entries.
+    "crates/pii-model/tests/stream_close_is_eof.rs",
+    // Spec 230: the coder's container runtime talks HTTP/1.1 over the podman
+    // API socket — the one UnixStream::connect site outside pii-uds (rootless
+    // podman cannot be driven by a child process under the sandbox; measured
+    // M0 PASS through this socket). Sync std stream with a read-timeout tick
+    // a cancelled run can stop, which the async client_connect does not offer.
+    "crates/pii-server/src/node_kinds/nodes/coder_runtime.rs",
+    // Spec 230: the test's fake podman serves the REST paths on a bound UDS.
+    "crates/pii-server/tests/coder_starts_through_the_runtime_socket.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

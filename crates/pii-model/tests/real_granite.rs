@@ -10,7 +10,9 @@
 //! ```
 //!
 //! The model is loaded at most once per test binary via `OnceLock`; all tests
-//! share it. Requires `/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf` present.
+//! share it. Requires `/models/granite/granite-4.2-3b-Q4_K_M.gguf` present (the
+//! canonical model store mounted read-only as /models; superseded the old
+//! /projects/_tmp path on 2026-10-20 — see docs/03-reference/local-model-store.md).
 
 // reason: integration tests use unwrap/expect/indexing for concise assertions,
 // matching the in-crate test modules' convention.
@@ -27,7 +29,7 @@ use std::sync::OnceLock;
 use pii_core::{Budget, CapSet, Ctx};
 use pii_model::{ChatMessage, ChatRequest, LlamaCppProvider, ModelProvider, Role, ToolSpec};
 
-const MODEL_PATH: &str = "/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf";
+const MODEL_PATH: &str = "/models/granite/granite-4.2-3b-Q4_K_M.gguf";
 
 /// Shared provider: the 2.2GB model is loaded once for the whole test binary.
 fn provider() -> &'static LlamaCppProvider {

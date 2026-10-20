@@ -942,17 +942,17 @@ host = "http://10.10.10.217:8082/v1"
     fn core_section_parses_llamacpp_model() {
         let raw = r#"
 [core]
-model = "llamacpp:/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf"
+model = "llamacpp:/models/granite/granite-4.2-3b-Q4_K_M.gguf"
 "#;
         let cfg = Config::parse(raw).unwrap();
         assert_eq!(
             cfg.core.model.as_deref(),
-            Some("llamacpp:/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf")
+            Some("llamacpp:/models/granite/granite-4.2-3b-Q4_K_M.gguf")
         );
         // resolve_model returns it verbatim (no special-casing).
         assert_eq!(
             cfg.resolve_model(None).as_deref(),
-            Some("llamacpp:/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf")
+            Some("llamacpp:/models/granite/granite-4.2-3b-Q4_K_M.gguf")
         );
     }
 

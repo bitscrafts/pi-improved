@@ -9,7 +9,7 @@ and A94 (parked) · control RUNNING · watchdog alive (pid 2172486, 1d18h).
 
 - **The `|` in the commit-path column is what stalled both items.** `cycle.sh` splits that column on `;`
   (L357), so rows A92 and A94 handed `git add` the single nonexistent path
-  `crates/pii-server/src|crates/pii-graph/src|crates/pii-cli/src` and exited 11 (`add-failed`) *after* a green
+  the |-joined path crates/pii-server/src, crates/pii-graph/src, crates/pii-cli/src and exited 11 (`add-failed`) *after* a green
   verify and a green routine gate — twice each. The same typo was in the finished rows A85/A87/A90/A91. All six
   rows corrected, and the two live rows now carry their full criteria (224: 4 commands, 225: 5).
 - **224 closed on its own evidence.** Criteria 1-3 green at HEAD (2/0, 2/0, 2/0); the work had already landed

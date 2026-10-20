@@ -25,7 +25,7 @@ use std::time::Instant;
 use pii_core::{Budget, CapSet, Ctx};
 use pii_model::{ChatMessage, ChatRequest, LlamaCppProvider, ModelProvider, Role, ToolSpec};
 
-const MODEL_PATH: &str = "/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf";
+const MODEL_PATH: &str = "/models/granite/granite-4.2-3b-Q4_K_M.gguf";
 
 fn main() {
     let path = Path::new(MODEL_PATH);

@@ -91,6 +91,14 @@ fn anchored_path(token: &str) -> bool {
     {
         return false;
     }
+    // An `_tmp` component anywhere in the path is the same scratch rule: a
+    // test that writes crate-local `crates/<x>/_tmp/**` creates it on demand
+    // (spec 96's tmp_scratch contract), so a history paragraph citing one is
+    // not drift. Measured 2026-10-20: `crates/pii-memory/_tmp/phase3` and
+    // `crates/pii-server/_tmp` in HANDOFF history failed a green tree.
+    if token.split('/').any(|comp| comp == "_tmp") {
+        return false;
+    }
     PATH_PREFIXES.iter().any(|p| token.starts_with(p))
 }
 
@@ -134,6 +142,10 @@ mod tests {
             anchored_path("crates/pii-x/src/y.rs"),
             "real paths still checked"
         );
+        // An `_tmp` component anywhere is the scratch rule, not only a
+        // leading one (the two crate-cited scratch paths in HANDOFF history).
+        assert!(!anchored_path("crates/pii-memory/_tmp/phase3"));
+        assert!(!anchored_path("crates/pii-server/_tmp"));
         assert!(anchored_path("_docs/02-guides/x.md"));
     }
 

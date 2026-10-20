@@ -362,7 +362,7 @@ mod tests {
         use crate::{ChatRequest, ModelProvider};
         use pii_core::{Budget, CapSet, Ctx};
 
-        let path = std::path::Path::new("/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf");
+        let path = std::path::Path::new("/models/granite/granite-4.2-3b-Q4_K_M.gguf");
         assert!(path.exists(), "granite GGUF must be present");
         let provider = LlamaCppProvider::load(path, 4096, 16).unwrap();
         let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
@@ -398,7 +398,7 @@ mod tests {
         use crate::{ChatRequest, ModelProvider, ToolSpec};
         use pii_core::{Budget, CapSet, Ctx};
 
-        let path = std::path::Path::new("/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf");
+        let path = std::path::Path::new("/models/granite/granite-4.2-3b-Q4_K_M.gguf");
         assert!(path.exists(), "granite GGUF must be present");
         let provider = LlamaCppProvider::load(path, 4096, 16).unwrap();
         let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());

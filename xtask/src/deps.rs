@@ -83,8 +83,21 @@ fn check_confined(metadata: &Value, dep: &str, allowed: &[&str], violations: &mu
             .into_iter()
             .flatten()
         {
-            let dep_id = d.get("pkg").and_then(Value::as_str).unwrap_or_default();
-            if name_of_id(dep_id) == dep {
+            // A dev-only edge (e.g. pii-model's test TLS fake, spec 200) is not
+            // a production dependency: the invariant quarantines what SHIPS.
+            // Measured 2026-10-20: the resolve graph carries dep_kinds, and
+            // pii-model's rustls is exactly `dev`; a blind node sweep would
+            // have red every gate since the test landed (it went in ungated).
+            let kinds = d
+                .get("dep_kinds")
+                .and_then(Value::as_array)
+                .is_none_or(|ks| {
+                    ks.iter()
+                        .filter_map(|k| k.get("kind").and_then(Value::as_str))
+                        .any(|k| k != "dev")
+                });
+            if name_of_id(d.get("pkg").and_then(Value::as_str).unwrap_or_default()) == dep && kinds
+            {
                 violations.push(format!(
                     "deps-check: '{name}' depends on {dep} outside {allowed:?}"
                 ));
@@ -542,6 +555,63 @@ pub(crate) mod tests {
         assert!(
             errs.iter()
                 .any(|e| e.contains("pii-proto") && e.contains("pii-core"))
+        );
+    }
+
+    #[test]
+    fn a_dev_only_edge_does_not_violate_a_confinement_invariant() {
+        // pii-model carries rustls as a DEV dependency for its TLS loopback
+        // test fake (spec 200); the confinement quarantines what ships, not
+        // what a test links. A dev-only rustls edge into a non-pii-net crate
+        // must stay clean; the same edge as a normal dependency stays red.
+        let mut m = clean_metadata();
+        m["packages"].as_array_mut().unwrap().push(pkg(
+            "model",
+            "pii-model",
+            json!([{"name":"rustls","kind":null}]),
+        ));
+        m["packages"]
+            .as_array_mut()
+            .unwrap()
+            .push(pkg("rustls", "rustls", json!([])));
+        let dev_kind = json!([{"kind":"dev","target":null}]);
+        m["resolve"]["nodes"].as_array_mut().unwrap().push(node(
+            "model",
+            json!([{"pkg":"rustls","dep_kinds":dev_kind}]),
+        ));
+        m["resolve"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(node("rustls", json!([])));
+        assert!(
+            check_all(&m).is_ok(),
+            "dev-only rustls is not a production dep"
+        );
+
+        let normal = json!([{"kind":null,"target":null}]);
+        let mut m = clean_metadata();
+        m["packages"].as_array_mut().unwrap().push(pkg(
+            "model",
+            "pii-model",
+            json!([{"name":"rustls","kind":null}]),
+        ));
+        m["packages"]
+            .as_array_mut()
+            .unwrap()
+            .push(pkg("rustls", "rustls", json!([])));
+        m["resolve"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(node("model", json!([{"pkg":"rustls","dep_kinds":normal}])));
+        m["resolve"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(node("rustls", json!([])));
+        let errs = check_all(&m).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("pii-model") && e.contains("rustls")),
+            "a normal rustls edge is still refused: {errs:?}"
         );
     }
 
