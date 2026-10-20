@@ -24,6 +24,7 @@ use sha2::{Digest, Sha256};
 
 use super::agent_worker::{CriterionRun, Verdict, WorkerSpec, decide, plan};
 use super::coder_container::{self, CONTAINER_WORKDIR, ContainerRun, PODMAN_BIN};
+use super::coder_skills::{self, Drift, NoSkills, Rendered, SkillRefusal, SkillSource};
 use super::criteria::{self, Table};
 
 /// Where the agent binaries live in production. A coder node may exec `pi` and `claude` from here, and nothing
@@ -69,6 +70,8 @@ pub struct CoderFactory {
     podman: PathBuf,
     criteria: Table,
     log: Arc<dyn Observer>,
+    skills: Arc<dyn SkillSource>,
+    runs_dir: Option<PathBuf>,
 }
 
 impl CoderFactory {
@@ -96,6 +99,8 @@ impl CoderFactory {
             podman: PathBuf::from(PODMAN_BIN),
             criteria: criteria::production(),
             log,
+            skills: Arc::new(NoSkills),
+            runs_dir: None,
         }
     }
 
@@ -112,6 +117,20 @@ impl CoderFactory {
         self.criteria = criteria;
         self
     }
+
+    /// Replaces the skill source; production keeps [`NoSkills`], so a pinned skill refuses until the store is wired.
+    #[must_use]
+    pub fn with_skills(mut self, skills: Arc<dyn SkillSource>) -> Self {
+        self.skills = skills;
+        self
+    }
+
+    /// The directory a run's pinned skills are written under, as `<dir>/<run_id>/skills` (spec 225 R3).
+    #[must_use]
+    pub fn with_runs_dir(mut self, dir: PathBuf) -> Self {
+        self.runs_dir = Some(dir);
+        self
+    }
 }
 
 /// A built `coder` node. Its config is read at run time, so a bad config is a refusal, not a build error.
@@ -121,6 +140,8 @@ struct CoderNode {
     podman: PathBuf,
     criteria: Table,
     log: Arc<dyn Observer>,
+    skills: Arc<dyn SkillSource>,
+    runs_dir: Option<PathBuf>,
     cfg: serde_json::Value,
 }
 
@@ -211,6 +232,24 @@ fn elapsed_ms(started: Instant) -> i64 {
 fn argv_digest(argv: &[String]) -> String {
     let digest = Sha256::digest(argv.join("\0").as_bytes());
     format!("{digest:x}")
+}
+
+/// The pinned skills' names, comma-joined (spec 225 R7).
+fn skill_names(skills: &[Rendered]) -> String {
+    skills
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The pinned skills' sha256s, comma-joined, in the order of [`skill_names`] (spec 225 R7).
+fn skill_hashes(skills: &[Rendered]) -> String {
+    skills
+        .iter()
+        .map(|s| s.sha256.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// The session an agent was launched with: the value after `--session`, empty when the argv names none.
@@ -317,6 +356,7 @@ impl CoderNode {
         spec: &WorkerSpec,
         env: BTreeMap<String, String>,
         argv: &[String],
+        skills: &[Rendered],
     ) -> Result<Launch, PiiError> {
         if coder_container::forbidden_mount(&spec.workdir) {
             return Ok(Launch::Refused(format!(
@@ -342,6 +382,10 @@ impl CoderNode {
         if digest.is_empty() {
             return Ok(self.refuse_image(image, "image has no digest; pin it by digest"));
         }
+        let skills_dir = match self.materialise(ctx, skills) {
+            Ok(dir) => dir.map(|p| p.display().to_string()),
+            Err(reason) => return Ok(Launch::Refused(reason)),
+        };
 
         let env_file = env_file_path();
         let pairs: Vec<(String, String)> = env.into_iter().collect();
@@ -358,6 +402,7 @@ impl CoderNode {
             env_file: &env_file_str,
             network: &network,
             run_id: &run_id,
+            skills_dir: skills_dir.as_deref(),
         };
         let run_argv = coder_container::run_argv(&run, argv);
         // podman's own environment: the daemon's PATH and HOME, never a secret.
@@ -371,9 +416,40 @@ impl CoderNode {
             &run_argv,
             &podman_env,
             Some((image, digest.as_str())),
+            skills,
         );
         let _ = std::fs::remove_file(&env_file);
         result
+    }
+
+    /// Journals `skill.drift` and refuses the node before anything spawns (spec 225 R4).
+    fn refuse_drift(&self, ctx: &Ctx, agent: &str, model: &str, drift: &Drift) -> Outcome {
+        self.observe(
+            ctx,
+            &Event::new("coder", Level::Warn, names::SKILL_DRIFT)
+                .field("name", drift.name.clone())
+                .field("pinned", drift.pinned.clone())
+                .field("found", drift.found.clone()),
+        );
+        let reason = format!(
+            "skill.drift: {} pinned {} found {}",
+            drift.name, drift.pinned, drift.found
+        );
+        self.refuse(ctx, agent, model, &reason)
+    }
+
+    /// Writes the run's skills under `<runs_dir>/<run_id>/skills` (spec 225 R3). `None` when the run pins none.
+    fn materialise(&self, ctx: &Ctx, skills: &[Rendered]) -> Result<Option<PathBuf>, String> {
+        if skills.is_empty() {
+            return Ok(None);
+        }
+        let Some(runs) = &self.runs_dir else {
+            return Err(String::from("skills: no runs directory is configured"));
+        };
+        let run_dir = runs.join(ctx.trace().run.as_str());
+        coder_skills::materialise(&run_dir, skills)
+            .map(Some)
+            .map_err(|e| format!("skills: {e}"))
     }
 
     /// The network a container run gets: `none`, unless the graph declares a grant (spec 209).
@@ -397,7 +473,7 @@ impl CoderNode {
         let mut host_argv = vec![self.bin_dir.join(program).display().to_string()];
         host_argv.extend(rest.iter().cloned());
         let env_pairs: Vec<(String, String)> = env.into_iter().collect();
-        self.spawn_and_wait(ctx, spec, &host_argv, &env_pairs, None)
+        self.spawn_and_wait(ctx, spec, &host_argv, &env_pairs, None, &[])
     }
 
     /// Journals a finished call (spec 217 R4). `runs` are the criteria that ran; none for a deferred verdict.
@@ -445,6 +521,7 @@ impl CoderNode {
         argv: &[String],
         env_pairs: &[(String, String)],
         container: Option<(&str, &str)>,
+        skills: &[Rendered],
     ) -> Result<Launch, PiiError> {
         let started = Instant::now();
         let workdir = Path::new(&spec.workdir);
@@ -462,7 +539,9 @@ impl CoderNode {
                 .field("argv_len", i64::try_from(argv.len()).unwrap_or(i64::MAX))
                 .field("argv_digest", argv_digest(argv))
                 .field("pid", i64::from(pid))
-                .field("session", session_of(argv)),
+                .field("session", session_of(argv))
+                .field("skill", skill_names(skills))
+                .field("sha256", skill_hashes(skills)),
         );
         let env_names: Vec<&str> = env_pairs.iter().map(|(k, _)| k.as_str()).collect();
         self.log.event(
@@ -517,6 +596,7 @@ fn with_selected_spec(cfg: &serde_json::Value, input: &NodeInput) -> serde_json:
 }
 
 impl GraphNode for CoderNode {
+    #[allow(clippy::too_many_lines)] // reason: the node's refusals, spawn and criteria decide in one linear sequence
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         let cfg = with_selected_spec(&self.cfg, input);
         let cfg = &cfg;
@@ -534,6 +614,21 @@ impl GraphNode for CoderNode {
         };
         let env = self.pass_env(&texts(cfg, "env_pass"));
         let image = text(cfg, "container_image").filter(|i| !i.is_empty());
+        // Spec 225 R4: every pinned skill is checked against the store before anything spawns.
+        let skills = match coder_skills::check(self.skills.as_ref(), cfg) {
+            Ok(skills) => skills,
+            Err(SkillRefusal::Drift(drift)) => {
+                return Ok(self.refuse_drift(ctx, &agent, &model, &drift));
+            }
+            Err(SkillRefusal::Invalid(reason)) => {
+                return Ok(self.refuse(ctx, &agent, &model, &reason));
+            }
+        };
+        if !skills.is_empty() && image.is_none() {
+            let reason =
+                "skills need a container_image: the host fallback cannot bind them read-only";
+            return Ok(self.refuse(ctx, &agent, &model, reason));
+        }
         // Inside a container the workspace is at `/work`, so the planned session path must be too.
         let planned = match &image {
             Some(_) => WorkerSpec {
@@ -547,7 +642,7 @@ impl GraphNode for CoderNode {
             Err(e) => return Ok(refuse_planned(ctx, &agent, &model, &format!("{e}"))),
         };
         let launch = if let Some(image) = &image {
-            self.launch_in_container(ctx, image, &spec, env, &dispatch.argv)?
+            self.launch_in_container(ctx, image, &spec, env, &dispatch.argv, &skills)?
         } else {
             self.log.event(
                 &Event::new("coder", Level::Warn, names::CODER_HOST_SPAWN_DEPRECATED)
@@ -644,6 +739,8 @@ impl NodeFactory for CoderFactory {
             podman: self.podman.clone(),
             criteria: self.criteria.clone(),
             log: Arc::clone(&self.log),
+            skills: Arc::clone(&self.skills),
+            runs_dir: self.runs_dir.clone(),
             cfg: cfg.clone(),
         }))
     }

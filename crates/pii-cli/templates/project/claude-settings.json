@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "deny": ["Edit(tests/**)", "Write(tests/**)", "MultiEdit(tests/**)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -q '/tests/' && { echo 'tests are read-only for this run' >&2; exit 2; } || exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo fmt --all || true"
+          }
+        ]
+      }
+    ]
+  }
+}

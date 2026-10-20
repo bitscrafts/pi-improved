@@ -78,6 +78,8 @@ pub const CODER_EXITED: &str = "coder.exited";
 pub const CODER_ENV_NAMES: &str = "coder.env.names";
 /// Event: a coder call's environment was refused because a name would journal a value (spec 217 R3).
 pub const CODER_ENV_REFUSED: &str = "coder.env.refused";
+/// Event: a pinned skill's stored text no longer hashes to its pin (`name`, `pinned`, `found`); nothing spawned (spec 225).
+pub const SKILL_DRIFT: &str = "skill.drift";
 /// Event: a memory search completed.
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.

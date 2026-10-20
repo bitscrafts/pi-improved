@@ -22,6 +22,7 @@ mod cmd_learn;
 mod cmd_loop;
 mod cmd_metrics;
 mod cmd_oneshot;
+mod cmd_project;
 mod cmd_run;
 mod cmd_sandbox_exec;
 mod cmd_skill;
@@ -38,7 +39,7 @@ mod ndjson;
 use crate::cli_util::fail;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace|list|explain|edit} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|learn|link|neighbours|compact|show|tiers|archive|restore} ... | pii skill {list|show|explain|edit} ... | pii index {code [--root <dir>] [--max N]|docs [--root <dir>] [--kind spec|handoff|ops|all]} | pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii deploy-card {render|approve|refuse} --card <file> | pii loop {emit|events} ... | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace|list|explain|edit} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|learn|link|neighbours|compact|show|tiers|archive|restore} ... | pii skill {list|show|explain|edit} ... | pii project init <dir> | pii index {code [--root <dir>] [--max N]|docs [--root <dir>] [--kind spec|handoff|ops|all]} | pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii deploy-card {render|approve|refuse} --card <file> | pii loop {emit|events} ... | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]
@@ -236,6 +237,9 @@ fn main() -> ExitCode {
     }
     if cmd == "skill" {
         return cmd_skill::cmd_skill(&mut args);
+    }
+    if cmd == "project" {
+        return cmd_project::cmd_project(&mut args);
     }
     if cmd == "deploy-card" {
         return cmd_deploy_card::cmd_deploy_card(&mut args);

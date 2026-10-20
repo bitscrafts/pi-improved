@@ -28,7 +28,13 @@ pub struct ContainerRun<'a> {
     pub network: &'a str,
     /// The run's id, labelled on the container so a killed run's container can be found.
     pub run_id: &'a str,
+    /// The run's materialised skills (spec 225 R3), bound read-only over each of [`SKILL_DIRS`]; `None` when the
+    /// run pins none.
+    pub skills_dir: Option<&'a str>,
 }
+
+/// The agent-visible skill directories, relative to the workspace, that a run's skills are bound over (spec 225 R3).
+pub const SKILL_DIRS: [&str; 2] = [".pi/skills", ".claude/skills"];
 
 /// The argv a coder run execs: `podman run --rm` with the workspace mounted, the env file, the network and labels.
 ///
@@ -43,6 +49,14 @@ pub fn run_argv(run: &ContainerRun<'_>, agent_argv: &[String]) -> Vec<String> {
         CONTAINER_WORKDIR.to_owned(),
         "-v".to_owned(),
         format!("{}:{CONTAINER_WORKDIR}", run.workdir),
+    ];
+    if let Some(skills) = run.skills_dir {
+        for dir in SKILL_DIRS {
+            argv.push("-v".to_owned());
+            argv.push(format!("{skills}:{CONTAINER_WORKDIR}/{dir}:ro"));
+        }
+    }
+    argv.extend([
         "--env-file".to_owned(),
         run.env_file.to_owned(),
         "--network".to_owned(),
@@ -52,7 +66,7 @@ pub fn run_argv(run: &ContainerRun<'_>, agent_argv: &[String]) -> Vec<String> {
         "--label".to_owned(),
         format!("pii.run={}", run.run_id),
         run.image.to_owned(),
-    ];
+    ]);
     argv.extend(agent_argv.iter().cloned());
     argv
 }
