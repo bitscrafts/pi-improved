@@ -27,10 +27,10 @@ esac
 
 # 1. is there a dispatchable row?
 pick=$(python3 scripts/autonomy/state.py pick 2>&1 | head -1)
-case "$pick" in
-  A[0-9]*) row=$(printf '%s' "$pick" | cut -f1) ;;
-  *) exit 0 ;;                     # nothing pending, or all parked — both are named states
-esac
+# pick prints a human line ("pick: skip parked A78 ... -> dispatching A99" or "pick: NONE"), so extract the id rather than
+# matching the whole line: the first version matched ^A[0-9] and therefore NEVER fired (found by its own positive control).
+row=$(printf '%s' "$pick" | grep -oE 'dispatching A[0-9]+' | grep -oE 'A[0-9]+' | head -1)
+[ -n "$row" ] || exit 0          # nothing pending, or all parked — both are named states
 
 # 2. is anything alive?
 alive=$(python3 - <<'PY'
