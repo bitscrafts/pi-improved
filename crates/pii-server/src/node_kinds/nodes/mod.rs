@@ -8,6 +8,7 @@ pub mod agent_worker;
 pub mod classify;
 pub mod coder;
 pub mod coder_container;
+pub mod coder_runtime;
 pub mod coder_skills;
 pub mod crash;
 pub mod criteria;

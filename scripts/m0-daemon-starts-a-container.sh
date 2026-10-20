@@ -61,6 +61,8 @@ spec = "__SPEC__"
 brief = "M0: start the image and exit. The container runs the image's entrypoint; no agent work."
 env_pass = []
 container_image = "localhost/pii-agent:1"
+# Spec 230: the API path, not `podman run` as a child (the direct path is measured closed by M0 2026-10-20).
+container_runtime = "socket"
 
 [[node]]
 id = "done"

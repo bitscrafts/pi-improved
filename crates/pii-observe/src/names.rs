@@ -70,6 +70,10 @@ pub const CODER_SPAWNED: &str = "coder.spawned";
 pub const CODER_IMAGE_MISSING: &str = "coder.image.missing";
 /// Event: a coder node's criterion is not in the named table (`criterion`); nothing was spawned (spec 215).
 pub const CRITERIA_UNKNOWN: &str = "criteria.unknown";
+/// Event: a coder node's container runtime could not be reached or refused a call (`socket`, `status`, `reason`).
+///
+/// Nothing was spawned (spec 230). Never `coder.image.missing`: a runtime failure is not an absent image.
+pub const CODER_RUNTIME_UNAVAILABLE: &str = "coder.runtime.unavailable";
 /// Event: a coder node ran on the host because it names no `container_image` (`agent`); deprecated (spec 209).
 pub const CODER_HOST_SPAWN_DEPRECATED: &str = "coder.host_spawn.deprecated";
 /// Event: a coder call ended (`pid`, `rc`, `dur_ms`, `stop_reason`, criteria counts, `first_failure`) (spec 217).
@@ -407,6 +411,7 @@ pub const ALL: &[&str] = &[
     WORKER_RELOAD_COMPLETED,
     WORKER_START_REFUSED,
     CODER_IMAGE_MISSING,
+    CODER_RUNTIME_UNAVAILABLE,
     CODER_HOST_SPAWN_DEPRECATED,
     CRITERIA_UNKNOWN,
     MEMORY_SEARCH,

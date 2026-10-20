@@ -76,7 +76,7 @@ fn refuse_outcome(podman: &Path, work: &Path) -> (String, Vec<Event>) {
     (port, log.0.lock().clone())
 }
 
-fn image_missing<'a>(events: &'a [Event]) -> &'a Event {
+fn image_missing(events: &[Event]) -> &Event {
     events
         .iter()
         .find(|e| e.kind == names::CODER_IMAGE_MISSING)

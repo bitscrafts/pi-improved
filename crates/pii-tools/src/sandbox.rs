@@ -104,6 +104,31 @@ pub fn podman_state_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// The user's podman API socket (spec 230): `XDG_RUNTIME_DIR/podman/podman.sock`.
+///
+/// This is the socket, not a grant: a sandboxed process reaches it by `connect()`, which landlock does not mediate,
+/// so the `workspace` profile is unchanged by it.
+///
+/// # Errors
+/// [`PiiError::Invalid`] when `XDG_RUNTIME_DIR` is unset or empty: there is no socket to name.
+pub fn runtime_socket() -> Result<PathBuf, PiiError> {
+    runtime_socket_in(env_var("XDG_RUNTIME_DIR").as_deref())
+}
+
+/// [`runtime_socket`] over an explicit runtime directory, so the refusal is testable without touching the process
+/// environment.
+///
+/// # Errors
+/// [`PiiError::Invalid`] when `runtime_dir` is `None` or empty.
+pub fn runtime_socket_in(runtime_dir: Option<&str>) -> Result<PathBuf, PiiError> {
+    let dir = runtime_dir.filter(|d| !d.is_empty()).ok_or_else(|| {
+        PiiError::Invalid(String::from(
+            "XDG_RUNTIME_DIR is unset: no podman socket to name",
+        ))
+    })?;
+    Ok(PathBuf::from(dir).join("podman").join("podman.sock"))
+}
+
 /// Applies the `workspace` profile process-wide and verifies enforcement
 /// (F3.10). Fail-closed: any doubt aborts.
 ///
@@ -211,6 +236,7 @@ mod tests {
 
     use super::{
         SandboxProfileName, env_var, grant_policy, parse_profile, podman_state_dirs, profile_name,
+        runtime_socket_in,
     };
 
     #[test]
@@ -259,6 +285,29 @@ mod tests {
         let off = grant_policy(SandboxProfileName::Off);
         assert!(off.contains("NO filesystem confinement"), "{off}");
         assert_ne!(ws, off);
+    }
+
+    #[test]
+    fn runtime_socket_is_the_podman_socket_under_the_runtime_dir() {
+        assert_eq!(
+            runtime_socket_in(Some("/run/user/1000")).unwrap(),
+            std::path::PathBuf::from("/run/user/1000/podman/podman.sock")
+        );
+    }
+
+    #[test]
+    fn runtime_socket_refuses_without_a_runtime_dir() {
+        assert!(runtime_socket_in(None).is_err());
+        assert!(runtime_socket_in(Some("")).is_err());
+    }
+
+    #[test]
+    fn the_runtime_socket_is_not_a_grant() {
+        // Spec 230 R4: the socket is reached by connect(), which landlock does not mediate, so the workspace
+        // profile's grant list and text are the same with or without it.
+        let ws = grant_policy(SandboxProfileName::Workspace);
+        assert!(!ws.contains("podman.sock"), "{ws}");
+        assert_eq!(podman_state_dirs().len(), 4);
     }
 
     #[test]
