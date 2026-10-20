@@ -67,6 +67,30 @@ if [ -x "$PII_BIN" ]; then
   done
 fi
 
+# 0c) paused by the operator (Discord: `control.sh pause`) — say it once, start nothing.
+#     REPORTED HERE, before the in-flight and window branches, because both of those exit 0 and a tick that exits
+#     early never told the operator that the switch they flipped is on. That is measured, twice: the selftest row
+#     "paused -> the tick says so (once)" failed on 2026-10-14 (gateway down) and again on 2026-10-17 (a cycle in
+#     flight), 32 passed / 2 failed, for no reason other than branch order. A switch nobody hears is not a control.
+if grep -q PAUSED "${PII_CONTROL:-$ST/control}" 2>/dev/null; then
+  say_once "paused:$(sed -n 1p "${PII_CONTROL:-$ST/control}")" "pii autonomy · PAUSED — $(sed -n 1p "${PII_CONTROL:-$ST/control}")"
+  # A cycle already in flight is NOT stopped by the switch (measured 2026-10-15: a paid worker ran 83 min into a
+  # pause). Fall through to branch 1 so its progress still reaches the phone; branch 1 exits without dispatching.
+  # With no cycle in flight, stop here: the pause must still buy nothing.
+  if flock -n "${PII_LOCK:-$ST/lock}" true 2>/dev/null; then exit 0; fi
+fi
+
+# 0d) an open question must reach the phone (the user's instruction: "qualquer duvida, pelo discord"), and it must
+#     reach it even while a cycle runs — so this sits above the in-flight branch, whose exit 0 used to swallow it
+#     (the selftest row "an open question is carried to the phone" failed with 32 passed / 2 failed on 2026-10-17
+#     for that reason). Keyed by the question list itself, so the same question is not re-sent every tick.
+Q="${PII_QUESTIONS:-$ST/questions.md}"
+if [ -f "$Q" ] && grep -q '^- \[ \]' "$Q"; then
+  KEY="q:$(grep '^- \[ \]' "$Q" | md5sum | cut -c1-12)"
+  OPEN=$(grep -c '^- \[ \]' "$Q")
+  say_once "$KEY" "pii autonomy · $OPEN open question(s) for you:" "$(grep '^- \[ \]' "$Q" | head -3 | sed 's/^- \[ \] //' | cut -c1-160)"
+fi
+
 # 1) a cycle is running — silence is the normal state; only a stuck worker is worth a line
 if ! flock -n "${PII_LOCK:-$ST/lock}" true 2>/dev/null; then
   AGE=$(( $(date +%s) - $(stat -c %Y "${PII_LOCK:-$ST/lock}" 2>/dev/null || date +%s) ))
@@ -98,11 +122,8 @@ if bash scripts/autonomy/window.sh check 2>/dev/null; then
   echo "pii autonomy · the marker is $(($AGE/60)) min old — probing again (the marker throttles, it does not block)"
 fi
 
-# 2) paused by the operator (Discord: `control.sh pause`) — say it once, start nothing
-if grep -q PAUSED "${PII_CONTROL:-$ST/control}" 2>/dev/null; then
-  say_once "paused:$(sed -n 1p "${PII_CONTROL:-$ST/control}")" "pii autonomy · PAUSED — $(sed -n 1p "${PII_CONTROL:-$ST/control}")"
-  exit 0
-fi
+# 2) paused is reported at 0c, above the branches that exit early. Kept as a note, not a branch: a switch checked
+#    after two exits is a switch that goes unheard exactly when the loop is busy.
 
 # 3) the last cycle's outcome
 LASTLOG=$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | head -1)
@@ -119,14 +140,7 @@ case "$OUT" in
                    "pii autonomy · the Anthropic window is closed — nothing spent, the queue is untouched" ;;
 esac
 
-# 2b) an open question must reach the phone (the user's instruction: "qualquer duvida, pelo discord")
-#     keyed by the question list itself, so the same question is not re-sent every tick
-Q="${PII_QUESTIONS:-$ST/questions.md}"
-if [ -f "$Q" ] && grep -q '^- \[ \]' "$Q"; then
-  KEY="q:$(grep '^- \[ \]' "$Q" | md5sum | cut -c1-12)"
-  OPEN=$(grep -c '^- \[ \]' "$Q")
-  say_once "$KEY" "pii autonomy · $OPEN open question(s) for you:" "$(grep '^- \[ \]' "$Q" | head -3 | sed 's/^- \[ \] //' | cut -c1-160)"
-fi
+# 2b) an open question is reported at 0d, above the branches that exit early (same reason as 0c).
 
 # 2b-2) the review becomes queue rows (spec 167, doc 066): the importer copies ```queue blocks and refuses what it
 #       cannot verify; it takes the cycle lock itself (exit 75 = held, nothing read). It commits only the files it wrote.

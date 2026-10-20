@@ -25,6 +25,18 @@ row(){ # row <name> <expected> <actual>
   else printf 'FAIL  %-46s expected=%s actual=%s\n' "$1" "$2" "$3"; FAIL=$((FAIL+1)); fi
 }
 fake(){ printf '#!/bin/sh\n%s\n' "$2" >"$BIN/claude"; chmod +x "$BIN/claude"; }
+# fake_cmd <name> <body>: a fake CLI under $BIN, the body being a shell command (fake() is the claude-specific form)
+fake_cmd(){ local n="$1" b="$2"; printf '#!/bin/sh\n%s\n' "$b" >"$BIN/$n"; chmod +x "$BIN/$n"; }
+
+# A fake `hermes` for the rows that drive tick.sh. The tick's FIRST branch is the gateway: when its probe does
+# not answer, the tick prints the gateway line and exits 0 before it can report the operator's switch or an open
+# question. That is correct for a real dead gateway (nothing can be delivered) and it is what made these two rows
+# read as a switch regression: measured 2026-10-20 07:10:27Z, a transient probe failure attempted `hermes gateway
+# run` (refused: the real gateway was up, pid 73 untouched) and the question row failed with expected=0 actual=1
+# while the same row passed minutes later. The rows below therefore bring their own `hermes`, one that ANSWERS, so
+# they test the switch and the question and not the probe's luck. It never runs `gateway run`: a test must not
+# revive, restart or truncate the real gateway's log.
+fake_cmd hermes "echo 'Gateway is running (PID: fake-selftest)'"
 
 echo "== 1. queue bookkeeping (state.py, atomic)"
 PII_PLAN=$T/plan.tsv printf 'X1\tfake-spec.md\t-\tthe fake item\t-\t-\t0\n' >"$T/plan.tsv"
@@ -64,9 +76,9 @@ row "the spec number is derived from the filename" "134" "$(printf '%s' '134-x.m
 
 echo "== 5. the operator's switch (Discord verbs)"
 bash scripts/autonomy/control.sh pause "selftest" >/dev/null
-PATH=$BIN:$PATH bash scripts/autonomy/cycle.sh 2>&1 | grep -q 'OUTCOME=paused'; row "paused -> the cycle spends nothing" 0 $?
-bash scripts/autonomy/tick.sh | grep -q 'PAUSED'; row "paused -> the tick says so (once)" 0 $?
-bash scripts/autonomy/tick.sh | grep -q 'PAUSED'; row "paused -> the tick does not repeat itself" 1 $?
+PATH=$BIN:$PATH bash scripts/autonomy/cycle.sh >"$T/cycle-paused.out" 2>&1; grep -q 'OUTCOME=paused' "$T/cycle-paused.out"; row "paused -> the cycle spends nothing" 0 $?
+PATH=$BIN:$PATH bash scripts/autonomy/tick.sh >"$T/tick-paused.out" 2>&1; grep -q 'PAUSED' "$T/tick-paused.out"; row "paused -> the tick says so (once)" 0 $?
+PATH=$BIN:$PATH bash scripts/autonomy/tick.sh >"$T/tick-paused2.out" 2>&1; grep -q 'PAUSED' "$T/tick-paused2.out"; row "paused -> the tick does not repeat itself" 1 $?
 bash scripts/autonomy/control.sh resume >/dev/null
 row "resume clears the switch" "RUNNING at" "$(cut -c1-10 "$PII_CONTROL")"
 bash scripts/autonomy/control.sh skip X1 >/dev/null
@@ -78,15 +90,19 @@ bash scripts/autonomy/control.sh note "selftest note" >/dev/null; row "note appe
 
 echo "== 5b. a question reaches the phone, and an answer stops it"
 bash scripts/autonomy/control.sh ask "selftest: which way should the loop go?" >/dev/null
-bash scripts/autonomy/tick.sh | grep -q 'open question'; row "an open question is carried to the phone" 0 $?
-bash scripts/autonomy/tick.sh | grep -q 'open question'; row "it is not repeated every tick" 1 $?
+# The output goes to a FILE, never into `grep -q` through a pipe: the tick prints its question and then the dry
+# line, so grep -q exits on the first match, the tick takes SIGPIPE while writing the rest, and `set -o pipefail`
+# reports 141 instead of grep's 0 — measured 2026-10-20 07:13Z, actual=141 on a tick that had printed the question
+# correctly. Same trap the file's own note at section 4 warns about: assert the artefact, not a pipeline's status.
+PATH=$BIN:$PATH bash scripts/autonomy/tick.sh >"$T/tick-question.out" 2>&1; grep -q 'open question' "$T/tick-question.out"; row "an open question is carried to the phone" 0 $?
+PATH=$BIN:$PATH bash scripts/autonomy/tick.sh >"$T/tick-question2.out" 2>&1; grep -q 'open question' "$T/tick-question2.out"; row "it is not repeated every tick" 1 $?
 N=$(grep -c '^- \[ \]' "$PII_QUESTIONS")
 bash scripts/autonomy/control.sh answer "$N" "selftest answer" >/dev/null
 row "the answer is recorded" "ok" "$(grep -q 'ANSWERED: selftest answer' "$PII_QUESTIONS" && echo ok)"
 
 echo "== 6. the supervisor does nothing when there is nothing to do"
 bash scripts/autonomy/control.sh pause "selftest2" >/dev/null
-bash scripts/autonomy/supervise.sh | grep -q 'paused'; row "paused -> the supervisor is idle" 0 $?
+bash scripts/autonomy/supervise.sh >"$T/supervise-paused.out" 2>&1; grep -q 'paused' "$T/supervise-paused.out"; row "paused -> the supervisor is idle" 0 $?
 bash scripts/autonomy/control.sh resume >/dev/null
 
 echo
