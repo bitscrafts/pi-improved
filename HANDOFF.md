@@ -2,6 +2,42 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-20 07:20Z — both `needs-review` rows were ROW defects, not worker defects; 224 closed, 225 parked on M0 and unwired
+
+State: tree clean at `89eacc4` · no cycle in flight · queue EMPTY apart from A65/A71 (skipped), A79 (revoked)
+and A94 (parked) · control RUNNING · watchdog alive (pid 2172486, 1d18h).
+
+- **The `|` in the commit-path column is what stalled both items.** `cycle.sh` splits that column on `;`
+  (L357), so rows A92 and A94 handed `git add` the single nonexistent path
+  `crates/pii-server/src|crates/pii-graph/src|crates/pii-cli/src` and exited 11 (`add-failed`) *after* a green
+  verify and a green routine gate — twice each. The same typo was in the finished rows A85/A87/A90/A91. All six
+  rows corrected, and the two live rows now carry their full criteria (224: 4 commands, 225: 5).
+- **224 closed on its own evidence.** Criteria 1-3 green at HEAD (2/0, 2/0, 2/0); the work had already landed
+  as the bulk of `aa6c721`. Criterion 4 is no longer prose: `scripts/orch-224-live-unknown-criterion.sh` builds a
+  graph whose coder node carries `criteria = ["cargo test"]` and drives it through the built binary, so the
+  criteria table under test is the shipped one. Measured: `NodeFailed ... "criteria.unknown: 'cargo test' is not
+  in the criteria table"` and the same string as the run's terminal `Failure`, `coder.no_call_events` nowhere.
+- **225 is parked, and the reason is bigger than its sixth criterion.** Five criteria are green (1/0, 2/0, 1/0,
+  2/0, and the scaffold greps clean), but **the feature is inert in production**: both registrations that build
+  the node kind (`engine/registry.rs:64` and `:184`) call `CoderFactory::new`, which defaults to
+  `skills = NoSkills`, `runs_dir = None`; `with_skills`/`with_runs_dir` exist only in `coder.rs` and the two
+  tests. A deployed coder node therefore refuses every pinned skill as missing and `coder.spawned` can never
+  carry the pin — the "asserted in a test, never read by the live path" class (DO-NOT-REPEAT 1.50). Criterion 6
+  additionally cannot be observed: spec 226's M0 measured `core.cap.denied: proc` before any podman call, and
+  `/usr/bin/podman` does not exist here.
+- **The full gate — not the routine tier the cycle runs — is red on this tree**, and it was already red at HEAD
+  beyond 225's three: `lint-files` 6 files over 450 (`lib.rs` 491, `coder.rs` 611, `cmd_trace.rs` 667,
+  `cmd_graph_installed.rs` 712, `fragment.rs` 587, `sched/dispatch.rs` 455); `lint-observability` 6 files over
+  their print budget plus `CODER_SPAWNED`/`CODER_EXITED`/`CODER_ENV_NAMES`/`CODER_ENV_REFUSED` not in
+  `names::ALL`; `lint-scratch` `coder.rs:269` rooting scratch in `std::env::temp_dir()`; `deps-check`
+  `pii-model` pulling rustls; `net-check` `pii-model/tests/stream_close_is_eof.rs` binding a `TcpListener`. 225's
+  own three are `cmd_project.rs` 7 raw prints, `SKILL_DRIFT` missing from `ALL`, and that same scratch line.
+- 225's code is committed as *kept for review* (`89eacc4`) — not accepted: the routine gate is green, the
+  decisions and every measured gap are in the spec's Closure.
+- **Next, in order:** (1) a spec that wires the memory store as the coder node's `SkillSource` and the run's
+  dir as its runs dir, so R3/R7 stop being a seam; (2) 225's three full-gate reds; (3) M0's unblock, since
+  nothing about spawning can be accepted live until a container can start.
+
 ## 2026-10-19 15:35Z — HEAD failed the fresh gate; the deployed revision predates the repair; the real 429 window closed E5 live
 
 State: tree clean at `d27abfd` · no cycle in flight · queue EMPTY (pick NONE) · deployed **`420fe8a7e946`**
