@@ -46,7 +46,9 @@ for d in glob.glob('/proc/[0-9]*'):
 print(','.join(sorted(set(n))))
 PY
 )
-[ -n "$alive" ] && exit 0          # work in flight
+# PII_ALARM_IGNORE_ALIVE=1 exists ONLY so a fabricated queue can be tested while real work runs elsewhere; the cron
+# never sets it, so production always honours the liveness check.
+if [ -n "$alive" ] && [ "${PII_ALARM_IGNORE_ALIVE:-0}" != "1" ]; then exit 0; fi   # work in flight
 
 # 3. how long has the tree been untouched by a cycle?
 newest=$(ls -t _tmp/autonomy/logs/cycle-*.log 2>/dev/null | head -1)
