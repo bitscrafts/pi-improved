@@ -40,10 +40,14 @@ for d in glob.glob("/proc/[0-9]*"):
     try:
         env=open(d+"/environ","rb").read()
         cmd=open(d+"/cmdline","rb").read()
+        comm=open(d+"/comm","rb").read()
     except Exception: continue
     # match the HOST binary path, not an env var: the lnx daemon does not export PII_RUNTIME_DIR, and the containerised
     # production daemon runs /root/.local/bin/pii — matching "pii daemon" alone is what stopped production earlier tonight.
-    if b"/home/mvcorrea/.local/bin/pii" in cmd and b"daemon" in cmd:
+    # comm must be `pii`: a bash wrapper whose command STRING holds the daemon path is not the
+    # daemon — measured 2026-10-20 (pid 3183932 wrapper killed, real daemon 3183934 kept the
+    # control.sock on the old build and the deploy read back the stale revision).
+    if b"/home/mvcorrea/.local/bin/pii" in cmd and b"daemon" in cmd and comm.strip() == b"pii":
         pid=d.rsplit("/",1)[-1]; break
 if pid:
     print("stopping daemon pid", pid); os.kill(int(pid), signal.SIGTERM); time.sleep(2)
