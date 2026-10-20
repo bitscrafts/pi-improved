@@ -13,6 +13,7 @@ mod cmd_daemon;
 mod cmd_daemon_flags;
 mod cmd_deploy_card;
 mod cmd_entity;
+mod cmd_graph_installed;
 mod cmd_health;
 mod cmd_incidents;
 mod cmd_index;
@@ -37,7 +38,7 @@ mod ndjson;
 use crate::cli_util::fail;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|learn|link|neighbours|compact|show|tiers|archive|restore} ... | pii skill {list|show|explain|edit} ... | pii index {code [--root <dir>] [--max N]|docs [--root <dir>] [--kind spec|handoff|ops|all]} | pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii deploy-card {render|approve|refuse} --card <file> | pii loop {emit|events} ... | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
+const USAGE: &str = "usage: pii [--version] | pii -p \"<prompt>\" [...] | pii daemon [...] | pii sandbox-exec ... | pii graph {lint|show|run|resume|trace|list|explain|edit} ... | pii sop {compile|lint|show|run|resume} ... | pii store compact [--dir D] | pii memory {entity {add|show|list}|learn|link|neighbours|compact|show|tiers|archive|restore} ... | pii skill {list|show|explain|edit} ... | pii index {code [--root <dir>] [--max N]|docs [--root <dir>] [--kind spec|handoff|ops|all]} | pii incidents scan --root <dir> [--new] | pii incidents scan --source runtime --log <file> | pii deploy-card {render|approve|refuse} --card <file> | pii loop {emit|events} ... | pii learn {scan|list|show|verify|promote|promotions|revert|ledger} ...";
 
 /// Renders the version banner; testable without spawning a process.
 #[must_use]
@@ -248,7 +249,7 @@ fn main() -> ExitCode {
 
 fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(sub) = args.next() else {
-        eprintln!("usage: pii graph {{lint|show|run|resume|trace}} ...");
+        eprintln!("usage: pii graph {{lint|show|run|resume|trace|list|explain|edit}} ...");
         return ExitCode::from(2);
     };
     let sub = sub.to_str().map_or_else(|| "?".to_owned(), str::to_owned);
@@ -261,6 +262,9 @@ fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
             return ExitCode::from(2);
         };
         let file = file_arg.into_string().unwrap_or_default();
+        if sub == "show" && cmd_graph_installed::is_installed_name(&file) {
+            return cmd_graph_installed::cmd_show(&file, args);
+        }
         return if sub == "show" {
             cmd_graph_show(&file)
         } else {
@@ -271,8 +275,11 @@ fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
         "run" => cmd_run::cmd_run(args),
         "resume" => cmd_run::cmd_resume(args),
         "trace" => cmd_trace::cmd_trace(args),
+        "list" => cmd_graph_installed::cmd_list(args),
+        "explain" => cmd_graph_installed::cmd_explain(args),
+        "edit" => cmd_graph_installed::cmd_edit(args),
         _ => {
-            eprintln!("usage: pii graph {{lint|show|run|resume|trace}} ...");
+            eprintln!("usage: pii graph {{lint|show|run|resume|trace|list|explain|edit}} ...");
             ExitCode::from(2)
         }
     }
