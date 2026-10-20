@@ -21,6 +21,8 @@ pub enum WireRunStatus {
     Succeeded,
     /// Failed.
     Failed,
+    /// Refused before any agent call spawned (spec 221).
+    Refused,
 }
 
 /// `run.start` params.

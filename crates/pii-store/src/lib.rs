@@ -454,6 +454,7 @@ impl Store {
                 RunStatus::Suspended,
                 RunStatus::Succeeded,
                 RunStatus::Failed,
+                RunStatus::Refused,
             ] {
                 status_tbl
                     .remove((status_name(st), header.run.as_str()))
@@ -625,6 +626,7 @@ fn status_name(status: RunStatus) -> &'static str {
         RunStatus::Suspended => "Suspended",
         RunStatus::Succeeded => "Succeeded",
         RunStatus::Failed => "Failed",
+        RunStatus::Refused => "Refused",
     }
 }
 

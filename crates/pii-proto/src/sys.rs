@@ -363,6 +363,9 @@ pub struct RunsByStatus {
     pub succeeded: u64,
     /// Runs failed.
     pub failed: u64,
+    /// Runs refused before any agent call spawned (spec 221).
+    #[serde(default)]
+    pub refused: u64,
 }
 
 /// What the store holds for the running revision, read from run headers (spec 188).

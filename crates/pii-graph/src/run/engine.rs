@@ -16,7 +16,7 @@ use pii_core::{Ctx, Metric};
 use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
 use crate::node::{GraphNode, NodeRegistry};
-use crate::run_helpers::{CancelTokenSet, terminal_determination, terminal_status};
+use crate::run_helpers::{CancelTokenSet, terminal_determination};
 use crate::sched::dispatch::{
     DispatchOutcome, Env, FinishedNode, apply, build_node_input, cancel_losers, dispatch,
 };
@@ -159,7 +159,7 @@ impl Engine<'_> {
             }
             if batch.is_empty() {
                 let terminal = terminal_determination(spec, st, fin, failure.as_deref());
-                let status = terminal_status(&terminal);
+                let (terminal, status) = self.judged(spec, terminal)?;
                 return self.finish(&terminal, status);
             }
 
@@ -347,6 +347,18 @@ impl Engine<'_> {
                 && !st.cancelled.contains(&n.id)
                 && readiness(self.spec, st, &n.id) == Readiness::UnsatisfiableJoin
         })
+    }
+
+    /// Spec 221: the terminal and status this run ends with, once its coder calls are read back from the journal.
+    /// The journal is flushed first, so every observation the nodes made is in the store.
+    fn judged(
+        &self,
+        spec: &GraphSpec,
+        terminal: Terminal,
+    ) -> Result<(Terminal, RunStatus), PiiError> {
+        self.jr.flush()?;
+        let journal = self.jr.store().read_journal(self.run_id)?;
+        Ok(crate::agent_calls::call_verdict(spec, &journal, terminal))
     }
 
     /// Journals the `Finished` event with the terminal status and returns.

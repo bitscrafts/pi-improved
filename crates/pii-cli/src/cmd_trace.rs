@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use pii_abi::{RunEvent, RunHeader, RunId, RunStatus, Terminal};
+use pii_abi::{NodeId, RunEvent, RunHeader, RunId, RunStatus, Terminal};
 use pii_proto::method::Method;
 use pii_proto::run::{TraceResult, WireRunStatus};
 
@@ -189,6 +189,7 @@ fn terminal_word(header: &RunHeader) -> &'static str {
         RunStatus::Suspended => "suspended",
         RunStatus::Succeeded => "success",
         RunStatus::Failed => "failure",
+        RunStatus::Refused => "refused",
     }
 }
 
@@ -446,6 +447,49 @@ fn trace_line(line: &NodeLine) -> String {
     )
 }
 
+/// Spec 221 R4: one `<node> spawned=<pid|none> exited=<rc|none> refused=<reason|none>` line per node the journal
+/// shows making an agent call or refusal, in the order the nodes first did so.
+fn call_lines(journal: &[(u64, RunEvent)]) -> Vec<String> {
+    let mut nodes: Vec<&NodeId> = Vec::new();
+    for (_, event) in journal {
+        if let RunEvent::NodeObserved { node, kind, .. } = event
+            && matches!(
+                kind.as_str(),
+                "coder.spawned" | "coder.exited" | "worker.start.refused"
+            )
+            && !nodes.contains(&node)
+        {
+            nodes.push(node);
+        }
+    }
+    nodes
+        .into_iter()
+        .map(|node| {
+            let calls = pii_graph::agent_calls::call_summary(journal, node);
+            let pid = calls
+                .spawned
+                .map_or_else(|| "none".to_owned(), |p| p.to_string());
+            let rc = calls
+                .exit_rc
+                .map_or_else(|| "none".to_owned(), |c| c.to_string());
+            let refused = calls.refused.unwrap_or_else(|| "none".to_owned());
+            format!("{node} spawned={pid} exited={rc} refused={refused}")
+        })
+        .collect()
+}
+
+/// Spec 221 R4: the coder lines of a run the daemon holds. `None` when no daemon is reachable.
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn coder_lines_via_daemon(run: &str) -> Option<Result<Vec<String>, ExitCode>> {
+    read_via_daemon(run).map(|loaded| loaded.map(|l| call_lines(&l.journal)))
+}
+
+/// Spec 221 R4: the coder lines of a run read from the store at `db`, the offline path.
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn coder_lines_via_store(run: &str, db: &Path) -> Result<Vec<String>, ExitCode> {
+    read_via_store(run, db).map(|l| call_lines(&l.journal))
+}
+
 /// The explain paragraph's sentence for one agent call (spec 217 R7).
 fn explain_call(node: &str, call: &AgentCall) -> String {
     let image = match digest8(&call.image_digest) {
@@ -529,7 +573,10 @@ fn daemon_loaded(reply: serde_json::Value) -> Result<Loaded, ExitCode> {
         graph: trace.header.graph,
         status: format!("{status:?}").to_lowercase(),
         dur_ms: trace.header.dur_ms,
-        terminal: matches!(status, WireRunStatus::Succeeded | WireRunStatus::Failed),
+        terminal: matches!(
+            status,
+            WireRunStatus::Succeeded | WireRunStatus::Failed | WireRunStatus::Refused
+        ),
         journal,
         source: Source::Daemon,
     })
@@ -593,7 +640,10 @@ fn read_via_store(run: &str, db: &Path) -> Result<Loaded, ExitCode> {
         graph: header.graph.clone(),
         status: format!("{:?}", header.status).to_lowercase(),
         dur_ms: header.dur_ms,
-        terminal: matches!(header.status, RunStatus::Succeeded | RunStatus::Failed),
+        terminal: matches!(
+            header.status,
+            RunStatus::Succeeded | RunStatus::Failed | RunStatus::Refused
+        ),
         journal,
         source: Source::Store(db.to_path_buf()),
     })

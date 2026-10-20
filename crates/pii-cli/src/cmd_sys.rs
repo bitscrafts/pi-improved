@@ -7,7 +7,8 @@ use std::process::ExitCode;
 
 use pii_proto::method::Method;
 
-use crate::cmd_ctl::{next_str, print_result, run_call};
+use crate::cmd_ctl::{CallError, next_str, print_result, run_call, run_call_typed};
+use crate::cmd_trace::{coder_lines_via_daemon, coder_lines_via_store};
 
 /// `pii sys status|reload`.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
@@ -126,17 +127,65 @@ fn run_get_line(id: &str, answer: &Result<serde_json::Value, String>) -> String 
     }
 }
 
+/// `pii run get <run_id> [--db <path>]` (spec 115, spec 221 R4). The daemon answers first, then prints one coder line
+/// per agent call in the run; with no daemon reachable the store at `--db` (or `$PII_RUNTIME_DIR`) answers instead.
 fn run_get(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(id) = next_str(args) else {
-        let _ = writeln!(std::io::stderr(), "usage: pii run get <run_id>");
+        let _ = writeln!(
+            std::io::stderr(),
+            "usage: pii run get <run_id> [--db <path>]"
+        );
         return ExitCode::from(2);
     };
-    let answer = run_call(Method::RunGet, serde_json::json!({"run_id": id}));
-    let _ = writeln!(std::io::stdout(), "{}", run_get_line(&id, &answer));
-    if answer.is_ok() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(2)
+    let mut db = None;
+    while let Some(flag) = next_str(args) {
+        if flag == "--db" {
+            db = next_str(args).map(std::path::PathBuf::from);
+        }
+    }
+    match run_call_typed(Method::RunGet, serde_json::json!({"run_id": id})) {
+        Err(CallError::Down(msg)) => get_from_store(&id, db, &msg),
+        answer => {
+            let answer = answer.map_err(CallError::into_message);
+            let _ = writeln!(std::io::stdout(), "{}", run_get_line(&id, &answer));
+            if answer.is_err() {
+                return ExitCode::from(2);
+            }
+            match coder_lines_via_daemon(&id) {
+                Some(Ok(lines)) => print_lines(&lines),
+                Some(Err(code)) => return code,
+                None => {}
+            }
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+/// The coder lines of a run read from the store, for when no daemon is reachable (spec 221 R4).
+fn get_from_store(id: &str, db: Option<std::path::PathBuf>, daemon_msg: &str) -> ExitCode {
+    let db = db.or_else(|| {
+        std::env::var_os("PII_RUNTIME_DIR").map(|d| std::path::PathBuf::from(d).join("store.redb"))
+    });
+    let Some(db) = db else {
+        let _ = writeln!(
+            std::io::stdout(),
+            "{}",
+            run_get_line(id, &Err(daemon_msg.to_owned()))
+        );
+        return ExitCode::from(2);
+    };
+    match coder_lines_via_store(id, &db) {
+        Ok(lines) => {
+            print_lines(&lines);
+            ExitCode::SUCCESS
+        }
+        Err(code) => code,
+    }
+}
+
+fn print_lines(lines: &[String]) {
+    for line in lines {
+        let _ = writeln!(std::io::stdout(), "{line}");
     }
 }
 

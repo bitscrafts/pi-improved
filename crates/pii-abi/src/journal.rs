@@ -22,6 +22,8 @@ pub enum RunStatus {
     Succeeded,
     /// The run failed.
     Failed,
+    /// The run's agent call was refused before any spawn (spec 221): it would not start, which is not a failure.
+    Refused,
 }
 
 /// Durable header describing one run.
