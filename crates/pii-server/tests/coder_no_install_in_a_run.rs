@@ -124,16 +124,18 @@ fn a_coder_run_installs_nothing() {
         .find(|e| e.kind == names::CODER_SPAWNED)
         .cloned()
         .expect("coder.spawned journalled");
-    let argv = spawned
+    // Spec 217 R3: the raw argv is no longer journalled, so the install check reads the program it exec'd (argv0).
+    // A missing field fails the test rather than passing an empty string.
+    let argv0 = spawned
         .fields
-        .get("argv")
+        .get("argv0")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
+        .expect("argv0 journalled")
         .to_owned();
     for bad in INSTALLERS {
         assert!(
-            !argv.contains(bad),
-            "install word `{bad}` in spawned argv: {argv}"
+            !argv0.contains(bad),
+            "install word `{bad}` in spawned argv0: {argv0}"
         );
     }
 }

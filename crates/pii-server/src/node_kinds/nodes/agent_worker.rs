@@ -80,7 +80,7 @@ impl WorkerSpec {
         })
     }
 
-    fn agent_name(&self) -> &'static str {
+    pub(super) fn agent_name(&self) -> &'static str {
         match self.agent {
             Agent::Pi => "pi",
             Agent::Claude => "claude",

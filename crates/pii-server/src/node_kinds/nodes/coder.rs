@@ -14,12 +14,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
 use pii_core::{CapKind, Ctx};
 use pii_graph::node::{GraphNode, NodeFactory};
 use pii_observe::{Event, Level, Observer, names};
+use sha2::{Digest, Sha256};
 
 use super::agent_worker::{CriterionRun, Verdict, WorkerSpec, decide, plan};
 use super::coder_container::{self, CONTAINER_WORKDIR, ContainerRun, PODMAN_BIN};
@@ -150,10 +151,42 @@ fn refused_port(agent: &str, model: &str, reason: &str) -> Outcome {
     }
 }
 
-/// What a launch came to: the agent's exit code and pid, or the reason the node refused to launch.
+/// What a launch came to: the agent's exit code, pid, duration and stop reason, or the reason the node refused to
+/// launch.
 enum Launch {
-    Exited { code: i32, pid: u32 },
+    Exited {
+        code: i32,
+        pid: u32,
+        dur_ms: i64,
+        stop: &'static str,
+    },
     Refused(String),
+}
+
+/// The stop reason of a finished child (spec 217 R4). A signal death is `128 + signal`, so a code above 128 is
+/// `signalled`; any other code is the agent ending on its own.
+fn stop_reason(code: i32) -> &'static str {
+    if code > 128 { "signalled" } else { "end_turn" }
+}
+
+/// Milliseconds since `started`, saturating: a duration never wraps negative.
+fn elapsed_ms(started: Instant) -> i64 {
+    i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)
+}
+
+/// The sha256 of an argv as lowercase hex (spec 217 R3): identifies a call without journalling its arguments.
+fn argv_digest(argv: &[String]) -> String {
+    let digest = Sha256::digest(argv.join("\0").as_bytes());
+    format!("{digest:x}")
+}
+
+/// The session an agent was launched with: the value after `--session`, empty when the argv names none.
+fn session_of(argv: &[String]) -> String {
+    argv.iter()
+        .position(|a| a == "--session")
+        .and_then(|i| argv.get(i + 1))
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// A fresh env-file path under the temp dir, unique within this process. The file is created with `create_new`,
@@ -282,8 +315,8 @@ impl CoderNode {
             .collect();
         let result = self.spawn_and_wait(
             ctx,
+            spec,
             &run_argv,
-            &workdir,
             &podman_env,
             Some((image, digest.as_str())),
         );
@@ -312,31 +345,68 @@ impl CoderNode {
         let mut host_argv = vec![self.bin_dir.join(program).display().to_string()];
         host_argv.extend(rest.iter().cloned());
         let env_pairs: Vec<(String, String)> = env.into_iter().collect();
-        self.spawn_and_wait(ctx, &host_argv, Path::new(&spec.workdir), &env_pairs, None)
+        self.spawn_and_wait(ctx, spec, &host_argv, &env_pairs, None)
     }
 
-    /// Spawns `argv` with exactly `env_pairs`, journals `coder.spawned`, and waits for it. Its output is drained,
-    /// and a cancelled or timed-out run kills the child. `container` names the image and digest a container run
-    /// used, so the journal records which image produced the run (spec 209).
+    /// Journals a finished call (spec 217 R4). `runs` are the criteria that ran; none for a deferred verdict.
+    fn emit_exited(&self, pid: u32, rc: i32, dur_ms: i64, stop: &str, runs: &[CriterionRun]) {
+        let failed = runs.iter().find(|r| r.rc != 0);
+        let passed = runs.iter().filter(|r| r.rc == 0).count();
+        self.log.event(
+            &Event::new("coder", Level::Info, names::CODER_EXITED)
+                .field("pid", i64::from(pid))
+                .field("rc", i64::from(rc))
+                .field("dur_ms", dur_ms)
+                .field("stop_reason", stop.to_owned())
+                .field(
+                    "criteria_run",
+                    i64::try_from(runs.len()).unwrap_or(i64::MAX),
+                )
+                .field("criteria_passed", i64::try_from(passed).unwrap_or(i64::MAX))
+                .field(
+                    "criteria_failed",
+                    i64::try_from(runs.len() - passed).unwrap_or(i64::MAX),
+                )
+                .field(
+                    "first_failure",
+                    failed.map(|r| r.command.clone()).unwrap_or_default(),
+                ),
+        );
+    }
+
+    /// Spawns `argv` with exactly `env_pairs` in the spec's workspace, journals `coder.spawned` and
+    /// `coder.env.names`, and waits for it (spec 217). Its output is drained. A cancelled or timed-out run kills
+    /// the child and journals it as `killed`. A container run passes the image and digest it used (spec 209).
     fn spawn_and_wait(
         &self,
         ctx: &Ctx,
+        spec: &WorkerSpec,
         argv: &[String],
-        workdir: &Path,
         env_pairs: &[(String, String)],
         container: Option<(&str, &str)>,
     ) -> Result<Launch, PiiError> {
+        let started = Instant::now();
+        let workdir = Path::new(&spec.workdir);
         let mut child = ctx.proc()?.spawn_child_exact(argv, workdir, env_pairs)?;
         let pid = child.pid();
-        let mut spawned = Event::new("coder", Level::Info, names::CODER_SPAWNED)
-            .field("pid", i64::from(pid))
-            .field("argv", argv.join(" "));
-        if let Some((image, digest)) = container {
-            spawned = spawned
+        let (image, image_digest) = container.unwrap_or_default();
+        self.log.event(
+            &Event::new("coder", Level::Info, names::CODER_SPAWNED)
+                .field("agent", spec.agent_name().to_owned())
+                .field("model", spec.model.clone())
                 .field("image", image.to_owned())
-                .field("image_digest", digest.to_owned());
-        }
-        self.log.event(&spawned);
+                .field("image_digest", image_digest.to_owned())
+                .field("argv0", argv.first().cloned().unwrap_or_default())
+                .field("argv_len", i64::try_from(argv.len()).unwrap_or(i64::MAX))
+                .field("argv_digest", argv_digest(argv))
+                .field("pid", i64::from(pid))
+                .field("session", session_of(argv)),
+        );
+        let env_names: Vec<&str> = env_pairs.iter().map(|(k, _)| k.as_str()).collect();
+        self.log.event(
+            &Event::new("coder", Level::Info, names::CODER_ENV_NAMES)
+                .field("names", env_names.join(",")),
+        );
         // Nothing is written to the agent's stdin; its output is drained so a chatty agent cannot block.
         drop(child.stdin());
         if let Some(mut out) = child.stdout() {
@@ -355,10 +425,16 @@ impl CoderNode {
             }
             if let Err(e) = ctx.check() {
                 let _ = child.kill();
+                self.emit_exited(pid, -1, elapsed_ms(started), "killed", &[]);
                 return Err(e);
             }
         };
-        Ok(Launch::Exited { code, pid })
+        Ok(Launch::Exited {
+            code,
+            pid,
+            dur_ms: elapsed_ms(started),
+            stop: stop_reason(code),
+        })
     }
 }
 
@@ -417,17 +493,17 @@ impl GraphNode for CoderNode {
             );
             self.launch_on_host(ctx, &dispatch.argv, &spec, env)?
         };
-        let (code, pid) = match launch {
-            Launch::Exited { code, pid } => (code, pid),
-            Launch::Refused(reason) => return Ok(refused_port(&agent, &model, &reason)),
+        let (code, pid, dur_ms, stop) = match launch {
+            Launch::Exited {
+                code,
+                pid,
+                dur_ms,
+                stop,
+            } => (code, pid, dur_ms, stop),
+            // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`.
+            Launch::Refused(reason) => return Ok(self.refuse(&agent, &model, &reason)),
         };
         let workdir = PathBuf::from(&spec.workdir);
-
-        // No criteria configured: the verdict is deferred to a downstream `judge` node (spec 208). A clean exit
-        // hands on; a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.
-        if texts(cfg, "criteria").is_empty() {
-            return Ok(deferred_verdict(code, pid, &agent, &model));
-        }
 
         // The criteria decide. The first failing criterion stops the run and names itself in the verdict.
         let mut runs = Vec::new();
@@ -441,6 +517,14 @@ impl GraphNode for CoderNode {
                 break;
             }
         }
+        self.emit_exited(pid, code, dur_ms, stop, &runs);
+
+        // No criteria configured: the verdict is deferred to a downstream `judge` node (spec 208). A clean exit
+        // hands on; a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.
+        if texts(cfg, "criteria").is_empty() {
+            return Ok(deferred_verdict(code, pid, &agent, &model));
+        }
+
         match decide(code, "", &runs) {
             Verdict::Passed { criteria, .. } => Ok(Outcome::Next {
                 port: PortName::from("ok"),

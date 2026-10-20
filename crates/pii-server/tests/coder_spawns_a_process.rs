@@ -94,7 +94,7 @@ fn run_coder_graph(
 }
 
 /// Spawns the fake `pi` through the node: the child runs, the criterion passes, the node succeeds, and the
-/// journal-visible `coder.spawned` event names the pid and an argv that begins with the agent binary.
+/// journal-visible `coder.spawned` event names the pid and the agent binary as its `argv0`.
 #[test]
 fn coder_spawns_pi_and_passes_on_green_criteria() {
     let bin = fake_bin("echo ran > \"$PWD/ran.txt\"");
@@ -117,14 +117,16 @@ fn coder_spawns_pi_and_passes_on_green_criteria() {
         .iter()
         .find(|e| e.kind == names::CODER_SPAWNED)
         .expect("coder.spawned journalled");
-    let argv = spawned
+    // Spec 217 R3: the raw argv is never journalled; its program path is.
+    let argv0 = spawned
         .fields
-        .get("argv")
+        .get("argv0")
         .and_then(serde_json::Value::as_str)
-        .expect("argv field");
-    assert!(
-        argv.starts_with(&bin.path().join("pi").display().to_string()),
-        "argv begins with the agent binary: {argv}"
+        .expect("argv0 field");
+    assert_eq!(
+        argv0,
+        bin.path().join("pi").display().to_string(),
+        "argv0 is the agent binary"
     );
     assert!(spawned.fields.get("pid").is_some(), "pid recorded");
 }

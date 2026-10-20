@@ -64,7 +64,7 @@ pub const WORKER_REQUEST_REFUSED: &str = "worker.request.refused";
 pub const WORKER_RELOAD_COMPLETED: &str = "worker.reload.completed";
 /// Event: a coding-agent worker refused to start (`agent`, `model`, `reason`); nothing was spawned (spec 185).
 pub const WORKER_START_REFUSED: &str = "worker.start.refused";
-/// Event: a coder node spawned its agent (`agent`, `model`, `pid`, `argv`); the argv names the session (spec 207).
+/// Event: a coder node spawned its agent (`agent`, `model`, `pid`, `argv_digest`, `session`); no raw argv (spec 217).
 pub const CODER_SPAWNED: &str = "coder.spawned";
 /// Event: a coder node's image is absent or has no digest (`image`, `reason`); nothing was started (spec 209).
 pub const CODER_IMAGE_MISSING: &str = "coder.image.missing";
@@ -72,6 +72,12 @@ pub const CODER_IMAGE_MISSING: &str = "coder.image.missing";
 pub const CRITERIA_UNKNOWN: &str = "criteria.unknown";
 /// Event: a coder node ran on the host because it names no `container_image` (`agent`); deprecated (spec 209).
 pub const CODER_HOST_SPAWN_DEPRECATED: &str = "coder.host_spawn.deprecated";
+/// Event: a coder call ended (`pid`, `rc`, `dur_ms`, `stop_reason`, criteria counts, `first_failure`) (spec 217).
+pub const CODER_EXITED: &str = "coder.exited";
+/// Event: the environment names a coder call was given (`names`, comma-joined; never a value) (spec 217 R3).
+pub const CODER_ENV_NAMES: &str = "coder.env.names";
+/// Event: a coder call's environment was refused because a name would journal a value (spec 217 R3).
+pub const CODER_ENV_REFUSED: &str = "coder.env.refused";
 /// Event: a memory search completed.
 pub const MEMORY_SEARCH: &str = "memory.search";
 /// Event: a memory consolidation completed.
