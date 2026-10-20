@@ -158,15 +158,11 @@ if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
   LEFT=$STATEDIR/leftovers; mkdir -p "$LEFT"
   git diff >"$LEFT/$CID-tracked.patch" 2>/dev/null || true
   git status --porcelain | awk '{print $2}' >"$LEFT/$CID-paths.txt"
-  say "DIRTY TREE with no session: keeping the leftover as $LEFT/$CID-tracked.patch and committing it as a named leftover"
-  mapfile -t LP < <(git status --porcelain | awk '{print $2}')
-  [ "${#LP[@]}" -gt 0 ] && git add -- "${LP[@]}" 2>>"$LOG" || true
-  if git diff --cached --quiet; then say "nothing stageable in the leftover"; else
-    git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" commit -q \
-      -m "leftover from the previous item, kept for review (cycle $CID; the diff is also at $LEFT/$CID-tracked.patch)" 2>>"$LOG" || true
-    say "leftover committed: $(git log --oneline -1)"
-  fi
-  bash scripts/autonomy/control.sh ask "found a leftover from the previous item and committed it for review (cycle $CID). Nothing was lost; check the message if it looks wrong." >/dev/null 2>&1 || true
+  # GATE BYPASS CLOSED (2026-10-20): a leftover used to be committed here with no gate
+  # at all, to master. It is now kept ONLY as the patch and path list above, for review.
+  # Nothing is staged or committed by the loop; the tree is left as it was.
+  say "DIRTY TREE with no session: kept the leftover as $LEFT/$CID-tracked.patch (not committed; the gate never saw it)"
+  bash scripts/autonomy/control.sh ask "found a leftover from the previous item and kept it as a patch for review (cycle $CID). Nothing was committed." >/dev/null 2>&1 || true
   fi
 fi
 ARGS=(); [ -n "$RSID" ] && ARGS=(--resume "$RSID")
