@@ -29,7 +29,9 @@ esac
 pick=$(python3 scripts/autonomy/state.py pick 2>&1 | head -1)
 # pick prints a human line ("pick: skip parked A78 ... -> dispatching A99" or "pick: NONE"), so extract the id rather than
 # matching the whole line: the first version matched ^A[0-9] and therefore NEVER fired (found by its own positive control).
-row=$(printf '%s' "$pick" | grep -oE 'dispatching A[0-9]+' | grep -oE 'A[0-9]+' | head -1)
+# pick emits EITHER a tab-separated row (starts with the id) OR a human line ending "-> dispatching A99". Both are covered
+# here; two earlier versions matched only one shape and therefore never fired. The shapes were read from the command, not guessed.
+row=$(printf '%s' "$pick" | grep -oE '(^|dispatching )A[0-9]+' | grep -oE 'A[0-9]+' | head -1)
 [ -n "$row" ] || exit 0          # nothing pending, or all parked — both are named states
 
 # 2. is anything alive?
