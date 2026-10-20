@@ -45,9 +45,14 @@ pub(crate) fn cmd_sandbox_exec(args: &mut std::env::ArgsOs) -> ExitCode {
     };
     let workspace = PathBuf::from(workspace);
 
+    // Spec 229: the same `workspace` grant the daemon applies (podman's state dirs and /dev/shm),
+    // so the profile means one thing in both places.
     if matches!(profile, pii_tools::sandbox::SandboxProfileName::Workspace)
-        && let Err(e) =
-            pii_tools::sandbox::apply_workspace(&workspace, &[], std::path::Path::new("/etc"))
+        && let Err(e) = pii_tools::sandbox::apply_workspace(
+            &workspace,
+            &pii_tools::sandbox::podman_state_dirs(),
+            std::path::Path::new("/etc"),
+        )
     {
         eprintln!("{e}");
         return ExitCode::from(4);
