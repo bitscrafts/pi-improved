@@ -39,6 +39,19 @@ pub fn agent_binaries(bin_dir: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The programs a run's scope admits (spec 207, 209, 215, 223): `/bin/sh`, the agent binaries, podman and the
+/// criteria table's programs.
+///
+/// Dispatch hands each of them to a `coder` node only, and a node names only the one it execs.
+#[must_use]
+pub fn run_programs(bin_dir: &Path, podman: &Path, criteria: &Table) -> Vec<String> {
+    let mut argv0 = vec![String::from("/bin/sh")];
+    argv0.extend(agent_binaries(bin_dir));
+    argv0.push(podman.display().to_string());
+    argv0.extend(criteria::programs(criteria));
+    argv0
+}
+
 /// How long one criterion command may run before it is killed.
 const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);
 
@@ -226,13 +239,26 @@ impl CoderNode {
 
     /// Journals a refusal the node decided itself, then routes it to `err`.
     fn refuse(&self, ctx: &Ctx, agent: &str, model: &str, reason: &str) -> Outcome {
-        self.observe(
-            ctx,
-            &Event::new("coder", Level::Warn, names::WORKER_START_REFUSED)
-                .field("agent", agent.to_owned())
-                .field("model", model.to_owned())
-                .field("reason", reason.to_owned()),
-        );
+        self.refuse_with(ctx, agent, model, reason, None)
+    }
+
+    /// Journals a refusal with the image digest slot it had (spec 223 R3), then routes it to `err`.
+    fn refuse_with(
+        &self,
+        ctx: &Ctx,
+        agent: &str,
+        model: &str,
+        reason: &str,
+        image_digest: Option<&str>,
+    ) -> Outcome {
+        let mut event = Event::new("coder", Level::Warn, names::WORKER_START_REFUSED)
+            .field("agent", agent.to_owned())
+            .field("model", model.to_owned())
+            .field("reason", reason.to_owned());
+        if let Some(digest) = image_digest {
+            event = event.field("image_digest", digest.to_owned());
+        }
+        self.observe(ctx, &event);
         refused_port(agent, model, reason)
     }
 
@@ -537,8 +563,12 @@ impl GraphNode for CoderNode {
                 dur_ms,
                 stop,
             } => (code, pid, dur_ms, stop),
-            // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`.
-            Launch::Refused(reason) => return Ok(self.refuse(ctx, &agent, &model, &reason)),
+            // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`. No spawn ran, so an
+            // image node's digest slot reads `missing` (spec 223 R3).
+            Launch::Refused(reason) => {
+                let digest = image.as_ref().map(|_| "missing");
+                return Ok(self.refuse_with(ctx, &agent, &model, &reason, digest));
+            }
         };
         let workdir = PathBuf::from(&spec.workdir);
 

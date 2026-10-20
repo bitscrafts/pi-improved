@@ -299,8 +299,17 @@ struct NodeLine {
     start_ms: i64,
     dur_ms: Option<i64>,
     calls: Vec<AgentCall>,
+    /// The refusal the node journalled before any spawn, if it made one (spec 223 R2).
+    refusal: Option<Refusal>,
     /// The `<fragment>#<node>` origin of a woven node (spec 219 R4).
     woven_from: Option<String>,
+}
+
+/// A `worker.start.refused` a node journalled: the scope's or the node's own reason, and the image digest slot.
+#[derive(Debug, Clone)]
+struct Refusal {
+    reason: String,
+    image_digest: String,
 }
 
 fn str_field(fields: &serde_json::Value, key: &str) -> String {
@@ -355,6 +364,8 @@ fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
     let mut observed: std::collections::BTreeMap<String, Vec<AgentCall>> =
         std::collections::BTreeMap::new();
     let mut woven: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut refusals: std::collections::BTreeMap<String, Refusal> =
+        std::collections::BTreeMap::new();
     let mut lines = Vec::new();
     for (seq, event) in journal {
         match event {
@@ -363,6 +374,16 @@ fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
             }
             RunEvent::NodeObserved { node, kind, fields } if kind == "woven" => {
                 woven.insert(node.to_string(), str_field(fields, "woven-from"));
+            }
+            RunEvent::NodeObserved { node, kind, fields } if kind == "worker.start.refused" => {
+                observed.entry(node.to_string()).or_default();
+                refusals.insert(
+                    node.to_string(),
+                    Refusal {
+                        reason: str_field(fields, "reason"),
+                        image_digest: str_field(fields, "image_digest"),
+                    },
+                );
             }
             RunEvent::NodeObserved { node, kind, fields } => {
                 observe_call(observed.entry(node.to_string()).or_default(), kind, fields);
@@ -379,12 +400,21 @@ fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
                     i64::from(*at_ms),
                     Some(i64::from(*dur_ms)),
                     &observed,
+                    &refusals,
                     &woven,
                 ));
             }
             RunEvent::NodeFailed { node, .. } => {
                 let start = started.get(&node.to_string()).copied().unwrap_or_default();
-                lines.push(line(*seq, node.to_string(), start, None, &observed, &woven));
+                lines.push(line(
+                    *seq,
+                    node.to_string(),
+                    start,
+                    None,
+                    &observed,
+                    &refusals,
+                    &woven,
+                ));
             }
             _ => {}
         }
@@ -398,6 +428,7 @@ fn line(
     start_ms: i64,
     dur_ms: Option<i64>,
     observed: &std::collections::BTreeMap<String, Vec<AgentCall>>,
+    refusals: &std::collections::BTreeMap<String, Refusal>,
     woven: &std::collections::BTreeMap<String, String>,
 ) -> NodeLine {
     let calls = observed.get(&node).cloned();
@@ -405,6 +436,7 @@ fn line(
         seq,
         kind: if calls.is_some() { "coder" } else { "-" },
         calls: calls.unwrap_or_default(),
+        refusal: refusals.get(&node).cloned(),
         woven_from: woven.get(&node).cloned(),
         node,
         start_ms,
@@ -430,11 +462,18 @@ fn trace_line(line: &NodeLine) -> String {
         .or_else(|| exit.map(|e| e.dur_ms))
         .map_or_else(|| "-".to_owned(), |d| d.to_string());
     let pid = last.map_or_else(|| "-".to_owned(), |c| c.pid.to_string());
-    let image = last.map_or("-", |c| digest8(&c.image_digest));
+    let refusal = line.refusal.as_ref();
+    // Spec 223 R3: a node that declared an image never prints `-` here; a refusal prints its digest slot.
+    let image = last
+        .map(|c| digest8(&c.image_digest))
+        .or_else(|| refusal.map(|r| digest8(&r.image_digest)))
+        .unwrap_or("-");
     let crit = exit.map_or_else(|| "-".to_owned(), |e| format!("{}/{}", e.passed, e.run));
+    // Spec 223 R2: a refused node names its refusal, not an empty `pid=-`.
     let fail = exit
         .map(|e| e.first_failure.as_str())
         .filter(|f| !f.is_empty())
+        .or_else(|| refusal.map(|r| r.reason.as_str()).filter(|r| !r.is_empty()))
         .unwrap_or("-");
     let rc = exit.map_or_else(|| "-".to_owned(), |e| e.rc.to_string());
     let woven = line
@@ -733,8 +772,40 @@ mod tests {
         clippy::indexing_slicing
     )]
 
-    use super::reason_for;
+    use super::{node_lines, reason_for, trace_line};
     use pii_abi::{NodeId, PortName, RunEvent};
+
+    /// Spec 223 R2-R3: a refused coder node's trace line names the refusal and its image slot, never `pid=-` alone.
+    #[test]
+    fn trace_line_names_a_refusal_and_the_image_slot() {
+        let refused = RunEvent::NodeObserved {
+            node: NodeId::from("code"),
+            kind: String::from("worker.start.refused"),
+            fields: serde_json::json!({
+                "agent": "pi",
+                "model": "m",
+                "reason": "denied",
+                "image_digest": "missing",
+            }),
+        };
+        let lines = node_lines(&journal(vec![
+            RunEvent::NodeStarted {
+                node: NodeId::from("code"),
+                at_ms: 5,
+            },
+            refused,
+            RunEvent::NodeFailed {
+                node: NodeId::from("code"),
+                error: String::from("denied"),
+                retryable: false,
+                attempt: 1,
+            },
+        ]));
+        let text = trace_line(&lines[0]);
+        assert!(text.contains("pid=-"), "{text}");
+        assert!(text.contains("image=missing"), "{text}");
+        assert!(text.contains("fail=denied"), "{text}");
+    }
 
     /// A `NodeFinished` event for `node` on `port` carrying `value`.
     fn finished(node: &str, port: &str, value: serde_json::Value) -> RunEvent {

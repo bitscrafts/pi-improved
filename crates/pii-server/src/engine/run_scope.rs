@@ -111,15 +111,13 @@ pub(super) fn run_caps(
         );
     }
     // spec 207: the run admits the agent binaries; dispatch hands them only to `coder` nodes.
-    let mut argv0 = vec![String::from("/bin/sh")];
-    argv0.extend(crate::node_kinds::nodes::coder::agent_binaries(
+    // spec 207/215: the run admits the agent binaries and the criteria table's programs; dispatch hands them only to
+    // `coder` nodes.
+    caps.proc_argv0 = pii_core::ArgvScope::new(crate::node_kinds::nodes::coder::run_programs(
         std::path::Path::new(crate::node_kinds::nodes::coder::AGENT_BIN_DIR),
-    ));
-    // spec 215: the run admits the criteria table's programs too; dispatch hands them only to `coder` nodes.
-    argv0.extend(crate::node_kinds::nodes::criteria::programs(
+        std::path::Path::new(crate::node_kinds::nodes::coder_container::PODMAN_BIN),
         &crate::node_kinds::nodes::criteria::production(),
     ));
-    caps.proc_argv0 = pii_core::ArgvScope::new(argv0);
     if let Some(host) = net_host {
         caps.net_hosts = pii_core::HostScope::new(vec![host.to_owned()]);
     }
