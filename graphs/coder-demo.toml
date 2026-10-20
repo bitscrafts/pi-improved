@@ -37,3 +37,10 @@ from = "code"
 port = "err"
 to = "refused"
 kind = "data"
+
+# Spec 212: the podman guard is woven in at run start, pinned to the fragment's sha256.
+[[attach]]
+id = "guard"
+fragment = "podman-guard"
+at = "run.start"
+pin = "5e1ff7772bf4f698553753c697e6b943a84604f38f5fdff867ee6aba98766f01"
