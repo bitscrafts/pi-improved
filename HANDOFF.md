@@ -2,6 +2,30 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-21 18:20Z — the queue's one open action now has a pre-registered card (still not run: the switch is PAUSED)
+
+State: HEAD `85389e7` before this tick's commit (tree clean) · lock free (18:15Z) · control unchanged:
+`PAUSED (paused for the deps/gate fix; user directive)`, written 2026-10-20T18:11:53Z · selftest this tick
+**34 passed, 0 failed / VERDICT: ALL MECHANISMS PASS**.
+
+- **Nothing to dispatch, and this time nothing to re-measure either.** `state.py pick` names no open row: 95 done,
+  2 skipped, 1 revoked, and only A94(parked)/A95(needs-review), both waiting on the same reading. The previous
+  tick already re-ran 227 c1-c6 and 225 c1-c5 at HEAD and reddened the drift guard by hand, so repeating it would
+  have bought nothing.
+- **What was missing was the card, not the work.** A deploy that closes two rows must name its readings before it
+  runs (spec 218's rule), and the pending deploy had none: `_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md`
+  now carries the sequence, the exact event fields, the pass/fail readings and the stop conditions for spec 225 c6
+  and spec 227 c7. Both specs' `## Closure` point at it.
+- **Two traps it records, both false greens rather than reds.** `pii skill add` prints `via daemon` on *stderr*
+  (`cmd_skill.rs:111`) and falls back to writing the store file directly when the daemon does not answer — a
+  `via store <path>` line proves the store half and leaves the daemon half unmeasured. And `pii run trace` does
+  **not** print `coder.spawned`'s `skill=`/`sha256=` fields (it prints pid, image, criterion counts, failure name),
+  so the pin is read from the daemon's JSON event line, not the trace. The post-edit pin comes from the
+  `skill.drift` event's own `found` hash (`coder.rs:335`), not from hashing the file by hand.
+- **Not done, deliberately:** the deploy itself. It stops and restarts lnx's live daemon; the operator switch is
+  still `PAUSED` and no host action is authorized from an unattended tick. `bash scripts/deploy-lnx-test.sh` plus
+  the card is the whole of the remaining work.
+
 ## 2026-10-21 12:30Z — A94/A95's local halves re-measured at HEAD, and the drift guard reddened (one lnx deploy still the only open action)
 
 State: HEAD `b4d5bb4` (clean tree) · lock free (12:15Z) · control unchanged: `PAUSED (paused for the deps/gate fix;

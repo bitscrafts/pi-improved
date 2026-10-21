@@ -117,3 +117,15 @@ paragraph is its brief.
 Criterion 6 is the only unmeasured one, unchanged: one deploy of HEAD to lnx (shared brief with spec 227
 criterion 7). The deploy binary note is recorded there — `target/release/pii` was built at `7023cd9`, so
 `health.build.revision` will read `7023cd9`, not `b4d5bb4`, unless it is rebuilt.
+
+### 2026-10-21 18:20Z — criterion 6's reading is pre-registered, not taken
+
+`_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md` now carries the exact sequence for this criterion and
+spec 227's criterion 7 (one reading, shared): install HEAD with `scripts/deploy-lnx-test.sh` and read the
+`READING build:` line; `pii skill add` with `via daemon` on stderr (a `via store <path>` line is a stop — it would
+prove the store half and leave the daemon half unmeasured); the pinned graph with
+`skills = [{ name, sha256 }]`; `coder.spawned` carrying `skill=`/`sha256=` read from the daemon's JSON event line,
+not from `run trace`, which does not print those fields; then `pii skill edit` and a re-run still pinned at the old
+hash, expecting the `skill.drift` event to carry `pinned <old> found <new>` with no `coder.spawned`. Nothing in it
+has been run: the deploy restarts lnx's daemon, and the operator switch in `_tmp/autonomy/control` remains
+`PAUSED`.

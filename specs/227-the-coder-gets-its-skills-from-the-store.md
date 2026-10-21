@@ -151,3 +151,13 @@ Criterion 7 remains the only unmeasured one and is unchanged: it needs the deplo
 spec 225's criterion 6). One detail for that deploy's card: `target/release/pii` (11,173,424 B, built 06:30Z) was
 built from `7023cd9`, and HEAD is that commit plus docs/`.gitignore` only — so `health.build.revision` will report
 `7023cd9` unless the binary is rebuilt at HEAD; that mismatch is expected, not a drift.
+
+### 2026-10-21 18:20Z — criterion 7's reading is pre-registered in a card, still not taken
+
+`_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md` pins down the sequence, the exact fields and the
+false-green traps for this criterion (shared with spec 225's criterion 6): the pin comes from `pii skill add`'s own
+`sha256=` line with `via daemon` on stderr; `coder.spawned`'s `skill=`/`sha256=` are read from the daemon's JSON
+event line because `pii run trace` does not print them; after `pii skill edit`, the drifted re-run must journal
+`skill.drift` with `pinned <old> found <new>` and **no** `coder.spawned`, and that `found` hash is the pin for the
+final passing run. Nothing in the card has been executed — it restarts lnx's daemon, and the operator switch is
+`PAUSED`.
