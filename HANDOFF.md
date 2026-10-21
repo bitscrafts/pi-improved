@@ -2,6 +2,29 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-21 12:30Z — A94/A95's local halves re-measured at HEAD, and the drift guard reddened (one lnx deploy still the only open action)
+
+State: HEAD `b4d5bb4` (clean tree) · lock free (12:15Z) · control unchanged: `PAUSED (paused for the deps/gate fix;
+user directive)` · selftest this tick **34 passed, 0 failed / VERDICT: ALL MECHANISMS PASS** (15 s).
+
+- **The two top rows were re-measured, not carried forward.** Five coder commits landed after their last
+  measurement; all of spec 227 c1-c6 and spec 225 c1-c5 are green at HEAD, and spec 225 c5 was *run* (`pii project
+  init` into a fresh dir → exactly seven generated files, credential grep empty) rather than inferred.
+- **The drift refusal was reddened with the orchestrator's own mutation**: `coder_skills.rs:128`
+  `if found != pinned` → `if false && …` made 227 c2 read 1/1 (`a drifted skill must not reach the container`) and
+  225 c4 read 1/1, with both untouched-pin controls green; restored byte-identical (`sha256sum -c` OK on
+  `13118f0f…`, file touched) and green again. Recorded in both specs' `## Closure`.
+- **Two false-reading traps, both now documented in the specs:** this cron shell has no `cargo` on `PATH` (all
+  criteria return 127, which reads as a spec failure), and the 227 fixture needs `/root/.local/bin` for `pi`/`claude`
+  (without it both tests panic in the fixture, so a mutation looks red for the wrong reason — that first red was
+  discarded, not recorded).
+- **Nothing was authored from 059 §4: it is exhausted but for rank 1 (the deploy), and every other rank already has
+  a row** (A1-A8 done). Authoring a spec would have restated a closed finding.
+- **The queue's one action is unchanged and still behind the operator switch:** `bash scripts/deploy-lnx-test.sh`
+  restarts the lnx daemon, so it was not run under a hand-set pause. Note for its card: `target/release/pii`
+  (11,173,424 B, 06:30Z) was built at `7023cd9`, so `health.build.revision` will read `7023cd9` unless rebuilt at
+  HEAD `b4d5bb4` (docs-only difference) — expected, not drift.
+
 ## 2026-10-21 06:30Z — HEAD is deployable (fresh-gate PASS) and the mechanisms are green; the queue's one open action is the lnx deploy, still behind the operator switch
 
 State: HEAD `7023cd9a7937` · lock free at 06:15:52Z · control still `PAUSED (paused for the deps/gate fix; user

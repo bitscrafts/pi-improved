@@ -118,3 +118,36 @@ Criterion 7 is measurable in one deploy of HEAD to lnx, and it is the SAME readi
 (row A94): a coder run pinning the stored skill spawns and journals the pin in `coder.spawned`, and an edited
 document makes the next run refuse `skill.drift` before the spawn. Nothing to implement; both rows wait on that
 deploy, and this paragraph is their shared brief.
+
+### 2026-10-21 12:30Z — criteria 1-6 re-measured at HEAD `b4d5bb4`, and the drift guard shown to bind
+
+The five coder commits that landed after 00:20Z (`8637a8f` provider+key route, `5e363b9` session header,
+`45e7d14` stderr journalled, `11314d8` argv order, `7023cd9` config layering) touch the spawn path this spec
+asserts on, so the criteria were re-run rather than carried forward:
+
+- c1 `live_registry_supplies_the_skill_source` — **2 passed / 0 failed**
+- c2 `live_registry_refuses_a_drifted_skill` — **2 passed / 0 failed** (the drifted case and its untouched
+  control are both tests of that binary; the count is checked, not just the verdict)
+- c3 `grep -q 'with_skills' …/engine/registry.rs` — rc 0 · c4 `! grep -q 'env::temp_dir()' …/nodes/coder.rs` — rc 0
+- c5 `lint-scratch` — `549 files checked, 0 bare sites` · c6 `lint-observability` — `326 files checked, 172 raw
+  prints within a per-file budget total of 173, 0 findings`
+
+**The guard was reddened, not assumed.** `crates/pii-server/src/node_kinds/nodes/coder_skills.rs:128`
+(`if found != pinned`) was mutated to `if false && found != pinned`: c2 then read **1 passed / 1 failed** on
+`a drifted skill must not reach the container`, and spec 225's c4 read **1 passed / 1 failed** on
+`a_drifted_skill_refuses_before_the_agent_spawns`, while both binaries' untouched-pin controls stayed green —
+the signature of the drift check and nothing else. Restored byte-identical (`sha256sum -c` OK on
+`13118f0fc6982ef523d3341ad64f24f5a198678609dd43e3f01937fe953a9116`, file touched so no stale artifact is reused),
+then green again: c1 2/0, c2 2/0, 225 c4 2/0.
+
+Two harness traps measured on the way, both of which make a *wrong* reading rather than a red one:
+1. this cron/tool shell has no `cargo` on `PATH` — every criterion returned **127** and would have read as a spec
+   failure; the check now asserts `command -v cargo` before running anything;
+2. the 227 fixture needs `/root/.local/bin` on `PATH` (it resolves `pi`/`claude`), and without it **both** tests
+   panic in the fixture at line 81 — the mutation's first run therefore looked red for the wrong reason and was
+   discarded. A red is only evidence when the failing assertion is the one the mutation targets.
+
+Criterion 7 remains the only unmeasured one and is unchanged: it needs the deploy of HEAD to lnx (same reading as
+spec 225's criterion 6). One detail for that deploy's card: `target/release/pii` (11,173,424 B, built 06:30Z) was
+built from `7023cd9`, and HEAD is that commit plus docs/`.gitignore` only — so `health.build.revision` will report
+`7023cd9` unless the binary is rebuilt at HEAD; that mismatch is expected, not a drift.

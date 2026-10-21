@@ -99,3 +99,21 @@ of HEAD to lnx, one coder run pinning the stored skill (it must spawn, and `code
 spawn). Nothing is left to implement, so no workhorse is dispatched for it on this host — this host has no
 podman, so the criterion cannot be seen here at all. The row stays parked until that one deploy, and this
 paragraph is its brief.
+
+### 2026-10-21 12:30Z — criteria 1-5 re-measured at HEAD `b4d5bb4`, criterion 6 unchanged
+
+- c1 `project_init_generates_and_never_copies` — **1 passed / 0 failed**
+- c2 `project_init_refuses_a_credential` — **2 passed / 0 failed**
+- c3 `skills_are_materialised_read_only` — **1 passed / 0 failed**
+- c4 `skill_drift_refuses_before_spawn` — **2 passed / 0 failed**, and reddened by the orchestrator's own mutation
+  (`coder_skills.rs:128` `if found != pinned` → `if false && …`): **1 passed / 1 failed** on
+  `a_drifted_skill_refuses_before_the_agent_spawns` with the untouched-pin control green; restored byte-identical
+  (`sha256sum -c` OK, file touched) and green again.
+- c5 run for real, not inferred: `pii project init <fresh dir>` exited 0 and wrote exactly the seven generated
+  paths (`.pii/policy.toml`, `.pii/settings.toml`, `.pi/APPEND_SYSTEM.md`, `.pi/settings.json`,
+  `.claude/CLAUDE.md`, `.claude/settings.json`, `.gitignore`); `grep -rE 'auth\.json|_API_KEY=|credentials'` over
+  `.pii .pi .claude` returned nothing (rc 1).
+
+Criterion 6 is the only unmeasured one, unchanged: one deploy of HEAD to lnx (shared brief with spec 227
+criterion 7). The deploy binary note is recorded there — `target/release/pii` was built at `7023cd9`, so
+`health.build.revision` will read `7023cd9`, not `b4d5bb4`, unless it is rebuilt.
