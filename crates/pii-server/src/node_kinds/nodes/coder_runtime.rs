@@ -42,6 +42,8 @@ pub enum Launch {
         dur_ms: i64,
         /// The agent's captured stdout (bounded). Empty when the runtime cannot return it (a container).
         output: String,
+        /// The agent's captured stderr (bounded): the reason it exited, when it said one. Empty for a container.
+        stderr: String,
     },
     /// The launch was refused before the run started.
     Refused(Refusal),
@@ -294,6 +296,7 @@ impl PodmanApi {
             pid,
             dur_ms: elapsed_ms(started),
             output: String::new(),
+            stderr: String::new(),
         })
     }
 
@@ -459,16 +462,12 @@ pub fn wait_child(
     let mut child = ctx.proc()?.spawn_child_exact(argv, workdir, env)?;
     let pid = child.pid();
     spawned(pid);
-    // Nothing is written to the child's stdin. Its output is kept, bounded, so the run can say which provider
-    // the agent actually used (observability: a fallback to another route must be visible in the journal).
-    // The capture starts BEFORE the wait so the pipe never fills, and is finished AFTER the child exits.
+    // Nothing is written to the child's stdin. Both streams are kept, bounded, and captured BEFORE the wait so
+    // the pipes never fill, then finished AFTER the child exits. stderr is what says WHY an agent exited, so it
+    // is journaled too (a fast failure that wrote only to stderr was invisible before).
     let capture = StdoutCapture::start(child.stdout());
+    let err_capture = StdoutCapture::start(child.stderr());
     drop(child.stdin());
-    if let Some(mut err) = child.stderr() {
-        std::thread::spawn(move || {
-            let _ = std::io::copy(&mut err, &mut std::io::sink());
-        });
-    }
     let code = loop {
         if let Some(code) = child.wait_timeout(POLL)? {
             break code;
@@ -479,11 +478,13 @@ pub fn wait_child(
         }
     };
     let output = capture.finish();
+    let stderr = err_capture.finish();
     Ok(Launch::Exited {
         code,
         pid,
         dur_ms: elapsed_ms(started),
         output,
+        stderr,
     })
 }
 

@@ -13,6 +13,8 @@ pub(in crate::node_kinds::nodes) struct RunReport<'a> {
     /// The agent's captured stdout: its size and head go to the journal, so a run that reported no route shows
     /// what the agent actually printed.
     pub agent_output: &'a str,
+    /// The agent's captured stderr: the reason it exited, when it said one. Size and head go to the journal.
+    pub agent_stderr: &'a str,
 }
 
 impl RunReport<'_> {
@@ -52,6 +54,12 @@ impl RunReport<'_> {
             .field(
                 "agent_output_head",
                 self.agent_output.chars().take(200).collect::<String>(),
+            )
+            // The reason the agent exited, when it wrote one to stderr: the failure a silent stdout hid.
+            .field("agent_stderr_bytes", self.agent_stderr.len().to_string())
+            .field(
+                "agent_stderr_head",
+                self.agent_stderr.chars().take(300).collect::<String>(),
             )
             .field(
                 "reported_routes",

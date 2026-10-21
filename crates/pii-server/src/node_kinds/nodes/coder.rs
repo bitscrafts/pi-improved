@@ -439,6 +439,7 @@ impl CoderNode {
                 failure_tail: "",
                 routes: &[],
                 agent_output: "",
+                agent_stderr: "",
             };
             self.emit_exited(ctx, pid, -1, elapsed_ms(started), "killed", &empty);
         }

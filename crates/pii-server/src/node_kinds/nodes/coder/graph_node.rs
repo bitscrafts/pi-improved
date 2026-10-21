@@ -86,13 +86,14 @@ impl GraphNode for CoderNode {
             );
             self.launch_on_host(ctx, &dispatch.argv, &spec, env)?
         };
-        let (code, pid, dur_ms, stop, output) = match launch {
+        let (code, pid, dur_ms, stop, output, stderr) = match launch {
             Launch::Exited {
                 code,
                 pid,
                 dur_ms,
                 output,
-            } => (code, pid, dur_ms, stop_reason(code), output),
+                stderr,
+            } => (code, pid, dur_ms, stop_reason(code), output, stderr),
             // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`. No spawn ran, so an
             // image node's digest slot says what the probe found (spec 223 R3, 231 R2): `missing` when the runtime said
             // the image is absent, `probe-failed` when it could not answer.
@@ -125,6 +126,7 @@ impl GraphNode for CoderNode {
             failure_tail: &failure_tail,
             routes: &reported_routes(&output),
             agent_output: &output,
+            agent_stderr: &stderr,
         };
         self.emit_exited(ctx, pid, code, dur_ms, stop, &report);
 
