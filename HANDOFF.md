@@ -30,6 +30,12 @@ not committed, not verified: verification ran on a clean worktree instead.
 - **Not done, deliberately:** no deploy was run this tick (the operator switch is PAUSED and another session holds
   a dirty tree); no spec was authored, because authoring rank 7/8 again would duplicate specs 137 and the docs
   pass, and the runtime area the other session is editing has no authoritative finding to spec against yet.
+- **Mechanism gap found, not fixed:** `ad2e5d2` closed a gate bypass (a dirty tree with no session used to be
+  committed to master with no gate), but no selftest row covers that branch — `cycle.sh` hardcodes
+  `ROOT=/projects/pi-improved` and `DRY=1` exits at L126, *before* the dirty-tree branch at L143-165, so the only
+  behavioural test is a real dispatch in a throwaway repo, which needs a `PII_ROOT` seam first. Until then that
+  closure rests on reading the code, not on a test. Editing `cycle.sh` was left for a tick with no live session
+  in the tree, since DO-NOT-REPEAT 2.15 is exactly a script rewritten under something that was reading it.
 
 
 ## 2026-10-20 18:17Z — A94 and A95 collapsed into ONE reading; the loop is paused for the deps/gate fix
