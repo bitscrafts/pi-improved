@@ -4,8 +4,8 @@
 set -eu
 PATH="/root/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 export PATH
-ENV_FILE="${PII_AGENT_ENV_FILE:-/root/.config/pii/agent.env}"
-if [ -r "$ENV_FILE" ]; then
+ENV_FILE="${PII_AGENT_ENV_FILE:-}"
+if [ -n "$ENV_FILE" ] && [ -r "$ENV_FILE" ]; then
   set -a
   # shellcheck disable=SC1090
   . "$ENV_FILE"

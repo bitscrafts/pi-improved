@@ -24,7 +24,7 @@ use pii_core::{CapKind, Ctx};
 use pii_graph::node::{GraphNode, NodeFactory};
 use pii_observe::{Event, Level, Observer, names};
 
-use super::agent_worker::{CriterionRun, WorkerSpec};
+use super::agent_worker::WorkerSpec;
 use super::coder_container::{self, PODMAN_BIN};
 use super::coder_runtime::{
     ContainerRuntime, Launch, PodmanApi, PodmanCli, Refusal, Request, Spawn, elapsed_ms, wait_child,
@@ -34,43 +34,14 @@ use super::criteria::{self, Table};
 
 mod graph_node;
 mod helpers;
+mod paths;
+mod report;
 
 use self::helpers::{
     argv_digest, journal, refused_port, session_of, skill_hashes, skill_names, text, texts,
 };
-
-/// The agent binary directory: the first `PATH` entry holding both `pi` and `claude`.
-///
-/// Resolved at runtime, never a literal, so the spawn and the `proc` allowlist (`run_scope`) always agree.
-/// `None` when no entry holds both: the caller must refuse rather than guess a directory.
-#[must_use]
-pub fn agent_bin_dir() -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .find(|dir| dir.join("pi").is_file() && dir.join("claude").is_file())
-}
-
-/// The agent program paths under `bin_dir`: the only programs a `coder` node may exec (spec 207).
-#[must_use]
-pub fn agent_binaries(bin_dir: &Path) -> Vec<String> {
-    ["pi", "claude"]
-        .iter()
-        .map(|agent| bin_dir.join(agent).display().to_string())
-        .collect()
-}
-
-/// The programs a run's scope admits (spec 207, 209, 215, 223): `/bin/sh`, the agent binaries, podman and the
-/// criteria table's programs.
-///
-/// Dispatch hands each of them to a `coder` node only, and a node names only the one it execs.
-#[must_use]
-pub fn run_programs(bin_dir: &Path, podman: &Path, criteria: &Table) -> Vec<String> {
-    let mut argv0 = vec![String::from("/bin/sh")];
-    argv0.extend(agent_binaries(bin_dir));
-    argv0.push(podman.display().to_string());
-    argv0.extend(criteria::programs(criteria));
-    argv0
-}
+pub use self::paths::{agent_bin_dir, agent_binaries, run_programs};
+use self::report::RunReport;
 
 /// How long one criterion command may run before it is killed.
 pub(super) const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);
@@ -425,7 +396,7 @@ impl CoderNode {
         })
     }
 
-    /// Journals a finished call (spec 217 R4). `runs` are the criteria that ran; none for a deferred verdict.
+    /// Journals a finished call (spec 217 R4). `report.runs` are the criteria that ran; none for a deferred verdict.
     fn emit_exited(
         &self,
         ctx: &Ctx,
@@ -433,8 +404,11 @@ impl CoderNode {
         rc: i32,
         dur_ms: i64,
         stop: &str,
-        runs: &[CriterionRun],
+        report: &RunReport<'_>,
     ) {
+        let runs = report.runs;
+        let failure_tail = report.failure_tail;
+        let routes = report.routes;
         let failed = runs.iter().find(|r| r.rc != 0);
         let passed = runs.iter().filter(|r| r.rc == 0).count();
         self.observe(
@@ -456,6 +430,17 @@ impl CoderNode {
                 .field(
                     "first_failure",
                     failed.map(|r| r.command.clone()).unwrap_or_default(),
+                )
+                .field("failure_output", failure_tail.to_owned())
+                // What the agent REPORTED it used (provider/model), beside the requested route in the graph. An
+                // empty value means the run reported no route, which is unknown, not a match.
+                .field(
+                    "reported_routes",
+                    routes
+                        .iter()
+                        .map(|(p, m)| format!("{p}/{m}"))
+                        .collect::<Vec<_>>()
+                        .join(","),
                 ),
         );
     }
@@ -479,7 +464,12 @@ impl CoderNode {
         if let (Err(PiiError::Cancelled | PiiError::Timeout { .. }), Some(pid)) =
             (&result, spawned_pid.get())
         {
-            self.emit_exited(ctx, pid, -1, elapsed_ms(started), "killed", &[]);
+            let empty = RunReport {
+                runs: &[],
+                failure_tail: "",
+                routes: &[],
+            };
+            self.emit_exited(ctx, pid, -1, elapsed_ms(started), "killed", &empty);
         }
         result
     }

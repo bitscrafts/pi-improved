@@ -13,6 +13,52 @@ use pii_observe::{Event, Level, Observer, names};
 /// Environment variables, any one of which authorises a `claude` dispatch.
 const CLAUDE_CREDENTIALS: [&str; 2] = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
 
+/// The API-key variable each `pi` provider reads (names only, never values). A `pi` dispatch that names a
+/// provider is refused before spawn unless that provider's key is present, so the agent is never started
+/// without the credential it needs. Keys come from the daemon environment via the graph's `env_pass`.
+const PI_PROVIDER_KEYS: [(&str, &str); 2] = [
+    ("ollama-cloud", "OLLAMA_API_KEY"),
+    ("deepseek", "DEEPSEEK_API_KEY"),
+];
+
+/// The key variable a named `pi` provider needs, or `None` when the provider is not in the table.
+#[must_use]
+pub fn pi_provider_key(provider: &str) -> Option<&'static str> {
+    PI_PROVIDER_KEYS
+        .iter()
+        .find(|(p, _)| *p == provider)
+        .map(|(_, k)| *k)
+}
+
+/// The provider and model an agent REPORTS it used, read from its `--mode json` event stream.
+///
+/// Observability only: this is what the run actually used, to compare with what was requested. Returns the
+/// distinct `(provider, model)` pairs seen, in order of first appearance. An empty result means the output
+/// named no route (a text run, or no output captured), which the caller must report as unknown, not as a match.
+#[must_use]
+pub fn reported_routes(output: &str) -> Vec<(String, String)> {
+    let mut routes: Vec<(String, String)> = Vec::new();
+    for line in output.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        // `pi --mode json` names the route on its `session` header as `provider` + `modelId` (measured
+        // 2026-10-21 against the installed pi). Any event that names `provider` + `model` also counts.
+        let provider = v.get("provider").and_then(serde_json::Value::as_str);
+        let model = v
+            .get("modelId")
+            .or_else(|| v.get("model"))
+            .and_then(serde_json::Value::as_str);
+        if let (Some(p), Some(m)) = (provider, model) {
+            let pair = (p.to_owned(), m.to_owned());
+            if !routes.contains(&pair) {
+                routes.push(pair);
+            }
+        }
+    }
+    routes
+}
+
 /// Which coding agent a worker drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
@@ -41,6 +87,8 @@ pub struct WorkerSpec {
     pub agent: Agent,
     /// The model id handed to the agent.
     pub model: String,
+    /// The provider the agent must use (`--provider`). Optional: when absent the agent keeps its own default.
+    pub provider: Option<String>,
     /// Path of the spec the worker implements.
     pub spec: String,
     /// Working directory of the dispatch.
@@ -73,6 +121,7 @@ impl WorkerSpec {
         Ok(Self {
             agent: Agent::parse(&field(cfg, "agent")?)?,
             model: field(cfg, "model")?,
+            provider: opt(cfg, "provider"),
             spec: field(cfg, "spec")?,
             workdir: field(cfg, "workdir")?,
             sid: opt(cfg, "sid"),
@@ -126,6 +175,26 @@ pub fn plan(
             spec.model
         )));
     }
+    // A `pi` dispatch that names a provider must have that provider's key in its env. Refused before spawn,
+    // through the same journal event as the claude check, so the agent never starts without its credential.
+    if let (Agent::Pi, Some(provider)) = (spec.agent, spec.provider.as_deref()) {
+        let key_ok =
+            pi_provider_key(provider).is_some_and(|k| env.get(k).is_some_and(|v| !v.is_empty()));
+        if !key_ok {
+            let reason = format!("no credential for provider {provider} in the environment");
+            log.event(
+                &Event::new("worker", Level::Warn, names::WORKER_START_REFUSED)
+                    .field("agent", spec.agent_name().to_owned())
+                    .field("model", spec.model.clone())
+                    .field("reason", reason.clone()),
+            );
+            return Err(PiiError::Unavailable(format!(
+                "worker refused: agent {} model {}: {reason}",
+                spec.agent_name(),
+                spec.model
+            )));
+        }
+    }
     let s = |x: &str| x.to_owned();
     let argv = match spec.agent {
         Agent::Pi => {
@@ -136,15 +205,26 @@ pub fn plan(
                     .unwrap_or("worker");
                 format!("{}/.pii-sessions/{stem}.jsonl", spec.workdir)
             });
-            vec![
+            let mut v = vec![
                 s("pi"),
                 s("--session"),
                 file,
                 s("--model"),
                 spec.model.clone(),
-                s("-p"),
-                brief.to_owned(),
-            ]
+                // JSON events name the provider and model per message, so the run's real route can be read.
+                s("--mode"),
+                s("json"),
+            ];
+            if let Some(provider) = &spec.provider {
+                v.extend([s("--provider"), provider.clone()]);
+                // The key is passed explicitly, the way scripts/run-batchC-pi.sh passes it. Without it `pi`
+                // falls back to its own stored credential and route (measured: an Anthropic 429).
+                if let Some(value) = pi_provider_key(provider).and_then(|k| env.get(k)) {
+                    v.extend([s("--api-key"), value.clone()]);
+                }
+            }
+            v.extend([s("-p"), brief.to_owned()]);
+            v
         }
         Agent::Claude => {
             let mut v = vec![s("claude")];

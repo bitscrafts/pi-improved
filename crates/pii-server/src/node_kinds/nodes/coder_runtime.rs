@@ -9,6 +9,7 @@
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use pii_abi::PiiError;
@@ -39,6 +40,8 @@ pub enum Launch {
         pid: u32,
         /// Milliseconds from the start of the launch to the exit.
         dur_ms: i64,
+        /// The agent's captured stdout (bounded). Empty when the runtime cannot return it (a container).
+        output: String,
     },
     /// The launch was refused before the run started.
     Refused(Refusal),
@@ -290,6 +293,7 @@ impl PodmanApi {
             code,
             pid,
             dur_ms: elapsed_ms(started),
+            output: String::new(),
         })
     }
 
@@ -455,12 +459,14 @@ pub fn wait_child(
     let mut child = ctx.proc()?.spawn_child_exact(argv, workdir, env)?;
     let pid = child.pid();
     spawned(pid);
-    // Nothing is written to the child's stdin; its output is drained so a chatty child cannot block.
+    // Nothing is written to the child's stdin. Its output is kept, bounded, so the run can say which provider
+    // the agent actually used (observability: a fallback to another route must be visible in the journal).
+    // The reader threads keep draining after the bound, so a chatty child still cannot block on a full pipe.
+    let stdout_buf = Arc::new(parking_lot::Mutex::new(Vec::<u8>::new()));
     drop(child.stdin());
     if let Some(mut out) = child.stdout() {
-        std::thread::spawn(move || {
-            let _ = std::io::copy(&mut out, &mut std::io::sink());
-        });
+        let buf = Arc::clone(&stdout_buf);
+        std::thread::spawn(move || capture_bounded(&mut out, &buf));
     }
     if let Some(mut err) = child.stderr() {
         std::thread::spawn(move || {
@@ -476,9 +482,33 @@ pub fn wait_child(
             return Err(e);
         }
     };
+    // The reader may still be draining; take what it has captured so far.
+    let output = String::from_utf8_lossy(&stdout_buf.lock()).into_owned();
     Ok(Launch::Exited {
         code,
         pid,
         dur_ms: elapsed_ms(started),
+        output,
     })
+}
+
+/// The most agent output one run keeps. Enough for a `--mode json` event stream's routing fields; the rest
+/// is drained and discarded so a long run cannot exhaust memory.
+const OUTPUT_KEEP_BYTES: usize = 256 * 1024;
+
+/// Copies `src` into `buf` up to [`OUTPUT_KEEP_BYTES`], then keeps draining without storing.
+fn capture_bounded(src: &mut dyn Read, buf: &parking_lot::Mutex<Vec<u8>>) {
+    let mut chunk = [0u8; 8192];
+    loop {
+        match src.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let mut b = buf.lock();
+                let room = OUTPUT_KEEP_BYTES.saturating_sub(b.len());
+                if let Some(kept) = chunk.get(..room.min(n)) {
+                    b.extend_from_slice(kept);
+                }
+            }
+        }
+    }
 }

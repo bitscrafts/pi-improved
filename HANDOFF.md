@@ -17,7 +17,7 @@ not committed, not verified: verification ran on a clean worktree instead.
   `fmt` rc=0; one mutation re-run at HEAD (the `DropsPin` refusal removed) reddens both guards
   (`skill_edit_through_the_daemons_store.rs:318`, `skill_edit_keeps_the_pin.rs:96`), the restore is byte-identical
   (`sha256 89e3f576…ec3f8`, `git checkout --`, no `cp -p`), and both tests are green again.
-- **`_docs/06-research/059` §4 is exhausted by ranks 2-10.** Checked today rather than assumed: rank 7 (F7, egress
+- **`_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §4 is exhausted by ranks 2-10.** Checked today rather than assumed: rank 7 (F7, egress
   widening by `PII_DISCORD_API_BASE`) is closed by spec 137's `check_sanctioned` + `Channel::env_derived_hosts`
   (`daemon/mod.rs:397-412`, default base sanctioned, env-derived host refused at startup by name); rank 8 (docs
   truth) greps 0 hits in `_docs/01-overview/001-pii-vision.md`; rank 9 is row A7/136 (done `f004b5b`), rank 5 is

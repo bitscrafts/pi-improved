@@ -9,11 +9,12 @@ id = "code"
 kind = "coder"
 caps = ["spawn", "proc"]
 agent = "pi"
-model = "deepseek-v4-flash"
+model = "deepseek-v4.1-flash:cloud"
+provider = "ollama-cloud"
 workdir = "/projects/pi-improved"
 spec = "specs/207-the-coder-node-spawns-an-agent.md"
 brief = "Implement the spec named above. Follow it as the contract."
-env_pass = ["PATH", "HOME"]
+env_pass = ["PATH", "HOME", "OLLAMA_API_KEY"]
 criteria = ["cargo:test:pii-server/coder_spawns_a_process"]
 
 [[node]]

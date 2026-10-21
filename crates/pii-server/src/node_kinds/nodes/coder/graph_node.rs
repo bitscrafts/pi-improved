@@ -6,8 +6,11 @@ use pii_abi::{NodeInput, Outcome, PiiError, PortName};
 use pii_core::Ctx;
 use pii_graph::node::GraphNode;
 
-use super::super::agent_worker::{CriterionRun, Verdict, WorkerSpec, decide, plan};
+use super::super::agent_worker::{
+    CriterionRun, Verdict, WorkerSpec, decide, plan, reported_routes,
+};
 use super::super::coder::CRITERION_TIMEOUT;
+use super::super::coder::report::RunReport;
 use super::super::coder_container::CONTAINER_WORKDIR;
 use super::super::coder_runtime::{Launch, Refusal};
 use super::super::coder_skills::{self, SkillRefusal};
@@ -83,8 +86,13 @@ impl GraphNode for CoderNode {
             );
             self.launch_on_host(ctx, &dispatch.argv, &spec, env)?
         };
-        let (code, pid, dur_ms, stop) = match launch {
-            Launch::Exited { code, pid, dur_ms } => (code, pid, dur_ms, stop_reason(code)),
+        let (code, pid, dur_ms, stop, output) = match launch {
+            Launch::Exited {
+                code,
+                pid,
+                dur_ms,
+                output,
+            } => (code, pid, dur_ms, stop_reason(code), output),
             // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`. No spawn ran, so an
             // image node's digest slot says what the probe found (spec 223 R3, 231 R2): `missing` when the runtime said
             // the image is absent, `probe-failed` when it could not answer.
@@ -100,18 +108,24 @@ impl GraphNode for CoderNode {
         let workdir = PathBuf::from(&spec.workdir);
 
         // The criteria decide. The first failing criterion stops the run and names itself in the verdict.
+        // Its output tail is kept for the journal: a bare rc says the check failed, not why.
         let mut runs = Vec::new();
+        let mut failure_tail = String::new();
         for (command, argv) in checks {
-            let rc = ctx
-                .proc()?
-                .run(&argv, &workdir, CRITERION_TIMEOUT)?
-                .exit_code;
+            let out = ctx.proc()?.run(&argv, &workdir, CRITERION_TIMEOUT)?;
+            let rc = out.exit_code;
             runs.push(CriterionRun { command, rc });
             if rc != 0 {
+                failure_tail = output_tail(&out.stdout, &out.stderr);
                 break;
             }
         }
-        self.emit_exited(ctx, pid, code, dur_ms, stop, &runs);
+        let report = RunReport {
+            runs: &runs,
+            failure_tail: &failure_tail,
+            routes: &reported_routes(&output),
+        };
+        self.emit_exited(ctx, pid, code, dur_ms, stop, &report);
 
         // No criteria configured: the verdict is deferred to a downstream `judge` node (spec 208). A clean exit
         // hands on; a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.
@@ -134,4 +148,30 @@ impl GraphNode for CoderNode {
             Verdict::Failed { reason, .. } => Ok(Outcome::Fail { error: reason }),
         }
     }
+}
+
+/// The last part of a failing criterion's output, for the journal. A bare exit code does not say why the check
+/// failed. Bounded to the tail so a long build log cannot flood the journal.
+const OUTPUT_TAIL_BYTES: usize = 2000;
+
+fn output_tail(stdout: &[u8], stderr: &[u8]) -> String {
+    // Keep the HEAD as well as the tail: a cargo failure names its cause near the start, and the tail
+    // alone is often a successful compile (the rlib list) that hides it.
+    let mut text = String::from_utf8_lossy(stderr).into_owned();
+    text.push_str(&String::from_utf8_lossy(stdout));
+    if text.len() <= OUTPUT_TAIL_BYTES {
+        return text;
+    }
+    let half = OUTPUT_TAIL_BYTES / 2;
+    let head_end = char_floor(&text, half);
+    let tail_start = char_floor(&text, text.len() - half);
+    format!("{} ... {}", &text[..head_end], &text[tail_start..])
+}
+
+/// The largest char boundary at or below `i`.
+fn char_floor(s: &str, mut i: usize) -> usize {
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
 }
