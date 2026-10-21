@@ -3,7 +3,26 @@
 
 use std::path::{Path, PathBuf};
 
+use super::super::agent_worker::{Agent, WorkerSpec, pi_session_path, write_pi_session_header};
+use super::super::coder_runtime::Refusal;
 use super::super::criteria::{self, Table};
+
+/// Prepares the session a `pi` dispatch resumes.
+///
+/// Writes its header if the file is absent. Any other agent needs no session file. A failure is a refusal, so
+/// a spawn never runs against a file `pi` would reject.
+///
+/// # Errors
+///
+/// Returns a [`Refusal`] carrying the path and the I/O error when the header cannot be written.
+pub fn prepare_pi_session(spec: &WorkerSpec, now_ms: u64) -> Result<(), Refusal> {
+    if spec.agent != Agent::Pi {
+        return Ok(());
+    }
+    let path = pi_session_path(spec);
+    write_pi_session_header(&path, &spec.workdir, now_ms)
+        .map_err(|e| Refusal::Other(format!("session header: {path}: {e}")))
+}
 
 /// The agent binary directory: the first `PATH` entry holding both `pi` and `claude`.
 ///

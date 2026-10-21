@@ -461,13 +461,9 @@ pub fn wait_child(
     spawned(pid);
     // Nothing is written to the child's stdin. Its output is kept, bounded, so the run can say which provider
     // the agent actually used (observability: a fallback to another route must be visible in the journal).
-    // The reader threads keep draining after the bound, so a chatty child still cannot block on a full pipe.
-    let stdout_buf = Arc::new(parking_lot::Mutex::new(Vec::<u8>::new()));
+    // The capture starts BEFORE the wait so the pipe never fills, and is finished AFTER the child exits.
+    let capture = StdoutCapture::start(child.stdout());
     drop(child.stdin());
-    if let Some(mut out) = child.stdout() {
-        let buf = Arc::clone(&stdout_buf);
-        std::thread::spawn(move || capture_bounded(&mut out, &buf));
-    }
     if let Some(mut err) = child.stderr() {
         std::thread::spawn(move || {
             let _ = std::io::copy(&mut err, &mut std::io::sink());
@@ -482,8 +478,7 @@ pub fn wait_child(
             return Err(e);
         }
     };
-    // The reader may still be draining; take what it has captured so far.
-    let output = String::from_utf8_lossy(&stdout_buf.lock()).into_owned();
+    let output = capture.finish();
     Ok(Launch::Exited {
         code,
         pid,
@@ -495,6 +490,41 @@ pub fn wait_child(
 /// The most agent output one run keeps. Enough for a `--mode json` event stream's routing fields; the rest
 /// is drained and discarded so a long run cannot exhaust memory.
 const OUTPUT_KEEP_BYTES: usize = 256 * 1024;
+
+/// A running stdout reader: started before the child is waited on, so the pipe never fills, and joined after.
+pub struct StdoutCapture {
+    buf: Arc<parking_lot::Mutex<Vec<u8>>>,
+    reader: Option<std::thread::JoinHandle<()>>,
+}
+
+impl StdoutCapture {
+    /// Starts draining `out` in a background thread, keeping at most [`OUTPUT_KEEP_BYTES`].
+    pub fn start(out: Option<impl Read + Send + 'static>) -> Self {
+        let buf = Arc::new(parking_lot::Mutex::new(Vec::<u8>::new()));
+        let reader = out.map(|mut out| {
+            let reader_buf = Arc::clone(&buf);
+            std::thread::spawn(move || capture_bounded(&mut out, &reader_buf))
+        });
+        Self { buf, reader }
+    }
+
+    /// Waits for the reader to end (the child has exited, so its pipe closed), bounded to five seconds, then
+    /// returns the captured text. A reader still open past the bound yields what was read so far.
+    pub fn finish(self) -> String {
+        if let Some(reader) = self.reader {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !reader.is_finished() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        String::from_utf8_lossy(&self.buf.lock()).into_owned()
+    }
+}
+
+/// Reads a child's stdout to its end and returns it: start the capture and finish it in one call.
+pub fn drain_stdout(out: impl Read + Send + 'static) -> String {
+    StdoutCapture::start(Some(out)).finish()
+}
 
 /// Copies `src` into `buf` up to [`OUTPUT_KEEP_BYTES`], then keeps draining without storing.
 fn capture_bounded(src: &mut dyn Read, buf: &parking_lot::Mutex<Vec<u8>>) {

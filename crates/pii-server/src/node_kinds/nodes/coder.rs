@@ -40,7 +40,7 @@ mod report;
 use self::helpers::{
     argv_digest, journal, refused_port, session_of, skill_hashes, skill_names, text, texts,
 };
-pub use self::paths::{agent_bin_dir, agent_binaries, run_programs};
+pub use self::paths::{agent_bin_dir, agent_binaries, prepare_pi_session, run_programs};
 use self::report::RunReport;
 
 /// How long one criterion command may run before it is killed.
@@ -372,6 +372,11 @@ impl CoderNode {
                 "empty agent argv".to_owned(),
             )));
         };
+        // pi refuses a missing or empty session file, so the header is written before the spawn. A resumed
+        // session is left as it is. A failure to write it is a refusal, never a spawn into a file pi rejects.
+        if let Err(refusal) = prepare_pi_session(spec, ctx.now_ms()) {
+            return Ok(Launch::Refused(refusal));
+        }
         let mut host_argv = vec![self.bin_dir.join(program).display().to_string()];
         host_argv.extend(rest.iter().cloned());
         let env_pairs: Vec<(String, String)> = env.into_iter().collect();
@@ -406,43 +411,8 @@ impl CoderNode {
         stop: &str,
         report: &RunReport<'_>,
     ) {
-        let runs = report.runs;
-        let failure_tail = report.failure_tail;
-        let routes = report.routes;
-        let failed = runs.iter().find(|r| r.rc != 0);
-        let passed = runs.iter().filter(|r| r.rc == 0).count();
-        self.observe(
-            ctx,
-            &Event::new("coder", Level::Info, names::CODER_EXITED)
-                .field("pid", i64::from(pid))
-                .field("rc", i64::from(rc))
-                .field("dur_ms", dur_ms)
-                .field("stop_reason", stop.to_owned())
-                .field(
-                    "criteria_run",
-                    i64::try_from(runs.len()).unwrap_or(i64::MAX),
-                )
-                .field("criteria_passed", i64::try_from(passed).unwrap_or(i64::MAX))
-                .field(
-                    "criteria_failed",
-                    i64::try_from(runs.len() - passed).unwrap_or(i64::MAX),
-                )
-                .field(
-                    "first_failure",
-                    failed.map(|r| r.command.clone()).unwrap_or_default(),
-                )
-                .field("failure_output", failure_tail.to_owned())
-                // What the agent REPORTED it used (provider/model), beside the requested route in the graph. An
-                // empty value means the run reported no route, which is unknown, not a match.
-                .field(
-                    "reported_routes",
-                    routes
-                        .iter()
-                        .map(|(p, m)| format!("{p}/{m}"))
-                        .collect::<Vec<_>>()
-                        .join(","),
-                ),
-        );
+        let report_event = report.exited_event(pid, rc, dur_ms, stop);
+        self.observe(ctx, &report_event);
     }
 
     /// Runs `run`, journalling `coder.spawned` (and `coder.env.names`) as the runtime reports the pid, before it waits
@@ -468,6 +438,7 @@ impl CoderNode {
                 runs: &[],
                 failure_tail: "",
                 routes: &[],
+                agent_output: "",
             };
             self.emit_exited(ctx, pid, -1, elapsed_ms(started), "killed", &empty);
         }

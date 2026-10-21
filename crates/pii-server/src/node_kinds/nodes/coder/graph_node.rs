@@ -124,6 +124,7 @@ impl GraphNode for CoderNode {
             runs: &runs,
             failure_tail: &failure_tail,
             routes: &reported_routes(&output),
+            agent_output: &output,
         };
         self.emit_exited(ctx, pid, code, dur_ms, stop, &report);
 

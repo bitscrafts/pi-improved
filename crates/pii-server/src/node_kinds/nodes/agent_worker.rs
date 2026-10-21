@@ -30,6 +30,101 @@ pub fn pi_provider_key(provider: &str) -> Option<&'static str> {
         .map(|(_, k)| *k)
 }
 
+/// The session file a `pi` dispatch resumes, named by the same rule [`plan`] uses for the argv.
+pub fn pi_session_path(spec: &WorkerSpec) -> String {
+    spec.session.clone().unwrap_or_else(|| {
+        let stem = std::path::Path::new(&spec.spec)
+            .file_stem()
+            .and_then(|x| x.to_str())
+            .unwrap_or("worker");
+        format!("{}/.pii-sessions/{stem}.jsonl", spec.workdir)
+    })
+}
+
+/// Writes the session header `pi` needs before it will run.
+///
+/// An empty or missing session file is rejected by `pi` before any model is called, so the header is written
+/// first. The shape is the one the installed `pi` emits (`type`, `version`, `id`, `timestamp`, `cwd`).
+///
+/// The timestamp comes from the caller's clock (`now_ms`), so the workspace's one sanctioned clock is the only
+/// wall-clock read and a replay sees the same value. An existing file (a resumed session) is left untouched.
+///
+/// # Errors
+///
+/// Returns the I/O error when the parent directory cannot be created or the file cannot be written.
+pub fn write_pi_session_header(path: &str, cwd: &str, now_ms: u64) -> std::io::Result<()> {
+    let p = std::path::Path::new(path);
+    if p.exists() {
+        return Ok(());
+    }
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let id = uuid_v4();
+    let ts = rfc3339_millis(now_ms);
+    let header = format!(
+        "{{\"type\":\"session\",\"version\":3,\"id\":\"{id}\",\"timestamp\":\"{ts}\",\"cwd\":{}}}\n",
+        serde_json::Value::String(cwd.to_owned())
+    );
+    std::fs::write(p, header)
+}
+
+/// A v4 UUID from the OS random source, as text. Used only for the session id; no other meaning.
+fn uuid_v4() -> String {
+    let mut b = [0u8; 16];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        use std::io::Read;
+        let _ = f.read_exact(&mut b);
+    }
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let mut h = String::with_capacity(32);
+    for x in b {
+        use std::fmt::Write as _;
+        let _ = write!(h, "{x:02x}");
+    }
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
+}
+
+/// The millisecond RFC 3339 UTC form `pi` writes, for a given time. Pure formatting: it reads no clock.
+fn rfc3339_millis(now_ms: u64) -> String {
+    let secs = now_ms / 1000;
+    let ms = u32::try_from(now_ms % 1000).unwrap_or(0);
+    let (y, mo, da, hh, mi, ss) = civil_from_unix(secs);
+    format!("{y:04}-{mo:02}-{da:02}T{hh:02}:{mi:02}:{ss:02}.{ms:03}Z")
+}
+
+/// Proleptic Gregorian date and time from a UNIX timestamp (days-from-civil, Howard Hinnant's algorithm).
+fn civil_from_unix(secs: u64) -> (u64, u32, u32, u32, u32, u32) {
+    let days = secs / 86_400;
+    let rem = secs % 86_400;
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z % 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (
+        y,
+        u32::try_from(m).unwrap_or(0),
+        u32::try_from(d).unwrap_or(0),
+        u32::try_from(rem / 3600).unwrap_or(0),
+        u32::try_from((rem % 3600) / 60).unwrap_or(0),
+        u32::try_from(rem % 60).unwrap_or(0),
+    )
+}
+
 /// The provider and model an agent REPORTS it used, read from its `--mode json` event stream.
 ///
 /// Observability only: this is what the run actually used, to compare with what was requested. Returns the
@@ -376,4 +471,27 @@ pub fn escalate<'a>(ladder: &'a Ladder, history: &[AttemptEvidence]) -> Option<&
         return None;
     }
     ladder.0.get(history.len())
+}
+
+#[cfg(test)]
+mod civil_time_tests {
+    use super::civil_from_unix;
+
+    #[test]
+    fn the_unix_epoch_is_1970_01_01() {
+        assert_eq!(civil_from_unix(0), (1970, 1, 1, 0, 0, 0));
+    }
+
+    #[test]
+    fn a_leap_day_is_handled() {
+        // 2000-02-29 12:34:56 UTC = 951_827_696 (a 400-year leap year).
+        assert_eq!(civil_from_unix(951_827_696), (2000, 2, 29, 12, 34, 56));
+    }
+
+    #[test]
+    fn the_day_after_a_year_end_rolls_over() {
+        // 2026-12-31 23:59:59 UTC = 1_798_761_599; one second later is 2027-01-01.
+        assert_eq!(civil_from_unix(1_798_761_599), (2026, 12, 31, 23, 59, 59));
+        assert_eq!(civil_from_unix(1_798_761_600), (2027, 1, 1, 0, 0, 0));
+    }
 }
