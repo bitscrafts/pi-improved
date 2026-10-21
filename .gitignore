@@ -6,6 +6,7 @@ _repos/
 *.profraw
 .DS_Store
 .pii/
+.pii-sessions/
 lint-heal.redb
 lint-approval.redb
 lint-memory.redb

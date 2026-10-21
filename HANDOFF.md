@@ -2,7 +2,43 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-21 06:30Z — HEAD is deployable (fresh-gate PASS) and the mechanisms are green; the queue's one open action is the lnx deploy, still behind the operator switch
+
+State: HEAD `7023cd9a7937` · lock free at 06:15:52Z · control still `PAUSED (paused for the deps/gate fix; user
+directive)`, rewritten 2026-10-20T18:11:53Z · watchdog alive (pid 811768, 12 h beat) · the tree is CLEAN: the only
+untracked path was `.pii-sessions/`, a pi session header that a local coder run writes into its workspace
+(`crates/pii-server/src/node_kinds/nodes/agent_worker.rs:40`, `spec.workdir`), now gitignored alongside `.pii/` — it
+had been making every cycle read the tree as dirty with no session and keep a phantom leftover.
+
+- **selftest, measured 06:16:56Z: `RESULT: 34 passed, 0 failed` / `VERDICT: ALL MECHANISMS PASS`** — and it took
+  **15 s, not the ~9 minutes the skill documents**: every `tick.sh` row now brings its own answering `hermes`
+  (`e422b8b`), so the gateway probe that used to dominate the run is gone. Background is still the safe way to run
+  it; the duration note in the skill was stale, not the result.
+- **`fresh-gate` on HEAD `7023cd9a7937`: PASS** (`_tmp/autonomy/logs/fresh-gate-20261021T061641Z.log`, `quality-gate:
+  ALL PASS`, `EXIT=0`). This is the first gate run on the five commits another lane landed after 00:20Z (the coder's
+  provider route, session header, stderr capture, argv order, project-local config layering) — they export clean and
+  pass the CI-equivalent gate, so HEAD is deployable as it stands.
+- **`059` §4 re-checked independently rather than trusted, and it is exhausted but for rank 1.** rank 8 (docs truth)
+  `grep -c '~14 crates\|2,000-line' _docs/01-overview/001-pii-vision.md` = **0**; rank 7 (channel egress bounded by
+  `[net]`) is live at `crates/pii-server/src/daemon/mod.rs:381` (`check_sanctioned`) and `:398-403`
+  (`Channel::env_derived_hosts`); rank 5 = row A4/138 `done`, rank 9 = row A7/136 `done`. So no spec was authored this
+  tick: a new one would restate a closed finding, and inventing a finding is not authoring.
+- **lnx, read-only probe (nothing changed there):** reachable over BatchMode ssh, `pii.service` `active`, installed
+  binary `/home/mvcorrea/.local/bin/pii` **11,150,384 B dated 2026-10-20T12:38:35Z** — 7 commits and one gate behind
+  HEAD. That single fact is A94 criterion 6 and A95 criterion 7.
+- **The deploy was NOT run, deliberately.** The one action left is `bash scripts/deploy-lnx-test.sh` (release build →
+  scp to `pii.new` → `mv` → env-matched daemon restart → pinned coder run + drifted skill edit), and it restarts the
+  user's live daemon. Under a `PAUSED` switch that the user wrote by hand, an unattended restart of a live service is
+  the one failure this loop must not create: if the new binary does not come up, the daemon stays down with nobody to
+  put it back. **The pause's stated reason (the deps/gate fix) is now measurably satisfied** — `da1a03d` made the repo
+  gate green and this tick's `fresh-gate` is green on HEAD — so the next step is the user's: resume the switch, and the
+  deploy plus both closures follow in one tick.
+- **Not done, deliberately:** no worker dispatched (pick = `NONE`: `A94(parked), A95(needs-review)` are the whole open
+  queue and both are the same reading); no spec authored (see above); no file of another session swept — there is no
+  other session's WIP in the tree any more.
+
 ## 2026-10-21 00:20Z — 234 re-verified at HEAD (mutation red, restore byte-identical); the ranked list is exhausted but for the deploy
+
 
 State: HEAD `c74aa2f` · no cycle in flight (lock free at 00:15Z) · control still `PAUSED (paused for the deps/gate
 fix; user directive)` from 18:11Z · watchdog alive (pid 811768, 6 h) · the tree is dirty with **another live
