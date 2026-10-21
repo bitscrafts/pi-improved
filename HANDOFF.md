@@ -2,6 +2,36 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-21 00:20Z — 234 re-verified at HEAD (mutation red, restore byte-identical); the ranked list is exhausted but for the deploy
+
+State: HEAD `c74aa2f` · no cycle in flight (lock free at 00:15Z) · control still `PAUSED (paused for the deps/gate
+fix; user directive)` from 18:11Z · watchdog alive (pid 811768, 6 h) · the tree is dirty with **another live
+session's** runtime WIP (`agent_worker.rs`, `coder.rs`, `coder/graph_node.rs`, `coder_runtime.rs`,
+`coder-selffix.toml`, `agent-worker.sh` + three untracked `agent_provider_*` / `agent_route_observed` tests,
+mtimes 23:30–00:15Z, a `hermes --yolo` session and a scratch daemon under `_tmp/local-agent-test`) — not swept,
+not committed, not verified: verification ran on a clean worktree instead.
+
+- **selftest: `RESULT: 34 passed, 0 failed` / `VERDICT: ALL MECHANISMS PASS`** (2026-10-21T00:16Z, second run
+  since `cycle.sh` changed in `ad2e5d2`).
+- **Spec 234 re-verified on a clean detached worktree of `c74aa2f`** (its own target dir): criteria 1-6 rc=0 and
+  `fmt` rc=0; one mutation re-run at HEAD (the `DropsPin` refusal removed) reddens both guards
+  (`skill_edit_through_the_daemons_store.rs:318`, `skill_edit_keeps_the_pin.rs:96`), the restore is byte-identical
+  (`sha256 89e3f576…ec3f8`, `git checkout --`, no `cp -p`), and both tests are green again.
+- **`_docs/06-research/059` §4 is exhausted by ranks 2-10.** Checked today rather than assumed: rank 7 (F7, egress
+  widening by `PII_DISCORD_API_BASE`) is closed by spec 137's `check_sanctioned` + `Channel::env_derived_hosts`
+  (`daemon/mod.rs:397-412`, default base sanctioned, env-derived host refused at startup by name); rank 8 (docs
+  truth) greps 0 hits in `_docs/01-overview/001-pii-vision.md`; rank 9 is row A7/136 (done `f004b5b`), rank 5 is
+  row A4/138 (done `36335fb`). **The only ranked item left is rank 1, the deploy — which is exactly A94/A95's
+  one shared reading.**
+- **A94/A95 stale premise, again measured:** the lnx daemon is up (systemd user `pii.service`, `active (running)`
+  since 2026-10-20 15:41:08 BST, inside the `hermes` container so its socket is `/run/user/0/pii` and a host
+  `pii health` cannot reach it), running the **2026-10-20T12:38:35Z** binary (11,150,384 bytes). The live half
+  needs a deploy of HEAD plus a daemon restart on lnx, then a pinned coder run and a drifted skill edit — no code.
+- **Not done, deliberately:** no deploy was run this tick (the operator switch is PAUSED and another session holds
+  a dirty tree); no spec was authored, because authoring rank 7/8 again would duplicate specs 137 and the docs
+  pass, and the runtime area the other session is editing has no authoritative finding to spec against yet.
+
+
 ## 2026-10-20 18:17Z — A94 and A95 collapsed into ONE reading; the loop is paused for the deps/gate fix
 
 State: HEAD `3258d1e` · no cycle in flight · control `PAUSED (paused for the deps/gate fix; user directive)`,

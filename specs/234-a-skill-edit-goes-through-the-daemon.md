@@ -106,3 +106,23 @@ so the uncommitted coder.rs/lib.rs split in the main tree did not take part):
   clippy on pii-graph/proto/server/cli/memory --all-targets rc=0, and pii-graph's tests stay 110/0.
 - criterion 8 (lnx live: `via daemon`, old pin refuses `skill.drift`, new pin journals `coder.spawned`) is NOT
   measured here; it needs a deploy of this tree and is carried by row A95 (spec 227 criterion 7).
+
+### Re-verified at HEAD `c74aa2f`, 2026-10-21T00:20Z (the tree had moved on since `622826e`)
+
+The main tree was dirty with another agent's runtime WIP, so the criteria were run on a clean detached worktree
+of `c74aa2f` (`_tmp/verify-a102-20261021T001649Z`, its own `CARGO_TARGET_DIR`), not on the working tree:
+
+- criteria 1-6 green: `skill_edit_through_the_daemons_store` rc=0 (61 s), `skill_put_through_the_daemon` rc=0,
+  `skill_edit_keeps_the_pin` rc=0, `skill_list_and_explain` rc=0, `wire_roundtrip` rc=0, `lint-observability`
+  rc=0; `cargo fmt --all -- --check` rc=0.
+- one mutation, re-run at HEAD rather than trusted from the earlier closure: the `DropsPin` refusal in
+  `crates/pii-memory/src/skill.rs::edit` removed. Both guards redden — `skill_edit_through_the_daemons_store.rs:318`
+  and `skill_edit_keeps_the_pin.rs:96` (`pin before: ok  after: none`), rc=101 each. Restored with
+  `git checkout --` (**never** `cp -p`, the stale-mtime false red): `sha256sum` after the restore is
+  `89e3f57679c4b08d94927bb380d1d6a12dd25f9c59d556ce26487dfe581ec3f8`, the same value measured before the
+  mutation, zero mutation markers left in the file, and both tests green again (rc=0).
+- criterion 8 stays unmeasured, and the reason is now a reading rather than an assumption (2026-10-21T00:18Z
+  from the host): the lnx daemon is `active (running)` since 2026-10-20 15:41:08 BST inside the `hermes`
+  container (`PII_RUNTIME_DIR=/run/user/0/pii`), and the installed binary is the 2026-10-20T12:38:35Z build
+  (11,150,384 bytes) — behind HEAD, so the live half needs that deploy, not code.
+
