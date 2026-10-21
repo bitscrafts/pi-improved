@@ -7,6 +7,7 @@ mod adapters;
 pub mod approvals;
 mod channel_wiring;
 pub mod config;
+mod config_layers;
 mod cron;
 pub mod identity;
 mod lag;
