@@ -50,7 +50,15 @@ which is why the gap is only visible by reading the code.
 
 ## Exit Criteria
 
+A file-level `cargo test` alone is not a criterion for this spec: it is green on HEAD **before** any of the three
+rows above exist (measured 2026-10-22 — the file had three start-path rows and zero `reload` rows, so the item
+could have been called done with `reload_config` untouched). Each contract row is therefore asserted by name, and
+a row that does not exist fails its criterion (`grep -c '1 passed'` reads 0).
+
 - [ ] `cargo test -p pii-cli --test project_config_layers_live`
+- [ ] `[ "$(cargo test -p pii-cli --test project_config_layers_live -- --exact a_global_only_setting_added_after_start_is_refused_by_reload 2>&1 | grep -c '^test result: ok\. 1 passed')" = 1 ]`
+- [ ] `[ "$(cargo test -p pii-cli --test project_config_layers_live -- --exact a_valid_project_file_reloads_instead_of_erroring 2>&1 | grep -c '^test result: ok\. 1 passed')" = 1 ]`
+- [ ] `[ "$(cargo test -p pii-cli --test project_config_layers_live -- --exact an_absent_project_file_still_reloads_the_global 2>&1 | grep -c '^test result: ok\. 1 passed')" = 1 ]`
 - [ ] `cargo test -p pii-server --lib`
 - [ ] `bash quality-gate.sh`
 

@@ -2,6 +2,38 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-22 06:26Z — A103's exit criteria were vacuous at HEAD; they now bind row by row (nothing dispatched: the switch is still PAUSED)
+
+State: HEAD `f09174e` · tree clean at 06:15Z · lock free · control unchanged: `PAUSED at 2026-10-20 (paused for the
+deps/gate fix; user directive)`, written 2026-10-20T18:11:53Z · selftest this tick **34 passed, 0 failed /
+VERDICT: ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261022T061551Z.log`, 26 s) · queue unchanged:
+A94(parked) + A95(needs-review) on one lnx deploy, A103(pending) first when the switch resumes.
+
+- **The defect this tick found is in the criterion, not in the code.** Spec 235's first criterion —
+  `cargo test -p pii-cli --test project_config_layers_live` — run at HEAD `f09174e`: **3 passed, 0 failed**
+  (`_tmp/autonomy/logs/a103-criteria-20261022T061535Z.log`). That file holds only the three start-path rows
+  committed in `0e46a12`; it contains no `reload` row at all, and `reload_config` still loads `ctx.config_path`
+  alone (`crates/pii-server/src/daemon/mod.rs:430`). A file-level run therefore certifies the item with R1-R3
+  untouched — exactly the false green the loop's own rules forbid.
+- **Each TDD-contract row is now asserted by name**, three criteria added (six total):
+  `[ "$(cargo test -p pii-cli --test project_config_layers_live -- --exact <row> 2>&1 | grep -c '^test result: ok\. 1 passed')" = 1 ]`.
+  A row that does not exist runs 0 tests and prints `0 passed`, so it fails; the spec says so in a sentence above
+  the list, and the plan row A103's verify column was rewritten to match command-for-command
+  (`_tmp/autonomy/check-a103-row.py`: 7 fields, 6 criteria ⇒ 6 commands, identical strings, all three commit
+  paths exist — no `;` inside a criterion, so the `;`-split cannot silently drop one).
+- **Measured both ways before the criterion was committed.** The named-row form exits **1** for
+  `a_global_only_setting_added_after_start_is_refused_by_reload` (no such test yet) and **0** for the existing
+  `the_workspace_project_file_wins_over_the_global_file` with the identical shape — red for the missing work, not
+  red by construction. The near-miss control is the same shell form, so a criterion that could never pass cannot
+  hide here.
+- **HEAD measured, not inferred:** `cargo test -p pii-server --lib` **136 passed, 0 failed, 1 ignored**; full
+  `bash quality-gate.sh` **ALL PASS** (same log, `rc3=0`). The local gate and the 01:02Z fresh-gate agree.
+- **Nothing was dispatched and nothing was spent.** The pause is the operator's, hand-written, and its stated
+  reason (the deps/gate fix) has been discharged since `943e4c8`/`f09174e` — but resuming a switch the user set is
+  theirs to do, not an unattended tick's. On resume A103 is first: carry the project path in `DaemonContext`,
+  merge through `Config::merge_project` inside `reload_config`, write the three live rows; the lnx deploy card
+  `_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md` still closes A94/A95 in the same tick.
+
 ## 2026-10-22 00:55Z — the tree carried the daemon's half of the project-config layer; committed with a live test, and the reload half is spec 235 at the top of the queue
 
 State: HEAD `943e4c8` before this commit · lock free at 00:15Z · control unchanged:
