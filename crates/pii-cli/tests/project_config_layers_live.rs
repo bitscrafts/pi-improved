@@ -58,6 +58,57 @@ fn start_and_read_log(global: &Path, workspace: &Path, log: &Path) -> String {
     text
 }
 
+/// Starts the daemon and LEAVES IT RUNNING: `sys.reload` needs a live control socket, so these
+/// rows cannot use the start-then-stop harness above. The guard kills it on every exit path,
+/// including a panicking assertion.
+struct LiveDaemon(std::process::Child);
+
+impl Drop for LiveDaemon {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn start_live_daemon(global: &Path, workspace: &Path, log: &Path) -> LiveDaemon {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_pii"))
+        .arg("daemon")
+        .args(["--sandbox", "off", "--workspace"])
+        .arg(workspace)
+        .arg("--log-file")
+        .arg(log)
+        .env("PII_RUNTIME_DIR", workspace)
+        .env("PII_CONFIG", global)
+        .env_remove("PII_MODEL")
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let end = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < end {
+        let text = std::fs::read_to_string(log).unwrap_or_default();
+        if text.contains("daemon.started") || child.try_wait().unwrap().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    LiveDaemon(child)
+}
+
+/// One `pii` control verb against the live daemon's socket: `(code, stdout, stderr)`.
+fn ctl(workspace: &Path, args: &[&str]) -> (Option<i32>, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_pii"))
+        .args(args)
+        .env("PII_RUNTIME_DIR", workspace)
+        .env_remove("PII_MODEL")
+        .output()
+        .unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout).to_string(),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+    )
+}
+
 #[test]
 fn the_workspace_project_file_wins_over_the_global_file() {
     let dir = scratch("pcfg-");
@@ -174,5 +225,120 @@ fn a_global_only_setting_in_the_project_file_stops_the_start() {
             .unwrap_or_default()
             .contains("daemon.started"),
         "the daemon must not have started"
+    );
+}
+
+/// The reload rows (spec 235): the SAME layers must be in force after `pii sys reload`, because
+/// one daemon that answers two different "which config is in force" questions silently reverts
+/// the project's model, llama host and tiers on the first reload.
+#[test]
+fn a_global_only_setting_added_after_start_is_refused_by_reload() {
+    let dir = scratch("pcfg-");
+    let global = dir.path().join("global.toml");
+    std::fs::write(
+        &global,
+        format!("[core]\nmodel = \"{}\"\n", fixture("hello.json")),
+    )
+    .unwrap();
+    let workspace = dir.path().join("ws");
+    std::fs::create_dir_all(workspace.join(".pii")).unwrap();
+    let project = workspace.join(".pii").join("pii.toml");
+    std::fs::write(
+        &project,
+        format!("[core]\nmodel = \"{}\"\n", fixture("selfchange.json")),
+    )
+    .unwrap();
+    let log = dir.path().join("daemon.log");
+    let _daemon = start_live_daemon(&global, &workspace, &log);
+
+    // A repository may not move where the daemon writes. `runtime_dir` is global-only, so the
+    // layer that refuses it must be the one reload applies — the global file alone would never
+    // look at this file and the reload would answer `workers_reloaded` instead.
+    std::fs::write(&project, "[core]\nruntime_dir = \"/tmp/elsewhere\"\n").unwrap();
+
+    let (code, stdout, stderr) = ctl(&workspace, &["sys", "reload"]);
+
+    assert_eq!(
+        code,
+        Some(2),
+        "a refused project setting fails the reload; stdout: {stdout}; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("global-only") && stderr.contains("runtime_dir"),
+        "the refusal names the setting; stderr: {stderr}"
+    );
+    assert!(
+        !stdout.contains("workers_reloaded"),
+        "nothing from a refused file is applied; stdout: {stdout}"
+    );
+    // The refusal must not take the daemon down with it.
+    let (status_code, status_out, status_err) = ctl(&workspace, &["sys", "status"]);
+    assert_eq!(
+        status_code,
+        Some(0),
+        "the daemon keeps serving after a refused reload; stdout: {status_out}; stderr: {status_err}"
+    );
+}
+
+#[test]
+fn a_valid_project_file_reloads_instead_of_erroring() {
+    let dir = scratch("pcfg-");
+    let global = dir.path().join("global.toml");
+    let project_model = fixture("selfchange.json");
+    std::fs::write(
+        &global,
+        format!("[core]\nmodel = \"{}\"\n", fixture("hello.json")),
+    )
+    .unwrap();
+    let workspace = dir.path().join("ws");
+    std::fs::create_dir_all(workspace.join(".pii")).unwrap();
+    std::fs::write(
+        workspace.join(".pii").join("pii.toml"),
+        format!("[core]\nmodel = \"{project_model}\"\n"),
+    )
+    .unwrap();
+    let log = dir.path().join("daemon.log");
+    let _daemon = start_live_daemon(&global, &workspace, &log);
+
+    let (code, stdout, stderr) = ctl(&workspace, &["sys", "reload"]);
+
+    assert_eq!(
+        code,
+        Some(0),
+        "a valid project file reloads; stdout: {stdout}; stderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("workers_reloaded"),
+        "the operator's view is unchanged; stdout: {stdout}"
+    );
+}
+
+#[test]
+fn an_absent_project_file_still_reloads_the_global() {
+    // The near-miss control for the two rows above: same harness, no project file at all. If the
+    // reload always read some project path, the refusal row would pass for the wrong reason.
+    let dir = scratch("pcfg-");
+    let global = dir.path().join("global.toml");
+    std::fs::write(
+        &global,
+        format!("[core]\nmodel = \"{}\"\n", fixture("hello.json")),
+    )
+    .unwrap();
+    let workspace = dir.path().join("ws");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let log = dir.path().join("daemon.log");
+    let _daemon = start_live_daemon(&global, &workspace, &log);
+
+    let (code, stdout, stderr) = ctl(&workspace, &["sys", "reload"]);
+
+    assert_eq!(
+        code,
+        Some(0),
+        "without a project file the global config applies and the reload succeeds; \
+         stdout: {stdout}; stderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("workers_reloaded"),
+        "the answer shape does not depend on the layer; stdout: {stdout}"
     );
 }

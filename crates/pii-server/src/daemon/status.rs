@@ -63,6 +63,10 @@ pub struct DaemonContext {
     pub crashes_dir: std::path::PathBuf,
     /// The config file path (F5.12 `sys.reload` re-reads this).
     pub config_path: std::path::PathBuf,
+    /// The workspace's own `<workspace>/.pii/pii.toml`, when the daemon was started with one
+    /// (spec 235): `sys.reload` layers it over `config_path` exactly as start did. The PATH is
+    /// held, not its contents, so a file that appears or disappears after start is seen.
+    pub project_path: Option<std::path::PathBuf>,
     /// Base directory every channel's fs scope is rooted under (Phase 5.0
     /// D2): `<runtime_dir>/channels`. A channel named `name` gets exactly
     /// `channels_scope.join(name)`; never a hardcoded literal path.

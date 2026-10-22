@@ -7,7 +7,7 @@ mod adapters;
 pub mod approvals;
 mod channel_wiring;
 pub mod config;
-mod config_layers;
+pub mod config_layers;
 mod cron;
 pub mod identity;
 mod lag;
@@ -96,13 +96,31 @@ impl Daemon {
     ///
     /// # Errors
     /// As [`Self::build`].
-    // reason: one linear wiring sequence; splitting would only hide the order.
-    #[allow(clippy::too_many_lines)]
     pub fn build_with_env(
         engine: Arc<Engine>,
         cfg: &config::Config,
         runtime_dir: &Path,
         config_path: PathBuf,
+        clock: Arc<dyn pii_core::Clock>,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Arc<Self>, PiiError> {
+        Self::build_layered(engine, cfg, runtime_dir, config_path, None, clock, env)
+    }
+
+    /// [`Self::build_with_env`] plus the workspace's project config path (spec 235 R1/R4): the
+    /// daemon records the path so `sys.reload` can apply the same layers start did, while the
+    /// ~20 existing [`Self::build`] call sites keep their shape and get `None`.
+    ///
+    /// # Errors
+    /// As [`Self::build`].
+    // reason: one linear wiring sequence; splitting would only hide the order.
+    #[allow(clippy::too_many_lines)]
+    pub fn build_layered(
+        engine: Arc<Engine>,
+        cfg: &config::Config,
+        runtime_dir: &Path,
+        config_path: PathBuf,
+        project_path: Option<PathBuf>,
         clock: Arc<dyn pii_core::Clock>,
         env: &dyn Fn(&str) -> Option<String>,
     ) -> Result<Arc<Self>, PiiError> {
@@ -204,6 +222,7 @@ impl Daemon {
             channel_runs: Mutex::new(BTreeMap::new()),
             crashes_dir: runtime_dir.join("crashes"),
             config_path,
+            project_path,
             channels_scope,
             runtime_dir: runtime_dir.to_path_buf(),
         });
@@ -428,7 +447,10 @@ fn spawn_ctx() -> pii_core::Ctx {
 /// # Errors
 /// [`PiiError::Invalid`] if the config file cannot be parsed.
 pub fn reload_config(ctx: &DaemonContext) -> Result<u32, PiiError> {
-    let cfg = config::Config::load(&ctx.config_path)?;
+    // Spec 235 R1: the same layers start applied, through the one function that owns the rules.
+    let global = config::Config::load(&ctx.config_path)?;
+    let project = config_layers::load_project(ctx.project_path.as_deref())?;
+    let cfg = config::Config::merge_project(global, project)?;
     let mut reloaded = 0u32;
     {
         let workers = ctx.workers.lock();
@@ -571,6 +593,7 @@ mod tests {
             channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             crashes_dir: dir.join("crashes"),
             config_path: dir.join("config.toml"),
+            project_path: None,
             channels_scope: dir.join("channels"),
             runtime_dir: dir.to_path_buf(),
         })

@@ -393,6 +393,7 @@ mod tests {
             channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
             crashes_dir: tmp_root.join("router-test/crashes"),
             config_path: tmp_root.join("router-test/config.toml"),
+            project_path: None,
             channels_scope: tmp_root.join("router-test/channels"),
             runtime_dir: tmp_root.join("router-test"),
         })

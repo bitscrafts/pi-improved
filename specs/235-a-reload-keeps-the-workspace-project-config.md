@@ -74,5 +74,43 @@ a row that does not exist fails its criterion (`grep -c '1 passed'` reads 0).
 
 ## Closure
 
-(to be filled by the orchestrator: the three rows run green, the mutation red quoted under a
-`mutation red: ` line, and the sha256 of the restored file)
+Closed by the orchestrator 2026-10-22 (item A103). The reload half did not exist at HEAD `f48298f`: the
+three contract rows were absent and `reload_config` read the global file alone.
+
+- **RED first, on the tree HEAD had.** With the three `reload` rows written and nothing implemented,
+  `a_global_only_setting_added_after_start_is_refused_by_reload` failed with
+  `a refused project setting fails the reload; stdout: {"workers_reloaded":0}` — the reload never looked at
+  the project file, so the `runtime_dir` a repository put there was silently accepted. The other two rows are
+  the near-miss controls (an unchanged valid project file; no project file at all) and were green before the
+  change for the right reason: neither needs the merge.
+- **What was implemented.** `DaemonContext.project_path` holds the PATH, not the contents, so a file that
+  appears or disappears after start is seen (R3); `config_layers::project_path` and
+  `config_layers::load_project` are now the one resolution and the one existence rule, called by start
+  (`cmd_daemon`) and by `reload_config` alike; `reload_config` resolves the effective config through
+  `Config::merge_project`, the function that owns the rules (R1), and a refused file applies nothing (R2).
+  `Daemon::build`/`build_with_env` keep their shapes (R4) — the CLI calls the new `Daemon::build_layered`.
+  The only test edits are the mechanical `project_path: None` on three `DaemonContext` literals
+  (`daemon/mod.rs` fixture, `daemon/router.rs` fixture, `tests/poll_backoff.rs`); no assertion was touched.
+- **GREEN on the tree this commit carries.** `cargo test -p pii-cli --test project_config_layers_live`
+  **6 passed, 0 failed**; each reload row by name **1 passed, 0 failed**; `cargo test -p pii-server --lib`
+  **136 passed, 0 failed, 1 ignored**; `bash quality-gate.sh` **ALL PASS**
+  (`_tmp/autonomy/logs/a103-gate4-20261022T124012Z.log`, gate_rc=0).
+- sha256 `crates/pii-server/src/daemon/mod.rs` before the mutation:
+  `6a992ca2431104fea361bfd360c743a978b3ed9a029c397647ba96b6627ab4f9`
+
+  mutation red: `reload_config`'s body reduced to `let cfg = config::Config::load(&ctx.config_path)?;` (the
+  bare global config — R6) reddens one row and only that row:
+  `a_global_only_setting_added_after_start_is_refused_by_reload` →
+  `assertion left == right failed … stdout: {"workers_reloaded":0}; left: Some(0) right: Some(2)`,
+  the other five still green. Restored from the saved copy and `touch`ed; sha256 after:
+  `6a992ca2431104fea361bfd360c743a978b3ed9a029c397647ba96b6627ab4f9` (identical), and the row re-ran green
+  (`1 passed; 0 failed`) on the restored file, in that order.
+- **Gate noise recorded, not hidden.** Two earlier gate runs of this same tree failed inside `xtask`'s
+  `spec72_reachability` and not in this item: a second agent session was running
+  `cargo llvm-cov --workspace` over the same tree at the same time, and that fixture mutates a shared
+  `_tmp/spec72-reachability-integration/<tag>` export, so two concurrent suites collide
+  (`expected exactly one non-test caller of pii_model::resolve_with_transport(: […queue.rs, …observed_provider.rs]`).
+  With no code change in between, the run after the foreign coverage finished measured **ALL PASS**.
+  Finding for a follow-up spec: that fixture's scratch is not concurrency-safe (its decoy files are shared by
+  tag and its cleanup ignores errors) — not fixed here.
+

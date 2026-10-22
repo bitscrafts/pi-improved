@@ -12,7 +12,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use pii_observe::{Event, Level, Observer, names};
-use pii_server::daemon::{Daemon, ShutdownSignal, config::Config};
+use pii_server::daemon::{Daemon, ShutdownSignal, config::Config, config_layers};
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 use tokio::net::UnixListener;
@@ -79,18 +79,12 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     };
     // The workspace's own pii.toml layers over the global one (CLAUDE.md model). Absent = global unchanged;
     // a malformed or global-only-setting project file is fatal, like a malformed global file.
-    let project_cfg = {
-        let project_path = workspace.join(".pii").join("pii.toml");
-        if project_path.exists() {
-            match Config::load(&project_path) {
-                Ok(c) => Some(c),
-                Err(e) => {
-                    fail("daemon", &e);
-                    return ExitCode::from(2);
-                }
-            }
-        } else {
-            None
+    let project_path = config_layers::project_path(&workspace);
+    let project_cfg = match config_layers::load_project(Some(&project_path)) {
+        Ok(c) => c,
+        Err(e) => {
+            fail("daemon", &e);
+            return ExitCode::from(2);
         }
     };
     let cfg = match Config::merge_project(cfg, project_cfg) {
@@ -288,6 +282,9 @@ async fn run_daemon(
     switches: Switches,
 ) -> ExitCode {
     let fail = |stage: &'static str, m: String| fail_to(&Tee(Arc::clone(&log)), stage, &m);
+    // Spec 235 R3: the same resolution the start path used, held on the context so `sys.reload`
+    // layers the workspace's project file too (computed before `workspace` moves into the engine).
+    let project_path = config_layers::project_path(&workspace);
     let sock_path = match pii_server::engine::uds::prepare_socket(&runtime_dir) {
         Ok(p) => p,
         Err(e) => {
@@ -360,7 +357,15 @@ async fn run_daemon(
             }
             None => Arc::new(pii_core::SystemClock),
         };
-    let daemon = match Daemon::build(engine.clone(), &cfg, &runtime_dir, config_path, clock) {
+    let daemon = match Daemon::build_layered(
+        engine.clone(),
+        &cfg,
+        &runtime_dir,
+        config_path,
+        Some(project_path),
+        clock,
+        &pii_core::env_var,
+    ) {
         Ok(d) => d,
         Err(e) => {
             fail("daemon", e.to_string());

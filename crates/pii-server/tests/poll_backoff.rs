@@ -83,6 +83,7 @@ fn setup(dir: &std::path::Path, channel: Arc<dyn Channel>) -> (Arc<Engine>, Arc<
         channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
         crashes_dir: dir.join("crashes"),
         config_path: dir.join("config.toml"),
+        project_path: None,
         channels_scope: dir.join("channels"),
         runtime_dir: dir.to_path_buf(),
     });

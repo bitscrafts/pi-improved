@@ -2,6 +2,42 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-22 12:50Z — A103/spec 235 implemented: `sys.reload` now layers the workspace's project config (criteria 6/6, gate ALL PASS)
+
+State: HEAD `f48298f` before this commit · tree carried a second session's WIP (`agent_worker.rs`,
+`agent_provider_*.rs`, `graphs/coder-selffix.toml` — untouched, not committed) · control unchanged:
+`PAUSED at 2026-10-20 (paused for the deps/gate fix; user directive)` · selftest earlier this run:
+34 passed / 0 failed.
+
+- **The previous tick's criterion tightening was right, and it exposed real missing work.** At HEAD
+  `0e46a12` only the START half existed; `reload_config` read `ctx.config_path` alone
+  (`crates/pii-server/src/daemon/mod.rs:430`). With the three reload rows written and nothing
+  implemented, the refusal row failed with `stdout: {"workers_reloaded":0}` — the project file's
+  `[core].runtime_dir` was never consulted. RED first, measured, not inferred.
+- **Implemented (no worker dispatched, nothing spent):** `DaemonContext.project_path` (the path, so a
+  file that appears/disappears after start is honoured); `config_layers::project_path` +
+  `load_project` are the one resolution and the one existence rule, called by start and by reload;
+  `reload_config` resolves through `Config::merge_project`; CLI takes `Daemon::build_layered`, so
+  `Daemon::build`'s ~20 call sites are unchanged. Test edits limited to `project_path: None` on three
+  `DaemonContext` literals.
+- **Evidence:** rows by name 1/0 ×3, file 6/6 (`cargo test -p pii-cli --test
+  project_config_layers_live`), `cargo test -p pii-server --lib` 136 passed / 0 failed / 1 ignored,
+  `bash quality-gate.sh` **ALL PASS** (`_tmp/autonomy/logs/a103-gate4-20261022T124012Z.log`).
+  Mutation (R6): bare global config inside `reload_config` reddens exactly the refusal row
+  (`left: Some(0) right: Some(2)`); restored byte-identical, sha256
+  `6a992ca2…7ab4f9` before and after, `touch`ed, then green again.
+- **Two earlier gate runs failed in `xtask`'s `spec72_reachability`, not in this item.** A second
+  agent session (`hermes --yolo --resume 20261006_131058_33628f`, pid 36353) was running
+  `cargo llvm-cov --workspace` over this same tree; that test mutates a shared
+  `_tmp/spec72-reachability-integration/<tag>` export and its cleanup ignores errors, so two
+  concurrent suites collide (`expected exactly one non-test caller …queue.rs`). No code change in
+  between; the gate after the foreign run finished was ALL PASS. Filed as a follow-up: make that
+  fixture's scratch concurrency-safe.
+- **Queue:** A103 done on this commit (state row updated). Next dispatchable is nothing of ours —
+  A94(parked) + A95(needs-review) still wait on ONE deploy of HEAD to lnx
+  (`_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md`); the switch is still the operator's to
+  resume.
+
 ## 2026-10-22 06:26Z — A103's exit criteria were vacuous at HEAD; they now bind row by row (nothing dispatched: the switch is still PAUSED)
 
 State: HEAD `f09174e` · tree clean at 06:15Z · lock free · control unchanged: `PAUSED at 2026-10-20 (paused for the
