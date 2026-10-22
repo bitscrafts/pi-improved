@@ -143,11 +143,41 @@ fn walk_sources(dir: &Path, needle: &str, hits: &mut Vec<PathBuf>) {
             walk_sources(&p, needle, hits);
         } else if p.extension().is_some_and(|x| x == "rs")
             && !p.to_string_lossy().contains("tests")
-            && std::fs::read_to_string(&p).is_ok_and(|s| s.lines().any(|l| l.contains(needle)))
+            && std::fs::read_to_string(&p).is_ok_and(|s| has_live_needle(&s, needle))
         {
             hits.push(p);
         }
     }
+}
+
+/// True when `needle` appears on a line OUTSIDE every `#[cfg(test)]` item. Mirrors the production rule in
+/// `xtask::reachability` (a cfg(test)-only reference is not a caller): the attribute opens a test item, its brace
+/// depth is tracked to the item's end, and the state carries across lines. A needle inside such an item does not count.
+fn has_live_needle(src: &str, needle: &str) -> bool {
+    let mut in_test = false;
+    let mut depth: isize = 0;
+    for line in src.lines() {
+        let t = line.trim();
+        if !in_test && t.starts_with("#[cfg(test)]") {
+            in_test = true;
+            depth = 0;
+            continue;
+        }
+        if in_test {
+            if depth == 0 && t.starts_with("#[") {
+                continue; // further attributes on the same gated item
+            }
+            depth += t.matches('{').count().cast_signed() - t.matches('}').count().cast_signed();
+            if depth <= 0 && (t.contains('}') || t.ends_with(';')) {
+                in_test = false;
+            }
+            continue;
+        }
+        if line.contains(needle) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Resolve the file that holds the `resolve_with_transport` caller: the
@@ -263,4 +293,24 @@ fn cfg_test_body_is_not_a_caller() {
         "the stand-in must not satisfy the gate: {err:?}"
     );
     let _ = std::fs::remove_dir_all(&export);
+}
+
+// Near-miss controls for the fixture's cfg(test) rule. They call the REAL has_live_needle, so a green here
+// proves the fixture's logic, not a copy of it.
+#[test]
+fn a_live_caller_after_a_cfg_test_item_still_counts() {
+    let src = "#[cfg(test)]\nmod tests {\n    fn t() { let _ = 1; }\n}\n\npub fn live() { pii_model::resolve_with_transport(\"x\", y); }\n";
+    assert!(
+        has_live_needle(src, "resolve_with_transport("),
+        "a live caller after a closed cfg(test) item must count"
+    );
+}
+
+#[test]
+fn a_needle_only_inside_a_cfg_test_item_does_not_count() {
+    let src = "#[cfg(test)]\nmod tests {\n    fn t() { pii_model::resolve_with_transport(\"x\", y); }\n}\n";
+    assert!(
+        !has_live_needle(src, "resolve_with_transport("),
+        "a needle only inside cfg(test) is not a caller"
+    );
 }
