@@ -38,6 +38,7 @@ mod paths;
 pub mod redact;
 mod report;
 
+pub use self::helpers::stop_reason;
 use self::helpers::{
     argv_digest, journal, refused_port, session_of, skill_hashes, skill_names, text, texts,
 };
@@ -52,6 +53,18 @@ use self::report::RunReport;
 #[must_use]
 pub fn brief_is_usable(brief: &str) -> bool {
     !brief.trim().is_empty()
+}
+
+/// The agent's wall-clock bound from the node's `timeout_ms`, when the graph sets a positive one.
+///
+/// The same key graph rule V10 already demands of a node that spawns a process. Absent or zero means no bound, which
+/// is the old behaviour; a graph that wants the bound enforced declares it.
+#[must_use]
+pub fn agent_timeout(cfg: &serde_json::Value) -> Option<Duration> {
+    cfg.get("timeout_ms")
+        .and_then(serde_json::Value::as_u64)
+        .filter(|ms| *ms > 0)
+        .map(Duration::from_millis)
 }
 
 /// How long one criterion command may run before it is killed.
@@ -377,6 +390,7 @@ impl CoderNode {
         argv: &[String],
         spec: &WorkerSpec,
         env: BTreeMap<String, String>,
+        timeout: Option<Duration>,
     ) -> Result<Launch, PiiError> {
         let Some((program, rest)) = argv.split_first() else {
             return Ok(Launch::Refused(Refusal::Other(
@@ -397,6 +411,7 @@ impl CoderNode {
                 &host_argv,
                 Path::new(&spec.workdir),
                 &env_pairs,
+                timeout,
                 &mut |pid| {
                     spawned(&Spawn {
                         runtime: "host",

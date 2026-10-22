@@ -448,14 +448,24 @@ fn parse_reply(raw: &[u8]) -> Result<(u16, String), String> {
     Ok((status, String::from_utf8_lossy(&body).into_owned()))
 }
 
+/// The exit code a launch reports when the node's own timeout killed the agent.
+///
+/// The `timeout(1)` convention, so the journal carries a real `coder.exited` with a non-zero rc instead of a run that
+/// never ends.
+pub const TIMEOUT_EXIT_CODE: i32 = 124;
+
 /// # Errors
 /// Returns [`PiiError`] when the child cannot be spawned or the wait fails.
 /// [`PiiError`] when the node lacks the spawn capability, the spawn fails, or the run's context ends first.
+///
+/// `timeout` bounds the whole run of the child: when it passes, the child's process group is killed and the launch
+/// ends with [`TIMEOUT_EXIT_CODE`]. `None` waits without a bound.
 pub fn wait_child(
     ctx: &Ctx,
     argv: &[String],
     workdir: &Path,
     env: &[(String, String)],
+    timeout: Option<Duration>,
     spawned: &mut dyn FnMut(u32),
 ) -> Result<Launch, PiiError> {
     let started = Instant::now();
@@ -475,6 +485,12 @@ pub fn wait_child(
         if let Err(e) = ctx.check() {
             let _ = child.kill();
             return Err(e);
+        }
+        // A hung agent cannot be cancelled (a running node refuses `run cancel`) and nothing else bounds it, so the
+        // node bounds itself: kill the whole group and report the timeout as an exit, not as a run that never ends.
+        if timeout.is_some_and(|limit| started.elapsed() >= limit) {
+            let _ = child.kill();
+            break TIMEOUT_EXIT_CODE;
         }
     };
     // Anything the agent left running in its process group dies with the node (the stand-in matrix measured a

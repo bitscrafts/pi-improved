@@ -86,7 +86,7 @@ impl ContainerRuntime for PodmanCli {
             skills_dir: req.skills_dir,
         };
         let run_argv = coder_container::run_argv(&run, req.agent_argv);
-        let result = wait_child(ctx, &run_argv, &workdir, &self.env, &mut |pid| {
+        let result = wait_child(ctx, &run_argv, &workdir, &self.env, None, &mut |pid| {
             spawned(&Spawn {
                 runtime: "cli",
                 image: req.image.to_owned(),

@@ -68,10 +68,18 @@ pub(super) fn journal(ctx: &Ctx, event: &Event) {
     });
 }
 
-/// The stop reason of a finished child (spec 217 R4). A signal death is `128 + signal`, so a code above 128 is
-/// `signalled`; any other code is the agent ending on its own.
-pub(super) fn stop_reason(code: i32) -> &'static str {
-    if code > 128 { "signalled" } else { "end_turn" }
+/// The stop reason of a finished child (spec 217 R4).
+///
+/// A signal death is `128 + signal`, so a code above 128 is `signalled`; the node's own timeout kill is `timeout`;
+/// any other code is the agent ending on its own.
+pub fn stop_reason(code: i32) -> &'static str {
+    if code == super::super::coder_runtime::TIMEOUT_EXIT_CODE {
+        "timeout"
+    } else if code > 128 {
+        "signalled"
+    } else {
+        "end_turn"
+    }
 }
 
 /// The sha256 of an argv as lowercase hex (spec 217 R3): identifies a call without journalling its arguments.

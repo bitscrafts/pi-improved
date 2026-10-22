@@ -87,7 +87,7 @@ impl GraphNode for CoderNode {
                 &Event::new("coder", Level::Warn, names::CODER_HOST_SPAWN_DEPRECATED)
                     .field("agent", agent.clone()),
             );
-            self.launch_on_host(ctx, &dispatch.argv, &spec, env)?
+            self.launch_on_host(ctx, &dispatch.argv, &spec, env, super::agent_timeout(cfg))?
         };
         let (code, pid, dur_ms, stop, output, stderr) = match launch {
             Launch::Exited {
