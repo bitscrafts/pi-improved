@@ -2,6 +2,30 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-22 18:25Z — HEAD is gated again; the deploy card predated the credential commit (nothing dispatched, switch still PAUSED)
+
+State: HEAD `719b785` · tree clean before this edit · lock free, no cycle in flight · control unchanged:
+`PAUSED at 2026-10-20 (paused for the deps/gate fix; user directive)` · selftest this tick **34 passed, 0 failed /
+VERDICT: ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261022T1816Z.log`) · queue unchanged: A94 (parked) and
+A95 (needs-review) wait on one deploy of HEAD to lnx.
+
+- **Two commits landed after the last green fresh-gate and are now gated.** `269bc39` "coder: keep the provider key
+  off the pi argv" and `719b785` "xtask: a cfg(test)-only reference is not a caller in the spec72 fixture" are the
+  sibling session's WIP that the 12:50Z entry recorded as untouched; it committed them at 17:16Z. The loop's last
+  fresh-gate (`ede0ab1`, 12:52Z) predates both, so this tick re-ran the CI-model gate on HEAD: **fresh-gate PASS**,
+  every step PASS, `fresh_gate_rc=0` (`_tmp/autonomy/logs/freshgate-head-20261022T1816Z.log`). Nothing was
+  re-implemented and no worker was dispatched.
+- **The finding is in the deploy card, not in the code.** Step 3's graph template names no `provider` and passes
+  `env_pass = ["PATH", "HOME"]`. After `269bc39` the key is no longer on the argv, so that graph reaches the agent
+  with no credential and fails **before** the skill pin is checked — the operator's deploy would be spent twice and
+  the reading lost. The card now carries a "Credential path" section (a named `provider`, `env_pass` carrying
+  `OLLAMA_API_KEY`, and `PI_CODING_AGENT_DIR` whose `models.json` holds `apiKey = "$ENV:<NAME>"`, inside the
+  container — cited to `agent_worker.rs:273` and `graphs/coder-selffix.toml`) plus a stop condition that a
+  `no credential for provider ...` refusal is not this reading.
+- **What is still the operator's:** resuming `_tmp/autonomy/control` (the pause reason — the repo gate and the fresh
+  export — is satisfied and measured green above) and authorizing the host action, because the deploy stops and
+  restarts lnx's daemon. No code path advances A94/A95 without that one reading.
+
 ## 2026-10-22 12:50Z — A103/spec 235 implemented: `sys.reload` now layers the workspace's project config (criteria 6/6, gate ALL PASS)
 
 State: HEAD `f48298f` before this commit · tree carried a second session's WIP (`agent_worker.rs`,

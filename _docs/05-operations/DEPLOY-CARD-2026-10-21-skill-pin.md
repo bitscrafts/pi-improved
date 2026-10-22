@@ -23,6 +23,32 @@ What is missing is not code: it is one deploy of HEAD and the two runs below.
   (`the file has no PII-SKILL marker line, so it is not a skill`).
 - No second coder run is in flight on lnx (`pii run ls --status running`).
 
+### Credential path — added 2026-10-22, read before step 3
+
+A commit landed after this card was written: `269bc39` "coder: keep the provider key off the pi argv". The coder no
+longer puts `--api-key <value>` on the agent's argv (the value is readable in `/proc/<pid>/cmdline`); the key has to
+reach `pi` through the environment now — a named graph `provider`, `env_pass` carrying the key variable, and
+`PI_CODING_AGENT_DIR` pointing at a directory whose `models.json` holds `apiKey = "$ENV:<NAME>"` (the commit
+records the measurement: `pi` exits 0 via ollama-cloud with no `--api-key`).
+
+Step 3's template below predates that commit. It names no `provider` and passes `env_pass = ["PATH", "HOME"]`.
+Copied as it stands the run cannot authenticate, and it fails **before** the skill pin is ever checked — the reading
+is lost and the deploy has to be spent a second time. Two readings in this tree settle the shape, and neither
+touches the host:
+
+- `crates/pii-server/src/node_kinds/nodes/agent_worker.rs:273` refuses a `pi` dispatch that names a provider whose
+  key is absent from its env (`no credential for provider <p> in the environment`). A graph that names no provider
+  skips that refusal and lets the agent fall back to its own stored route — the silent failure the check exists to
+  prevent, and the forbidden Anthropic route on this path.
+- `graphs/coder-selffix.toml` is the graph measured green after `269bc39`: it names `provider = "ollama-cloud"` and
+  passes `PI_CODING_AGENT_DIR` by name. Step 3's graph runs inside `localhost/pii-agent:1` with the workspace at
+  `/work`, so whatever path `PI_CODING_AGENT_DIR` names must exist **inside that container** and hold a
+  `models.json`. pii mounts the per-run skills at `/work/.pi/skills` but writes no `models.json`
+  (`grep -rn 'models.json' crates` returns comments only), so that file is the operator's to place or the image's
+  to ship.
+
+Treat step 3 as a shape to adapt from the selffix graph's credential fields, not as a file to copy verbatim.
+
 ## Steps and what each one must print
 
 ### 1. Install HEAD and restart the daemon
@@ -199,5 +225,8 @@ _(empty — nothing in this card has been run; it is the pre-registration, not a
 - `via store` anywhere — stop; the daemon half is unmeasured.
 - The image probe answers `image=missing` for a present image — that is spec 231's shape and a separate defect;
   record it as a finding instead of pinning around it.
+- A run that refuses with `no credential for provider ...`, or that reaches the agent with no credential at all —
+  that is the credential path ("Credential path" above), not the skill pin. Fix the graph's `provider`/`env_pass`
+  and re-run; no part of that run counts as this reading.
 - Any temptation to weaken the graph (`skills` pin removed, criterion loosened) to get a green: that is the
   forbidden move, and a worker that stops to flag a wrong premise is behaving correctly.
