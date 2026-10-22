@@ -93,8 +93,10 @@ three contract rows were absent and `reload_config` read the global file alone.
   (`daemon/mod.rs` fixture, `daemon/router.rs` fixture, `tests/poll_backoff.rs`); no assertion was touched.
 - **GREEN on the tree this commit carries.** `cargo test -p pii-cli --test project_config_layers_live`
   **6 passed, 0 failed**; each reload row by name **1 passed, 0 failed**; `cargo test -p pii-server --lib`
-  **136 passed, 0 failed, 1 ignored**; `bash quality-gate.sh` **ALL PASS**
-  (`_tmp/autonomy/logs/a103-gate4-20261022T124012Z.log`, gate_rc=0).
+  **136 passed, 0 failed, 1 ignored**; `bash quality-gate.sh` **ALL PASS** (`_tmp/autonomy/logs/a103-gate4-20261022T124012Z.log`, gate_rc=0).
+ CI-model gate on the committed tree `ede0ab1`: `cargo run -q -p xtask -- fresh-gate` → **ALL PASS**
+ (`_tmp/autonomy/logs/freshgate-235-20261022T1252Z.log`, `fresh_gate_rc=0`; the export skips
+ coverage-floor by design, and the repo gate above measured that floor green).
 - sha256 `crates/pii-server/src/daemon/mod.rs` before the mutation:
   `6a992ca2431104fea361bfd360c743a978b3ed9a029c397647ba96b6627ab4f9`
 

@@ -22,7 +22,9 @@ State: HEAD `f48298f` before this commit · tree carried a second session's WIP 
   `DaemonContext` literals.
 - **Evidence:** rows by name 1/0 ×3, file 6/6 (`cargo test -p pii-cli --test
   project_config_layers_live`), `cargo test -p pii-server --lib` 136 passed / 0 failed / 1 ignored,
-  `bash quality-gate.sh` **ALL PASS** (`_tmp/autonomy/logs/a103-gate4-20261022T124012Z.log`).
+  `bash quality-gate.sh` **ALL PASS** (`_tmp/autonomy/logs/a103-gate4-20261022T124012Z.log`), and the
+  CI-model gate on the committed tree `ede0ab1` — `cargo run -q -p xtask -- fresh-gate` — also
+  **ALL PASS** (`_tmp/autonomy/logs/freshgate-235-20261022T1252Z.log`, `fresh_gate_rc=0`).
   Mutation (R6): bare global config inside `reload_config` reddens exactly the refusal row
   (`left: Some(0) right: Some(2)`); restored byte-identical, sha256
   `6a992ca2…7ab4f9` before and after, `touch`ed, then green again.
