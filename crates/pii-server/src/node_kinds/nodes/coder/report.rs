@@ -1,6 +1,7 @@
 //! What one coder run journals on `coder.exited` beyond the pid and exit code: the criteria that ran, the
 //! failing output, and the routes the agent reported (observability, spec 185).
 
+use super::super::agent_claude::run_facts;
 use super::super::agent_worker::CriterionRun;
 use super::tree::TreeDigest;
 use pii_observe::{Event, Level, names};
@@ -40,6 +41,8 @@ impl RunReport<'_> {
         stop: &str,
     ) -> Event {
         let runs = self.runs;
+        // Empty for any agent that does not print claude's stream-json: unknown, not zero.
+        let claude = run_facts(self.agent_output);
         let passed = runs.iter().filter(|r| r.rc == 0).count();
         let failed = runs.iter().find(|r| r.rc != 0);
         Event::new("coder", Level::Info, names::CODER_EXITED)
@@ -92,6 +95,26 @@ impl RunReport<'_> {
             .field(
                 "tree_hash_after",
                 self.tree.map(|(_, a)| a.hash.clone()).unwrap_or_default(),
+            )
+            .field("claude_session_id", claude.session_id.unwrap_or_default())
+            .field(
+                "claude_turns",
+                claude
+                    .turns
+                    .map_or(-1, |t| i64::try_from(t).unwrap_or(i64::MAX)),
+            )
+            .field(
+                "claude_cost_usd",
+                claude
+                    .cost_usd
+                    .map_or_else(String::new, |c| format!("{c:.6}")),
+            )
+            .field(
+                "claude_is_error",
+                claude
+                    .is_error
+                    .map_or("unknown", |e| if e { "true" } else { "false" })
+                    .to_owned(),
             )
             .field(
                 "reported_routes",

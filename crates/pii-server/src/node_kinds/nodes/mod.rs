@@ -4,6 +4,7 @@
 //! need a resource the engine owns (the approval table, the memory store)
 //! that `pii-graph` itself must not know about.
 
+pub mod agent_claude;
 pub mod agent_worker;
 pub mod classify;
 pub mod coder;

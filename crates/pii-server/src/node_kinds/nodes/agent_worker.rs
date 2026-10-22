@@ -139,6 +139,17 @@ pub fn reported_routes(output: &str) -> Vec<(String, String)> {
         };
         // `pi --mode json` names the route on its `session` header as `provider` + `modelId` (measured
         // 2026-10-21 against the installed pi). Any event that names `provider` + `model` also counts.
+        // claude's stream-json names its model on the `system`/`init` line, with no provider field.
+        if v.get("type").and_then(serde_json::Value::as_str) == Some("system")
+            && v.get("subtype").and_then(serde_json::Value::as_str) == Some("init")
+            && let Some(m) = v.get("model").and_then(serde_json::Value::as_str)
+        {
+            let pair = ("claude".to_owned(), m.to_owned());
+            if !routes.contains(&pair) {
+                routes.push(pair);
+            }
+            continue;
+        }
         let provider = v.get("provider").and_then(serde_json::Value::as_str);
         let model = v
             .get("modelId")
@@ -319,14 +330,7 @@ pub fn plan(
             v.extend([s("-p"), brief.to_owned()]);
             v
         }
-        Agent::Claude => {
-            let mut v = vec![s("claude")];
-            if let Some(sid) = &spec.sid {
-                v.extend([s("--resume"), sid.clone()]);
-            }
-            v.extend([s("--model"), spec.model.clone(), s("-p"), brief.to_owned()]);
-            v
-        }
+        Agent::Claude => super::agent_claude::argv(spec.sid.as_deref(), &spec.model, brief),
     };
     Ok(Dispatch {
         launcher: launcher.to_owned(),
