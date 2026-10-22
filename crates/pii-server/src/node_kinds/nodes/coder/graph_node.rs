@@ -1,6 +1,6 @@
 //! The `GraphNode` the coder node runs as.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use pii_abi::{NodeInput, Outcome, PiiError, PortName};
 use pii_core::Ctx;
@@ -12,6 +12,7 @@ use super::super::agent_worker::{
 use super::super::coder::CRITERION_TIMEOUT;
 use super::super::coder::redact;
 use super::super::coder::report::RunReport;
+use super::super::coder::tree;
 use super::super::coder_container::CONTAINER_WORKDIR;
 use super::super::coder_runtime::{Launch, Refusal};
 use super::super::coder_skills::{self, SkillRefusal};
@@ -80,6 +81,8 @@ impl GraphNode for CoderNode {
             Ok(dispatch) => dispatch,
             Err(e) => return Ok(refuse_planned(ctx, &agent, &model, &format!("{e}"))),
         };
+        // Evidence of what the agent changed: the workdir digest before and after, journalled beside the exit.
+        let tree_before = tree::digest(Path::new(&spec.workdir));
         let launch = if let Some(image) = &image {
             self.launch_in_container(ctx, image, &spec, env, &dispatch.argv, &skills, &runtime)?
         } else {
@@ -129,7 +132,9 @@ impl GraphNode for CoderNode {
                 break;
             }
         }
+        let tree_after = tree::digest(Path::new(&spec.workdir));
         let report = RunReport {
+            tree: Some((&tree_before, &tree_after)),
             runs: &runs,
             failure_tail: &failure_tail,
             routes: &reported_routes(&output),

@@ -2,11 +2,14 @@
 //! failing output, and the routes the agent reported (observability, spec 185).
 
 use super::super::agent_worker::CriterionRun;
+use super::tree::TreeDigest;
 use pii_observe::{Event, Level, names};
 
 /// What one agent run produced, as the journal records it: the criteria, the failing output, the routes the
 /// agent reported. Grouped so `emit_exited` keeps its argument count.
 pub(in crate::node_kinds::nodes) struct RunReport<'a> {
+    /// The workdir digest before and after the agent ran; `None` when none was taken.
+    pub tree: Option<(&'a TreeDigest, &'a TreeDigest)>,
     pub runs: &'a [CriterionRun],
     pub failure_tail: &'a str,
     pub routes: &'a [(String, String)],
@@ -18,6 +21,16 @@ pub(in crate::node_kinds::nodes) struct RunReport<'a> {
 }
 
 impl RunReport<'_> {
+    /// `"yes"`/`"no"` when a digest pair exists, `"unknown"` when none was taken: unknown is not "no".
+    fn tree_changed(&self) -> String {
+        match self.tree {
+            Some((b, a)) if b.hash == a.hash => "no",
+            Some(_) => "yes",
+            None => "unknown",
+        }
+        .to_owned()
+    }
+
     /// The `coder.exited` event for this run. The field names are the journal's contract; do not rename them.
     pub(in crate::node_kinds::nodes) fn exited_event(
         &self,
@@ -60,6 +73,25 @@ impl RunReport<'_> {
             .field(
                 "agent_stderr_head",
                 self.agent_stderr.chars().take(300).collect::<String>(),
+            )
+            .field("tree_changed", self.tree_changed())
+            .field(
+                "tree_files_before",
+                self.tree
+                    .map_or(-1, |(b, _)| i64::try_from(b.files).unwrap_or(i64::MAX)),
+            )
+            .field(
+                "tree_files_after",
+                self.tree
+                    .map_or(-1, |(_, a)| i64::try_from(a.files).unwrap_or(i64::MAX)),
+            )
+            .field(
+                "tree_hash_before",
+                self.tree.map(|(b, _)| b.hash.clone()).unwrap_or_default(),
+            )
+            .field(
+                "tree_hash_after",
+                self.tree.map(|(_, a)| a.hash.clone()).unwrap_or_default(),
             )
             .field(
                 "reported_routes",

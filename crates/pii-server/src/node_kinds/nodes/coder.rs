@@ -37,6 +37,7 @@ mod helpers;
 mod paths;
 pub mod redact;
 mod report;
+pub mod tree;
 
 pub use self::helpers::stop_reason;
 use self::helpers::{
@@ -461,6 +462,7 @@ impl CoderNode {
             (&result, spawned_pid.get())
         {
             let empty = RunReport {
+                tree: None,
                 runs: &[],
                 failure_tail: "",
                 routes: &[],
