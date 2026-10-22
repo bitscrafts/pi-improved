@@ -77,6 +77,29 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     } else {
         Config::default()
     };
+    // The workspace's own pii.toml layers over the global one (CLAUDE.md model). Absent = global unchanged;
+    // a malformed or global-only-setting project file is fatal, like a malformed global file.
+    let project_cfg = {
+        let project_path = workspace.join(".pii").join("pii.toml");
+        if project_path.exists() {
+            match Config::load(&project_path) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    fail("daemon", &e);
+                    return ExitCode::from(2);
+                }
+            }
+        } else {
+            None
+        }
+    };
+    let cfg = match Config::merge_project(cfg, project_cfg) {
+        Ok(c) => c,
+        Err(e) => {
+            fail("daemon", &e);
+            return ExitCode::from(2);
+        }
+    };
 
     // Sandbox enforcement is verified BEFORE the model lookup: a requested
     // profile that cannot be positively enforced must exit 4 regardless of

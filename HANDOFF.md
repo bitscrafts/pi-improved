@@ -2,6 +2,44 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-22 00:55Z — the tree carried the daemon's half of the project-config layer; committed with a live test, and the reload half is spec 235 at the top of the queue
+
+State: HEAD `943e4c8` before this commit · lock free at 00:15Z · control unchanged:
+`PAUSED at 2026-10-20 (paused for the deps/gate fix; user directive)` · selftest this tick **34 passed, 0 failed /
+VERDICT: ALL MECHANISMS PASS** · queue: A94(parked) + A95(needs-review) on the same lnx deploy, plus A103 (spec 235).
+
+- **Nothing to dispatch, and the deploy half is unchanged.** A94/A95 still wait on one deploy of HEAD to lnx; an
+  unattended tick does not restart a host daemon, and the switch is PAUSED. No row was re-measured: the previous
+  tick had already re-run 227 c1-c6 and 225 c1-c5 at HEAD.
+- **What the tick found instead: an uncommitted live-path change.** `crates/pii-cli/src/cmd_daemon.rs` (mtime
+  2026-10-21T22:27Z) called `Config::merge_project` at daemon start — the half `7023cd9` explicitly left out ("the
+  merge is not yet called by the daemon"). Left in the tree it would have been committed by the next cycle's
+  leftover path under a message that never mentions it; left reverted, `project_config_layers.rs`'s six green rows
+  would keep certifying a merge nothing calls.
+- **Verified BEFORE committing, RED first.** New `crates/pii-cli/tests/project_config_layers_live.rs` drives the
+  built `pii` binary and reads the daemon's own `daemon.started` event, because the merge's unit suite proves the
+  merge and never that anything invokes it. With `cmd_daemon.rs` restored to HEAD (saved aside, restored
+  byte-identical `sha256 20a3cf3ad5e5…`, then touched): `the_workspace_project_file_wins_over_the_global_file`
+  **FAILED** — the global model was still the one in force — and the refusal row had to be given a bounded wait,
+  because a daemon that starts instead of refusing never exits (it hung the first attempt). GREEN after the
+  restore: **3 passed, 0 failed**, and the third row is a near-miss control (no project file ⇒ the global model,
+  same harness).
+- **The reload half is real and deliberately not hidden.** `sys.reload` re-reads `ctx.config_path` only
+  (`daemon/mod.rs:430`), so after any reload the project's model/tiers revert to the global ones and a repository's
+  global-only setting stops being refused. Filed as spec `235-a-reload-keeps-the-workspace-project-config.md` +
+  row A103; the row's verify was diffed against the spec's `## Exit Criteria` programmatically (3 criteria ⇒ 3
+  commands, no `;` inside a criterion) and `state.py pick` names A103 first.
+- **The gate's first verdict was a FALSE RED, and it was the artifact, not the code** (`943e4c8`). Three
+  `pii-evolve` launcher tests read `src/driver.rs` through `CARGO_MANIFEST_DIR` and got NotFound while
+  `cargo test -p pii-evolve --test launcher` passed 5/5 in the same tree; `strings` on the cached test binary
+  printed `/projects/_tmp/fresh-gate-2168199` — an export directory a previous fresh-gate run had deleted. Both
+  modes had shared one `CARGO_TARGET_DIR`; `--fresh` now has its own, which costs nothing because a fresh export
+  re-stamps every mtime and rebuilds anyway. After `cargo clean` of the poisoned `test-gate` dir (20.8 GiB):
+  **gate ALL PASS**, the same launcher tests 5/5 inside the gate.
+- **Next:** nothing dispatches while the switch is PAUSED. On resume A103 is the first row (spec 235, a ~30-line
+  daemon change: carry the project path in `DaemonContext`, merge in `reload_config`, three live rows); the
+  pre-registered card `_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md` still closes A94/A95.
+
 ## 2026-10-21 18:20Z — the queue's one open action now has a pre-registered card (still not run: the switch is PAUSED)
 
 State: HEAD `85389e7` before this tick's commit (tree clean) · lock free (18:15Z) · control unchanged:
