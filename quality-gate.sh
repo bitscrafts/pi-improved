@@ -43,7 +43,14 @@ esac
 
 if [ "$mode" = "fresh" ]; then
     echo "quality-gate: mode=fresh (fresh-tree export, the release boundary)"
-    CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}" \
+    # The export's artifacts must NOT land in the warm in-tree cache. Measured 2026-10-22: they did
+    # (both modes defaulted to _tmp/gate-target), and because a test binary bakes `CARGO_MANIFEST_DIR`
+    # at compile time, the routine gate then re-ran `pii-evolve`'s launcher tests out of an artifact
+    # whose manifest dir was the DELETED export (`strings` found /projects/_tmp/fresh-gate-2168199) —
+    # three tests read `src/driver.rs` and failed NotFound on a tree where `cargo test -p pii-evolve`
+    # passed 5/5. A fresh export re-stamps every source mtime, so the export rebuilds everything
+    # anyway: a separate target dir costs nothing and removes the whole class.
+    CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target-fresh}" \
         FRESH_GATE_MIN_FREE_MB="${FRESH_GATE_MIN_FREE_MB:-12000}" \
         cargo run -q -p xtask -- fresh-gate --worktree
     exit $?
