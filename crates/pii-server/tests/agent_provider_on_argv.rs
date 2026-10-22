@@ -93,7 +93,6 @@ fn pi_argv_order_is_pinned_flags_then_print_then_brief() {
     let model = at("--model");
     let mode = at("--mode");
     let provider = at("--provider");
-    let api_key = at("--api-key");
     let print = at("-p");
     // Every value-taking flag is followed by its value.
     assert!(
@@ -103,12 +102,16 @@ fn pi_argv_order_is_pinned_flags_then_print_then_brief() {
     assert_eq!(argv[model + 1], "deepseek-v4-flash");
     assert_eq!(argv[mode + 1], "json");
     assert_eq!(argv[provider + 1], "ollama-cloud");
-    assert!(api_key + 1 < argv.len(), "--api-key carries a value");
+    // The key is never on argv (it is resolved from the env reference in models.json).
+    assert!(
+        !argv.iter().any(|a| a == "--api-key"),
+        "no --api-key on argv"
+    );
     // The print flag is a boolean: it takes no value, so the token after it is the brief.
     assert_eq!(argv[print + 1], "brief", "the brief follows -p");
     assert_eq!(print + 2, argv.len(), "the brief is the LAST token");
     // All value-taking flags come before the boolean -p.
-    for f in [session, model, mode, provider, api_key] {
+    for f in [session, model, mode, provider] {
         assert!(f < print, "a value flag precedes -p");
     }
 }

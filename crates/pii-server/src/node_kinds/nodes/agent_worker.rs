@@ -312,11 +312,9 @@ pub fn plan(
             ];
             if let Some(provider) = &spec.provider {
                 v.extend([s("--provider"), provider.clone()]);
-                // The key is passed explicitly, the way scripts/run-batchC-pi.sh passes it. Without it `pi`
-                // falls back to its own stored credential and route (measured: an Anthropic 429).
-                if let Some(value) = pi_provider_key(provider).and_then(|k| env.get(k)) {
-                    v.extend([s("--api-key"), value.clone()]);
-                }
+                // The key is NOT put on argv. pi resolves it at runtime from the env reference in the pii-owned
+                // models.json (apiKey "$ENV:<NAME>"), with PI_CODING_AGENT_DIR pointing there. Measured 2026-10-22:
+                // rc=0 via ollama-cloud, no --api-key. An argv key would show in /proc/<pid>/cmdline.
             }
             v.extend([s("-p"), brief.to_owned()]);
             v

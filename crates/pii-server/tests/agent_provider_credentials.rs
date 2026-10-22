@@ -95,22 +95,20 @@ fn pi_dispatches_with_provider_model_and_key_present() {
         .position(|a| a == "--model")
         .expect("--model on the argv");
     assert_eq!(d.argv[m + 1], "deepseek-v4.1-flash:cloud");
-    // The key is passed explicitly, taken from the env (the placeholder value we set), never invented.
-    let k = d
-        .argv
-        .iter()
-        .position(|a| a == "--api-key")
-        .expect("--api-key on the argv");
-    assert_eq!(
-        d.argv[k + 1],
-        "placeholder",
-        "the key comes from OLLAMA_API_KEY in the env"
+    // The key is never on argv: pi reads it from the env reference in the pii-owned models.json.
+    assert!(
+        !d.argv.iter().any(|a| a == "--api-key"),
+        "--api-key must not be on the argv; the key stays in the environment"
+    );
+    assert!(
+        !d.argv.iter().any(|a| a == "placeholder"),
+        "the key VALUE must never reach argv"
     );
 }
 
 #[test]
-fn pi_dispatch_with_a_provider_never_omits_the_key_flag() {
-    // Control: with the key present, --api-key is always on the argv for a named provider.
+fn pi_dispatch_with_a_provider_is_planned_without_a_key_on_argv() {
+    // Control: a named provider still plans (the key is resolved from the env reference, not argv).
     let env = env_with(&["PATH", "HOME", "OLLAMA_API_KEY"]);
     let d = plan_for(
         "pi",
@@ -119,7 +117,7 @@ fn pi_dispatch_with_a_provider_never_omits_the_key_flag() {
         &env,
     )
     .unwrap();
-    assert!(d.argv.iter().any(|a| a == "--api-key"));
+    assert!(!d.argv.iter().any(|a| a == "--api-key"));
 }
 
 #[test]

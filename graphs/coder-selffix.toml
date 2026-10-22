@@ -14,7 +14,7 @@ provider = "ollama-cloud"
 workdir = "/projects/pi-improved"
 spec = "specs/207-the-coder-node-spawns-an-agent.md"
 brief = "Implement the spec named above. Follow it as the contract."
-env_pass = ["PATH", "HOME", "OLLAMA_API_KEY"]
+env_pass = ["PATH", "HOME", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR"]
 criteria = ["cargo:test:pii-server/coder_spawns_a_process"]
 
 [[node]]
