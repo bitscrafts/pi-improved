@@ -35,6 +35,7 @@ use super::criteria::{self, Table};
 mod graph_node;
 mod helpers;
 mod paths;
+pub mod redact;
 mod report;
 
 use self::helpers::{
@@ -42,6 +43,16 @@ use self::helpers::{
 };
 pub use self::paths::{agent_bin_dir, agent_binaries, prepare_pi_session, run_programs};
 use self::report::RunReport;
+
+/// Whether a brief gives the agent anything to do.
+///
+/// An empty or whitespace-only brief runs the agent with no prompt: it exits 0 at once, and a criterion that already
+/// passes makes the node SUCCEED having done nothing (measured: the stand-in matrix, `brief = ""`, 92 ms, succeeded).
+/// The coder refuses such a brief before it spawns.
+#[must_use]
+pub fn brief_is_usable(brief: &str) -> bool {
+    !brief.trim().is_empty()
+}
 
 /// How long one criterion command may run before it is killed.
 pub(super) const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);

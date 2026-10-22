@@ -74,6 +74,15 @@ impl ChildProc {
         self.inner.id()
     }
 
+    /// Kills whatever is left in the child's process group once the child itself has exited: a background process the
+    /// agent started (a server, a watcher) must not outlive the node that ran it. The child is its own group leader
+    /// (`process_group(0)`), so its group id is its pid and survives the leader's exit while any member lives. A
+    /// process that left the group on purpose (`setsid`) is out of reach; that is the documented limit. An empty group
+    /// is the normal case, so "no such process" is not an error.
+    pub fn reap_group(&self) {
+        let _ = kill_group(self.pid());
+    }
+
     /// Takes the child's stdin handle (the supervisor owns the writer).
     pub fn stdin(&mut self) -> Option<std::process::ChildStdin> {
         self.inner.stdin.take()
@@ -121,12 +130,14 @@ impl ChildProc {
         }
     }
 
-    /// Forcibly kills the child (kill -9 semantics via `kill()`).
+    /// Forcibly kills the child and everything in its process group (kill -9 semantics). The child is its own group
+    /// leader, so the group is its pid: a cancel or a timeout must not leave the agent's grandchildren running.
     ///
     /// # Errors
     /// [`PiiError::Internal`] when the kill fails.
     pub fn kill(&mut self) -> Result<(), PiiError> {
         let delay = TEST_KILL_DELAY_MS.load(std::sync::atomic::Ordering::SeqCst);
+        let _ = kill_group(self.pid());
         let _ = self.inner.kill();
         if delay > 0 {
             std::thread::sleep(std::time::Duration::from_millis(delay));

@@ -10,6 +10,7 @@ use super::super::agent_worker::{
     CriterionRun, Verdict, WorkerSpec, decide, plan, reported_routes,
 };
 use super::super::coder::CRITERION_TIMEOUT;
+use super::super::coder::redact;
 use super::super::coder::report::RunReport;
 use super::super::coder_container::CONTAINER_WORKDIR;
 use super::super::coder_runtime::{Launch, Refusal};
@@ -29,7 +30,9 @@ impl GraphNode for CoderNode {
         let agent = text(cfg, "agent").unwrap_or_default();
         let model = text(cfg, "model").unwrap_or_default();
         let (spec, brief) = match (WorkerSpec::from_cfg(cfg), text(cfg, "brief")) {
-            (Ok(spec), Some(brief)) if !spec.spec.is_empty() => (spec, brief),
+            (Ok(spec), Some(brief)) if !spec.spec.is_empty() && super::brief_is_usable(&brief) => {
+                (spec, brief)
+            }
             (Err(e), _) => return Ok(self.refuse(ctx, &agent, &model, &format!("{e}"))),
             _ => return Ok(self.refuse(ctx, &agent, &model, "no spec or no brief")),
         };
@@ -107,6 +110,11 @@ impl GraphNode for CoderNode {
             }
         };
         let workdir = PathBuf::from(&spec.workdir);
+        // The agent's output is journalled and stored: scrub the credentials pii passed it, and any token-shaped
+        // string it printed itself, before anything downstream sees the text.
+        let secrets = redact::credential_values(&self.pass_env(&texts(cfg, "env_pass")));
+        let output = redact::redact(&output, &secrets);
+        let stderr = redact::redact(&stderr, &secrets);
 
         // The criteria decide. The first failing criterion stops the run and names itself in the verdict.
         // Its output tail is kept for the journal: a bare rc says the check failed, not why.
@@ -117,7 +125,7 @@ impl GraphNode for CoderNode {
             let rc = out.exit_code;
             runs.push(CriterionRun { command, rc });
             if rc != 0 {
-                failure_tail = output_tail(&out.stdout, &out.stderr);
+                failure_tail = redact::redact(&output_tail(&out.stdout, &out.stderr), &secrets);
                 break;
             }
         }

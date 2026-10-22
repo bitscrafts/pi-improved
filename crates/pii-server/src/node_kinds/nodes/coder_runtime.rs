@@ -477,6 +477,10 @@ pub fn wait_child(
             return Err(e);
         }
     };
+    // Anything the agent left running in its process group dies with the node (the stand-in matrix measured a
+    // `sleep 100000` surviving as pid 1's child). Killed BEFORE the capture is finished, so a grandchild that holds
+    // the pipe open cannot stall the capture for its whole wait bound.
+    child.reap_group();
     let output = capture.finish();
     let stderr = err_capture.finish();
     Ok(Launch::Exited {
