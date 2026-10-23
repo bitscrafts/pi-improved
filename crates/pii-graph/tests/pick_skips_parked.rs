@@ -11,7 +11,9 @@ use std::process::{Command, Output, Stdio};
 
 fn pick(dir: &std::path::Path) -> Output {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    Command::new("python3")
+    // Python goes through uv, never a bare `python3` (operator rule, 2026-10-23; the devbox image has no bare python3 on purpose).
+    Command::new("uv")
+        .args(["run", "--no-project", "python"])
         .arg(root.join("scripts/autonomy/state.py"))
         .arg("pick")
         .env("PII_PLAN", dir.join("plan.tsv"))
@@ -19,9 +21,9 @@ fn pick(dir: &std::path::Path) -> Output {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("python3 spawns")
+        .expect("uv spawns")
         .wait_with_output()
-        .expect("python3 runs")
+        .expect("uv runs state.py")
 }
 
 fn fixture(states: &[(&str, &str)]) -> tempfile::TempDir {

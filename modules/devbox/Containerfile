@@ -1,19 +1,26 @@
 # modules/devbox/Containerfile — the development container for pii: the gate, the coder's agents, and nothing else.
 #
 # Minimal on purpose (operator, 2026-10-23: "make the image minimal ... we got a slim version of rust").
-# Base: the official rust slim image, PINNED BY DIGEST (a tag moves; a digest is the artefact that was measured).
+# Base: the official rust slim image, pinned by exact version (the build prints the digest it resolved; record it, do not trust the tag).
 #   docker.io/library/rust:1.99.1-slim-trixie   amd64, 327 MB compressed, updated 2026-10-22
 # It already carries rustup + cargo + rustc 1.99.1 + gcc + libc6-dev. This file adds only what a consumer was MEASURED to need:
 #
 #   git               the gate scripts (87 call sites) and xtask (5 files); pi and claude both shell out to it
 #   ca-certificates   TLS to api.anthropic.com / ollama.com; already present in the base
-#   python3           the autonomy scripts (76 call sites); NOT used by the gate itself (0 hits in gate-steps/quality-gate/gate-lib)
+#   python (via uv)   the autonomy scripts (76 call sites); NOT used by the gate itself (0 hits in gate-steps/quality-gate/gate-lib).
+#                     uv-managed 3.13 only: no apt python3, so a bare `python3` fails instead of running something unpinned
 #   flock, timeout    coreutils/util-linux, already in the base
 #   ripgrep, fd-find  pi implements its grep/find tools by running `rg` / `fd`|`fdfind`; without them those tools are absent
 #   nodejs            claude's runtime ONLY if claude is installed through npm; the native binary needs none (see KNOB below)
+#   clang             .cargo/config.toml sets CC=clang for the WHOLE workspace ([env], spec 35), so `ring` (rustls) needs it, not only the
+#                     llamacpp feature. MEASURED by the first in-container gate: 5x "failed to find tool clang" in ring's build script.
+#                     (An earlier version of this file said clang was not needed: it had read the gate steps, not the cargo config.)
+#   procps            /usr/bin/kill: pii-worker's supervisor tests spawn it by absolute path (5 tests failed without it, measured by the
+#                     second in-container gate). The slim base has no procps. Found by scanning every Command::new / absolute path in
+#                     crates/ and xtask/: `kill` was the only program the base lacked (tar, df, diff, test, touch, sh are all present).
 #   clippy, rustfmt, llvm-tools, cargo-llvm-cov, musl target   the gate's fmt / clippy / coverage / static-build steps
 #
-# NOT added, each with the evidence: clang/cmake (only the llamacpp feature; spec 170 removed that gate step), openssl (the lockfile
+# NOT added, each with the evidence: cmake (only the llamacpp feature; spec 170 removed that gate step), openssl (the lockfile
 # has rustls + ring, no openssl), ssh/tmux/rsync (an agent in a container has no business reaching the host), jq/uv/shellcheck
 # (the gate does not call them; the loop does, and the loop runs on the orchestrator side, not in this container).
 # A tool a task proves necessary goes HERE; a one-off is installed in the running container and is gone at the next start.
@@ -23,6 +30,14 @@
 #   CLAUDE_SRC   how claude gets in. default `native`: the ELF the orchestrator runs (2.1.300, 267 MB, no node needed).
 #                `npm` is ~smaller to fetch but pulls node + npm (~150 MB) into the image.
 FROM docker.io/library/rust:1.99.1-slim-trixie
+
+# Python is uv's, and only uv's (operator, 2026-10-23: "you must use UV for python"). There is NO apt python3: a bare `python3`
+# fails loudly instead of quietly running an interpreter nobody pinned. uv is copied from its own pinned image, then installs the
+# interpreter into /opt/uv-python; `uv run` / `uv run --no-project python` are the only ways in.
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /usr/local/bin/
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_LINK_MODE=copy
 
 # Root inside, by decision (operator, 2026-10-23): rootless podman maps container root to the host user, so files the agent
 # writes keep the host owner. IS_SANDBOX=1 is what lets claude run its bypass-permissions mode as root.
@@ -36,9 +51,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # One layer for apt (so the lists are removed in the same layer that made them), one for the Rust components.
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends git python3 ripgrep fd-find musl-tools; \
+    apt-get install -y --no-install-recommends git ripgrep fd-find musl-tools clang procps; \
     ln -s "$(command -v fdfind)" /usr/local/bin/fd; \
     rm -rf /var/lib/apt/lists/*
+
+RUN uv python install 3.13
 
 RUN set -eux; \
     rustup component add rustfmt clippy llvm-tools; \
@@ -50,10 +67,11 @@ RUN set -eux; \
 COPY --chmod=0755 pi /usr/local/bin/pi
 COPY --chmod=0755 claude /usr/local/bin/claude
 
-WORKDIR /work
+WORKDIR /projects/pi-improved
 
 # Smoke: every tool the gate and the agents use, by version. A build whose smoke fails does not produce an image.
 RUN rustc --version && cargo --version && cargo clippy --version && cargo fmt --version && cargo llvm-cov --version \
- && git --version && python3 --version && rg --version | head -1 && fd --version && pi --version && claude --version
+ && git --version && uv --version && uv run --no-project python --version && rg --version | head -1 && fd --version && pi --version && claude --version \
+&& test -x /usr/bin/kill && ! command -v python3
 
 CMD ["bash"]

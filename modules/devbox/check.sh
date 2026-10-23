@@ -27,7 +27,7 @@ grep -qE '(API_KEY|TOKEN|SECRET|PASSWORD)[A-Z_]*=[^$ "]+' "${TMPDIR:-/tmp}/devbo
 rm -f "${TMPDIR:-/tmp}/devbox-check-plant.$$" 2>/dev/null
 
 grep -q '^ *env_file:' "$Y"; row "credentials come from an env_file, not inline" $?
-# Root inside + the default mapping: files written to /work keep the host owner. keep-id + root would give them to a sub-uid (measured).
+# Root inside + the default mapping: files written to the project keep the host owner. keep-id + root would give them to a sub-uid (measured).
 no_keep_id() { ! grep -qE '^[[:space:]]*(userns_mode:.*keep-id|.*--userns[= ]keep-id)' "$1"; }
 no_keep_id "$Y"; row "no keep-id with a root container (it would give the tree to a sub-uid)" $?
 # control: the same predicate MUST reject a compose file that asks for keep-id, or the row above proves nothing
@@ -38,10 +38,19 @@ grep -q 'io.pii: "1"' "$Y"; row "the container carries pii's io.pii label" $?
 grep -q 'IS_SANDBOX' "$C"; row "IS_SANDBOX set so claude accepts bypass-permissions as root" $?
 ! grep -qE '^USER ' "$C"; row "root inside (no USER directive), by decision" $?
 # minimality: nothing the evidence ruled out
-for t in clang cmake openssh tmux rsync nodejs npm; do
+for t in cmake openssh tmux rsync nodejs npm; do
   ! grep -E '^\s*(RUN|apt-get).*\b'"$t"'\b' "$C" >/dev/null; row "not installed: $t (no consumer measured)" $?
 done
 # the agents are copied from the build context, not downloaded at build time
 grep -q '^COPY .*pi /usr/local/bin/pi' "$C" && grep -q '^COPY .*claude /usr/local/bin/claude' "$C"; row "pi and claude come from the build context" $?
 ! grep -qE 'curl .*\| *(ba)?sh|npm install' "$C"; row "no curl|sh and no npm install in the image build" $?
+# Python is uv's only (operator, 2026-10-23): uv is in the image, no apt python3, and the smoke step asserts no bare python3.
+grep -qE '^COPY --from=ghcr\.io/astral-sh/uv:[0-9]' "$C"; row "uv comes from its own pinned image" $?
+grep -q '^RUN uv python install' "$C"; row "the interpreter is uv-managed" $?
+no_apt_python() { ! grep -E 'apt-get install' "$1" | grep -qE '\bpython3?\b'; }
+no_apt_python "$C"; row "no apt python in the image" $?
+printf 'RUN apt-get install -y python3 git\n' > "${TMPDIR:-/tmp}/devbox-check-py.$$"
+no_apt_python "${TMPDIR:-/tmp}/devbox-check-py.$$"; [ $? -ne 0 ]; row "control: the apt-python predicate rejects a planted apt python3" $?
+rm -f "${TMPDIR:-/tmp}/devbox-check-py.$$" 2>/dev/null
+grep -q 'command -v python3' "$C"; row "the smoke step asserts a bare python3 is absent" $?
 exit $rc

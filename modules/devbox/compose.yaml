@@ -1,7 +1,7 @@
 # modules/devbox/compose.yaml — the long-lived development container on the lnx host (podman-compose).
 #
-# One service, one image (modules/devbox/Containerfile), the project bind-mounted at /work. Decisions (operator, 2026-10-23):
-#   - root inside: rootless podman maps it to the host user, so files written into /work keep the host owner;
+# One service, one image (modules/devbox/Containerfile), the project bind-mounted at /projects/pi-improved. Decisions (operator, 2026-10-23):
+#   - root inside: rootless podman maps it to the host user, so files written into the project keep the host owner;
 #   - credentials in ONE env file shared with whatever else needs them, mode 0600, never in this file, never in the image,
 #     never on an argv. The compose file names the PATH of the env file, not a value.
 #   - "if something else is needed, add it to the Containerfile; a one-off is installed in the running container and is gone at
@@ -19,7 +19,7 @@ services:
     container_name: pii-devbox
     labels:
       io.pii: "1"                  # pii's own label: `pii-podman.sh ps/gc` and the orphan reaper (spec 242) find it by this
-    working_dir: /work
+    working_dir: /projects/pi-improved
     init: true                     # reaps zombies: a hung agent's children do not accumulate in PID 1's table
     # Rootless, DEFAULT user mapping: container root IS the host user. Measured on lnx 2026-10-23 with one-shot containers:
     #   default                 inside uid=0    -> a file written into the bind mount is owned by uid 1000 (mvcorrea)
@@ -28,7 +28,9 @@ services:
     # So: no `userns_mode` here. Adding keep-id while staying root would silently hand the tree to a sub-uid.
     volumes:
       # The working subject. :z is not used: no SELinux on this host (getenforce is absent), and relabelling a shared tree is a side effect.
-      - ${DEVBOX_PROJECT:-/podman/assistants/hermes/projects/pi-improved}:/work
+      # Mounted at the SAME path the orchestrator sees (/projects/pi-improved), not /work: the gate hardcodes that path in
+      # quality-gate.sh and xtask (doc-drift reads /projects/pi-improved/HANDOFF.md) — measured by the first in-container gate.
+      - ${DEVBOX_PROJECT:-/podman/assistants/hermes/projects/pi-improved}:/projects/pi-improved
       - devbox-cargo-registry:/usr/local/cargo/registry
       - devbox-target:/work-target
     environment:
