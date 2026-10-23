@@ -5,6 +5,7 @@
 //! that `pii-graph` itself must not know about.
 
 pub mod agent_claude;
+pub mod agent_quota;
 pub mod agent_route;
 pub mod agent_worker;
 pub mod classify;

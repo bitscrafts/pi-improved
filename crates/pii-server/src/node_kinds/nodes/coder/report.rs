@@ -2,6 +2,7 @@
 //! failing output, and the routes the agent reported (observability, spec 185).
 
 use super::super::agent_claude::run_facts;
+use super::super::agent_quota::quota_signal;
 use super::super::agent_route::{failovers, route_drift};
 use super::super::agent_worker::CriterionRun;
 use super::tree::TreeDigest;
@@ -9,13 +10,16 @@ use pii_observe::{Event, Level, names};
 
 /// What one agent run produced, as the journal records it: the criteria, the failing output, the routes the
 /// agent reported. Grouped so `emit_exited` keeps its argument count.
-pub(in crate::node_kinds::nodes) struct RunReport<'a> {
+pub struct RunReport<'a> {
     /// The workdir digest before and after the agent ran; `None` when none was taken.
     pub tree: Option<(&'a TreeDigest, &'a TreeDigest)>,
     /// The `(provider, model)` the graph asked for; `None` when none was requested, which cannot drift.
     pub requested: Option<&'a (String, String)>,
+    /// The criteria that ran, in order.
     pub runs: &'a [CriterionRun],
+    /// The tail of the first failing criterion's output.
     pub failure_tail: &'a str,
+    /// The `(provider, model)` routes the agent reported.
     pub routes: &'a [(String, String)],
     /// The agent's captured stdout: its size and head go to the journal, so a run that reported no route shows
     /// what the agent actually printed.
@@ -36,21 +40,30 @@ impl RunReport<'_> {
     }
 
     /// The `coder.exited` event for this run. The field names are the journal's contract; do not rename them.
-    pub(in crate::node_kinds::nodes) fn exited_event(
-        &self,
-        pid: u32,
-        rc: i32,
-        dur_ms: i64,
-        stop: &str,
-    ) -> Event {
+    pub fn exited_event(&self, pid: u32, rc: i32, dur_ms: i64, stop: &str) -> Event {
         let base = Event::new("coder", Level::Info, names::CODER_EXITED)
             .field("pid", i64::from(pid))
             .field("rc", i64::from(rc))
             .field("dur_ms", dur_ms)
             .field("stop_reason", stop.to_owned());
-        self.route_fields(
+        self.quota_fields(self.route_fields(
             self.claude_fields(self.tree_fields(self.output_fields(self.criteria_fields(base)))),
-        )
+        ))
+    }
+
+    /// Whether the agent's output or stderr carries the CLI's spend-limit words, and the reset time it printed (spec
+    /// 237). Observability only: no verdict reads it.
+    fn quota_fields(&self, event: Event) -> Event {
+        let signal = quota_signal(self.agent_output, self.agent_stderr);
+        event
+            .field(
+                "quota_exhausted",
+                if signal.is_some() { "yes" } else { "no" },
+            )
+            .field(
+                "quota_reset",
+                signal.map(|s| s.reset_text).unwrap_or_default(),
+            )
     }
 
     /// The criteria that ran, and the first failure with its output.
