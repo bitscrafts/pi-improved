@@ -43,6 +43,28 @@ const PRODUCTION: &[(&str, &[&str])] = &[
             "grant_ceiling_refuses",
         ],
     ),
+    (
+        "cargo:test:pii-server/coder_brief_names_the_spec",
+        &[
+            "cargo",
+            "test",
+            "-p",
+            "pii-server",
+            "--test",
+            "coder_brief_names_the_spec",
+        ],
+    ),
+    (
+        "cargo:test:pii-graph/coder_requires_timeout_lint",
+        &[
+            "cargo",
+            "test",
+            "-p",
+            "pii-graph",
+            "--test",
+            "coder_requires_timeout_lint",
+        ],
+    ),
 ];
 
 /// The production table as an owned [`Table`].

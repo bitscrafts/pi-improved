@@ -69,6 +69,12 @@ COPY --chmod=0755 claude /usr/local/bin/claude
 
 WORKDIR /projects/pi-improved
 
+# pii runs criteria (and agents' children) under a SCRUBBED environment: PATH HOME LANG LC_ALL TERM PWD TMPDIR and PII_* only
+# (crates/pii-core/src/childproc.rs, CHILD_ENV_ALLOWLIST). CARGO_HOME / RUSTUP_HOME are dropped, and rustup then cannot see the
+# baked-in toolchain and tries to download one into /root/.rustup. MEASURED on the host with `env -i` and exactly that allowlist.
+# With HOME=/root, these links make the defaults resolve to the real locations, so no extra variable has to survive the scrub.
+RUN ln -s /usr/local/cargo /root/.cargo && ln -s /usr/local/rustup /root/.rustup
+
 # Smoke: every tool the gate and the agents use, by version. A build whose smoke fails does not produce an image.
 RUN rustc --version && cargo --version && cargo clippy --version && cargo fmt --version && cargo llvm-cov --version \
  && git --version && uv --version && uv run --no-project python --version && rg --version | head -1 && fd --version && pi --version && claude --version \

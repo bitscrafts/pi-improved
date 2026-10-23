@@ -53,4 +53,7 @@ printf 'RUN apt-get install -y python3 git\n' > "${TMPDIR:-/tmp}/devbox-check-py
 no_apt_python "${TMPDIR:-/tmp}/devbox-check-py.$$"; [ $? -ne 0 ]; row "control: the apt-python predicate rejects a planted apt python3" $?
 rm -f "${TMPDIR:-/tmp}/devbox-check-py.$$" 2>/dev/null
 grep -q 'command -v python3' "$C"; row "the smoke step asserts a bare python3 is absent" $?
+# criteria run under a scrubbed env: rustup must find its toolchain from HOME alone
+grep -q 'ln -s /usr/local/cargo /root/.cargo' "$C" && grep -q 'ln -s /usr/local/rustup /root/.rustup' "$C"; row "cargo and rustup resolve from HOME alone (scrubbed criterion env)" $?
+grep -q 'devbox-target:/projects/pi-improved/target' "$Y"; row "the build volume is also at the project's default target dir" $?
 exit $rc

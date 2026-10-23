@@ -33,6 +33,9 @@ services:
       - ${DEVBOX_PROJECT:-/podman/assistants/hermes/projects/pi-improved}:/projects/pi-improved
       - devbox-cargo-registry:/usr/local/cargo/registry
       - devbox-target:/work-target
+      # The same volume at the project's DEFAULT target dir: criteria run under a scrubbed env with no CARGO_TARGET_DIR, so `cargo test`
+      # there builds into <project>/target. Mounting the warm volume keeps that out of the host tree and avoids a 20-minute cold build.
+      - devbox-target:/projects/pi-improved/target
       # claude authenticates by login file (no ANTHROPIC_API_KEY exists on the host). Read-only: the container cannot rewrite it.
       - ${DEVBOX_CLAUDE_LOGIN:-/podman/assistants/hermes/root/.claude/.credentials.json}:/root/.claude/.credentials.json:ro
     environment:
