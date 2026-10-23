@@ -2,6 +2,27 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-23 06:25Z — HEAD did not build: 237's commit left its module private behind a green gate
+
+State at the tick: HEAD `7111cff` · lock free, no cycle in flight · control `RUNNING at 2026-10-23T02:58:54Z
+(resumed by human)` · queue untouched: A104 (spec 236, needs-review, tree WIP present), A94 parked, A95
+needs-review — all three wait on code or on the one lnx deploy, none dispatchable.
+
+- **237's "automated pass" committed an incomplete change.** `1224d48` added
+  `crates/pii-server/tests/coder_quota_signal.rs`, a separate integration crate that imports
+  `pii_server::node_kinds::nodes::coder::report::RunReport`, but `crates/pii-server/src/node_kinds/nodes/coder.rs`
+  still carried `mod report;` at HEAD. Measured by restoring that file from HEAD (`git checkout --`) and running
+  the spec's own first criterion: `error: unreachable 'pub' item` twice in `coder/report.rs`, `error: could not
+  compile pii-server (lib)`. The lib did not build at `7111cff`; the gate that certified it ran in a tree holding
+  the missing line uncommitted — the same "green here, red in a clean clone" class the fresh-gate exists for.
+- **Fixed as one line** (`pub mod report;`), the worker's file restored byte-identical
+  (`sha256 161ad53e…807df` before and after, `touch`ed), and all five of 237's exit criteria re-run green on the
+  committed tree: `coder_quota_signal` 10/0, `coder_stop_reason` 4/0, both greps rc=0, `clippy -p pii-server
+  --all-targets -D warnings` clean. Spec 237's `## Closure` carries the readings.
+- **The lesson for the loop:** an item is not done when its criterion is green in the working tree — it is done
+  when it is green on the tree the commit leaves. A `git status` line sitting next to a green gate is a
+  measurement of the tree, never of HEAD.
+
 ## 2026-10-23 00:45Z — HEAD gated PASS, and the gate's own second run measured a defect in itself (spec 236 filed)
 
 State: HEAD `16236dd` · tree clean · lock free, no cycle in flight · control unchanged:

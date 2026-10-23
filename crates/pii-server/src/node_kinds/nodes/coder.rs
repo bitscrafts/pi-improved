@@ -36,7 +36,7 @@ mod graph_node;
 mod helpers;
 mod paths;
 pub mod redact;
-mod report;
+pub mod report;
 pub mod tree;
 
 pub use self::helpers::stop_reason;

@@ -76,4 +76,19 @@ quotes the operator and would label ordinary failures as quota. The three CONTRO
 
 ## Closure
 
-_(empty — the implementer's readings go here)_
+_(the implementer's readings)_ — `1224d48` committed the test and the journal fields, but not the one line
+that makes them reachable: HEAD carries `mod report;` while `crates/pii-server/tests/coder_quota_signal.rs`
+(a separate crate) imports `pii_server::node_kinds::nodes::coder::report::RunReport`.
+
+- **Measured at HEAD `7111cff`**, with the tree's copy of `coder.rs` put back by `git checkout --`: `cargo test
+  -q -p pii-server --test coder_quota_signal` → `error: unreachable 'pub' item` twice in
+  `crates/pii-server/src/node_kinds/nodes/coder/report.rs` (`pub struct RunReport`, `pub fn exited_event`) and
+  `error: could not compile pii-server (lib)`. The lib did not build at that commit, so "gate green" in the
+  worker's tree measured the uncommitted line, not the commit.
+- **Fix:** `pub mod report;`. The worker's file was restored byte-identical (`sha256
+  161ad53ead39c0b00c75a40502dcb5b32225fc1819b0544fba7f95e595e807df` before and after, `touch`ed so cargo
+  could not reuse the artefact built from the HEAD version) and re-run.
+- **All five exit criteria green on the committed tree:** `coder_quota_signal` 10 passed / 0 failed,
+  `grep quota_exhausted` and `grep 'pub mod agent_quota'` rc=0, `coder_stop_reason` 4 passed / 0 failed,
+  `clippy -q -p pii-server --all-targets -- -D warnings` clean.
+- Committed alone, so HEAD now matches the tree the gate measured.
