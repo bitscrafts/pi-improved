@@ -8,6 +8,7 @@
 // reason: dev tooling shells out to git/bash, like `run_cmd` in main.rs.
 #![allow(clippy::disallowed_methods)]
 
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -189,6 +190,20 @@ fn overlay_worktree(root: &Path, dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The environment the gate child runs with. Every step shares the warm cache, except the test step:
+/// its `TEST_GATE_TARGET` lives inside the export, because a test binary bakes `CARGO_MANIFEST_DIR`
+/// at compile time and a binary left in the shared cache would be reused by the next run.
+fn gate_env(export: &Path, warm: &Path, skip_coverage: &str) -> Vec<(&'static str, OsString)> {
+    vec![
+        ("CARGO_TARGET_DIR", warm.as_os_str().to_owned()),
+        (
+            "TEST_GATE_TARGET",
+            export.join("_tmp").join("test-gate").into_os_string(),
+        ),
+        ("QG_SKIP_COVERAGE", OsString::from(skip_coverage)),
+    ]
+}
+
 /// Runs the gate in `dir`, streaming output while capturing it.
 fn run_gate(dir: &Path) -> Result<(bool, String), String> {
     // The export's job is the hermetic-tree model, not a second measurement of the coverage floor the
@@ -219,8 +234,7 @@ fn run_gate(dir: &Path) -> Result<(bool, String), String> {
     let mut child = Command::new("bash")
         .args(["-c", "bash quality-gate.sh 2>&1"])
         .current_dir(dir)
-        .env("CARGO_TARGET_DIR", &target)
-        .env("QG_SKIP_COVERAGE", covev)
+        .envs(gate_env(dir, &target, covev))
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| format!("gate: {e}"))?;
@@ -423,6 +437,31 @@ mod tests {
             .join(format!("fg-stale-{}", std::process::id()));
         std::fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    #[test]
+    fn gate_env_gives_the_test_step_a_target_inside_the_export() {
+        let export = Path::new("/projects/_tmp/fresh-gate-7");
+        let warm = Path::new("/projects/pi-improved/_tmp/gate-target");
+        let env = gate_env(export, warm, "1");
+        let get = |k: &str| {
+            env.iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| PathBuf::from(v))
+        };
+        let test = get("TEST_GATE_TARGET").expect("TEST_GATE_TARGET is set");
+        assert!(
+            test.starts_with(export),
+            "lies under the export: {}",
+            test.display()
+        );
+        assert_ne!(
+            test,
+            warm.join("test-gate"),
+            "not the shared test-gate cache"
+        );
+        // control: every other step keeps the warm cache
+        assert_eq!(get("CARGO_TARGET_DIR"), Some(warm.to_path_buf()));
     }
 
     #[test]

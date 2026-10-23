@@ -26,7 +26,7 @@ build|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-tar
 
 # pii-worker's control tests spawn `pii` from the test executable's own target dir (test-gate/debug/pii).
 # The `build` step above writes to build-gate and target/debug, not here, so build pii into test-gate first.
-test (lib/bins/tests)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/test-gate cargo build -q -p pii-cli --bin pii && CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"/test-gate cargo test -j 2 --workspace --lib --bins --tests
+test (lib/bins/tests)|CARGO_TARGET_DIR="${TEST_GATE_TARGET:-${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/test-gate}" cargo build -q -p pii-cli --bin pii && CARGO_TARGET_DIR="${TEST_GATE_TARGET:-${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/test-gate}" cargo test -j 2 --workspace --lib --bins --tests
 
 # F-01: doctests build each lib WITHOUT cfg(test); sharing target/debug/deps with the step above can
 # pick a stale rlib hash (E0463). Own CARGO_TARGET_DIR so it always builds its own libs.

@@ -57,9 +57,28 @@ entirely and writes straight into the routine cache.
 - **R2 — the warm cache still carries everything else.** `fmt`, `clippy`, `clippy (hal-gpiod)`, `build`,
   `test (doc)` and the xtask scans keep resolving through `FRESH_GATE_TARGET` exactly as today. The change
   moves ONE step's cache. A fresh-gate must not become a cold workspace build (the measured 40-60 min trap).
-- **R3 — no shared cache holds an export path after a run.** After `fresh-gate` returns, no file under any
-  `_tmp/gate-target*` shared directory names a `/projects/_tmp/fresh-gate-` path. Checked by grepping the
-  binaries, not by trusting the code.
+- **R3 — no shared TEST-STEP cache holds an export path after a run.** After `fresh-gate` returns, no file
+  under a shared `_tmp/gate-target*/test-gate` directory names a `/projects/_tmp/fresh-gate-` path. Checked by
+  grepping the binaries, not by trusting the code. **The scope is the test step on purpose, and it was measured
+  on 2026-10-23**: `grep -rl` over `_tmp/gate-target` found **13437** files naming an export path, of which
+  **3589** were under `test-gate` and the rest under `clippy-gate`/`build-gate` — steps R2 keeps on the warm
+  cache, whose rmeta is never executed and whose export paths are the price of the 40-60 minute cold build R2
+  rules out. A criterion written over *every* cache contradicts R2 and can only be met by the
+  clean-after-every-run step the non-goals forbid; the defect under repair is a stale **test binary**, so the
+  check owns `*/test-gate` and reports the out-of-scope count rather than hiding it.
+  **The pattern is a baked manifest dir, not the bare prefix, and that was measured too.** The first version of
+  the check greped for `/projects/_tmp/fresh-gate-` and flagged **three** files in a correct tree: the `xtask`
+  test binary and its incremental artefacts, whose string table carries the *sample* path
+  `/projects/_tmp/fresh-gate-7` that the new unit test uses as data (next to
+  `/projects/pi-improved/_tmp/gate-target`, the warm dir). A check that fires on a correct tree teaches
+  everyone to ignore it, so the pattern is `/projects/_tmp/fresh-gate-[0-9]+/(crates|xtask)/` — the manifest
+  dir a binary bakes at compile time, which is exactly the path the three launcher tests then fail to read.
+  **The check carries two controls on every run:** it must see a planted baked manifest dir, and it must NOT
+  flag the unit test's bare sample path.
+- **R3a — the criterion names the target that holds the test.** `xtask` is a binary crate whose integration
+  tests live in `--bins`, so `cargo test -p xtask --lib gate_env` collects **0 tests and exits 0** — measured
+  2026-10-23 (`running 0 tests … 33 filtered out`, rc 0). Every criterion for this test therefore runs
+  `--bins` and asserts `test result: ok. [1-9]`, never just rc 0.
 - **R4 — the routine gate is unaffected.** The pii-evolve launcher lane on the routine cache
   (`CARGO_TARGET_DIR=_tmp/gate-target/test-gate`) reads 5 passed / 0 failed immediately after a fresh-gate run.
 - **R5 — two consecutive runs both pass.** The measured red is the criterion: run `fresh-gate` twice in a row
@@ -101,10 +120,12 @@ there and nowhere else.
 
 ## Exit Criteria
 
-- [ ] `cargo test -q -p xtask --lib gate_env` passes, with the test named in R6 present
-- [ ] `bash scripts/orch-236-no-export-path.sh` exits 0 (no export path in any shared gate cache)
-- [ ] `CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target/test-gate cargo test -q -p pii-evolve --test launcher` passes
-- [ ] `bash scripts/orch-236-two-runs.sh` exits 0 (two consecutive fresh-gate runs, both PASS)
+- [ ] `cargo test -q -p xtask --bins gate_env 2>&1 | grep -qE "test result: ok\. [1-9]"` — the R6 test is
+      collected **and** passing (`--bins`, per R3a: `--lib` would collect 0 and still exit 0)
+- [ ] `bash scripts/orch-236-no-export-path.sh` exits 0 — no export-baked file in any shared **test-step**
+      cache, with its own control proving the check can see a known hit
+- [ ] `CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target/test-gate cargo test -q -p pii-evolve --test launcher 2>&1 | grep -qE "test result: ok\. [1-9]"` — the routine launcher lane reads its tests and passes
+- [ ] `bash scripts/orch-236-two-runs.sh` exits 0 (two consecutive fresh-gate runs, both `fresh-gate: PASS`)
 - [ ] `bash quality-gate.sh` passes in the dev tree
 
 ## Guardrails
