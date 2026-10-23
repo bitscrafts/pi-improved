@@ -13,7 +13,7 @@ model = "haiku"
 workdir = "/projects/pi-improved/_tmp/claude-probe-work"
 spec = "specs/207-the-coder-node-spawns-an-agent.md"
 brief = "Reply with the single word PONG and nothing else. Do not use any tools."
-env_pass = ["PATH", "HOME"]
+env_pass = ["PATH", "HOME", "IS_SANDBOX"]
 max_budget_usd = 0.30
 timeout_ms = 180000
 
