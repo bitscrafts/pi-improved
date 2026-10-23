@@ -24,7 +24,7 @@ mod principal;
 pub use budget::{Budget, BudgetKind, BudgetShare};
 pub use cancel::CancelToken;
 pub use cap::{ArgvScope, CapSet, HostScope, PROTECTED_RELATIVE_PATHS, PathScope, SecretScope};
-pub use childproc::{ChildProc, ProcOutput, set_test_kill_delay_ms};
+pub use childproc::{ChildProc, ProcOutput, kill_group, set_test_kill_delay_ms};
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use config::{env_var, secret_scrubber};
 pub use ctx::Ctx;

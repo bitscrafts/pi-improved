@@ -344,7 +344,7 @@ async fn run_daemon(
     // permanent zombies in `run.list --status running`.
     engine.seed_sessions_from_store();
     wire_observers(&engine, &log, switches);
-    engine.reconcile_boot();
+    pii_server::engine::orphans::recover_at_boot(&engine);
 
     // PII_TEST_CLOCK_MS (test-only): when set, the daemon uses a FixedClock
     // starting at that epoch so scripts can drive timers deterministically.

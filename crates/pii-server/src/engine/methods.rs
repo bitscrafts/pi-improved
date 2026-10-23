@@ -403,8 +403,9 @@ pub(crate) fn run_abandon(engine: &Arc<Engine>, req: &Request) -> Response {
     }
 }
 
-/// `run.cancel { run_id, reason }`: close a not-running run with the reason
-/// recorded; refused while a node executes (spec 189).
+/// `run.cancel { run_id, reason, kill? }`: close a not-running run with the reason
+/// recorded; refused while a node executes (spec 189). `kill: true` stops the executing
+/// node and closes the run as abandoned (spec 243).
 pub(crate) fn run_cancel(engine: &Arc<Engine>, req: &Request) -> Response {
     let (Some(run_id), Some(reason)) = (
         req.params.get("run_id").and_then(|v| v.as_str()),
@@ -416,7 +417,13 @@ pub(crate) fn run_cancel(engine: &Arc<Engine>, req: &Request) -> Response {
             "run.cancel with a reason needs 'run_id' and 'reason'",
         );
     };
-    match crate::engine::runs::cancel_run(engine, &RunId::from(run_id), reason) {
+    let kill = req
+        .params
+        .get("kill")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let wait = crate::engine::runs::KILL_WAIT;
+    match crate::engine::runs::cancel_run_with(engine, &RunId::from(run_id), reason, kill, wait) {
         Ok(()) => value_response(req, Some(serde_json::json!({"cancelled": true})), |c, m| {
             err(req, c, m)
         }),

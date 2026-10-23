@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 
 use super::coder_container::{CONTAINER_WORKDIR, SKILL_DIRS};
 use super::coder_runtime::{
-    ContainerRuntime, Launch, OUTPUT_KEEP_BYTES, POLL, Refusal, Request, Spawn, TIMEOUT_EXIT_CODE,
+    ContainerRuntime, Launch, Listed, OUTPUT_KEEP_BYTES, POLL, Refusal, Request, Spawn,
+    TIMEOUT_EXIT_CODE,
 };
 use super::coder_runtime_util::{dechunk, elapsed_ms, message};
 
@@ -86,6 +87,49 @@ impl ContainerRuntime for PodmanApi {
             None,
         );
         outcome
+    }
+
+    fn list_all(&self, ctx: &Ctx) -> Result<Vec<Listed>, PiiError> {
+        let listed = self
+            .json_call(
+                &mut || ctx.check(),
+                "GET",
+                "/containers/json?all=1",
+                None,
+                "container list",
+                is_2xx,
+            )?
+            .map_err(|failure| PiiError::Internal(format!("coder runtime: {}", failure.reason)))?;
+        Ok(listed
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|item| {
+                let id = item.get("Id")?.as_str()?.to_owned();
+                let labels = item
+                    .get("Labels")?
+                    .as_object()?
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_owned()))
+                    .collect();
+                Some(Listed { id, labels })
+            })
+            .collect())
+    }
+
+    fn force_remove(&self, ctx: &Ctx, id: &str) -> Result<bool, PiiError> {
+        let path = format!("/containers/{id}?force=true");
+        match self.call(&mut || ctx.check(), "DELETE", &path, None)? {
+            Reply::Answered { status: 404, .. } => Ok(false),
+            Reply::Answered { status, .. } if is_2xx(status) => Ok(true),
+            Reply::Answered { status, body } => Err(PiiError::Internal(format!(
+                "coder runtime: remove {id} ({status}): {}",
+                message(&String::from_utf8_lossy(&body))
+            ))),
+            Reply::Failed(e) => Err(PiiError::Internal(format!(
+                "coder runtime: remove {id}: {e}"
+            ))),
+        }
     }
 }
 

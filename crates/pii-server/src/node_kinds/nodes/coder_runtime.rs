@@ -119,6 +119,15 @@ pub struct Spawn {
     pub env_names: Vec<String>,
 }
 
+/// A container the runtime holds, with its labels (spec 242 R1).
+#[derive(Clone)]
+pub struct Listed {
+    /// The container's id.
+    pub id: String,
+    /// Its labels as `(key, value)` pairs.
+    pub labels: Vec<(String, String)>,
+}
+
 /// A way to run a `coder` node's agent inside its image: the seam between the node and the container runtime
 /// (spec 230 R1).
 pub trait ContainerRuntime {
@@ -140,6 +149,19 @@ pub trait ContainerRuntime {
         timeout: Option<Duration>,
         spawned: &mut dyn FnMut(&Spawn),
     ) -> Result<Launch, PiiError>;
+
+    /// Every container the runtime holds, stopped ones included, with its labels (spec 242 R1). Boot recovery reads
+    /// them to find the ones a dead daemon's runs left behind.
+    ///
+    /// # Errors
+    /// [`PiiError`] when the runtime cannot be asked.
+    fn list_all(&self, ctx: &Ctx) -> Result<Vec<Listed>, PiiError>;
+
+    /// Force-removes container `id` (spec 242 R2). `Ok(false)` when it was already gone.
+    ///
+    /// # Errors
+    /// [`PiiError`] when the runtime refuses the removal or cannot be asked.
+    fn force_remove(&self, ctx: &Ctx, id: &str) -> Result<bool, PiiError>;
 }
 
 /// The exit code a launch reports when the node's own timeout killed the agent.

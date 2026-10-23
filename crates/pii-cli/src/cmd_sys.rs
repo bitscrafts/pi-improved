@@ -39,7 +39,7 @@ pub(crate) fn cmd_run_ctl(args: &mut std::env::ArgsOs) -> ExitCode {
         _ => {
             eprintln!(
                 "usage: pii run {{ls [--status S] [--graph G]|start <graph> [--input J]|get <run_id>|trace <run_id> [--db P]|explain <run_id> [--db P]\
-                 |resume <run_id>|retry <run_id> --node <id>|abandon <run_id> --reason <text>|cancel <run_id> --reason <text>}}"
+                 |resume <run_id>|retry <run_id> --node <id>|abandon <run_id> --reason <text>|cancel <run_id> [--kill] [--reason <text>]}}"
             );
             ExitCode::from(2)
         }
@@ -189,18 +189,20 @@ fn print_lines(lines: &[String]) {
     }
 }
 
-/// `pii run resume <id> | retry <id> --node N | abandon <id> --reason T`
-/// (spec 186): replay is an operator action with an id, never automatic.
+/// `pii run resume <id> | retry <id> --node N | abandon <id> --reason T | cancel <id> [--kill] [--reason T]`
+/// (spec 186): replay is an operator action with an id, never automatic. `--kill` (spec 243)
+/// stops an executing node; without it a cancel of an executing run is refused.
 fn run_replay(args: &mut std::env::ArgsOs, verb: &str) -> ExitCode {
-    let Some(id) = next_str(args) else {
+    let Some(id) = next_str(args).filter(|a| !a.starts_with("--")) else {
         eprintln!("usage: pii run {verb} <run_id> ...");
         return ExitCode::from(2);
     };
-    let (mut node, mut reason) = (None, None);
+    let (mut node, mut reason, mut kill) = (None, None, false);
     while let Some(a) = next_str(args) {
         match a.as_str() {
             "--node" => node = next_str(args),
             "--reason" => reason = next_str(args),
+            "--kill" => kill = true,
             _ => {}
         }
     }
@@ -217,16 +219,28 @@ fn run_replay(args: &mut std::env::ArgsOs, verb: &str) -> ExitCode {
             )
         }
         _ => {
-            let Some(r) = reason else {
-                eprintln!("usage: pii run {verb} <run_id> --reason <text>");
-                return ExitCode::from(2);
+            // `--kill` is meaningful for `cancel` only: for `abandon` it is ignored and the reason stays mandatory.
+            let kill = kill && verb == "cancel";
+            // A kill needs no reason of its own: the operator's kill is the reason.
+            let r = match (reason, kill) {
+                (Some(r), _) => r,
+                (None, true) => String::from("killed by operator"),
+                (None, false) => {
+                    eprintln!("usage: pii run {verb} <run_id> --reason <text>");
+                    return ExitCode::from(2);
+                }
             };
-            let method = if verb == "cancel" {
-                Method::RunCancel
+            if verb == "cancel" {
+                (
+                    Method::RunCancel,
+                    serde_json::json!({"run_id": id, "reason": r, "kill": kill}),
+                )
             } else {
-                Method::RunAbandon
-            };
-            (method, serde_json::json!({"run_id": id, "reason": r}))
+                (
+                    Method::RunAbandon,
+                    serde_json::json!({"run_id": id, "reason": r}),
+                )
+            }
         }
     };
     match run_call(method, params) {

@@ -4,15 +4,16 @@ use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
 use pii_abi::{NodeId, PiiError, PortName};
-use toml::Table;
 
 use crate::spec::{Edge, EdgeKind, GraphSpec, NodeSpec};
 
 use super::check::{Attach, Link, Loaded, Piece};
 use super::check::{Fragment, check_fragment, sha256_hex};
-use super::shared::{PRE_SURFACES, SURFACES};
+use super::shared::PRE_SURFACES;
 use super::weave::Inlined;
 use crate::node::NodeRegistry;
+mod attaches;
+pub(super) use attaches::parse_attaches;
 /// The run.start chain sits in front of the host's entry.
 pub(super) fn splice_run_start(
     spec: &mut GraphSpec,
@@ -168,90 +169,6 @@ pub(super) fn splice_run_end(
     }
     splice(spec, pieces, &[], sequence);
     Ok(())
-}
-
-/// Whether `src` is a fragment file (it declares a `[fragment]` table) rather than a host graph.
-pub(super) fn parse_attaches(doc: &Table) -> Result<Vec<Attach>, PiiError> {
-    let items = match doc.get("attach") {
-        None => return Ok(Vec::new()),
-        Some(toml::Value::Array(items)) => items,
-        Some(_) => {
-            return Err(PiiError::Invalid(
-                "'attach' must be an array of tables".into(),
-            ));
-        }
-    };
-    let mut out: Vec<Attach> = Vec::new();
-    for item in items {
-        let t = item
-            .as_table()
-            .ok_or_else(|| PiiError::Invalid("each [[attach]] must be a table".into()))?;
-        let id = text(t, "id")?;
-        if out.iter().any(|a| a.id == id) {
-            return Err(PiiError::Invalid(format!("duplicate attach id '{id}'")));
-        }
-        let at = text(t, "at")?;
-        if !SURFACES.contains(&at.as_str()) {
-            return Err(PiiError::Invalid(format!(
-                "fragment.surface.unknown: attach '{id}' names surface '{at}'"
-            )));
-        }
-        let on = names(t, &id)?;
-        if at.starts_with("node.") && on.is_empty() {
-            return Err(PiiError::Invalid(format!(
-                "attach '{id}' at {at} needs on = [node ids] or [\"*\"]"
-            )));
-        }
-        if !at.starts_with("node.") && !on.is_empty() {
-            return Err(PiiError::Invalid(format!(
-                "attach '{id}' at {at} takes no on list"
-            )));
-        }
-        let pin = text(t, "pin").map_err(|_| {
-            PiiError::Invalid(format!(
-                "fragment.pin.missing: attach '{id}' carries no pin; a fragment is inlined only by its sha256"
-            ))
-        })?;
-        let order = match t.get("order") {
-            None => 0,
-            Some(v) => v.as_integer().ok_or_else(|| {
-                PiiError::Invalid(format!("attach '{id}' order must be an integer"))
-            })?,
-        };
-        out.push(Attach {
-            fragment: text(t, "fragment")?,
-            id,
-            at,
-            on,
-            order,
-            pin: pin.to_ascii_lowercase(),
-        });
-    }
-    Ok(out)
-}
-
-fn text(t: &Table, key: &str) -> Result<String, PiiError> {
-    t.get(key)
-        .and_then(toml::Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| PiiError::Invalid(format!("attach missing string '{key}'")))
-}
-
-fn names(t: &Table, id: &str) -> Result<Vec<String>, PiiError> {
-    match t.get("on") {
-        None => Ok(Vec::new()),
-        Some(toml::Value::Array(items)) => items
-            .iter()
-            .map(|item| {
-                item.as_str().map(str::to_owned).ok_or_else(|| {
-                    PiiError::Invalid(format!("attach '{id}': 'on' entries must be strings"))
-                })
-            })
-            .collect(),
-        Some(_) => Err(PiiError::Invalid(format!(
-            "attach '{id}': 'on' must be an array"
-        ))),
-    }
 }
 
 /// The host nodes an attach applies to: `["*"]` is every node, else the named ones.

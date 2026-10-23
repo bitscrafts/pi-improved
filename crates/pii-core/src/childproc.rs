@@ -377,7 +377,10 @@ fn run_child(
 
 /// Kills the process group whose leader is `pid` (SIGKILL). Safe wrapper
 /// over `nix::sys::signal::killpg` — no `unsafe` in our code (F3, spec 13).
-fn kill_group(pid: u32) -> Result<(), PiiError> {
+///
+/// # Errors
+/// [`PiiError`] when the group cannot be signalled, `ESRCH` included.
+pub fn kill_group(pid: u32) -> Result<(), PiiError> {
     use nix::sys::signal::{Signal, killpg};
     use nix::unistd::Pid;
     killpg(

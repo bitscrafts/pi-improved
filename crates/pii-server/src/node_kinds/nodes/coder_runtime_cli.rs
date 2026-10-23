@@ -1,14 +1,16 @@
 //! The spec 209 container runtime: `podman run` as a child process of the daemon. Split out of
 //! `coder_runtime.rs` by the 450-line gate; the socket runtime (spec 230) stays there.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use pii_abi::PiiError;
 use pii_core::Ctx;
+use serde_json::Value;
 
 use super::coder_container::{self, ContainerRun};
 use super::coder_runtime::{
-    ContainerRuntime, Launch, PROBE_TIMEOUT, Refusal, Request, Spawn, wait_child,
+    ContainerRuntime, Launch, Listed, PROBE_TIMEOUT, Refusal, Request, Spawn, wait_child,
 };
 use super::coder_runtime_util::{env_file_path, env_names, probe_reason, probe_says_absent};
 
@@ -31,6 +33,7 @@ impl ContainerRuntime for PodmanCli {
         &self,
         ctx: &Ctx,
         req: &Request<'_>,
+        timeout: Option<Duration>,
         spawned: &mut dyn FnMut(&Spawn),
     ) -> Result<Launch, PiiError> {
         let podman = self.podman.display().to_string();
@@ -86,7 +89,7 @@ impl ContainerRuntime for PodmanCli {
             skills_dir: req.skills_dir,
         };
         let run_argv = coder_container::run_argv(&run, req.agent_argv);
-        let result = wait_child(ctx, &run_argv, &workdir, &self.env, None, &mut |pid| {
+        let result = wait_child(ctx, &run_argv, &workdir, &self.env, timeout, &mut |pid| {
             spawned(&Spawn {
                 runtime: "cli",
                 image: req.image.to_owned(),
@@ -100,5 +103,59 @@ impl ContainerRuntime for PodmanCli {
         // The env file holds the secrets: it goes on every path, once podman has had its read.
         let _ = std::fs::remove_file(&env_file);
         result
+    }
+
+    fn list_all(&self, ctx: &Ctx) -> Result<Vec<Listed>, PiiError> {
+        let argv = [
+            self.podman.display().to_string(),
+            "ps".to_owned(),
+            "--all".to_owned(),
+            "--format".to_owned(),
+            "json".to_owned(),
+        ];
+        let out = ctx.proc()?.run(&argv, Path::new("/"), PROBE_TIMEOUT)?;
+        if out.exit_code != 0 {
+            return Err(PiiError::Internal(format!(
+                "coder runtime: podman ps: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        let rows: Value = serde_json::from_slice(&out.stdout)
+            .map_err(|e| PiiError::Internal(format!("coder runtime: podman ps: {e}")))?;
+        Ok(rows
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|row| {
+                let id = row.get("Id")?.as_str()?.to_owned();
+                let labels = row
+                    .get("Labels")?
+                    .as_object()?
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_owned()))
+                    .collect();
+                Some(Listed { id, labels })
+            })
+            .collect())
+    }
+
+    fn force_remove(&self, ctx: &Ctx, id: &str) -> Result<bool, PiiError> {
+        let argv = [
+            self.podman.display().to_string(),
+            "rm".to_owned(),
+            "--force".to_owned(),
+            id.to_owned(),
+        ];
+        let out = ctx.proc()?.run(&argv, Path::new("/"), PROBE_TIMEOUT)?;
+        if out.exit_code == 0 {
+            return Ok(true);
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        if stderr.to_ascii_lowercase().contains("no such container") {
+            return Ok(false);
+        }
+        Err(PiiError::Internal(format!(
+            "coder runtime: podman rm {id}: {stderr}"
+        )))
     }
 }

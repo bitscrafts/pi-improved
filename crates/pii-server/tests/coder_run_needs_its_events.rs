@@ -126,7 +126,13 @@ fn silent_coder_node_cannot_succeed_the_run() {
 #[test]
 fn spawned_and_exited_coder_run_succeeds() {
     let bin = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-bin-").unwrap();
-    std::fs::write(bin.path().join("pi"), "#!/bin/sh\nexit 0\n").unwrap();
+    // The agent does real work (spec 239): a run whose agent changed nothing while the criterion already passed is refused,
+    // so a "spawned and exited" agent that must leave the run succeeded writes a file into its workdir.
+    std::fs::write(
+        bin.path().join("pi"),
+        "#!/bin/sh\necho done > agent-wrote.txt\nexit 0\n",
+    )
+    .unwrap();
     std::fs::set_permissions(
         bin.path().join("pi"),
         std::os::unix::fs::PermissionsExt::from_mode(0o755),

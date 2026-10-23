@@ -12,6 +12,7 @@ pub mod classify;
 pub mod coder;
 pub mod coder_container;
 pub mod coder_runtime;
+pub(crate) mod coder_runtime_api;
 pub(crate) mod coder_runtime_cli;
 pub(crate) mod coder_runtime_util;
 pub mod coder_skills;

@@ -75,8 +75,12 @@ pub const ALLOWLIST: &[&str] = &[
     // M0 PASS through this socket). Sync std stream with a read-timeout tick
     // a cancelled run can stop, which the async client_connect does not offer.
     "crates/pii-server/src/node_kinds/nodes/coder_runtime.rs",
+    // Spec 241 moved that same client (unchanged purpose) into its own file when `coder_runtime.rs` reached the 450-line gate.
+    "crates/pii-server/src/node_kinds/nodes/coder_runtime_api.rs",
     // Spec 230: the test's fake podman serves the REST paths on a bound UDS.
     "crates/pii-server/tests/coder_starts_through_the_runtime_socket.rs",
+    // Spec 241: the same sanctioned fake, extended to serve `logs`/`stop` and hang on demand.
+    "crates/pii-server/tests/coder_container_bounded.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

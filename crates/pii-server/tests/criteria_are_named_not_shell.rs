@@ -87,10 +87,11 @@ fn fields(workdir: &Path, criteria: &str) -> String {
     )
 }
 
-/// A named criterion from the table runs, and a green one passes the node.
+/// A named criterion from the table runs, and a green one passes the node. The agent writes a file: a run that changed
+/// nothing while its criterion already passed is refused (spec 239), which this test is not about.
 #[test]
 fn named_criterion_from_the_table_passes() {
-    let bin = fake_bin("exit 0");
+    let bin = fake_bin("echo done > agent-wrote.txt\nexit 0");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "named-work-").unwrap();
     let (terminal, _) = run_coder_graph(bin.path(), &fields(work.path(), "\"green\""));
     assert!(
