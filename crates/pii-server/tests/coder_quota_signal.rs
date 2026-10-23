@@ -64,6 +64,7 @@ fn exited_for(output: &str) -> pii_observe::Event {
         tree: None,
         requested: None,
         runs: &[],
+        pre_passed: None,
         failure_tail: "",
         routes: &[],
         agent_output: output,
