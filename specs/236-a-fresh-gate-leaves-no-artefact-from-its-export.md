@@ -143,4 +143,45 @@ there and nowhere else.
 
 ## Closure
 
-_(empty — the implementer's readings, the mutation red/restore and the two-run pair go here)_
+Readings from the orchestrator's own runs on 2026-10-23, all logs under `_tmp/autonomy/logs/`.
+
+- **The worker's change was right and the spec's own criteria were wrong twice.** (a) `cargo test -q -p xtask
+  --lib gate_env` collects **0 tests and exits 0** (`running 0 tests … 33 filtered out`) — `xtask` is a binary
+  crate and the test lives in `--bins`; the criterion as first written certified nothing (R3a). (b)
+  `orch-236-no-export-path.sh` greped the bare prefix over **every** warm cache and found **12098** files on
+  the worker's tree, which is why the cycle recorded `verify-failed`: most of those are clippy/build artefacts
+  that R2 deliberately keeps on the warm cache, and the rest was the pre-fix residue in `*/test-gate`.
+- **The plain door cannot measure an uncommitted fix, and that was measured rather than assumed.** With the
+  change in the worktree only, `scripts/orch-236-two-runs.sh` read run 1 `PASS`, run 2 `FAIL` with the same
+  three `pii-evolve` launcher tests (`read driver.rs: Os { code: 2 }`) — because `fresh-gate` exports **HEAD**
+  with `git archive`, so the export's `gate-steps.txt` did not carry `TEST_GATE_TARGET` while the `xtask`
+  binary that set it was built from the dirty tree. The pair poisoned the shared test-step cache with 30121
+  export-baked files and the dev-tree gate then failed on them too. **`--worktree` is the pre-commit door:**
+  two `fresh-gate --worktree` runs at `f39f61e` both printed `fresh-gate: PASS`, the inventory check passed
+  after each, and the dev-tree `quality-gate.sh` that followed read `ALL PASS` with the launcher lane 5/0.
+- **The check's pattern was made precise by measurement, with both controls.** Greping the bare prefix flagged
+  **three files in a correct tree**: the `xtask` test binary and its incremental artefacts, whose string table
+  carries the sample path `/projects/_tmp/fresh-gate-7` used as test data. The pattern is now
+  `/projects/_tmp/fresh-gate-[0-9]+/(crates|xtask)/` — a baked manifest dir — and the script runs two controls
+  on every invocation: it must see a planted baked manifest dir, and must not flag the sample path.
+  **Checker mutation:** planting `_tmp/gate-target/test-gate/debug/deps/orch-fake-export-baked.bin` with the
+  string `/projects/_tmp/fresh-gate-424242/crates/pii-evolve/src/driver.rs` read `rc=1`,
+  `FAIL, 1 test-step file(s) baked a manifest dir inside an export`; removing the planted file (the only file
+  deleted, created by this run) read `rc=0`.
+- **Unit mutation (R6):** `TEST_GATE_TARGET` changed from `<export>/_tmp/test-gate` to `warm/test-gate` reddened
+  exactly the target assertion — `panicked at xtask/src/fresh_gate.rs:453: lies under the export:
+  /projects/pi-improved/_tmp/gate-target/test-gate`, `0 passed; 1 failed`. Restored byte-identical (`sha256
+  5fc2e1e557ad5a8a22ec3e5ca46bbf6e5d379c0575017d0abc9528a6f6b62f9a` before and after, `touch`ed) and green
+  again: `1 passed`.
+- **The spec's criteria on the committed tree, `3217788`** (`_tmp/autonomy/logs/orch-236-plain-pair-20261023T072722Z.log`):
+  `cargo test -q -p xtask --bins gate_env` 1 passed; `scripts/orch-236-two-runs.sh` → `run 1 PASS`, `run 2 PASS`,
+  `two-runs: PASS (both runs at 3217788…)`; `scripts/orch-236-no-export-path.sh` → `PASS (… controls ok …)`;
+  launcher lane 5 passed / 0 failed. `bash quality-gate.sh` read `ALL PASS` on the identical tree content
+  (`_tmp/autonomy/logs/orch-236-worktree-pair-20261023T065058Z.log`).
+- **Cost, stated so it is not re-learned:** the test step no longer reuses binaries, so each fresh-gate
+  rebuilds the workspace test targets inside its export. On this host the pair took about 22 minutes for two
+  runs (start 07:27:22Z, `c2` at ~07:49Z — `_tmp/autonomy/logs/orch-236-plain-pair-20261023T072722Z.log`
+  mtimes), where run 1 built everything and run 2 built its own copy inside its own export. That is the price
+  of never reusing a binary that names a directory the previous run deleted.
+- Commit paths touched: `xtask/src/fresh_gate.rs`, `gate-steps.txt`, `scripts/orch-236-two-runs.sh`,
+  `scripts/orch-236-no-export-path.sh`, this spec, `scripts/autonomy/plan.tsv`.

@@ -2,6 +2,36 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-23 07:55Z — 236 closed at `3217788`: the fresh-gate test step compiles inside its export
+
+State: HEAD `3217788` · tree clean but for four generated `QUEUE-BRIEF-2026-10-23T0[3-6].md` (untracked, not
+mine) · control `RUNNING at 2026-10-23T02:58:54Z (resumed by human)` · queue: **A104 done**; A94 parked and
+A95 needs-review, both still waiting on the one lnx deploy; nothing dispatchable.
+
+- **The fix:** `gate_env` hands the gate child `TEST_GATE_TARGET=<export>/_tmp/test-gate` and `gate-steps.txt`'s
+  test line reads it with the old `${FRESH_GATE_TARGET}` fallback, so fmt/clippy/build/doc keep the warm cache
+  (R2) and only the test step's artefacts die with the run that made them (R1). Measured inside the export:
+  `rustc … --out-dir /projects/_tmp/fresh-gate-1078874/_tmp/test-gate/debug/deps`.
+- **Two spec defects, both measured.** `cargo test -p xtask --lib gate_env` collected **0 tests and exited 0**
+  (the test lives in `--bins`), and the inventory check greped the bare prefix over every warm cache, reading
+  12098 hits on the worker's correct tree — which is what the cycle had recorded as `verify-failed`. Spec 236
+  now says `--bins` + `test result: ok. [1-9]`, scopes the check to `*/test-gate`, and matches a baked manifest
+  dir (`/projects/_tmp/fresh-gate-[0-9]+/(crates|xtask)/`) rather than the prefix, because the new unit test's
+  own sample path `/projects/_tmp/fresh-gate-7` made the prefix version fire on a correct tree.
+- **`fresh-gate` exports HEAD — so the plain two-run door cannot measure an uncommitted fix.** Measured: the
+  pair on the dirty tree read run 1 PASS, run 2 FAIL (three `pii-evolve` launcher tests, `read driver.rs:
+  Os { code: 2 }`), because the export's `gate-steps.txt` was HEAD's while the `xtask` binary that set
+  `TEST_GATE_TARGET` came from the worktree. `fresh-gate --worktree` is the pre-commit door: both runs PASS,
+  inventory clean, dev-tree gate ALL PASS. After the commit the plain pair passed at an unchanged HEAD.
+- **Mutations, both recorded in the spec's `## Closure`:** the unit mutation (`TEST_GATE_TARGET` → the warm
+  dir) reddened exactly `lies under the export` and was restored byte-identical (`sha256 5fc2e1e5…`); the
+  checker mutation (a planted file naming `<dead export>/crates/pii-evolve`) read rc=1 and rc=0 after removal.
+- **237 needed a repair too, in the same tick** (see the section below): its commit landed without the
+  `pub mod report` line it needed, so HEAD did not compile until `f39f61e`.
+- **Cost of the fix, stated:** a fresh-gate now rebuilds the workspace test targets inside its export each run
+  (the pair took ~22 minutes on this host). That is the price of never reusing a binary that names a deleted
+  directory.
+
 ## 2026-10-23 06:25Z — HEAD did not build: 237's commit left its module private behind a green gate
 
 State at the tick: HEAD `7111cff` · lock free, no cycle in flight · control `RUNNING at 2026-10-23T02:58:54Z
