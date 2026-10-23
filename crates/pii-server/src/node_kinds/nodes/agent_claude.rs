@@ -58,17 +58,23 @@ pub fn run_facts(output: &str) -> RunFacts {
 /// with `--verbose`) is what makes the route, the session id and the cost readable. Partial messages are NOT
 /// requested: one haiku run measured 3,779 `stream_event` lines, past the capture bound. No provider flag and no key
 /// on the argv: claude reads its own credential. A budget, when the node sets one, is the claude spend cap.
+///
+/// A resumed run (`sid`) carries `--resume <sid>`. A fresh run carries `--session-id <new_session>` when the caller
+/// chose one, so the id is known before the spawn (spec 244). The two flags are never both emitted.
 #[must_use]
 pub fn argv(
     sid: Option<&str>,
+    new_session: Option<&str>,
     model: &str,
     max_budget_usd: Option<f64>,
     brief: &str,
 ) -> Vec<String> {
     let s = |x: &str| x.to_owned();
     let mut v = vec![s("claude")];
-    if let Some(sid) = sid {
-        v.extend([s("--resume"), s(sid)]);
+    match (sid, new_session) {
+        (Some(sid), _) => v.extend([s("--resume"), s(sid)]),
+        (None, Some(id)) => v.extend([s("--session-id"), s(id)]),
+        (None, None) => {}
     }
     v.extend([
         s("--model"),
@@ -111,5 +117,19 @@ pub fn has_credential(env: &std::collections::BTreeMap<String, String>) -> bool 
         .is_some_and(|v| {
             v.get("claudeAiOauth")
                 .is_some_and(serde_json::Value::is_object)
+        })
+}
+
+/// Whether `id` is a lowercase, hyphenated UUID v4: the only shape pii hands `claude` as a session id (spec 244 R5).
+/// A graph's `sid` that fails this never reaches the argv.
+#[must_use]
+pub fn is_session_uuid(id: &str) -> bool {
+    let b = id.as_bytes();
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => *c == b'-',
+            14 => *c == b'4',
+            19 => matches!(c, b'8' | b'9' | b'a' | b'b'),
+            _ => c.is_ascii_digit() || (b'a'..=b'f').contains(c),
         })
 }

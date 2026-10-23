@@ -231,19 +231,33 @@ fn budget(cfg: &serde_json::Value) -> Result<Option<f64>, PiiError> {
     }
 }
 
+/// The graph's `sid`. A claude handle must be a session UUID v4 (spec 244 R5): a malformed one is refused here, before
+/// any dispatch, so a bad handle never reaches `claude`. A pi node never reads `sid`, so it is passed through.
+fn session_handle(agent: Agent, cfg: &serde_json::Value) -> Result<Option<String>, PiiError> {
+    match opt(cfg, "sid") {
+        Some(sid) if agent == Agent::Claude && !super::agent_claude::is_session_uuid(&sid) => {
+            Err(PiiError::Invalid(
+                "worker node 'sid' must be a lowercase UUID v4 session id".to_owned(),
+            ))
+        }
+        sid => Ok(sid),
+    }
+}
+
 impl WorkerSpec {
     /// Reads `agent`, `model`, `spec`, `workdir` (and optional `sid`, `session`, `max_budget_usd`) from node data.
     ///
     /// # Errors
-    /// [`PiiError::Invalid`] on a missing field or an unknown agent.
+    /// [`PiiError::Invalid`] on a missing field, an unknown agent, or a malformed claude `sid`.
     pub fn from_cfg(cfg: &serde_json::Value) -> Result<Self, PiiError> {
+        let agent = Agent::parse(&field(cfg, "agent")?)?;
         Ok(Self {
-            agent: Agent::parse(&field(cfg, "agent")?)?,
+            agent,
             model: field(cfg, "model")?,
             provider: opt(cfg, "provider"),
             spec: field(cfg, "spec")?,
             workdir: field(cfg, "workdir")?,
-            sid: opt(cfg, "sid"),
+            sid: session_handle(agent, cfg)?,
             session: opt(cfg, "session"),
             max_budget_usd: budget(cfg)?,
         })
@@ -311,6 +325,9 @@ pub fn plan(
             )));
         }
     }
+    // spec 244: a fresh claude run names its session before the spawn, so a crash after it still journals the handle.
+    let claude_sid = spec.sid.as_deref().filter(|_| spec.agent == Agent::Claude);
+    let new_session = (spec.agent == Agent::Claude && claude_sid.is_none()).then(uuid_v4);
     let s = |x: &str| x.to_owned();
     let argv = match spec.agent {
         Agent::Pi => {
@@ -340,9 +357,13 @@ pub fn plan(
             v.extend([s("-p"), brief.to_owned()]);
             v
         }
-        Agent::Claude => {
-            super::agent_claude::argv(spec.sid.as_deref(), &spec.model, spec.max_budget_usd, brief)
-        }
+        Agent::Claude => super::agent_claude::argv(
+            claude_sid,
+            new_session.as_deref(),
+            &spec.model,
+            spec.max_budget_usd,
+            brief,
+        ),
     };
     Ok(Dispatch {
         launcher: launcher.to_owned(),

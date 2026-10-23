@@ -106,12 +106,18 @@ pub(super) fn skill_hashes(skills: &[Rendered]) -> String {
         .join(",")
 }
 
-/// The session an agent was launched with: the value after `--session`, empty when the argv names none.
-pub(super) fn session_of(argv: &[String]) -> String {
-    argv.iter()
-        .position(|a| a == "--session")
-        .and_then(|i| argv.get(i + 1))
-        .cloned()
+/// The session an agent was launched with, read from the argv it was spawned with.
+///
+/// The value after `--session` (pi), or after `--session-id` or `--resume` (claude), whichever flag comes first. Empty
+/// when the argv names none (spec 244).
+pub fn session_of(argv: &[String]) -> String {
+    argv.windows(2)
+        .find_map(|w| match w {
+            [flag, value] if matches!(flag.as_str(), "--session" | "--session-id" | "--resume") => {
+                Some(value.clone())
+            }
+            _ => None,
+        })
         .unwrap_or_default()
 }
 pub(super) fn with_selected_spec(cfg: &serde_json::Value, input: &NodeInput) -> serde_json::Value {
