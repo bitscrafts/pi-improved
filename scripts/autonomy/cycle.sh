@@ -368,6 +368,15 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
     -m "$SPEC: automated pass — $TITLE (spec + criteria in specs/$SPEC; gate green)" || { say "commit failed"; exit 11; }
   say "committed: $(git log --oneline -1)"
   report loop.commit "item=$ITEM rev=$(git rev-parse --short HEAD)"
+  # 6b) spec 245: the gate measured the working tree; this reads the COMMIT. HEAD_BUILDS defaults to the real script.
+  HB=$(timeout "${HEAD_BUILDS_TIMEOUT:-1800}" bash "${HEAD_BUILDS:-scripts/autonomy/head-builds.sh}" 2>&1); HBRC=$?
+  if [ "$HBRC" -ne 0 ]; then
+    HBSYM=$(printf '%s\n' "$HB" | grep -m1 -E '^error' | cut -c1-160)
+    python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=head-broken after $(git rev-parse --short HEAD): ${HBSYM:-see log}"
+    printf '%s\n' "$HB" >>"$LOG"; say "head-builds FAILED: $HB"
+    echo "OUTCOME=head-broken ITEM=$ITEM HEAD=$(git rev-parse --short HEAD)"; exit 15
+  fi
+  say "head-builds: $(printf '%s' "$HB" | head -1)"
 fi
 python3 scripts/autonomy/state.py set "$ITEM" status=done attempts=$((ATTEMPTS+1)) "last=committed $(git rev-parse --short HEAD)"
 say "ITEM $ITEM DONE"; echo "OUTCOME=done ITEM=$ITEM HEAD=$(git rev-parse --short HEAD)"

@@ -147,6 +147,29 @@ OUTPUT=$(PII_PLAN=$T/dup.tsv PATH=$BIN:$PATH bash scripts/autonomy/cycle.sh 2>&1
 row "the cycle reports plan-error" "plan-error" "$(printf '%s' "$OUTPUT" | grep -o 'OUTCOME=plan-error' | head -1 | cut -d= -f2)"
 printf '%s' "$OUTPUT" | grep -q 'queue empty'; row "and never claims an empty queue" 1 $?
 
+echo; echo "== 11. a commit builds at its own HEAD (head-builds.sh, spec 245) — a control, so a check that always passes or fails is caught"
+FX=$T/fx; mkdir -p "$FX/crates/x/src"
+printf '[workspace]\nresolver = "2"\nmembers = ["crates/x"]\n' >"$FX/Cargo.toml"
+printf '[package]\nname = "x"\nversion = "0.0.0"\nedition = "2021"\n' >"$FX/crates/x/Cargo.toml"
+printf 'pub fn present() -> u32 { 1 }\n' >"$FX/crates/x/src/lib.rs"
+printf '_tmp/\ntarget/\n' >"$FX/.gitignore"
+fxg(){ git -C "$FX" -c user.name=fixture -c user.email=fixture@localhost "$@"; }
+fxg init -q && fxg add -A && fxg commit -q -m green
+HB(){ HEAD_BUILDS_REPO=$FX HEAD_BUILDS_TARGET=$T/fx-target bash scripts/autonomy/head-builds.sh "$@"; }
+OUT=$(HB 2>&1); RC=$?
+row "a building commit -> exit 0" 0 $RC
+printf '%s' "$OUT" | grep -qE '^HEAD [0-9a-f]+ builds$'; row "and the one-line verdict" 0 $?
+printf 'pub fn present() -> u32 { 1 }\npub fn caller() -> u32 { missing_symbol() }\n' >"$FX/crates/x/src/lib.rs"
+fxg commit -q -am red
+OUT=$(HB 2>&1); RC=$?
+row "a commit calling a missing symbol -> exit 1" 1 $RC
+printf '%s' "$OUT" | grep -q 'does NOT build' && printf '%s' "$OUT" | grep -q 'missing_symbol'; row "and it names the symbol" 0 $?
+printf 'pub fn present() -> u32 { 1 }\npub fn caller() -> u32 { present() }\n' >"$FX/crates/x/src/lib.rs"
+OUT=$(HB 2>&1); RC=$?
+row "the plain door cannot see an uncommitted fix" 1 $RC
+OUT=$(HB --worktree 2>&1); RC=$?
+row "--worktree overlays the uncommitted fix -> exit 0" 0 $RC
+
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]
