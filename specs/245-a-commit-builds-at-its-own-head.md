@@ -97,5 +97,26 @@ item whose fix is uncommitted read `head-broken`, and the loop parks correct wor
 
 ## Closure
 
-_(empty — the implementer's readings go here; the orchestrator's independent reading of criteria, controls and the
-red-before-green mutation goes here too)_
+**Orchestrator's independent reading, 2026-10-23T18:17–18:22Z** — tree at HEAD `7172770`, carrying this spec's
+WIP (`M scripts/autonomy/selftest.sh`, `?? scripts/autonomy/head-builds.sh`, `?? crates/pii-server/tests/coder_runtime_surface.rs`):
+
+| # | criterion | reading |
+|---|---|---|
+| 1 | `cargo test -q -p pii-server --test coder_runtime_surface` | **PASS** — `running 2 tests … test result: ok. 2 passed; 0 failed`, rc 0 |
+| 2 | `bash scripts/autonomy/head-builds.sh --worktree` | **PASS** — `HEAD 7172770 builds`, rc 0 |
+| 3 | `cargo check -q --workspace` | **PASS** — rc 0 |
+| 4 | `bash -n scripts/autonomy/head-builds.sh && grep -q "head-builds" scripts/autonomy/cycle.sh` | **FAIL** — rc 1: `cycle.sh` contains no reference to `head-builds` at all |
+| 5 | `cargo clippy -q -p pii-server -p pii-core --all-targets -- -D warnings` | **PASS** — rc 0 |
+
+So R1, R2, R3 and R5 are delivered and measured; **R4 is not implemented** — the post-commit check exists as a
+script and is called by nobody, which is the exact shape this spec was filed to remove (a green reading that
+nothing enforces). The row stays `needs-review`.
+
+`scripts/autonomy/selftest.sh` was run on this tree: **40 passed, 0 failed / VERDICT: ALL MECHANISMS PASS**,
+including all four new `head-builds.sh` rows — the fixture's building commit exits 0 with `^HEAD [0-9a-f]+ builds$`,
+a commit calling `missing_symbol()` exits 1 and names the symbol, the plain door cannot see an uncommitted fix
+(exit 1) while `--worktree` overlays it (exit 0). Both controls fire, so the check is not one that always passes.
+
+**Finding owed by the next pass:** criterion 4 is a `grep`. It certifies that a call exists, never that the
+`head-broken` branch fires, that exit 15 is returned, or that the row is left `needs-review` instead of `done`.
+R4 owes a reading of the **branch**, taken through the real `cycle.sh` — not a re-enactment of its lines.

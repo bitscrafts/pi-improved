@@ -2,6 +2,26 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-23 18:25Z — 245 is four of five: the check exists, nothing calls it
+
+State: HEAD `7172770` · lock free, no cycle in flight · watchdog alive (pid 811768, 2d23h) · control
+`RUNNING at 2026-10-23T02:58:54Z` · queue: A94 parked, A95 needs-review (both still the one lnx deploy),
+A113 **needs-review / verify-failed** · selftest **40 passed, 0 failed / ALL MECHANISMS PASS**
+(`_tmp/autonomy/logs/selftest-20261023T18*.log`).
+
+- **A113/245 measured by hand on the tree the worker left** (logs `a113-criteria-20261023T181710Z`): criteria
+  1, 2, 3, 5 green — `coder_runtime_surface` 2 passed, `head-builds.sh --worktree` → `HEAD 7172770 builds`,
+  `cargo check --workspace` rc 0, clippy rc 0. Criterion 4 **rc 1**: `cycle.sh` never mentions `head-builds`,
+  so R4 was never implemented. The worker delivered R1–R3 and R5; the check it built is called by nobody.
+- **The selftest's new rows are real controls.** Row 11 drives `head-builds.sh` against a two-commit fixture:
+  the building commit exits 0, the commit calling `missing_symbol()` exits 1 *and names the symbol*, the plain
+  door cannot see an uncommitted fix, `--worktree` can. A check that always passed would fail that pair.
+- **Owed:** criterion 4 is a grep — it proves a call exists, not that the `head-broken` branch fires, returns
+  15, or keeps the row out of `done`. That branch needs its own reading through the real `cycle.sh`.
+- **Next tick:** session `c155a20a` was resumed with a corrective brief limited to R4 (additive `cycle.sh` edit,
+  lock checked first, no commit, `modules/devbox/*` untouched). When it ends, the cycle's verify + gate decide;
+  A113 is at attempt 1, so two more failures park it.
+
 ## 2026-10-23 12:52Z — HEAD `1675120` does not build: the same class as 06:25Z, a second time in one day
 
 State: HEAD `1675120` (this tick added `ee0c280`, `fa7b100`) · lock free, no cycle in flight · tree dirty from
