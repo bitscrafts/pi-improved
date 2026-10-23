@@ -61,7 +61,7 @@ fn coder_node_scope_admits_its_agent_binary() {
             .with_criteria(criteria),
     ));
     let src = format!(
-        "name = \"coder-scope\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"ran-file\"]\n",
+        "name = \"coder-scope\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/207-x.md\"\nworkdir = \"{}\"\ncriteria = [\"ran-file\"]\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();

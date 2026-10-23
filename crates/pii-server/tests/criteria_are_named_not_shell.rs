@@ -62,7 +62,7 @@ fn run_coder_graph(bin: &Path, node_fields: &str) -> (Terminal, Vec<Event>) {
             .with_criteria(table()),
     ));
     let src = format!(
-        "name = \"named-test\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\n{node_fields}\n"
+        "name = \"named-test\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\n{node_fields}\n"
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();
     let run_id = store.next_run_id().unwrap();

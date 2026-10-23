@@ -422,7 +422,7 @@ fn run_node(fake: Fake) -> Vec<Event> {
             .with_runs_dir(store_dir.path().join("runs")),
     ));
     let src = format!(
-        "name = \"coder-bounded\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/241-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"pii-coder:test\"\ncontainer_runtime = \"socket\"\n\n[[node]]\nid = \"done\"\nkind = \"transform\"\nvalue = \"done\"\n\n[[edge]]\nfrom = \"code\"\nport = \"ok\"\nto = \"done\"\nkind = \"data\"\n",
+        "name = \"coder-bounded\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/241-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"pii-coder:test\"\ncontainer_runtime = \"socket\"\n\n[[node]]\nid = \"done\"\nkind = \"transform\"\nvalue = \"done\"\n\n[[edge]]\nfrom = \"code\"\nport = \"ok\"\nto = \"done\"\nkind = \"data\"\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();

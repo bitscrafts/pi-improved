@@ -97,7 +97,7 @@ fn run_graph(
     (header.status, terminal, store, store_dir)
 }
 
-const SILENT_GRAPH: &str = "name = \"silent\"\nentry = \"code\"\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\n\n[[node]]\nid = \"done\"\nkind = \"transform\"\nvalue = \"done\"\n\n[[edge]]\nfrom = \"code\"\nport = \"ok\"\nto = \"done\"\nkind = \"data\"\n";
+const SILENT_GRAPH: &str = "name = \"silent\"\nentry = \"code\"\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\n\n[[node]]\nid = \"done\"\nkind = \"transform\"\nvalue = \"done\"\n\n[[edge]]\nfrom = \"code\"\nport = \"ok\"\nto = \"done\"\nkind = \"data\"\n";
 
 /// A `coder` node that claims success without a `coder.spawned` makes the run FAILED, and the failure names the
 /// node and the missing reason. Its duration is irrelevant: the claim alone is not evidence.
@@ -147,7 +147,7 @@ fn spawned_and_exited_coder_run_succeeds() {
         ),
     ));
     let src = format!(
-        "name = \"real\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/221-x.md\"\nworkdir = \"{}\"\ncriteria = [\"green\"]\n",
+        "name = \"real\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/221-x.md\"\nworkdir = \"{}\"\ncriteria = [\"green\"]\n",
         work.path().display()
     );
 

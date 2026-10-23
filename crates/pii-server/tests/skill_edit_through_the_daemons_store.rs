@@ -156,7 +156,7 @@ fn coder_leg(engine: &Arc<Engine>, root: &Path, pin: &str) -> Leg {
     let log = Arc::new(Rec::default());
     let reg = registry_over(engine, &podman, log.clone());
     let src = format!(
-        "name = \"edit-skill\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/234-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{IMAGE}\"\nskills = [{{ name = \"lint-234\", sha256 = \"{pin}\" }}]\n",
+        "name = \"edit-skill\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/234-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{IMAGE}\"\nskills = [{{ name = \"lint-234\", sha256 = \"{pin}\" }}]\n",
         work.path().display(),
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();

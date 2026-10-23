@@ -111,7 +111,11 @@ fn a_coder_node_without_timeout_is_a_v10_error() {
 
 #[test]
 fn a_coder_node_with_zero_timeout_is_a_v10_error() {
-    let spec = graph(vec![node("c", "coder", serde_json::json!({"timeout_ms": 0}))]);
+    let spec = graph(vec![node(
+        "c",
+        "coder",
+        serde_json::json!({"timeout_ms": 0}),
+    )]);
     let e = v10(&spec);
     assert_eq!(e.len(), 1, "{e:?}");
     assert!(e[0].contains("'c'"), "the message names the node: {e:?}");

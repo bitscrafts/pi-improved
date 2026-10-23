@@ -81,7 +81,7 @@ fn refused_agent_call_makes_the_run_refused() {
     let bin = fake_bin("exit 0");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-work-").unwrap();
     let src = format!(
-        "name = \"refused\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"claude\"\nmodel = \"haiku-5-5\"\nbrief = \"b\"\nspec = \"specs/221-x.md\"\nworkdir = \"{}\"\ncriteria = [\"green\"]\n\n[[node]]\nid = \"refused\"\nkind = \"transform\"\nvalue = \"refused\"\n\n[[edge]]\nfrom = \"code\"\nport = \"err\"\nto = \"refused\"\nkind = \"data\"\n",
+        "name = \"refused\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"claude\"\nmodel = \"haiku-5-5\"\nbrief = \"b\"\nspec = \"specs/221-x.md\"\nworkdir = \"{}\"\ncriteria = [\"green\"]\n\n[[node]]\nid = \"refused\"\nkind = \"transform\"\nvalue = \"refused\"\n\n[[edge]]\nfrom = \"code\"\nport = \"err\"\nto = \"refused\"\nkind = \"data\"\n",
         work.path().display()
     );
 
@@ -134,7 +134,7 @@ impl GraphNode for SilentNode {
 fn expect_spawn_false_refuses_a_call_less_run() {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(SilentCoder));
-    let src = "name = \"demo\"\nentry = \"code\"\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\nexpect_spawn = false\n\n[[node]]\nid = \"done\"\nkind = \"transform\"\nvalue = \"done\"\n\n[[edge]]\nfrom = \"code\"\nport = \"ok\"\nto = \"done\"\nkind = \"data\"\n";
+    let src = "name = \"demo\"\nentry = \"code\"\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\nexpect_spawn = false\n\n[[node]]\nid = \"done\"\nkind = \"transform\"\nvalue = \"done\"\n\n[[edge]]\nfrom = \"code\"\nport = \"ok\"\nto = \"done\"\nkind = \"data\"\n";
     let store_dir =
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-store-").unwrap();
     let store = pii_store::Store::open(&store_dir.path().join("store.redb")).unwrap();
@@ -167,7 +167,7 @@ fn a_call_that_started_and_broke_stays_failed() {
     let bin = fake_bin("exit 0");
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "coder-work-").unwrap();
     let src = format!(
-        "name = \"broke\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/221-x.md\"\nworkdir = \"{}\"\ncriteria = [\"red\"]\n",
+        "name = \"broke\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/221-x.md\"\nworkdir = \"{}\"\ncriteria = [\"red\"]\n",
         work.path().display()
     );
 

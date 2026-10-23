@@ -77,7 +77,7 @@ fn run_coder_graph(
         CoderFactory::with_env(bin.to_path_buf(), env, log.clone()).with_criteria(criteria_table()),
     ));
     let src = format!(
-        "name = \"coder-test\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\n{node_fields}\n"
+        "name = \"coder-test\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\n{node_fields}\n"
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();
     let run_id = store.next_run_id().unwrap();

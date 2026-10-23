@@ -35,6 +35,7 @@ mod helpers;
 mod launch;
 pub mod no_change;
 mod paths;
+pub mod prompt;
 pub mod redact;
 pub mod report;
 pub mod tree;

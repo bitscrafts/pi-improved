@@ -38,7 +38,7 @@ const INSTALLERS: [&str; 7] = [
 fn fake_podman(dir: &Path, image: &str) -> std::path::PathBuf {
     let log = dir.join("podman.log");
     let script = format!(
-        "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1\" in\n  image) if [ \"$5\" = '{image}' ]; then echo sha256:feedface; exit 0; fi; exit 1 ;;\n  run) touch ./ran.txt; exit 0 ;;\n  *) exit 2 ;;\nesac\n",
+        "#!/bin/sh\necho \"$*\" | tr '\\n' ' ' >> '{log}'\necho >> '{log}'\ncase \"$1\" in\n  image) if [ \"$5\" = '{image}' ]; then echo sha256:feedface; exit 0; fi; exit 1 ;;\n  run) touch ./ran.txt; exit 0 ;;\n  *) exit 2 ;;\nesac\n",
         log = log.display(),
     );
     let podman = dir.join("podman");
@@ -77,7 +77,7 @@ fn a_coder_run_installs_nothing() {
             .with_criteria(ran_file_criteria()),
     ));
     let src = format!(
-        "name = \"coder-no-install\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{image}\"\ncriteria = [\"ran-file\"]\n",
+        "name = \"coder-no-install\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/209-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{image}\"\ncriteria = [\"ran-file\"]\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();

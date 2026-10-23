@@ -49,7 +49,7 @@ fn scope_refusal_names_its_reason_and_the_run_is_refused() {
             .with_podman(podman),
     ));
     let src = format!(
-        "name = \"coder-refused\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/223-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"pii-coder:1\"\n\n[[node]]\nid = \"refused\"\nkind = \"transform\"\nvalue = \"refused\"\n\n[[edge]]\nfrom = \"code\"\nport = \"err\"\nto = \"refused\"\nkind = \"data\"\n",
+        "name = \"coder-refused\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/223-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"pii-coder:1\"\n\n[[node]]\nid = \"refused\"\nkind = \"transform\"\nvalue = \"refused\"\n\n[[edge]]\nfrom = \"code\"\nport = \"err\"\nto = \"refused\"\nkind = \"data\"\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();

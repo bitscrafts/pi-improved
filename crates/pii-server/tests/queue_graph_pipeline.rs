@@ -69,7 +69,7 @@ fn tick(queue: Arc<QueueStore>, memory: Arc<MemStore>, bin: &Path, workdir: &Pat
     let src = format!(
         "name = \"queue\"\nentry = \"select\"\ncaps = [\"spawn\", \"proc\"]\n\n\
         [[node]]\nid = \"select\"\nkind = \"select\"\n\n\
-        [[node]]\nid = \"dispatch\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\n\
+        [[node]]\nid = \"dispatch\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\n\
         workdir = \"{work}\"\nbrief = \"do it\"\n\n\
         [[node]]\nid = \"judge\"\nkind = \"judge\"\ncaps = [\"proc\"]\nworkdir = \"{work}\"\n\n\
         [[node]]\nid = \"record\"\nkind = \"record\"\njoin = \"any\"\n\n\

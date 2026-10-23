@@ -124,7 +124,7 @@ fn pinned_skills_are_materialised_read_only_and_bound_ro() {
             .with_runs_dir(runs.path().to_path_buf()),
     ));
     let src = format!(
-        "name = \"materialise\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/225-x.md\"\nworkdir = \"{work}\"\ncontainer_image = \"{IMAGE}\"\nskills = [{{ name = \"lint\", sha256 = \"{pin}\" }}]\n",
+        "name = \"materialise\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/225-x.md\"\nworkdir = \"{work}\"\ncontainer_image = \"{IMAGE}\"\nskills = [{{ name = \"lint\", sha256 = \"{pin}\" }}]\n",
         work = work.path().display(),
         pin = sha256_hex(BODY),
     );

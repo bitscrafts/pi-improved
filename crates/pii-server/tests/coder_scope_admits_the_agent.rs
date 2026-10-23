@@ -53,7 +53,7 @@ fn image_run_scope_admits_podman_and_the_agent() {
             .with_runs_dir(store_dir.path().join("runs")),
     ));
     let src = format!(
-        "name = \"coder-image\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/223-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"pii-coder:1\"\n",
+        "name = \"coder-image\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\nbrief = \"b\"\nspec = \"specs/223-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"pii-coder:1\"\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();

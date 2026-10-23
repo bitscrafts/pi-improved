@@ -148,7 +148,7 @@ fn coder_leg(engine: &Arc<Engine>, root: &Path) -> Vec<Event> {
     let log = Arc::new(Rec::default());
     let reg = registry_over(engine, &podman, log.clone());
     let src = format!(
-        "name = \"put-skill\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/233-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{IMAGE}\"\nskills = [{{ name = \"lint-233\", sha256 = \"{}\" }}]\n",
+        "name = \"put-skill\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/233-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"{IMAGE}\"\nskills = [{{ name = \"lint-233\", sha256 = \"{}\" }}]\n",
         work.path().display(),
         sha256_hex(SKILL),
     );

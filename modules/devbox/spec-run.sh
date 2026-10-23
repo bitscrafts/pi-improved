@@ -35,7 +35,7 @@ $AG
 workdir = "/projects/pi-improved"
 spec = "$SPEC"
 brief = "Implement the spec. Follow its Requirements, TDD Contract and Guardrails exactly. Write the test file first, then the code."
-env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR"]
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]
 criteria = ["$CRIT"]
 timeout_ms = 1500000
 $BUDGET
@@ -70,7 +70,10 @@ echo "tree before    : $(wc -l < "$T/$AGENT/tree-before.txt") modified/untracked
 ssh -o BatchMode=yes "$HOST" "AGENT=$AGENT C=$C bash -s" <<'REMOTE'
 X() { podman exec -w /projects/pi-improved pii-devbox "$@"; }
 PII=/projects/pi-improved/target/debug/pii
-export_env="PII_RUNTIME_DIR=$C/run PI_CODING_AGENT_DIR=/projects/pi-improved/_tmp/pii-agent IS_SANDBOX=1 PII_MODEL=llamacpp-server:granite-4.2-3b"
+export_env="PII_RUNTIME_DIR=$C/run PI_CODING_AGENT_DIR=/projects/pi-improved/_tmp/pii-agent IS_SANDBOX=1 PII_MODEL=llamacpp-server:granite-4.2-3b CLAUDE_CODE_TMPDIR=$C/tmp"
+# CLAUDE_CODE_TMPDIR: claude makes /tmp/claude-<uid> for its scratch and ignores TMPDIR; the daemon's landlock sandbox lets writes go to the
+# workspace, store, runtime dir and $TMPDIR only, so in a fresh container claude died with "EACCES: mkdir '/tmp/claude-0'" (measured,
+# r000000000002). The local daemon never hit it because that directory already existed from earlier unsandboxed runs.
 # PII_MODEL: the daemon refuses to start without one ("no model configured"; measured). A coder run never calls it: the agent is pi or
 # claude. The value is the model name the project's own pii.toml carries ([core].model), not a secret.
 if ! X sh -c "test -S $C/run/control.sock && env PII_RUNTIME_DIR=$C/run $PII health --json >/dev/null 2>&1"; then

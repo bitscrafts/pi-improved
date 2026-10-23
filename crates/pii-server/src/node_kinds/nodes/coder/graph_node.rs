@@ -11,6 +11,7 @@ use super::super::agent_worker::{
 };
 use super::super::coder::CRITERION_TIMEOUT;
 use super::super::coder::no_change::no_change_refusal;
+use super::super::coder::prompt;
 use super::super::coder::redact;
 use super::super::coder::report::RunReport;
 use super::super::coder::tree;
@@ -78,7 +79,8 @@ impl GraphNode for CoderNode {
             },
             None => spec.clone(),
         };
-        let dispatch = match plan(&planned, &brief, &env, "direct", self.log.as_ref()) {
+        let prompt = prompt::brief_with_spec(&brief, &spec.spec);
+        let dispatch = match plan(&planned, &prompt, &env, "direct", self.log.as_ref()) {
             Ok(dispatch) => dispatch,
             Err(e) => return Ok(refuse_planned(ctx, &agent, &model, &format!("{e}"))),
         };

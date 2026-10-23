@@ -105,7 +105,7 @@ fn run_pinned(pin: &str, stored_text: &str) -> (Terminal, Vec<Event>, tempfile::
             .with_runs_dir(runs.path().to_path_buf()),
     ));
     let src = format!(
-        "name = \"skill-pin\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/225-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"localhost/pii-agent@sha256:feedface\"\nskills = [{{ name = \"lint\", sha256 = \"{pin}\" }}]\n",
+        "name = \"skill-pin\"\nentry = \"code\"\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"code\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m-one\"\nbrief = \"do it\"\nspec = \"specs/225-x.md\"\nworkdir = \"{}\"\ncontainer_image = \"localhost/pii-agent@sha256:feedface\"\nskills = [{{ name = \"lint\", sha256 = \"{pin}\" }}]\n",
         work.path().display()
     );
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();
