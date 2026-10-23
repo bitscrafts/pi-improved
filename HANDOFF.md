@@ -22,6 +22,17 @@ A113 **needs-review / verify-failed** · selftest **40 passed, 0 failed / ALL ME
   lock checked first, no commit, `modules/devbox/*` untouched). When it ends, the cycle's verify + gate decide;
   A113 is at attempt 1, so two more failures park it.
 
+**18:26Z addendum — R4 landed, its proof did not.** The resumed session (5 turns, $0.66, `end_turn`) added 9
+lines to `cycle.sh` after the commit: `HB=$(… bash "${HEAD_BUILDS:-scripts/autonomy/head-builds.sh}" …)`,
+`OUTCOME=head-broken` + `exit 15` + `last=head-broken after <sha>` on a non-zero reading, `say "head-builds: …"`
+on a green one, and the `exit 15` sits **before** the `done` write, so a red cannot print `done`. `bash -n` on
+both scripts is clean (orchestrator, 18:24Z). But the session ran **four** bash calls — lock, two reads, the edit —
+and never executed the branch it wrote, never ran the criteria, never ran `bash -n`. The proof the brief demanded
+was skipped while the pass still reported done: the same class as the spec it implements, one level up.
+`A113` was set back to `pending` so the loop's own verify + gate + commit run on it (pick skips `needs-review`);
+its red-branch reading is **owed** — selftest row 11 proves the check reddens, nothing yet proves the cycle
+answers rc 15 and leaves the row `needs-review`.
+
 ## 2026-10-23 12:52Z — HEAD `1675120` does not build: the same class as 06:25Z, a second time in one day
 
 State: HEAD `1675120` (this tick added `ee0c280`, `fa7b100`) · lock free, no cycle in flight · tree dirty from
