@@ -2,6 +2,7 @@
 //! (< 50 ms, N4). The journal→bus bridge rides the run context's observer.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use pii_abi::{PiiError, ResumeKey, RunId};
 use pii_graph::spec::GraphSpec;
@@ -297,16 +298,39 @@ fn close_failed(
     Ok(())
 }
 
+/// How long a `kill` cancel waits for the killed node to leave flight (spec 243 R3).
+pub const KILL_WAIT: Duration = Duration::from_secs(30);
+
 /// Cancels a run that is not executing (spec 189): closes it as `Failed` with
 /// `cancelled: <reason>` on the record and emits `run.cancelled`.
 ///
 /// A run with a node executing is refused (`run.cancel_refused` names the node):
-/// cancellation never abandons work half-done.
+/// cancellation never abandons work half-done. The spec 243 kill accepts that, see
+/// [`cancel_run_with`].
 ///
 /// # Errors
 /// [`PiiError::NotFound`] for an unknown run, [`PiiError::Invalid`] for a run that
 /// already finished or whose node is executing, store errors from journaling.
 pub fn cancel_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), PiiError> {
+    cancel_run_with(engine, run_id, reason, false, KILL_WAIT)
+}
+
+/// [`cancel_run`] with the spec 243 kill explicit.
+///
+/// With `kill`, the executing node is stopped and the run is awaited for up to `wait`,
+/// then closed as `cancelled: <reason> (node '<node>' abandoned)`. A node still running
+/// after `wait` leaves the run open: it is never closed while its agent may still run.
+///
+/// # Errors
+/// As [`cancel_run`], and [`PiiError::Invalid`] `did not stop` when a killed node is
+/// still in flight after `wait`.
+pub fn cancel_run_with(
+    engine: &Engine,
+    run_id: &RunId,
+    reason: &str,
+    kill: bool,
+    wait: Duration,
+) -> Result<(), PiiError> {
     let header = engine
         .store
         .get_run(run_id)?
@@ -319,23 +343,32 @@ pub fn cancel_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), P
             "run '{run_id}' already finished"
         )));
     }
+    let mut error = format!("cancelled: {reason}");
+    let mut close = true;
     if engine.is_in_flight(run_id.as_str()) {
         let node = executing_node(engine, run_id)?;
-        engine.log().event(
-            &pii_observe::Event::new(
-                "engine",
-                pii_observe::Level::Warn,
-                pii_observe::names::RUN_CANCEL_REFUSED,
-            )
-            .field("run", run_id.as_str())
-            .field("node", node.as_str())
-            .in_run(pii_observe::RunId(run_id.to_string())),
-        );
-        return Err(PiiError::Invalid(format!(
-            "run '{run_id}' is executing node '{node}'; cancel refused"
-        )));
+        if !kill {
+            engine.log().event(
+                &pii_observe::Event::new(
+                    "engine",
+                    pii_observe::Level::Warn,
+                    pii_observe::names::RUN_CANCEL_REFUSED,
+                )
+                .field("run", run_id.as_str())
+                .field("node", node.as_str())
+                .in_run(pii_observe::RunId(run_id.to_string())),
+            );
+            return Err(PiiError::Invalid(format!(
+                "run '{run_id}' is executing node '{node}'; cancel refused"
+            )));
+        }
+        // The node's own thread may close the run once it stops; then it stays as it closed.
+        close = stop_executing(engine, run_id, reason, &node, wait)?;
+        error = format!("cancelled: {reason} (node '{node}' abandoned)");
     }
-    close_failed(engine, run_id, format!("cancelled: {reason}"), "refused")?;
+    if close {
+        close_failed(engine, run_id, error, "refused")?;
+    }
     // Spec 196: a cancelled run's schedule dies with it; zero is normal (most runs have no timer).
     let disarmed = match engine.daemon_ctx() {
         Some(ctx) => ctx.timer_store.remove_run(run_id.as_str())?,
@@ -353,6 +386,51 @@ pub fn cancel_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), P
         .in_run(pii_observe::RunId(run_id.to_string())),
     );
     Ok(())
+}
+
+/// Trips the cancel token of the node a kill names and waits for it to leave flight
+/// (spec 243 R2/R3). Returns `Ok(false)` when the run was already closed by its own
+/// thread during the wait, so the kill must not append a second terminal.
+fn stop_executing(
+    engine: &Engine,
+    run_id: &RunId,
+    reason: &str,
+    node: &str,
+    wait: Duration,
+) -> Result<bool, PiiError> {
+    let event = |name: &'static str| {
+        pii_observe::Event::new("engine", pii_observe::Level::Warn, name)
+            .field("run", run_id.as_str())
+            .field("node", node)
+            .in_run(pii_observe::RunId(run_id.to_string()))
+    };
+    engine
+        .log()
+        .event(&event(pii_observe::names::RUN_CANCEL_KILLING).field("reason", reason));
+    // `trip_cancel` keeps the handle: `Engine::cancel` would drop it and look stopped at once.
+    engine.trip_cancel(run_id.as_str());
+    let end = std::time::Instant::now() + wait;
+    while engine.is_in_flight(run_id.as_str()) {
+        if std::time::Instant::now() >= end {
+            engine
+                .log()
+                .event(&event(pii_observe::names::RUN_CANCEL_KILL_TIMEOUT));
+            return Err(PiiError::Invalid(format!(
+                "run '{run_id}' did not stop within {wait:?} after kill"
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    engine.cancel(run_id.as_str());
+    let closed_by_node = engine.store.get_run(run_id)?.is_some_and(|h| {
+        matches!(
+            h.status,
+            pii_abi::RunStatus::Succeeded
+                | pii_abi::RunStatus::Failed
+                | pii_abi::RunStatus::Refused
+        )
+    });
+    Ok(!closed_by_node)
 }
 
 /// The node a run's journal shows started and not yet ended (empty if none).

@@ -639,11 +639,17 @@ impl Engine {
         self.runs.lock().contains_key(run_id)
     }
 
-    /// Trips a run's cancel token (idempotent, F2.7).
-    pub fn cancel(&self, run_id: &str) {
+    /// Trips a run's cancel token and keeps its handle: the run leaves flight only when its node ends
+    /// (spec 243). [`Engine::cancel`] drops the handle, so it cannot be waited on.
+    pub fn trip_cancel(&self, run_id: &str) {
         if let Some(h) = self.runs.lock().get(run_id) {
             h.cancel.cancel();
         }
+    }
+
+    /// Trips a run's cancel token (idempotent, F2.7).
+    pub fn cancel(&self, run_id: &str) {
+        self.trip_cancel(run_id);
         // F19: use the run's current journal seq so the cancellation event
         // does not poison the subscriber dedup cursor.
         let seq = self

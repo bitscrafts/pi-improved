@@ -191,6 +191,10 @@ pub const RUN_START_REFUSED: &str = "run.start.refused";
 pub const RUN_CANCELLED: &str = "run.cancelled";
 /// Event: a cancel was refused because a node is executing (`run`, `node`).
 pub const RUN_CANCEL_REFUSED: &str = "run.cancel_refused";
+/// Event: an operator asked to kill a running node; the run is being stopped (`run`, `node`, `reason`).
+pub const RUN_CANCEL_KILLING: &str = "run.cancel_killing";
+/// Event: a killed run did not leave flight within its wait; it is left as it is (`run`, `node`).
+pub const RUN_CANCEL_KILL_TIMEOUT: &str = "run.cancel_kill_timeout";
 /// Event: a resume of a finished run was refused, e.g. a due timer outliving a cancel (`run`, `status`).
 pub const RUN_RESUME_REFUSED: &str = "run.resume.refused";
 /// Event: the scheduler's resume of a due timer was refused (`run`, `key`, `error`).
@@ -475,6 +479,8 @@ pub const ALL: &[&str] = &[
     RUN_START_REFUSED,
     RUN_CANCELLED,
     RUN_CANCEL_REFUSED,
+    RUN_CANCEL_KILLING,
+    RUN_CANCEL_KILL_TIMEOUT,
     RUN_RESUME_REFUSED,
     TIMER_RESUME_REFUSED,
     NODE_PANICKED,
