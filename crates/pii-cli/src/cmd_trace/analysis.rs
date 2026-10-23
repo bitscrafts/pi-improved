@@ -29,6 +29,8 @@ struct CallExit {
     passed: i64,
     run: i64,
     first_failure: String,
+    /// The head of the agent's stderr: the reason it exited, when it wrote one.
+    stderr_head: String,
 }
 
 /// One trace line: a node that finished or failed, with the agent calls it made up to that point.
@@ -93,6 +95,7 @@ pub(super) fn observe_call(calls: &mut Vec<AgentCall>, kind: &str, fields: &serd
                     passed: int_field(fields, "criteria_passed"),
                     run: int_field(fields, "criteria_run"),
                     first_failure: str_field(fields, "first_failure"),
+                    stderr_head: str_field(fields, "agent_stderr_head"),
                 });
             }
         }
@@ -338,7 +341,30 @@ pub(super) fn explain_call(node: &str, call: &AgentCall) -> String {
         format!(", first failing criterion {}", exit.first_failure)
     };
     format!(
-        "{node} ran {} on model {} {image} for {}ms and exited {}; criteria passed {}/{}{failing}.",
-        call.agent, call.model, exit.dur_ms, exit.rc, exit.passed, exit.run
+        "{node} ran {} on model {} {image} for {}ms and exited {}{}; criteria passed {}/{}{failing}.",
+        call.agent,
+        call.model,
+        exit.dur_ms,
+        exit.rc,
+        agent_failure(exit),
+        exit.passed,
+        exit.run
     )
+}
+
+/// ` (agent failed: <stderr>)` for a non-zero exit, empty for a clean one.
+///
+/// The criteria ran against the tree the failed agent left, so a passed criterion beside a failed agent is not a
+/// verdict; saying the agent failed, and why, keeps the two apart. The stderr is its first line only, bounded.
+fn agent_failure(exit: &CallExit) -> String {
+    if exit.rc == 0 {
+        return String::new();
+    }
+    let reason = exit.stderr_head.lines().next().unwrap_or_default().trim();
+    if reason.is_empty() {
+        " (agent failed, no stderr)".to_owned()
+    } else {
+        let short: String = reason.chars().take(160).collect();
+        format!(" (agent failed: {short})")
+    }
 }
