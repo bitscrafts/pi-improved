@@ -2,6 +2,40 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-23 12:52Z — HEAD `1675120` does not build: the same class as 06:25Z, a second time in one day
+
+State: HEAD `1675120` (this tick added `ee0c280`, `fa7b100`) · lock free, no cycle in flight · tree dirty from
+another lane's module-split refactor (16 `M` + 5 `??`, its `quality-gate.sh` running under `_tmp/tools-gate`) ·
+control `RUNNING at 2026-10-23T02:58:54Z (resumed by human)` · queue: A94 parked, A95 needs-review (both still
+waiting on the one lnx deploy), A113 **dispatchable** · selftest **34 passed, 0 failed / ALL MECHANISMS PASS**
+(`_tmp/autonomy/logs/selftest-20261023T124*.log`).
+
+- **The last four "done" items sit on a HEAD that does not compile.** Verified on a detached worktree of
+  `1675120` (clean): `cargo check -q -p pii-server` → 7 errors — `E0425 pii_core::kill_group` (HEAD declares it
+  private), `E0432 coder_runtime::Listed` / `coder_runtime_api`, `E0599 list_all` / `force_remove` on
+  `&dyn ContainerRuntime`, `E0050 run` 4 params vs the trait's 5. Specs 241 (`85602d2`), 242 (`1655e2d`) and 243
+  (`8cc8ffe`) committed the call sites; the API they call is still uncommitted (`M` in the working tree), and 244
+  (`1675120`) built on top.
+- **Spec 244's own reading, by hand** (`specs/244…md` §Closure): criterion 4 PASS; the three test targets +
+  clippy are unmeasurable at HEAD (no compile) but green in the working tree — `agent_claude_session_handle`
+  13/0, `agent_claude_arm` 12/0, `agent_claude_budget` 7/0, clippy rc 0. Its red-before-green mutation is
+  recorded as **owed**, not done, for the same reason.
+- **Why it recurred.** The 06:25Z entry below measured exactly this class on 237 and repaired it one line at a
+  time; no invariant was added, so it returned within six hours. The two doors the cycle uses both read the
+  working tree (`quality-gate.sh --routine` at `cycle.sh:321-328`, and the verify step), while the commit stages
+  an explicit path list — so "the gate saw it" and "the commit carries it" are never compared. A warning in
+  HANDOFF is not enforcement.
+- **Queued, not fixed here:** spec `245-a-commit-builds-at-its-own-head.md` + row **A113** (committed `fa7b100`)
+  — restore the API, add a compile-surface test, and add `scripts/autonomy/head-builds.sh` (a `cargo check` of
+  HEAD's exported content, `--worktree` for the pre-commit door) as a post-commit step whose non-zero reading
+  makes the item `head-broken` instead of `done`. Defect 24 in `_docs/05-operations/agent-management-findings-2026-10-23.md`
+  carries the reproduction.
+- **Not swept:** the dirty tree belongs to a live lane (module split for the 450-line gate, a gate running on it).
+  Committing its files would have landed its refactor under my message; the worktree door above was used instead.
+- **Next tick:** the tree is dirty with no session to resume, so a cycle would read `dirty-tree` (rc 7) and stop;
+  once that lane commits, A113 dispatches — its criteria are run by `head-builds.sh --worktree`, and its closure
+  owes the 244 mutation.
+
 ## 2026-10-23 07:55Z — 236 closed at `3217788`: the fresh-gate test step compiles inside its export
 
 State: HEAD `3217788` · tree clean but for four generated `QUEUE-BRIEF-2026-10-23T0[3-6].md` (untracked, not
