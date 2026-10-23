@@ -17,6 +17,8 @@ pub struct RunReport<'a> {
     pub requested: Option<&'a (String, String)>,
     /// The criteria that ran, in order.
     pub runs: &'a [CriterionRun],
+    /// Whether every criterion passed before the agent ran; `None` when no pre-run was taken (spec 239).
+    pub pre_passed: Option<bool>,
     /// The tail of the first failing criterion's output.
     pub failure_tail: &'a str,
     /// The `(provider, model)` routes the agent reported.
@@ -30,7 +32,7 @@ pub struct RunReport<'a> {
 
 impl RunReport<'_> {
     /// `"yes"`/`"no"` when a digest pair exists, `"unknown"` when none was taken: unknown is not "no".
-    fn tree_changed(&self) -> String {
+    pub fn tree_changed(&self) -> String {
         match self.tree {
             Some((b, a)) if b.hash == a.hash => "no",
             Some(_) => "yes",
@@ -66,12 +68,18 @@ impl RunReport<'_> {
             )
     }
 
-    /// The criteria that ran, and the first failure with its output.
+    /// The criteria that ran, and the first failure with its output, and whether they passed before the agent ran.
     fn criteria_fields(&self, event: Event) -> Event {
         let runs = self.runs;
         let passed = runs.iter().filter(|r| r.rc == 0).count();
         let failed = runs.iter().find(|r| r.rc != 0);
+        let pre = match self.pre_passed {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => "skipped",
+        };
         event
+            .field("pre_criteria_passed", pre)
             .field(
                 "criteria_run",
                 i64::try_from(runs.len()).unwrap_or(i64::MAX),

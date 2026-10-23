@@ -34,6 +34,7 @@ use super::criteria::{self, Table};
 
 mod graph_node;
 mod helpers;
+pub mod no_change;
 mod paths;
 pub mod redact;
 pub mod report;
@@ -465,6 +466,7 @@ impl CoderNode {
                 tree: None,
                 requested: None,
                 runs: &[],
+                pre_passed: None,
                 failure_tail: "",
                 routes: &[],
                 agent_output: "",

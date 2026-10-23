@@ -10,6 +10,7 @@ use super::super::agent_worker::{
     CriterionRun, Verdict, WorkerSpec, decide, plan, reported_routes,
 };
 use super::super::coder::CRITERION_TIMEOUT;
+use super::super::coder::no_change::no_change_refusal;
 use super::super::coder::redact;
 use super::super::coder::report::RunReport;
 use super::super::coder::tree;
@@ -83,6 +84,13 @@ impl GraphNode for CoderNode {
         };
         // Evidence of what the agent changed: the workdir digest before and after, journalled beside the exit.
         let tree_before = tree::digest(Path::new(&spec.workdir));
+        // Spec 239: the criteria run once on the tree as the agent found it, so a no-change run can be told apart.
+        // No criteria means no pre-run: the verdict is deferred.
+        let pre_passed = if checks.is_empty() {
+            None
+        } else {
+            Some(criteria_pass(ctx, &checks, Path::new(&spec.workdir))?)
+        };
         let launch = if let Some(image) = &image {
             self.launch_in_container(ctx, image, &spec, env, &dispatch.argv, &skills, &runtime)?
         } else {
@@ -145,6 +153,7 @@ impl GraphNode for CoderNode {
             tree: Some((&tree_before, &tree_after)),
             requested: Some(&requested),
             runs: &runs,
+            pre_passed,
             failure_tail: &failure_tail,
             routes: &reported_routes(&output),
             agent_output: &output,
@@ -158,7 +167,13 @@ impl GraphNode for CoderNode {
             return Ok(deferred_verdict(code, pid, &agent, &model));
         }
 
-        match decide(code, "", &runs) {
+        let verdict = decide(code, "", &runs);
+        let verdict_passed = matches!(verdict, Verdict::Passed { .. });
+        if let Some(reason) = no_change_refusal(pre_passed, &report.tree_changed(), verdict_passed)
+        {
+            return Ok(Outcome::Fail { error: reason });
+        }
+        match verdict {
             Verdict::Passed { criteria, .. } => Ok(Outcome::Next {
                 port: PortName::from("ok"),
                 value: serde_json::json!({
@@ -173,6 +188,20 @@ impl GraphNode for CoderNode {
             Verdict::Failed { reason, .. } => Ok(Outcome::Fail { error: reason }),
         }
     }
+}
+
+/// Whether every criterion passes in `workdir`, stopping at the first that does not (spec 239's pre-run).
+fn criteria_pass(
+    ctx: &Ctx,
+    checks: &[(String, Vec<String>)],
+    workdir: &Path,
+) -> Result<bool, PiiError> {
+    for (_, argv) in checks {
+        if ctx.proc()?.run(argv, workdir, CRITERION_TIMEOUT)?.exit_code != 0 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// The last part of a failing criterion's output, for the journal. A bare exit code does not say why the check
