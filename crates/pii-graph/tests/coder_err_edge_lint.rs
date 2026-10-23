@@ -137,12 +137,40 @@ fn a_non_coder_node_does_not_warn() {
     assert!(lint(&spec).is_empty());
 }
 
+/// Spec 240: the shipped probe now ends `err` in a `refuse` node, so this reads the old shape inline instead.
 #[test]
-fn the_shipped_probe_graph_warns() {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../graphs/claude-probe.toml");
-    let src = std::fs::read_to_string(&path).unwrap();
-    let spec = load_toml(&src).unwrap();
+fn a_probe_shaped_graph_ending_err_in_a_transform_warns() {
+    let src = r#"
+name = "claude-probe-old-shape"
+entry = "code"
+
+[[node]]
+id = "code"
+kind = "coder"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+[[node]]
+id = "refused"
+kind = "transform"
+value = "refused"
+
+[[edge]]
+from = "code"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "code"
+port = "err"
+to = "refused"
+kind = "data"
+"#;
+    let spec = load_toml(src).unwrap();
     let w = lint(&spec);
     assert_eq!(w.len(), 1, "{w:?}");
 }

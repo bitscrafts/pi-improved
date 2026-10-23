@@ -23,8 +23,9 @@ value = "done"
 
 [[node]]
 id = "refused"
-kind = "transform"
-value = "refused"
+kind = "refuse"
+hook = "coder"
+reason = "the agent failed"
 
 [[edge]]
 from = "code"
