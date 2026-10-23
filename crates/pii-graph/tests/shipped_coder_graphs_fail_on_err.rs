@@ -135,6 +135,7 @@ entry = "code"
 [[node]]
 id = "code"
 kind = "coder"
+timeout_ms = 1000
 
 [[node]]
 id = "done"

@@ -70,7 +70,9 @@ echo "tree before    : $(wc -l < "$T/$AGENT/tree-before.txt") modified/untracked
 ssh -o BatchMode=yes "$HOST" "AGENT=$AGENT C=$C bash -s" <<'REMOTE'
 X() { podman exec -w /projects/pi-improved pii-devbox "$@"; }
 PII=/projects/pi-improved/target/debug/pii
-export_env="PII_RUNTIME_DIR=$C/run PI_CODING_AGENT_DIR=/projects/pi-improved/_tmp/pii-agent IS_SANDBOX=1"
+export_env="PII_RUNTIME_DIR=$C/run PI_CODING_AGENT_DIR=/projects/pi-improved/_tmp/pii-agent IS_SANDBOX=1 PII_MODEL=llamacpp-server:granite-4.2-3b"
+# PII_MODEL: the daemon refuses to start without one ("no model configured"; measured). A coder run never calls it: the agent is pi or
+# claude. The value is the model name the project's own pii.toml carries ([core].model), not a secret.
 if ! X sh -c "test -S $C/run/control.sock && env PII_RUNTIME_DIR=$C/run $PII health --json >/dev/null 2>&1"; then
   X sh -c "mkdir -p $C/run $C/tmp && rm -f $C/run/control.sock"
   podman exec -d -w /projects/pi-improved pii-devbox sh -c "env $export_env TMPDIR=$C/tmp $PII daemon --foreground --store $C/store.redb --workspace /projects/pi-improved --log-file $C/pii.log > $C/daemon.out 2>&1"

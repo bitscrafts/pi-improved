@@ -14,6 +14,7 @@ workdir = "/tmp"
 spec = "specs/207-the-coder-node-spawns-an-agent.md"
 brief = "Implement the spec named above. Follow it as the contract."
 container_image = "docker.io/library/python:3.12-slim"
+timeout_ms = 1800000
 env_pass = ["PATH", "HOME"]
 criteria = ["cargo test -p pii-server --test coder_spawns_a_process"]
 

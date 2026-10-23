@@ -53,7 +53,8 @@ fn node(id: &str, kind: &str) -> NodeSpec {
         loop_budget: None,
         retry: RetryPolicy::default(),
         caps: 0,
-        cfg: serde_json::json!({"value": "v"}),
+        // `timeout_ms` because spec 247 makes V10 judge a coder node by its kind; these tests are about V11, not V10.
+        cfg: serde_json::json!({"value": "v", "timeout_ms": 1000}),
     }
 }
 
@@ -147,6 +148,7 @@ entry = "code"
 [[node]]
 id = "code"
 kind = "coder"
+timeout_ms = 1000
 
 [[node]]
 id = "done"
