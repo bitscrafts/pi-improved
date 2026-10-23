@@ -2,6 +2,49 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-23 00:45Z — HEAD gated PASS, and the gate's own second run measured a defect in itself (spec 236 filed)
+
+State: HEAD `16236dd` · tree clean · lock free, no cycle in flight · control unchanged:
+`PAUSED at 2026-10-20 (paused for the deps/gate fix; user directive)` · selftest this tick **34 passed, 0 failed /
+VERDICT: ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261023T0024Z.log`) · queue now holds **A104**
+(the item this tick filed); A94 (parked) and A95 (needs-review) still wait on the operator's one lnx deploy.
+
+- **The four coder commits the sibling session landed after the last gate are green on their own terms.**
+  `bcab5a5`, `ea2976f`, `e259bac`, `16236dd` (20:24-21:50Z on 10-22) touch the spawn path, so they were
+  re-measured rather than carried forward: `agent_claude_arm` 12/0, `coder_output_redacted` 7/0,
+  `coder_agent_timeout` 5/0, `coder_stop_reason` 4/0, `coder_tree_digest` 7/0, `child_group_reaped` (pii-core)
+  4/0. **Mutation:** dropping `--permission-mode`/`bypassPermissions` from
+  `crates/pii-server/src/node_kinds/nodes/agent_claude.rs:71` read **11 passed / 1 failed**, failing exactly
+  `a_headless_claude_may_write` at `tests/agent_claude_arm.rs:51` — the intended assertion, no test deleted;
+  restored byte-identical (`sha256 aa96b4fd…14ab` before and after, `touch`ed) and green again 12/0.
+- **`fresh-gate` on HEAD `16236dd`: PASS, `fresh_gate_rc=0`, every step PASS** (00:16Z run; the log of the
+  second, poisoned run is `_tmp/autonomy/logs/freshgate-head-20261023T0024Z.log`). HEAD is gated.
+- **A defect in the gate itself, measured twice on the same tree at the same HEAD — spec 236, row A104.**
+  The first run exported to `/projects/_tmp/fresh-gate-73534`, its test step wrote into the SHARED warm cache
+  (`_tmp/gate-target/test-gate`, `FRESH_GATE_TARGET` unset), and its success removed the export. The second run
+  reused that binary — `launcher-02e24e7123aaff6a`, mtime `00:19:42Z`, `strings` →
+  `/projects/_tmp/fresh-gate-73534/crates/pii-evolve`, a path that no longer exists — and `test (lib/bins/tests)`
+  failed three `pii-evolve` tests with `read driver.rs: NotFound` (`read src: NotFound`) while five tests were
+  still collected. A freshly compiled binary in the same directory (`launcher-5ea7fb6082780f01`, 00:29Z) carries
+  `/projects/pi-improved/crates/pii-evolve` and reads **5/5**. `quality-gate.sh --fresh` pins the shared cache to
+  `_tmp/gate-target-fresh`, which keeps the export out of the ROUTINE cache but does not fix this: that directory
+  is shared between runs too, and the plain `cargo run -p xtask -- fresh-gate` door — the one this file quoted —
+  bypasses the pin. The three launcher tests are right; the binary was stale. 188 files read
+  `env!("CARGO_MANIFEST_DIR")` and 190 sites pass it to `tmp_scratch`, which can even recreate a deleted export's
+  directories, so the fix belongs in the runner that hands out the cache (spec 236 R1: a per-run `TEST_GATE_TARGET`
+  inside the export), not in the tests.
+- **Measured before the next tick can trip on it:** the poisoned artefacts were reclaimed with
+  `CARGO_TARGET_DIR=_tmp/gate-target/test-gate cargo clean -p pii-evolve` (1771 files, 430.6 MiB — `cargo clean`
+  is the only reclamation this loop allows), and the routine lane re-read **5 passed / 0 failed**. Until 236
+  lands, a SECOND fresh-gate on a tree that already passed one needs that clean first, or it fails on a stale
+  binary and says nothing about the code.
+- **Why a new spec and not a ranked item:** 059 §4's ranks 2-9 are all closed (rows A1-A7 `done`), rank 1 is the
+  operator's deploy and rank 10 is a set of user decisions. The queue was otherwise drained, so this tick filed
+  the measured defect instead of inventing a row.
+- **Still the operator's, unchanged:** resuming `_tmp/autonomy/control`, and authorizing the lnx deploy that is
+  A94 criterion 6 / A95 criterion 7 (one pinned coder run, `coder.spawned` carrying `skill=<name> sha256=<hex>`,
+  then an edited document refusing `skill.drift`) — the deploy card now also carries the credential path.
+
 ## 2026-10-22 18:25Z — HEAD is gated again; the deploy card predated the credential commit (nothing dispatched, switch still PAUSED)
 
 State: HEAD `719b785` · tree clean before this edit · lock free, no cycle in flight · control unchanged:
