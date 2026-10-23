@@ -40,6 +40,7 @@ Stand-in = `_tmp/fake-agent`, a replaceable `pi`/`claude` with a mode file (no n
 | 21 | an interrupted run cannot be resumed | `refused (run already finished: Failed)` | open, policy |
 | 22 | a failed agent run can finish `succeeded` | `r000000000641` and `r000000000706`: rc 1, status succeeded | warned by lint V11 (`7111cff`); behaviour open |
 | 23 | gate caches share a target, stale export-baked binaries fail tests | repeated `cargo clean -p` | fixed `3217788` and `7a952e7` (queue A104) |
+| 24 | a commit lands `done` whose HEAD does not compile: specs 241-243 committed the callers and left the API they call uncommitted | clean worktree at `1675120`: `cargo check -q -p pii-server` = 7 errors (E0425 `kill_group`, E0432 `Listed`/`coder_runtime_api`, E0599 `list_all`/`force_remove`, E0050 `run` 4 vs 5 params); the same files are `M`/`??` in the working tree, where the loop's gate step (`cycle.sh:321-328`, `quality-gate.sh --routine`) reads green | open (spec 245 / row A113) |
 
 New journal fields from this work: `tree_changed`, `claude_session_id`, `claude_turns`, `claude_cost_usd`,
 `failovers`, `route_drift`, `quota_exhausted`, `quota_reset` (`1224d48`, observation only).
@@ -48,6 +49,36 @@ New journal fields from this work: `tree_changed`, `claude_session_id`, `claude_
 
 The coder is correct: a non-zero exit goes to the `err` port. The run reads as green because the probe graphs end `err`
 in a terminal `transform`. Lint V11 now warns on that shape. It does not change a run's status.
+
+## Defect 24 — a `done` commit whose HEAD does not build (measured 2026-10-23T12:20Z)
+
+Reproduction, from a clean checkout of the commit the loop called done:
+
+```
+git worktree add --detach _tmp/verify-244-<ts> 1675120
+cd _tmp/verify-244-<ts> && cargo check -q -p pii-server
+→ 7 errors: E0425 cannot find function `kill_group` in crate `pii_core`;
+  E0432 unresolved import `coder_runtime::Listed` / `coder_runtime_api`;
+  E0599 no method `list_all` / `force_remove` for `&dyn ContainerRuntime`;
+  E0050 `run` has 4 parameters, the trait declares 5
+```
+
+The working tree builds, because it holds the missing API as uncommitted changes (`pub fn kill_group` at
+`childproc.rs:383` and its re-export; `list_all`, `force_remove`, `Listed` and the timeout parameter on the trait;
+the `coder_runtime_api` module). Specs 241 (`85602d2`), 242 (`1655e2d`) and 243 (`8cc8ffe`) committed the call sites;
+their commit path lists never carried the API, and 244 (`1675120`) built on top.
+
+Why no step caught it — two doors read the working tree, none read the commit:
+
+- the gate step is `bash quality-gate.sh --routine` on the repo tree (`cycle.sh:321-328`);
+- the verify step runs its criteria in the same tree;
+- the commit stages an explicit path list (plan column 6), so "the gate saw it" and "the commit carries it" are
+  two different sets, and nothing compares them.
+
+`cargo xtask fresh-gate` exports HEAD and would have failed here; it is not the door the cycle uses. The fix queued is
+spec 245 / row A113: restore the API, prove it with a compile-surface test, and add `scripts/autonomy/head-builds.sh`
+(a `cargo check` of HEAD's exported content) as a post-commit step whose non-zero reading makes the item
+`head-broken` instead of `done`.
 
 ## Decisions that need the operator
 
