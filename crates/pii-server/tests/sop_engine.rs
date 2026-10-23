@@ -231,7 +231,10 @@ async fn example_suspends_at_the_approval_then_resumes_to_completion() {
             step("announce")
         ]
     );
-    assert!(events(&rig, names::SOP_STEP_FAILED).is_empty());
+    assert_eq!(
+        events(&rig, names::SOP_STEP_FAILED),
+        [] as [(String, String); 0]
+    );
     let notified = std::fs::read_to_string(rig.ws.join("_tmp/sop-cut-release-notify.log")).unwrap();
     assert_eq!(notified, "release cut and published\n");
 }
@@ -255,7 +258,10 @@ fn a_failing_check_ends_the_run_naming_the_step() {
         vec![step("manifest-present")]
     );
     assert!(!events(&rig, names::SOP_STEP_STARTED).contains(&step("approve-tag")));
-    assert!(rig.engine.approvals.pending_approvals().unwrap().is_empty());
+    assert_eq!(
+        rig.engine.approvals.pending_approvals().unwrap(),
+        [] as [pii_store::approval::Approval; 0]
+    );
     let status = rig.engine.store.get_run(&run).unwrap().unwrap().status;
     assert_eq!(status, RunStatus::Failed);
 }

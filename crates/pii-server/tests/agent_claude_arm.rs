@@ -139,7 +139,10 @@ fn output_that_is_not_claude_json_yields_no_facts() {
     assert_eq!(f.session_id, None);
     assert_eq!(f.cost_usd, None);
     assert_eq!(f.turns, None);
-    assert!(reported_routes("plain text, no json\n").is_empty());
+    assert_eq!(
+        reported_routes("plain text, no json\n"),
+        [] as [(String, String); 0]
+    );
 }
 
 #[test]

@@ -81,7 +81,10 @@ fn since_excludes_older_incidents() {
         "\n"
     ));
     let since = pii_learn::incident::parse_iso("2026-10-01T00:00:00Z").unwrap();
-    assert!(measure_distance(d.path(), since).incidents.is_empty());
+    assert_eq!(
+        measure_distance(d.path(), since).incidents,
+        [] as [pii_learn::distance::Distance; 0]
+    );
 }
 
 #[test]

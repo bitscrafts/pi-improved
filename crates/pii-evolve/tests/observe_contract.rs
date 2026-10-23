@@ -30,7 +30,10 @@ fn launch_failure_and_cycle_start_are_reported_by_name() {
     assert_eq!(started[0].fields.get("cycle"), Some(&serde_json::json!(1)));
     let failed = rec.events_named(names::EVOLVE_LAUNCH_FAILED);
     assert_eq!(failed.len(), 1, "{:?}", rec.events());
-    assert!(rec.events_named(names::EVOLVE_CYCLE_FINISHED).is_empty());
+    assert_eq!(
+        rec.events_named(names::EVOLVE_CYCLE_FINISHED),
+        [] as [pii_observe::OwnedEvent; 0]
+    );
 }
 
 /// Spec 130 R3/R4: a missing socket is reported by `pii_uds` with the endpoint,

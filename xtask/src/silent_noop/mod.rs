@@ -213,8 +213,8 @@ mod tests {
         let lines = helpers::require_written_reasons(allowlist(), &mut v);
         // Our real allowlist has all non-empty reasons, so nothing is flagged,
         // but the FUNCTION must not crash and the real-list is fully populated.
-        assert!(lines.is_empty());
-        assert!(v.is_empty());
+        assert_eq!(lines, [] as [String; 0]);
+        assert_eq!(v, [] as [String; 0]);
     }
 
     /// R1d guard: a fabricated empty reason WOULD be flagged.

@@ -76,5 +76,8 @@ fn successful_fetch_reports_outcome() {
     let ev = rec.events_named(names::FETCH_OUTCOME);
     assert_eq!(ev.len(), 1, "{:?}", rec.events());
     assert_eq!(ev[0].fields.get("status"), Some(&json!(200)));
-    assert!(rec.events_named(names::FETCH_ALLOWLIST_DENIED).is_empty());
+    assert_eq!(
+        rec.events_named(names::FETCH_ALLOWLIST_DENIED),
+        [] as [pii_observe::OwnedEvent; 0]
+    );
 }

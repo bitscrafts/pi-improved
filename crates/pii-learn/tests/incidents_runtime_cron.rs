@@ -27,19 +27,22 @@ fn occurrence(all: Vec<RuntimeIncident>) -> Vec<RuntimeIncident> {
 
 #[test]
 fn one_firing_is_silent() {
-    assert!(scan(&line("cron.fired", 0, "digest")).is_empty());
+    assert_eq!(
+        scan(&line("cron.fired", 0, "digest")),
+        [] as [RuntimeIncident; 0]
+    );
 }
 
 #[test]
 fn a_rearm_is_not_a_firing() {
     let t = line("cron.fired", 0, "digest") + &line("cron.rearmed", 1, "digest");
-    assert!(scan(&t).is_empty());
+    assert_eq!(scan(&t), [] as [RuntimeIncident; 0]);
 }
 
 #[test]
 fn two_firings_a_day_apart_are_silent() {
     let t = line("cron.fired", 0, "digest") + &line("cron.fired", 86_400, "digest");
-    assert!(scan(&t).is_empty());
+    assert_eq!(scan(&t), [] as [RuntimeIncident; 0]);
 }
 
 #[test]
@@ -59,7 +62,7 @@ fn two_firings_three_seconds_apart_are_one_incident() {
 #[test]
 fn different_crons_do_not_cluster() {
     let t = line("cron.fired", 0, "a") + &line("cron.fired", 3, "b");
-    assert!(scan(&t).is_empty());
+    assert_eq!(scan(&t), [] as [RuntimeIncident; 0]);
 }
 
 #[test]
@@ -67,5 +70,5 @@ fn a_log_from_before_the_event_opens_nothing() {
     let p: PathBuf =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/runtime-stalled.jsonl");
     let all = scan_runtime_log(&p, &IncidentConfig::default()).unwrap();
-    assert!(occurrence(all).is_empty());
+    assert_eq!(occurrence(all), [] as [RuntimeIncident; 0]);
 }

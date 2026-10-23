@@ -44,6 +44,6 @@ fn a_fallback_to_another_route_is_reported_as_a_second_route() {
 
 #[test]
 fn a_text_run_reports_no_route_so_it_is_unknown_not_a_match() {
-    assert!(reported_routes("PONG\n").is_empty());
-    assert!(reported_routes("").is_empty());
+    assert_eq!(reported_routes("PONG\n"), [] as [(String, String); 0]);
+    assert_eq!(reported_routes(""), [] as [(String, String); 0]);
 }

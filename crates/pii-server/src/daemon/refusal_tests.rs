@@ -200,7 +200,10 @@ async fn an_allowed_run_writes_no_decision() {
     let fx = fixture();
     let (_, status) = start(&fx, "healthy");
     assert_ne!(status, RunStatus::Failed);
-    assert!(fx.engine.heals.list_attempts().unwrap().is_empty());
+    assert_eq!(
+        fx.engine.heals.list_attempts().unwrap(),
+        [] as [pii_store::heal::HealAttempt; 0]
+    );
     assert_eq!(fx.engine.refusals.refused(), 0);
 }
 
@@ -216,7 +219,10 @@ async fn a_ledger_write_failure_does_not_swallow_the_refusal() {
     assert!(journal.contains("quarantined by promotion"), "{journal}");
     assert_eq!(fx.engine.refusals.refused(), 1);
     assert_eq!(fx.engine.refusals.recorded(), 0);
-    assert!(fx.engine.heals.list_attempts().unwrap().is_empty());
+    assert_eq!(
+        fx.engine.heals.list_attempts().unwrap(),
+        [] as [pii_store::heal::HealAttempt; 0]
+    );
     assert!(
         format!("{:?}", rec.events()).contains("quarantine.refusal.record"),
         "the failure is visible: {:?}",

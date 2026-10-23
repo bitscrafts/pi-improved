@@ -219,10 +219,10 @@ mod tests {
         let w = TimerWheel::open(&path).unwrap();
         w.put_timer(100, "r1", "k").unwrap();
         assert_eq!(w.remove_run("r1").unwrap(), 1);
-        assert!(w.take_due(101).unwrap().is_empty());
+        assert_eq!(w.take_due(101).unwrap().len(), 0);
         // Control 4: an empty wheel is intact and removal of nothing is not an error.
         assert_eq!(w.remove_run("r1").unwrap(), 0);
-        assert!(w.take_due(1_000).unwrap().is_empty());
+        assert_eq!(w.take_due(1_000).unwrap().len(), 0);
         let _ = std::fs::remove_file(&path);
     }
 

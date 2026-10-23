@@ -137,13 +137,13 @@ mod tests {
     #[test]
     fn accepts_create_dir_all_before() {
         let s = "fn t() {\n    let root = std::path::Path::new(\"/x\").join(\"_tmp\");\n    std::fs::create_dir_all(&root).unwrap();\n    let d = b.tempdir_in(&root).unwrap();\n}\n";
-        assert!(check_source("a.rs", s).is_empty());
+        assert_eq!(check_source("a.rs", s), [] as [String; 0]);
     }
 
     #[test]
     fn accepts_tmp_scratch_and_unrelated() {
         let s = "fn t() {\n    let d = pii_store::testing::tmp_scratch(m, \"x\");\n}\nfn u() {\n    b.tempdir_in(\"/tmp\").unwrap();\n}\n";
-        assert!(check_source("a.rs", s).is_empty());
+        assert_eq!(check_source("a.rs", s), [] as [String; 0]);
     }
 
     #[test]

@@ -101,7 +101,10 @@ fn a_close_after_a_frame_completes_the_body_with_no_error() {
     srv.join().unwrap();
     assert_eq!(resp.text, "PONG-GLM");
     assert_eq!(deltas, "PONG-GLM");
-    assert!(rec.events_named(names::MODEL_PROVIDER_ERROR).is_empty());
+    assert_eq!(
+        rec.events_named(names::MODEL_PROVIDER_ERROR),
+        [] as [pii_observe::OwnedEvent; 0]
+    );
 }
 
 #[test]

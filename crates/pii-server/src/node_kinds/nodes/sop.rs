@@ -293,7 +293,10 @@ mod tests {
             .to_string();
         assert!(err.contains("step 'two'") && err.contains("'one'"), "{err}");
         assert_eq!(log.events_named(names::SOP_STEP_FAILED).len(), 1);
-        assert!(log.events_named(names::SOP_STEP_STARTED).is_empty());
+        assert_eq!(
+            log.events_named(names::SOP_STEP_STARTED),
+            [] as [pii_observe::OwnedEvent; 0]
+        );
     }
 
     /// Negative control: a met `requires` continues and starts the step.
@@ -305,7 +308,10 @@ mod tests {
             .unwrap();
         assert!(matches!(out, Outcome::Next { ref port, .. } if port.as_str() == "ok"));
         assert_eq!(log.events_named(names::SOP_STEP_STARTED).len(), 1);
-        assert!(log.events_named(names::SOP_STEP_FAILED).is_empty());
+        assert_eq!(
+            log.events_named(names::SOP_STEP_FAILED),
+            [] as [pii_observe::OwnedEvent; 0]
+        );
     }
 
     #[test]

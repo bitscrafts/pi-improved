@@ -107,7 +107,7 @@ fn an_err_edge_to_a_node_that_continues_does_not_warn() {
         ],
         vec![edge("c", "err", "t"), edge("t", "ok", "u")],
     );
-    assert!(lint(&spec).is_empty());
+    assert_eq!(lint(&spec), [] as [String; 0]);
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn an_err_edge_to_another_kind_does_not_warn() {
         vec![node("c", "coder"), node("o", "other")],
         vec![edge("c", "err", "o")],
     );
-    assert!(lint(&spec).is_empty());
+    assert_eq!(lint(&spec), [] as [String; 0]);
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn a_coder_with_no_err_edge_does_not_warn() {
         vec![node("c", "coder"), node("t", "transform")],
         vec![edge("c", "ok", "t")],
     );
-    assert!(lint(&spec).is_empty());
+    assert_eq!(lint(&spec), [] as [String; 0]);
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn a_non_coder_node_does_not_warn() {
         vec![node("c", "other"), node("t", "transform")],
         vec![edge("c", "err", "t")],
     );
-    assert!(lint(&spec).is_empty());
+    assert_eq!(lint(&spec), [] as [String; 0]);
 }
 
 /// Spec 240: the shipped probe now ends `err` in a `refuse` node, so this reads the old shape inline instead.

@@ -536,7 +536,10 @@ mod tests {
         };
         let out = node.run(&ctx(), &input).unwrap();
         assert!(matches!(out, Outcome::Next { port, .. } if port.as_str() == "ok"));
-        assert!(f.heals.list_attempts().unwrap().is_empty());
+        assert_eq!(
+            f.heals.list_attempts().unwrap(),
+            [] as [pii_store::heal::HealAttempt; 0]
+        );
     }
 
     #[test]
@@ -580,6 +583,9 @@ mod tests {
         };
         let out = node.run(&ctx(), &input).unwrap();
         assert!(matches!(out, Outcome::Next { port, .. } if port.as_str() == "flake"));
-        assert!(f.heals.list_attempts().unwrap().is_empty());
+        assert_eq!(
+            f.heals.list_attempts().unwrap(),
+            [] as [pii_store::heal::HealAttempt; 0]
+        );
     }
 }

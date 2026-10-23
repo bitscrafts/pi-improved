@@ -126,8 +126,8 @@ mod tests {
         let a = FetchArgs::parse(&json!({"url": "http://example.com/"})).unwrap();
         let req = a.to_request();
         assert_eq!(req.method, HttpMethod::Get);
-        assert!(req.headers.is_empty());
-        assert!(req.body.is_empty());
+        assert_eq!(req.headers, [] as [(String, String); 0]);
+        assert_eq!(req.body, [] as [u8; 0]);
         assert_eq!(req.url, "http://example.com/");
     }
 

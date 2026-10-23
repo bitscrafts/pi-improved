@@ -149,7 +149,10 @@ fn fetch_post_blocked() {
         );
     }
     // Nothing reached the chokepoint and the refusals are audited.
-    assert!(fake.requests().is_empty());
+    assert_eq!(
+        fake.requests(),
+        [] as [pii_net::testing::RecordedRequest; 0]
+    );
     let lines = audit_snapshot(&buf);
     assert_eq!(lines.len(), 4, "each refusal is audited: {lines:?}");
     assert!(lines.iter().all(|l| l.starts_with("FEED: DENIED ")));

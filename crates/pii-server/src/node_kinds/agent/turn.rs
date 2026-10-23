@@ -337,6 +337,6 @@ mod memory_tests {
             lanes: Vec::new(),
         };
         assert!(memory_lines(&ctx_with(&obs), Ok(empty)).is_none());
-        assert!(obs.events().is_empty());
+        assert_eq!(obs.events(), [] as [ObsEvent; 0]);
     }
 }

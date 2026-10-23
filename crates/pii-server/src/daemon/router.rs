@@ -275,7 +275,7 @@ mod tests {
             scope.join("in"),
             scope.join("out"),
         );
-        assert!(cli.egress_hosts().is_empty());
+        assert_eq!(cli.egress_hosts(), [] as [String; 0]);
         let rctx = channel_ctx(scope, "c", &cli.egress_hosts());
         assert!(!rctx.caps().net_hosts.permits("discord.com:443"));
         assert!(!rctx.caps().net_hosts.permits(""));

@@ -60,7 +60,7 @@ fn compile_is_byte_deterministic() {
     let a = sop::compile(&sop::load(GOOD).unwrap());
     let b = sop::compile(&sop::load(GOOD).unwrap());
     assert_eq!(a, b);
-    assert!(!a.is_empty());
+    assert_ne!(a, "");
     // Caps are normalised, so their written order cannot change the bytes.
     let swapped = GOOD.replace(r#"["proc", "fs_read"]"#, r#"["fs_read", "proc"]"#);
     assert_eq!(a, sop::compile(&sop::load(&swapped).unwrap()));

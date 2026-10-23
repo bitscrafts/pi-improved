@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn registry_requires_every_const_in_all() {
         let ok = "pub const A: &str = \"a\";\npub const ALL: &[&str] = &[\n    A,\n];\n";
-        assert!(check_registry("n.rs", ok).is_empty());
+        assert_eq!(check_registry("n.rs", ok), [] as [String; 0]);
         let missing = "pub const A: &str = \"a\";\npub const B: &str = \"a\";\npub const ALL: &[&str] = &[\n    A,\n];\n";
         let f = check_registry("n.rs", missing);
         assert_eq!(f.len(), 1);
@@ -662,7 +662,7 @@ mod tests {
             "pub struct A;\npub const B: u8 = 1;\n",
             "pii-abi  # types only\n",
         );
-        assert!(io_findings(&scan(&root)).is_empty());
+        assert_eq!(io_findings(&scan(&root)), [] as [&String; 0]);
     }
 
     #[test]
@@ -689,7 +689,7 @@ mod tests {
             "use std::io::Write;\n",
             "pii-abi  # types\npii-abi:lib  # dormant: sink trait, never driven here\n",
         );
-        assert!(io_findings(&scan(&covered)).is_empty());
+        assert_eq!(io_findings(&scan(&covered)), [] as [&String; 0]);
         let stale = io_tree(
             "io-module-stale",
             "pub struct A;\n",

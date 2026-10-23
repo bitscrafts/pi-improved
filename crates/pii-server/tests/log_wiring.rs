@@ -84,7 +84,10 @@ async fn a_model_request_reaches_the_log() {
         "{:?}",
         log.events()
     );
-    assert!(!log.events_named(names::MODEL_REQUEST_LATENCY).is_empty());
+    assert_ne!(
+        log.events_named(names::MODEL_REQUEST_LATENCY),
+        [] as [pii_observe::OwnedEvent; 0]
+    );
 }
 
 #[test]
@@ -298,5 +301,8 @@ async fn a_started_cron_entry_is_one_firing() {
         .cloned()
         .expect("a tracked run");
     assert_eq!(ev[0].fields.get("run"), Some(&serde_json::json!(run)));
-    assert!(log.events_named(names::CRON_START_REFUSED).is_empty());
+    assert_eq!(
+        log.events_named(names::CRON_START_REFUSED),
+        [] as [pii_observe::OwnedEvent; 0]
+    );
 }

@@ -168,8 +168,8 @@ async fn status_keeps_old_keys_and_reports_build_and_counts() {
         "spec 116: present, and 0 until a window of runs exists: {v}"
     );
     assert_eq!(v["build"]["version"], env!("CARGO_PKG_VERSION"));
-    assert!(!v["build"]["revision"].as_str().unwrap().is_empty());
-    assert!(!v["build"]["target"].as_str().unwrap().is_empty());
+    assert_ne!(v["build"]["revision"].as_str().unwrap(), "");
+    assert_ne!(v["build"]["target"].as_str().unwrap(), "");
     for k in [
         "runs",
         "journal_events",

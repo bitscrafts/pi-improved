@@ -229,7 +229,7 @@ mod tests {
             observer: true,
             audit: true,
         };
-        assert!(switch_off_events(on).is_empty());
+        assert_eq!(switch_off_events(on), [] as [Event; 0]);
         let both = Switches {
             observer: false,
             audit: false,

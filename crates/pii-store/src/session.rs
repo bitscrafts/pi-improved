@@ -587,7 +587,7 @@ mod tests {
         store.put_session_snapshot(sid, 0, b"snap").unwrap();
         store.del_session(sid).unwrap();
         assert!(store.get_session(sid).unwrap().is_none());
-        assert!(store.session_messages(sid).unwrap().is_empty());
+        assert_eq!(store.session_messages(sid).unwrap().len(), 0);
         assert!(store.latest_session_snapshot(sid).unwrap().is_none());
     }
 }

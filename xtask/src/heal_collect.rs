@@ -71,7 +71,7 @@ pub fn run_at(
         // Verify the restoration honestly before declaring success: the
         // seeded file must contain the recorded original line again.
         let full = Path::new(wt).join(&seed.broken_file);
-        let restored = std::fs::read_to_string(&full).ok().is_some_and(|src| {
+        let restored = std::fs::read_to_string(&full).is_ok_and(|src| {
             usize::try_from(seed.broken_line.saturating_sub(1))
                 .is_ok_and(|idx| src.lines().nth(idx) == Some(&seed.original_line))
         });

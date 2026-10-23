@@ -59,10 +59,9 @@ fn five_identical_refusals_are_one_incident_with_count_five() {
     assert_eq!(inc.first().unwrap().count, 5);
     // below the configured count: nothing.
     let (_d, p) = log_with(&(ev("run.start.refused", 1, None) + &ev("run.start.refused", 2, None)));
-    assert!(
-        scan_runtime_log(&p, &IncidentConfig::default())
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        scan_runtime_log(&p, &IncidentConfig::default()).unwrap(),
+        [] as [pii_learn::incident_runtime::RuntimeIncident; 0]
     );
 }
 

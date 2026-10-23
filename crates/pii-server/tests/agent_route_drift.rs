@@ -38,7 +38,10 @@ fn a_failover_event_is_read_with_both_ends_and_the_class() {
 
 #[test]
 fn a_run_with_no_failover_event_reports_none() {
-    assert!(failovers(&format!("{PI_SESSION}\n")).is_empty());
+    assert_eq!(
+        failovers(&format!("{PI_SESSION}\n")),
+        [] as [pii_server::node_kinds::nodes::agent_route::Failover; 0]
+    );
 }
 
 #[test]
@@ -52,12 +55,12 @@ fn a_swapped_to_model_is_also_a_second_reported_route() {
 #[test]
 fn the_requested_route_alone_is_not_drift() {
     let routes = reported_routes(&format!("{PI_SESSION}\n"));
-    assert!(
+    assert_eq!(
         route_drift(
             &requested("ollama-cloud", "deepseek-v4.1-flash:cloud"),
             &routes
-        )
-        .is_empty()
+        ),
+        [] as [String; 0]
     );
 }
 
@@ -88,14 +91,20 @@ fn the_same_provider_with_another_model_is_drift() {
 
 #[test]
 fn a_run_that_reported_no_route_is_unknown_not_drift() {
-    assert!(route_drift(&requested("ollama-cloud", "x"), &[]).is_empty());
+    assert_eq!(
+        route_drift(&requested("ollama-cloud", "x"), &[]),
+        [] as [String; 0]
+    );
 }
 
 #[test]
 fn claude_asked_for_haiku_and_given_the_full_id_is_not_drift() {
     // The graph says `haiku`; claude reports `claude-haiku-5-5`. An alias contained in the id is the same route.
     let routes = reported_routes(&format!("{CLAUDE_INIT}\n"));
-    assert!(route_drift(&requested("claude", "haiku"), &routes).is_empty());
+    assert_eq!(
+        route_drift(&requested("claude", "haiku"), &routes),
+        [] as [String; 0]
+    );
 }
 
 #[test]

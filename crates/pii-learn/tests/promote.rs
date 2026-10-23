@@ -260,7 +260,7 @@ fn the_outcome_metric_reads_satisfied_after_a_definition_change() {
     let p = promoter_seeing(d.path(), &defs);
     let a = p.promote(&req(&c), T0).unwrap();
     *defs.lock() = Some("h2".to_owned());
-    assert!(p.sweep(T0 + 100).is_empty());
+    assert_eq!(p.sweep(T0 + 100), [] as [(String, PromotionState); 0]);
     let s = get_promotion(d.path(), &a.id).unwrap();
     assert_eq!(s.state, PromotionState::Active);
     let o = s.outcome.unwrap();
@@ -368,7 +368,7 @@ fn r3_a_ledger_that_cannot_be_written_means_nothing_is_applied() {
     // A directory where the ledger file belongs: the append must fail.
     fs::create_dir_all(d.path().join("learn").join("ledger.jsonl")).unwrap();
     assert_eq!(refusal_of(d.path(), &req(&c), T0), PromotionRefusal::Store);
-    assert!(list_promotions(d.path()).is_empty());
+    assert_eq!(list_promotions(d.path()), [] as [Promotion; 0]);
     assert_eq!(quarantine_reason(d.path(), "g", T0 + 1), None);
 }
 

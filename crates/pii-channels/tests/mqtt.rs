@@ -73,7 +73,10 @@ fn subscribe_message_becomes_incoming_with_payload_and_topic() {
     let ev = rec.events_named(names::MQTT_MESSAGE_RECEIVED);
     assert_eq!(ev.len(), 1);
     assert!(format!("{:?}", ev[0].fields).contains("sensors/temp"));
-    assert!(!rec.events_named(names::MQTT_CONNECTED).is_empty());
+    assert_ne!(
+        rec.events_named(names::MQTT_CONNECTED),
+        [] as [pii_observe::OwnedEvent; 0]
+    );
     assert!(ch.health_issue().is_none());
 }
 
@@ -138,7 +141,7 @@ fn broker_down_is_degraded_with_reason_event_and_bounded_attempts() {
     // The broker comes back on the same port: the channel heals.
     let b = Broker::start_on(port, false);
     until("healed", || ch.health_issue().is_none());
-    assert!(!b.connects().is_empty());
+    assert_ne!(b.connects(), [] as [mqtt_broker::Connect; 0]);
     let after = ch.reconnect_attempts();
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(ch.reconnect_attempts(), after, "no retries once connected");

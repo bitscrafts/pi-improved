@@ -57,7 +57,10 @@ mod tests {
 
     #[test]
     fn a_types_only_source_has_no_io_imports() {
-        assert!(io_imports("pub struct A;\npub const B: u8 = 1;\nuse std::fmt;\n").is_empty());
+        assert_eq!(
+            io_imports("pub struct A;\npub const B: u8 = 1;\nuse std::fmt;\n"),
+            [] as [usize; 0]
+        );
     }
 
     #[test]

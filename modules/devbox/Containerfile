@@ -1,0 +1,59 @@
+# modules/devbox/Containerfile — the development container for pii: the gate, the coder's agents, and nothing else.
+#
+# Minimal on purpose (operator, 2026-10-23: "make the image minimal ... we got a slim version of rust").
+# Base: the official rust slim image, PINNED BY DIGEST (a tag moves; a digest is the artefact that was measured).
+#   docker.io/library/rust:1.99.1-slim-trixie   amd64, 327 MB compressed, updated 2026-10-22
+# It already carries rustup + cargo + rustc 1.99.1 + gcc + libc6-dev. This file adds only what a consumer was MEASURED to need:
+#
+#   git               the gate scripts (87 call sites) and xtask (5 files); pi and claude both shell out to it
+#   ca-certificates   TLS to api.anthropic.com / ollama.com; already present in the base
+#   python3           the autonomy scripts (76 call sites); NOT used by the gate itself (0 hits in gate-steps/quality-gate/gate-lib)
+#   flock, timeout    coreutils/util-linux, already in the base
+#   ripgrep, fd-find  pi implements its grep/find tools by running `rg` / `fd`|`fdfind`; without them those tools are absent
+#   nodejs            claude's runtime ONLY if claude is installed through npm; the native binary needs none (see KNOB below)
+#   clippy, rustfmt, llvm-tools, cargo-llvm-cov, musl target   the gate's fmt / clippy / coverage / static-build steps
+#
+# NOT added, each with the evidence: clang/cmake (only the llamacpp feature; spec 170 removed that gate step), openssl (the lockfile
+# has rustls + ring, no openssl), ssh/tmux/rsync (an agent in a container has no business reaching the host), jq/uv/shellcheck
+# (the gate does not call them; the loop does, and the loop runs on the orchestrator side, not in this container).
+# A tool a task proves necessary goes HERE; a one-off is installed in the running container and is gone at the next start.
+#
+# KNOBS the operator decides (defaults are the measured-safe ones):
+#   PI_SRC       how pi gets in.   default `copy`: the same static-ish binary the orchestrator runs (0.2.0, 23.7 MB).
+#   CLAUDE_SRC   how claude gets in. default `native`: the ELF the orchestrator runs (2.1.300, 267 MB, no node needed).
+#                `npm` is ~smaller to fetch but pulls node + npm (~150 MB) into the image.
+FROM docker.io/library/rust:1.99.1-slim-trixie
+
+# Root inside, by decision (operator, 2026-10-23): rootless podman maps container root to the host user, so files the agent
+# writes keep the host owner. IS_SANDBOX=1 is what lets claude run its bypass-permissions mode as root.
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_TERM_COLOR=never \
+    RUSTUP_TOOLCHAIN=1.99.1 \
+    LANG=C.UTF-8 \
+    TZ=UTC \
+    IS_SANDBOX=1
+
+# One layer for apt (so the lists are removed in the same layer that made them), one for the Rust components.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends git python3 ripgrep fd-find musl-tools; \
+    ln -s "$(command -v fdfind)" /usr/local/bin/fd; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    rustup component add rustfmt clippy llvm-tools; \
+    rustup target add x86_64-unknown-linux-musl; \
+    cargo install --locked cargo-llvm-cov --version 0.9.1; \
+    rm -rf "$CARGO_HOME/registry" "$CARGO_HOME/git"
+
+# The agents: copied in from the build context (the orchestrator's own binaries), so the image carries exactly what was measured.
+COPY --chmod=0755 pi /usr/local/bin/pi
+COPY --chmod=0755 claude /usr/local/bin/claude
+
+WORKDIR /work
+
+# Smoke: every tool the gate and the agents use, by version. A build whose smoke fails does not produce an image.
+RUN rustc --version && cargo --version && cargo clippy --version && cargo fmt --version && cargo llvm-cov --version \
+ && git --version && python3 --version && rg --version | head -1 && fd --version && pi --version && claude --version
+
+CMD ["bash"]

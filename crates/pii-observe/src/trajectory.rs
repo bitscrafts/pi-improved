@@ -601,7 +601,7 @@ mod tests {
                 .iter()
                 .any(|v| v["kind"] == "trajectory.truncated")
         );
-        assert!(rep.events_named(names::TRAJECTORY_TRUNCATED).is_empty());
+        assert_eq!(rep.events_named(names::TRAJECTORY_TRUNCATED).len(), 0);
     }
 
     #[test]
@@ -677,7 +677,7 @@ mod tests {
             }
             sink.event(&Event::new("graph", Level::Info, names::RUN_OUTCOME).in_run(RunId(run)));
         }
-        assert!(!rep.events_named(names::TRAJECTORY_PRUNED).is_empty());
+        assert_ne!(rep.events_named(names::TRAJECTORY_PRUNED).len(), 0);
         // The newest run is intact: all 3 journal lines and its outcome.
         let newest = std::fs::read_to_string(d.path().join("trajectories/r039.jsonl")).unwrap();
         assert_eq!(newest.lines().count(), 4);

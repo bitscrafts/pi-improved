@@ -71,7 +71,7 @@ impl Store {
     pub(crate) fn injected_append_events_error(&self) -> Option<PiiError> {
         if self
             .fail_append_events_for_test
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
             .is_ok()
         {
             return Some(PiiError::Internal(String::from(

@@ -41,7 +41,10 @@ fn an_absent_project_file_leaves_the_global_config_unchanged() {
         effective.core.runtime_dir.as_deref(),
         Some("/run/user/0/pii")
     );
-    assert!(effective.model_tier.is_empty());
+    assert_eq!(
+        effective.model_tier,
+        [] as [pii_server::daemon::config::ModelTierSection; 0]
+    );
 }
 
 #[test]

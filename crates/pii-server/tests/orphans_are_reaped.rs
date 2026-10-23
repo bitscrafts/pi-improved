@@ -362,7 +362,10 @@ fn a_run_with_coder_exited_is_not_searched() {
 
     assert_eq!(*runtime.lists.borrow(), 0);
     assert!(runtime.removed.borrow().is_empty());
-    assert!(reaped_events(&engine.store, "r1").is_empty());
+    assert_eq!(
+        reaped_events(&engine.store, "r1"),
+        [] as [serde_json::Value; 0]
+    );
 }
 
 #[test]

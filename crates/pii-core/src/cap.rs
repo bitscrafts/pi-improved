@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn protected_relative_paths_are_relative() {
         use super::PROTECTED_RELATIVE_PATHS;
-        assert!(!PROTECTED_RELATIVE_PATHS.is_empty());
+        assert_ne!(PROTECTED_RELATIVE_PATHS.len(), 0);
         for p in PROTECTED_RELATIVE_PATHS {
             assert!(!p.starts_with('/'), "{p} must be relative");
         }

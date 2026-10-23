@@ -77,7 +77,7 @@ fn the_clean_control_stores_nothing() {
         scan_runtime_log(&fixture("runtime-clean.jsonl"), &IncidentConfig::default()).unwrap();
     let d = tempfile::tempdir().unwrap();
     let stored = ingest(d.path(), &scan).unwrap();
-    assert!(stored.is_empty());
+    assert_eq!(stored, [] as [pii_learn::incident_store::StoredIncident; 0]);
     assert_eq!(files_in(d.path()), 0);
 }
 

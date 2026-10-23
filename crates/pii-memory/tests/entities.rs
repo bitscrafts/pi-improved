@@ -317,7 +317,10 @@ fn queries_over_the_result_cap_are_a_named_refusal_not_a_truncation() {
             .unwrap_or(0)
             >= 3
     );
-    assert!(!rec.events_named(names::MEMORY_QUERY_REFUSED).is_empty());
+    assert_ne!(
+        rec.events_named(names::MEMORY_QUERY_REFUSED),
+        [] as [pii_observe::OwnedEvent; 0]
+    );
     let ev = &rec.events_named(names::MEMORY_QUERY_REFUSED)[0];
     assert_eq!(
         ev.fields.get("reason"),

@@ -680,7 +680,7 @@ mod tests {
             m.clone_into(&mut logged);
         });
         assert!(!timed_out);
-        assert!(logged.is_empty());
+        assert_eq!(logged, "");
     }
 
     #[test]

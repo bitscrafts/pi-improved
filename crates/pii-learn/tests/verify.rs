@@ -195,11 +195,11 @@ fn a_fabricated_claim_is_refuted_and_refutation_is_reachable() {
         r.numbers["shadow_failed"], 0,
         "diamond succeeds in the shadow"
     );
-    assert!(!r.shadow_runs.is_empty());
+    assert_ne!(r.shadow_runs, [] as [String; 0]);
     assert_eq!(rec.events_named(names::LEARN_CANDIDATE_REFUTED).len(), 1);
-    assert!(
-        rec.events_named(names::LEARN_CANDIDATE_CONFIRMED)
-            .is_empty()
+    assert_eq!(
+        rec.events_named(names::LEARN_CANDIDATE_CONFIRMED),
+        [] as [pii_observe::OwnedEvent; 0]
     );
 }
 
@@ -350,7 +350,7 @@ fn a_scratch_dir_inside_protected_state_is_refused_not_run_best_effort() {
     });
     let r = v.verify(&c);
     assert_eq!(r.reason, Some(Reason::Isolation), "{r:?}");
-    assert!(r.shadow_runs.is_empty());
+    assert_eq!(r.shadow_runs, [] as [String; 0]);
     assert_eq!(
         before,
         snapshot(&prod),

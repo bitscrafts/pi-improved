@@ -277,7 +277,7 @@ mod tests {
         // Nothing dropped since: a re-attach reports nothing more.
         let again = std::sync::Arc::new(Recorder::new());
         sw.attach(again.clone());
-        assert!(again.events_named(names::OBSERVE_EVENTS_DROPPED).is_empty());
+        assert_eq!(again.events_named(names::OBSERVE_EVENTS_DROPPED).len(), 0);
     }
 
     #[test]
@@ -286,7 +286,7 @@ mod tests {
         let rec = std::sync::Arc::new(Recorder::new());
         sw.attach(rec.clone());
         sw.event(&Event::new("t", Level::Info, names::TOOLS_CALL));
-        assert!(rec.events_named(names::OBSERVE_EVENTS_DROPPED).is_empty());
+        assert_eq!(rec.events_named(names::OBSERVE_EVENTS_DROPPED).len(), 0);
         assert_eq!(rec.events_named(names::TOOLS_CALL).len(), 1);
     }
 }

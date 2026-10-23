@@ -203,7 +203,10 @@ mod tests {
         suspend_approval(&engine, "r-badkey", "p");
         super::handle(&engine, &sched, "r-badkey", "p", 1).await;
         assert_eq!(seen.0.lock().len(), 1, "{:?}", seen.0.lock());
-        assert!(engine.approvals.pending_approvals().unwrap().is_empty());
+        assert_eq!(
+            engine.approvals.pending_approvals().unwrap(),
+            [] as [pii_store::approval::Approval; 0]
+        );
     }
 
     /// R3: the good path creates a row keyed by the run-scoped id, never the

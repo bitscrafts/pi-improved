@@ -78,7 +78,7 @@ async fn memory_put_search_consolidate_round_trip() {
         .and_then(|v| v.as_str())
         .expect("put must return an id")
         .to_owned();
-    assert!(!id.is_empty());
+    assert_ne!(id, "");
 
     // 2. memory.search: the doc must come back, WITH its text inline (N3).
     let search = client

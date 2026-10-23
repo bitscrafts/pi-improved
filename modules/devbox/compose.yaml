@@ -1,0 +1,46 @@
+# modules/devbox/compose.yaml — the long-lived development container on the lnx host (podman-compose).
+#
+# One service, one image (modules/devbox/Containerfile), the project bind-mounted at /work. Decisions (operator, 2026-10-23):
+#   - root inside: rootless podman maps it to the host user, so files written into /work keep the host owner;
+#   - credentials in ONE env file shared with whatever else needs them, mode 0600, never in this file, never in the image,
+#     never on an argv. The compose file names the PATH of the env file, not a value.
+#   - "if something else is needed, add it to the Containerfile; a one-off is installed in the running container and is gone at
+#     the next start" -> the container is recreated on `up`, nothing in its writable layer is relied on.
+#
+# What persists, and only this: the project (bind), the cargo registry and the build output (named volumes, outside the tree).
+# Everything else is the container's writable layer and is wiped by `down`/`up`.
+#
+# Use (on the host, as the host user):  podman-compose -f modules/devbox/compose.yaml up -d
+#                                       podman exec -it pii-devbox bash
+#                                       podman exec pii-devbox bash quality-gate.sh
+services:
+  devbox:
+    image: localhost/pii-devbox:${DEVBOX_REV:-latest}
+    container_name: pii-devbox
+    labels:
+      io.pii: "1"                  # pii's own label: `pii-podman.sh ps/gc` and the orphan reaper (spec 242) find it by this
+    working_dir: /work
+    init: true                     # reaps zombies: a hung agent's children do not accumulate in PID 1's table
+    # Rootless, DEFAULT user mapping: container root IS the host user. Measured on lnx 2026-10-23 with one-shot containers:
+    #   default                 inside uid=0    -> a file written into the bind mount is owned by uid 1000 (mvcorrea)
+    #   keep-id                 inside uid=1000 -> owned by uid 1000
+    #   keep-id + --user 0:0    inside uid=0    -> owned by uid 100000 (a sub-uid, "UNKNOWN" to the host)  <- never use with root
+    # So: no `userns_mode` here. Adding keep-id while staying root would silently hand the tree to a sub-uid.
+    volumes:
+      # The working subject. :z is not used: no SELinux on this host (getenforce is absent), and relabelling a shared tree is a side effect.
+      - ${DEVBOX_PROJECT:-/podman/assistants/hermes/projects/pi-improved}:/work
+      - devbox-cargo-registry:/usr/local/cargo/registry
+      - devbox-target:/work-target
+    environment:
+      CARGO_TARGET_DIR: /work-target       # build output lives OUTSIDE the tree (a 29 GB cache must not sit in the project)
+      IS_SANDBOX: "1"
+    # The credentials: names and values live in the file, not here. Required to exist; `up` fails loudly when it does not,
+    # which is what you want (a devbox that silently starts without its keys fails an agent run an hour later).
+    env_file:
+      - ${DEVBOX_ENV_FILE:-/home/mvcorrea/.config/pii/devbox.env}
+    # Egress is the agents' (api.anthropic.com, ollama.com). The gate can run with `--network none` once the cargo volume is warm:
+    # that is a per-exec choice (`podman run --network none` for a gate-only container), not this long-lived one.
+    command: ["sleep", "infinity"]
+volumes:
+  devbox-cargo-registry: {}
+  devbox-target: {}

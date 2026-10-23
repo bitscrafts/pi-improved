@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(c.input, serde_json::json!({}));
         assert!(!c.no_validate);
         assert!(c.run_id.is_none());
-        assert!(c.allow_write.is_empty());
+        assert_eq!(c.allow_write, [] as [std::path::PathBuf; 0]);
     }
 
     #[test]

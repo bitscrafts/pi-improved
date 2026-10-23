@@ -345,7 +345,7 @@ mod tests {
     fn only_a_non_default_base_is_env_derived() {
         let mut ch = channel(FakeTransport::ok(Vec::new()));
         ch.base = super::DEFAULT_API_BASE.to_owned();
-        assert!(ch.env_derived_hosts().is_empty());
+        assert_eq!(ch.env_derived_hosts(), [] as [String; 0]);
         ch.base = String::from("https://evil.example");
         assert_eq!(
             ch.env_derived_hosts(),

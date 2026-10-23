@@ -218,9 +218,9 @@ mod tests {
         };
         let ctx = daemon_ctx(&log, caps);
         run_bash("true", &ctx);
-        assert!(
-            log.events_named(pii_observe::names::TOOLS_DENY_LIST_HIT)
-                .is_empty()
+        assert_eq!(
+            log.events_named(pii_observe::names::TOOLS_DENY_LIST_HIT),
+            [] as [pii_observe::OwnedEvent; 0]
         );
         let calls = log.events_named(pii_observe::names::TOOLS_CALL);
         assert_eq!(calls.len(), 1);
@@ -243,7 +243,7 @@ mod tests {
                 cap: "c".into(),
             },
         );
-        assert!(log.events().is_empty());
+        assert_eq!(log.events(), [] as [pii_observe::OwnedEvent; 0]);
         let ctx = Ctx::with_observer(
             CapSet::default(),
             Budget::unlimited(),

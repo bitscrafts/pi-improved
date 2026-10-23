@@ -684,7 +684,7 @@ mod tests {
             },
         });
         assert_eq!(rec.events_named(pii_observe::names::RUN_JOURNAL).len(), 1);
-        assert!(rec.events_named(pii_observe::names::RUN_OUTCOME).is_empty());
+        assert_eq!(rec.events_named(pii_observe::names::RUN_OUTCOME).len(), 0);
     }
 
     #[test]

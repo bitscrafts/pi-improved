@@ -111,7 +111,10 @@ fn repeated_failure_ignores_a_different_error_class() {
     failing(t.path(), "r1", "g", "fetch", "connection reset");
     failing(t.path(), "r2", "g", "fetch", "request timed out");
     failing(t.path(), "r3", "g", "fetch", "permission denied");
-    assert!(kinds(&extract(t.path()), Kind::RepeatedFailure).is_empty());
+    assert_eq!(
+        kinds(&extract(t.path()), Kind::RepeatedFailure),
+        [] as [&Candidate; 0]
+    );
 }
 
 #[test]
@@ -135,7 +138,10 @@ fn stuck_loop_is_every_run_failing_the_same_way() {
             outcome("r4", "success", "ok"),
         ],
     );
-    assert!(kinds(&extract(t.path()), Kind::StuckLoop).is_empty());
+    assert_eq!(
+        kinds(&extract(t.path()), Kind::StuckLoop),
+        [] as [&Candidate; 0]
+    );
 }
 
 #[test]
@@ -151,7 +157,10 @@ fn limit_hit_uses_the_registered_names_and_needs_three_runs() {
             ],
         );
     }
-    assert!(kinds(&extract(t.path()), Kind::LimitHit).is_empty());
+    assert_eq!(
+        kinds(&extract(t.path()), Kind::LimitHit),
+        [] as [&Candidate; 0]
+    );
     put(
         t.path(),
         "r3",
@@ -393,7 +402,7 @@ fn same_input_gives_byte_identical_output() {
     };
     let (a, b) = (TempDir::new().unwrap(), TempDir::new().unwrap());
     let (ra, rb) = (run(a.path()), run(b.path()));
-    assert!(!ra.1.is_empty());
+    assert_ne!(ra.1, [] as [Vec<u8>; 0]);
     assert_eq!(ra, rb);
     assert_eq!(
         run(a.path()),

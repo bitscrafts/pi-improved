@@ -378,7 +378,7 @@ fn two_archives_of_the_same_state_are_byte_identical() {
     };
     let (_d1, one) = mk("tier-byte1-", &["a", "b", "c"]);
     let (_d2, two) = mk("tier-byte2-", &["c", "b", "a"]);
-    assert!(!one.is_empty());
+    assert_ne!(one, [] as [u8; 0]);
     assert_eq!(one, two);
 }
 
@@ -465,7 +465,7 @@ fn the_byte_budget_refuses_the_write_and_demotes_and_drops_nothing() {
     }
     let e = refusal.expect("the budget must be reached");
     assert_eq!(e.reason(), Some("bytes_cap"), "{e}");
-    assert!(!stored.is_empty());
+    assert_ne!(stored, [] as [String; 0]);
     let c = s.counts().unwrap();
     assert!(
         c.bytes <= 700,

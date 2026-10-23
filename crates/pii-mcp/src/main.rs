@@ -116,6 +116,7 @@ impl PiiMcpServer {
     }
 }
 
+#[allow(clippy::unused_async_trait_impl)] // reason: the rmcp `tool_handler` macro generates async trait methods that never await
 #[tool_handler(router = Self::tool_router())]
 impl ServerHandler for PiiMcpServer {}
 
@@ -265,7 +266,10 @@ mod tests {
                 .dispatch("fs_read", &serde_json::json!({"path": "a.txt"}))
                 .is_ok()
         );
-        assert!(rec.events_named(names::MCP_TOOL_CALL_FAILED).is_empty());
+        assert_eq!(
+            rec.events_named(names::MCP_TOOL_CALL_FAILED),
+            [] as [pii_observe::OwnedEvent; 0]
+        );
         assert!(
             server
                 .dispatch("fs_read", &serde_json::json!({"path": "absent.txt"}))
@@ -406,7 +410,7 @@ mod tests {
             .and_then(|v| v.as_str())
             .expect("put must return an id")
             .to_owned();
-        assert!(!id.is_empty());
+        assert_ne!(id, "");
 
         let search_out = MemorySearchTool {
             sock_override: Some(sock),

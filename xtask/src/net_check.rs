@@ -297,7 +297,10 @@ mod tests {
             "let s = std::net::TcpStream",
             "::connect_timeout(addr, d);\n"
         );
-        assert!(scan_one("crates/pii-net/src/dial.rs", src, ALLOWLIST).is_empty());
+        assert_eq!(
+            scan_one("crates/pii-net/src/dial.rs", src, ALLOWLIST),
+            [] as [String; 0]
+        );
     }
 
     /// Spec 130 R5: `pii-evolve`'s production code holds no allowlist entry, so

@@ -49,7 +49,7 @@ fn a_link_made_with_rel_returns_its_id_and_is_listed_by_neighbours() {
     ]));
     assert!(link["id"].as_str().is_some_and(|i| !i.is_empty()), "{link}");
     assert_eq!(link["kind"], "contains");
-    assert!(!link["provenance"].as_array().unwrap().is_empty());
+    assert_ne!(link["provenance"].as_array().unwrap().len(), 0);
     let around = json(&pii(&["memory", "neighbours", &a, "--dir", dir]));
     assert_eq!(around["entities"][0]["entity"]["id"], b.as_str());
     assert_eq!(around["relationships"][0]["id"], link["id"]);

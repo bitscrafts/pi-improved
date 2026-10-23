@@ -78,7 +78,10 @@ fn refusals_collapse_into_one_incident() {
 #[test]
 fn a_benign_fingerprint_never_opens() {
     let d = root_with("cycle-20261011T210000Z.log", &burst("window-closed", 10, 5));
-    assert!(detect(&read_rows(d.path()), &IncidentConfig::default()).is_empty());
+    assert_eq!(
+        detect(&read_rows(d.path()), &IncidentConfig::default()),
+        [] as [pii_learn::incident::Incident; 0]
+    );
     // and the list is config: take it away and the same rows open one.
     let cfg = IncidentConfig {
         benign: vec![],
@@ -90,17 +93,23 @@ fn a_benign_fingerprint_never_opens() {
 #[test]
 fn below_the_threshold_opens_nothing() {
     let d = root_with("cycle-20261011T210000Z.log", &burst("dirty-tree", 2, 60));
-    assert!(detect(&read_rows(d.path()), &IncidentConfig::default()).is_empty());
+    assert_eq!(
+        detect(&read_rows(d.path()), &IncidentConfig::default()),
+        [] as [pii_learn::incident::Incident; 0]
+    );
     // three rows, but spread wider than the 30 minute window
     let d = root_with("cycle-20261011T210000Z.log", &burst("dirty-tree", 3, 1000));
-    assert!(detect(&read_rows(d.path()), &IncidentConfig::default()).is_empty());
+    assert_eq!(
+        detect(&read_rows(d.path()), &IncidentConfig::default()),
+        [] as [pii_learn::incident::Incident; 0]
+    );
 }
 
 #[test]
 fn the_evidence_points_at_a_line() {
     let d = root_with("cycle-last-detached.log", FIXTURE);
     let rows = read_rows(d.path());
-    assert!(!rows.is_empty());
+    assert_ne!(rows, [] as [pii_learn::incident::Row; 0]);
     for r in &rows {
         let text = std::fs::read_to_string(&r.path).unwrap();
         let line = text.lines().nth(r.line - 1).unwrap();

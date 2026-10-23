@@ -37,7 +37,7 @@ mod tests {
                 String::from("holds"),
             ]
         );
-        assert!(tokenize("a I x").is_empty());
+        assert_eq!(tokenize("a I x"), [] as [String; 0]);
         assert_eq!(tokenize(""), Vec::<String>::new());
     }
 }

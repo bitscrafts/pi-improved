@@ -74,7 +74,7 @@ fn a_non_credential_env_value_is_not_treated_as_a_secret() {
 fn a_short_credential_value_is_not_scrubbed_everywhere() {
     // A 3-character "key" would replace common substrings across the whole output.
     let e = env(&[("MY_API_KEY", "abc")]);
-    assert!(credential_values(&e).is_empty());
+    assert_eq!(credential_values(&e), [] as [String; 0]);
 }
 
 #[test]

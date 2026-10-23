@@ -292,7 +292,10 @@ fn flush_if_stale_waits_for_the_window() {
     let txns = store.write_txn_count();
     jr.flush_if_stale(window).unwrap();
     assert_eq!(store.write_txn_count(), txns, "inside the window: no flush");
-    assert!(store.read_journal(&run).unwrap().is_empty());
+    assert_eq!(
+        store.read_journal(&run).unwrap(),
+        [] as [(u64, RunEvent); 0]
+    );
     std::thread::sleep(window * 2);
     jr.flush_if_stale(window).unwrap();
     assert_eq!(

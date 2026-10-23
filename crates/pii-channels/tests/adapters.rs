@@ -94,7 +94,10 @@ fn telegram_poll_maps_updates_and_advances_with_offset() {
     assert_eq!(got[0].user, "ann");
     assert_eq!(got[0].text, "hi");
     assert_eq!(got[0].channel, "tg");
-    assert!(ch.poll(&ctx(), Some(11)).unwrap().is_empty());
+    assert_eq!(
+        ch.poll(&ctx(), Some(11)).unwrap(),
+        [] as [pii_channels::Incoming; 0]
+    );
     let seen = mock.seen();
     assert!(
         !seen[0].url.contains("offset="),
@@ -187,7 +190,10 @@ fn matrix_sync_filters_by_cursor_skips_self_and_keeps_since() {
     assert_eq!(got[0].chat, "!r:hs");
     assert_eq!(got[0].user, "@ann:hs");
     assert_eq!(got[0].cursor, 1000);
-    assert!(ch.poll(&ctx(), Some(1000)).unwrap().is_empty());
+    assert_eq!(
+        ch.poll(&ctx(), Some(1000)).unwrap(),
+        [] as [pii_channels::Incoming; 0]
+    );
     let seen = mock.seen();
     assert!(!seen[0].url.contains("since="));
     assert!(seen[1].url.contains("since=s1"), "{}", seen[1].url);
@@ -286,7 +292,10 @@ fn webhook_inbound_becomes_incoming_and_reply_is_posted() {
     assert_eq!((got[0].text.as_str(), got[0].chat.as_str()), ("ping", "c1"));
     // at-least-once: not acknowledged yet -> delivered again; acked -> gone
     assert_eq!(ch.poll(&ctx(), None).unwrap().len(), 1);
-    assert!(ch.poll(&ctx(), Some(got[0].cursor)).unwrap().is_empty());
+    assert_eq!(
+        ch.poll(&ctx(), Some(got[0].cursor)).unwrap(),
+        [] as [pii_channels::Incoming; 0]
+    );
     ch.send(&ctx(), "c1", "pong").unwrap();
     let seen = mock.seen();
     assert_eq!(seen[0].url, "http://sink.test/reply");

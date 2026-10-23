@@ -197,7 +197,7 @@ fn edges_and_concepts_reflect_puts() {
             .iter()
             .any(|(d, w)| d == "a1" && *w == 1)
     );
-    assert!(store.edges("unseen").unwrap().is_empty());
+    assert_eq!(store.edges("unseen").unwrap(), [] as [(String, u64); 0]);
 
     let concepts = store.concepts().unwrap();
     assert_eq!(concepts, vec!["bm25", "kv", "rust"]);
@@ -224,7 +224,7 @@ fn archive_then_archived_roundtrips() {
     // archive() removes the doc from mem_doc (it does not touch n_docs/
     // postings/df meta), so doc() is None and doc_ids() excludes it.
     assert!(store.doc("a1").unwrap().is_none());
-    assert!(store.doc_ids().unwrap().is_empty());
+    assert_eq!(store.doc_ids().unwrap(), [] as [String; 0]);
 }
 
 #[test]

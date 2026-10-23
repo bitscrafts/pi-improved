@@ -77,6 +77,6 @@ fn successful_poll_records_cursor_lag_and_is_otherwise_silent() {
     let ch = ObservedChannel::new(Arc::new(Scripted { fail: false }), rec.clone());
     assert_eq!(ch.poll(&ctx(), Some(0)).unwrap().len(), 3);
     assert_eq!(rec.measures(), vec![Measure::Gauge(3)]);
-    assert!(rec.events().is_empty());
+    assert_eq!(rec.events(), [] as [pii_observe::OwnedEvent; 0]);
     assert_eq!(names::CHANNEL_CURSOR_LAG, "channel.cursor.lag");
 }

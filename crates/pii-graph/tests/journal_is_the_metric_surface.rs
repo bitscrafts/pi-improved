@@ -101,7 +101,7 @@ fn dead_nodes_and_batch_widths_in_the_journal_equal_the_metric_stream() {
             _ => None,
         })
         .collect();
-    assert!(!widths.is_empty());
+    assert_ne!(widths, [] as [u64; 0]);
     let metric_widths: Vec<u64> = out
         .rec
         .events_named(names::GRAPH_BATCH_WIDTH)

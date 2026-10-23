@@ -28,7 +28,7 @@ fn imported_temp_dir_is_refused() {
 #[test]
 fn tempdir_in_under_the_tree_still_passes() {
     let src = "fn t() {\n    let root = std::path::Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"_tmp\");\n    std::fs::create_dir_all(&root).unwrap();\n    let d = tempfile::Builder::new().tempdir_in(&root).unwrap();\n}\n";
-    assert!(check_source("a.rs", src).is_empty());
+    assert_eq!(check_source("a.rs", src), [] as [String; 0]);
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn comments_and_docs_naming_temp_dir_pass() {
     let src = format!(
         "// never call std::env::{NEEDLE} here\n/// not `env::{NEEDLE}` either\nfn t() {{}}\n"
     );
-    assert!(check_source("a.rs", &src).is_empty());
+    assert_eq!(check_source("a.rs", &src), [] as [String; 0]);
 }
 
 #[test]

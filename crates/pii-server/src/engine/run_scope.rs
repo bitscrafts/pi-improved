@@ -195,7 +195,7 @@ mod tests {
         // Control: nothing attached, nothing recorded anywhere.
         let rec = Arc::new(RecordingObserver::new());
         super::with_trajectory(&engine, &run, None, bridge()).event(&denial);
-        assert!(rec.events().is_empty());
+        assert_eq!(rec.events(), [] as [ObsEvent; 0]);
         engine.attach_audit(rec.clone());
         super::with_trajectory(&engine, &run, None, bridge()).event(&denial);
         assert!(
