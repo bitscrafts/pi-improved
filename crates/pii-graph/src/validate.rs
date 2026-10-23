@@ -210,6 +210,25 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
         }
     }
 
+    // V11 a coder's `err` edge that ends in a terminal `transform` finishes the
+    // run as succeeded although the agent failed (spec 238). Warning only.
+    for n in spec.nodes.iter().filter(|n| n.kind == "coder") {
+        for &ei in &spec.outbound(&n.id) {
+            let Some(e) = spec.edges.get(ei).filter(|e| e.port.as_str() == "err") else {
+                continue;
+            };
+            let terminal_transform = idx
+                .get(e.to.as_str())
+                .is_some_and(|t| t.kind == "transform" && spec.outbound(&t.id).is_empty());
+            if terminal_transform {
+                warnings.push(format!(
+                    "V11: coder node '{}' routes its err port to transform node '{}', which has no outgoing edge, so a failed agent finishes the run as succeeded",
+                    n.id, e.to
+                ));
+            }
+        }
+    }
+
     if errors.is_empty() {
         Ok(warnings)
     } else {
