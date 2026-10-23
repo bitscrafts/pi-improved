@@ -33,6 +33,8 @@ services:
       - ${DEVBOX_PROJECT:-/podman/assistants/hermes/projects/pi-improved}:/projects/pi-improved
       - devbox-cargo-registry:/usr/local/cargo/registry
       - devbox-target:/work-target
+      # claude authenticates by login file (no ANTHROPIC_API_KEY exists on the host). Read-only: the container cannot rewrite it.
+      - ${DEVBOX_CLAUDE_LOGIN:-/podman/assistants/hermes/root/.claude/.credentials.json}:/root/.claude/.credentials.json:ro
     environment:
       CARGO_TARGET_DIR: /work-target       # build output lives OUTSIDE the tree (a 29 GB cache must not sit in the project)
       IS_SANDBOX: "1"
