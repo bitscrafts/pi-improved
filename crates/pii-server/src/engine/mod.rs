@@ -33,6 +33,7 @@ mod inline_measure_tests;
 pub mod learn_methods;
 pub mod loopback;
 pub mod methods;
+pub mod orphans;
 #[cfg(test)]
 mod reconcile_tests;
 pub mod refusal;

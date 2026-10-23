@@ -23,9 +23,13 @@
 //! not abort a run), but "best-effort" must not mean "unobservable".
 
 use pii_abi::PiiError;
+use pii_core::Ctx;
 use pii_proto::session::{SessionStatus, WireMessage};
 
 use crate::Engine;
+use crate::node_kinds::nodes::coder_runtime::ContainerRuntime;
+
+use super::orphans::{self, ProcProbe, Reaped};
 
 /// A full-session snapshot is taken every time
 /// [`Engine::append_session_message`] lands on a message seq that is a
@@ -308,7 +312,19 @@ impl Engine {
     /// [`pii_core::ObsEvent::PersistError`] and every reconciled run as one
     /// [`pii_core::ObsEvent::RunReconciled`].
     pub fn reconcile_boot(&self) {
+        self.reconcile_with(&[]);
+    }
+
+    /// Boot recovery (spec 242): kills the agents the dead daemon started, journals each reap on its run, then
+    /// reconciles the runs it left `Running`. The failure text says an agent was reaped when one was killed.
+    pub fn recover_boot(&self, ctx: &Ctx, runtime: &dyn ContainerRuntime, proc: &dyn ProcProbe) {
+        let reaped = orphans::reap_orphans(&self.store, ctx, runtime, proc);
+        self.reconcile_with(&reaped);
+    }
+
+    fn reconcile_with(&self, reaped: &[Reaped]) {
         const REASON: &str = "interrupted by daemon restart";
+        const REAPED_REASON: &str = "interrupted by daemon restart; agent reaped";
         let running = match self.store.runs_by_status(pii_abi::RunStatus::Running) {
             Ok(running) => running,
             Err(e) => {
@@ -325,20 +341,27 @@ impl Engine {
                     continue;
                 }
             };
-            header.status = pii_abi::RunStatus::Failed;
-            let written = self.store.append_event(
-                &mut header,
-                &pii_abi::RunEvent::Finished {
-                    terminal: pii_abi::Terminal::Failure {
-                        error: String::from(REASON),
-                    },
-                    output_hash: String::new(),
+            let ours: Vec<&Reaped> = reaped.iter().filter(|r| r.run == run.as_str()).collect();
+            let reason = if ours.iter().any(|r| r.result == "killed") {
+                REAPED_REASON
+            } else {
+                REASON
+            };
+            let finished = pii_abi::RunEvent::Finished {
+                terminal: pii_abi::Terminal::Failure {
+                    error: String::from(reason),
                 },
-            );
+                output_hash: String::new(),
+            };
+            let journal: Vec<pii_abi::RunEvent> = ours.iter().map(|r| r.event()).collect();
+            let mut events: Vec<&pii_abi::RunEvent> = journal.iter().collect();
+            events.push(&finished);
+            header.status = pii_abi::RunStatus::Failed;
+            let written = self.store.append_events(&mut header, &events);
             match written {
                 Ok(_) => self.observer().event(&pii_core::ObsEvent::RunReconciled {
                     run: run.as_str().to_owned(),
-                    reason: String::from(REASON),
+                    reason: String::from(reason),
                 }),
                 Err(e) => self.report_reconcile_error(run.as_str(), &e),
             }

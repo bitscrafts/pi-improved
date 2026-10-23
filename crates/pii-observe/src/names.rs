@@ -76,12 +76,16 @@ pub const CRITERIA_UNKNOWN: &str = "criteria.unknown";
 pub const CODER_RUNTIME_UNAVAILABLE: &str = "coder.runtime.unavailable";
 /// Event: a coder node ran on the host because it names no `container_image` (`agent`); deprecated (spec 209).
 pub const CODER_HOST_SPAWN_DEPRECATED: &str = "coder.host_spawn.deprecated";
+/// Event: a container's logs could not be read after it exited (`container`); its exit code stands (spec 241).
+pub const CODER_LOGS_UNREADABLE: &str = "coder.logs_unreadable";
 /// Event: a coder call ended (`pid`, `rc`, `dur_ms`, `stop_reason`, criteria counts, `first_failure`) (spec 217).
 pub const CODER_EXITED: &str = "coder.exited";
 /// Event: the environment names a coder call was given (`names`, comma-joined; never a value) (spec 217 R3).
 pub const CODER_ENV_NAMES: &str = "coder.env.names";
 /// Event: a coder call's environment was refused because a name would journal a value (spec 217 R3).
 pub const CODER_ENV_REFUSED: &str = "coder.env.refused";
+/// Event: boot recovery reaped an agent a dead daemon left (`run`, `kind`, `id`, `result`: `killed`|`already_gone`|`failed`) (spec 242).
+pub const CODER_ORPHAN_REAPED: &str = "coder.orphan_reaped";
 /// Event: a pinned skill's stored text no longer hashes to its pin (`name`, `pinned`, `found`); nothing spawned (spec 225).
 pub const SKILL_DRIFT: &str = "skill.drift";
 /// Event: a memory search completed.
@@ -413,6 +417,7 @@ pub const ALL: &[&str] = &[
     CODER_IMAGE_MISSING,
     CODER_RUNTIME_UNAVAILABLE,
     CODER_HOST_SPAWN_DEPRECATED,
+    CODER_LOGS_UNREADABLE,
     CRITERIA_UNKNOWN,
     MEMORY_SEARCH,
     MEMORY_CONSOLIDATE,
@@ -430,6 +435,7 @@ pub const ALL: &[&str] = &[
     CODER_EXITED,
     CODER_ENV_NAMES,
     CODER_ENV_REFUSED,
+    CODER_ORPHAN_REAPED,
     SKILL_DRIFT,
     CRON_START_REFUSED,
     CRON_REARMED,
