@@ -288,6 +288,7 @@ impl CoderNode {
     fn launch_in_container(
         &self,
         ctx: &Ctx,
+        timeout: Option<Duration>,
         image: &str,
         spec: &WorkerSpec,
         env: BTreeMap<String, String>,
@@ -332,8 +333,9 @@ impl CoderNode {
                 },
             };
             let api = PodmanApi { socket };
-            return self
-                .journalled_run(ctx, spec, skills, |spawned| api.run(ctx, &request, spawned));
+            return self.journalled_run(ctx, spec, skills, |spawned| {
+                api.run(ctx, &request, timeout, spawned)
+            });
         }
         // podman's own environment: the daemon's PATH and HOME, never a secret.
         let podman_env: Vec<(String, String)> = ["PATH", "HOME"]
@@ -345,7 +347,9 @@ impl CoderNode {
             env: podman_env,
             runs_dir: self.runs_dir.clone(),
         };
-        self.journalled_run(ctx, spec, skills, |spawned| cli.run(ctx, &request, spawned))
+        self.journalled_run(ctx, spec, skills, |spawned| {
+            cli.run(ctx, &request, timeout, spawned)
+        })
     }
 
     /// Journals `skill.drift` and refuses the node before anything spawns (spec 225 R4).

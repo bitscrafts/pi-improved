@@ -92,7 +92,16 @@ impl GraphNode for CoderNode {
             Some(criteria_pass(ctx, &checks, Path::new(&spec.workdir))?)
         };
         let launch = if let Some(image) = &image {
-            self.launch_in_container(ctx, image, &spec, env, &dispatch.argv, &skills, &runtime)?
+            self.launch_in_container(
+                ctx,
+                super::agent_timeout(cfg),
+                image,
+                &spec,
+                env,
+                &dispatch.argv,
+                &skills,
+                &runtime,
+            )?
         } else {
             self.log.event(
                 &Event::new("coder", Level::Warn, names::CODER_HOST_SPAWN_DEPRECATED)
@@ -107,7 +116,17 @@ impl GraphNode for CoderNode {
                 dur_ms,
                 output,
                 stderr,
-            } => (code, pid, dur_ms, stop_reason(code), output, stderr),
+                logs_unreadable,
+            } => {
+                if let Some(container) = logs_unreadable {
+                    self.observe(
+                        ctx,
+                        &Event::new("coder", Level::Warn, names::CODER_LOGS_UNREADABLE)
+                            .field("container", container),
+                    );
+                }
+                (code, pid, dur_ms, stop_reason(code), output, stderr)
+            }
             // A refusal is journalled before it routes (spec 217 R5): no pid, and no `coder.exited`. No spawn ran, so an
             // image node's digest slot says what the probe found (spec 223 R3, 231 R2): `missing` when the runtime said
             // the image is absent, `probe-failed` when it could not answer.
