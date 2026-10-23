@@ -88,4 +88,36 @@ The requirement a plausible implementation gets wrong is the last row: journalli
 
 ## Closure
 
-_(empty — the implementer's readings go here)_
+### The implementer's readings
+
+Left to the orchestrator — the cycle committed `1675120` with `gate green`, and the reading below is the orchestrator's.
+
+### The orchestrator's independent reading (2026-10-23T12:20Z, by hand, not from the worker's report)
+
+Two trees, because they disagree:
+
+**A clean worktree of the commit — `git worktree add --detach _tmp/verify-244-<ts> 1675120`:**
+- criterion 4 (`grep -q "session-id" …/agent_claude.rs`): **PASS**.
+- criteria 1, 2, 3, 5 (`cargo test` ×3, `cargo clippy`): **NOT MEASURABLE** — the commit does not compile.
+  `cargo check -q -p pii-server` reports 7 errors, none of them in this spec's paths (`agent_claude.rs`,
+  `agent_worker.rs`, `coder/helpers.rs`, the three test files): `E0425 kill_group`, `E0432 Listed` /
+  `coder_runtime_api`, `E0599 list_all` / `force_remove`, `E0050 run` 4 vs 5 parameters. They belong to the API
+  specs 241-243 call and left uncommitted (finding defect 24; fix queued as spec 245 / row A113).
+
+**The working tree, which holds that API uncommitted (HEAD's code + that API, `CARGO_TARGET_DIR` separate from the gate's):**
+- `agent_claude_session_handle` — **13 passed, 0 failed**
+- `agent_claude_arm` — **12 passed, 0 failed** (the spec's permitted change: one `None` for the new parameter)
+- `agent_claude_budget` — **7 passed, 0 failed**
+- `cargo clippy -q -p pii-server --all-targets -- -D warnings` — **rc 0**
+- criterion 4 — PASS
+
+So this spec's content reads green wherever it can compile; what is false is the *commit's* claim, not the code. The
+item stays `done` on its own criteria and is **not** verified end to end, because its HEAD cannot be built.
+
+**Owed, not done — the mutation.** The red-before-green mutation this lane owes for a defect fix was NOT run: it
+requires the criteria green on the commit first, and at HEAD they cannot compile. It is owed by row A113 (spec 245)
+the moment HEAD builds: mutate `let new_session = (spec.agent == Agent::Claude && claude_sid.is_none()).then(uuid_v4);`
+(`agent_worker.rs:330`) to `None`, expect `the_spawned_event_names_the_session` and
+`a_run_killed_mid_agent_still_names_its_session` red, then restore byte-identical (`sha256sum` before/after, then
+`touch`, per the `cp -p` false-RED trap). Recorded here as owed so it is not mistaken for a reading.
+
