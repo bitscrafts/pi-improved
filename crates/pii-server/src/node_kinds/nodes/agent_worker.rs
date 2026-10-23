@@ -10,9 +10,6 @@ use std::collections::BTreeMap;
 use pii_abi::PiiError;
 use pii_observe::{Event, Level, Observer, names};
 
-/// Environment variables, any one of which authorises a `claude` dispatch.
-const CLAUDE_CREDENTIALS: [&str; 2] = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
-
 /// The API-key variable each `pi` provider reads (names only, never values). A `pi` dispatch that names a
 /// provider is refused before spawn unless that provider's key is present, so the agent is never started
 /// without the credential it needs. Keys come from the daemon environment via the graph's `env_pass`.
@@ -203,6 +200,8 @@ pub struct WorkerSpec {
     pub sid: Option<String>,
     /// Session file (pi); defaults to one beside the spec's name under the workdir.
     pub session: Option<String>,
+    /// Spend cap in USD for one run (claude `--max-budget-usd`). `None` passes no flag. Always positive and finite.
+    pub max_budget_usd: Option<f64>,
 }
 
 fn field(cfg: &serde_json::Value, key: &str) -> Result<String, PiiError> {
@@ -218,8 +217,22 @@ fn opt(cfg: &serde_json::Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The optional `max_budget_usd`: absent is `None`; present must be a positive, finite number, so a typo can never
+/// become "no cap" or a flag claude rejects after the dispatch has started.
+fn budget(cfg: &serde_json::Value) -> Result<Option<f64>, PiiError> {
+    let Some(v) = cfg.get("max_budget_usd") else {
+        return Ok(None);
+    };
+    match v.as_f64() {
+        Some(n) if n.is_finite() && n > 0.0 => Ok(Some(n)),
+        _ => Err(PiiError::Invalid(
+            "worker node 'max_budget_usd' must be a positive number".to_owned(),
+        )),
+    }
+}
+
 impl WorkerSpec {
-    /// Reads `agent`, `model`, `spec`, `workdir` (and optional `sid`, `session`) from node data.
+    /// Reads `agent`, `model`, `spec`, `workdir` (and optional `sid`, `session`, `max_budget_usd`) from node data.
     ///
     /// # Errors
     /// [`PiiError::Invalid`] on a missing field or an unknown agent.
@@ -232,6 +245,7 @@ impl WorkerSpec {
             workdir: field(cfg, "workdir")?,
             sid: opt(cfg, "sid"),
             session: opt(cfg, "session"),
+            max_budget_usd: budget(cfg)?,
         })
     }
 
@@ -263,11 +277,7 @@ pub fn plan(
     launcher: &str,
     log: &dyn Observer,
 ) -> Result<Dispatch, PiiError> {
-    if spec.agent == Agent::Claude
-        && !CLAUDE_CREDENTIALS
-            .iter()
-            .any(|k| env.get(*k).is_some_and(|v| !v.is_empty()))
-    {
+    if spec.agent == Agent::Claude && !super::agent_claude::has_credential(env) {
         let reason = "no credentials in the environment";
         log.event(
             &Event::new("worker", Level::Warn, names::WORKER_START_REFUSED)
@@ -330,7 +340,9 @@ pub fn plan(
             v.extend([s("-p"), brief.to_owned()]);
             v
         }
-        Agent::Claude => super::agent_claude::argv(spec.sid.as_deref(), &spec.model, brief),
+        Agent::Claude => {
+            super::agent_claude::argv(spec.sid.as_deref(), &spec.model, spec.max_budget_usd, brief)
+        }
     };
     Ok(Dispatch {
         launcher: launcher.to_owned(),

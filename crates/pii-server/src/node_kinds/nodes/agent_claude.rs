@@ -57,9 +57,14 @@ pub fn run_facts(output: &str) -> RunFacts {
 /// Headless `-p` cannot ask for permission, so without a mode it cannot write. stream-json (which `-p` only allows
 /// with `--verbose`) is what makes the route, the session id and the cost readable. Partial messages are NOT
 /// requested: one haiku run measured 3,779 `stream_event` lines, past the capture bound. No provider flag and no key
-/// on the argv: claude reads its own credential.
+/// on the argv: claude reads its own credential. A budget, when the node sets one, is the claude spend cap.
 #[must_use]
-pub fn argv(sid: Option<&str>, model: &str, brief: &str) -> Vec<String> {
+pub fn argv(
+    sid: Option<&str>,
+    model: &str,
+    max_budget_usd: Option<f64>,
+    brief: &str,
+) -> Vec<String> {
     let s = |x: &str| x.to_owned();
     let mut v = vec![s("claude")];
     if let Some(sid) = sid {
@@ -73,8 +78,38 @@ pub fn argv(sid: Option<&str>, model: &str, brief: &str) -> Vec<String> {
         s("--output-format"),
         s("stream-json"),
         s("--verbose"),
-        s("-p"),
-        s(brief),
     ]);
+    if let Some(usd) = max_budget_usd {
+        v.extend([s("--max-budget-usd"), format!("{usd}")]);
+    }
+    v.extend([s("-p"), s(brief)]);
     v
+}
+
+/// The env names that carry a claude credential.
+pub const CREDENTIAL_ENV: [&str; 2] = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
+
+/// Whether `env` gives claude a credential.
+///
+/// Either an env token, or the login file `<HOME>/.claude/.credentials.json` with an OAuth block. The host's login is
+/// that file, and claude reads it itself through `HOME`, so nothing is copied or put on the argv. Only the block's
+/// presence is checked; its values are never read into the journal.
+#[must_use]
+pub fn has_credential(env: &std::collections::BTreeMap<String, String>) -> bool {
+    if CREDENTIAL_ENV
+        .iter()
+        .any(|k| env.get(*k).is_some_and(|v| !v.is_empty()))
+    {
+        return true;
+    }
+    let Some(home) = env.get("HOME").filter(|h| !h.is_empty()) else {
+        return false;
+    };
+    std::fs::read_to_string(std::path::Path::new(home).join(".claude/.credentials.json"))
+        .ok()
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .is_some_and(|v| {
+            v.get("claudeAiOauth")
+                .is_some_and(serde_json::Value::is_object)
+        })
 }
