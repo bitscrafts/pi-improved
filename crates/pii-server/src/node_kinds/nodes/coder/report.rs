@@ -2,6 +2,7 @@
 //! failing output, and the routes the agent reported (observability, spec 185).
 
 use super::super::agent_claude::run_facts;
+use super::super::agent_route::{failovers, route_drift};
 use super::super::agent_worker::CriterionRun;
 use super::tree::TreeDigest;
 use pii_observe::{Event, Level, names};
@@ -11,6 +12,8 @@ use pii_observe::{Event, Level, names};
 pub(in crate::node_kinds::nodes) struct RunReport<'a> {
     /// The workdir digest before and after the agent ran; `None` when none was taken.
     pub tree: Option<(&'a TreeDigest, &'a TreeDigest)>,
+    /// The `(provider, model)` the graph asked for; `None` when none was requested, which cannot drift.
+    pub requested: Option<&'a (String, String)>,
     pub runs: &'a [CriterionRun],
     pub failure_tail: &'a str,
     pub routes: &'a [(String, String)],
@@ -40,16 +43,22 @@ impl RunReport<'_> {
         dur_ms: i64,
         stop: &str,
     ) -> Event {
-        let runs = self.runs;
-        // Empty for any agent that does not print claude's stream-json: unknown, not zero.
-        let claude = run_facts(self.agent_output);
-        let passed = runs.iter().filter(|r| r.rc == 0).count();
-        let failed = runs.iter().find(|r| r.rc != 0);
-        Event::new("coder", Level::Info, names::CODER_EXITED)
+        let base = Event::new("coder", Level::Info, names::CODER_EXITED)
             .field("pid", i64::from(pid))
             .field("rc", i64::from(rc))
             .field("dur_ms", dur_ms)
-            .field("stop_reason", stop.to_owned())
+            .field("stop_reason", stop.to_owned());
+        self.route_fields(
+            self.claude_fields(self.tree_fields(self.output_fields(self.criteria_fields(base)))),
+        )
+    }
+
+    /// The criteria that ran, and the first failure with its output.
+    fn criteria_fields(&self, event: Event) -> Event {
+        let runs = self.runs;
+        let passed = runs.iter().filter(|r| r.rc == 0).count();
+        let failed = runs.iter().find(|r| r.rc != 0);
+        event
             .field(
                 "criteria_run",
                 i64::try_from(runs.len()).unwrap_or(i64::MAX),
@@ -64,29 +73,35 @@ impl RunReport<'_> {
                 failed.map(|r| r.command.clone()).unwrap_or_default(),
             )
             .field("failure_output", self.failure_tail.to_owned())
-            // What the agent REPORTED it used (provider/model), beside the requested route in the graph. An
-            // empty value means the run reported no route, which is unknown, not a match.
+    }
+
+    /// What the agent printed, and the reason it exited when it wrote one to stderr: the failure a silent stdout hid.
+    fn output_fields(&self, event: Event) -> Event {
+        event
             .field("agent_output_bytes", self.agent_output.len().to_string())
             .field(
                 "agent_output_head",
                 self.agent_output.chars().take(200).collect::<String>(),
             )
-            // The reason the agent exited, when it wrote one to stderr: the failure a silent stdout hid.
             .field("agent_stderr_bytes", self.agent_stderr.len().to_string())
             .field(
                 "agent_stderr_head",
                 self.agent_stderr.chars().take(300).collect::<String>(),
             )
+    }
+
+    /// Whether the agent changed the workdir, with the digests it is judged from.
+    fn tree_fields(&self, event: Event) -> Event {
+        let count = |n: usize| i64::try_from(n).unwrap_or(i64::MAX);
+        event
             .field("tree_changed", self.tree_changed())
             .field(
                 "tree_files_before",
-                self.tree
-                    .map_or(-1, |(b, _)| i64::try_from(b.files).unwrap_or(i64::MAX)),
+                self.tree.map_or(-1, |(b, _)| count(b.files)),
             )
             .field(
                 "tree_files_after",
-                self.tree
-                    .map_or(-1, |(_, a)| i64::try_from(a.files).unwrap_or(i64::MAX)),
+                self.tree.map_or(-1, |(_, a)| count(a.files)),
             )
             .field(
                 "tree_hash_before",
@@ -96,6 +111,13 @@ impl RunReport<'_> {
                 "tree_hash_after",
                 self.tree.map(|(_, a)| a.hash.clone()).unwrap_or_default(),
             )
+    }
+
+    /// What a claude run said about itself. Empty or -1 for any agent that does not print claude's stream-json:
+    /// unknown, not zero.
+    fn claude_fields(&self, event: Event) -> Event {
+        let claude = run_facts(self.agent_output);
+        event
             .field("claude_session_id", claude.session_id.unwrap_or_default())
             .field(
                 "claude_turns",
@@ -115,6 +137,25 @@ impl RunReport<'_> {
                     .is_error
                     .map_or("unknown", |e| if e { "true" } else { "false" })
                     .to_owned(),
+            )
+    }
+
+    /// The routes the agent reported beside the one the graph asked for. An empty `reported_routes` is unknown, not a
+    /// match; `route_drift` and `failovers` are empty when none was seen. A swap mid-turn spends another provider's
+    /// quota, so it must not read as a pass.
+    fn route_fields(&self, event: Event) -> Event {
+        let drift = self
+            .requested
+            .map_or_else(Vec::new, |r| route_drift(r, self.routes));
+        event
+            .field("route_drift", drift.join(","))
+            .field(
+                "failovers",
+                failovers(self.agent_output)
+                    .iter()
+                    .map(|f| format!("{}>{}:{}", f.from, f.to, f.class))
+                    .collect::<Vec<_>>()
+                    .join(","),
             )
             .field(
                 "reported_routes",

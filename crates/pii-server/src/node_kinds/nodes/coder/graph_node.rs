@@ -133,8 +133,17 @@ impl GraphNode for CoderNode {
             }
         }
         let tree_after = tree::digest(Path::new(&spec.workdir));
+        // What the graph asked for, to compare with what the agent reported. pi names the provider; claude has none,
+        // and its route reads as `claude/<model>`.
+        let requested = (
+            spec.provider
+                .clone()
+                .unwrap_or_else(|| spec.agent_name().to_owned()),
+            spec.model,
+        );
         let report = RunReport {
             tree: Some((&tree_before, &tree_after)),
+            requested: Some(&requested),
             runs: &runs,
             failure_tail: &failure_tail,
             routes: &reported_routes(&output),

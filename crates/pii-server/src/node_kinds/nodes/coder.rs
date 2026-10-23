@@ -463,6 +463,7 @@ impl CoderNode {
         {
             let empty = RunReport {
                 tree: None,
+                requested: None,
                 runs: &[],
                 failure_tail: "",
                 routes: &[],
