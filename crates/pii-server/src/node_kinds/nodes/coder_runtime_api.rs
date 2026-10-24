@@ -15,7 +15,7 @@ use super::coder_runtime::{
     ContainerRuntime, Launch, Listed, OUTPUT_KEEP_BYTES, POLL, Refusal, Request, Spawn,
     TIMEOUT_EXIT_CODE,
 };
-use super::coder_runtime_util::{dechunk, elapsed_ms, message};
+use super::coder_runtime_util::{elapsed_ms, message, parse_reply};
 
 /// The podman REST API runtime (spec 230).
 ///
@@ -49,14 +49,16 @@ impl ContainerRuntime for PodmanApi {
             "image inspect",
             is_2xx,
         )? {
-            Ok(value) => {
-                String::from("sha256:")
-                    + value
-                        .pointer("/Digest")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .trim_start_matches("sha256:")
-            }
+            Ok(value) => match image_digest_from_inspect(&value, req.image) {
+                Some(digest) => digest,
+                // Spec 252 R4: the refusal the CLI path gives an undigested image, never a bare `sha256:`.
+                None => {
+                    return Ok(Launch::Refused(Refusal::Image {
+                        image: req.image.to_owned(),
+                        reason: String::from("image has no digest; pin it by digest"),
+                    }));
+                }
+            },
             Err(failure) => return Ok(self.refused(failure)),
         };
         let created = self.json_call(
@@ -368,6 +370,40 @@ fn create_body(req: &Request<'_>) -> Value {
     })
 }
 
+/// The full digest an inspect reply names for `image` (spec 252 R1–R3): `Digest`, else the `RepoDigests` entry for
+/// the image's repo (or the only entry), else `Id`. `None` when no candidate is `sha256:` plus 64 hex.
+fn image_digest_from_inspect(reply: &Value, image: &str) -> Option<String> {
+    let at = image.split('@').next().unwrap_or(image);
+    let name = match at.rsplit_once(':') {
+        Some((name, tag)) if !tag.contains('/') => name,
+        _ => at,
+    };
+    let repos: Vec<&str> = reply
+        .get("RepoDigests")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let named = repos
+        .iter()
+        .find(|r| r.split('@').next() == Some(name))
+        .or_else(|| repos.first().filter(|_| repos.len() == 1));
+    let candidates = [
+        reply.get("Digest").and_then(Value::as_str),
+        named.and_then(|r| r.split_once('@')).map(|(_, d)| d),
+        reply
+            .get("Id")
+            .and_then(Value::as_str)
+            .filter(|id| id.starts_with("sha256:")),
+    ];
+    candidates.into_iter().flatten().find_map(|d| {
+        let hex = d.trim_start_matches("sha256:").to_ascii_lowercase();
+        (hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| format!("sha256:{hex}"))
+    })
+}
+
 fn is_2xx(status: u16) -> bool {
     (200..300).contains(&status)
 }
@@ -375,28 +411,6 @@ fn is_2xx(status: u16) -> bool {
 /// `start` answers 204 on success and 304 when the container was already running.
 fn started_ok(status: u16) -> bool {
     is_2xx(status) || status == 304
-}
-
-/// Splits an HTTP/1.1 reply into its status and body, decoding a chunked body.
-fn parse_reply(raw: &[u8]) -> Result<(u16, Vec<u8>), String> {
-    let split = raw
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .ok_or("the reply has no header end")?;
-    let head = String::from_utf8_lossy(raw.get(..split).unwrap_or_default()).to_ascii_lowercase();
-    let status = head
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .and_then(|s| s.parse::<u16>().ok())
-        .ok_or_else(|| format!("the reply has no status line: {head:?}"))?;
-    let body = raw.get(split + 4..).unwrap_or_default();
-    let body = if head.contains("transfer-encoding: chunked") {
-        dechunk(body)?
-    } else {
-        body.to_vec()
-    };
-    Ok((status, body))
 }
 
 /// Splits a container's log stream into its stdout and stderr, each kept to [`OUTPUT_KEEP_BYTES`] (spec 241 R3). The
