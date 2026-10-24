@@ -82,5 +82,23 @@ No new Rust. The proof is one helper, two call sites, one behavioural reading of
 - Do NOT weaken a check to make it pass, and do NOT write anything under `specs/`. No commit. Scratch under `/projects/_tmp/`.
 
 ## Closure
-(outcome, the `git status` reading before and after, the archive count, and the cycle-log line that still names the brief —
-filled in when the item is closed.)
+
+Closed 2026-10-24T12:2xZ by the orchestrator, independently of the worker's report: the eight exit
+criteria were run on the committed tree `09c06eb`, then criterion 1 was reddened by a mutation of
+`scripts/autonomy/brief-path.sh` and restored byte-identical.
+
+- **Criteria, on the committed tree** (`_tmp/autonomy/verify-251.sh`): C1..C8 all rc=0.
+  `git status --porcelain` empty before and after the run — criterion 5 writes the brief through
+  `queue-brief.sh` into the pinned path and the tree count is unchanged (that is the defect this spec
+  named, measured live rather than grepped).
+- **The brief still lands where the row pins it, and the cycle log names it**:
+  `[11:58:54Z] queue brief: _tmp/autonomy/briefs/QUEUE-BRIEF-2026-10-24T11.md` — a run's artefact, not
+  a change to the tree.
+- **Archive count**: `ls _tmp/autonomy/briefs/archive-2026-10-24 | wc -l` = 28 (criterion 8 asks >= 28).
+- **Mutation** (`_tmp/autonomy/mutate-251.sh`): `D=_tmp/autonomy/briefs` -> `D=_tmp/autonomy/briefs-mutated`
+  (one directory off the pinned home). C1 went 0 -> 1 while the near-miss controls C2/C5/C7 stayed 0 —
+  the criterion reddens on the path the defect is about, not on any change. Restored with `mv` +
+  `touch`, `sha256` before `b25990a1…0b0789` equals after; criteria re-run green; `git status` clean.
+- **The gate nobody asked for yet**: `bash scripts/autonomy/selftest.sh` at this tree —
+  `RESULT: 40 passed, 0 failed` / `VERDICT: ALL MECHANISMS PASS`
+  (`_tmp/autonomy/logs/selftest-20261024T121617Z.log`).

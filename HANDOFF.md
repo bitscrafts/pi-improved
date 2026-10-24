@@ -2,6 +2,24 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-24 12:30Z — 251 verified by hand and mutated; the only queue left is one live reading on lnx
+
+- **A116 / spec 251 (queue brief is an artefact of the run) verified independently of the worker's
+  report** at the committed tree `09c06eb`: all eight exit criteria rc=0 (`_tmp/autonomy/verify-251.sh`),
+  `git status --porcelain` empty before and after (criterion 5 writes the brief and the tree count does
+  not move — the defect the spec is about, measured rather than grepped), archive count 28.
+- **Mutation**: `brief-path.sh`'s `D=_tmp/autonomy/briefs` -> `D=_tmp/autonomy/briefs-mutated` reddened
+  C1 (0 -> 1) and left the near-miss controls C2/C5/C7 green; restored with `mv`+`touch`, sha256
+  `b25990a1…0b0789` before and after, criteria re-run green. Closure written into spec 251.
+- **`selftest.sh` at this tree: `RESULT: 40 passed, 0 failed` / `VERDICT: ALL MECHANISMS PASS`** (15 rows
+  more than the 2026-10-20 note's 34; the added rows are the fresh-gate/`--worktree` rows of 236).
+- **The queue is not broken, it is out of work**: 113 rows, 108 done, 2 skipped, 1 revoked, A94 parked and
+  A95 needs-review — and both of those wait on the SAME single live reading, not on code: a deploy of HEAD
+  to lnx, a coder run whose skill pin journals `coder.spawned` with `skill=<name> sha256=<hex>`, and the
+  same graph refusing `skill.drift` after the document is edited. Measured this tick: lnx is reachable over
+  ssh and has podman, its daemon is healthy at revision **8d77adff8016** (14 commits behind HEAD) — so the
+  reading is now measurable from here without a person, which is what the next card is for.
+
 ## 2026-10-24 06:20Z — spec 250 verified by hand and mutated; the queue is drained, not broken
 
 State: HEAD `9a5bee2` · lock free, no cycle in flight · watchdog alive (pid 811768, 3d11h) · control
