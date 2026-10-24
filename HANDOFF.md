@@ -24,7 +24,17 @@ needs-review (both the one lnx deploy), every other row done/skipped/revoked.
   their rows are done) and the agent-management defects 1–24 are all fixed or are operator decisions (interrupted-run
   policy, no-op verdict policy, cancel policy, the stage-2 podman host). A94/A95 need one deploy of HEAD on lnx and
   this host has no podman, so the pinned-coder reading cannot be taken here. Nothing was touched on lnx.
-- **Next tick:** nothing to dispatch; the next advance is the operator's — the lnx deploy card
+- **Authored anyway, from a defect measured in this tick: spec `251-a-queue-brief-is-an-artefact.md` + row A116.** The
+  cycle writes one queue brief per hour into `_docs/05-operations/` (a **tracked** path) and never commits it: 28 untracked
+  files, 188 KB, since 2026-10-19. So `git status` is never clean, and every dispatch without a session to resume takes
+  `cycle.sh:143-165`'s leftover branch and asks the operator about a leftover that is not one (`deploy-row.sh:25` already
+  carves the same files out by hand). The spec moves the writer to `_tmp/autonomy/briefs/` through ONE helper both writers
+  call, and moves the 28 stranded files aside with `mv`. Its row was copied from the spec programmatically — 7 columns,
+  8 verify commands, none containing the `;` separator, `state.py pick` names A116 — and its criteria are RED now
+  (1,2,3,4,5,7,8 fail; 6 is the control that must stay green).
+- **Also: `__pycache__/` and `*.pyc` are ignored** (`.gitignore`), so a stray `plan_import.cpython-311.pyc` no longer shows
+  up as a changed path on every cycle.
+- **Next tick:** the 5-minute beat dispatches **A116 (spec 251)**; A94/A95 still wait on the operator's lnx deploy
   (`_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md`) and the six decisions in
   `_docs/05-operations/agent-management-findings-2026-10-23.md` §Decisions.
 
