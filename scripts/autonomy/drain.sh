@@ -70,8 +70,7 @@ done
 
 echo "drain: closed $done_n row(s) this firing"
 if [ "$(python3 scripts/autonomy/state.py pick 2>/dev/null | head -1)" = "" ]; then
-  BRIEF="_docs/05-operations/QUEUE-BRIEF-$(date -u +%Y-%m-%dT%H%M%SZ).md"
-  mkdir -p _docs/05-operations
+  BRIEF=$(bash scripts/autonomy/brief-path.sh)
   bash scripts/autonomy/queue-brief.sh > "$BRIEF" 2>/dev/null || true
   echo "drain: QUEUE EMPTY — brief written to $BRIEF"
 fi

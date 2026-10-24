@@ -92,8 +92,7 @@ print("\n".join(seen))' "$INCF")
   # session ends with a file rather than a paragraph in a terminal.
   # One file per HOUR, overwritten each pass. Measured 2026-10-19: the drain loop asked 40 times and left 33 near-identical
   # briefs in _docs, which is file spam dressed as reporting. A brief summarises the session, not the iteration.
-  BRIEF="_docs/05-operations/QUEUE-BRIEF-$(date -u +%Y-%m-%dT%H).md"
-  mkdir -p _docs/05-operations
+  BRIEF=$(bash scripts/autonomy/brief-path.sh)
   bash scripts/autonomy/queue-brief.sh > "$BRIEF" 2>/dev/null || echo "queue brief: FAILED to generate" >> "$BRIEF"
   say "queue empty — nothing pending"
   say "queue brief: $BRIEF"
