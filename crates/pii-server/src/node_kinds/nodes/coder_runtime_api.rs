@@ -11,9 +11,9 @@ use pii_core::Ctx;
 use serde_json::{Value, json};
 
 use super::coder_container::{CONTAINER_WORKDIR, SKILL_DIRS};
+use super::coder_output_keep::OutputKeep;
 use super::coder_runtime::{
-    ContainerRuntime, Launch, Listed, OUTPUT_KEEP_BYTES, POLL, Refusal, Request, Spawn,
-    TIMEOUT_EXIT_CODE,
+    ContainerRuntime, Launch, Listed, POLL, Refusal, Request, Spawn, TIMEOUT_EXIT_CODE,
 };
 use super::coder_runtime_util::{elapsed_ms, message, parse_reply};
 
@@ -413,25 +413,21 @@ fn started_ok(status: u16) -> bool {
     is_2xx(status) || status == 304
 }
 
-/// Splits a container's log stream into its stdout and stderr, each kept to [`OUTPUT_KEEP_BYTES`] (spec 241 R3). The
+/// Splits a container's log stream into its stdout and stderr, each kept to `OUTPUT_KEEP_BYTES` (spec 241 R3). The
 /// API frames every chunk with an eight-byte header: the stream (1 stdout, 2 stderr), three zero bytes, and the
 /// payload's length as a big-endian `u32`.
 fn demux(raw: &[u8]) -> (String, String) {
-    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let (mut out, mut err) = (OutputKeep::default(), OutputKeep::default());
     let mut rest = raw;
     while let Some((head, tail)) = rest.split_first_chunk::<8>() {
         let [kind, _, _, _, a, b, c, d] = *head;
         let len = usize::try_from(u32::from_be_bytes([a, b, c, d])).unwrap_or(usize::MAX);
         let (payload, next) = tail.split_at(len.min(tail.len()));
         let sink = if kind == 2 { &mut err } else { &mut out };
-        let room = OUTPUT_KEEP_BYTES.saturating_sub(sink.len());
-        sink.extend_from_slice(payload.get(..room.min(payload.len())).unwrap_or_default());
+        sink.push(payload);
         rest = next;
     }
-    (
-        String::from_utf8_lossy(&out).into_owned(),
-        String::from_utf8_lossy(&err).into_owned(),
-    )
+    (out.finish(), err.finish())
 }
 
 /// The exit code the runtime recorded for a container's inspect document; `-1` when it names none.

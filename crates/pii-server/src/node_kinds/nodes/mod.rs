@@ -11,6 +11,7 @@ pub mod agent_worker;
 pub mod classify;
 pub mod coder;
 pub mod coder_container;
+pub mod coder_output_keep;
 pub mod coder_runtime;
 pub(crate) mod coder_runtime_api;
 pub(crate) mod coder_runtime_cli;

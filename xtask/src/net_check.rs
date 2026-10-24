@@ -83,6 +83,8 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-server/tests/coder_container_bounded.rs",
     // Spec 252: the same sanctioned fake again, serving the inspect reply whose digest the runtime must never journal as a bare prefix.
     "crates/pii-server/tests/image_digest_is_never_a_bare_prefix.rs",
+    // Spec 263: the same sanctioned fake again, serving a framed container log so the container path's head-and-tail capture is driven through the real runtime client.
+    "crates/pii-server/tests/coder_output_keeps_the_tail.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

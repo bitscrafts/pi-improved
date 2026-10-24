@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 use pii_abi::PiiError;
 use pii_core::Ctx;
 
+use super::coder_output_keep::OutputKeep;
+
 pub use super::coder_runtime_api::PodmanApi;
 pub use super::coder_runtime_cli::PodmanCli;
 /// The elapsed-ms helper the coder node reports durations with (kept at this path for callers).
@@ -231,14 +233,14 @@ pub(super) const OUTPUT_KEEP_BYTES: usize = 256 * 1024;
 
 /// A running stdout reader: started before the child is waited on, so the pipe never fills, and joined after.
 pub struct StdoutCapture {
-    buf: Arc<parking_lot::Mutex<Vec<u8>>>,
+    buf: Arc<parking_lot::Mutex<OutputKeep>>,
     reader: Option<std::thread::JoinHandle<()>>,
 }
 
 impl StdoutCapture {
     /// Starts draining `out` in a background thread, keeping at most [`OUTPUT_KEEP_BYTES`].
     pub fn start(out: Option<impl Read + Send + 'static>) -> Self {
-        let buf = Arc::new(parking_lot::Mutex::new(Vec::<u8>::new()));
+        let buf = Arc::new(parking_lot::Mutex::new(OutputKeep::default()));
         let reader = out.map(|mut out| {
             let reader_buf = Arc::clone(&buf);
             std::thread::spawn(move || capture_bounded(&mut out, &reader_buf))
@@ -255,7 +257,7 @@ impl StdoutCapture {
                 std::thread::sleep(Duration::from_millis(10));
             }
         }
-        String::from_utf8_lossy(&self.buf.lock()).into_owned()
+        self.buf.lock().finish()
     }
 }
 
@@ -264,17 +266,15 @@ pub fn drain_stdout(out: impl Read + Send + 'static) -> String {
     StdoutCapture::start(Some(out)).finish()
 }
 
-/// Copies `src` into `buf` up to [`OUTPUT_KEEP_BYTES`], then keeps draining without storing.
-fn capture_bounded(src: &mut dyn Read, buf: &parking_lot::Mutex<Vec<u8>>) {
+/// Feeds `src` into `buf` until it ends, keeping the head and the tail of what it carried (spec 263).
+fn capture_bounded(src: &mut dyn Read, buf: &parking_lot::Mutex<OutputKeep>) {
     let mut chunk = [0u8; 8192];
     loop {
         match src.read(&mut chunk) {
             Ok(0) | Err(_) => break,
             Ok(n) => {
-                let mut b = buf.lock();
-                let room = OUTPUT_KEEP_BYTES.saturating_sub(b.len());
-                if let Some(kept) = chunk.get(..room.min(n)) {
-                    b.extend_from_slice(kept);
+                if let Some(read) = chunk.get(..n) {
+                    buf.lock().push(read);
                 }
             }
         }
