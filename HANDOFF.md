@@ -2,6 +2,61 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-24 06:20Z — spec 250 verified by hand and mutated; the queue is drained, not broken
+
+State: HEAD `9a5bee2` · lock free, no cycle in flight · watchdog alive (pid 811768, 3d11h) · control
+`RUNNING at 2026-10-23T02:58:54Z` · selftest **40 passed, 0 failed / ALL MECHANISMS PASS**
+(`_tmp/autonomy/logs/selftest-20261024T0615Z.log`) · queue: **nothing dispatchable** — A94 parked and A95
+needs-review (both the one lnx deploy), every other row done/skipped/revoked.
+
+- **Independent verification of A115 / spec 250** (the last item the loop committed, `7999bb5`), run by the
+  orchestrator on the tree it left: the step line is in `gate-steps.txt` exactly once; `bash modules/devbox/check.sh`
+  exits 0; the spec's own control (a module copy with `FROM scratch`) exits 1, so the check cannot pass by accident;
+  the commit's numstat is `2 0` on `gate-steps.txt` and 0 lines on `gate-steps-quick.txt`. Criteria 4–5 are written
+  against `git diff`, which is empty after a commit, so the honest post-commit reading is the commit's numstat — the
+  criterion moved, it was not weakened.
+- **The mutation was on the door, not on the file.** The item's claim is "the gate runs this check", so the live
+  `gate-steps.txt` line's command was broken (`check.sh` → `check-DOES-NOT-EXIST.sh`) and the **real**
+  `quality-gate.sh` was driven with the list extracted from that live file: `FAIL: devbox-check`, rc 1. Restored with
+  a plain `cp` + `touch` (never `cp -p`), `sha256 699a63e0…` identical before and after, re-run `ALL PASS` rc 0.
+  Closure recorded in `specs/250-the-gate-runs-the-devbox-check.md`.
+- **Why the queue is empty and that is not a failure.** The 059 §4 ranked list is drained (specs 133–141 exist and
+  their rows are done) and the agent-management defects 1–24 are all fixed or are operator decisions (interrupted-run
+  policy, no-op verdict policy, cancel policy, the stage-2 podman host). A94/A95 need one deploy of HEAD on lnx and
+  this host has no podman, so the pinned-coder reading cannot be taken here. Nothing was touched on lnx.
+- **Next tick:** nothing to dispatch; the next advance is the operator's — the lnx deploy card
+  (`_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md`) and the six decisions in
+  `_docs/05-operations/agent-management-findings-2026-10-23.md` §Decisions.
+
+## 2026-10-24 00:20Z — the 059 ranked list is drained; the queue's next item is 248 (defect 19)
+
+State: HEAD `6c432aa` (this tick added it) · lock free, no cycle in flight · watchdog alive (pid 811768) · control
+`RUNNING at 2026-10-23T02:58:54Z` · queue: **A114 dispatchable** (spec 248), A94 parked and A95 needs-review, both still
+the one lnx deploy · selftest **40 passed, 0 failed / ALL MECHANISMS PASS**
+(`_tmp/autonomy/logs/selftest-20261024T001*.log`).
+
+- **`state.py pick` said "every open row is parked"** on five consecutive beats (00:04–00:14Z), so the loop had nothing to
+  spend on. The 059 §4 ranked list is in fact drained: specs 133 (Q7 wait), 134 (`lanes` hermetic), 135 (panicking node),
+  137 (`[net]` egress), 138 (one writer), 141 (docs pass) all exist and their rows are `done` — measured by id, not by
+  memory. Rank 4's own gate (`grep -rn 'fn db() ' crates/*/tests` returns nothing) is a **broken check**: both hits are the
+  pid-keyed hermetic `db()` with the F4 story in its doc comment, so it fires on a correct tree. The real gate for that item
+  is `scripts/checks/concurrent-store.sh` (0 of 10 collisions), not a name.
+- **A94/A95 stay blocked on a host step.** This host has no podman (`command -v podman` empty, no
+  `/run/podman/podman.sock`, no `/run/user/*/podman/podman.sock`), so the pinned-coder reading cannot be taken here and the
+  rows are not a worker error and not a wrong spec. Nothing was touched on lnx.
+- **Authored: spec `248-a-runs-session-file-belongs-to-the-run.md` + row A114** (defect 19, `6c432aa`). Two coder runs on one
+  workdir share ONE pi session file, because the default path is built from the spec's file stem in two places
+  (`pi_session_path`, and again inside `plan`) and carries no run identity (measured 2026-10-23: 204,737 bytes, two
+  conversations). The spec adds `WorkerSpec.run`, keyed from `ctx.trace().run`, so the argv and the pre-spawn header name the
+  same run-scoped file; an explicit `session =` still pins the path; a malformed run is refused before spawn. Its test writes
+  into the session file the stand-in pi is handed, and takes **two run ids from ONE store** — two stores both hand out
+  `r000000000001` and would hide the defect.
+- **Row sanity-checked, not eyeballed:** 7 tab columns, 6 verify commands split from the spec's `## Exit Criteria` by script
+  (no criterion contains the `;` separator), all six commit paths real or a file the worker creates, and `state.py pick`
+  names A114.
+- **Next tick:** the 5-minute beat dispatches A114 (spec 248). Its criteria are RED now (the test file does not exist), which
+  is the expected state for an authored-but-unimplemented spec.
+
 ## 2026-10-23 18:25Z — 245 is four of five: the check exists, nothing calls it
 
 State: HEAD `7172770` · lock free, no cycle in flight · watchdog alive (pid 811768, 2d23h) · control
