@@ -1,4 +1,4 @@
-# Spec 252: an authentication failure parks the lane, it does not burn the row's attempts
+# Spec 254: an authentication failure parks the lane, it does not burn the row's attempts
 
 ## Overview
 **Project**: /projects/pi-improved

@@ -1,4 +1,4 @@
-# Spec 251: the journal carries the text claude gave for its own failure
+# Spec 253: the journal carries the text claude gave for its own failure
 
 ## Overview
 **Project**: /projects/pi-improved
