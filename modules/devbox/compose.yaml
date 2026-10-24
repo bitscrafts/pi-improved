@@ -39,8 +39,12 @@ services:
       # claude's session files. Without a volume they live in the container's writable layer and `compose down` wipes them, which makes
       # resume-first (`claude --resume <sid>`) impossible after any restart. The login file below is bound INSIDE this directory's parent.
       - devbox-claude-sessions:/root/.claude/projects
-      # claude authenticates by login file (no ANTHROPIC_API_KEY exists on the host). Read-only: the container cannot rewrite it.
-      - ${DEVBOX_CLAUDE_LOGIN:-/podman/assistants/hermes/root/.claude/.credentials.json}:/root/.claude/.credentials.json:ro
+      # claude authenticates by login file (no ANTHROPIC_API_KEY exists on the host). Mounted as a DIRECTORY, read-only, and reached through
+      # a symlink made in the image (/root/.claude/.credentials.json -> /run/claude-login/.credentials.json). NOT as a single-file bind mount:
+      # when the CLI refreshes its token it replaces the file by rename, a single-file mount keeps the OLD inode, and the container then
+      # presents a revoked token (measured 2026-10-24: host inode 3603386 at 04:10, container still on 3603376 from 20:15, 401 "OAuth token
+      # revoked"). A directory mount follows the rename.
+      - ${DEVBOX_CLAUDE_LOGIN_DIR:-/podman/assistants/hermes/root/.claude}:/run/claude-login:ro
     environment:
       CARGO_TARGET_DIR: /work-target       # build output lives OUTSIDE the tree (a 29 GB cache must not sit in the project)
       IS_SANDBOX: "1"

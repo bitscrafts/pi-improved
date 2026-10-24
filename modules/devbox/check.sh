@@ -57,4 +57,11 @@ grep -q 'command -v python3' "$C"; row "the smoke step asserts a bare python3 is
 grep -q 'ln -s /usr/local/cargo /root/.cargo' "$C" && grep -q 'ln -s /usr/local/rustup /root/.rustup' "$C"; row "cargo and rustup resolve from HOME alone (scrubbed criterion env)" $?
 grep -q 'devbox-target:/projects/pi-improved/target' "$Y"; row "the build volume is also at the project's default target dir" $?
 grep -q 'devbox-claude-sessions:/root/.claude/projects' "$Y"; row "claude's sessions persist across a container restart (resume-first)" $?
+# the login file must NOT be a single-file bind mount (it goes stale on a token refresh): a directory mount plus the image's symlink
+single_file_login() { grep -qE '^[[:space:]]*-[[:space:]].*\.credentials\.json:' "$1"; }
+! single_file_login "$Y"; row "claude's login is not a single-file bind mount (stale inode after a token refresh)" $?
+printf 'services:\n  x:\n    volumes:\n      - /a/.claude/.credentials.json:/root/.claude/.credentials.json:ro\n' > "${TMPDIR:-/tmp}/devbox-check-login.$$"
+single_file_login "${TMPDIR:-/tmp}/devbox-check-login.$$"; row "control: the single-file-login predicate catches a planted single-file mount" $?
+rm -f "${TMPDIR:-/tmp}/devbox-check-login.$$" 2>/dev/null
+grep -q 'ln -s /run/claude-login/.credentials.json /root/.claude/.credentials.json' "$C" && grep -qE ':/run/claude-login:ro' "$Y"; row "the login directory is mounted read-only and the image links its file into place" $?
 exit $rc
