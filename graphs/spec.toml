@@ -20,9 +20,23 @@ timeout_ms = 3000000
 env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]
 
 [[node]]
+id = "verify"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
+[[node]]
 id = "done"
 kind = "transform"
 value = "done"
+
+[[node]]
+id = "unverified"
+kind = "refuse"
+hook = "judge"
+reason = "the spec's criteria failed"
 
 [[node]]
 id = "refused"
@@ -33,7 +47,19 @@ reason = "the agent failed"
 [[edge]]
 from = "code"
 port = "ok"
+to = "verify"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "ok"
 to = "done"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "fail"
+to = "unverified"
 kind = "data"
 
 [[edge]]

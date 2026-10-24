@@ -45,9 +45,31 @@ impl GraphNode for Never {
     }
 }
 
+/// Stand-in for the judge kind (spec 259 put a `verify` judge in the graph): ports `ok` and `fail`, and it never runs.
+struct StubJudge;
+
+impl NodeFactory for StubJudge {
+    fn kind(&self) -> &'static str {
+        "judge"
+    }
+    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(vec![PortName::from("ok"), PortName::from("fail")])
+    }
+    fn required_caps(&self) -> CapKind {
+        CapKind::empty()
+    }
+    fn effects(&self) -> Effects {
+        Effects::PURE
+    }
+    fn build(&self, _cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        Ok(Box::new(Never))
+    }
+}
+
 fn registry() -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
     reg.register(Arc::new(StubCoder));
+    reg.register(Arc::new(StubJudge));
     reg
 }
 

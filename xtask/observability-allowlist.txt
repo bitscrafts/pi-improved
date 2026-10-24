@@ -8,7 +8,7 @@ crates/pii-cli/src/cmd_oneshot.rs  # pre-existing at spec 98 seed  # 4
 crates/pii-cli/src/cmd_run.rs  # pre-existing at spec 98 seed  # 2
 crates/pii-cli/src/cmd_sandbox_exec.rs  # pre-existing at spec 98 seed  # 3
 crates/pii-cli/src/cmd_soak.rs  # pre-existing at spec 98 seed  # 3
-crates/pii-cli/src/cmd_sys.rs  # spec 186 added the replay verbs (resume/retry/abandon/cancel) to this dispatcher  # 8
+crates/pii-cli/src/cmd_sys.rs  # spec 186 added the replay verbs (resume/retry/abandon/cancel) to this dispatcher; spec 257 added two usage errors to `run start` (--input needs a value, --input must be valid JSON), each exit 2 on stderr like the others  # 10
 crates/pii-cli/src/cmd_trace.rs  # the command's stdout is its product (spec 98 seed); spec 231 R1 added the --reason print, whose whole uncut string is the M0 script's verdict  # 12
 crates/pii-cli/src/cmd_trace/run.rs  # the command's stdout is its product (spec 98 seed); spec 231 R1 added the --reason print, whose whole uncut string is the M0 script's verdict  # 1
 crates/pii-cli/src/main.rs  # the binary's stdout and stderr are its product (spec F5.5); the count grew past the seed's 12 as subcommands were added (spec 227 R7)  # 14

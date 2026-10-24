@@ -16,6 +16,7 @@ use pii_store::MemStore;
 use pii_store::queue::{Claim, ItemStatus, QueueStore};
 
 use super::agent_worker::{Verdict, learn_fact};
+use super::judge_spec::SpecJudgeNode;
 
 /// How long one criterion command may run before it is killed.
 const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);
@@ -185,6 +186,10 @@ impl NodeFactory for JudgeFactory {
     }
 
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        // Spec mode (spec 259) resolves its keys at run time, so it needs no literal `workdir` here.
+        if cfg.get("spec").is_some() {
+            return Ok(Box::new(SpecJudgeNode { cfg: cfg.clone() }));
+        }
         let workdir = cfg
             .get("workdir")
             .and_then(serde_json::Value::as_str)

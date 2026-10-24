@@ -22,6 +22,7 @@ pub mod entity;
 pub mod gate;
 pub mod hal;
 pub mod heal;
+pub mod judge_spec;
 pub mod memory;
 pub mod mqtt;
 pub mod post;
