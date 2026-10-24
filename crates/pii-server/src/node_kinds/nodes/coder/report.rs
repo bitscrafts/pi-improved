@@ -159,6 +159,20 @@ impl RunReport<'_> {
                     .map_or("unknown", |e| if e { "true" } else { "false" })
                     .to_owned(),
             )
+            // The output was redacted before this report was built (graph_node.rs), so the text carries no secret.
+            .field(
+                "claude_result",
+                claude
+                    .result_text
+                    .map(|t| t.chars().take(300).collect::<String>())
+                    .unwrap_or_default(),
+            )
+            .field(
+                "claude_api_error_status",
+                claude
+                    .api_error_status
+                    .map_or_else(String::new, |s| s.to_string()),
+            )
     }
 
     /// The routes the agent reported beside the one the graph asked for. An empty `reported_routes` is unknown, not a

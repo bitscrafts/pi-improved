@@ -17,6 +17,10 @@ pub struct RunFacts {
     pub cost_usd: Option<f64>,
     /// `is_error` from the `result` line.
     pub is_error: Option<bool>,
+    /// The `result` string from the `result` line: claude's own words for a failure (spec 253).
+    pub result_text: Option<String>,
+    /// `api_error_status` from the `result` line, when claude had an HTTP status to report (spec 253).
+    pub api_error_status: Option<u64>,
 }
 
 /// Reads the facts out of claude's stream-json output. Lines that are not JSON are skipped.
@@ -45,6 +49,13 @@ pub fn run_facts(output: &str) -> RunFacts {
                 facts.turns = v.get("num_turns").and_then(serde_json::Value::as_u64);
                 facts.cost_usd = v.get("total_cost_usd").and_then(serde_json::Value::as_f64);
                 facts.is_error = v.get("is_error").and_then(serde_json::Value::as_bool);
+                facts.result_text = v
+                    .get("result")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+                facts.api_error_status = v
+                    .get("api_error_status")
+                    .and_then(serde_json::Value::as_u64);
             }
             _ => {}
         }
