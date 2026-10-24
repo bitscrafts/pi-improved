@@ -32,6 +32,7 @@ use super::criteria::{self, Table};
 
 mod graph_node;
 mod helpers;
+mod input_cfg;
 mod launch;
 pub mod no_change;
 mod paths;

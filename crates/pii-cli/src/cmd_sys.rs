@@ -262,10 +262,17 @@ fn run_start(args: &mut std::env::ArgsOs) -> ExitCode {
     };
     let mut input = serde_json::json!({});
     while let Some(a) = next_str(args) {
-        if a == "--input"
-            && let Some(raw) = next_str(args)
-        {
-            input = serde_json::from_str(&raw).unwrap_or(input);
+        if a == "--input" {
+            // Spec 257 R5: a bad `--input` is a usage error, not a silent `{}` run.
+            let Some(raw) = next_str(args) else {
+                eprintln!("error: --input needs a value");
+                return ExitCode::from(2);
+            };
+            let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                eprintln!("error: --input must be valid JSON");
+                return ExitCode::from(2);
+            };
+            input = parsed;
         }
     }
     print_result(

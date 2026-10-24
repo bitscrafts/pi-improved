@@ -10,6 +10,7 @@ use super::super::agent_worker::{
     CriterionRun, Verdict, WorkerSpec, decide, plan, reported_routes,
 };
 use super::super::coder::CRITERION_TIMEOUT;
+use super::super::coder::input_cfg;
 use super::super::coder::no_change::no_change_refusal;
 use super::super::coder::prompt;
 use super::super::coder::redact;
@@ -28,10 +29,14 @@ use super::helpers::{
 impl GraphNode for CoderNode {
     #[allow(clippy::too_many_lines)] // reason: the node's refusals, spawn and criteria decide in one linear sequence
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        let cfg = with_selected_spec(&self.cfg, input);
+        // Spec 257: the designated keys resolve against the run input; a required one that resolves to nothing refuses here.
+        let (cfg, unresolved) = input_cfg::resolve(&with_selected_spec(&self.cfg, input), input);
         let cfg = &cfg;
         let agent = text(cfg, "agent").unwrap_or_default();
         let model = text(cfg, "model").unwrap_or_default();
+        if let Some(reason) = unresolved {
+            return Ok(self.refuse(ctx, &agent, &model, &reason));
+        }
         let (spec, brief) = match (WorkerSpec::from_cfg(cfg), text(cfg, "brief")) {
             (Ok(spec), Some(brief)) if !spec.spec.is_empty() && super::brief_is_usable(&brief) => {
                 (spec, brief)

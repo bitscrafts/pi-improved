@@ -1,0 +1,43 @@
+# Spec 257: one tracked graph implements any spec. The run input chooses the agent, model, spec, workdir and brief:
+#   pii run start spec --input '{"agent":"pi","model":"<model>","provider":"<provider>","spec":"specs/N-x.md","workdir":"<dir>","brief":"<text>"}'
+# No absolute path and no credential lives in this file: only the NAMES in env_pass are copied from the daemon's environment.
+name = "spec"
+entry = "code"
+caps = ["spawn", "proc"]
+
+[[node]]
+id = "code"
+kind = "coder"
+caps = ["spawn", "proc"]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "$.input.brief"
+max_budget_usd = "$.input.max_budget_usd"
+timeout_ms = 3000000
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+[[node]]
+id = "refused"
+kind = "refuse"
+hook = "coder"
+reason = "the agent failed"
+
+[[edge]]
+from = "code"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "code"
+port = "err"
+to = "refused"
+kind = "data"
