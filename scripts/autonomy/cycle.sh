@@ -268,6 +268,14 @@ else
     echo "OUTCOME=window-closed ITEM=$ITEM SESSION=${NEWSID:-}"
     exit 3
   fi
+  # AUTH IS A LANE FAULT, NOT A ROW FAULT (spec 254): a dead login refuses every row, so counting it as an attempt parks
+  # three rows that were never tried. The row keeps its attempts, the control file stops the queue, and a person acts.
+  if [ "$WRC" -ne 0 ] && [ -n "${WLOG:-}" ] && [ "$(bash scripts/autonomy/classify-failure.sh <"$WLOG" 2>/dev/null)" = auth ]; then
+    python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=lane-auth-failed
+    bash scripts/autonomy/control.sh pause "lane-auth-failed $(date -u '+%FT%TZ')" >/dev/null 2>&1 || true
+    say "AUTH FAILURE: the worker's login is dead — the row keeps its attempts and the queue is PAUSED for a person"
+    echo "OUTCOME=lane-auth-failed ITEM=$ITEM"; exit 16
+  fi
   python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC
   [ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
   # QUOTA IS NOT A FAILURE (user rule 2026-10-19: "eventually it will exaust, let it run to the end then put it again on

@@ -12,7 +12,7 @@ shape: the row is fine, the LANE is broken, and a person has to act.
 ## Requirements
 ### Functional
 - **R1.** New script `scripts/autonomy/classify-failure.sh`: reads a worker log on stdin, prints exactly one word on stdout and exits 0:
-  `auth` when the text contains any of `OAuth token revoked`, `Failed to authenticate`, `Please log in again`, `api_error_status":401` (also `api_error_status\":401`);
+  `auth` when the text contains any of `OAuth token revoked`, `Failed to authenticate`, `Please log in again`, `api_error_status":401` (also `api_error_status\":401`), or the journal's own field `claude_api_error_status":"401"` (spec 253 writes the status as a string and, when claude gave no text, writes only that);
   `quota` when it contains `spend limit`, `usage limit` or `hit your` + `limit` (case-insensitive) and no auth marker; otherwise `work`.
   Auth wins over quota when both appear. Empty input is `work`.
 - **R2.** `scripts/autonomy/cycle.sh`, in the branch that handles a worker with a non-zero exit, runs the worker's log through `classify-failure.sh` BEFORE the attempt
@@ -42,12 +42,14 @@ New file `scripts/autonomy/tests/classify-failure.test.sh` (create the directory
 | `auth_beats_quota` | both an auth marker and `spend limit` | `auth` |
 | `plain_work_failure` | `error[E0063]: missing field` | `work` |
 | `empty_is_work` | (nothing) | `work` |
+| `auth_journal_status_only` | `{"claude_api_error_status":"401","claude_result":"","rc":"1"}` | `auth` |
+| `NEAR-MISS: journal status that is not 401` | `{"claude_api_error_status":"500","claude_result":"","rc":"1"}` | `work` |
 | `NEAR-MISS: 401 as a plain number` | `took 401 ms` | `work` (a bare number is not the status field) |
 | `NEAR-MISS: the word limit alone` | `line limit of 450 reached` | `work` |
 
 ## Exit Criteria
 - [ ] `test -x scripts/autonomy/classify-failure.sh && test -f scripts/autonomy/tests/classify-failure.test.sh`
-- [ ] `bash scripts/autonomy/tests/classify-failure.test.sh | grep -c '^ok ' | grep -qx 8`
+- [ ] `bash scripts/autonomy/tests/classify-failure.test.sh | grep -c '^ok ' | grep -qx 10`
 - [ ] `bash scripts/autonomy/tests/classify-failure.test.sh > /dev/null`
 - [ ] `grep -q 'classify-failure.sh' scripts/autonomy/cycle.sh && grep -q 'lane-auth-failed' scripts/autonomy/cycle.sh`
 - [ ] `bash -n scripts/autonomy/cycle.sh && bash -n scripts/autonomy/classify-failure.sh`
