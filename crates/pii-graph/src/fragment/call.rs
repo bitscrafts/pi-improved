@@ -1,0 +1,415 @@
+//! Spec 255: a `call` node inlines another graph at load time.
+//!
+//! [`expand_host`] runs on the host table before the weave. Each `kind = "call"` node is replaced by the named
+//! graph's nodes, ids namespaced `<call>__<n>`, behind a `<call>__in` head. The sub-graph's `$.input` reads go to
+//! the call's own input nodes and its `$.nodes.<m>` reads go to its own copies, so it never sees the host's input.
+//! Each input key the call maps is its own transform, `<call>__in__<key>`, chained after the head: a transform
+//! evaluates only a top-level `$.` string, so one node cannot hold a whole object of expressions.
+
+use std::path::PathBuf;
+
+use pii_abi::PiiError;
+use pii_core::CapKind;
+use toml::{Table, Value};
+
+use crate::node::NodeRegistry;
+
+use super::call_rewrite::{Refs, rewrite};
+use super::check::sha256_hex;
+
+/// The deepest chain of nested calls a load accepts (spec 255 R7).
+const MAX_DEPTH: usize = 4;
+
+/// A sub-graph read from its file, expanded, and checked against its call.
+struct Sub {
+    exit: String,
+    entry: String,
+    ids: Vec<String>,
+    nodes: Vec<Table>,
+    edges: Vec<Table>,
+}
+
+/// True when the table holds a `call` node. A fragment may not hold one (spec 255 R9).
+pub(super) fn has_call(doc: &Table) -> bool {
+    doc.get("node")
+        .and_then(Value::as_array)
+        .is_some_and(|nodes| {
+            nodes
+                .iter()
+                .filter_map(Value::as_table)
+                .any(|n| kind_of(n) == Some("call"))
+        })
+}
+
+/// Expands every `call` node of the host source. Returns `None` when the source has no call, so the caller loads
+/// the original text unchanged; otherwise the expanded graph as TOML.
+///
+/// # Errors
+/// [`PiiError::Invalid`] naming the `graph.call.*` rule that failed, or a `fragment.*` rule for a bad pin.
+pub(super) fn expand_host(
+    src: &str,
+    graph_dirs: &[PathBuf],
+    reg: &NodeRegistry,
+) -> Result<Option<String>, PiiError> {
+    // A source that does not parse is left for the loader, which names the parse error.
+    let Ok(mut doc) = toml::from_str::<Table>(src) else {
+        return Ok(None);
+    };
+    if !has_call(&doc) {
+        return Ok(None);
+    }
+    let name = doc
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let grant = caps_of(doc.get("caps"))?;
+    expand(&mut doc, graph_dirs, reg, &mut vec![name], grant)?;
+    toml::to_string(&doc)
+        .map(Some)
+        .map_err(|e| PiiError::Invalid(format!("graph toml: {e}")))
+}
+
+/// Expands every call in `doc`. `chain` is the graph names from the host down to `doc`; `grant` is the most
+/// capability `doc`'s calls may ask for (the host's caps, or the caps the enclosing call granted).
+fn expand(
+    doc: &mut Table,
+    graph_dirs: &[PathBuf],
+    reg: &NodeRegistry,
+    chain: &mut Vec<String>,
+    grant: CapKind,
+) -> Result<(), PiiError> {
+    if graph_dirs.is_empty() {
+        return Err(PiiError::Invalid(
+            "graph.call.no_dir: a call node needs a graph directory to resolve its graph in; no graph directory was given"
+                .into(),
+        ));
+    }
+    // The first node may be a call, so the entry is named before any node is replaced.
+    if let Some(first) = first_id(doc).filter(|_| !doc.contains_key("entry")) {
+        doc.insert("entry".into(), Value::String(first));
+    }
+    while let Some(call) = take_call(doc) {
+        expand_one(doc, &call, graph_dirs, reg, chain, grant)?;
+    }
+    Ok(())
+}
+
+/// Replaces one call node: checks its parts, reads its graph, and splices the graph's nodes and edges in.
+fn expand_one(
+    doc: &mut Table,
+    call: &Table,
+    graph_dirs: &[PathBuf],
+    reg: &NodeRegistry,
+    chain: &mut Vec<String>,
+    grant: CapKind,
+) -> Result<(), PiiError> {
+    let id = id_of(call)
+        .ok_or_else(|| PiiError::Invalid("graph.call.missing: a call has no 'id'".into()))?;
+    let graph = required(call, &id, "graph")?;
+    let sha = required(call, &id, "sha256")?;
+    let call_caps = caps_of(Some(call.get("caps").ok_or_else(|| missing(&id, "caps"))?))?;
+    let input = match call.get("in") {
+        None => Table::new(),
+        Some(v) => v.as_table().cloned().ok_or_else(|| {
+            PiiError::Invalid(format!(
+                "graph.call.in: call '{id}' must give 'in' as a table"
+            ))
+        })?,
+    };
+
+    let widen = call_caps & !grant;
+    if !widen.is_empty() {
+        return Err(PiiError::Invalid(format!(
+            "graph.call.widen: call '{id}' grants {} the graph it sits in does not hold",
+            names(widen)
+        )));
+    }
+    if chain.contains(&graph) {
+        return Err(PiiError::Invalid(format!(
+            "graph.call.cycle: {} -> {graph}",
+            chain.join(" -> ")
+        )));
+    }
+    if chain.len() > MAX_DEPTH {
+        return Err(PiiError::Invalid(format!(
+            "graph.call.depth: call '{id}' nests past the depth cap of {MAX_DEPTH}, via {} -> {graph}",
+            chain.join(" -> ")
+        )));
+    }
+
+    let sub = load_sub(&id, &graph, &sha, call_caps, graph_dirs, reg, chain)?;
+    splice(doc, &id, &input, sub)
+}
+
+/// Reads the sub-graph file, checks its pin, expands its own calls, and checks its exit and its caps against the
+/// call's grant.
+fn load_sub(
+    id: &str,
+    graph: &str,
+    sha: &str,
+    call_caps: CapKind,
+    graph_dirs: &[PathBuf],
+    reg: &NodeRegistry,
+    chain: &mut Vec<String>,
+) -> Result<Sub, PiiError> {
+    let path = find(graph_dirs, graph)?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| PiiError::Invalid(format!("graph.call.read: {}: {e}", path.display())))?;
+    let actual = sha256_hex(&bytes);
+    if actual != sha {
+        return Err(PiiError::Invalid(format!(
+            "fragment.pin.mismatch: call '{id}' pins graph '{graph}' to sha256 {sha}, but its file is {actual}"
+        )));
+    }
+    let text = std::str::from_utf8(&bytes).map_err(|e| {
+        PiiError::Invalid(format!(
+            "graph.call.read: graph '{graph}' is not UTF-8: {e}"
+        ))
+    })?;
+    let mut doc: Table = toml::from_str(text)
+        .map_err(|e| PiiError::Invalid(format!("graph toml parse: graph '{graph}': {e}")))?;
+
+    chain.push(graph.to_string());
+    let expanded = expand(&mut doc, graph_dirs, reg, chain, call_caps);
+    chain.pop();
+    expanded?;
+
+    let exit = doc
+        .get("exit")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            PiiError::Invalid(format!(
+                "graph.call.exit: graph '{graph}' declares no 'exit' node"
+            ))
+        })?;
+    let nodes = tables(&doc, "node");
+    let ids: Vec<String> = nodes.iter().filter_map(id_of).collect();
+    if !ids.contains(&exit) {
+        return Err(PiiError::Invalid(format!(
+            "graph.call.exit: graph '{graph}' exit '{exit}' names no node"
+        )));
+    }
+    let entry = doc
+        .get("entry")
+        .and_then(Value::as_str)
+        .map_or_else(|| ids.first().cloned().unwrap_or_default(), str::to_string);
+
+    for node in &nodes {
+        let nid = id_of(node).unwrap_or_default();
+        let needs = match node.get("caps") {
+            Some(v) => caps_of(Some(v))?,
+            None => reg.required_caps_of(kind_of(node).unwrap_or("")),
+        };
+        let excess = needs & !call_caps;
+        if !excess.is_empty() {
+            return Err(PiiError::Invalid(format!(
+                "graph.call.widen: node '{nid}' of graph '{graph}' needs {} beyond the {} call '{id}' grants",
+                names(excess),
+                names(call_caps)
+            )));
+        }
+    }
+    Ok(Sub {
+        exit,
+        entry,
+        ids,
+        nodes,
+        edges: tables(&doc, "edge"),
+    })
+}
+
+/// Adds the call's head, input nodes and sub-graph to the host, rewires the host edges that touched the call, and
+/// refuses an id the host already has.
+fn splice(doc: &mut Table, id: &str, input: &Table, sub: Sub) -> Result<(), PiiError> {
+    let keys: Vec<String> = input.keys().cloned().collect();
+    let refs = Refs {
+        call: id,
+        keys: &keys,
+        nodes: &sub.ids,
+    };
+    let head = format!("{id}__in");
+
+    let mut added: Vec<Table> = vec![transform(&head, Value::Table(Table::new()))];
+    let mut prev = head.clone();
+    let mut new_edges: Vec<Table> = Vec::new();
+    for (key, value) in input {
+        let key_id = format!("{id}__in__{key}");
+        added.push(transform(&key_id, value.clone()));
+        new_edges.push(edge(&prev, &key_id));
+        prev = key_id;
+    }
+    new_edges.push(edge(&prev, &format!("{id}__{}", sub.entry)));
+
+    for mut node in sub.nodes {
+        let nid = id_of(&node).unwrap_or_default();
+        node.insert("id".into(), Value::String(format!("{id}__{nid}")));
+        for (k, v) in &mut node {
+            if k != "id" {
+                rewrite(v, &refs);
+            }
+        }
+        added.push(node);
+    }
+    for mut e in sub.edges {
+        let from = e
+            .get("from")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let to = e
+            .get("to")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        e.insert("from".into(), Value::String(format!("{id}__{from}")));
+        e.insert("to".into(), Value::String(format!("{id}__{to}")));
+        new_edges.push(e);
+    }
+
+    let host_ids: Vec<String> = tables(doc, "node").iter().filter_map(id_of).collect();
+    if let Some(clash) = added
+        .iter()
+        .filter_map(id_of)
+        .find(|nid| host_ids.contains(nid))
+    {
+        return Err(PiiError::Invalid(format!(
+            "graph.call.id: call '{id}' adds node '{clash}', which the host already has"
+        )));
+    }
+
+    // Host edges that touched the call now touch its head (in) or its exit.
+    if doc.get("entry").and_then(Value::as_str) == Some(id) {
+        doc.insert("entry".into(), Value::String(head.clone()));
+    }
+    let mut host_edges = tables(doc, "edge");
+    for e in &mut host_edges {
+        if e.get("to").and_then(Value::as_str) == Some(id) {
+            e.insert("to".into(), Value::String(head.clone()));
+        }
+        if e.get("from").and_then(Value::as_str) == Some(id) {
+            e.insert("from".into(), Value::String(format!("{id}__{}", sub.exit)));
+        }
+    }
+    host_edges.extend(new_edges);
+
+    let mut nodes = take_array(doc, "node");
+    nodes.extend(added.into_iter().map(Value::Table));
+    doc.insert("node".into(), Value::Array(nodes));
+    doc.insert(
+        "edge".into(),
+        Value::Array(host_edges.into_iter().map(Value::Table).collect()),
+    );
+    Ok(())
+}
+
+/// Removes and returns the first `call` node of `doc`.
+fn take_call(doc: &mut Table) -> Option<Table> {
+    let nodes = doc.get_mut("node")?.as_array_mut()?;
+    let at = nodes
+        .iter()
+        .position(|n| n.as_table().and_then(kind_of) == Some("call"))?;
+    nodes.remove(at).try_into().ok()
+}
+
+fn transform(id: &str, value: Value) -> Table {
+    let mut t = Table::new();
+    t.insert("id".into(), Value::String(id.to_string()));
+    t.insert("kind".into(), Value::String("transform".into()));
+    t.insert("value".into(), value);
+    t
+}
+
+fn edge(from: &str, to: &str) -> Table {
+    let mut t = Table::new();
+    t.insert("from".into(), Value::String(from.to_string()));
+    t.insert("port".into(), Value::String("ok".into()));
+    t.insert("to".into(), Value::String(to.to_string()));
+    t.insert("kind".into(), Value::String("data".into()));
+    t
+}
+
+/// Resolves a graph name to its file. A name is a bare file stem: no separator, no leading dot.
+fn find(graph_dirs: &[PathBuf], graph: &str) -> Result<PathBuf, PiiError> {
+    if graph.is_empty() || graph.starts_with('.') || graph.contains(['/', '\\']) {
+        return Err(PiiError::Invalid(format!(
+            "graph.call.name: '{graph}' is not a graph name"
+        )));
+    }
+    graph_dirs
+        .iter()
+        .map(|d| d.join(format!("{graph}.toml")))
+        .find(|p| p.is_file())
+        .ok_or_else(|| {
+            PiiError::Invalid(format!(
+                "graph.call.not_found: graph '{graph}' is in none of the {} graph dirs",
+                graph_dirs.len()
+            ))
+        })
+}
+
+/// The capabilities a `caps` value names. Absent means none; a non-array is refused.
+fn caps_of(v: Option<&Value>) -> Result<CapKind, PiiError> {
+    let Some(v) = v else {
+        return Ok(CapKind::empty());
+    };
+    let items = v
+        .as_array()
+        .ok_or_else(|| PiiError::Invalid("'caps' must be an array".into()))?;
+    let mut kinds = CapKind::empty();
+    for item in items {
+        let s = item
+            .as_str()
+            .ok_or_else(|| PiiError::Invalid("caps entry must be a string".into()))?;
+        kinds |= CapKind::parse_kind(s)?;
+    }
+    Ok(kinds)
+}
+
+fn names(kinds: CapKind) -> String {
+    kinds.names().join(",")
+}
+
+fn required(call: &Table, id: &str, key: &str) -> Result<String, PiiError> {
+    call.get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| missing(id, key))
+}
+
+fn missing(id: &str, key: &str) -> PiiError {
+    PiiError::Invalid(format!("graph.call.missing: call '{id}' has no '{key}'"))
+}
+
+fn id_of(node: &Table) -> Option<String> {
+    node.get("id").and_then(Value::as_str).map(str::to_string)
+}
+
+fn first_id(doc: &Table) -> Option<String> {
+    doc.get("node")
+        .and_then(Value::as_array)
+        .and_then(|n| n.first())
+        .and_then(Value::as_table)
+        .and_then(id_of)
+}
+
+fn kind_of(node: &Table) -> Option<&str> {
+    node.get("kind").and_then(Value::as_str)
+}
+
+/// The tables under `key` in `doc`, cloned. Absent or non-table entries give none.
+fn tables(doc: &Table, key: &str) -> Vec<Table> {
+    doc.get(key)
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(|v| v.as_table().cloned()).collect())
+        .unwrap_or_default()
+}
+
+/// Takes the array under `key` out of `doc` (empty when absent); the caller puts it back.
+fn take_array(doc: &mut Table, key: &str) -> Vec<Value> {
+    match doc.remove(key) {
+        Some(Value::Array(items)) => items,
+        _ => Vec::new(),
+    }
+}

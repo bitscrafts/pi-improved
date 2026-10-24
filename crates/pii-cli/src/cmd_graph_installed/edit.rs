@@ -31,7 +31,12 @@ pub(super) fn drift_verdict(
     if rep_sha == sha {
         return String::from("same (the repo copy has the same sha256)");
     }
-    let rep = match check(&rep_src, &fragments_dir(repo, repo), reg) {
+    let rep = match check(
+        &rep_src,
+        &fragments_dir(repo, repo),
+        &[repo.to_path_buf()],
+        reg,
+    ) {
         Ok(c) => c.spec,
         Err(e) => return format!("repo copy does not load: {e}"),
     };
@@ -124,7 +129,15 @@ fn gate(
     let lint_fragments = file
         .parent()
         .map_or_else(|| PathBuf::from("fragments"), |p| p.join("fragments"));
-    if let Err(e) = check(new, &lint_fragments, &registry()) {
+    if let Err(e) = check(
+        new,
+        &lint_fragments,
+        &[file
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()],
+        &registry(),
+    ) {
         fail(
             "graph",
             format!("refused: {} fails lint: {e}", file.display()),
@@ -176,7 +189,12 @@ fn install(target: &Path, prev: &Path, tmp: &Path, new: &[u8]) -> Result<(), Str
 /// Re-reads the installed copy and lints it again. Returns its sha256 on success.
 fn relint_installed(target: &Path, installed: &Path, repo: &Path) -> Result<String, String> {
     let src = std::fs::read_to_string(target).map_err(|e| format!("re-read: {e}"))?;
-    check(&src, &fragments_dir(installed, repo), &registry())?;
+    check(
+        &src,
+        &fragments_dir(installed, repo),
+        &[installed.to_path_buf()],
+        &registry(),
+    )?;
     Ok(sha256_hex(src.as_bytes()))
 }
 

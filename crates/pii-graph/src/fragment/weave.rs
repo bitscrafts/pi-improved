@@ -1,6 +1,6 @@
 //! The weave: fragment nodes spliced into a host graph at its surfaces (spec 212).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use pii_abi::{NodeId, PiiError};
 use toml::Table;
@@ -9,6 +9,7 @@ use crate::node::NodeRegistry;
 use crate::spec::GraphSpec;
 use crate::toml_load::load_toml_with_registry;
 
+use super::call::expand_host;
 use super::check::Loaded;
 use super::splice::{
     check_unique, load_fragment_file, parse_attaches, splice_node_surfaces, splice_run_end,
@@ -81,15 +82,34 @@ pub fn weave(host_src: &str, fragments_dir: &Path, reg: &NodeRegistry) -> Result
 ///
 /// A graph that attaches fragments is woven, so its pins are verified and its fragments inlined. Any other graph
 /// loads exactly as [`load_toml_with_registry`] loads it. Every caller that runs or checks a graph goes through
-/// here, so "check passed" and "run started" cannot disagree.
+/// here, so "check passed" and "run started" cannot disagree. A graph with a `call` node has no graph directory
+/// here, so it is refused; use [`load_host_with_graphs`].
 ///
 /// # Errors
-/// The errors of [`weave`] for a graph with attaches, else those of [`load_toml_with_registry`].
+/// The errors of [`load_host_with_graphs`] with no graph directory.
 pub fn load_host(
     host_src: &str,
     fragments_dir: &Path,
     reg: &NodeRegistry,
 ) -> Result<Woven, PiiError> {
+    load_host_with_graphs(host_src, fragments_dir, &[], reg)
+}
+
+/// Loads a host graph, inlining its `call` nodes from `graph_dirs` first (spec 255).
+///
+/// The calls are expanded on the host table before anything else, so `pii graph check`, a run start and a resume
+/// all load the same expanded graph. A graph with no call is loaded from its own text, as [`load_host`] did.
+///
+/// # Errors
+/// The errors of [`expand_host`] for a bad call, and those of [`load_host`]'s other paths otherwise.
+pub fn load_host_with_graphs(
+    host_src: &str,
+    fragments_dir: &Path,
+    graph_dirs: &[PathBuf],
+    reg: &NodeRegistry,
+) -> Result<Woven, PiiError> {
+    let expanded = expand_host(host_src, graph_dirs, reg)?;
+    let host_src = expanded.as_deref().unwrap_or(host_src);
     let attaches = toml::from_str::<Table>(host_src).is_ok_and(|t| t.contains_key("attach"));
     if attaches {
         return weave(host_src, fragments_dir, reg);

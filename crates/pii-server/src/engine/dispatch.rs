@@ -362,7 +362,9 @@ fn graph_lint(engine: &Arc<Engine>, toml: &str) -> GraphLintResult {
     );
     let reg = crate::lint_registry(&engine.cfg.workspace, &runtime_dir);
     let fragments = engine.cfg.graph_dir.join("fragments");
-    match pii_graph::fragment::load_host(toml, &fragments, &reg).map(|w| w.spec) {
+    let dirs = crate::graph_search_dirs(&engine.cfg.graph_dir, &engine.cfg.store_path);
+    match pii_graph::fragment::load_host_with_graphs(toml, &fragments, &dirs, &reg).map(|w| w.spec)
+    {
         Ok(spec) => match pii_graph::validate(&spec, &reg) {
             Ok(warnings) => GraphLintResult {
                 ok: true,

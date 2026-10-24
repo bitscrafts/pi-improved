@@ -88,7 +88,12 @@ fn row_of(
     Some(Row {
         name: name.to_owned(),
         sha: sha256_hex(shown.as_bytes()),
-        checked: check(shown, &fragments_dir(inst_dir, repo), reg),
+        checked: check(
+            shown,
+            &fragments_dir(inst_dir, repo),
+            &[inst_dir.to_path_buf()],
+            reg,
+        ),
         armed,
         drift,
     })

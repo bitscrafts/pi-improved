@@ -483,7 +483,8 @@ impl Engine {
             // Spec 219: a graph that attaches fragments is woven here, before it is validated or run.
             let dir = path.parent().unwrap_or(&self.cfg.graph_dir);
             let fragments = dir.join("fragments");
-            return pii_graph::fragment::load_host(&src, &fragments, &self.reg).map(|w| w.spec);
+            return pii_graph::fragment::load_host_with_graphs(&src, &fragments, &dirs, &self.reg)
+                .map(|w| w.spec);
         }
         if name == "default" {
             return pii_graph::load_toml_with_registry(engine::registry::DEFAULT_TOML, &self.reg);

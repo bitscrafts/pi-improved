@@ -38,6 +38,11 @@ pub fn check_fragment(src: &str, reg: &NodeRegistry) -> Result<Fragment, PiiErro
             "fragment.nesting.forbidden: a fragment may not attach a fragment (depth 1)".into(),
         ));
     }
+    if super::call::has_call(&doc) {
+        return Err(PiiError::Invalid(
+            "fragment.nesting.forbidden: a fragment may not call a graph (spec 255)".into(),
+        ));
+    }
     let header = doc
         .get("fragment")
         .and_then(toml::Value::as_table)

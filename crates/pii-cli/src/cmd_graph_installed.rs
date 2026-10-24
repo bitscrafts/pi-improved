@@ -255,13 +255,18 @@ fn registry() -> NodeRegistry {
 }
 
 /// Weaves and checks a graph source the way `pii graph lint` does, then validates it.
-fn check(src: &str, fragments: &Path, reg: &NodeRegistry) -> Result<Checked, String> {
+fn check(
+    src: &str,
+    fragments: &Path,
+    graph_dirs: &[PathBuf],
+    reg: &NodeRegistry,
+) -> Result<Checked, String> {
     let (spec, woven) = if pii_graph::fragment::declares_fragment(src) {
         let fragment = pii_graph::fragment::check_fragment(src, reg).map_err(|e| e.to_string())?;
         (fragment.spec, Vec::new())
     } else {
-        let host =
-            pii_graph::fragment::load_host(src, fragments, reg).map_err(|e| e.to_string())?;
+        let host = pii_graph::fragment::load_host_with_graphs(src, fragments, graph_dirs, reg)
+            .map_err(|e| e.to_string())?;
         (host.spec, host.sequence)
     };
     pii_graph::validate(&spec, reg).map_err(|errors| errors.join("; "))?;

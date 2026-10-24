@@ -12,10 +12,12 @@
 //! The module is split by role (450-line gate): [`check`] decides what a
 //! fragment file may be; [`weave`] splices the checked fragments into a host.
 
+mod call;
+mod call_rewrite;
 mod check;
 mod shared;
 mod splice;
 mod weave;
 
 pub use check::{Fragment, check_fragment, declares_fragment, sha256_hex};
-pub use weave::{Inlined, Woven, load_host, weave};
+pub use weave::{Inlined, Woven, load_host, load_host_with_graphs, weave};

@@ -61,7 +61,7 @@ pub(super) fn run(o: &Opts) -> ExitCode {
     let dir = path.parent().unwrap_or(repo.as_path());
     let reg = registry();
     let sha = sha256_hex(src.as_bytes());
-    let checked = match check(&src, &fragments_dir(dir, &repo), &reg) {
+    let checked = match check(&src, &fragments_dir(dir, &repo), &[dir.to_path_buf()], &reg) {
         Ok(c) => c,
         Err(e) => return error(format!("{name} does not load: {e}")),
     };
