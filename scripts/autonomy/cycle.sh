@@ -29,6 +29,7 @@ touch "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" 2>/dev/null || tru
 #
 # env: PLAN, GATE=1|0 (default 1), DRY=1 prints the plan and stops before dispatching.
 . "$(dirname "$(readlink -f "$0")")/env.sh"   # the loop needs PATH set inside the script
+. "$(dirname "$(readlink -f "$0")")/gate-env.sh"   # spec 262: which step list a queue item's commit is gated with
 set -uo pipefail
 ROOT=/projects/pi-improved; cd "$ROOT" || exit 1
 STATEDIR=$ROOT/_tmp/autonomy; LOGD=$STATEDIR/logs
@@ -336,10 +337,13 @@ if [ -n "$GATE_ON" ]; then
     # gated item ended `gate-failed` with its tree never judged. 3600 s leaves the measured run room and still
     # bounds a hang: every step also kills itself after QG_STALL_SECS=1800 with no output.
     GATE_TIMEOUT=${GATE_TIMEOUT:-3600}
-    ( export PATH="/usr/local/cargo/bin:$PATH"; CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
+    # spec 262: the commit is gated with the FULL list, pinned on this command (env.sh exports the quick list for other callers).
+    GLIST=$(gate_steps_file); GCOUNT=$(gate_step_labels "$GLIST" | wc -l | tr -d ' ')
+    say "gate steps: $(gate_step_labels "$GLIST" | paste -sd, - | sed 's/,/, /g') ($GCOUNT steps)"
+    ( export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
     GTRC=$?
     if [ "$GTRC" -eq 0 ]; then
-      python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "fresh-gate PASS (phase marked: gated)"
+      python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "gate PASS ($GCOUNT steps) (phase marked: gated)"
       report loop.gate.verdict "item=$ITEM pass"
     elif [ "$GTRC" -eq 124 ]; then
       # A KILLED gate is not a verdict. Decided 2026-10-14 (DECISION-fresh-worktrees-and-a-resumable-gate-build.md
@@ -348,13 +352,13 @@ if [ -n "$GATE_ON" ]; then
       # are NOT incremented and the marker keeps the next cycle at VERIFY, so a slow host costs a retry — never a
       # worker re-dispatch (which would re-bill a paid run) and never a park dressed as a code failure.
       python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=worker-ok; gate-timeout after ${GATE_TIMEOUT}s — the gate was KILLED, not failed; retried at verify"
-      say "fresh-gate TIMED OUT after ${GATE_TIMEOUT}s — NOT MEASURED, not a failure; the item is retried at verify"
+      say "gate TIMED OUT after ${GATE_TIMEOUT}s — NOT MEASURED, not a failure; the item is retried at verify"
       echo "OUTCOME=gate-timeout ITEM=$ITEM SECS=$GATE_TIMEOUT"; exit 14
     else
       python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-failed
       GSTEP=$(grep -E 'failed steps:' "$LOG" 2>/dev/null | tail -1 | cut -c1-200)
       report loop.gate.verdict "item=$ITEM FAILED ${GSTEP:-failing step not named in the log}"
-      say "fresh-gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
+      say "gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
     fi
   fi
 fi
