@@ -129,3 +129,27 @@ not from `run trace`, which does not print those fields; then `pii skill edit` a
 hash, expecting the `skill.drift` event to carry `pinned <old> found <new>` with no `coder.spawned`. Nothing in it
 has been run: the deploy restarts lnx's daemon, and the operator switch in `_tmp/autonomy/control` remains
 `PAUSED`.
+
+### 2026-10-24 12:25Z — criterion 6 TAKEN on lnx; the item is done
+
+Deployed HEAD (`7211e238a94b`) to the lnx test daemon (health read back at that revision) and took the reading with
+`scripts/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. One reading serves
+this criterion and spec 227's criterion 7.
+
+- **The store's skill is put THROUGH the daemon, not behind its lock**: `added 69122b218677… lint-live-20261024t122427z
+  sha256=a3171ae3…5e54` with `via daemon` on the stderr line — the card's stop condition (`via store <path>`) did not fire.
+- **A coder run whose pin matches proceeds to spawn, and journals the pin** — run `r000000000324`,
+  `coder.spawned{pid 1780181, runtime=socket, container f35f32c7…, image localhost/pii-agent:1,
+  skill=lint-live-20261024t122427z, sha256=a3171ae3…5e54, session /work/.pii-sessions/spec-r000000000324.jsonl}`,
+  read from the daemon's own journal, never from `pii run trace` (its table does not print these fields).
+- **A deliberately edited skill document refuses** — `pii skill edit 69122b218677` (body 114 -> 122 bytes, `via
+  daemon`), then run `r000000000325` journalled `skill.drift{name=lint-live-20261024t122427z, pinned=a3171ae3…5e54,
+  found=02287ebf…b3f8}` and **no** `coder.spawned` at all.
+- **Control**: re-pinning the graph at `02287ebf…b3f8` (what the drift reported as `found`) made the same graph spawn
+  again in run `r000000000326`, journalling the new hash — so the refusal was the hash, not a document the edit had
+  broken.
+- Criteria 1-5 were unchanged by this reading and stay green as recorded on 2026-10-21.
+
+One defect seen in the same journal line and NOT part of this spec's criteria, filed separately: the socket runtime
+journals `image_digest` as `sha256:` with no hex after it, so `pii run trace` prints `image=-` for a container that
+did start with a named image (spec 232 R3 says the socket path fills the digest).

@@ -161,3 +161,25 @@ event line because `pii run trace` does not print them; after `pii skill edit`, 
 `skill.drift` with `pinned <old> found <new>` and **no** `coder.spawned`, and that `found` hash is the pin for the
 final passing run. Nothing in the card has been executed — it restarts lnx's daemon, and the operator switch is
 `PAUSED`.
+
+### 2026-10-24 12:25Z — criterion 7 TAKEN on lnx; every criterion is now measured
+
+HEAD `7211e238a94b` deployed to the lnx test daemon (`health.build.revision` read back equal to it), then
+`scripts/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. This is the same
+reading as spec 225's criterion 6, taken once and recorded in both.
+
+- `pii skill add --file …` answered `added 69122b218677… lint-live-20261024t122427z sha256=a3171ae3…5e54` with
+  **`via daemon`** — the document went into the daemon's own store through its RPC, not by opening redb under it.
+- `pii run start` on a coder graph pinning that skill (`skills = [{ name, sha256 }]`, image `localhost/pii-agent:1`,
+  `container_runtime = "socket"`) journalled **`coder.spawned` with `skill=lint-live-20261024t122427z
+  sha256=a3171ae3…5e54`** in run `r000000000324` (pid 1780181, container `f35f32c7…`). The check reads the daemon's
+  journal JSON: `pii run trace`'s table prints only pid/image/criteria and would have made this criterion
+  unobservable rather than false.
+- After `pii skill edit 69122b218677` (body 114 -> 122 bytes, `via daemon`), the SAME graph in run
+  `r000000000325` journalled **`skill.drift{pinned=a3171ae3…5e54, found=02287ebf…b3f8}`** and no `coder.spawned`.
+- Control: re-pinning at `02287ebf…b3f8` spawned again (`r000000000326`, journalling the new hash), which is what
+  makes the refusal evidence about the pin rather than about an unusable document.
+
+Criteria 1-6 stand as re-measured on 2026-10-21. The store's own registry registration
+(`engine/registry.rs:25` with `StoreSkills` + `with_runs_dir`) is what the live run exercised: the pin reached
+`coder.spawned`, which `NoSkills` could never have produced.
