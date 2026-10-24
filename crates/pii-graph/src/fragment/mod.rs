@@ -13,6 +13,7 @@
 //! fragment file may be; [`weave`] splices the checked fragments into a host.
 
 mod call;
+mod call_needs;
 mod call_rewrite;
 mod check;
 mod shared;

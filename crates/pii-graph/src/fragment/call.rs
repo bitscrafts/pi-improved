@@ -5,6 +5,11 @@
 //! the call's own input nodes and its `$.nodes.<m>` reads go to its own copies, so it never sees the host's input.
 //! Each input key the call maps is its own transform, `<call>__in__<key>`, chained after the head: a transform
 //! evaluates only a top-level `$.` string, so one node cannot hold a whole object of expressions.
+//!
+//! Spec 261: a sub-graph that declares `needs` reads its undeclared-but-unmapped keys from the host run's input, and
+//! [`super::call_needs`] refuses every other input or host-node read before the rewrite. The rewrite governs `$.`
+//! expressions only; Rust-side reads of `NodeInput.input` (the coder's `scope_root`, `heal_record`) see the host's
+//! run input regardless, and a node with no inbound Data edge gets the run input as its payload.
 
 use std::path::PathBuf;
 
@@ -14,14 +19,20 @@ use toml::{Table, Value};
 
 use crate::node::NodeRegistry;
 
+use super::call_needs::{self, Scope};
 use super::call_rewrite::{Refs, rewrite};
 use super::check::sha256_hex;
 
 /// The deepest chain of nested calls a load accepts (spec 255 R7).
 const MAX_DEPTH: usize = 4;
 
+/// The keys a `call` node may carry (spec 255, spec 261 R7).
+const CALL_KEYS: [&str; 6] = ["id", "kind", "graph", "sha256", "caps", "in"];
+
 /// A sub-graph read from its file, expanded, and checked against its call.
 struct Sub {
+    graph: String,
+    needs: Option<Vec<String>>,
     exit: String,
     entry: String,
     ids: Vec<String>,
@@ -106,6 +117,11 @@ fn expand_one(
 ) -> Result<(), PiiError> {
     let id = id_of(call)
         .ok_or_else(|| PiiError::Invalid("graph.call.missing: a call has no 'id'".into()))?;
+    if let Some(k) = call.keys().find(|k| !CALL_KEYS.contains(&k.as_str())) {
+        return Err(PiiError::Invalid(format!(
+            "graph.call.key: call '{id}' has unknown key '{k}'"
+        )));
+    }
     let graph = required(call, &id, "graph")?;
     let sha = required(call, &id, "sha256")?;
     let call_caps = caps_of(Some(call.get("caps").ok_or_else(|| missing(&id, "caps"))?))?;
@@ -139,6 +155,15 @@ fn expand_one(
     }
 
     let sub = load_sub(&id, &graph, &sha, call_caps, graph_dirs, reg, chain)?;
+    let scope = Scope {
+        call: &id,
+        graph: &sub.graph,
+        needs: sub.needs.as_deref(),
+        input: &input,
+        ids: &sub.ids,
+        nodes: &sub.nodes,
+    };
+    call_needs::check(&scope, doc, chain)?;
     splice(doc, &id, &input, sub)
 }
 
@@ -169,6 +194,7 @@ fn load_sub(
     })?;
     let mut doc: Table = toml::from_str(text)
         .map_err(|e| PiiError::Invalid(format!("graph toml parse: graph '{graph}': {e}")))?;
+    let needs = call_needs::parse(&doc, graph)?;
 
     chain.push(graph.to_string());
     let expanded = expand(&mut doc, graph_dirs, reg, chain, call_caps);
@@ -212,6 +238,8 @@ fn load_sub(
         }
     }
     Ok(Sub {
+        graph: graph.to_string(),
+        needs,
         exit,
         entry,
         ids,
@@ -224,11 +252,6 @@ fn load_sub(
 /// refuses an id the host already has.
 fn splice(doc: &mut Table, id: &str, input: &Table, sub: Sub) -> Result<(), PiiError> {
     let keys: Vec<String> = input.keys().cloned().collect();
-    let refs = Refs {
-        call: id,
-        keys: &keys,
-        nodes: &sub.ids,
-    };
     let head = format!("{id}__in");
 
     let mut added: Vec<Table> = vec![transform(&head, Value::Table(Table::new()))];
@@ -245,6 +268,14 @@ fn splice(doc: &mut Table, id: &str, input: &Table, sub: Sub) -> Result<(), PiiE
     for mut node in sub.nodes {
         let nid = id_of(&node).unwrap_or_default();
         node.insert("id".into(), Value::String(format!("{id}__{nid}")));
+        let arms = call_needs::arms(&sub.edges, &nid);
+        let refs = Refs {
+            call: id,
+            keys: &keys,
+            nodes: &sub.ids,
+            needs: sub.needs.as_deref(),
+            arms: &arms,
+        };
         for (k, v) in &mut node {
             if k != "id" {
                 rewrite(v, &refs);
@@ -382,7 +413,7 @@ fn missing(id: &str, key: &str) -> PiiError {
     PiiError::Invalid(format!("graph.call.missing: call '{id}' has no '{key}'"))
 }
 
-fn id_of(node: &Table) -> Option<String> {
+pub(super) fn id_of(node: &Table) -> Option<String> {
     node.get("id").and_then(Value::as_str).map(str::to_string)
 }
 
@@ -399,7 +430,7 @@ fn kind_of(node: &Table) -> Option<&str> {
 }
 
 /// The tables under `key` in `doc`, cloned. Absent or non-table entries give none.
-fn tables(doc: &Table, key: &str) -> Vec<Table> {
+pub(super) fn tables(doc: &Table, key: &str) -> Vec<Table> {
     doc.get(key)
         .and_then(Value::as_array)
         .map(|items| items.iter().filter_map(|v| v.as_table().cloned()).collect())
