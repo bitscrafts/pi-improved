@@ -15,7 +15,7 @@
 # Stop it explicitly:  echo PAUSED > _tmp/autonomy/control   (the loop exits, and the queue is then a named stop)
 set -uo pipefail
 export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
-export PII_WORKER="${PII_WORKER:-claude}"
+export PII_WORKER="${PII_WORKER:-pii}"
 export CLAUDE_MODEL="${CLAUDE_MODEL:-claude-haiku-5-5}"
 REPO="${PII_REPO:-/projects/pi-improved}"
 cd "$REPO" || exit 1

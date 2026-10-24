@@ -39,6 +39,11 @@ impl GraphNode for CoderNode {
             (Err(e), _) => return Ok(self.refuse(ctx, &agent, &model, &format!("{e}"))),
             _ => return Ok(self.refuse(ctx, &agent, &model, "no spec or no brief")),
         };
+        // Spec 248: the default session file belongs to this run, before anything plans or prepares it.
+        let spec = WorkerSpec {
+            run: Some(ctx.trace().run.as_str().to_owned()),
+            ..spec
+        };
         // Spec 215: every criterion resolves to its fixed argv before anything spawns; an unknown name refuses.
         let scope_root = input
             .input

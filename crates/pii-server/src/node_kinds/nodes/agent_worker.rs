@@ -27,14 +27,18 @@ pub fn pi_provider_key(provider: &str) -> Option<&'static str> {
         .map(|(_, k)| *k)
 }
 
-/// The session file a `pi` dispatch resumes, named by the same rule [`plan`] uses for the argv.
+/// The session file a `pi` dispatch writes: an explicit `session` as written, else one named for the spec and the run.
 pub fn pi_session_path(spec: &WorkerSpec) -> String {
     spec.session.clone().unwrap_or_else(|| {
         let stem = std::path::Path::new(&spec.spec)
             .file_stem()
             .and_then(|x| x.to_str())
             .unwrap_or("worker");
-        format!("{}/.pii-sessions/{stem}.jsonl", spec.workdir)
+        let run = spec
+            .run
+            .as_ref()
+            .map_or_else(String::new, |r| format!("-{r}"));
+        format!("{}/.pii-sessions/{stem}{run}.jsonl", spec.workdir)
     })
 }
 
@@ -200,6 +204,8 @@ pub struct WorkerSpec {
     pub sid: Option<String>,
     /// Session file (pi); defaults to one beside the spec's name under the workdir.
     pub session: Option<String>,
+    /// The run whose session this dispatch writes; scopes the default session file. Set by the coder node.
+    pub run: Option<String>,
     /// Spend cap in USD for one run (claude `--max-budget-usd`). `None` passes no flag. Always positive and finite.
     pub max_budget_usd: Option<f64>,
 }
@@ -244,11 +250,25 @@ fn session_handle(agent: Agent, cfg: &serde_json::Value) -> Result<Option<String
     }
 }
 
+/// The optional `run`: it names a file, so it must be `[A-Za-z0-9._-]+` and cannot leave `.pii-sessions/`.
+fn run_handle(cfg: &serde_json::Value) -> Result<Option<String>, PiiError> {
+    match opt(cfg, "run") {
+        Some(r) if r.is_empty() || r == "." || r == ".." || !r.bytes().all(is_run_byte) => Err(
+            PiiError::Invalid("worker node 'run' must match [A-Za-z0-9._-]+".to_owned()),
+        ),
+        run => Ok(run),
+    }
+}
+
+fn is_run_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')
+}
+
 impl WorkerSpec {
-    /// Reads `agent`, `model`, `spec`, `workdir` (and optional `sid`, `session`, `max_budget_usd`) from node data.
+    /// Reads `agent`, `model`, `spec`, `workdir` (and optional `sid`, `session`, `run`, `max_budget_usd`) from node data.
     ///
     /// # Errors
-    /// [`PiiError::Invalid`] on a missing field, an unknown agent, or a malformed claude `sid`.
+    /// [`PiiError::Invalid`] on a missing field, an unknown agent, a malformed claude `sid`, or a malformed `run`.
     pub fn from_cfg(cfg: &serde_json::Value) -> Result<Self, PiiError> {
         let agent = Agent::parse(&field(cfg, "agent")?)?;
         Ok(Self {
@@ -259,6 +279,7 @@ impl WorkerSpec {
             workdir: field(cfg, "workdir")?,
             sid: session_handle(agent, cfg)?,
             session: opt(cfg, "session"),
+            run: run_handle(cfg)?,
             max_budget_usd: budget(cfg)?,
         })
     }
@@ -331,17 +352,10 @@ pub fn plan(
     let s = |x: &str| x.to_owned();
     let argv = match spec.agent {
         Agent::Pi => {
-            let file = spec.session.clone().unwrap_or_else(|| {
-                let stem = std::path::Path::new(&spec.spec)
-                    .file_stem()
-                    .and_then(|x| x.to_str())
-                    .unwrap_or("worker");
-                format!("{}/.pii-sessions/{stem}.jsonl", spec.workdir)
-            });
             let mut v = vec![
                 s("pi"),
                 s("--session"),
-                file,
+                pi_session_path(spec),
                 s("--model"),
                 spec.model.clone(),
                 // JSON events name the provider and model per message, so the run's real route can be read.

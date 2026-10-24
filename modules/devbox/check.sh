@@ -56,4 +56,5 @@ grep -q 'command -v python3' "$C"; row "the smoke step asserts a bare python3 is
 # criteria run under a scrubbed env: rustup must find its toolchain from HOME alone
 grep -q 'ln -s /usr/local/cargo /root/.cargo' "$C" && grep -q 'ln -s /usr/local/rustup /root/.rustup' "$C"; row "cargo and rustup resolve from HOME alone (scrubbed criterion env)" $?
 grep -q 'devbox-target:/projects/pi-improved/target' "$Y"; row "the build volume is also at the project's default target dir" $?
+grep -q 'devbox-claude-sessions:/root/.claude/projects' "$Y"; row "claude's sessions persist across a container restart (resume-first)" $?
 exit $rc

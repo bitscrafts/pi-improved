@@ -67,10 +67,11 @@ fn the_default_session_path_follows_the_spec_stem() {
         "spec": "specs/207-the-coder-node-spawns-an-agent.md",
         "workdir": "/projects/x",
         "brief": "b",
+        "run": "r000000000042",
     });
     let spec = WorkerSpec::from_cfg(&cfg).unwrap();
     assert_eq!(
         pi_session_path(&spec),
-        "/projects/x/.pii-sessions/207-the-coder-node-spawns-an-agent.jsonl"
+        "/projects/x/.pii-sessions/207-the-coder-node-spawns-an-agent-r000000000042.jsonl"
     );
 }

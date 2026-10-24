@@ -239,7 +239,11 @@ else
   # WORKER SELECTION (user directive 2026-10-19: "dont implement it as the anthropic quota will exaust").
   # PII_WORKER=pi (default) dispatches to ollama-cloud through scripts/run-batchC-pi.sh — the Claude account is untouched.
   # PII_WORKER=claude is the opt-in escalation, and only when the window is known open.
-  if [ "${PII_WORKER:-claude}" = "claude" ]; then
+  # PII_WORKER=pii (the default since 2026-10-24, user directive "all our specs should be implemented by pii") runs the item as a
+  # coder-node graph through the pii daemon inside the devbox container (scripts/run-batchC-pii.sh; PII_AGENT picks claude or pi).
+  if [ "${PII_WORKER:-pii}" = "pii" ]; then
+    ( ALLOW_DIRTY=1 bash scripts/run-batchC-pii.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
+  elif [ "${PII_WORKER:-pii}" = "claude" ]; then
     ( ALLOW_DIRTY=1 bash scripts/run-batchC-claude.sh "$N" "${ARGS[@]}" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1
   else
     ( ALLOW_DIRTY=1 bash scripts/run-batchC-pi.sh "$N" "${BRIEFARG[@]}" ) >>"$LOG" 2>&1

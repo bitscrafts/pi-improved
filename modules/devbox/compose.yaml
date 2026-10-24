@@ -36,6 +36,9 @@ services:
       # The same volume at the project's DEFAULT target dir: criteria run under a scrubbed env with no CARGO_TARGET_DIR, so `cargo test`
       # there builds into <project>/target. Mounting the warm volume keeps that out of the host tree and avoids a 20-minute cold build.
       - devbox-target:/projects/pi-improved/target
+      # claude's session files. Without a volume they live in the container's writable layer and `compose down` wipes them, which makes
+      # resume-first (`claude --resume <sid>`) impossible after any restart. The login file below is bound INSIDE this directory's parent.
+      - devbox-claude-sessions:/root/.claude/projects
       # claude authenticates by login file (no ANTHROPIC_API_KEY exists on the host). Read-only: the container cannot rewrite it.
       - ${DEVBOX_CLAUDE_LOGIN:-/podman/assistants/hermes/root/.claude/.credentials.json}:/root/.claude/.credentials.json:ro
     environment:
@@ -51,3 +54,4 @@ services:
 volumes:
   devbox-cargo-registry: {}
   devbox-target: {}
+  devbox-claude-sessions: {}
