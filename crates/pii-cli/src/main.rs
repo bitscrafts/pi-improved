@@ -34,6 +34,7 @@ mod cmd_trace;
 mod cmd_tui;
 mod cmd_worker_exec;
 mod daemon_log;
+mod graph_dirs;
 mod ndjson;
 
 use crate::cli_util::fail;
@@ -70,10 +71,14 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
             }
         }
     } else {
-        let dir = std::path::Path::new(path)
-            .parent()
-            .map_or_else(|| "fragments".into(), |p| p.join("fragments"));
-        match pii_graph::fragment::load_host(&src, &dir, &reg) {
+        let file = std::path::Path::new(path);
+        let dirs = graph_dirs::dirs_for(file, graph_dirs::default_store().as_deref());
+        match pii_graph::fragment::load_host_with_graphs(
+            &src,
+            &graph_dirs::fragments_for(file),
+            &dirs,
+            &reg,
+        ) {
             Ok(woven) => (woven.spec, woven.sequence),
             Err(e) => {
                 fail("graph", &e);
@@ -127,8 +132,15 @@ fn cmd_graph_show(path: &str) -> ExitCode {
     // Same registry as lint/run so `show` accepts every graph those do,
     // including `agent`/`tool`/`route`/`gate` starter graphs.
     let reg = pii_server::lint_registry(std::path::Path::new("."), std::path::Path::new("."));
-    let spec = match pii_graph::load_toml_with_registry(&src, &reg) {
-        Ok(s) => s,
+    let file = std::path::Path::new(path);
+    let dirs = graph_dirs::dirs_for(file, graph_dirs::default_store().as_deref());
+    let spec = match pii_graph::fragment::load_host_with_graphs(
+        &src,
+        &graph_dirs::fragments_for(file),
+        &dirs,
+        &reg,
+    ) {
+        Ok(woven) => woven.spec,
         Err(e) => {
             fail("graph", &e);
             return ExitCode::from(2);

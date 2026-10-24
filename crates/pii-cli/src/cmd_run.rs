@@ -9,6 +9,7 @@ use pii_abi::{PiiError, RunId, Terminal};
 use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx, PathScope, TraceCtx};
 
 use crate::cli_util::{next_value, open_store, usage_error};
+use crate::graph_dirs;
 use crate::ndjson::NdjsonObserver;
 
 const RUN_USAGE: &str = "usage: pii graph run <file.toml> --db <path> [--run-id <id>] \
@@ -82,9 +83,6 @@ pub(crate) fn cmd_run(args: &mut std::env::ArgsOs) -> ExitCode {
         Ok(c) => c,
         Err(code) => return code,
     };
-    let Some(store) = open_store(&common.db) else {
-        return ExitCode::from(2);
-    };
     // F13 (opus review): use the server registry (built-ins + agent + tool)
     // so `graph run` accepts the same graphs `graph lint` accepts. The
     // builtin-only registry rejected starter graphs with unknown node kinds.
@@ -93,9 +91,13 @@ pub(crate) fn cmd_run(args: &mut std::env::ArgsOs) -> ExitCode {
         .parent()
         .map_or_else(|| PathBuf::from("."), std::path::Path::to_path_buf);
     let reg = pii_server::lint_registry(std::path::Path::new("."), &runtime_dir);
-    let spec = match load_and_validate(&file, &reg, common.no_validate) {
+    // Loaded before the store is opened, so a refused graph (a wrong pin, a missing call) creates no store file.
+    let spec = match load_and_validate(&file, &reg, common.no_validate, &common.db) {
         Ok(spec) => spec,
         Err(code) => return code,
+    };
+    let Some(store) = open_store(&common.db) else {
+        return ExitCode::from(2);
     };
     let run_id = match common.run_id.clone() {
         Some(id) => id,
@@ -151,18 +153,26 @@ pub(crate) fn cmd_resume(args: &mut std::env::ArgsOs) -> ExitCode {
     report(result)
 }
 
-/// Loads `file.toml` and validates it unless `--no-validate` (F5.6: exit 3).
+/// Loads `file.toml`, expanding its `call` nodes (spec 260), and validates it unless `--no-validate` (F5.6: exit 3).
 fn load_and_validate(
     file: &str,
     reg: &pii_graph::NodeRegistry,
     no_validate: bool,
+    db: &std::path::Path,
 ) -> Result<pii_graph::GraphSpec, ExitCode> {
     let src = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(e) => return Err(usage_error(&format!("read {file}: {e}"), RUN_USAGE)),
     };
-    let spec = match pii_graph::load_toml(&src) {
-        Ok(s) => s,
+    let path = std::path::Path::new(file);
+    let dirs = graph_dirs::dirs_for(path, Some(db));
+    let spec = match pii_graph::fragment::load_host_with_graphs(
+        &src,
+        &graph_dirs::fragments_for(path),
+        &dirs,
+        reg,
+    ) {
+        Ok(woven) => woven.spec,
         Err(e) => return Err(usage_error(&format!("{e}"), RUN_USAGE)),
     };
     if !no_validate && let Err(errors) = pii_graph::validate(&spec, reg) {
