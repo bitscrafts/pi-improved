@@ -32,6 +32,28 @@ pub(super) fn dechunk(mut rest: &[u8]) -> Result<Vec<u8>, String> {
     }
 }
 
+/// Splits an HTTP/1.1 reply into its status and body, decoding a chunked body.
+pub(super) fn parse_reply(raw: &[u8]) -> Result<(u16, Vec<u8>), String> {
+    let split = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .ok_or("the reply has no header end")?;
+    let head = String::from_utf8_lossy(raw.get(..split).unwrap_or_default()).to_ascii_lowercase();
+    let status = head
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|s| s.parse::<u16>().ok())
+        .ok_or_else(|| format!("the reply has no status line: {head:?}"))?;
+    let body = raw.get(split + 4..).unwrap_or_default();
+    let body = if head.contains("transfer-encoding: chunked") {
+        dechunk(body)?
+    } else {
+        body.to_vec()
+    };
+    Ok((status, body))
+}
+
 /// The runtime's own message from an error body, or the body itself, collapsed to one line and cut to 240 chars.
 pub(super) fn message(body: &str) -> String {
     let text = serde_json::from_str::<Value>(body)

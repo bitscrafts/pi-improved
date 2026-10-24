@@ -81,6 +81,8 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-server/tests/coder_starts_through_the_runtime_socket.rs",
     // Spec 241: the same sanctioned fake, extended to serve `logs`/`stop` and hang on demand.
     "crates/pii-server/tests/coder_container_bounded.rs",
+    // Spec 252: the same sanctioned fake again, serving the inspect reply whose digest the runtime must never journal as a bare prefix.
+    "crates/pii-server/tests/image_digest_is_never_a_bare_prefix.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

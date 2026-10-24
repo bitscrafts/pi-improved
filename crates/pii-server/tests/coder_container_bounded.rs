@@ -73,7 +73,7 @@ fn answer(line: &str, fake: &Fake, w: &mut World) -> (u16, Vec<u8>) {
     let json = |s: String| (200, s.into_bytes());
     if line.starts_with("GET /images/") && line.ends_with("/json HTTP/1.1") {
         return json(String::from(
-            "{\"Digest\":\"sha256:cafebabe00000000000000000000000000000000\"}",
+            "{\"Digest\":\"sha256:cafebabe00000000000000000000000000000000000000000000000000000000\"}",
         ));
     }
     if line == "POST /containers/create HTTP/1.1" {
