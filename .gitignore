@@ -14,3 +14,8 @@ lint-queue.redb
 
 # graphify code knowledge graph (local, regenerate with: graphify extract . --code-only)
 graphify-out/
+
+# python bytecode from the autonomy scripts: a stray .pyc made every cycle report
+# "tree: 1 changed paths before dispatch" and ask the operator about a leftover that was not one
+__pycache__/
+*.pyc
