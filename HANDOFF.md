@@ -19,6 +19,22 @@
   same graph refusing `skill.drift` after the document is edited. Measured this tick: lnx is reachable over
   ssh and has podman, its daemon is healthy at revision **8d77adff8016** (14 commits behind HEAD) — so the
   reading is now measurable from here without a person, which is what the next card is for.
+- **Then it was measured, and the queue is empty again — honestly this time.** HEAD `7211e238a94b` was deployed to
+  the lnx test daemon (`health.build.revision` read back equal) and `scripts/orch-225-227-live-skill-pin.sh` took the
+  one shared reading for A94 c6 / A95 c7: `pii skill add` answered `added 69122b21… sha256=a3171ae3…` **via daemon**;
+  run `r000000000324` journalled `coder.spawned{pid 1780181, runtime=socket, container f35f32c7…,
+  skill=lint-live-20261024t122427z, sha256=a3171ae3…}`; after `pii skill edit` (body 114 -> 122) run
+  `r000000000325` journalled `skill.drift{pinned a3171ae3, found 02287ebf}` with **no** spawn; the control —
+  re-pinning at `02287ebf` — spawned again in `r000000000326`. Evidence `_tmp/orch-225-227-live-20261024T122427Z/`.
+  Both rows are `done`; the closure is in specs 225 and 227, committed with the harness (`9b42bd2`).
+- **A defect the reading exposed, filed as the next item instead of being mentioned and dropped**: the same
+  `coder.spawned` line carries `"image_digest":"sha256:"` — a prefix with no hex — because the socket path reads
+  `/Digest` out of podman's **compat** inspect, and that reply has no `Digest` key at all (measured: only
+  `RepoDigests` holds one; `Id` holds the image id). So `pii run trace` prints `image=-` for a container that did
+  start, and the CLI runtime in the same crate refuses this state where the socket path hides it. Spec
+  `252-a-container-digest-is-never-a-bare-prefix.md` + row A117 (6 criteria, diffed against the row's verify
+  programmatically: 6 commands, 7 columns) — authored from the measured reply, tests-first, with the live re-read in
+  its Closure because this host has no podman.
 
 ## 2026-10-24 06:20Z — spec 250 verified by hand and mutated; the queue is drained, not broken
 
