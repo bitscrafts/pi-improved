@@ -1,0 +1,21 @@
+# Spec 272: the documentation step, a CALLED graph. `spec.toml` calls it after `verify` passes, and re-verifies after it,
+# so a docs step that breaks the criteria is refused. It holds no budget, session or criteria: the budget stays the host's
+# and the verdict is the host's `reverify`. No absolute path and no credential lives in this file.
+name = "docs"
+entry = "docs"
+exit = "docs"
+needs = ["agent", "model", "provider", "spec", "workdir", "brief"]
+caps = ["spawn", "proc"]
+
+[[node]]
+id = "docs"
+kind = "coder"
+caps = ["spawn", "proc"]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "$.input.brief"
+timeout_ms = 1200000
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]

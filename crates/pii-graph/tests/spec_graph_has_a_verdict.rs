@@ -13,8 +13,9 @@ use std::sync::Arc;
 
 use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
 use pii_core::{CapKind, Ctx};
+use pii_graph::fragment::load_host_with_graphs;
 use pii_graph::node::{GraphNode, NodeFactory, NodeRegistry};
-use pii_graph::{GraphSpec, load_toml_with_registry, validate};
+use pii_graph::{GraphSpec, validate};
 
 /// Stand-in for a kind the graph names: the given ports, no effects, and it never runs.
 struct Stub {
@@ -61,13 +62,25 @@ fn registry() -> NodeRegistry {
     reg
 }
 
+/// The repo's `graphs/` directory: where the `docs` graph that `spec.toml` calls lives (spec 272).
+fn graphs_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../graphs")
+}
+
 fn tracked_source() -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../graphs/spec.toml");
     std::fs::read_to_string(path).unwrap()
 }
 
 fn loaded() -> GraphSpec {
-    load_toml_with_registry(&tracked_source(), &registry()).unwrap()
+    load_host_with_graphs(
+        &tracked_source(),
+        &graphs_dir(),
+        &[graphs_dir()],
+        &registry(),
+    )
+    .unwrap()
+    .spec
 }
 
 /// Whether the graph has an edge `from.port -> to`.
@@ -91,7 +104,19 @@ fn has_absolute_path(doc: &toml::Value) -> bool {
 fn the_graph_routes_ok_through_verify_to_done() {
     let spec = loaded();
     assert!(has_edge(&spec, "code", "ok", "verify"), "code.ok -> verify");
-    assert!(has_edge(&spec, "verify", "ok", "done"), "verify.ok -> done");
+    // Spec 272 put the documentation step between the verdict and `done`, and judges again after it.
+    assert!(
+        !has_edge(&spec, "verify", "ok", "done"),
+        "verify.ok must not skip the docs step"
+    );
+    assert!(
+        has_edge(&spec, "reverify", "ok", "done"),
+        "reverify.ok -> done"
+    );
+    assert!(
+        has_edge(&spec, "reverify", "fail", "unverified"),
+        "reverify.fail -> unverified"
+    );
     assert!(
         has_edge(&spec, "verify", "fail", "unverified"),
         "verify.fail -> unverified"
@@ -125,7 +150,9 @@ fn a_failed_verdict_cannot_reach_done() {
 #[test]
 fn the_graph_still_validates_with_no_absolute_path() {
     let src = tracked_source();
-    let spec = load_toml_with_registry(&src, &registry()).unwrap();
+    let spec = load_host_with_graphs(&src, &graphs_dir(), &[graphs_dir()], &registry())
+        .unwrap()
+        .spec;
     assert!(validate(&spec, &registry()).is_ok(), "no validation errors");
     let doc: toml::Value = toml::from_str(&src).unwrap();
     assert!(

@@ -13,8 +13,9 @@ use std::sync::Arc;
 
 use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
 use pii_core::{CapKind, Ctx};
+use pii_graph::fragment::load_host_with_graphs;
 use pii_graph::node::{GraphNode, NodeFactory, NodeRegistry};
-use pii_graph::{load_toml_with_registry, validate};
+use pii_graph::validate;
 
 /// Stand-in for the coder kind: ports `ok` and `err`, and it never runs.
 struct StubCoder;
@@ -73,6 +74,11 @@ fn registry() -> NodeRegistry {
     reg
 }
 
+/// The repo's `graphs/` directory: where the `docs` graph that `spec.toml` calls lives (spec 272).
+fn graphs_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../graphs")
+}
+
 fn tracked_source() -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../graphs/spec.toml");
     std::fs::read_to_string(path).unwrap()
@@ -95,7 +101,9 @@ fn parsed(src: &str) -> toml::Value {
 #[test]
 fn spec_graph_loads_validates_and_has_no_absolute_path() {
     let src = tracked_source();
-    let spec = load_toml_with_registry(&src, &registry()).unwrap();
+    let spec = load_host_with_graphs(&src, &graphs_dir(), &[graphs_dir()], &registry())
+        .unwrap()
+        .spec;
     // Warnings are allowed (the `done` and `refused` transforms declare the default ports); errors are not.
     validate(&spec, &registry()).expect("no validation errors");
     assert!(

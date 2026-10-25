@@ -27,20 +27,44 @@ spec = "$.input.spec"
 base = "$.input.base"
 workdir = "$.input.workdir"
 
+# Spec 272: after `verify` passes, the docs graph documents the work (its own session, its own brief), then `reverify`
+# judges the same criteria again: a docs step that broke them is refused. The pin is the digest of graphs/docs.toml.
+[[node]]
+id = "docs"
+kind = "call"
+graph = "docs"
+sha256 = "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980"
+caps = ["spawn", "proc"]
+
+[node.in]
+brief = "$.input.docs_brief"
+
+[[node]]
+id = "reverify"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
 [[node]]
 id = "done"
 kind = "transform"
 value = "done"
 
+# Spec 272: `unverified` and `refused` take a route from two exclusive ports (verify or reverify; code or docs), so their
+# join is `any`: whichever arm arrives ends the run.
 [[node]]
 id = "unverified"
 kind = "refuse"
+join = "any"
 hook = "judge"
 reason = "the spec's criteria failed"
 
 [[node]]
 id = "refused"
 kind = "refuse"
+join = "any"
 hook = "coder"
 reason = "the agent failed"
 
@@ -53,7 +77,31 @@ kind = "data"
 [[edge]]
 from = "verify"
 port = "ok"
+to = "docs"
+kind = "data"
+
+[[edge]]
+from = "docs"
+port = "ok"
+to = "reverify"
+kind = "data"
+
+[[edge]]
+from = "docs"
+port = "err"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "reverify"
+port = "ok"
 to = "done"
+kind = "data"
+
+[[edge]]
+from = "reverify"
+port = "fail"
+to = "unverified"
 kind = "data"
 
 [[edge]]
