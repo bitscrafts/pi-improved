@@ -47,3 +47,14 @@ Reading `crates/pii-server/build.rs:43-45`, the script tells cargo to rerun only
 ## Follow-ups (not this spec)
 1. A `-dirty` suffix that is current: the script reruns only on the watched paths, so an edit to a tracked file leaves it stale in both directions.
 2. The deploy check and the freshness rule reading the label: until the label is trusted they verify by content (a string only the new commit adds).
+
+## Closure (2026-10-25) — NOT IMPLEMENTED: the premise was measured false
+
+The spec's own guardrail said: "If the first test passes on today's `build.rs`, STOP and report it." It did.
+
+- **The worker's test on the UNCHANGED `build.rs`:** 5 of 6 pass, including `an_empty_commit_changes_the_baked_revision` (the case this spec was written around). The empty-commit scenario IS followed today.
+- **Measured in the devbox container:** `CARGO_TARGET_DIR=/work-target`; its build-script output `/work-target/debug/build/pii-server-949f31ffae473db6/output` (16:29) says `PII_GIT_REV=b8358f7519f5`, the HEAD that build was made at. The label never lied.
+- **What lied was the binary choice.** The daemon's binary (`_tmp/devbox-test/bin/pii`, sha `fd74ad2c716d`) is byte-identical to the stale host-side `target/debug/pii` (15:38), carrying `222f4debf542`; the freshly built `/work-target/debug/pii` (sha `044152aa9cc1`) carries `b8358f7519f5`. `daemon.sh refresh` built one file and installed another.
+- **Why the string check in the first note misled:** the strings `budget_exhausted` and `graph.call` appear in the stale file too, because that file was built at a commit that already had them. A string is evidence of a feature, not of which build is installed; the sha is.
+- **Superseded by spec 279** (the refresh installs what it built). The worker's test file for this spec was moved to `/projects/_trash` and no source was changed; the stale-`-dirty`-suffix remark in this spec's follow-ups still stands as its own open defect.
+- Cost of the run that found it: claude/haiku, 55 turns, 647 s, `claude_cost_usd` 0.070610 (the first cost the refreshed daemon journalled).
