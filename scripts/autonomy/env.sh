@@ -46,3 +46,9 @@ export QG_SKIP_COVERAGE
 # clippy and build — minutes. Set GATE_STEPS=gate-steps.txt deliberately when a full run is intended.
 : "${GATE_STEPS:=gate-steps-quick.txt}"
 export GATE_STEPS
+
+# THE DIRECTORIES THE GATE WRITES TO, stated once (spec 273). The disk floor reads each one's REAL volume: the two gate
+# target dirs, the llvm-cov-target links inside them (symlinks into /tmp/gate-cache on the host root, a different volume
+# from /projects), and /tmp. Measured 2026-10-25: a /projects-only check never saw those tens of GB.
+: "${GATE_WRITE_DIRS:=/projects/pi-improved/_tmp/gate-target /projects/pi-improved/_tmp/gate-target/llvm-cov-target /projects/pi-improved/_tmp/tools-gate /projects/pi-improved/_tmp/tools-gate/llvm-cov-target /tmp}"
+export GATE_WRITE_DIRS

@@ -321,11 +321,14 @@ report loop.verify "item=$ITEM ok"
 # were committed with no fresh-gate under a message that said "gate green" (075fee9). Fail toward gating.
 case "${GATE:-1}" in 0|-|none) GATE_ON= ;; *) GATE_ON=1 ;; esac
 if [ -n "$GATE_ON" ]; then
-  FREE=$(df -m --output=avail /projects | tail -1 | tr -d ' ')
-  if [ "$FREE" -lt 20000 ]; then
+  # spec 273: the floor checks every volume the gate writes to (GATE_WRITE_DIRS), not /projects alone
+  DISK=$(bash scripts/autonomy/disk-floor.sh 20000 /projects $GATE_WRITE_DIRS); DRC=$?
+  if [ "$DRC" -ne 0 ]; then
+    LOWL=$(echo "$DISK" | grep -m1 -E '^(LOW|MISSING): ')
+    FREE=$(echo "$LOWL" | sed -n 's/^LOW: .* free=\([0-9]*\)M .*/\1/p')
     # A skipped gate must NOT fall through to the commit: an ungated commit is worse than a parked item.
     python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-skipped-disk
-    say "gate SKIPPED: only ${FREE}M free (needs 20000M) — the item is NOT committed without a gate"
+    say "gate SKIPPED: $LOWL (needs 20000M free) — the item is NOT committed without a gate"
     echo "OUTCOME=gate-skipped-disk ITEM=$ITEM FREE_MB=$FREE"
     bash scripts/autonomy/control.sh ask "disk is down to ${FREE}M: the gate cannot run, so $ITEM cannot be committed. Reclaim with cargo clean (an operator action here)?" >/dev/null 2>&1 || true
     exit 13
