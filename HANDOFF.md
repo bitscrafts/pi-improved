@@ -1,5 +1,44 @@
 # Pii — Session Handoff
 
+## 2026-10-25 18:55Z — 276 verified by hand and mutated; the queue refilled with a measured hole in its own safety net
+
+State: HEAD `1a32516` · lock free (`flock -n _tmp/autonomy/lock` rc 0) · no cycle in flight · watchdog alive
+(pid 811768, 4d23h) · control `RUNNING at 2026-10-23T02:58:54Z` · selftest **`RESULT: 40 passed, 0 failed` /
+`VERDICT: ALL MECHANISMS PASS`** · queue: A142 dispatchable, everything else done/skipped/revoked (the three
+non-done rows are A65 skipped, A71 skipped, A79 revoked).
+
+- **A141 / spec 276 verified independently of the worker's report** on the tree it was committed at
+  (`b8358f7`, `git status --porcelain` empty before and after): all **ten** Exit Criteria rc=0
+  (`_tmp/autonomy/verify-276.sh`, log `_tmp/autonomy/logs/verify-276-run.log`), `coder_charges_run_budget`
+  **9 passed**, the three neighbour lanes green, clippy `-D warnings` clean, `lint-files` green.
+- **Mutation, by the orchestrator**: `start_gate`'s `remaining(...) == 0` clause replaced by a gate that never
+  refuses → `an_exhausted_budget_refuses_the_next_coder_and_spawns_nothing` and
+  `start_gate_refuses_only_an_empty_budget` red (`7 passed; 2 failed`, rc 101), controls green; restored,
+  `touch`ed (never `cp -p`), re-run **9 passed rc 0**, `sha256 e9f4525f…4034` identical before and after
+  (`_tmp/autonomy/logs/mutate-276.log`). Closure written into spec 276 and committed alone (`3ee34dc`).
+- **The queue was empty and the ranked list of 059 §4 is consumed** (F2/F3/F4/F5/F6/F7/F8/F10 all have landed
+  specs; `grep env::temp_dir() crates --include=*.rs` is 0, `_docs/01-overview/001-pii-vision.md` carries no
+  `~14 crates`/`2,000-line`). One 268 follow-up turned out stale — the unlisted check already runs before the
+  `done-satisfied` exit (`cycle.sh:384` precedes the `git diff --cached --quiet` branch).
+- **So the next item came from a measurement of the loop's own safety net, and it is a defect in both
+  directions.** `scripts/autonomy/unlisted-changes.sh` parses the human-readable `git status --porcelain`:
+  a rename (`R  old.rs -> new.rs`) is skipped by its `?[MD]` case — measured in a scratch repo
+  (`_tmp/diag-unlisted2-522752`): with rows listing only another file, the rename passes **rc 0, silent** — and
+  a path git quotes (`"with space.rs"`) never matches the row's own entry — measured: the file is listed and the
+  check still refuses, **rc 1**. The first direction lands a commit whose HEAD may not build (the A131/A132 and
+  A136/A141 class); the second parks a correct worker. Filed as spec
+  `277-the-unlisted-check-reads-what-git-prints.md` + row A142 (11 criteria, 7 columns, every criterion `;`-free,
+  the row's verify column generated from the spec's `## Exit Criteria` and counted programmatically — 11
+  commands). The fix is `git status -z` and the produced path of a rename, with the near-miss control that a
+  LISTED rename must stay rc 0.
+- **Still open, and only the operator can close it:** `graphs/spec.toml` declares no `[limits] max_micro_usd`,
+  so the shipped composed graph is unbounded even though spec 276 now makes such a number real (276 Follow-up 1).
+  Also unclaimed: a claude run resumed after a crash still mints a new session id (`agent_worker.rs:351`); nothing
+  reads the journalled `claude_session_id` back — the crash-resume policy is decision 3 in
+  `_docs/05-operations/agent-management-findings-2026-10-23.md`.
+- **Next tick**: A142 is the only dispatchable row; `cycle.sh` was started detached at the end of this tick and,
+  when it commits, the next tick verifies A142's own criteria and reddens the rename parse with its own mutation.
+
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
 ## 2026-10-25 07:20Z — the gate failed on a correct tree: a control racing `setsid`
