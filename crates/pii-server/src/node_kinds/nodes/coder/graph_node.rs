@@ -10,6 +10,7 @@ use super::super::agent_worker::{
     CriterionRun, Verdict, WorkerSpec, decide, plan, reported_routes,
 };
 use super::super::coder::CRITERION_TIMEOUT;
+use super::super::coder::budget;
 use super::super::coder::input_cfg;
 use super::super::coder::no_change::no_change_refusal;
 use super::super::coder::prompt;
@@ -17,6 +18,7 @@ use super::super::coder::redact;
 use super::super::coder::report::RunReport;
 use super::super::coder::session_path::with_node_session;
 use super::super::coder::tree;
+use super::super::coder::{cap_usd, charge_run, start_gate};
 use super::super::coder_container::CONTAINER_WORKDIR;
 use super::super::coder_runtime::{Launch, Refusal};
 use super::super::coder_skills::{self, SkillRefusal};
@@ -45,9 +47,15 @@ impl GraphNode for CoderNode {
             (Err(e), _) => return Ok(self.refuse(ctx, &agent, &model, &format!("{e}"))),
             _ => return Ok(self.refuse(ctx, &agent, &model, "no spec or no brief")),
         };
+        // Spec 276 R1: a run whose budget is spent refuses before anything spawns.
+        if let Some(reason) = start_gate(ctx) {
+            return Ok(self.refuse(ctx, &agent, &model, &reason));
+        }
         // Spec 248: the default session file belongs to this run, before anything plans or prepares it.
+        // Spec 276 R2: and a claude run is capped by what the run has left.
         let base = WorkerSpec {
             run: Some(ctx.trace().run.as_str().to_owned()),
+            max_budget_usd: cap_usd(ctx, spec.max_budget_usd),
             ..spec
         };
         // Spec 271: and to this node, so two nodes of one run never resume one conversation.
@@ -163,6 +171,8 @@ impl GraphNode for CoderNode {
         let secrets = redact::credential_values(&self.pass_env(&texts(cfg, "env_pass")));
         let output = redact::redact(&output, &secrets);
         let stderr = redact::redact(&stderr, &secrets);
+        // Spec 276 R3: a claude run charges the run's budget with the cost it reported, once it has ended.
+        let budget_exhausted = spec.agent_name() == "claude" && charge_run(ctx, &output);
 
         // The criteria decide. The first failing criterion stops the run and names itself in the verdict.
         // Its output tail is kept for the journal: a bare rc says the check failed, not why.
@@ -196,7 +206,8 @@ impl GraphNode for CoderNode {
             agent_output: &output,
             agent_stderr: &stderr,
         };
-        self.emit_exited(ctx, pid, code, dur_ms, stop, &report);
+        let exited = report.exited_event(pid, code, dur_ms, stop);
+        self.observe(ctx, &budget::exited_field(exited, budget_exhausted));
 
         // No criteria configured: the verdict is deferred to a downstream `judge` node (spec 208). A clean exit
         // hands on; a non-zero exit goes to `err`, so the caller records it rather than the run failing outright.

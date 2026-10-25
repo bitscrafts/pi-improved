@@ -30,6 +30,7 @@ use super::coder_runtime::{Launch, Refusal, Spawn, elapsed_ms};
 use super::coder_skills::{NoSkills, Rendered, SkillSource};
 use super::criteria::{self, Table};
 
+pub mod budget;
 mod graph_node;
 mod helpers;
 mod input_cfg;
@@ -42,6 +43,7 @@ pub mod report;
 pub mod session_path;
 pub mod tree;
 
+pub use self::budget::{cap_usd, charge_run, start_gate};
 use self::helpers::{argv_digest, journal, refused_port, skill_hashes, skill_names, text, texts};
 pub use self::helpers::{session_of, stop_reason};
 pub use self::paths::{agent_bin_dir, agent_binaries, prepare_pi_session, run_programs};
