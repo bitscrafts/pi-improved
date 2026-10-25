@@ -6,7 +6,7 @@ use pii_core::Ctx;
 
 /// Build the evaluation context object for a node:
 /// `{ "input": ..., "payload": ..., "nodes": ... }`.
-fn eval_ctx(input: &NodeInput) -> serde_json::Value {
+pub(crate) fn eval_ctx(input: &NodeInput) -> serde_json::Value {
     serde_json::json!({
         "input": input.input,
         "payload": input.payload,
