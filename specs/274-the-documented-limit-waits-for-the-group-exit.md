@@ -103,4 +103,21 @@ class of failure this repo has recorded: a check certifying a defect that does n
    operator decision — not decided here.
 
 ## Closure
-(open)
+**Closed 2026-10-25 by the orchestrator** (the fixture repair was made in the tick that measured the gate failure;
+the tree it edits is a test file, `src/` untouched).
+
+- **All 8 exit criteria rc=0** on the committed content (`7249f6d6…`): the file `4 passed; 0 failed`; the
+  single-test loop **20/20** while the previous cycle's gate was still loading the box; the killing control
+  `1 passed`; `git diff --quiet crates/pii-core/src/childproc.rs`; 177 lines; `pii-core --lib` green; `fmt` clean;
+  `clippy -p pii-core --all-targets` no `error|warning` (one `unused_mut` was fixed, not allowed).
+- **Mutation m1** (the `wait_for_own_session` assert deleted, every assertion kept): the 20-iteration loop red
+  **1 of 20**; file restored from a copy, `touch`ed, sha256 `7249f6d6…` before and after, then the loop and the
+  file green again. Note the honest shape of that number: the race is load-dependent (4/8 in a direct
+  reproduction, 3/3 immediately after the gate's own failure), so a single 20-run sample can red once — it still
+  proves the wait is what the verdict rests on.
+- **The gate that started this was re-read**: `FAIL: test (lib/bins/tests)` was its ONLY failing step;
+  `coverage-floor: total 82.89% >= 74.00%`, `lint-files`, `lint-scratch`, `lint-observability`,
+  `reachability-check`, `deps-check`, `net-check`, `doc-drift-check`, `devbox-check` all PASS.
+- **What this did NOT do**: it did not commit specs 272/273's work (rows A137/A138 stay `needs-review` with their
+  sessions); their commit script is re-run against the fixed tree. And it does not decide follow-up 2.
+
