@@ -20,6 +20,7 @@ pub mod fragment;
 pub mod journal;
 pub mod node;
 pub mod nodes;
+pub mod nodes_require;
 pub mod render;
 pub mod run;
 pub mod run_helpers;

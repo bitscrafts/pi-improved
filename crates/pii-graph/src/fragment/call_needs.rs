@@ -108,6 +108,81 @@ pub(super) fn arms(edges: &[Table], node: &str) -> Vec<String> {
     if srcs.len() > 1 { srcs } else { Vec::new() }
 }
 
+/// A data edge from `from` on its `ok` port to `to`.
+pub(super) fn edge(from: &str, to: &str) -> Table {
+    let mut t = Table::new();
+    t.insert("from".into(), Value::String(from.to_string()));
+    t.insert("port".into(), Value::String("ok".into()));
+    t.insert("to".into(), Value::String(to.to_string()));
+    t.insert("kind".into(), Value::String("data".into()));
+    t
+}
+
+/// The `require` node `<id>__need` of a call whose sub-graph declares `needs` (spec 267 R2): one key per declared key.
+/// A key the call's `in` maps (`mapped`) reads its `<id>__in__<key>` transform; any other key reads the host run's input.
+pub(super) fn require_node(id: &str, graph: &str, needs: &[String], mapped: &[String]) -> Table {
+    let keys: Table = needs
+        .iter()
+        .map(|key| {
+            let expr = if mapped.contains(key) {
+                format!("$.nodes.{id}__in__{key}")
+            } else {
+                format!("$.input.{key}")
+            };
+            (key.clone(), Value::String(expr))
+        })
+        .collect();
+    let mut t = Table::new();
+    t.insert("id".into(), Value::String(format!("{id}__need")));
+    t.insert("kind".into(), Value::String("require".into()));
+    t.insert("call".into(), Value::String(id.into()));
+    t.insert("graph".into(), Value::String(graph.into()));
+    t.insert("keys".into(), Value::Table(keys));
+    t
+}
+
+/// The call's input chain (spec 255, spec 267 R2): the `<id>__in` head, one `<id>__in__<key>` transform per mapped
+/// key, then, when the sub-graph declares `needs`, the `<id>__need` node, then the sub-graph `entry`. Returns the nodes
+/// and the edges to add.
+pub(super) fn chain(
+    id: &str,
+    graph: &str,
+    needs: Option<&[String]>,
+    input: &Table,
+    entry: &str,
+) -> (Vec<Table>, Vec<Table>) {
+    let head = format!("{id}__in");
+    let mut added = vec![transform(&head, Value::Table(Table::new()))];
+    let mut edges = Vec::new();
+    let mut prev = head;
+    for (key, value) in input {
+        let key_id = format!("{id}__in__{key}");
+        added.push(transform(&key_id, value.clone()));
+        edges.push(edge(&prev, &key_id));
+        prev = key_id;
+    }
+    match needs {
+        None => edges.push(edge(&prev, entry)),
+        Some(needs) => {
+            let mapped: Vec<String> = input.keys().cloned().collect();
+            let need = format!("{id}__need");
+            added.push(require_node(id, graph, needs, &mapped));
+            edges.push(edge(&prev, &need));
+            edges.push(edge(&need, entry));
+        }
+    }
+    (added, edges)
+}
+
+/// A transform node `id` that holds `value`.
+fn transform(id: &str, value: Value) -> Table {
+    let mut t = Table::new();
+    t.insert("id".into(), Value::String(id.to_string()));
+    t.insert("kind".into(), Value::String("transform".into()));
+    t.insert("value".into(), value);
+    t
+}
+
 /// The `graph.call.undeclared` refusal for a read of `read` in node `nid` of the sub-graph of `scope`.
 fn refusal(scope: &Scope<'_>, nid: &str, read: &str, declared: &[String]) -> PiiError {
     let maps: Vec<&str> = scope.input.keys().map(String::as_str).collect();

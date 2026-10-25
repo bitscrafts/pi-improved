@@ -253,17 +253,9 @@ fn load_sub(
 fn splice(doc: &mut Table, id: &str, input: &Table, sub: Sub) -> Result<(), PiiError> {
     let keys: Vec<String> = input.keys().cloned().collect();
     let head = format!("{id}__in");
-
-    let mut added: Vec<Table> = vec![transform(&head, Value::Table(Table::new()))];
-    let mut prev = head.clone();
-    let mut new_edges: Vec<Table> = Vec::new();
-    for (key, value) in input {
-        let key_id = format!("{id}__in__{key}");
-        added.push(transform(&key_id, value.clone()));
-        new_edges.push(edge(&prev, &key_id));
-        prev = key_id;
-    }
-    new_edges.push(edge(&prev, &format!("{id}__{}", sub.entry)));
+    let entry = format!("{id}__{}", sub.entry);
+    let (mut added, mut new_edges) =
+        call_needs::chain(id, &sub.graph, sub.needs.as_deref(), input, &entry);
 
     for mut node in sub.nodes {
         let nid = id_of(&node).unwrap_or_default();
@@ -342,23 +334,6 @@ fn take_call(doc: &mut Table) -> Option<Table> {
         .iter()
         .position(|n| n.as_table().and_then(kind_of) == Some("call"))?;
     nodes.remove(at).try_into().ok()
-}
-
-fn transform(id: &str, value: Value) -> Table {
-    let mut t = Table::new();
-    t.insert("id".into(), Value::String(id.to_string()));
-    t.insert("kind".into(), Value::String("transform".into()));
-    t.insert("value".into(), value);
-    t
-}
-
-fn edge(from: &str, to: &str) -> Table {
-    let mut t = Table::new();
-    t.insert("from".into(), Value::String(from.to_string()));
-    t.insert("port".into(), Value::String("ok".into()));
-    t.insert("to".into(), Value::String(to.to_string()));
-    t.insert("kind".into(), Value::String("data".into()));
-    t
 }
 
 /// Resolves a graph name to its file. A name is a bare file stem: no separator, no leading dot.

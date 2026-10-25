@@ -74,7 +74,7 @@ pub struct NodeRegistry {
 }
 
 impl NodeRegistry {
-    /// Builds the registry with the six built-in kinds.
+    /// Builds the registry with the seven built-in kinds.
     #[must_use]
     pub fn builtin() -> Self {
         let mut map: BTreeMap<&'static str, Arc<dyn NodeFactory>> = BTreeMap::new();
@@ -84,6 +84,7 @@ impl NodeRegistry {
         map.insert("wait", Arc::new(WaitFactory));
         map.insert("timer", Arc::new(TimerFactory));
         map.insert("refuse", Arc::new(RefuseFactory));
+        map.insert("require", Arc::new(crate::nodes_require::RequireFactory));
         Self { map, ceiling: None }
     }
 
