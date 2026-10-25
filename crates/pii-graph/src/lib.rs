@@ -19,6 +19,7 @@ pub mod expr;
 pub mod fragment;
 pub mod journal;
 pub mod node;
+pub mod node_id;
 pub mod nodes;
 pub mod nodes_require;
 pub mod render;

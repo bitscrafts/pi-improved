@@ -39,6 +39,7 @@ mod paths;
 pub mod prompt;
 pub mod redact;
 pub mod report;
+pub mod session_path;
 pub mod tree;
 
 use self::helpers::{argv_digest, journal, refused_port, skill_hashes, skill_names, text, texts};

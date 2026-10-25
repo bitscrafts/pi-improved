@@ -11,6 +11,7 @@ use pii_core::Ctx;
 
 use crate::blackboard::Blackboard;
 use crate::node::{GraphNode, NodeRegistry};
+use crate::node_id::with_node_id;
 use crate::sched::dispatch::FinishedNode;
 use crate::sched::state::{Readiness, RunState, readiness};
 use crate::spec::{EdgeKind, GraphSpec};
@@ -40,7 +41,8 @@ pub(crate) fn build_nodes(
     let mut built = BTreeMap::new();
     for n in &spec.nodes {
         let factory = reg.factory(&n.kind)?;
-        let node = factory.build(&n.cfg)?;
+        // Spec 271 R1: the factory learns its node's id through the built config, never the journalled spec.
+        let node = factory.build(&with_node_id(&n.cfg, &n.id))?;
         built.insert(n.id.clone(), node);
     }
     Ok(built)

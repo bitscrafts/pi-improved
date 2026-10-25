@@ -15,6 +15,7 @@ use super::super::coder::no_change::no_change_refusal;
 use super::super::coder::prompt;
 use super::super::coder::redact;
 use super::super::coder::report::RunReport;
+use super::super::coder::session_path::with_node_session;
 use super::super::coder::tree;
 use super::super::coder_container::CONTAINER_WORKDIR;
 use super::super::coder_runtime::{Launch, Refusal};
@@ -45,10 +46,12 @@ impl GraphNode for CoderNode {
             _ => return Ok(self.refuse(ctx, &agent, &model, "no spec or no brief")),
         };
         // Spec 248: the default session file belongs to this run, before anything plans or prepares it.
-        let spec = WorkerSpec {
+        let base = WorkerSpec {
             run: Some(ctx.trace().run.as_str().to_owned()),
             ..spec
         };
+        // Spec 271: and to this node, so two nodes of one run never resume one conversation.
+        let spec = with_node_session(base.clone(), cfg);
         // Spec 215: every criterion resolves to its fixed argv before anything spawns; an unknown name refuses.
         let scope_root = input
             .input
@@ -83,10 +86,13 @@ impl GraphNode for CoderNode {
         }
         // Inside a container the workspace is at `/work`, so the planned session path must be too.
         let planned = match &image {
-            Some(_) => WorkerSpec {
-                workdir: CONTAINER_WORKDIR.to_owned(),
-                ..spec.clone()
-            },
+            Some(_) => with_node_session(
+                WorkerSpec {
+                    workdir: CONTAINER_WORKDIR.to_owned(),
+                    ..base
+                },
+                cfg,
+            ),
             None => spec.clone(),
         };
         let prompt = prompt::brief_with_spec(&brief, &spec.spec);
