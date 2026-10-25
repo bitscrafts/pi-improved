@@ -338,11 +338,20 @@ if [ -n "$GATE_ON" ]; then
     # bounds a hang: every step also kills itself after QG_STALL_SECS=1800 with no output.
     GATE_TIMEOUT=${GATE_TIMEOUT:-3600}
     # spec 262: the commit is gated with the FULL list, pinned on this command (env.sh exports the quick list for other callers).
+    # spec 266: the skip switch is pinned off here too (gate_skip_coverage prints 0, the QG_SKIP_COVERAGE=0 this line carries).
     GLIST=$(gate_steps_file); GCOUNT=$(gate_step_labels "$GLIST" | wc -l | tr -d ' ')
     say "gate steps: $(gate_step_labels "$GLIST" | paste -sd, - | sed 's/,/, /g') ($GCOUNT steps)"
-    ( export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
+    ( export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt QG_SKIP_COVERAGE=$(gate_skip_coverage) CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
     GTRC=$?
     if [ "$GTRC" -eq 0 ]; then
+      # spec 266: a green gate that never measured coverage is not a pass for a queue commit
+      COVM=$(coverage_measured "$LOG")
+      if [ "$COVM" = yes ]; then say "gate coverage: measured"; else say "gate coverage: NOT MEASURED"; fi
+      if [ "$COVM" = no ]; then
+        python3 scripts/autonomy/state.py set "$ITEM" status=needs-review last=gate-coverage-not-measured
+        report loop.gate.verdict "item=$ITEM coverage NOT MEASURED"
+        say "gate passed but coverage was NOT measured — the item is NOT committed"; echo "OUTCOME=gate-coverage-not-measured ITEM=$ITEM"; exit 16
+      fi
       python3 scripts/autonomy/state.py set "$ITEM" last=gated; say "gate PASS ($GCOUNT steps) (phase marked: gated)"
       report loop.gate.verdict "item=$ITEM pass"
     elif [ "$GTRC" -eq 124 ]; then
