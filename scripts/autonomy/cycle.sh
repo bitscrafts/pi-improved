@@ -376,6 +376,14 @@ fi
 if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
   IFS=';' read -ra P <<<"$PATHS"
   git add -- "${P[@]}" || { say "git add failed"; echo "OUTCOME=add-failed ITEM=$ITEM"; exit 11; }
+  # spec 268: the commit carries only the row's paths. A worker edit to any other file stays unstaged, so HEAD would not
+  # build (A131, A132). Refuse BEFORE the commit; the tree is left as the worker made it.
+  UNLISTED=$(bash scripts/autonomy/unlisted-changes.sh "$PATHS") || {
+    git reset -q
+    python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=unlisted-changes: $(printf '%s\n' "$UNLISTED" | head -5 | paste -sd' ' -)"
+    say "NOT COMMITTED: the worker changed files the row does not list: $(printf '%s' "$UNLISTED" | tr '\n' ' ')"
+    echo "OUTCOME=unlisted-changes ITEM=$ITEM"; exit 17
+  }
   if git diff --cached --quiet; then
     # The item may ALREADY be satisfied: its work can have landed in an earlier commit (a leftover commit is still a
     # commit — measured 2026-10-13: spec 153's whole implementation was in `91dc682`, so every cycle re-dispatched it,
