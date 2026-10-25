@@ -2,6 +2,26 @@
 
 **Fresh-tree gate (spec 84):** `cargo xtask fresh-gate [--worktree] [--overlay src=dest]` exports HEAD via `git archive` to `/projects/_tmp/fresh-gate-<pid>/` and runs `quality-gate.sh` there — the CI-equivalent run, not part of the default gate (recompiles the workspace); export kept on failure, removed on success.
 
+## 2026-10-25 07:20Z — the gate failed on a correct tree: a control racing `setsid`
+
+- **The full gate on the combined tree of specs 272+273 (HEAD `ae276bc`) failed at `test (lib/bins/tests)` on one
+  test**: `crates/pii-core/tests/child_group_reaped.rs`, `a_process_that_left_the_group_on_purpose_is_the_documented_limit`
+  — the control that pins the reaper's limit. Every other step passed, including `coverage-floor: total 82.89% >= 74.00%`.
+  No commit was made and the two specs' work stays in the worktree with rows A137/A138 `needs-review`.
+- **It was the test, not the tree.** The same binary red **3/3** right after the gate, then **6/6** run alone, and
+  **3/3** under `strace`; the binary (`2026-10-23T16:00:42Z`) is newer than both sources, so not a stale export-baked
+  artefact. Cause: `run_and_read_pid` reaped the child's group the instant `/bin/sh` exited, so a grandchild that had
+  not finished `setsid()` was still in the group and `killpg(SIGKILL)` killed the process the test exists to observe.
+  A reproduction of the fixture's ordering survived **4/8**; waiting for the grandchild's own session survived **8/8**
+  (`_tmp/diag/race.py`).
+- **Fixed as its own item (spec 274 / row A139)**: `spawn_and_read_pid` returns the child and pid, and the limit
+  control polls `/proc/<pid>/stat` until the session id equals the pid (5 s bound kept, loud on timeout) *before*
+  reaping. No assertion weakened, `src/` untouched, three killing tests unchanged.
+- **Evidence**: 8/8 exit criteria rc=0; the whole file `4 passed; 0 failed`; the single-test loop **20/20** under
+  the running gate's load; mutation m1 (wait deleted, assertion kept) red **1 of 20**, restored byte-identical
+  (`sha256 7249f6d6…` before and after, then `touch`, then green).
+
+
 ## 2026-10-24 12:30Z — 251 verified by hand and mutated; the only queue left is one live reading on lnx
 
 - **A116 / spec 251 (queue brief is an artefact of the run) verified independently of the worker's

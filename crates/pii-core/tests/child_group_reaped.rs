@@ -12,10 +12,10 @@
 )]
 
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use pii_abi::CapKind;
-use pii_core::{ArgvScope, Budget, CapSet, Ctx};
+use pii_core::{ArgvScope, Budget, CapSet, ChildProc, Ctx};
 
 fn ctx() -> Ctx {
     let mut caps = CapSet::empty();
@@ -29,8 +29,10 @@ fn alive(pid: i32) -> bool {
         && std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| !s.contains(") Z "))
 }
 
-/// Starts `script` under /bin/sh, waits for it to exit, and returns the pid it wrote to `pidfile`.
-fn run_and_read_pid(script: &str, pidfile: &Path) -> i32 {
+/// Starts `script` under /bin/sh, waits for it to exit, and returns the child plus the pid it wrote to
+/// `pidfile`. The caller decides when the group is reaped, so a test that must let a grandchild leave the
+/// group first can do so before the kill.
+fn spawn_and_read_pid(script: &str, pidfile: &Path) -> (ChildProc, i32) {
     let ctx = ctx();
     let argv = vec![
         String::from("/bin/sh"),
@@ -44,13 +46,44 @@ fn run_and_read_pid(script: &str, pidfile: &Path) -> i32 {
         .unwrap();
     let code = child.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(code, Some(0), "the parent exits cleanly");
-    child.reap_group();
-    std::thread::sleep(Duration::from_millis(300));
-    std::fs::read_to_string(pidfile)
+    let pid = std::fs::read_to_string(pidfile)
         .unwrap()
         .trim()
         .parse()
-        .unwrap()
+        .unwrap();
+    (child, pid)
+}
+
+/// Starts `script`, waits for it to exit, reaps its process group and returns the pid it wrote to `pidfile`.
+fn run_and_read_pid(script: &str, pidfile: &Path) -> i32 {
+    let (child, pid) = spawn_and_read_pid(script, pidfile);
+    child.reap_group();
+    std::thread::sleep(Duration::from_millis(300));
+    pid
+}
+
+/// Waits until `pid` has its own session (`setsid` has completed), so a kill of the child's process group can
+/// no longer reach it. Returns false when the deadline passes first; the caller decides whether that is a
+/// failure. The condition is read from `/proc`, never guessed with a fixed sleep.
+fn wait_for_own_session(pid: i32, d: Duration) -> bool {
+    let deadline = Instant::now() + d;
+    loop {
+        if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            // After the `(comm)` field the columns are state, ppid, pgrp, session; `comm` may contain spaces
+            // and parentheses, so the split starts after the last ')'.
+            let session = stat
+                .rsplit_once(')')
+                .and_then(|(_, rest)| rest.split_whitespace().nth(3).map(str::to_owned))
+                .and_then(|s| s.parse::<i32>().ok());
+            if session == Some(pid) {
+                return true;
+            }
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 fn scratch(tag: &str) -> std::path::PathBuf {
@@ -113,7 +146,16 @@ fn a_process_that_left_the_group_on_purpose_is_the_documented_limit() {
     // control pins the limit instead of hiding it, so a stronger guarantee (a cgroup) is a conscious later change.
     let pidfile = scratch("setsid");
     let script = format!("setsid sleep 100000 & echo $! > {}", pidfile.display());
-    let pid = run_and_read_pid(&script, &pidfile);
+    let (child, pid) = spawn_and_read_pid(&script, &pidfile);
+    // The parent exits as soon as the background job is started, so the group kill below can win the race
+    // against the grandchild's own setsid() and kill the process this test is about. Wait for the session
+    // change that IS the limit, then reap: measuring the limit, not the scheduler.
+    assert!(
+        wait_for_own_session(pid, Duration::from_secs(5)),
+        "the grandchild {pid} must reach its own session before the group is killed"
+    );
+    child.reap_group();
+    std::thread::sleep(Duration::from_millis(300));
     let escaped = alive(pid);
     // Clean up the test's own process through the gated spawn, so it does not linger.
     let ctx = ctx();
