@@ -131,6 +131,8 @@ pub(super) fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
                     },
                 );
             }
+            // Spec 270: a composed call is its own line (`graph_call_lines`), never an agent call.
+            RunEvent::NodeObserved { kind, .. } if kind == "graph.call" => {}
             RunEvent::NodeObserved { node, kind, fields } => {
                 observe_call(observed.entry(node.to_string()).or_default(), kind, fields);
             }
@@ -277,6 +279,49 @@ pub(super) fn trace_line(line: &NodeLine) -> String {
     format!(
         "{} {} {} {}+{} pid={pid} image={image} crit={crit} fail={fail} rc={rc}{woven}",
         line.seq, line.node, line.kind, line.start_ms, dur
+    )
+}
+
+/// Spec 270 R3: one `call <call> -> graph ...` line per `graph.call` observation, in the shape `pii graph explain` prints
+/// (spec 269). The head's `__in` suffix is dropped from the call's name; a nested call names the call that holds it.
+pub(super) fn graph_call_lines(journal: &[(u64, RunEvent)]) -> Vec<String> {
+    journal
+        .iter()
+        .filter_map(|(_, event)| match event {
+            RunEvent::NodeObserved { node, kind, fields } if kind == "graph.call" => {
+                Some(graph_call_line(&node.to_string(), fields))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn graph_call_line(head: &str, fields: &serde_json::Value) -> String {
+    let call = head.strip_suffix("__in").unwrap_or(head);
+    let sha = str_field(fields, "sha256");
+    let short = sha.get(..12).unwrap_or(sha.as_str());
+    let list = |key: &str| {
+        fields
+            .get(key)
+            .and_then(serde_json::Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+    };
+    let needs = list("needs").unwrap_or_else(|| String::from("none"));
+    let parent = fields
+        .get("parent")
+        .and_then(serde_json::Value::as_str)
+        .map_or_else(String::new, |p| format!(" (in {p})"));
+    format!(
+        "call {call} -> graph {} sha256 {short} caps [{}] needs [{needs}] exit {}{parent}",
+        str_field(fields, "graph"),
+        list("caps").unwrap_or_default(),
+        str_field(fields, "exit"),
     )
 }
 

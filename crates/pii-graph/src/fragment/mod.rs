@@ -14,11 +14,13 @@
 
 mod call;
 mod call_needs;
+mod call_record;
 mod call_rewrite;
 mod check;
 mod shared;
 mod splice;
 mod weave;
 
+pub use call_record::CallRecord;
 pub use check::{Fragment, check_fragment, declares_fragment, sha256_hex};
 pub use weave::{Inlined, Woven, load_host, load_host_with_graphs, weave};

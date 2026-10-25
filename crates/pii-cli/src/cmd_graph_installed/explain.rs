@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use pii_abi::PortName;
 use pii_core::CapKind;
-use pii_graph::fragment::{Inlined, sha256_hex};
+use pii_graph::fragment::{CallRecord, Inlined, sha256_hex};
 use pii_graph::{GraphSpec, NodeRegistry, NodeSpec};
 use serde_json::Value;
 
@@ -76,7 +76,31 @@ pub(super) fn run(o: &Opts) -> ExitCode {
     print_capabilities(spec);
     print_woven(&checked.woven);
     println!("DRIFT {}", drift_verdict(&name, &repo, &sha, spec, &reg));
+    print_calls(&checked.calls);
     ExitCode::SUCCESS
+}
+
+/// One `call` line per call the load expanded (spec 269): the graph, its verified digest's first 12 hex, the caps,
+/// the sub-graph's `needs` (`none` when it declares none), its exit, and the call that holds it when nested.
+fn print_calls(calls: &[CallRecord]) {
+    for c in calls {
+        let needs = c
+            .needs
+            .as_ref()
+            .map_or_else(|| String::from("none"), |keys| keys.join(","));
+        let parent = c
+            .parent
+            .as_ref()
+            .map_or_else(String::new, |p| format!(" (in {p})"));
+        let short = c.sha256.get(..12).unwrap_or(&c.sha256);
+        println!(
+            "call {} -> graph {} sha256 {short} caps [{}] needs [{needs}] exit {}{parent}",
+            c.call,
+            c.graph,
+            c.caps.join(","),
+            c.exit
+        );
+    }
 }
 
 /// The nodes in dependency order, each with its kind, its declared ports and its outgoing edges.

@@ -7,6 +7,7 @@ use pii_abi::PiiError;
 use toml::{Table, Value};
 
 use super::call::{id_of, tables};
+use super::call_record::{CallRecord, call_from_fields};
 
 /// What one call checks in its sub-graph: the sub-graph's name and declaration, the call's `in` table, and the
 /// sub-graph's node ids and nodes as they stand before the rewrite.
@@ -212,4 +213,22 @@ fn node_exprs(node: &Table) -> Vec<&str> {
         }
     }
     out
+}
+
+/// Stamps the head node (`<call>__in`) of each record in `records` with its `call-from` mark (spec 270 R1), built from
+/// the verified record. A head `nodes` does not hold is left alone.
+pub(super) fn mark(nodes: &mut [Table], records: &[CallRecord]) -> Result<(), PiiError> {
+    for r in records {
+        let head = format!("{}__in", r.call);
+        let Some(node) = nodes
+            .iter_mut()
+            .find(|n| n.get("id").and_then(Value::as_str) == Some(head.as_str()))
+        else {
+            continue;
+        };
+        let fields = Value::try_from(call_from_fields(r))
+            .map_err(|e| PiiError::Invalid(format!("graph.call.mark: call '{}': {e}", r.call)))?;
+        node.insert("call-from".into(), fields);
+    }
+    Ok(())
 }

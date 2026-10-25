@@ -25,6 +25,6 @@ crates/pii-cli/src/cmd_sop.rs  # new CLI surface (spec 113): compile/show print 
 crates/pii-cli/src/cmd_skill.rs  # pii skill list/show/explain/edit print the skill store's answer on stdout, which is the command's product (spec 210, spec 227 R7); spec 233 R2 adds the add line on stdout and the via-source line on stderr  # 24
 crates/pii-cli/src/cmd_graph_installed.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7)  # 2
 crates/pii-cli/src/cmd_graph_installed/edit.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7)  # 9
-crates/pii-cli/src/cmd_graph_installed/explain.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7)  # 17
+crates/pii-cli/src/cmd_graph_installed/explain.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7; spec 269 adds the call line)  # 18
 crates/pii-cli/src/cmd_graph_installed/list.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7)  # 3
 crates/pii-cli/src/cmd_project.rs  # pii project init prints the scaffold it wrote on stdout, which is the command's product (spec 225, spec 227 R7)  # 7

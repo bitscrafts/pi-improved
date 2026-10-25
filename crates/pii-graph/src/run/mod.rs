@@ -13,6 +13,7 @@
 //! Cyclic execution also lands in Phase 2: `run`/`resume` reject any cycle
 //! with [`PiiError::Invalid`] even when `loop_budget` makes it lint-clean.
 
+mod call_events;
 mod engine;
 mod resume;
 
@@ -113,6 +114,7 @@ pub fn run_with_validate(
             })?;
         }
     }
+    call_events::journal(&jr, spec)?;
     // Spec 154: the accepted run (header + `Started`) is durable before the
     // first node executes — one synchronous write per run, not per event.
     jr.flush()?;

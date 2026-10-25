@@ -20,6 +20,7 @@ use toml::{Table, Value};
 use crate::node::NodeRegistry;
 
 use super::call_needs::{self, Scope};
+use super::call_record::{self, CallRecord};
 use super::call_rewrite::{Refs, rewrite};
 use super::check::sha256_hex;
 
@@ -30,14 +31,16 @@ const MAX_DEPTH: usize = 4;
 const CALL_KEYS: [&str; 6] = ["id", "kind", "graph", "sha256", "caps", "in"];
 
 /// A sub-graph read from its file, expanded, and checked against its call.
-struct Sub {
-    graph: String,
-    needs: Option<Vec<String>>,
-    exit: String,
+pub(super) struct Sub {
+    pub(super) graph: String,
+    pub(super) needs: Option<Vec<String>>,
+    pub(super) exit: String,
     entry: String,
     ids: Vec<String>,
     nodes: Vec<Table>,
     edges: Vec<Table>,
+    /// The records of the calls this sub-graph made (spec 269), in expansion order.
+    pub(super) calls: Vec<CallRecord>,
 }
 
 /// True when the table holds a `call` node. A fragment may not hold one (spec 255 R9).
@@ -61,13 +64,13 @@ pub(super) fn expand_host(
     src: &str,
     graph_dirs: &[PathBuf],
     reg: &NodeRegistry,
-) -> Result<Option<String>, PiiError> {
+) -> Result<(Option<String>, Vec<CallRecord>), PiiError> {
     // A source that does not parse is left for the loader, which names the parse error.
     let Ok(mut doc) = toml::from_str::<Table>(src) else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     if !has_call(&doc) {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     }
     let name = doc
         .get("name")
@@ -75,10 +78,9 @@ pub(super) fn expand_host(
         .unwrap_or("")
         .to_string();
     let grant = caps_of(doc.get("caps"))?;
-    expand(&mut doc, graph_dirs, reg, &mut vec![name], grant)?;
-    toml::to_string(&doc)
-        .map(Some)
-        .map_err(|e| PiiError::Invalid(format!("graph toml: {e}")))
+    let records = expand(&mut doc, graph_dirs, reg, &mut vec![name], grant)?;
+    let text = toml::to_string(&doc).map_err(|e| PiiError::Invalid(format!("graph toml: {e}")))?;
+    Ok((Some(text), records))
 }
 
 /// Expands every call in `doc`. `chain` is the graph names from the host down to `doc`; `grant` is the most
@@ -89,7 +91,7 @@ fn expand(
     reg: &NodeRegistry,
     chain: &mut Vec<String>,
     grant: CapKind,
-) -> Result<(), PiiError> {
+) -> Result<Vec<CallRecord>, PiiError> {
     if graph_dirs.is_empty() {
         return Err(PiiError::Invalid(
             "graph.call.no_dir: a call node needs a graph directory to resolve its graph in; no graph directory was given"
@@ -100,13 +102,15 @@ fn expand(
     if let Some(first) = first_id(doc).filter(|_| !doc.contains_key("entry")) {
         doc.insert("entry".into(), Value::String(first));
     }
+    let mut records = Vec::new();
     while let Some(call) = take_call(doc) {
-        expand_one(doc, &call, graph_dirs, reg, chain, grant)?;
+        records.extend(expand_one(doc, &call, graph_dirs, reg, chain, grant)?);
     }
-    Ok(())
+    Ok(records)
 }
 
-/// Replaces one call node: checks its parts, reads its graph, and splices the graph's nodes and edges in.
+/// Replaces one call node: checks its parts, reads its graph, and splices the graph's nodes and edges in. Returns the
+/// records of this call and of the calls its graph made.
 fn expand_one(
     doc: &mut Table,
     call: &Table,
@@ -114,7 +118,7 @@ fn expand_one(
     reg: &NodeRegistry,
     chain: &mut Vec<String>,
     grant: CapKind,
-) -> Result<(), PiiError> {
+) -> Result<Vec<CallRecord>, PiiError> {
     let id = id_of(call)
         .ok_or_else(|| PiiError::Invalid("graph.call.missing: a call has no 'id'".into()))?;
     if let Some(k) = call.keys().find(|k| !CALL_KEYS.contains(&k.as_str())) {
@@ -154,7 +158,10 @@ fn expand_one(
         )));
     }
 
-    let sub = load_sub(&id, &graph, &sha, call_caps, graph_dirs, reg, chain)?;
+    let mut sub = load_sub(&id, &graph, &sha, call_caps, graph_dirs, reg, chain)?;
+    let (own, nested) = call_record::of(&id, &sha, call_caps, &input, &mut sub);
+    // The nested heads are marked now, with their parents, so the mark each carries names the call that holds it.
+    call_needs::mark(&mut sub.nodes, &nested)?;
     let scope = Scope {
         call: &id,
         graph: &sub.graph,
@@ -164,7 +171,8 @@ fn expand_one(
         nodes: &sub.nodes,
     };
     call_needs::check(&scope, doc, chain)?;
-    splice(doc, &id, &input, sub)
+    splice(doc, &id, &input, sub, &own)?;
+    Ok(std::iter::once(own).chain(nested).collect())
 }
 
 /// Reads the sub-graph file, checks its pin, expands its own calls, and checks its exit and its caps against the
@@ -199,7 +207,7 @@ fn load_sub(
     chain.push(graph.to_string());
     let expanded = expand(&mut doc, graph_dirs, reg, chain, call_caps);
     chain.pop();
-    expanded?;
+    let calls = expanded?;
 
     let exit = doc
         .get("exit")
@@ -245,17 +253,25 @@ fn load_sub(
         ids,
         nodes,
         edges: tables(&doc, "edge"),
+        calls,
     })
 }
 
 /// Adds the call's head, input nodes and sub-graph to the host, rewires the host edges that touched the call, and
 /// refuses an id the host already has.
-fn splice(doc: &mut Table, id: &str, input: &Table, sub: Sub) -> Result<(), PiiError> {
+fn splice(
+    doc: &mut Table,
+    id: &str,
+    input: &Table,
+    sub: Sub,
+    own: &CallRecord,
+) -> Result<(), PiiError> {
     let keys: Vec<String> = input.keys().cloned().collect();
     let head = format!("{id}__in");
     let entry = format!("{id}__{}", sub.entry);
     let (mut added, mut new_edges) =
         call_needs::chain(id, &sub.graph, sub.needs.as_deref(), input, &entry);
+    call_needs::mark(&mut added, std::slice::from_ref(own))?;
 
     for mut node in sub.nodes {
         let nid = id_of(&node).unwrap_or_default();

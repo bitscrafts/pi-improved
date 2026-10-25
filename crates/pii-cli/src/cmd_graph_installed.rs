@@ -68,6 +68,7 @@ impl Drift {
 struct Checked {
     spec: GraphSpec,
     woven: Vec<Inlined>,
+    calls: Vec<pii_graph::fragment::CallRecord>,
 }
 
 /// A suspended run and the graph it belongs to. A run header carries the graph's body hash; the
@@ -261,16 +262,16 @@ fn check(
     graph_dirs: &[PathBuf],
     reg: &NodeRegistry,
 ) -> Result<Checked, String> {
-    let (spec, woven) = if pii_graph::fragment::declares_fragment(src) {
+    let (spec, woven, calls) = if pii_graph::fragment::declares_fragment(src) {
         let fragment = pii_graph::fragment::check_fragment(src, reg).map_err(|e| e.to_string())?;
-        (fragment.spec, Vec::new())
+        (fragment.spec, Vec::new(), Vec::new())
     } else {
         let host = pii_graph::fragment::load_host_with_graphs(src, fragments, graph_dirs, reg)
             .map_err(|e| e.to_string())?;
-        (host.spec, host.sequence)
+        (host.spec, host.sequence, host.calls)
     };
     pii_graph::validate(&spec, reg).map_err(|errors| errors.join("; "))?;
-    Ok(Checked { spec, woven })
+    Ok(Checked { spec, woven, calls })
 }
 
 /// The `.toml` stems of a directory, sorted, without dotfiles.

@@ -9,7 +9,7 @@ use pii_abi::{RunEvent, RunId, RunStatus};
 use pii_proto::method::Method;
 use pii_proto::run::{TraceResult, WireRunStatus};
 
-use super::analysis::{explain_call, full_reason, node_lines, trace_line};
+use super::analysis::{explain_call, full_reason, graph_call_lines, node_lines, trace_line};
 use super::next_value_or_none;
 use crate::cli_util::fail;
 use crate::cli_util::{next_value, open_store, usage_error};
@@ -170,6 +170,9 @@ fn print_run(verb: &str, run: &str, loaded: &Loaded) -> ExitCode {
         let _ = writeln!(out, "{}", sentences.join(" "));
         let _ = writeln!(out, "{}", loaded.source.marker());
         return ExitCode::SUCCESS;
+    }
+    for call in graph_call_lines(&loaded.journal) {
+        let _ = writeln!(out, "{call}");
     }
     for line in &lines {
         let _ = writeln!(out, "{}", trace_line(line));

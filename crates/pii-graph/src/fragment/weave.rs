@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use pii_abi::{NodeId, PiiError};
 use toml::Table;
 
+use super::call_record::CallRecord;
 use crate::node::NodeRegistry;
 use crate::spec::GraphSpec;
 use crate::toml_load::load_toml_with_registry;
@@ -38,6 +39,8 @@ pub struct Woven {
     pub spec: GraphSpec,
     /// Every inlined node, in the order the weave applied them.
     pub sequence: Vec<Inlined>,
+    /// The records of every call the load expanded (spec 269), in expansion order.
+    pub calls: Vec<CallRecord>,
 }
 
 /// Weaves the `[[attach]]` tables of `host_src` into the host graph.
@@ -75,7 +78,11 @@ pub fn weave(host_src: &str, fragments_dir: &Path, reg: &NodeRegistry) -> Result
     splice_node_surfaces(&mut spec, &loaded, &host_ids, reg, &mut sequence)?;
     splice_run_end(&mut spec, &loaded, &host_ids, reg, &mut sequence)?;
     check_unique(&spec)?;
-    Ok(Woven { spec, sequence })
+    Ok(Woven {
+        spec,
+        sequence,
+        calls: Vec::new(),
+    })
 }
 
 /// Loads a host graph for running or checking (spec 219).
@@ -109,14 +116,16 @@ pub fn load_host_with_graphs(
     reg: &NodeRegistry,
 ) -> Result<Woven, PiiError> {
     let expanded = expand_host(host_src, graph_dirs, reg)?;
+    let (expanded, calls) = expanded;
     let host_src = expanded.as_deref().unwrap_or(host_src);
     let attaches = toml::from_str::<Table>(host_src).is_ok_and(|t| t.contains_key("attach"));
     if attaches {
-        return weave(host_src, fragments_dir, reg);
+        return weave(host_src, fragments_dir, reg).map(|w| Woven { calls, ..w });
     }
     Ok(Woven {
         spec: load_toml_with_registry(host_src, reg)?,
         sequence: Vec::new(),
+        calls,
     })
 }
 
