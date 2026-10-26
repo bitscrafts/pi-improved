@@ -20,7 +20,7 @@ up_container() {
 }
 start_daemon() {
   X sh -c "mkdir -p $C/bin $C/run $C/tmp $C/graphs && rm -f $C/run/control.sock"
-  X sh -c "test -x $PII || cp /projects/pi-improved/target/debug/pii $PII"
+  X sh -c "test -x $PII || bash /projects/pi-improved/modules/devbox/install-binary.sh \${CARGO_TARGET_DIR:-target} $PII" || return 1
   # PII_MODEL: the daemon refuses to start without one; a coder run never calls it. CLAUDE_CODE_TMPDIR: claude's scratch dir must be
   # somewhere the daemon's write sandbox allows (measured: EACCES on mkdir /tmp/claude-0).
   podman exec -d -w /projects/pi-improved pii-devbox sh -c "env PII_RUNTIME_DIR=$C/run PI_CODING_AGENT_DIR=/projects/pi-improved/_tmp/pii-agent IS_SANDBOX=1 PII_MODEL=llamacpp-server:granite-4.2-3b CLAUDE_CODE_TMPDIR=$C/tmp TMPDIR=$C/tmp $PII daemon --foreground --store $C/store.redb --workspace /projects/pi-improved --log-file $C/pii.log > $C/daemon.out 2>&1"
@@ -31,8 +31,8 @@ case "$CMD" in
   up)      up_container; [ -n "$(health)" ] || start_daemon || exit 1; health | grep -o '"revision":"[^"]*"' | head -1 ;;
   status)  up_container; health | grep -o '"revision":"[^"]*"' | head -1 || echo "no daemon" ;;
   refresh) up_container
-           X sh -c "mkdir -p $C/bin; pkill -x pii; sleep 1; cargo build -p pii-cli --bin pii 2>&1 | tail -2; cp /projects/pi-improved/target/debug/pii $PII.new && mv -f $PII.new $PII"
-           start_daemon && health | grep -o '"revision":"[^"]*"' | head -1 ;;
+           X sh -c "mkdir -p $C/bin; pkill -x pii; sleep 1; cargo build -p pii-cli --bin pii 2>&1 | tail -2; bash /projects/pi-improved/modules/devbox/install-binary.sh \${CARGO_TARGET_DIR:-target} $PII" || exit 1
+           start_daemon && health | grep -o '"revision":"[^"]*"' | head -1 && echo "daemon binary sha $(X sh -c "sha256sum $PII" | cut -c1-12)" ;;
   down)    X sh -c "pkill -x pii" ; echo "daemon stopped (container left up)" ;;
   *) echo "usage: daemon.sh up|status|refresh|down"; exit 2 ;;
 esac
