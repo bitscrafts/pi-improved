@@ -170,6 +170,11 @@ row "the plain door cannot see an uncommitted fix" 1 $RC
 OUT=$(HB --worktree 2>&1); RC=$?
 row "--worktree overlays the uncommitted fix -> exit 0" 0 $RC
 
+echo; echo "== 12. the unlisted check reads a rename and a quoted path (spec 277, the -z form of git status)"
+UC=$T/unlisted-changes-test.out
+bash scripts/autonomy/tests/unlisted-changes-test.sh >"$UC" 2>&1   # the output goes to a file: the verdict is read from it, not from a pipe's status
+grep -q '^RESULT: PASS' "$UC"; row "the unlisted check reads a rename and a quoted path" 0 $?
+
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]

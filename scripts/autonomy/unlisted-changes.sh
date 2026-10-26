@@ -5,19 +5,19 @@
 set -u
 IFS=';' read -ra L <<<"${1:-}"
 N=0
-while IFS= read -r LINE; do
+# -z: NUL-separated and unquoted (spec 277). A rename or copy is "R  new" then "old" as its own field: the new path is the change
+while IFS= read -r -d '' LINE; do
   ST=${LINE:0:2}; P=${LINE:3}
-  # modified, deleted or untracked only (a staged-and-clean entry is the row's own work)
-  case "$ST" in "??"|?[MD]) ;; *) continue ;; esac
+  case "$ST" in *[RC]*) IFS= read -r -d '' _OLD ;; esac
   # the queue's own files: HANDOFF.md, the __pycache__ of the autonomy scripts, QUEUE-BRIEF*
   case "$P" in HANDOFF.md|scripts/autonomy/__pycache__/*) continue ;; esac
-  case "$(basename "$P")" in QUEUE-BRIEF*) continue ;; esac
+  case "${P##*/}" in QUEUE-BRIEF*) continue ;; esac
   COVERED=""
   for E in "${L[@]}"; do
     E=${E%/}
     case "$P" in "$E"|"$E"/*) COVERED=1; break ;; esac
   done
   [ -n "$COVERED" ] && continue
-  echo "$P"; N=$((N+1))
-done < <(git status --porcelain --untracked-files=all)
+  printf '%s\n' "$P"; N=$((N+1))
+done < <(git status --porcelain=v1 -z --untracked-files=all)
 [ "$N" -eq 0 ]
