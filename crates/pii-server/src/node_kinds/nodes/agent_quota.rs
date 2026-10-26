@@ -3,6 +3,14 @@
 //! Observability only: the signal is journalled on `coder.exited`, and no verdict, park or retry reads it. The markers
 //! are the shapes `scripts/autonomy/window.sh` already trusts. Text that merely mentions quota or a rate limit does not
 //! match, because only the CLI's phrasing counts.
+//!
+//! A claude or pi run prints a JSON stream, and that stream carries everything the agent READ: a spec, a script or a
+//! test fixture that quotes the CLI's phrase is echoed in a `tool_result` line. Measured 2026-10-26: eight cycles in a
+//! row were reported `quota_exhausted=yes` because the worker had read a file quoting `resets 8:20pm`, and the loop
+//! re-dispatched each time. So on a JSON stream only a line that carries the refusal as STRUCTURE counts: a top-level
+//! `api_error_status` of 429, an error type of `rate_limit_error`, or a `result` line with `is_error` true whose own
+//! `result` text holds a marker. Output that is not a JSON stream (plain text) is scanned whole, as before; stderr is the
+//! CLI's own and is scanned whole.
 
 /// A spend-limit message from an agent run.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,12 +31,49 @@ const MARKERS: [&str; 5] = [
 /// The quota signal in an agent run's stdout or stderr, `None` when neither carries one.
 #[must_use]
 pub fn quota_signal(output: &str, stderr: &str) -> Option<QuotaSignal> {
-    [output, stderr]
-        .into_iter()
-        .find(|text| is_limit(text))
+    output_refusal(output)
+        .or_else(|| is_limit(stderr).then(|| stderr.to_owned()))
         .map(|text| QuotaSignal {
-            reset_text: reset_text(text),
+            reset_text: reset_text(&text),
         })
+}
+
+/// The refusal in stdout: the structured line when stdout is a JSON stream, the whole text when it is plain output
+/// (spec 237's rule, kept for a CLI that prints its refusal as bytes).
+fn output_refusal(output: &str) -> Option<String> {
+    let objects: Vec<serde_json::Map<String, serde_json::Value>> = output
+        .lines()
+        .filter_map(|line| match serde_json::from_str(line) {
+            Ok(serde_json::Value::Object(obj)) => Some(obj),
+            _ => None,
+        })
+        .collect();
+    if objects.is_empty() {
+        return is_limit(output).then(|| output.to_owned());
+    }
+    objects.iter().find_map(refusal_text)
+}
+
+/// The refusal a single JSON line carries as structure, as text to read the reset time from.
+fn refusal_text(obj: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    let type_is = |v: Option<&serde_json::Value>| {
+        v.and_then(serde_json::Value::as_str) == Some("rate_limit_error")
+    };
+    let status_429 = obj
+        .get("api_error_status")
+        .and_then(serde_json::Value::as_i64)
+        == Some(429);
+    let rate_error =
+        type_is(obj.get("type")) || type_is(obj.get("error").and_then(|e| e.get("type")));
+    let result = obj
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let is_error = obj.get("is_error").and_then(serde_json::Value::as_bool) == Some(true);
+    let result_marker = obj.get("type").and_then(serde_json::Value::as_str) == Some("result")
+        && is_error
+        && is_limit(result);
+    (status_429 || rate_error || result_marker).then(|| result.to_owned())
 }
 
 /// Whether `text` carries one of the CLI's spend-limit markers, in any letter case.
