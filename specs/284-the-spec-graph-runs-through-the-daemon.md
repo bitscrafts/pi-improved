@@ -22,7 +22,7 @@ This spec drives that graph through **`Engine::start_run("spec", input)`**, the 
 - **R4. A defect is a result, not something to fix here.** If the test shows the daemon path differs from the library path (a missing capability, a missing event, a budget not shared), the test stays and fails with the evidence; the worker reports it and changes no source.
 
 ### Non-Functional
-- Test-only change: no file under `crates/*/src`, `graphs/` or `scripts/` is edited. The test file stays under the 450-line gate (split helpers into a second test-support file if needed). Nothing spends: no real agent, no network.
+- Test-only change: no file under `crates/*/src`, `graphs/` or `scripts/` is edited. Both files stay under the 450-line gate: the tests live in `crates/pii-server/tests/spec_graph_runs_through_the_daemon.rs` and the helpers they use (the scratch bin dir holding the fake `pi` and `claude`, the child-process re-exec, the throwaway git repo, the `Engine` builder) live in `crates/pii-server/tests/spec_graph_daemon/mod.rs`, included with `mod spec_graph_daemon;` — a directory module is not a test target of its own (the same shape `crates/pii-graph/tests/common/mod.rs` already uses), and it must carry that harness, not be an empty placeholder. Create no third file: the row that commits this work names exactly these two paths, and the cycle refuses a change its row does not list. Nothing spends: no real agent, no network.
 
 ## Exit Criteria
 - [ ] `cargo test -q -p pii-server --test spec_graph_runs_through_the_daemon 2>&1 | grep -qE "^test result: ok\. [0-9]+ passed"`
@@ -33,6 +33,11 @@ This spec drives that graph through **`Engine::start_run("spec", input)`**, the 
 - [ ] `cargo test -q -p pii-server --test daemon_journals_calls 2>&1 | grep -qE "^test result: ok\. [0-9]+ passed"`
 - [ ] `git diff --quiet -- crates/pii-server/src crates/pii-graph/src graphs`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
+- [ ] `test -f crates/pii-server/tests/spec_graph_daemon/mod.rs`
+
+## Files
+- `crates/pii-server/tests/spec_graph_runs_through_the_daemon.rs`
+- `crates/pii-server/tests/spec_graph_daemon/mod.rs`
 
 ## Guardrails
 - Do NOT edit any source, any graph, or any existing test. Do NOT widen a capability, loosen an assertion, or `#[ignore]` a test to make it pass. Do NOT call `set_var`. Do NOT commit.

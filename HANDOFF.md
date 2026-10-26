@@ -1,5 +1,37 @@
 # Pii — Session Handoff
 
+## 2026-10-26 18:18Z — the loop read "queue empty" for 3 h 08 m over four specs its own new check refused
+
+State: HEAD pending this commit · control `RUNNING` · no cycle in flight · queue: A148–A151 dispatchable again.
+
+- **Measured, not inferred.** Specs 284–287 and rows A148–A151 landed at 15:06–15:07Z (`4893713`, `eed4f35`).
+  From **15:07:56Z to 18:16:20Z, 36 cycles** printed `refused A148…A151: NO-FILES <spec>` and then
+  `OUTCOME=queue-empty`; `state.py pick` answered `NONE`. Three hours in which nothing was read, nothing was
+  spent, nothing advanced — the loop was idle, not working.
+- **The cause was spec 283's own check, working correctly.** `scripts/autonomy/row-paths.py` requires every
+  spec to declare a `## Files` block and compares it to the row's column 6 by set equality. The four specs were
+  authored without that block, so the row was refused **before** a worker was bought. The guard held; the specs
+  were incomplete.
+- **Fixed the block, not the check** (nothing removed from a criterion, no assertion loosened):
+  - **284 / 285** now declare a shared test-harness module, `crates/pii-server/tests/spec_graph_daemon/mod.rs` —
+    a directory module, so it is not a test target of its own (the same shape
+    `crates/pii-graph/tests/common/mod.rs` already uses). Without it a 450-line split would land a file the row
+    does not list and the cycle's unlisted-changes guard would refuse the commit *after* a paid worker ran. 285
+    reuses that module instead of writing a second harness.
+  - **286** had the fixture **directory** as a commit path. Spec 283's check refuses a directory entry
+    (`NOT-A-FILE`), and a listed directory would have covered whatever files the worker chose. Replaced with the
+    three files the fixture actually is: `Cargo.toml` (empty `[workspace]`, so it detaches from the repo
+    workspace), `.gitignore` (`Cargo.lock`, `target/`, so building it leaves no unlisted path) and `src/lib.rs`.
+  - **287** paths unchanged, now declared.
+- **Verified, not eyeballed.** `row-paths.py check-all` → `OK A148 2 / A149 2 / A150 7 / A151 3` (rc 0);
+  `state.py pick` → A148; each row's `verify` column diffed against its spec's `## Exit Criteria`
+  programmatically — 9/9, 9/9, 7/7, 7/7 commands, identical text — and `## Files` equals column 6 for all four.
+- **Selftest:** `RESULT: 42 passed, 0 failed` · `VERDICT: ALL MECHANISMS PASS`
+  (`_tmp/autonomy/logs/selftest-20261026T18*.log`).
+- **Follow-up (recorded, not built):** a spec authored without `## Files` still costs a full stall, because
+  nothing at authoring time runs the check. The cheap fix is to run `row-paths.py check-all` in whatever step
+  lands a new row, so an incomplete spec is refused at authoring time instead of at every dispatch after it.
+
 ## 2026-10-26 13:10Z — A147 sat parked five and a half hours on a `verify-failed` that did not reproduce, and the gate it never reached was red for a reason the spec forbade fixing
 
 State: HEAD pending this commit (before it: `c605f5d`) · control `RUNNING` · no cycle in flight · queue: A147

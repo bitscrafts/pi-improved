@@ -9,7 +9,7 @@ Spec 284 proves the happy run and four refusals. This one covers what happens **
 ## Verified Premises
 - **CONFIRMED** (read 2026-10-26) the engine surface: `Engine::start_run` (`lib.rs:443`), `Engine::cancel` (`lib.rs:524`), `runs_cancel::cancel_run` / `cancel_run_with` (`engine/runs_cancel.rs:25,38`), `orphans::recover_at_boot` (`engine/orphans.rs:222`), `engine::bus::reattach`.
 - **CONFIRMED** existing non-composed coverage to copy the shape from: `cancel_with_kill_stops_a_hung_agent_and_closes_the_run`, `cancel_kill_stops_an_executing_run_and_the_refusal_stays_without_the_flag` (`crates/pii-cli/tests/run_cancel_kill.rs`), `reattach.rs`, and the orphan tests in `engine/orphans.rs`.
-- **CONFIRMED** `unsafe_code = "forbid"`: a fake agent reaches the engine through a **child process** whose `PATH` starts with the fake bin dir (see spec 284, "MEASURE FIRST"); reuse whatever helper spec 284 landed rather than writing a second one. If spec 284 has not landed, stop and report.
+- **CONFIRMED** `unsafe_code = "forbid"`: a fake agent reaches the engine through a **child process** whose `PATH` starts with the fake bin dir (see spec 284, "MEASURE FIRST"). Reuse spec 284's shared helper module `crates/pii-server/tests/spec_graph_daemon/mod.rs` (the fake bin dir, the child-process re-exec, the throwaway repo, the `Engine` builder) and extend THAT with what M1–M8 need (a sleeping stand-in, a pid file) rather than writing a second harness; do not edit spec 284's test file. If that module is absent, spec 284 has not landed: stop and report.
 - **MEASURE FIRST (1)** whether `cancel_run_with(.., kill = true)` reaches a coder that is running **inside an inlined call** — the node ids carry the `docs__` prefix; the kill path may look nodes up by the host's ids only.
 - **MEASURE FIRST (2)** what `recover_at_boot` does to a run left `Running` in the store whose agent process is dead: which terminal status it writes and whether `graph.call` stays readable afterwards. Find how an existing test simulates a restart (a second `Engine::new` on the same `store.redb` after dropping the first, or a copied store) and use that; if no in-process simulation is possible, record exactly why in the test file's header and cover it in spec 287 (the real daemon).
 - **MEASURE FIRST (3)** whether the engine can resume a run at all. If no resume exists for graph runs, the test asserts the **refusal** (the verb names the run and says it cannot resume) and the spec records it as a documented limit — not a gap to paper over.
@@ -29,7 +29,7 @@ One new test file `crates/pii-server/tests/composition_failure_matrix.rs`, each 
 - **M8 needs refused through the engine.** A host whose called graph declares `needs = ["x"]` started **without** `x` → no run is started or the run fails before any node, with `graph.call.need` naming the call, graph and key (spec 267 through `Engine`). CONTROL: with `x` present it runs.
 
 ### Non-Functional
-- Test-only. Under 450 lines per file (split by case group if needed). Nothing spends. A case that cannot be written (the engine offers no way in) is **reported with the reason in the test file header and the worker's final message**, never skipped silently.
+- Test-only. Under 450 lines per file. All eight cases stay in `crates/pii-server/tests/composition_failure_matrix.rs` (the criteria count `fn m[1-8]_` there); anything they share with spec 284 goes into the listed module `crates/pii-server/tests/spec_graph_daemon/mod.rs`, so move helpers, never cases. Create no third file: the row that commits this work names exactly these two paths, and the cycle refuses a change its row does not list. Nothing spends. A case that cannot be written (the engine offers no way in) is **reported with the reason in the test file header and the worker's final message**, never skipped silently.
 - A failing case is a **finding**: the worker stops, leaves the failing test in the tree, and reports which of M1–M8 failed and what the journal showed. It changes no source.
 
 ## Exit Criteria
@@ -41,6 +41,11 @@ One new test file `crates/pii-server/tests/composition_failure_matrix.rs`, each 
 - [ ] `cargo test -q -p pii-server --test spec_graph_runs_through_the_daemon 2>&1 | grep -qE "^test result: ok\. [0-9]+ passed"`
 - [ ] `git diff --quiet -- crates/pii-server/src crates/pii-graph/src graphs`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
+- [ ] `test -f crates/pii-server/tests/spec_graph_daemon/mod.rs`
+
+## Files
+- `crates/pii-server/tests/composition_failure_matrix.rs`
+- `crates/pii-server/tests/spec_graph_daemon/mod.rs`
 
 ## Guardrails
 - Do NOT edit source, graphs or existing tests; do NOT `#[ignore]`, loosen or delete a case to get green; do NOT call `set_var`; do NOT commit.

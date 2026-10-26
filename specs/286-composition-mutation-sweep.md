@@ -15,7 +15,7 @@
 ### Functional
 - **R1. `scripts/mutate/composition.sh`** (committed, executable, `set -euo pipefail`, all paths relative to the repo root, no absolute path) plus `scripts/mutate/composition_mutations.py` (the table and the applier, run with `uv run --no-project python`). The table has **at least 18** rows `id | file | old | new | test-file | kind`, `kind` being `required` (must turn the test red) or `probe` (reported, never counted as a pass). Required mutations, one per behaviour: (1) the pin check passes any digest, (2) the pin check is skipped when the digest is absent, (3) a sub-graph node read of a host node is allowed (`graph.call.leak` removed), (4) an undeclared `needs` key loads, (5) a null `needs` key does not refuse, (6) `MAX_DEPTH` raised by one, (7) the self-call/cycle check removed, (8) `caps` ceiling not enforced, (9) the call record is not attached, (10) `graph.call` is not journalled, (11) the inlined node ids lose their call prefix (id collision), (12) the call's `in` mapping is ignored, (13) the sub-graph exit port is not wired back to the host, (14) the coder never charges the run budget, (15) the coder's start gate removed, (16) the per-node session path ignores the node id, (17) the daemon path builds the budget without `[limits]`, (18) a `call` inside a fragment accepted. Each names the test file that must catch it (`call_inlines_a_graph`, `call_needs`, `call_records`, `run_journals_calls`, `coder_charges_run_budget`, `coder_session_per_node`, `spec_graph_runs_through_the_daemon`, `composition_failure_matrix`, …).
 - **R2. Behaviour per mutation:** copy the target file into the scratch tree, apply, run **only** the named test file, record `RED` / `SURVIVED` / `NO-APPLY`, restore, and **compare the sha256 of the restored file to the original's**; a mismatch aborts the whole sweep with a nonzero exit and a message naming the file. Output is one row per mutation and a final line `MUTATION-SWEEP: required <red>/<total> probes <n>`; exit 0 only when **every required row is RED** and every digest matched.
-- **R3. The sweep tests itself.** `scripts/mutate/tests/composition-sweep-test.sh` runs the sweep against a **fixture** (a tiny crate with one function and one test, under `scripts/mutate/tests/fixture/`) with three table rows: a mutation the test catches (RED), one it does not (SURVIVED), and one whose anchor is absent (NO-APPLY) — and asserts the sweep reports exactly those three, exits nonzero, and left the fixture byte-identical. CONTROL: with the SURVIVED row removed the sweep exits 0.
+- **R3. The sweep tests itself.** `scripts/mutate/tests/composition-sweep-test.sh` runs the sweep against a **fixture** — a tiny crate under `scripts/mutate/tests/fixture/` made of exactly three files: `Cargo.toml` (carrying an empty `[workspace]` table so the crate detaches from the repo workspace and builds on its own), `.gitignore` (naming `Cargo.lock` and `target/`, so building the fixture leaves no unlisted path in the tree) and `src/lib.rs` (one function and one test) — with three table rows: a mutation the test catches (RED), one it does not (SURVIVED), and one whose anchor is absent (NO-APPLY) — and asserts the sweep reports exactly those three, exits nonzero, and left the fixture byte-identical. CONTROL: with the SURVIVED row removed the sweep exits 0.
 - **R4. First run, recorded.** The worker runs the real sweep once and writes the result table to `_docs/05-operations/COMPOSITION-MUTATION-SWEEP.md` (the date, the commit, one row per mutation). **A SURVIVED required row is a finding**: it is listed under "Survivors" with the mutation, and the worker does **not** write a test to kill it in this spec — that is the next spec's work, named in the document.
 - **R5. Wiring.** The sweep is NOT in the per-commit gate (it builds and runs many tests). It is invoked by `scripts/autonomy/` only through an explicit `PII_SWEEP=1` flag — **out of scope here**; this spec only makes it runnable and proven.
 
@@ -30,6 +30,15 @@
 - [ ] `grep -qE 'MUTATION-SWEEP: required' _docs/05-operations/COMPOSITION-MUTATION-SWEEP.md`
 - [ ] `git diff --quiet -- crates/pii-graph/src crates/pii-server/src graphs`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
+
+## Files
+- `scripts/mutate/composition.sh`
+- `scripts/mutate/composition_mutations.py`
+- `scripts/mutate/tests/composition-sweep-test.sh`
+- `scripts/mutate/tests/fixture/Cargo.toml`
+- `scripts/mutate/tests/fixture/.gitignore`
+- `scripts/mutate/tests/fixture/src/lib.rs`
+- `_docs/05-operations/COMPOSITION-MUTATION-SWEEP.md`
 
 ## Guardrails
 - Do NOT edit any source file in the live tree. Do NOT use `rm -rf` (move to `_tmp/_trash/`). Do NOT weaken a mutation to make it turn red. Do NOT write tests to kill a survivor here. Do NOT commit.

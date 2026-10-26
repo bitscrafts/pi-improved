@@ -34,6 +34,11 @@ This spec adds one **re-runnable check script** that starts the real tracked `sp
 - [ ] `bash -n modules/devbox/check.sh && bash -n modules/devbox/daemon.sh`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
+## Files
+- `modules/devbox/composition-check.sh`
+- `modules/devbox/tests/composition-check-test.sh`
+- `_docs/05-operations/COMPOSITION-DAEMON-CHECK.md`
+
 ## Guardrails
 - Do NOT stop, restart or reconfigure the production daemon. Do NOT run while a worker is in flight. Do NOT use `rm -rf`. Do NOT spend: the stand-ins are shell scripts. Do NOT commit.
 - If a daemon-only defect shows (the graph passes in 284 but fails here), record it in the document and stop; do not edit source.
