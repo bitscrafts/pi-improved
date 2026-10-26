@@ -2321,3 +2321,33 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
 - A142/A144/A145 committed by the sibling lane (`a45d706`, `04e8203`, `7ca198a`), their rows `done`; tree clean;
   switch `RUNNING` since 00:52:54Z; queue now A146/spec 282, `pick` offers it. Selftest on the committed tree:
   `41 passed, 0 failed — ALL MECHANISMS PASS`.
+
+## 2026-10-26T07:05Z — spec 282 closed: the limit is in the tracked graph, and the gate that parked it for five hours was not about the limit
+
+State: HEAD `81696e8` (spec 282) + this closure commit · control `RUNNING` since 00:52:54Z · no cycle in flight ·
+`pick` = NONE · A146 `done`, only A79 `revoked` outside done.
+
+- **A146 had been parked `gate-failed` since 01:09Z** and every 5-minute beat since printed
+  `every open row is parked: A146(needs-review) - waiting for a person` — 60+ cycles of a loop that had work
+  in its tree and asked for a human instead. The tree it left was the whole item: `graphs/spec.toml` +6 lines,
+  two new test files.
+- **The work was right; the row was wrong.** A146's commit-path column named two of the three files spec 282 R2
+  requires — `crates/pii-server/tests/spec_graph_spend_limit_bites.rs` (the R2(e) run-level proof) was missing,
+  so even a green gate would have staged an incomplete path list and exited 11. The row now names all three, and
+  its verify column was compared to the spec's Exit Criteria by a script, not by eye: 8 commands, 8 commands,
+  identical.
+- **Verified on the worker's tree: 8 of 8 criteria green** (4 tests in `pii-graph`, the server proof reading
+  `--max-budget-usd 1` from the fake agent's recorded argv, no Rust diff, 3 added lines ≤ 6, `lint-files` PASS).
+- **Mutation:** the `[limits]` block deleted → `spec_graph_has_a_spend_limit` `2 passed; 2 failed`, and the two
+  reds are exactly assertions (a) and (b) while both controls (called graph still `u64::MAX`, `docs.toml` digest)
+  stayed green. Restored `cp`+`touch`, `sha256 495ed509…` before and after, then `ok. 4 passed`.
+- **Gates, on the door that measures what failed:** `fresh-gate --worktree` → `ALL PASS` but it SKIPS
+  `coverage-floor` by design (an export cannot fit ~18 G), so it was not read as the answer; the repo gate run as
+  `cycle.sh` runs it (`QG_SKIP_COVERAGE=0`) → `coverage-floor: total 82.92% >= floor 74.00%`, `ALL PASS`, rc 0.
+- **The red itself was a timing assertion, not the spec.** `pii-server --test latency` asserts `session.prompt`
+  returns in < 50 ms; under `cargo llvm-cov --workspace` with 177 test binaries in parallel it missed, and the
+  step log carries no assertion text at all (no `running 1 test`) — the harness output never reached the log.
+  That binary then passed alone (2.16 s), in the worktree gate, and twice in the repo gate. Not retuned, not
+  weakened; no row filed because it has never reproduced outside a full coverage run.
+- **Next:** the queue is empty — the next item comes from the ranked list in
+  `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §4, with its row, in this tick.

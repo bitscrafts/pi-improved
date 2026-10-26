@@ -38,3 +38,18 @@ The figure is a policy number, and this spec fixes it with its derivation rather
 ## Follow-ups (not this spec)
 1. `pii run start spec` driven by the queue's worker instead of `run-batchC-pii.sh` (the lane's shell graph would go).
 2. A per-node budget share, so `docs` cannot spend the whole run's allowance before `reverify`.
+
+## Closure
+
+Closed by the orchestrator 2026-10-26, on the tree the worker left (the item had been parked `gate-failed` for 5 h 15 min).
+
+**The eight Exit Criteria, run again by the orchestrator on that tree: 8 of 8 green.** `spec_graph_has_a_spend_limit` `ok. 4 passed`; the value grep; `spec_graph_is_tracked_and_valid`; `spec_graph_has_a_verdict`; `spec_graph_documents_after_verify`; no Rust diff; `graphs/spec.toml` `3 0` (≤ 6 added lines); `lint-files` PASS. The run-level proof R2(e) is `crates/pii-server/tests/spec_graph_spend_limit_bites.rs`, `ok. 1 passed` — it reads `--max-budget-usd 1` from the argv the fake agent recorded.
+
+**The test can fail (mutation, then restored byte-identical).** Deleting the `[limits]` block from `graphs/spec.toml` turned `spec_graph_has_a_spend_limit` red — `2 passed; 2 failed`, and the two that failed are exactly assertions (a) and (b), while both controls stayed green (the called `docs.toml` is still `u64::MAX`; its pinned digest still matches). Restored with `cp` + `touch` (so the mtime is newer than the mutated build — a `cp -p` restore would have re-used the stale binary and produced a false red), `sha256 495ed509e15f59f2cefc10b8c77d4ea184b99414c27328a9705f24cc3529ecc3` before and after, then `ok. 4 passed`.
+
+**The gate, on the door that measures coverage.** `cargo xtask fresh-gate --worktree` → `quality-gate: ALL PASS` (13 steps; it SKIPS `coverage-floor` by design, an export cannot fit ~18 G). The repo gate, run exactly as `cycle.sh` runs it (`QG_SKIP_COVERAGE=0`, `cargo llvm-cov --workspace --lib --bins --tests`) → `coverage-floor: total 82.92% >= floor 74.00%`, `quality-gate: ALL PASS`, rc 0.
+
+**The first gate red was not this spec, and is not a regression here.** Cycle `20261026T005407Z` failed `coverage-floor` on `pii-server --test latency`, an unrelated 50 ms wall-clock assertion (`session.prompt` must return before the run finishes), under `cargo llvm-cov --workspace` with 177 test binaries in parallel — the same test binary then passed in the worktree gate, in the repo gate's test step and in the repo gate's coverage run. Not retuned and not weakened. It has never reproduced outside a full coverage run; if it does, it earns its own row rather than a retry.
+
+**The row was wrong, and that is why this sat.** A146's commit-path column named two of the three files R2 requires — `crates/pii-server/tests/spec_graph_spend_limit_bites.rs` was missing, so the cycle would have staged an incomplete path list even with a green gate. The row now names all three files, and its `verify` column was diffed against this spec's `## Exit Criteria` **programmatically**: 8 criteria, 8 commands, identical.
+
