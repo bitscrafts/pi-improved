@@ -33,7 +33,7 @@ Every other spec in this queue is implemented by a worker through the daemon. Th
 
 ## Exit Criteria
 - [ ] `cargo test -q -p pii-server --test coder_quota_signal 2>&1 | grep -qE "^test result: ok\. 17 passed"`
-- [ ] `grep -q "structured_refusal" crates/pii-server/src/node_kinds/nodes/agent_quota.rs`
+- [ ] `grep -q "fn output_refusal" crates/pii-server/src/node_kinds/nodes/agent_quota.rs`
 - [ ] `grep -q "is_limit(result)" crates/pii-server/src/node_kinds/nodes/agent_quota.rs`
 - [ ] `cargo test -q -p pii-server --test coder_charges_run_budget 2>&1 | grep -qE "^test result: ok\. [0-9]+ passed"`
 - [ ] `cargo clippy -q -p pii-server --all-targets -- -D warnings`
@@ -45,3 +45,10 @@ Every other spec in this queue is implemented by a worker through the daemon. Th
 ## Follow-ups (not this spec)
 1. `window.sh` and `probe.sh` read the WORKER LOG, which contains the same echoed text, so they can be fooled the same way; they should read the journal's `quota_exhausted` field instead of grepping a log.
 2. A fixture that quotes a refusal belongs in a file the workers do not read; long term the phrase should be assembled at run time in the fixtures, not spelled out.
+
+## Closure
+**Committed** as `e176a5c`; the six Exit Criteria were then run by the orchestrator on that commit instead of being read from the implementing lane's log: criteria 1, 3, 4, 5, 6 returned rc=0 and criterion 2 returned **rc=1**.
+
+**Criterion 2 amended, reason measured.** The first attempt's gate failed on this crate's own `clippy -D warnings` (`option_if_let_else`, `option_option`) and nothing was committed; the version that passes the gate folds both rules into one helper, `output_refusal`, which takes the structured line when stdout is a JSON stream and falls back to the whole-text scan when it is plain output. The criterion named the pre-refactor helper, so it could not pass on the code the gate accepts. It now names the function that exists — the same assertion (a dedicated helper decides the stream case), nothing else relaxed. Criteria 1, 3 and 5 were green before the edit and after it, so the amendment bought no other pass.
+
+**The defect is reddened, and the file restored byte-identical.** Deleting `refusal_text`'s `&& is_error` condition — back to spec 237's behaviour — turned `coder_quota_signal` red on exactly one test, `an_error_free_result_that_quotes_the_phrase_is_not_a_signal` (16 passed, 1 failed). Restored with `cp` (not `cp -p`) and `touch`; `sha256` `5acc29226f5fad367d52ecf80b183467bdb82d6c4fd1ea0e7a5844ea1a0bc4f9` before and after, and the same test then read `ok. 17 passed`.
