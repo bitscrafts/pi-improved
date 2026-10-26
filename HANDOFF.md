@@ -2309,3 +2309,15 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
   `--reason` is an unknown flag, rc 2), and `image=missing` printed for a node the runtime never answered
   (the image is present, digest `sha256:2684dee9…`). Filed as spec 231 / row A99. The M0 script now marks
   a boundary-length reason `[clipped-80]` rather than passing a clip off as the measurement.
+
+## 2026-10-26T01:02Z — spec 281 closed by the orchestrator (six criteria, mutation red, restored byte-identical)
+- `e176a5c` committed spec 281 (a spend-limit phrase the agent *read* is not the CLI's refusal) after a first attempt
+  (`/tmp/qgate-281.log`) failed the gate on its own `clippy -D warnings` and committed nothing. Independently run on
+  that commit: criteria 1,3,4,5,6 green, **criterion 2 red** — it grepped `structured_refusal`, the helper the clippy
+  fix (`option_option`) replaced with `output_refusal`. Criterion 2 now names the existing function; same assertion.
+- Mutation: `refusal_text`'s `&& is_error` deleted → `coder_quota_signal` red on
+  `an_error_free_result_that_quotes_the_phrase_is_not_a_signal` (16/1), restored with `cp`+`touch`,
+  sha256 `5acc2922…` before and after, then `ok. 17 passed`. Closure recorded in the spec, committed `68e64cd`.
+- A142/A144/A145 committed by the sibling lane (`a45d706`, `04e8203`, `7ca198a`), their rows `done`; tree clean;
+  switch `RUNNING` since 00:52:54Z; queue now A146/spec 282, `pick` offers it. Selftest on the committed tree:
+  `41 passed, 0 failed — ALL MECHANISMS PASS`.
