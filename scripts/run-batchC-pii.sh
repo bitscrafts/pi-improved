@@ -82,10 +82,16 @@ fi
 
 # ---- the graph: one coder node; no criteria (the cycle runs the row's own criteria next), so the node's verdict is the agent's exit
 # and the journal's tree_changed / quota facts. `refuse` makes an agent failure FAIL the run (spec 240), never succeed it.
+# The run's wall limit must outlive its node: the engine's default is 600 000 ms and it is checked before the NEXT node is dispatched,
+# so a coder that ran past 10 minutes and exited 0 had its run FAILED (measured: 601 s and 717 s failed, 382 s succeeded).
+WALL_MS=$(( ${PII_NODE_TIMEOUT_MS:-3000000} + 300000 ))
 cat > "$GRAPH" <<GRAPH
 name = "$GRAPH_NAME"
 entry = "code"
 caps = ["spawn", "proc"]
+
+[limits]
+max_wall_ms = $WALL_MS
 
 [[node]]
 id = "code"
