@@ -28,7 +28,7 @@ The figure is a policy number, and this spec fixes it with its derivation rather
 - [ ] `cargo test -q -p pii-graph --test spec_graph_has_a_verdict 2>&1 | grep -qE "^test result: ok\. [0-9]+ passed"`
 - [ ] `cargo test -q -p pii-server --test spec_graph_documents_after_verify 2>&1 | grep -qE "^test result: ok\. [0-9]+ passed"`
 - [ ] `git diff --quiet -- crates/pii-graph/src crates/pii-server/src`
-- [ ] `test "$(git diff --numstat -- graphs/spec.toml | cut -f1)" -le 6`
+- [ ] `test "$(git diff --numstat -- graphs/spec.toml | cut -f1 | grep -E '^[0-9]+$' || echo 0)" -le 6`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Guardrails
