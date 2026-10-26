@@ -41,6 +41,9 @@ Measured 2026-10-26 (the A149 worker's `m2_restart_inside_a_call`, then the orch
 - `crates/pii-graph/src/sched/dispatch.rs`
 - `crates/pii-graph/src/sched/mod.rs`
 - `crates/pii-graph/tests/early_agent_calls.rs`
+- `crates/pii-server/tests/composition_failure_matrix.rs`
+
+**Acceptance tests already written (A149, spec 285).** `composition_failure_matrix.rs` (14 cases, 12 green) is committed WITH this spec: its `m2_restart_inside_a_call` and `m7_resume_of_a_run_interrupted_inside_a_call_is_refused` are red today for exactly this defect and turn green unchanged when the fix lands. Do not edit that file or `spec_graph_daemon/mod.rs`.
 
 ## Guardrails
 - Do NOT weaken, skip or delete `m2`, `m7`, `deadline_flush`, or `orphans_are_reaped`. Do NOT reorder or duplicate a journal event. Do NOT add a poll loop shorter than 250 ms. Do NOT change `graphs/` or `crates/pii-server/src`. Do NOT commit.
