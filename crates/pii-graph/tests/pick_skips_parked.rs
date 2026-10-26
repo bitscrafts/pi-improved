@@ -18,6 +18,10 @@ fn pick(dir: &std::path::Path) -> Output {
         .arg("pick")
         .env("PII_PLAN", dir.join("plan.tsv"))
         .env("PII_STATE", dir.join("state.json"))
+        // spec 283: pick refuses a row whose column 6 is not its spec's ## Files set, so the fixture declares its
+        // spec here. Without this the two rows are refused for the OTHER reason and this test stops measuring the
+        // parked head at all (measured: `NONE`, gate red on spec 283's first pass).
+        .env("PII_SPECS", dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -33,10 +37,16 @@ fn fixture(states: &[(&str, &str)]) -> tempfile::TempDir {
     for (id, status) in states {
         let _ = std::fmt::Write::write_fmt(
             &mut plan,
-            format_args!("{id}\tspec.md\t-\ttitle {id}\t-\t-\t0\n"),
+            // column 6 must be the spec's ## Files set (spec 283), not the `-` this fixture carried before
+            format_args!("{id}\tspec.md\t-\ttitle {id}\t-\tscripts/autonomy/state.py\t0\n"),
         );
         st.insert((*id).into(), serde_json::json!({ "status": status }));
     }
+    std::fs::write(
+        dir.path().join("spec.md"),
+        "# fixture spec for pick_skips_parked\n\n## Files\n- `scripts/autonomy/state.py`\n",
+    )
+    .unwrap();
     std::fs::write(dir.path().join("plan.tsv"), plan).unwrap();
     std::fs::write(
         dir.path().join("state.json"),

@@ -70,6 +70,14 @@ it buys a worker**.
 - **R5. The mechanism stays tested by the selftest.** One new row in `scripts/autonomy/selftest.sh`, named `a
   row's file list is checked against its spec`, that runs R4's script, writes its output to a file and greps **the
   file**; PASS only on `RESULT: PASS`. The selftest's verdict must stay `ALL MECHANISMS PASS`.
+- **R6. The refusal does not cost an existing test its meaning.** `pick` is driven as a black box by
+  `crates/pii-graph/tests/pick_skips_parked.rs` (spec 169), whose fixture rows carried `-` in column 6 and no spec
+  file at all. Under R3 those rows are refused for the new reason, `pick` answers `NONE`, and
+  `a_parked_head_does_not_freeze_the_queue` fails — measured on this spec's first pass, gate red at
+  `pick_skips_parked.rs:57` (`left: "NONE\n" right: "P2"`). The fixture therefore gains the declaration the new
+  contract requires and no more: a `spec.md` under the temp dir with `## Files` naming the row's path, column 6
+  carrying that same path, and `PII_SPECS` pointing at it. The assertion itself is unchanged — a parked head is
+  still skipped, the next row is still picked, and `all_parked_says_so_and_picks_none` still answers `NONE`.
 
 ### Non-Functional
 - Python 3 stdlib only; POSIX bash for the test. Every file under the 450-line gate.
@@ -86,6 +94,7 @@ it buys a worker**.
 | `a-spec-without-a-files-block-is-not-silently-accepted` | rc=2, `NO-FILES`, never `OK` |
 | `a-directory-entry-is-not-a-file-list` | rc=3, `NOT-A-FILE` |
 | `CONTROL-a-pick-with-a-refused-row-still-offers-the-next` | refused row on stderr, next row on stdout |
+| `a_parked_head_does_not_freeze_the_queue` (existing, spec 169) | parked head skipped, `P2` picked — red under R3 until its fixture declares its own `## Files` (R6) |
 
 **The requirement a plausible implementation satisfies only in appearance:** treating a spec with no `## Files`
 as "nothing to check" — i.e. passing it. That is the silent pass this spec exists to stop, so (d) is the row that
@@ -106,14 +115,18 @@ decides it, and (b) is the control that keeps the check from refusing everything
 - [ ] `python3 scripts/autonomy/state.py pick | grep -qE "^(A[0-9]+|NONE)$"`
 - [ ] `bash -n scripts/autonomy/tests/row-paths-test.sh`
 - [ ] `bash scripts/autonomy/selftest.sh 2>&1 | grep -q "ALL MECHANISMS PASS"`
-- [ ] `git diff --quiet -- crates graphs`
+- [ ] `git diff --quiet -- graphs`
+- [ ] `test -z "$(git status --porcelain crates | grep -v 'crates/pii-graph/tests/pick_skips_parked.rs')"`
 - [ ] `git diff --quiet -- scripts/autonomy/cycle.sh scripts/autonomy/tick.sh`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
+- [ ] `cargo test -q -p pii-graph --test pick_skips_parked 2>&1 | grep -qE "test result: ok\. 2 passed"`
 
 ## Guardrails
 - Do NOT edit `scripts/autonomy/cycle.sh` or `scripts/autonomy/tick.sh`. Do NOT edit any file under `specs/` —
   specs are the planner's, and adding a `## Files` block to one is planner work, not implementation.
-- Do NOT touch `crates/` or `graphs/`. Do NOT commit.
+- Do NOT touch `graphs/`. The ONLY file under `crates/` this spec may change is the fixture in
+  `crates/pii-graph/tests/pick_skips_parked.rs` (R6) — no other crate file, and never an assertion.
+- Do NOT commit.
 - Write `scripts/autonomy/state.py` through a temp file and `mv` it into place (R3): it runs on every tick.
 - If a **real** plan row's spec has no `## Files` and the row is dispatchable, STOP and report it — do not invent
   the block. (On 2026-10-26 the only open row is A147, whose spec is this one.)
@@ -131,3 +144,52 @@ decides it, and (b) is the control that keeps the check from refusing everything
 - `scripts/autonomy/tests/row-paths-test.sh`
 - `scripts/autonomy/state.py`
 - `scripts/autonomy/selftest.sh`
+- `crates/pii-graph/tests/pick_skips_parked.rs`
+
+## Closure
+
+**Closed by the orchestrator on 2026-10-26**, after a paid worker delivered the implementation and the queue parked
+the row on a `verify-failed` that no later run could reproduce.
+
+- **The worker delivered; the cycle's verify failed anyway.** Cycle `20261026T064317Z` dispatched A147 (session
+  `6fc6558a-9f97-45d9-a24f-0beeb0df6444`): `status=succeeded`, rc=0, 0.065986 USD, four dirty paths — exactly this
+  spec's files at that moment. `_tmp/autonomy/loop-events.ndjson` names the criterion that failed:
+  `loop.verify item=A147 FAILED: bash scripts/autonomy/selftest.sh 2>&1 | grep -q "ALL MECHANISMS PASS"` (06:48:07Z).
+  From then until 12:13Z the queue answered `pick: every open row is parked: A147(needs-review)` **61 times** — five
+  and a half hours in which nothing was read, nothing was spent and nothing advanced.
+- **That failure did not reproduce.** On the tree the worker left, the criteria were green twice: plain, and again
+  with `_tmp/autonomy/lock` held by `flock` for the whole selftest — the one condition a cycle adds and a hand run
+  does not. The selftest read `RESULT: 42 passed, 0 failed` / `VERDICT: ALL MECHANISMS PASS`
+  (`_tmp/autonomy/logs/selftest-repro1.log`, `selftest-inflight.log`).
+- **The gate — which the failed verify had prevented from ever running — was red for a real reason.**
+  `fresh-gate --worktree` failed at `crates/pii-graph/tests/pick_skips_parked.rs:57`:
+  `assertion left == right failed: head needs-review must be skipped: NONE`, `left: "NONE\n" right: "P2"`. The spec
+  169 test drives `pick` as a black box with fixture rows carrying `-` in column 6 and no spec file at all; under R3
+  those rows are refused for the new reason, so the test was measuring the refusal instead of the parked-head skip.
+- **The cause was this spec's own scope, not the worker's code.** Its guardrail said "Do NOT touch `crates/`",
+  forbidding the only file that could restore the test. Amended in this closure, committed with the work: **R6**
+  requires the fixture to declare its own `## Files` (`PII_SPECS`, a `spec.md`, column 6 naming that path) with the
+  assertion untouched; the guardrail now names that one file as the sole permitted `crates/` change; the
+  "crates untouched" criterion was narrowed to "nothing under `crates/` changed except that file" — it contradicted
+  R6 as written — and a new criterion runs the test itself.
+- **Evidence, all measured on this tree.** **19 of 19** Exit Criteria green. Three mutations, each red, each restored
+  byte-identical (`sha256sum` before == after):
+  - **m1** `judge` drops the MISSING side (`if missing or extra` -> `if extra`): `a-row-short-a-file-is-refused` red
+    (`rc=0, want 1 and MISSING crates/x/src/b.rs`) and the pick control red (`picked 'A1', want A2`),
+    `RESULT: FAIL 2` — restored, sha `f2baae84c953d4a4…` identical, `RESULT: PASS`.
+  - **m2** `pick`'s refusal block removed from `state.py`: `CONTROL-a-pick-with-a-refused-row-still-offers-the-next`
+    red (`picked 'A1', want A2 with 'refused A1' on stderr`), `RESULT: FAIL 1` — restored, sha
+    `113a507cb1f97e49…` identical, `RESULT: PASS`.
+  - **m3** the fixture's column 6 back to `-`: `pick_skips_parked` `FAILED. 1 passed; 1 failed`, `NONE` vs `P2` —
+    restored, sha `e6db3567ecf5c60b…` identical, `2 passed`.
+  - The near-miss control (b) stayed green under m1 and m2: the check never started refusing a correct row.
+- **The row and the spec agree.** A147 carries seven columns, its `verify` column equals this spec's Exit Criteria
+  command for command (**19 = 19**, no criterion carrying the `;` separator), all five of its commit paths exist,
+  and `row-paths.py check A147` prints `OK A147 5`.
+- **Gate:** `fresh-gate --worktree` PASS (`_tmp/autonomy/logs/gate-a147-worktree-3.log`, `fresh-gate: PASS`), and the queue's own door `quality-gate.sh --routine` with coverage pinned on: **coverage 82.92% >= 74.00%**, `quality-gate: ALL PASS` (`_tmp/autonomy/logs/gate-a147-repo-coverage.log`). The gate cache had to be reclaimed first: `/projects` was at 100% and the gate's 12 GB floor refused the run.
+
+### Follow-ups this closure adds
+3. The selftest criterion should `tee` its output to a dated log and grep the file, so a failing row is named by the
+   artefact instead of lost to a pipe — that blindness is why this park cost half a day.
+4. A `verify-failed` that no later run reproduces should not park a row for hours: re-run the single failing
+   criterion once on the same tree before incrementing the strike count, so a transient costs a second, not a day.

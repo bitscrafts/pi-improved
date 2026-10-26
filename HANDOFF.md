@@ -1,5 +1,44 @@
 # Pii — Session Handoff
 
+## 2026-10-26 13:10Z — A147 sat parked five and a half hours on a `verify-failed` that did not reproduce, and the gate it never reached was red for a reason the spec forbade fixing
+
+State: HEAD pending this commit (before it: `c605f5d`) · control `RUNNING` · no cycle in flight · queue: A147
+closed here, nothing else open (the next tick authors the next spec).
+
+- **Measured, not inferred.** Cycle `20261026T064317Z` dispatched A147 (session `6fc6558a-9f97-45d9-a24f-0beeb0df6444`):
+  `status=succeeded`, rc=0, 0.065986 USD, four dirty paths — exactly spec 283's files. `loop.verify` then recorded
+  `item=A147 FAILED: bash scripts/autonomy/selftest.sh 2>&1 | grep -q "ALL MECHANISMS PASS"` at **06:48:07Z**
+  (`_tmp/autonomy/loop-events.ndjson`). From then to 12:13Z the queue answered `pick: every open row is parked:
+  A147(needs-review)` **61 times**: 5 h 25 min in which nothing was read, nothing was spent, nothing advanced.
+- **The failure does not reproduce.** On the tree the worker left, spec 283's criteria ran green **twice**: plain,
+  and again with `_tmp/autonomy/lock` held by `flock` for the whole selftest — the one condition a cycle adds and a
+  hand run does not. Selftest: `RESULT: 42 passed, 0 failed`, `VERDICT: ALL MECHANISMS PASS`
+  (`_tmp/autonomy/logs/selftest-repro1.log`, `selftest-inflight.log`). The 06:48 red names no row, because the
+  criterion pipes the selftest into `grep -q` — the same blindness the selftest's own rows were fixed for on
+  2026-10-20. Recorded as a follow-up in the spec's Closure, not silently repaired.
+- **The gate, which the failed verify had prevented from ever running, was red for a real reason.**
+  `fresh-gate --worktree` failed `crates/pii-graph/tests/pick_skips_parked.rs:57` — spec 169's black-box test of
+  `pick` — with `assertion left == right failed: head needs-review must be skipped: NONE`, `left: "NONE\n"`,
+  `right: "P2"`. Its fixture rows carried `-` in column 6 with no spec file, and spec 283's new `pick` refuses such
+  rows (correctly), so the test was measuring the refusal instead of the parked-head skip.
+- **The spec was the obstacle, not the worker.** Spec 283's guardrail said "Do NOT touch `crates/`", forbidding the
+  only file that could restore the test. Amended: **R6** requires the fixture to declare its own `## Files`
+  (`PII_SPECS` + a `spec.md` + column 6 naming that path), assertion untouched; the guardrail names that one file
+  as the sole permitted `crates/` change; the "crates untouched" criterion was narrowed to "nothing under `crates/`
+  changed except that file" (it contradicted R6) and a criterion now runs the test.
+- **Evidence.** Exit Criteria **19/19** green on this tree. Three mutations, each red, each restored byte-identical
+  (`sha256sum` before == after, quoted in the spec's Closure): m1 drops the MISSING side of `judge`
+  (`FAIL 2`, sha `f2baae84…`), m2 removes `pick`'s refusal (`FAIL 1`, sha `113a507c…`), m3 reverts the fixture's
+  column 6 (`pick_skips_parked` `1 passed; 1 failed`, sha `e6db3567…`). The near-miss control stayed green under
+  m1/m2. Row A147 regenerated from the spec: seven columns, 19 verify commands = 19 criteria, five paths,
+  `row-paths.py check A147` -> `OK A147 5`.
+- **Disk: the gate cannot run on this volume without a clean.** `/projects` was at 100 % (2.5 GB free) — the first
+  fresh-gate's failed export held 29 GB and the dev-tree `target` 27 GB. Reclaimed with `cargo clean` only
+  (28.0 GiB + 26.9 GiB), leaving 57 GB. The gate's floor is 12 GB and an export needs ~29 GB, so the routine gate
+  needs ~40 GB headroom; `/projects` is a single 594 GB volume at 91 %. A follow-up of its own, not done here.
+- **Next.** The gate was re-run on the amended tree `fresh-gate: PASS` and `quality-gate: ALL PASS` with coverage 82.92% >= 74.00%; with
+  A147 closed the queue is empty, so the next tick authors the next spec from `_docs/06-research/059-…` section 4.
+
 ## 2026-10-26 00:40Z — the loop's own safety net raised a false alarm eight times: the quota detector read a file the worker had opened
 
 State: HEAD pending this commit (before it: `4df2a3b`) · **control `PAUSED`** (by me at 00:11Z, cause measured, see

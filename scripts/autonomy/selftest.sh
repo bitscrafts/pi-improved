@@ -19,6 +19,11 @@ export TICK_DRY=1   # a test must never start a real cycle (it did once, and it 
 export PII_CONTROL=$T/selftest.control   # and never flip the real operator switch
 export PII_QUESTIONS=$T/questions.md PII_NOTES=$T/notes.md PII_STATE=$T/state.json PII_ACTS=$T/operator-acts.log PII_REPORTED=$T/last-reported   # nor write the operator's records
 BIN=$T/bin; mkdir -p "$BIN"
+# spec 283: pick refuses a row whose column 6 is not its spec's ## Files set. The fixture rows below therefore name
+# fixture specs under $T/specs that declare exactly the path their row lists; the real specs are not read by them.
+export PII_SPECS=$T/specs; mkdir -p "$T/specs"
+printf '# fixture\n\n## Files\n- `scripts/autonomy/state.py`\n' >"$T/specs/fake-spec.md"
+cp "$T/specs/fake-spec.md" "$T/specs/fake-2.md"
 PASS=0; FAIL=0
 row(){ # row <name> <expected> <actual>
   if [ "$2" = "$3" ]; then printf 'PASS  %-46s %s\n' "$1" "$3"; PASS=$((PASS+1));
@@ -39,7 +44,7 @@ fake_cmd(){ local n="$1" b="$2"; printf '#!/bin/sh\n%s\n' "$b" >"$BIN/$n"; chmod
 fake_cmd hermes "echo 'Gateway is running (PID: fake-selftest)'"
 
 echo "== 1. queue bookkeeping (state.py, atomic)"
-PII_PLAN=$T/plan.tsv printf 'X1\tfake-spec.md\t-\tthe fake item\t-\t-\t0\n' >"$T/plan.tsv"
+PII_PLAN=$T/plan.tsv printf 'X1\tfake-spec.md\t-\tthe fake item\t-\tscripts/autonomy/state.py\t0\n' >"$T/plan.tsv"
 row "pick finds the first row" "X1" "$(PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py pick | cut -f1)"
 PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py set X1 status=needs-review attempts=2 >/dev/null
 row "set writes and get reads back" "2" "$(python3 scripts/autonomy/state.py get X1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["attempts"])')"
@@ -116,7 +121,7 @@ E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error
 
 echo; echo "== 8. a worker cut off by the window keeps its resume handle"
 # the test uses its own plan row (X2) and never a real item id: the loop is running and owns A17
-printf 'X2\tfake-2.md\t-\tthe resume-handle item\t-\t-\t0\n' > $T/plan2.tsv
+printf 'X2\tfake-2.md\t-\tthe resume-handle item\t-\tscripts/autonomy/state.py\t0\n' > $T/plan2.tsv
 python3 scripts/autonomy/state.py set X2 status=in-progress session=test-session-1234 last=window-closed >/dev/null 2>&1
 H=$(PII_PLAN=$T/plan2.tsv python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f9)
 row "the state still offers the session (pick field 9 = the resume handle)" "test-session-1234" "$H"
@@ -174,6 +179,11 @@ echo; echo "== 12. the unlisted check reads a rename and a quoted path (spec 277
 UC=$T/unlisted-changes-test.out
 bash scripts/autonomy/tests/unlisted-changes-test.sh >"$UC" 2>&1   # the output goes to a file: the verdict is read from it, not from a pipe's status
 grep -q '^RESULT: PASS' "$UC"; row "the unlisted check reads a rename and a quoted path" 0 $?
+
+echo; echo "== 13. a row's file list is checked against its spec (spec 283)"
+RP=$T/row-paths.out
+bash scripts/autonomy/tests/row-paths-test.sh >"$RP" 2>&1   # the verdict is read from the file, never from a pipe's status
+grep -q '^RESULT: PASS' "$RP"; row "a row's file list is checked against its spec" 0 $?
 
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"

@@ -12,7 +12,7 @@ usage:
   state.py list                           -> every row, TSV, for reporting
 A `plan.tsv` row is: id <tab> spec <tab> brief <tab> title <tab> verify(cmd;cmd) <tab> paths(a;b) <tab> gate
 """
-import json, os, sys, tempfile
+import importlib, json, os, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 STATE = os.environ.get("PII_STATE") or os.path.join(ROOT, "_tmp", "autonomy", "state.json")
@@ -83,6 +83,13 @@ def main():
                 skipped.append(f'{r["id"]}({s})')
                 continue
             if s in ("pending", "in-progress") or window:
+                # spec 283: a row whose column 6 is not its spec's ## Files set is refused before a worker is bought
+                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                rowpaths = importlib.import_module("row-paths")  # hyphenated file: import_module, not `import`
+                rc, lines = rowpaths.judge(r)
+                if rc:
+                    print(f"refused {r['id']}: {', '.join(lines)}", file=sys.stderr)
+                    continue
                 if skipped:
                     print("pick: skip parked " + ", ".join(skipped) + " -> dispatching " + r["id"], file=sys.stderr)
                 # a row imported from a review is re-verified at pick (doc 066 Q2): a broken anchor is a plan-error
