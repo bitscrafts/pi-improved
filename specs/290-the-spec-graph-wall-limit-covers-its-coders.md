@@ -17,7 +17,7 @@ The `spec` graph's `code` node allows `timeout_ms = 3 000 000` (50 minutes) and 
 ### Functional
 - **R1. The limit.** `graphs/spec.toml`'s `[limits]` gains `max_wall_ms` equal to: the `code` node's `timeout_ms`, plus the called graph's coder `timeout_ms`, plus **1 800 000** (30 minutes for the two judges and the call's own steps) — **6 000 000** with today's numbers — with a comment stating the derivation and the measured failure. Nothing else in the file changes: no node, edge, value, `max_micro_usd`, or comment other than the one added. `graphs/docs.toml` is not edited (its digest is pinned in `spec.toml`).
 - **R2. The test derives, it does not copy.** New `crates/pii-graph/tests/spec_graph_wall_covers_its_nodes.rs`: (a) load the tracked `spec` graph through `load_host_with_graphs` (the shape `spec_graph_is_tracked_and_valid.rs` uses) and assert `limits.max_wall_ms >=` the **sum of every `coder` node's `timeout_ms` in the loaded, expanded graph** (read from the loaded nodes — including the inlined `docs__…` coder — not hard-coded); (b) assert it is **not** 600 000 (the default); (c) CONTROL: a scratch copy of `spec.toml` with the `max_wall_ms` line removed fails (a) and (b) — proven by running the same assertion function on the modified text; (d) CONTROL: a scratch copy whose `max_wall_ms` is `sum - 1` fails (a), and one equal to `sum` passes — the boundary; (e) CONTROL: the digest of `docs.toml` still equals the pin (the file was not edited).
-- **R3. The same property for every tracked graph that has a coder node and is meant to run alone.** The test also loads each other tracked graph under `graphs/` that contains a `coder` node (read the list with the loader, do not name them) and asserts the same relation for it; a graph that fails is **listed by name in the assertion message**. If `docs.toml` fails because it is only meant to be called, the test records that as an explicit allowed exception **with the reason in a comment**, named in code, and a CONTROL proves a graph that is *not* on the list still fails. A graph that fails and is not an exception is a finding: the worker lists it in its final message and does **not** edit it unless it is `spec.toml`.
+- **R3. The same property for the other tracked graphs that run a coder alone.** **AMENDED 2026-10-26** — the first version told the worker not to edit them, and its own test (`every_tracked_coder_graph_covers_its_coders`) then found four graphs with the same defect: `coder-demo.toml`, `coder-podman.toml`, `coder-selffix.toml` and `queue.toml` each run a coder with `timeout_ms = 1800000` and declare no `max_wall_ms`, so the 600 000 ms default fails any run whose coder passes ten minutes (these are the graphs `scripts/deploy-lnx-test.sh`, `scripts/autonomy/deploy-row.sh` and `modules/devbox/verify-spec.sh` run). Each gets a `[limits]` table with `max_wall_ms` = the sum of its coder timeouts + 300 000 (**2 100 000** for the three single-coder graphs) and, for `queue.toml`, which also has a judge, + 1 800 000 (**3 600 000**), with a comment naming the measurement. Nothing else in those files changes. The test stays as the worker wrote it and turns green. `docs.toml` stays the one allowed exception (it is only called, and a called graph runs under its host's limits).
 
 ### Non-Functional
 - One new TOML key and one new test file. No Rust under `crates/*/src`. The test file stays under the 450-line gate.
@@ -31,14 +31,19 @@ The `spec` graph's `code` node allows `timeout_ms = 3 000 000` (50 minutes) and 
 - [ ] `cargo test -q -p pii-server --test spec_graph_runs_through_the_daemon 2>&1 | grep -qE "^test result: ok\. [0-9]+ passed"`
 - [ ] `git diff --quiet -- graphs/docs.toml crates/pii-graph/src crates/pii-server/src`
 - [ ] `test "$(git diff --numstat -- graphs/spec.toml | cut -f1 | grep -E '^[0-9]+$' || echo 0)" -le 8`
+- [ ] `test "$(grep -lE '^max_wall_ms = [0-9]+' graphs/coder-demo.toml graphs/coder-podman.toml graphs/coder-selffix.toml graphs/queue.toml | wc -l)" -eq 4`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Files
 - `graphs/spec.toml`
+- `graphs/coder-demo.toml`
+- `graphs/coder-podman.toml`
+- `graphs/coder-selffix.toml`
+- `graphs/queue.toml`
 - `crates/pii-graph/tests/spec_graph_wall_covers_its_nodes.rs`
 
 ## Guardrails
-- Do NOT edit `graphs/docs.toml`, any other graph, or any source. Do NOT lower or remove an assertion. Do NOT pick the number by trying values until a test passes: it is the derivation above. Do NOT commit.
+- Do NOT edit `graphs/docs.toml` (its digest is pinned), any graph other than `spec.toml` and the four named in R3, or any source. Do NOT lower or remove an assertion. Do NOT pick the number by trying values until a test passes: it is the derivation above. Do NOT commit.
 
 ## Follow-ups
 A graph-level `pii graph check` warning when a graph's wall limit is below the sum of its coder timeouts, so the next graph that spends money cannot ship with this gap.
