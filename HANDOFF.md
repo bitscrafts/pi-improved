@@ -2351,3 +2351,25 @@ State: HEAD `81696e8` (spec 282) + this closure commit · control `RUNNING` sinc
   weakened; no row filed because it has never reproduced outside a full coverage run.
 - **Next:** the queue is empty — the next item comes from the ranked list in
   `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §4, with its row, in this tick.
+
+## 2026-10-26T07:20Z — spec 283 authored: the row's file list is derived from the spec, because three rows were written short
+
+State: HEAD `9ec8004` + this commit · control `RUNNING` · no cycle in flight · queue: **A147 / spec 283** (`pick`
+offers it), everything else done, skipped or revoked.
+
+- **The queue was empty and the 059 §4 ranked list is fully consumed** (every rank 1-10 has its spec: 135, 133,
+  134, 139, 137, 136 and the docs pass). The next item therefore comes from a measured follow-up, not from taste.
+- **Chosen: spec 277's follow-up 1**, because the same defect has now been paid for three times — A136 omitted
+  `nodes/coder.rs`, A141 omitted `graph_node.rs`, and A146 (today, 5 h parked) omitted the R2(e) server test of
+  spec 282. Spec 268/277 closed the worker's half; nothing checked the row's half.
+- **Spec 283** makes a spec declare `## Files`, adds `scripts/autonomy/row-paths.py` (`files` / `check` /
+  `check-all`, exit 2 `NO-FILES`, exit 3 `NOT-A-FILE` — never a silent pass), wires the same comparison into
+  `state.py pick` so a mismatched row is named on stderr and is NOT dispatched, and adds a selftest row. Guardrail:
+  no edit to `cycle.sh`/`tick.sh` (the 2.15 trap) and `state.py` written through a temp file + `mv` because it runs
+  on every tick.
+- **The row was generated, not typed.** `_tmp/autonomy/add-row-a147.py` builds column 5 from the spec's Exit
+  Criteria and column 6 from `## Files`, and refuses to write when a criterion contains the plan's `;` separator.
+  It refused its own first draft: `python3 -c "import ast;ast.parse(...)"` carried one. The criterion is now
+  `py_compile`. Row: 7 columns, 17 criteria → 17 commands, 4 files → 4 paths.
+- **Selftest on the committed tree (before authoring): `41 passed, 0 failed — ALL MECHANISMS PASS`** (17 s,
+  background, verdict read from the tee'd log).
