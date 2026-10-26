@@ -5,6 +5,12 @@ name = "spec"
 entry = "code"
 caps = ["spawn", "proc"]
 
+# Spec 282: the run's spend bound, which the coder charges (spec 276). Measured basis: one full spec pass through the
+# queue's daemon cost claude_cost_usd = 0.070610 (run r000000000130); 1.00 USD is about fourteen such passes. A `call`
+# (the docs graph) is inlined and shares this budget.
+[limits]
+max_micro_usd = 1000000
+
 [[node]]
 id = "code"
 kind = "coder"
