@@ -1,5 +1,52 @@
 # Pii — Session Handoff
 
+## 2026-10-26 00:40Z — the loop's own safety net raised a false alarm eight times: the quota detector read a file the worker had opened
+
+State: HEAD pending this commit (before it: `4df2a3b`) · **control `PAUSED`** (by me at 00:11Z, cause measured, see
+below) · no cycle in flight · queue: A142 `worker-ok` uncommitted, A144 + A145 `needs-review` with their work in
+the tree, all three blocked on each other's dirty paths.
+
+- **Measured, not inferred:** between 00:02 and 00:11 the queue ran **eight** cycles on A145 in nine minutes
+  (`_tmp/autonomy/loop-events.ndjson`, `loop.cycle.start` × 8). Every worker finished cleanly — `rc=0`,
+  `claude_is_error=false`, `stop_reason=end_turn`, 14 turns, 48–55 s, **0.010–0.018 USD** each — and every
+  `coder.exited` carried `quota_exhausted=yes` with `quota_reset="resets 8:20pm (UTC)"`.
+- **That reset time was not the account's.** It is `scripts/autonomy/selftest.sh:51`, a test fixture the worker had
+  opened: `echo "You have hit your session limit - resets 8:20pm (UTC)"`. `agent_quota.rs` searched the WHOLE
+  captured stream with `contains()`, and a claude stream echoes every file the agent read in its `tool_result`
+  lines — so "the agent opened a file that quotes the phrase" was indistinguishable from "the account refused".
+  The phrase lives in four files here (`selftest.sh`, `window.sh`, `probe.sh`, and the specs quoting them), so any
+  worker touching them fired it. Spec 280's own text quotes it, which is why A145 re-dispatched itself.
+- **Fixed as spec 281** (`crates/pii-server/src/node_kinds/nodes/agent_quota.rs`): on a JSON stream only structure
+  counts — `api_error_status == 429`, a `rate_limit_error` type (top level or `error.type`), or a `result` line with
+  `is_error` true whose own `result` text holds a marker. Plain-text output keeps spec 237's whole-text rule; stderr
+  is always scanned whole. `report.rs`'s call and the event's two fields are unchanged.
+- **Evidence.** Control: with the OLD detector restored, **3 of the 6 new tests are red** (17 → 14 passed);
+  with the fix, **17 passed, 0 failed** (`coder_quota_signal`, 10 old + 7 new). Mutations, each red:
+  no stream parsing at all (`14/3`), a per-line `contains` scan (`14/3`), `is_error` no longer consulted on the
+  result line (`16/1`). Clippy `-D warnings` clean after the first attempt was refused for
+  `Option<Option<T>>` and an `if let/else` (rewritten as `output_refusal`, which collects the parsed objects once
+  and falls back to the whole text only when there are none).
+- **Written by the orchestrator, not a worker — a documented exception in the spec.** A worker implementing 281
+  must open `agent_quota.rs` (whose `MARKERS` array holds the literal phrase) and `selftest.sh` (which holds the
+  reset-time fixture), so the detector being repaired would fire on the worker's own reading of it and park the
+  row `window-closed`: the exact deadlock the bug creates. Recorded with the same evidence a worker's spec demands.
+- **The tangle behind it, and why the queue cannot drain it.** A142 (`worker-ok`), A144 and A145 each stopped with
+  their work finished in the tree; their path lists are disjoint, but the unlisted-changes check (spec 268) sees
+  the OTHER rows' files and refuses, so no one of them can commit alone. Resolution: one gate over the combined
+  tree, then one commit per row by its own explicit paths (the pattern used for 272+273). A follow-up, not done
+  here: the check should scope itself to the row's paths plus files that were clean at dispatch, not to the whole
+  tree.
+- **Corrections made to my own earlier claims, both recorded so they are not repeated:** the window was NOT closed
+  until 20:20 (the 1-turn probe said OPEN at 19:14 and only the false alarm kept the marker alive); and the stale
+  daemon revision label was NOT `build.rs` failing to watch the branch ref (the container's build-script output
+  carried the right revision; `daemon.sh refresh` built `/work-target/debug/pii` and installed
+  `target/debug/pii`). Spec 278 was closed unimplemented on its own stop clause and the fix moved to spec 279.
+- **Not claimed:** that A142's 18:27 refusal was the same false positive. That run's daemon predates spec 263's
+  head+tail capture, so its `claude_is_error` was `unknown`; the A145 evidence above stands on its own.
+- **Next:** commit 281, then the three-row gate+per-row commits, then `daemon.sh refresh` (spec 279 lands first so
+  the refresh installs what it built), then `control.sh resume`, then the `[limits] max_micro_usd` figure — the
+  measured basis is now 0.0706 USD for a 55-turn spec run.
+
 ## 2026-10-25 18:55Z — 276 verified by hand and mutated; the queue refilled with a measured hole in its own safety net
 
 State: HEAD `1a32516` · lock free (`flock -n _tmp/autonomy/lock` rc 0) · no cycle in flight · watchdog alive
