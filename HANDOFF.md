@@ -1,5 +1,20 @@
 # Pii — Session Handoff
 
+## 2026-10-27 23:xxZ — composability: an independent review found the queue's composed lane NOT usable unattended; four fixes landed and the retest passed once
+
+**Supersedes** the entries below that say "the queue drained" / "composability proved ... the queue runs it": A161 (spec 297) was refused at `verify` 7/8 (run r000000000419) and was parked `needs-review`; the HANDOFF line was wrong.
+State: HEAD `cbae980` (A161 landed) · lane knob `_tmp/autonomy/lane-graph` = `spec` (gitignored) · every commit below passed a clean-export fresh-gate.
+
+- **Review:** Opus (claude-opus-5-5, plan mode, read-only, $3.96, 3 turns) — `_tmp/pii-composability-review/pii-composability-review-plan-20261027T191716Z.md`. Verdict: engine well proved, the LANE is not. Ranked F1..F10; F1 (judge environment) happened.
+- **Fixes landed (specs 298-301, rows A162-A165):** `25dbce6` preflight + the failing criterion logged on a refused run (F1, F4); `68d1382` the lane waits as long as the graph's `max_wall_ms` and cancels with `--kill` when it gives up (F2); `1f722d4` a docs coder's quota refusal reaches the log `window.sh` reads, and `cycle.sh:290` no longer dies on an unset `$RECOVER` (F3, F8); `d66b461` + spec 301: the preflight is a one-node judge run THROUGH the daemon (`graphs/preflight.toml`) and the spec lane's scratch is `_tmp/` inside the repo. `PII_SSH` / `PII_DAEMON_SH` let the tests run the real lane against stubs (the lane puts /usr/bin ahead of PATH, so a stub on PATH was never run).
+- **The cause that took three attempts (measured, probe run r000000000454, no agent):** the judge runs each criterion through the daemon under landlock `workspace`: writes under `/projects/_tmp` are refused, writes under the repo's own `_tmp` succeed. Spec 298's preflight ran under `podman exec`, outside the sandbox, so it passed while the judge failed. Spec 297 itself told its script to use `/projects/_tmp` (amended, `933e39f`; its plan row's verify column regenerated and round-tripped).
+- **Retest:** A161 through the composed lane, started by the cron tick: run r000000000460 — verify 9/9, docs call (second coder), reverify 9/9, done; committed `cbae980`.
+- **Mutation review:** 14/14 mutants of 298-300 killed (a6/a10 first HUNG the test, which is why every lane call in `lane-wait-cancels.test.sh` is now `timeout 60`); b1-b4 of 301 killed.
+- **NOT done, stated plainly:**
+  - the cycle's own gate stops at its disk floor on `/` (19 GB free, floor 20 GB; the floor is deliberately NOT lowered): A162-A165 and A161 were each gated by hand (fresh-gate over a clean export + explicit-path commit). `/tmp/_trash-podman` (33 GB) and `/tmp/gate-cache` (54 GB) are on `/`; freeing them is the user's call.
+  - ONE composed row passed after the fixes; the next rows the tick dispatches are the evidence. F5/F6 (a resume of a composed session finds no transcript in the container and starts fresh; a resume silently drops to the one-node graph; the commit does not record which lane produced it), F7 (two criteria sources: the judge reads `## Exit Criteria` at `base`, the cycle reads plan.tsv), F9 (the pin is checked against the working tree, not HEAD), F10 (facts not scoped to the run id; `composed-real-faults.sh restart` SIGKILLs the production daemon) are open.
+  - `graphs/spec.toml:14` still says the judges have no timeout (they have 10 min per criterion); the mutation sweep and the real-daemon `composition-check.sh` were re-run at cbad7ae (18/18, 7/7) but not after these commits; no coverage run on today's commits.
+
 ## 2026-10-27 18:2xZ — the queue was empty again and 059 §4 is drained, so the next item came from spec 292's Follow-up: the orphan counter is certified on hand-built events
 
 State: HEAD `721bb86` · control `RUNNING at 2026-10-27T18:18:42Z (cron tick: spec 297 installed, row A161 dispatchable)` · lock free, no cycle in flight · watchdog alive (pid 811768) · queue: **A161 dispatchable** (spec 297); the other four rows are skipped/revoked · selftest **42 passed, 0 failed / ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261027T1815.log`, 18 s).
