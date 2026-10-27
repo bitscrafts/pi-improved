@@ -1,5 +1,40 @@
 # Pii — Session Handoff
 
+## 2026-10-27 06:2xZ — the queue was empty and the ranked list was already drained, so the next item came from a measured Follow-up: the reaper is certified on hand-built events
+
+State: HEAD `a515e3d` · control `RUNNING at 2026-10-27T02:46:29Z` · lock free, no cycle in flight · watchdog alive
+(pid 811768) · queue: **A156 dispatchable** (spec 292), the other four rows skipped/revoked · selftest **42 passed,
+0 failed / ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261027T0615.log`).
+
+- **Measured, not inferred.** The last four cycles (`060050`, `060601`, `061023`, `061112`) each printed `queue empty —
+  nothing pending` after an OPEN probe (claude-haiku-5-5), and `state.py pick` answers `NONE`. The four rows that are not
+  `done` are A65/A71/A143 `skipped` and A79 `revoked` — none dispatchable, none a worker error. 059 §4 is drained
+  (recorded 2026-10-24, re-checked here by id: 133/134/135/136/137/138/141 exist and their rows are `done`), so the
+  queue's source is now the **Follow-ups each landed spec wrote**.
+- **The item chosen and why.** Spec 289's Follow-up: `orphans_are_reaped.rs` (527 lines, 12 `#[test]`) builds every
+  `coder.spawned` with a local `spawned(...)` helper — a `RunEvent::NodeObserved` literal — so nothing connects
+  `coder.rs::journal_spawned` (the live write) to `engine/orphans.rs` (the read). A defect on either side of that seam
+  passes all twelve. That is the loop's own DO-NOT-REPEAT 1.50 class, and it is the safety net that kills a dead
+  daemon's agents.
+- **Authored: spec `292-the-reaper-reads-a-spawn-a-live-run-wrote.md` + row A156.** The test must take its spawn from a
+  run driven through `Engine::start_run` whose coder's agent hangs (the harness `crates/pii-server/tests/spec_graph_daemon/mod.rs`
+  already has the shape: `in_child` re-executes with a fake-agent bin first on `PATH`, and `DOCS_HANG` execs `sleep`
+  under its spawn name so `/proc/<pid>/cmdline` names it), then call `reap_orphans` and assert the journalled pid is dead
+  and `coder.orphan_reaped` lands. Two live controls: a coder that exited is not searched, and the same run **is** reaped
+  once its exit event is gone, so the control can fail. `scripts/checks/live-spawn-reap.sh` plants the mutation in
+  `journal_spawned` (drop the `pid` field) and measures that the new test goes RED while **all twelve seeded tests stay
+  GREEN** — the hole, measured. Restore is bytes + `touch` + digest, never `cp -p`.
+- **Row sanity-checked, not eyeballed.** 7 tab columns; `row-paths.py check A156` → `OK A156 3` (`check-all` rc 0, the
+  other rows included); the verify column was generated from the spec's `## Exit Criteria` by script — 8 commands in,
+  8 out, none containing the `;` separator; `state.py pick` names A156.
+- **Gap recorded, not silently repaired.** Commits `8ac5b9d`, `9a9117c`, `3cc4ffe`, `a515e3d` (2026-10-27 00:42–02:46Z,
+  the composed spec graph run with the real claude) landed with **no HANDOFF entry**; the newest entry above this one was
+  2026-10-26 18:18Z. They are not verified by this tick — only noted, so the next reader does not believe they were.
+- **Next tick:** the 5-minute beat dispatches A156 (spec 292). Its criteria are RED now (the test target, the check
+  script and the doc do not exist), the expected state for an authored-but-unimplemented spec. When it commits, the next
+  tick verifies the criteria on the worker's tree and reddens the seam with its own mutation.
+
+
 ## 2026-10-26 18:18Z — the loop read "queue empty" for 3 h 08 m over four specs its own new check refused
 
 State: HEAD pending this commit · control `RUNNING` · no cycle in flight · queue: A148–A151 dispatchable again.
