@@ -391,6 +391,29 @@ pub fn restarted(case: &Case, graphs: &Path) -> Arc<Engine> {
     case.engine_on_store(graphs, copy.join("store.redb"))
 }
 
+/// `restarted`, but only once the copied store holds `want` `coder.spawned` events for `run`. Spec 289 makes a spawn durable WITHIN
+/// two seconds (the barrier's `START_DURABLE_WITHIN`), not at the instant the agent starts, so a copy taken the moment a fake agent
+/// records its pid can legitimately miss it (measured under 32 CPU burners: the agent was alive and sleeping, the restart found nothing
+/// to reap). Retries for six seconds, then panics: a spawn that never becomes durable still fails the test.
+pub async fn restarted_when_durable(
+    case: &Case,
+    graphs: &Path,
+    run: &RunId,
+    want: usize,
+) -> Arc<Engine> {
+    let mut seen = 0;
+    for _ in 0..120 {
+        let engine = restarted(case, graphs);
+        seen = observed(&engine.store.read_journal(run).unwrap(), "coder.spawned").len();
+        if seen >= want {
+            return engine;
+        }
+        drop(engine);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("the copied store held {seen} of {want} coder.spawned after six seconds");
+}
+
 /// The engine over the tracked graphs plus `twice.toml`, the host that calls `docs` twice.
 pub fn twice_engine(case: &Case) -> Arc<Engine> {
     let graphs = graphs_copy(case.dir.path(), None);

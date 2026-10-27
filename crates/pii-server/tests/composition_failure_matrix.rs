@@ -36,7 +36,7 @@ use pii_server::engine::runs_cancel::{KILL_WAIT, cancel_run, cancel_run_with};
 use spec_graph_daemon::{
     Case, DOCS_HANG, DOCS_OK, LOOPED, Sleepers, argv_of, call_coder_started, docs_calls,
     docs_digest, graphs_copy, in_child, is_call_coder, needy_engine, observed, reason, restarted,
-    settle, started, tracked_graphs, twice_engine, wait_dead, wait_pids,
+    restarted_when_durable, settle, started, tracked_graphs, twice_engine, wait_dead, wait_pids,
 };
 
 const CRITERION: &str = "test -f built.txt";
@@ -116,7 +116,7 @@ async fn m2_restart_inside_a_call() {
     call_coder_started(&engine, &run).await;
     let pids = wait_pids(&sleepers, 1).await;
 
-    let engine2 = restarted(&case, &tracked_graphs());
+    let engine2 = restarted_when_durable(&case, &tracked_graphs(), &run, 2).await;
     recover_at_boot(&engine2);
     let (status, journal) = settle(&engine2, &run).await;
     assert!(
@@ -414,7 +414,7 @@ async fn m7_resume_of_a_run_interrupted_inside_a_call_is_refused() {
     call_coder_started(&engine, &run).await;
     let pids = wait_pids(&sleepers, 1).await;
 
-    let engine2 = restarted(&case, &tracked_graphs());
+    let engine2 = restarted_when_durable(&case, &tracked_graphs(), &run, 2).await;
     recover_at_boot(&engine2);
     settle(&engine2, &run).await;
     // MEASURED: the engine has a resume verb, and it refuses a run that already finished, naming it.
