@@ -43,7 +43,7 @@ test asserts but the live path never reads is a false green).
   - (f) **Nothing outlives the test.** Every process it starts is killed on the way out (`Sleepers`, and a `Drop` guard),
     including when an assertion fails early.
 - **R2. The control that shows the seam was uncovered** — new script `scripts/checks/live-orphan-count.sh` (the
-  `scripts/checks/` family: `set -u`, own scratch under `/projects/_tmp`, one verdict line, exit 0 only on success).
+  `scripts/checks/` family: `set -u`, own scratch under `_tmp/` INSIDE the repository (`$root/_tmp`, gitignored; amended 2026-10-27: the judge runs criteria through the daemon under landlock `workspace`, which refuses writes under `/projects/_tmp` and allows the repository's own `_tmp`; the first two runs of this spec were refused at verify 7/8 on exactly that). `LIVE_ORPHAN_SCRATCH` may still override it, one verdict line, exit 0 only on success).
   It plants **two** mutations in sequence, each restored byte-identically:
   1. `sha256sum crates/pii-server/src/node_kinds/nodes/coder.rs` → `BEFORE_W`; copy its **bytes** into scratch (never a
      hardlink, never a move).
@@ -129,6 +129,7 @@ test asserts but the live path never reads is a false green).
 - [ ] `bash scripts/checks/live-orphan-count.sh 2>&1 | tail -1 | grep -q "LIVE-ORPHAN-COUNT: OK"`
 - [ ] `grep -q 'LIVE-ORPHAN-COUNT: OK' _docs/05-operations/LIVE-ORPHAN-COUNT.md`
 - [ ] `git diff --quiet -- crates/pii-server/src crates/pii-graph/src crates/pii-server/tests/orphan_is_countable.rs crates/pii-server/tests/live_spawn_is_reaped.rs crates/pii-server/tests/spec_graph_daemon/mod.rs`
+- [ ] `! grep -q '/projects/_tmp' scripts/checks/live-orphan-count.sh`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Files
