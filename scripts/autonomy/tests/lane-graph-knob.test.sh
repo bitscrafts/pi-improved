@@ -35,4 +35,10 @@ G=$(env -u PII_LANE_GRAPH PII_LANE_FILE="$SCRATCH/nonl" bash -e -c 'source "$1";
 DEF=$(env -u PII_LANE_GRAPH -u PII_LANE_FILE bash -c 'source "$1"; printf "%s" "$PII_LANE_FILE"' _ "$ENV_SH" 2>&1)
 if [ -n "$DEF" ] && [ -e "$(dirname "$DEF")/control" ] && [ "$(basename "$DEF")" = lane-graph ]; then ok "default_path_sits_beside_the_control_file ($DEF)"; else bad "default_path_sits_beside_the_control_file (got [$DEF])"; fi
 mkdir -p "$REPO/_tmp/_trash" && mv "$SCRATCH" "$REPO/_tmp/_trash/lane-knob-$(date +%s)-$$"
+# the knob must not change what the other lane tests see: the cycle runs a row's criteria with env.sh sourced, so a test that expects the default lane has to pin it itself
+# (measured: lane-graph-select 7 ok 1 FAIL and lane-graph-wall 0 ok 3 FAIL with PII_LANE_GRAPH=spec exported)
+for t in lane-graph-select lane-graph-wall; do
+  R=$(PII_LANE_GRAPH=spec bash "$REPO/scripts/autonomy/tests/$t.test.sh" 2>&1 | tail -1)
+  case "$R" in *"FAIL: 0") ok "lane_tests_survive_the_knob_set_to_spec: $t";; *) bad "lane_tests_survive_the_knob_set_to_spec: $t ($R)";; esac
+done
 echo "PASS: $PASS FAIL: $FAIL"

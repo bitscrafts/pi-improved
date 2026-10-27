@@ -3,6 +3,8 @@
 # script is run (DEVBOX_HOST unreachable, so it writes its graph and then fails at the first ssh), and the graph file it left is parsed.
 # A control runs a copy of the script with the [limits] block removed: the same check must FAIL on it.
 set -uo pipefail
+# The cycle runs a row's criteria with env.sh sourced, and env.sh exports PII_LANE_GRAPH from the knob file (spec 295). This test expects the DEFAULT lane, so it pins the variable itself.
+unset PII_LANE_GRAPH
 cd "$(dirname "$0")/../../.." || exit 2
 export PATH="/root/.local/bin:$PATH"
 REPO=$(pwd); PASS=0; FAIL=0

@@ -3,6 +3,8 @@
 # input and exits BEFORE the daemon, ssh or any agent. The default one-node graph must stay byte-identical to the one the script wrote
 # before the lane existed (the only difference allowed is the run's timestamp in its name). Controls: a changed pin, and a cap over the limit.
 set -uo pipefail
+# The cycle runs a row's criteria with env.sh sourced, and env.sh exports PII_LANE_GRAPH from the knob file (spec 295). This test expects the DEFAULT lane, so it pins the variable itself.
+unset PII_LANE_GRAPH
 cd "$(dirname "$0")/../../.." || exit 2
 export PATH="/root/.local/bin:$PATH"
 export ALLOW_DIRTY=1 DEVBOX_HOST=nobody@127.0.0.1
