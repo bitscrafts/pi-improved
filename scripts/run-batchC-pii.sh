@@ -29,10 +29,11 @@ N="${1:-}"; [ -n "$N" ] || { echo "usage: run-batchC-pii.sh <spec-number> [--res
 SPEC=$(ls "$REPO"/specs/"$N"-*.md 2>/dev/null | head -1); [ -f "$SPEC" ] || { echo "no spec $N"; exit 2; }
 TAG=$(basename "$SPEC" .md); SPECREL=specs/$(basename "$SPEC")
 shift || true
-RESUME_SID=""; EXTRA_BRIEF=""
+RESUME_SID=""; EXTRA_BRIEF=""; DRY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --resume) RESUME_SID="${2:?--resume needs a session id}"; shift 2 ;;
+    --dry-run) DRY=1; shift ;;
     *) EXTRA_BRIEF="$1"; shift ;;
   esac
 done
@@ -70,10 +71,20 @@ EOF
 [ -n "$EXTRA_BRIEF" ] && { printf '\n\n' >> "$BRIEF"; cat "$EXTRA_BRIEF" >> "$BRIEF"; }
 if grep -q "'''" "$BRIEF"; then echo "ABORT: the brief contains ''' and cannot be written as a TOML literal"; exit 2; fi
 
+# ---- the lane (spec 294): PII_LANE_GRAPH=spec starts the tracked `spec` graph; anything else keeps the one-node coder graph below.
+# The spec graph has no session input, so a resume stays on the one-node graph. Printed before anything is spent.
+LANE=coder
+if [ "${PII_LANE_GRAPH:-}" = spec ]; then
+  if [ -n "$RESUME_SID" ]; then echo "LANE-GRAPH: coder (resume is not supported by the spec graph)"
+  else LANE=spec; GRAPH_NAME=spec; fi
+fi
+echo "LANE-GRAPH: $LANE"
+
 # ---- resume handle: claude's own session, only if the container still has it (the old lane's sessions live elsewhere)
 SID_LINE=""
 if [ -n "$RESUME_SID" ] && [ "$AGENT" = claude ]; then
-  if "${SSH[@]}" "podman exec pii-devbox sh -c 'ls /root/.claude/projects/*/$RESUME_SID.jsonl >/dev/null 2>&1'"; then
+  if [ "$DRY" = 1 ]; then SID_LINE="sid = \"$RESUME_SID\""; echo "== dry run: session $RESUME_SID is not checked in the devbox"
+  elif "${SSH[@]}" "podman exec pii-devbox sh -c 'ls /root/.claude/projects/*/$RESUME_SID.jsonl >/dev/null 2>&1'"; then
     SID_LINE="sid = \"$RESUME_SID\""; echo "== RESUMING claude session $RESUME_SID (found in the devbox)"
   else
     echo "== NOT resuming: session $RESUME_SID is not in the devbox (it was made by another lane); starting fresh on the tree as it is"
@@ -84,6 +95,7 @@ fi
 # and the journal's tree_changed / quota facts. `refuse` makes an agent failure FAIL the run (spec 240), never succeed it.
 # The run's wall limit must outlive its node: the engine's default is 600 000 ms and it is checked before the NEXT node is dispatched,
 # so a coder that ran past 10 minutes and exited 0 had its run FAILED (measured: 601 s and 717 s failed, 382 s succeeded).
+if [ "$LANE" = coder ]; then
 WALL_MS=$(( ${PII_NODE_TIMEOUT_MS:-3000000} + 300000 ))
 cat > "$GRAPH" <<GRAPH
 name = "$GRAPH_NAME"
@@ -130,26 +142,53 @@ port = "err"
 to = "refused"
 kind = "data"
 GRAPH
+fi
+
+# ---- the spec lane: the input of the tracked graph. The pin in graphs/spec.toml must be the digest of graphs/docs.toml (refused otherwise);
+# max_budget_usd is the queue's PII_MAX_BUDGET_USD (default 1.00), never above the graph's own [limits] max_micro_usd.
+if [ "$LANE" = spec ]; then
+  PIN=$(grep -o 'sha256 = "[0-9a-f]*"' "$REPO/graphs/spec.toml" | head -1 | cut -d'"' -f2)
+  DIG=$(sha256sum "$REPO/graphs/docs.toml" 2>/dev/null | cut -c1-64)
+  [ -n "$DIG" ] && [ "$PIN" = "$DIG" ] || { echo "ABORT: graphs/docs.toml digest '$DIG' is not the pin in graphs/spec.toml ('$PIN'): nothing started"; exit 2; }
+  IN_PROVIDER=$PROVIDER; [ "$AGENT" = claude ] && IN_PROVIDER=anthropic
+  DOCS_BRIEF="Documentation step. Create NOTES-$N.md in the repository root with a short note on what the spec changed. Do not modify any other file, do not modify anything under specs/, and do not commit anything."
+  INPUT="$LOGD/input-$TAG.json"
+  uv run --no-project python - "$INPUT" "$AGENT" "$MODEL" "$IN_PROVIDER" "$SPECREL" "$(git rev-parse HEAD)" "$REPO" "$BRIEF" "$DOCS_BRIEF" \
+    "${PII_MAX_BUDGET_USD:-1.00}" "$REPO/graphs/spec.toml" <<'PY' || { echo "ABORT: could not build the input"; exit 2; }
+import json, sys, tomllib
+p, agent, model, provider, spec, base, workdir, brief, docs_brief, cap, graph = sys.argv[1:]
+limit = tomllib.load(open(graph, "rb"))["limits"]["max_micro_usd"] / 1e6
+open(p, "w").write(json.dumps({"agent": agent, "model": model, "provider": provider, "spec": spec, "base": base, "workdir": workdir,
+    "brief": open(brief).read(), "docs_brief": docs_brief, "max_budget_usd": min(float(cap), limit)}))
+PY
+fi
 
 echo "AGENT    : $AGENT   (run by pii, not by the agent CLI directly)"
 echo "MODEL    : $MODEL"
 echo "PROVIDER : $PROVIDER"
 echo "SPEC     : $SPECREL"
 echo "BRIEF    : $BRIEF ($(wc -c < "$BRIEF") bytes)"
-echo "GRAPH    : $GRAPH"
+if [ "$LANE" = spec ]; then echo "INPUT    : $INPUT"; else echo "GRAPH    : $GRAPH"; fi
 echo "LOG      : $LOG"
 { echo "== $TAG via pii: agent=$AGENT model=$MODEL provider=$PROVIDER"; echo "== graph $GRAPH_NAME"; } > "$LOG"
+[ "$DRY" = 1 ] && { echo "DRY RUN: nothing started, nothing spent"; exit 0; }
 
 # ---- the daemon: up, and its build revision stated (it runs a deliberate binary, see modules/devbox/daemon.sh)
 DOUT=$(bash "$REPO/modules/devbox/daemon.sh" up 2>&1); DRC=$?
 echo "DAEMON   : $(printf '%s' "$DOUT" | tail -1)"
 [ $DRC -eq 0 ] || { echo "ABORT: the devbox daemon is not up:"; printf '%s\n' "$DOUT" | tail -5; exit 2; }
+[ "$LANE" = spec ] && { cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/_tmp/devbox-test/graphs/" || exit 2; }
 
 git status --porcelain -- specs | sort > "$LOGD/.specs-before-$TAG"
 C=/projects/pi-improved/_tmp/devbox-test; PIIB=$C/bin/pii
 X() { "${SSH[@]}" "podman exec -w /projects/pi-improved pii-devbox $*"; }
 LINES_BEFORE=$("${SSH[@]}" "podman exec pii-devbox sh -c 'wc -l < $C/pii.log'" 2>/dev/null | tr -d ' ')
-START=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run start $GRAPH_NAME 2>&1'")
+if [ "$LANE" = spec ]; then
+  printf '#!/bin/sh\nenv PII_RUNTIME_DIR=%s %s run start spec --input "$(cat %s)" 2>&1\n' "$C/run" "$PIIB" "$INPUT" > "$LOGD/start-$TAG.sh"
+  START=$(X sh "$LOGD/start-$TAG.sh")
+else
+  START=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run start $GRAPH_NAME 2>&1'")
+fi
 RID=$(printf '%s' "$START" | grep -o 'r[0-9]\{12\}' | head -1)
 [ -n "$RID" ] || { echo "ABORT: no run id: $(printf '%s' "$START" | head -c 300)"; exit 2; }
 echo "RUN      : $RID"; echo "== run $RID" >> "$LOG"
@@ -174,12 +213,19 @@ echo "== $RID final: ${ST:-unknown} after ~$((i*5))s" | tee -a "$LOG"
 
 # ---- the evidence, in the log: explain, the journal's coder.exited (raw), and the quota refusal in the CLI's own words
 X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run explain $RID 2>&1 | head -60'" >> "$LOG" 2>&1
-EXITED=$("${SSH[@]}" "podman exec pii-devbox sh -c 'tail -n +$((${LINES_BEFORE:-0}+1)) $C/pii.log | grep -a coder.exited | tail -1'" 2>/dev/null)
+EXITS=$("${SSH[@]}" "podman exec pii-devbox sh -c 'tail -n +$((${LINES_BEFORE:-0}+1)) $C/pii.log | grep -a coder.exited'" 2>/dev/null)
+# the spec graph runs two coders (code, then the inlined docs): the facts are the FIRST exit (the host's code), the docs coder's is a second line
+if [ "$LANE" = spec ]; then EXITED=$(printf '%s\n' "$EXITS" | head -1); DOCS_EXITED=$(printf '%s\n' "$EXITS" | sed -n 2p)
+else EXITED=$(printf '%s\n' "$EXITS" | tail -1); fi
 printf '== coder.exited: %s\n' "$EXITED" >> "$LOG"
-fact() { printf '%s' "$EXITED" | grep -o "\"$1\":\"\?[^,\"}]*" | head -1 | sed -E 's/^"[a-z_]*":"?//'; }
-RC=$(fact rc); CHG=$(fact tree_changed); QX=$(fact quota_exhausted); QR=$(printf '%s' "$EXITED" | grep -o '"quota_reset":"[^"]*"' | cut -d'"' -f4)
+fact() { printf '%s' "$1" | grep -o "\"$2\":\"\?[^,\"}]*" | head -1 | sed -E 's/^"[a-z_]*":"?//'; }
+RC=$(fact "$EXITED" rc); CHG=$(fact "$EXITED" tree_changed); QX=$(fact "$EXITED" quota_exhausted); QR=$(printf '%s' "$EXITED" | grep -o '"quota_reset":"[^"]*"' | cut -d'"' -f4)
 COST=$(printf '%s' "$EXITED" | grep -o '"claude_cost_usd":"[^"]*"' | cut -d'"' -f4)
 echo "FACTS    : rc=${RC:-?} tree_changed=${CHG:-?} quota_exhausted=${QX:-?} cost_usd=${COST:-not-journalled}"
+if [ "$LANE" = spec ]; then
+  DCOST=$(printf '%s' "$DOCS_EXITED" | grep -o '"claude_cost_usd":"[^"]*"' | cut -d'"' -f4)
+  echo "DOCS-FACTS: rc=$(fact "$DOCS_EXITED" rc) tree_changed=$(fact "$DOCS_EXITED" tree_changed) quota_exhausted=$(fact "$DOCS_EXITED" quota_exhausted) cost_usd=${DCOST:-not-journalled}"
+fi
 if [ "$QX" = "yes" ]; then
   T=$(printf '%s' "$QR" | grep -oE '[0-9]{1,2}:[0-9]{2}(am|pm)' | head -1)
   if [ -n "$T" ]; then echo "You've hit your session limit · resets $T (UTC)" | tee -a "$LOG"; else echo "You've hit your session limit" | tee -a "$LOG"; fi
