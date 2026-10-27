@@ -52,3 +52,14 @@ export GATE_STEPS
 # from /projects), and /tmp. Measured 2026-10-25: a /projects-only check never saw those tens of GB.
 : "${GATE_WRITE_DIRS:=/projects/pi-improved/_tmp/gate-target /projects/pi-improved/_tmp/gate-target/llvm-cov-target /projects/pi-improved/_tmp/tools-gate /projects/pi-improved/_tmp/tools-gate/llvm-cov-target /tmp}"
 export GATE_WRITE_DIRS
+
+# THE LANE GRAPH IS A ONE-WORD FILE (spec 295, 2026-10-27). The cron tick cannot see a person's shell, so the queue's lane is read
+# from this file: its first line, with spaces and CR stripped, is `spec` (the composed graph of spec 294) or `coder` (the one-node
+# graph). Any other word, an empty file, or no file at all leaves PII_LANE_GRAPH unset, which is the default. A PII_LANE_GRAPH
+# already set in the environment wins over the file. Nothing is printed and nothing in the file is executed.
+: "${PII_LANE_FILE:=/projects/pi-improved/_tmp/autonomy/lane-graph}"
+if [ -z "${PII_LANE_GRAPH:-}" ] && [ -r "$PII_LANE_FILE" ]; then
+  IFS= read -r PII_LANE_LINE < "$PII_LANE_FILE" || true
+  PII_LANE_LINE=${PII_LANE_LINE//[ $'\r']/}
+  case "$PII_LANE_LINE" in spec|coder) export PII_LANE_GRAPH=$PII_LANE_LINE ;; esac
+fi
