@@ -421,13 +421,19 @@ pub(crate) fn coder_lines_via_store(run: &str, db: &Path) -> Result<Vec<String>,
 
 /// Spec 293 R1: the error of a run's failure terminal, read from its journal. `None` for a run that did not fail.
 pub(super) fn terminal_reason(journal: &[(u64, RunEvent)]) -> Option<String> {
-    journal.iter().rev().find_map(|(_, event)| match event {
-        RunEvent::Finished {
-            terminal: Terminal::Failure { error },
-            ..
-        } => Some(error.clone()),
-        _ => None,
-    })
+    // The LAST `Finished` decides: a resumed or twice-abandoned run holds more than one (resume.rs appends, never rewrites), and an older
+    // failure must not be reported for a run whose final terminal is a success.
+    journal
+        .iter()
+        .rev()
+        .find_map(|(_, event)| match event {
+            RunEvent::Finished { terminal, .. } => Some(terminal),
+            _ => None,
+        })
+        .and_then(|terminal| match terminal {
+            Terminal::Failure { error } => Some(error.clone()),
+            _ => None,
+        })
 }
 
 /// The explain paragraph's sentence for one agent call (spec 217 R7).

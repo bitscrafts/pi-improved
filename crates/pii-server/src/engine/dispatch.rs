@@ -270,13 +270,18 @@ fn run_get(
 /// Spec 293 R1: the error of a run's failure terminal, read from its journal. `None` for a run that did not fail.
 fn failure_reason(engine: &Arc<Engine>, run_id: &str) -> Option<String> {
     let journal = engine.store.read_journal(&RunId::from(run_id)).ok()?;
-    journal.iter().rev().find_map(|(_, event)| match event {
-        RunEvent::Finished {
-            terminal: Terminal::Failure { error },
-            ..
-        } => Some(error.clone()),
-        _ => None,
-    })
+    // The LAST `Finished` decides (see the CLI reader): an older failure is not the reason of a run that finally succeeded.
+    journal
+        .iter()
+        .rev()
+        .find_map(|(_, event)| match event {
+            RunEvent::Finished { terminal, .. } => Some(terminal),
+            _ => None,
+        })
+        .and_then(|terminal| match terminal {
+            Terminal::Failure { error } => Some(error.clone()),
+            _ => None,
+        })
 }
 
 /// `run.list` (F6): list run headers. Without a status every run is listed,

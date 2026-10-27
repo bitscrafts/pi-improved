@@ -235,3 +235,88 @@ fn CONTROL_a_cancelled_run_has_no_reason() {
         "no failure sentence: {explain}"
     );
 }
+
+/// Two failing criteria are both on the judge row, in the order the judge listed them, separated by `; `. (Every other test here has one,
+/// so a different separator, or only the first, passed them all.)
+#[test]
+fn two_failing_criteria_are_both_named_in_order() {
+    let dir =
+        pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "failure-reason-").unwrap();
+    let verdict = serde_json::json!({
+        "verdict": "failed",
+        "criteria": 5,
+        "passed": 3,
+        "results": [],
+        "reason": "criterion failed: first (rc 1)",
+        "failing": ["first", "second"],
+    });
+    let db = record(
+        dir.path(),
+        "run-two",
+        "judge",
+        verdict,
+        End::Terminal(
+            Terminal::Success {
+                output: serde_json::json!({}),
+            },
+            RunStatus::Succeeded,
+        ),
+    );
+    let trace = pii(dir.path(), &db, &["trace"], "run-two");
+    let row = trace
+        .lines()
+        .find(|l| l.contains(" judge "))
+        .unwrap_or_else(|| panic!("a row for the judge node: {trace}"));
+    assert!(row.contains("crit=3/5"), "the judge's count: {row}");
+    assert!(
+        row.contains("fail=first; second"),
+        "both failing criteria, in order, joined by '; ': {row}"
+    );
+}
+
+/// A run that failed and was then resumed to success holds TWO `Finished` events. The reason is the last one's, so a succeeded run has none.
+/// (The first cut read the newest FAILURE, so it printed the old error on a run that finally succeeded.)
+#[test]
+fn a_later_success_hides_an_older_failure() {
+    let dir =
+        pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "failure-reason-").unwrap();
+    let db = record(
+        dir.path(),
+        "run-resumed",
+        "spec",
+        serde_json::json!({}),
+        End::Terminal(
+            Terminal::Failure {
+                error: "max_wall_ms exceeded".to_owned(),
+            },
+            RunStatus::Failed,
+        ),
+    );
+    // the resume: the same journal gets a second, successful terminal
+    {
+        let store = Store::open(&db).unwrap();
+        let mut header = store.get_run(&RunId::from("run-resumed")).unwrap().unwrap();
+        header.status = RunStatus::Succeeded;
+        store
+            .append_event(
+                &mut header,
+                &RunEvent::Finished {
+                    terminal: Terminal::Success {
+                        output: serde_json::json!({}),
+                    },
+                    output_hash: String::new(),
+                },
+            )
+            .unwrap();
+    }
+    let get = pii(dir.path(), &db, &["get"], "run-resumed");
+    let explain = pii(dir.path(), &db, &["explain"], "run-resumed");
+    assert!(
+        !get.contains("max_wall_ms"),
+        "run get must not name the old failure: {get}"
+    );
+    assert!(
+        !explain.contains("max_wall_ms"),
+        "explain must not name the old failure: {explain}"
+    );
+}
