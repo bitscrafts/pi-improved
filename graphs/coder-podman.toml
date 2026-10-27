@@ -4,6 +4,11 @@ name = "coder-podman"
 entry = "code"
 caps = ["spawn", "proc"]
 
+[limits]
+# The 600000 ms default is checked before each next node, and a coder pass past ten minutes was failed with its work complete
+# (measured on the daemon: 601 s and 717 s); the coder's timeout_ms is 1800000, so the wall is that plus 300000.
+max_wall_ms = 2100000
+
 [[node]]
 id = "code"
 kind = "coder"

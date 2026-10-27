@@ -10,6 +10,10 @@ caps = ["spawn", "proc"]
 # (the docs graph) is inlined and shares this budget.
 [limits]
 max_micro_usd = 1000000
+# Spec 290: the wall covers the coders. `code` 3 000 000 + the inlined docs coder 1 200 000, plus 1 800 000 for the two judges
+# (a stated allowance: judge_spec.rs has no timeout to measure) and the call's steps. The default 600 000 failed real passes
+# at `verify` with the agent's work done and exit 0 (r000000000261: 601 s, r000000000260: 717 s).
+max_wall_ms = 6000000
 
 [[node]]
 id = "code"
