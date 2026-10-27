@@ -1,5 +1,33 @@
 # Pii — Session Handoff
 
+## 2026-10-27 14:3xZ — composability: proved with real agents, and the queue runs it (the cron tick dispatched a row through the composed lane)
+
+State: HEAD `bb2bed8` · lane knob `_tmp/autonomy/lane-graph` = `spec` (gitignored) · loop RUNNING · queue empty after A160 · gate ALL PASS on every commit below.
+**The cron tick dispatched A160 (spec 296) through the composed lane on its own** (`LANE-GRAPH: spec`, run r000000000418, 115 s, USD 0.0253 over the code and docs
+coders). The run succeeded; the cycle's verify then failed (`lane-graph-select` 7 ok 1 FAIL) because the knob leaked into two tests that expect the default lane — fixed in `e4ec77f`, A160 committed as `bb2bed8`.
+
+- **Real-agent proof (claude haiku 5.5 and pi/ollama-cloud, production devbox daemon), each with a control that can fail** — `scripts/composed-real-run.sh`,
+  `scripts/composed-real-faults.sh {concurrent,cancel,restart,wall,impl,pi}`, `scripts/composed-quota-check.sh`; record in
+  `_docs/05-operations/COMPOSITION-REAL-RUN.md` and `COMPOSITION-REAL-FAULTS.md`. Two runs at once (4 sessions); cancel with the real docs agent alive (gone, 0
+  orphans); SIGKILL of the real daemon with the real claude mid-work (new daemon, run reconciled, claude reaped); a run of 885 s succeeds with the shipped
+  `max_wall_ms` and the same graph without it fails at 884 s with both agents exiting 0; a four-file implementation checked outside the agent; pi composed; quota refusal
+  inside a call (stand-ins with the real refusal shape, 13 rows). Cost: a few cents per scenario.
+- **Defects the proofs and reviews found, all fixed and committed:** m2/m7 race (`4399f08`, durable spawn takes up to 2 s); A157 read the newest FAILURE terminal (a
+  resumed run kept its old error) and 4 of 7 mutations survived its tests (`dcb25e4`); A158 told the docs coder to write `NOTES-<N>.md` in the repo root, which
+  the unlisted-changes guard refuses, so every composed row would have failed at its own commit (`3bdef7f`); A159's tests never read the default path and ignored a
+  no-newline file (`8bfd727`); my own scenarios had four defects (wrapper killed instead of daemon, wrong cancel word, a log field that does not exist, two rows asserting what
+  the CLI never printed).
+- **Two specs implemented through the composed lane:** 295 (`8bfd727`, dispatched by script, run r000000000417, 100 s, USD 0.0187, added the knob) and 296 (`bb2bed8`,
+  dispatched by the CRON TICK, run r000000000418, 115 s, USD 0.0253). The slips that stopped the queue on the way were mine: specs 293/294 and then 295/296 listed `## Files` entries
+  without backticks (the only form `row-paths.py` reads: NO-FILES, the queue refused to pick) — `/projects/_tmp/install-spec.sh` now refuses that BEFORE a row is committed.
+- **How to switch:** `printf 'spec\n' > _tmp/autonomy/lane-graph` (or `coder`, or remove the file). `PII_LANE_GRAPH` in the environment wins. Resume falls back to the
+  one-node graph (the spec graph has no session input).
+- **NOT proved, stated plainly:** a real quota refusal; a real `--resume` of a composed run; pi under cancel or restart; more than two concurrent real runs; a call nested
+  more than one level with a real agent; a composed row whose spec needs a long real implementation (295 took 100 s).
+- **Open register:** the gate's `coverage-floor` has not run on these commits (`QG_SKIP_COVERAGE=1` is the loop's default, run it at the release boundary); `install-spec.sh` lives in
+  `/projects/_tmp/` and is not in the repo; the sweep (`scripts/mutate/composition.sh`) was not re-run after specs 288-296; the real daemon's `composition-check.sh` was not re-run at the
+  new HEAD; the knob stays `spec`, so every row the tick dispatches now runs two coders and a judge twice — set it to `coder` (or delete the file) to go back.
+
 ## 2026-10-27 06:2xZ — the queue was empty and the ranked list was already drained, so the next item came from a measured Follow-up: the reaper is certified on hand-built events
 
 State: HEAD `a515e3d` · control `RUNNING at 2026-10-27T02:46:29Z` · lock free, no cycle in flight · watchdog alive
