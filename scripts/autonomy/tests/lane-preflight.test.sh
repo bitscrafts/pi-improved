@@ -24,8 +24,11 @@ echo "$*" >> "$F/argv"
 cmd="${*: -1}"
 case "$cmd" in
   *"mkdir -p /projects/_tmp"*) echo "preflight stub"; exit "$(cat "$F/preflight_rc" 2>/dev/null || echo 0)" ;;
+  *"command -v uv"*) echo "preflight stub"; exit "$(cat "$F/preflight_rc" 2>/dev/null || echo 0)" ;;
   *"run trace"*) cat "$F/trace" 2>/dev/null ;;
   *"run explain"*) echo "explain: refused, see the trace" ;;
+  *"run start preflight"*) echo "run r000000000418 started" ;;
+  *"run get r000000000418"*) echo "{\"status\":\"$(cat "$F/preflight_status")\"}" ;;
   *"run get"*) echo "{\"status\":\"$(cat "$F/status")\"}" ;;
   *"start-"*) echo "run r000000000419 started" ;;
   *"coder.spawned"*) echo '{"kind":"coder.spawned","session":"sid-298"}' ;;
@@ -42,8 +45,8 @@ echo '"revision":"stub000000000"'
 DSTUB
 chmod +x "$SCRATCH/daemon.sh"
 
-# fx <name> <final status> [trace text] [preflight rc]: a fresh fixture directory
-fx() { local d=$SCRATCH/$1; mkdir -p "$d"; : > "$d/argv"; printf '%s\n' "$2" > "$d/status"; printf '%s\n' "${3:-}" > "$d/trace"; printf '%s\n' "${4:-0}" > "$d/preflight_rc"; echo "$d"; }
+# fx <name> <final status> [trace text] [preflight rc] [preflight judge status]: a fresh fixture directory
+fx() { local d=$SCRATCH/$1; mkdir -p "$d"; : > "$d/argv"; printf '%s\n' "$2" > "$d/status"; printf '%s\n' "${3:-}" > "$d/trace"; printf '%s\n' "${4:-0}" > "$d/preflight_rc"; printf '%s\n' "${5:-succeeded}" > "$d/preflight_status"; echo "$d"; }
 # lane <fixture dir> [args...]: the real lane script (spec lane unless LANE_GRAPH says otherwise); stdout+stderr in <dir>/out, rc in <dir>/rc
 lane() {
   local d=$1; shift
@@ -52,16 +55,15 @@ lane() {
 }
 TRACE_CRIT='13 verify - crit=7/8 fail=bash scripts/checks/live-orphan-count.sh'
 
-# 1: the preflight is recorded before the run is started
+# 1 (spec 301, replaces the 298 test): the uv check and the preflight judge run are both recorded before the real run starts
 D=$(fx start succeeded); lane "$D"
-PRE=$(grep -n 'mkdir -p /projects/_tmp' "$D/argv" | head -1 | cut -d: -f1)
+UV=$(grep -n 'command -v uv' "$D/argv" | head -1 | cut -d: -f1)
+PRE=$(grep -n 'run start preflight' "$D/argv" | head -1 | cut -d: -f1)
 RUN=$(grep -n 'start-' "$D/argv" | head -1 | cut -d: -f1)
-if [ -n "$PRE" ] && [ -n "$RUN" ] && [ "$PRE" -lt "$RUN" ]; then ok "preflight_runs_before_the_run_starts"; else bad "preflight_runs_before_the_run_starts (preflight line [$PRE], run start line [$RUN])"; fi
+if [ -n "$UV" ] && [ -n "$PRE" ] && [ -n "$RUN" ] && [ "$UV" -lt "$RUN" ] && [ "$PRE" -lt "$RUN" ]; then ok "preflight_runs_before_the_run_starts"; else bad "preflight_runs_before_the_run_starts (uv line [$UV], preflight line [$PRE], run start line [$RUN])"; fi
 
-# 2: the preflight creates the scratch path the brief names
-P=$(sed -n 's/.*mkdir -p \([^ ]*\).*/\1/p' "$D/argv" | head -1)
-BRIEF=$(sed -n 's/^BRIEF    : \([^ ]*\) .*/\1/p' "$D/out" | head -1)
-if [ -n "$P" ] && [ "$P" = /projects/_tmp ] && [ -f "$BRIEF" ] && grep -qF "$P/" "$BRIEF"; then ok "preflight_creates_the_scratch_the_brief_names"; else bad "preflight_creates_the_scratch_the_brief_names (preflight path [$P], brief [$BRIEF])"; fi
+# 2 (spec 301, R4): the uv check still runs inside the container, through podman exec
+if grep -q 'podman exec pii-devbox sh -c .command -v uv' "$D/argv"; then ok "preflight_uv_check_runs_in_the_container"; else bad "preflight_uv_check_runs_in_the_container"; fi
 
 # CONTROL 3: a failing preflight aborts before anything is started
 D=$(fx preflight-fails succeeded "" 1); lane "$D"
@@ -87,6 +89,26 @@ if ! grep -q 'why the run was not accepted' "$D/out"; then ok "CONTROL_a_succeed
 # 8: a refused run whose trace names no criterion says so
 D=$(fx nocrit failed "13 code - ok"); lane "$D"
 if grep -qF '== why the run was not accepted: (the trace names no criterion)' "$D/out"; then ok "trace_without_a_criterion_says_so"; else bad "trace_without_a_criterion_says_so"; fi
+
+# 9 (spec 301): the brief names the repository's scratch, never /projects/_tmp
+D=$(fx brief succeeded); lane "$D" --dry-run
+BRIEF=$(sed -n 's/^BRIEF    : \([^ ]*\) .*/\1/p' "$D/out" | head -1)
+if [ -f "$BRIEF" ] && grep -q 'under _tmp/ in the repository' "$BRIEF" && ! grep -q '/projects/_tmp' "$BRIEF"; then ok "brief_names_the_repo_scratch"; else bad "brief_names_the_repo_scratch (brief [$BRIEF])"; fi
+
+# 10 (spec 301): the preflight is a judge run through the daemon, recorded before the real run starts, and its run is read back
+D=$(fx judge succeeded); lane "$D"
+PST=$(grep -n 'run start preflight' "$D/argv" | head -1 | cut -d: -f1)
+RUNST=$(grep -n 'start-' "$D/argv" | head -1 | cut -d: -f1)
+if [ -n "$PST" ] && [ -n "$RUNST" ] && [ "$PST" -lt "$RUNST" ] && grep -q 'run get r000000000418' "$D/argv"; then ok "preflight_runs_a_judge_through_the_daemon"; else bad "preflight_runs_a_judge_through_the_daemon (preflight start line [$PST], run start line [$RUNST])"; fi
+
+# CONTROL 11 (spec 301): a preflight judge the daemon fails aborts before the real run starts
+D=$(fx judge-fails succeeded "$TRACE_CRIT" 0 failed); lane "$D"
+if [ "$(cat "$D/rc")" = 2 ] && grep -q 'ABORT: container preflight failed: the daemon.s judge cannot write' "$D/out" && grep -qF "$TRACE_CRIT" "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_failed_preflight_judge_aborts"; else bad "CONTROL_a_failed_preflight_judge_aborts (rc [$(cat "$D/rc")])"; fi
+
+# 12 (spec 301): the preflight graph is tracked with one judge node, and the spec lane copies it to the daemon's graph dir
+rm -f "$REPO/_tmp/devbox-test/graphs/preflight.toml"
+D=$(fx graph succeeded); lane "$D"
+if [ -f graphs/preflight.toml ] && [ "$(grep -c 'kind = "judge"' graphs/preflight.toml)" = 1 ] && [ -f "$REPO/_tmp/devbox-test/graphs/preflight.toml" ]; then ok "preflight_graph_exists_and_is_copied"; else bad "preflight_graph_exists_and_is_copied"; fi
 
 trash
 echo "PASS: $PASS FAIL: $FAIL"

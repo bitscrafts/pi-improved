@@ -52,7 +52,7 @@ mkrepo() {
   local d=$SCRATCH/$1
   mkdir -p "$d/scripts" "$d/graphs" "$d/specs" "$d/modules/devbox"
   cp "$REPO"/specs/300-*.md "$d/specs/"
-  cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$d/graphs/"
+  cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$d/graphs/"
   sed "s|^REPO=/projects/pi-improved|REPO=$d|" "$REPO/scripts/run-batchC-pii.sh" > "$d/scripts/run-batchC-pii.sh"
   printf '#!/usr/bin/env bash\necho "daemon up (test)"\n' > "$d/modules/devbox/daemon.sh"
   echo "$d"

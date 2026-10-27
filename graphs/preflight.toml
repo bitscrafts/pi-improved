@@ -1,0 +1,40 @@
+# Spec 301: the preflight's one-node graph. The lane runs it through the daemon before the real run starts: the judge's sandbox is the
+# real judge's, so a criterion that cannot write the scratch refuses here, for no agent and no spend. The run input names the throwaway
+# spec (spec, base, workdir); the lane builds that repo under _tmp/devbox-test/ and passes the input with `run start preflight --input`.
+name = "preflight"
+entry = "verify"
+caps = ["proc"]
+
+[limits]
+max_wall_ms = 600000
+
+[[node]]
+id = "verify"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+[[node]]
+id = "refuse"
+kind = "refuse"
+hook = "judge"
+reason = "the daemon's judge cannot write the scratch"
+
+[[edge]]
+from = "verify"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "fail"
+to = "refuse"
+kind = "data"

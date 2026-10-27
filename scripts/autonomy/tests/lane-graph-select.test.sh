@@ -108,7 +108,7 @@ trash "$(field "$OUT" GRAPH)"
 
 # the controls run the script from a scratch repo: its REPO is rewritten, so the real graphs/ and specs/ are never touched
 mkdir -p "$SCRATCH/repo/graphs" "$SCRATCH/repo/specs"
-cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$SCRATCH/repo/graphs/"
+cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$SCRATCH/repo/graphs/"
 cp "$REPO"/specs/294-*.md "$SCRATCH/repo/specs/"
 sed "s|^REPO=/projects/pi-improved|REPO=$SCRATCH/repo|" "$S" > "$SCRATCH/repo/run.sh"
 

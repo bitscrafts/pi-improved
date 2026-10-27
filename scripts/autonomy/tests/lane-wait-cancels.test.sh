@@ -26,6 +26,8 @@ echo "$*" >> "$F/argv"
 cmd="${*: -1}"
 case "$cmd" in
   *"mkdir -p /projects/_tmp"*) echo "preflight stub"; exit 0 ;;
+  *"run start preflight"*) echo "run r000000000418 started" ;;
+  *"run get r000000000418"*) echo '{"status":"succeeded"}' ;;
   *"run get"*)
     n=$(( $(cat "$F/polls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/polls"
     s=$(cat "$F/status"); [ "$n" -ge "$(cat "$F/succeed_at" 2>/dev/null || echo 999999)" ] && s=succeeded
@@ -54,7 +56,7 @@ mkrepo() {
   local d=$SCRATCH/$1 W=$2
   mkdir -p "$d/scripts" "$d/graphs" "$d/specs" "$d/modules/devbox"
   cp "$REPO"/specs/299-*.md "$d/specs/"
-  cp "$REPO/graphs/docs.toml" "$d/graphs/"
+  cp "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$d/graphs/"
   if [ "$W" = none ]; then sed '/^max_wall_ms/d' "$REPO/graphs/spec.toml" > "$d/graphs/spec.toml"
   else sed "s/^max_wall_ms = .*/max_wall_ms = $W/" "$REPO/graphs/spec.toml" > "$d/graphs/spec.toml"; fi
   sed "s|^REPO=/projects/pi-improved|REPO=$d|" "$REPO/scripts/run-batchC-pii.sh" > "$d/scripts/run-batchC-pii.sh"
