@@ -21,7 +21,8 @@ export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:
 REPO=/projects/pi-improved
 LOGD=$REPO/_tmp/claude-batchC
 HOST=${DEVBOX_HOST:-mvcorrea@10.10.10.217}
-SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST")
+# PII_SSH names the ssh binary; the lane puts /usr/bin ahead of PATH, so a test cannot shadow `ssh` through PATH (measured: the stub was never run). Default: ssh.
+SSH=("${PII_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout=15 "$HOST")
 cd "$REPO" || exit 2
 mkdir -p "$LOGD" "$REPO/_tmp/devbox-test/graphs"
 
@@ -52,6 +53,9 @@ esac
 TS=$(date +%s); LOG="$LOGD/$TAG.$TS.log"
 GRAPH_NAME="q$N-$TS"; GRAPH="$REPO/_tmp/devbox-test/graphs/$GRAPH_NAME.toml"
 BRIEF="$LOGD/brief-$TAG.md"
+# the container's scratch: the brief names it and the preflight creates it (spec 298: the container mounts only the project, not /projects/_tmp)
+SCRATCH=/projects/_tmp
+PREFLIGHT_CMD="mkdir -p $SCRATCH && test -w $SCRATCH && command -v uv >/dev/null"
 
 # ---- the brief: what the old worker was told, minus the flag-enforced parts (those are verified below instead)
 cat > "$BRIEF" <<EOF
@@ -63,7 +67,7 @@ Do NOT run the whole workspace gate: the loop runs quality-gate.sh after you and
 and run only the tests your spec names (cargo test -p <crate> --test <name>). Keep the turn short.
 HARD RULES: never create, edit or rewrite anything under specs/ (read-only for implementers). Do NOT commit and do not run git commit/push.
 Destructive commands are banned: never rm -rf, never git checkout/restore ., git reset --hard or a bare git stash in this shared tree,
-and never touch /dev, /proc, /sys or /root. Scratch you create goes under /projects/_tmp/ and only that may be removed, with a guarded script.
+and never touch /dev, /proc, /sys or /root. Scratch you create goes under $SCRATCH/ and only that may be removed, with a guarded script.
 Work in the foreground; no background processes. If you run out of budget, write a COMPLETE handoff (done/remaining/next-start) to
 $LOGD/HANDOFF-$TAG.md and stop honestly; never compress the work to fake completion.
 Final line: SPEC-DONE $N criteria=<passed>/<total>, with every criterion command and its exit code listed.
@@ -79,6 +83,15 @@ if [ "${PII_LANE_GRAPH:-}" = spec ]; then
   else LANE=spec; GRAPH_NAME=spec; fi
 fi
 echo "LANE-GRAPH: $LANE"
+
+# ---- the spec lane's wait (spec 299): the deadline is the graph's own wall in seconds plus a margin, measured with SECONDS. Read here, so a
+# graph without a numeric wall aborts before anything is started. PII_WAIT_MARGIN_S (default 600) exists so a test can shorten the margin.
+if [ "$LANE" = spec ]; then
+  SPEC_WALL_MS=$(sed -n 's/^max_wall_ms *= *\([0-9][0-9]*\).*/\1/p' "$REPO/graphs/spec.toml" | head -1)
+  case "$SPEC_WALL_MS" in ''|*[!0-9]*) echo "ABORT: graphs/spec.toml has no numeric max_wall_ms: nothing started"; exit 2 ;; esac
+  WAIT_MARGIN_S=${PII_WAIT_MARGIN_S:-600}
+  DEADLINE=$(( SPEC_WALL_MS / 1000 + WAIT_MARGIN_S ))
+fi
 
 # ---- resume handle: claude's own session, only if the container still has it (the old lane's sessions live elsewhere)
 SID_LINE=""
@@ -170,11 +183,23 @@ echo "SPEC     : $SPECREL"
 echo "BRIEF    : $BRIEF ($(wc -c < "$BRIEF") bytes)"
 if [ "$LANE" = spec ]; then echo "INPUT    : $INPUT"; else echo "GRAPH    : $GRAPH"; fi
 echo "LOG      : $LOG"
+[ "$LANE" = spec ] && echo "WAIT     : up to ${DEADLINE}s (graph max_wall_ms $SPEC_WALL_MS + $WAIT_MARGIN_S)"
 { echo "== $TAG via pii: agent=$AGENT model=$MODEL provider=$PROVIDER"; echo "== graph $GRAPH_NAME"; } > "$LOG"
+
+# ---- the container preflight (spec 298): the scratch the brief names, and uv, must exist in the devbox before the run is started, so a
+# missing one refuses the run BEFORE anything is spent (the judges run the spec's criteria inside the container, not on the host)
+if [ "$LANE" = spec ]; then
+  if [ "$DRY" = 1 ]; then echo "PREFLIGHT: skipped (dry run)"
+  else
+    PRE=$("${SSH[@]}" "podman exec pii-devbox sh -c '$PREFLIGHT_CMD'" 2>&1) || { echo "ABORT: container preflight failed: ${PRE:-no output}"; exit 2; }
+    echo "PREFLIGHT: container scratch $SCRATCH ok, uv ok"
+  fi
+fi
 [ "$DRY" = 1 ] && { echo "DRY RUN: nothing started, nothing spent"; exit 0; }
 
 # ---- the daemon: up, and its build revision stated (it runs a deliberate binary, see modules/devbox/daemon.sh)
-DOUT=$(bash "$REPO/modules/devbox/daemon.sh" up 2>&1); DRC=$?
+# PII_DAEMON_SH: a test supplies a stub; the default is the real devbox script (it uses its own ssh, which PII_SSH does not reach)
+DOUT=$(bash "${PII_DAEMON_SH:-$REPO/modules/devbox/daemon.sh}" up 2>&1); DRC=$?
 echo "DAEMON   : $(printf '%s' "$DOUT" | tail -1)"
 [ $DRC -eq 0 ] || { echo "ABORT: the devbox daemon is not up:"; printf '%s\n' "$DOUT" | tail -5; exit 2; }
 [ "$LANE" = spec ] && { cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/_tmp/devbox-test/graphs/" || exit 2; }
@@ -201,18 +226,44 @@ for _ in $(seq 1 60); do
 done
 [ -n "$SID" ] && { printf '%s\n' "$SID" > "$LOGD/session-$TAG.txt"; echo "== session handle captured at spawn: $SID"; }
 
-# ---- wait for the run (bounded a little past the node's own timeout)
-MAXI=$(( ${PII_NODE_TIMEOUT_MS:-3000000} / 5000 + 120 ))
+# ---- wait for the run. The engine serialises a cancel as `failed`; `cancelled` stays a terminal word too (spec 299, no behaviour change).
+poll() { X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run get $RID 2>&1'" | grep -o '"status":"[a-z_]*"' | head -1; }
 ST=""
-for i in $(seq 1 "$MAXI"); do
-  ST=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run get $RID 2>&1'" | grep -o '"status":"[a-z_]*"' | head -1)
-  case "$ST" in *succeeded*|*failed*|*refused*|*cancelled*) break ;; esac
-  sleep 5
-done
-echo "== $RID final: ${ST:-unknown} after ~$((i*5))s" | tee -a "$LOG"
+if [ "$LANE" = spec ]; then
+  # spec 299: the wait is the graph's wall (DEADLINE, read above), not an iteration count
+  SECONDS=0
+  while :; do
+    ST=$(poll)
+    case "$ST" in *succeeded*|*failed*|*refused*|*cancelled*) break ;; esac
+    [ "$SECONDS" -ge "$DEADLINE" ] && break
+    sleep "${PII_POLL_SECONDS:-5}"
+  done
+  # the engine never cancels a run because its client stopped polling, so the lane cancels it once it gives up (spec 299)
+  case "$ST" in *succeeded*|*failed*|*refused*|*cancelled*) ;; *)
+    CANC=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run cancel $RID --kill --reason lane-wait-expired 2>&1'")
+    { echo "== $RID still running after ${SECONDS}s: cancelled by the lane"; printf '%s\n' "$CANC"; } | tee -a "$LOG" ;;
+  esac
+  WAITED=$SECONDS
+else
+  # bounded a little past the node's own timeout
+  MAXI=$(( ${PII_NODE_TIMEOUT_MS:-3000000} / 5000 + 120 ))
+  for i in $(seq 1 "$MAXI"); do
+    ST=$(poll)
+    case "$ST" in *succeeded*|*failed*|*refused*|*cancelled*) break ;; esac
+    sleep "${PII_POLL_SECONDS:-5}"
+  done
+  WAITED=$((i*${PII_POLL_SECONDS:-5}))
+fi
+echo "== $RID final: ${ST:-unknown} after ~${WAITED}s" | tee -a "$LOG"
 
 # ---- the evidence, in the log: explain, the journal's coder.exited (raw), and the quota refusal in the CLI's own words
 X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run explain $RID 2>&1 | head -60'" >> "$LOG" 2>&1
+# a refused spec run says WHY (spec 298): the criteria its trace names. explain names none, so the reason comes from the trace
+if [ "$LANE" = spec ]; then case "$ST" in *succeeded*) ;; *)
+  WHY=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run trace $RID 2>&1'" | grep -E 'crit=|fail=')
+  if [ -n "$WHY" ]; then { echo "== why the run was not accepted:"; printf '%s\n' "$WHY"; } | tee -a "$LOG"
+  else echo "== why the run was not accepted: (the trace names no criterion)" | tee -a "$LOG"; fi ;;
+esac; fi
 EXITS=$("${SSH[@]}" "podman exec pii-devbox sh -c 'tail -n +$((${LINES_BEFORE:-0}+1)) $C/pii.log | grep -a coder.exited'" 2>/dev/null)
 # the spec graph runs two coders (code, then the inlined docs): the facts are the FIRST exit (the host's code), the docs coder's is a second line
 if [ "$LANE" = spec ]; then EXITED=$(printf '%s\n' "$EXITS" | head -1); DOCS_EXITED=$(printf '%s\n' "$EXITS" | sed -n 2p)
@@ -221,14 +272,20 @@ printf '== coder.exited: %s\n' "$EXITED" >> "$LOG"
 fact() { printf '%s' "$1" | grep -o "\"$2\":\"\?[^,\"}]*" | head -1 | sed -E 's/^"[a-z_]*":"?//'; }
 RC=$(fact "$EXITED" rc); CHG=$(fact "$EXITED" tree_changed); QX=$(fact "$EXITED" quota_exhausted); QR=$(printf '%s' "$EXITED" | grep -o '"quota_reset":"[^"]*"' | cut -d'"' -f4)
 COST=$(printf '%s' "$EXITED" | grep -o '"claude_cost_usd":"[^"]*"' | cut -d'"' -f4)
+# spec 300: a refusal by EITHER coder is the run's refusal (the docs coder is the second line). The reset and the name come from the refusing coder
+QBY=host; QRESET=$QR
+if [ "$LANE" = spec ] && [ "$QX" != yes ] && [ "$(fact "$DOCS_EXITED" quota_exhausted)" = yes ]; then
+  QBY=docs; QRESET=$(printf '%s' "$DOCS_EXITED" | grep -o '"quota_reset":"[^"]*"' | cut -d'"' -f4)
+fi
 echo "FACTS    : rc=${RC:-?} tree_changed=${CHG:-?} quota_exhausted=${QX:-?} cost_usd=${COST:-not-journalled}"
 if [ "$LANE" = spec ]; then
   DCOST=$(printf '%s' "$DOCS_EXITED" | grep -o '"claude_cost_usd":"[^"]*"' | cut -d'"' -f4)
   echo "DOCS-FACTS: rc=$(fact "$DOCS_EXITED" rc) tree_changed=$(fact "$DOCS_EXITED" tree_changed) quota_exhausted=$(fact "$DOCS_EXITED" quota_exhausted) cost_usd=${DCOST:-not-journalled}"
 fi
-if [ "$QX" = "yes" ]; then
-  T=$(printf '%s' "$QR" | grep -oE '[0-9]{1,2}:[0-9]{2}(am|pm)' | head -1)
+if [ "$QX" = "yes" ] || [ "$QBY" = docs ]; then
+  T=$(printf '%s' "$QRESET" | grep -oE '[0-9]{1,2}:[0-9]{2}(am|pm)' | head -1)
   if [ -n "$T" ]; then echo "You've hit your session limit · resets $T (UTC)" | tee -a "$LOG"; else echo "You've hit your session limit" | tee -a "$LOG"; fi
+  echo "QUOTA    : refused by the $QBY coder" | tee -a "$LOG"
 fi
 
 # ---- specs are read-only for the worker: the old lane enforced it with a flag, this one checks the result
