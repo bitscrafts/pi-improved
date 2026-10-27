@@ -11,7 +11,7 @@ a criterion `mkdir -p _tmp/probe-N` in the workspace SUCCEEDS. The preflight ran
 
 ## Requirements
 ### Functional
-- R1: the scratch the worker brief names is `_tmp` INSIDE the repository (`$REPO/_tmp`, i.e. `/projects/pi-improved/_tmp` in the container, which the compose file mounts and which is gitignored), not `/projects/_tmp`. The brief says "Scratch you create goes under _tmp/ in the repository" and the lane's `SCRATCH` variable is that path.
+- R1: the scratch the worker brief names is `_tmp` INSIDE the repository (`$REPO/_tmp`, i.e. `/projects/pi-improved/_tmp` in the container, which the compose file mounts and which is gitignored), not `/projects/_tmp`. The brief says "Scratch you create goes under _tmp/ in the repository" and the lane's `SCRATCH` variable is that path. **This is the SPEC lane's wording only** (amended 2026-10-27 after the first attempt): the one-node coder lane's brief, and so its graph, stay byte-identical to today's, because the graph embeds the brief and `lane-graph-select.test.sh`'s `default_is_the_one_node_graph` pins it. The brief is written before the lane is decided, so the lane decision (spec lane = `PII_LANE_GRAPH=spec` and no `--resume`) moves above it or the scratch wording is chosen by a variable set there.
 - R2: the preflight no longer tests the shell's write access. It runs a ONE-NODE JUDGE through the production daemon: a throwaway spec in a scratch git repo under `$REPO/_tmp/devbox-test/` whose single criterion is `mkdir -p <SCRATCH-relative>/preflight-<ts> && test -d <SCRATCH-relative>/preflight-<ts>`, using the tracked graph `graphs/preflight.toml` (new, one `judge` node, ok -> `done`, fail -> `refuse`), and requires the run to end `succeeded`. This is the same confinement the real judge has. On a `failed` run it prints `ABORT: container preflight failed: the daemon's judge cannot write <SCRATCH>` plus the trace line and exits 2 BEFORE the real run starts. A `--dry-run` still prints `PREFLIGHT: skipped (dry run)`.
 - R3: `graphs/preflight.toml` is copied to the daemon's graph dir with the other two graphs; the lane's pin check also refuses a missing file.
 - R4: keep spec 298's `uv` check (it is still needed: a criterion may call `uv`), run inside the same `podman exec` as before.
@@ -37,7 +37,9 @@ lane (spec) -> pin check (3 graphs) -> PREFLIGHT: uv check (podman exec) + one-n
 | `preflight_runs_a_judge_through_the_daemon` | stub ssh records argv | a `run start preflight` precedes the real `run start spec`, and a `run get` of the preflight run |
 | `CONTROL_a_failed_preflight_judge_aborts` | stub answers the preflight run `failed` | exit 2, `ABORT: container preflight failed`, no `run start spec` |
 | `preflight_graph_exists_and_is_copied` | the tracked `graphs/preflight.toml` | present, one judge node, copied to the daemon graph dir (argv shows the cp) |
-| existing 298 tests | unchanged | still `ok` (the stub grows a branch, no assertion changes) |
+| `preflight_runs_before_the_run_starts` (298, REPLACED) | stub ssh records argv | the `command -v uv` preflight AND a `run start preflight` are both recorded before the real `run start spec` (the old assertion looked for the shell `mkdir -p /projects/_tmp`, which 301 removes on purpose) |
+| `preflight_creates_the_scratch_the_brief_names` (298, REPLACED by `brief_names_the_repo_scratch`) | the brief the lane writes | names `_tmp/` in the repository, not `/projects/_tmp` |
+| the other 298 tests | unchanged | still `ok` (the stub grows branches; setup lines that copy the graphs gain `preflight.toml`; no other assertion changes) |
 
 ## Exit Criteria
 - [ ] `bash scripts/autonomy/tests/lane-preflight.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
@@ -56,6 +58,6 @@ lane (spec) -> pin check (3 graphs) -> PREFLIGHT: uv check (podman exec) + one-n
 - `scripts/autonomy/tests/lane-preflight.test.sh`
 
 ## Guardrails
-- Do NOT edit `crates/`, `cycle.sh`, `env.sh`, `graphs/spec.toml`, `graphs/docs.toml` or an existing assertion. No real ssh, daemon or agent in a test.
+- Do NOT edit `crates/`, `cycle.sh`, `env.sh`, `graphs/spec.toml`, `graphs/docs.toml` or an existing assertion. The ONLY assertions that may change are the two 298 ones named in the TDD table (`preflight_runs_before_the_run_starts`, `preflight_creates_the_scratch_the_brief_names`), because they pin the behaviour this spec replaces; each is replaced by a stricter one, never removed. No real ssh, daemon or agent in a test.
 - The appearance-only implementation: a preflight that still runs under `podman exec` (outside the sandbox) and passes, which is exactly 298. The test that catches it: `CONTROL_a_failed_preflight_judge_aborts` can only go red if the verdict comes from the daemon's run status.
 - Mutations the tests must kill: the preflight judge run not required to be `succeeded`; the brief naming `/projects/_tmp`; the preflight after the real `run start`; `graphs/preflight.toml` not copied; a failed preflight not aborting.
