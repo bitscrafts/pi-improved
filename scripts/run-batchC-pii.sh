@@ -151,7 +151,7 @@ if [ "$LANE" = spec ]; then
   DIG=$(sha256sum "$REPO/graphs/docs.toml" 2>/dev/null | cut -c1-64)
   [ -n "$DIG" ] && [ "$PIN" = "$DIG" ] || { echo "ABORT: graphs/docs.toml digest '$DIG' is not the pin in graphs/spec.toml ('$PIN'): nothing started"; exit 2; }
   IN_PROVIDER=$PROVIDER; [ "$AGENT" = claude ] && IN_PROVIDER=anthropic
-  DOCS_BRIEF="Documentation step. Create NOTES-$N.md in the repository root with a short note on what the spec changed. Do not modify any other file, do not modify anything under specs/, and do not commit anything."
+  DOCS_BRIEF="Documentation step. Create the file _tmp/docs-notes/NOTES-$N.md (make the directory first) with a short note on what the spec changed. Do not modify any other file, do not modify anything under specs/, and do not commit anything."
   INPUT="$LOGD/input-$TAG.json"
   uv run --no-project python - "$INPUT" "$AGENT" "$MODEL" "$IN_PROVIDER" "$SPECREL" "$(git rev-parse HEAD)" "$REPO" "$BRIEF" "$DOCS_BRIEF" \
     "${PII_MAX_BUDGET_USD:-1.00}" "$REPO/graphs/spec.toml" <<'PY' || { echo "ABORT: could not build the input"; exit 2; }

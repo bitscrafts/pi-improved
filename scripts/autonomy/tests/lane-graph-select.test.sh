@@ -130,4 +130,9 @@ else bad "CONTROL_cap_never_exceeds_the_limit: exit $RC, max_budget_usd [$CAP], 
 trash "$I" "$(field "$OUT" GRAPH)"
 
 trash "$SCRATCH"
+# the docs coder's note must land where git ignores it, or the unlisted-changes guard refuses the row's own commit (measured on the first composed lane run)
+OUT=$(PII_LANE_GRAPH=spec bash "$S" 294 --dry-run 2>&1); IN=$(field "$OUT" INPUT)
+NOTE=$(uv run --no-project python -c 'import json,sys; print(json.load(open(sys.argv[1]))["docs_brief"])' "$IN" 2>/dev/null | grep -o '_tmp/docs-notes/NOTES-294.md' | head -1)
+if [ -n "$NOTE" ] && git check-ignore -q "$NOTE"; then ok "the docs note lands in an ignored path ($NOTE)"; else bad "the docs note lands in an ignored path (got [$NOTE])"; fi
+if printf '%s' "$(uv run --no-project python -c 'import json,sys; print(json.load(open(sys.argv[1]))["docs_brief"])' "$IN" 2>/dev/null)" | grep -q 'in the repository root'; then bad "CONTROL: the brief still says the repository root"; else ok "CONTROL: the brief no longer says the repository root"; fi
 echo "PASS: $PASS FAIL: $FAIL"
