@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use pii_abi::PiiError;
+use pii_abi::{PiiError, RunEvent, Terminal};
 use pii_proto::method::Method;
 use pii_proto::run::{
     GraphApplyParams, GraphLintParams, GraphLintResult, RunListParams, RunStartParams,
@@ -250,10 +250,33 @@ fn run_get(
 ) -> Response {
     let rid = req.params.get("run_id").and_then(|v| v.as_str());
     match rid.map(RunId::from).map(|r| run_header(engine, &r)) {
-        Some(Ok(h)) => value_response(req, serde_json::to_value(h).ok(), err),
+        Some(Ok(h)) => {
+            // Spec 293 R1: a failed run's header names the error its terminal event journalled.
+            let value = serde_json::to_value(&h).ok().map(|mut v| {
+                if let (Some(reason), Some(map)) =
+                    (failure_reason(engine, &h.run_id), v.as_object_mut())
+                {
+                    map.insert("reason".to_owned(), reason.into());
+                }
+                v
+            });
+            value_response(req, value, err)
+        }
         Some(Err(e)) => err_code(err, &e),
         None => err(ErrorCode::InvalidParams, "run.get needs run_id"),
     }
+}
+
+/// Spec 293 R1: the error of a run's failure terminal, read from its journal. `None` for a run that did not fail.
+fn failure_reason(engine: &Arc<Engine>, run_id: &str) -> Option<String> {
+    let journal = engine.store.read_journal(&RunId::from(run_id)).ok()?;
+    journal.iter().rev().find_map(|(_, event)| match event {
+        RunEvent::Finished {
+            terminal: Terminal::Failure { error },
+            ..
+        } => Some(error.clone()),
+        _ => None,
+    })
 }
 
 /// `run.list` (F6): list run headers. Without a status every run is listed,

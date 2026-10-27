@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use pii_abi::{NodeId, RunEvent};
+use pii_abi::{NodeId, RunEvent, Terminal};
 
 use super::run::{read_via_daemon, read_via_store};
 
@@ -48,6 +48,37 @@ pub(super) struct NodeLine {
     woven_from: Option<String>,
     /// The error the node failed with, when the journal shows it failing (spec 224 R2).
     pub(super) failure: Option<String>,
+    /// The verdict a judge node finished with, when its finished value carries one (spec 293 R2b).
+    pub(super) verdict: Option<Verdict>,
+}
+
+/// A judge node's verdict (spec 259): the criteria it ran, how many passed, and the text of the ones that failed.
+#[derive(Debug, Clone)]
+pub(super) struct Verdict {
+    passed: i64,
+    total: i64,
+    failing: String,
+}
+
+/// The verdict a judge node's finished value carries, or `None` for a value with no criteria count.
+fn verdict(value: &serde_json::Value) -> Option<Verdict> {
+    let total = value.get("criteria")?.as_i64()?;
+    let failing = value
+        .get("failing")
+        .and_then(serde_json::Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
+        .unwrap_or_default();
+    Some(Verdict {
+        passed: int_field(value, "passed"),
+        total,
+        failing,
+    })
 }
 
 /// A `worker.start.refused` a node journalled: the scope's or the node's own reason, and the image digest slot.
@@ -138,11 +169,12 @@ pub(super) fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
             }
             RunEvent::NodeFinished {
                 node,
+                value,
                 at_ms,
                 dur_ms,
                 ..
             } => {
-                lines.push(line(
+                let mut done = line(
                     *seq,
                     node.to_string(),
                     i64::from(*at_ms),
@@ -150,7 +182,9 @@ pub(super) fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
                     &observed,
                     &refusals,
                     &woven,
-                ));
+                );
+                done.verdict = verdict(value);
+                lines.push(done);
             }
             RunEvent::NodeFailed { node, error, .. } => {
                 let start = started.get(&node.to_string()).copied().unwrap_or_default();
@@ -189,6 +223,7 @@ pub(super) fn line(
         refusal: refusals.get(&node).cloned(),
         woven_from: woven.get(&node).cloned(),
         failure: None,
+        verdict: None,
         node,
         start_ms,
         dur_ms,
@@ -215,6 +250,12 @@ pub(super) fn fail_text(line: &NodeLine) -> Option<&str> {
     let exit = line.calls.last().and_then(|c| c.exit.as_ref());
     exit.map(|e| e.first_failure.as_str())
         .filter(|f| !f.is_empty())
+        .or_else(|| {
+            line.verdict
+                .as_ref()
+                .map(|v| v.failing.as_str())
+                .filter(|f| !f.is_empty())
+        })
         .or_else(|| {
             line.refusal
                 .as_ref()
@@ -268,7 +309,12 @@ pub(super) fn trace_line(line: &NodeLine) -> String {
         .map(|c| digest8(&c.image_digest))
         .or_else(|| refusal.map(|r| digest8(&r.image_digest)))
         .unwrap_or("-");
-    let crit = exit.map_or_else(|| "-".to_owned(), |e| format!("{}/{}", e.passed, e.run));
+    let crit = line
+        .verdict
+        .as_ref()
+        .map(|v| format!("{}/{}", v.passed, v.total))
+        .or_else(|| exit.map(|e| format!("{}/{}", e.passed, e.run)))
+        .unwrap_or_else(|| "-".to_owned());
     // Spec 224 R2: a failed node's error is cut to 80 characters on this line; `pii run trace --reason` prints it whole.
     let fail = fail_text(line).map_or_else(|| "-".to_owned(), |f| f.chars().take(80).collect());
     let rc = exit.map_or_else(|| "-".to_owned(), |e| e.rc.to_string());
@@ -365,7 +411,23 @@ pub(crate) fn coder_lines_via_daemon(run: &str) -> Option<Result<Vec<String>, Ex
 /// Spec 221 R4: the coder lines of a run read from the store at `db`, the offline path.
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn coder_lines_via_store(run: &str, db: &Path) -> Result<Vec<String>, ExitCode> {
-    read_via_store(run, db).map(|l| call_lines(&l.journal))
+    read_via_store(run, db).map(|l| {
+        // Spec 293 R1: a failed run's reason leads its lines, as the daemon's `run get` answer carries it.
+        let reason =
+            terminal_reason(&l.journal).map(|r| serde_json::json!({ "reason": r }).to_string());
+        reason.into_iter().chain(call_lines(&l.journal)).collect()
+    })
+}
+
+/// Spec 293 R1: the error of a run's failure terminal, read from its journal. `None` for a run that did not fail.
+pub(super) fn terminal_reason(journal: &[(u64, RunEvent)]) -> Option<String> {
+    journal.iter().rev().find_map(|(_, event)| match event {
+        RunEvent::Finished {
+            terminal: Terminal::Failure { error },
+            ..
+        } => Some(error.clone()),
+        _ => None,
+    })
 }
 
 /// The explain paragraph's sentence for one agent call (spec 217 R7).

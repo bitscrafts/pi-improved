@@ -9,7 +9,9 @@ use pii_abi::{RunEvent, RunId, RunStatus};
 use pii_proto::method::Method;
 use pii_proto::run::{TraceResult, WireRunStatus};
 
-use super::analysis::{explain_call, full_reason, graph_call_lines, node_lines, trace_line};
+use super::analysis::{
+    explain_call, full_reason, graph_call_lines, node_lines, terminal_reason, trace_line,
+};
 use super::next_value_or_none;
 use crate::cli_util::fail;
 use crate::cli_util::{next_value, open_store, usage_error};
@@ -156,8 +158,11 @@ fn print_run(verb: &str, run: &str, loaded: &Loaded) -> ExitCode {
     let lines = node_lines(&loaded.journal);
     let mut out = std::io::stdout();
     if verb == "explain" {
+        // Spec 293 R1: a failed run's sentence ends with the error its terminal event journalled.
+        let reason =
+            terminal_reason(&loaded.journal).map_or_else(String::new, |r| format!(": {r}"));
         let mut sentences = vec![format!(
-            "Run {run} of {} {} in {}ms.",
+            "Run {run} of {} {} in {}ms{reason}.",
             loaded.graph, loaded.status, loaded.dur_ms
         )];
         for line in &lines {
