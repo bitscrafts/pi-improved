@@ -161,6 +161,11 @@ fi
 # ---- the spec lane: the input of the tracked graph. The pin in graphs/spec.toml must be the digest of graphs/docs.toml (refused otherwise);
 # max_budget_usd is the queue's PII_MAX_BUDGET_USD (default 1.00), never above the graph's own [limits] max_micro_usd.
 if [ "$LANE" = spec ]; then
+  # spec 302: the three graphs must equal HEAD (the reviewed graph), not the working tree; an untracked one is refused too. Runs in a dry run as well
+  for G in spec docs preflight; do
+    git diff --quiet HEAD -- "graphs/$G.toml" && [ -z "$(git ls-files --others --exclude-standard -- "graphs/$G.toml")" ] \
+      || { echo "ABORT: graphs/$G.toml differs from HEAD (the pin protects the reviewed graph): nothing started"; exit 2; }
+  done
   PIN=$(grep -o 'sha256 = "[0-9a-f]*"' "$REPO/graphs/spec.toml" | head -1 | cut -d'"' -f2)
   DIG=$(sha256sum "$REPO/graphs/docs.toml" 2>/dev/null | cut -c1-64)
   [ -n "$DIG" ] && [ "$PIN" = "$DIG" ] || { echo "ABORT: graphs/docs.toml digest '$DIG' is not the pin in graphs/spec.toml ('$PIN'): nothing started"; exit 2; }
