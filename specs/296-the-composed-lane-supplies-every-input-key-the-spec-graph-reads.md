@@ -37,7 +37,7 @@ missing input: the run is refused at start (spec 288) and every queue row parks,
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Files
-- scripts/autonomy/tests/lane-input-matches-graph.test.sh
+- `scripts/autonomy/tests/lane-input-matches-graph.test.sh`
 
 ## Guardrails
 - Do NOT edit `graphs/`, `run-batchC-pii.sh` or `env.sh`. Do NOT start a daemon, use ssh or spawn an agent. Do NOT edit an existing assertion.

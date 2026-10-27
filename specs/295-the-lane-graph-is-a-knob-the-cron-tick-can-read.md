@@ -41,8 +41,8 @@ switch the queue to the composed graph would be to edit a script. This spec adds
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Files
-- scripts/autonomy/env.sh
-- scripts/autonomy/tests/lane-graph-knob.test.sh
+- `scripts/autonomy/env.sh`
+- `scripts/autonomy/tests/lane-graph-knob.test.sh`
 
 ## Guardrails
 - Do NOT change the default (no file means today's behaviour). Do NOT edit `run-batchC-pii.sh`, `cycle.sh` or any existing test. Do NOT spawn an agent or start a daemon in a test.
