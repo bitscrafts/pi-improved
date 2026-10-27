@@ -6,6 +6,7 @@
 
 pub mod barrier;
 pub mod dispatch;
+mod early_calls;
 pub mod loop_helpers;
 pub mod state;
 

@@ -16,11 +16,11 @@ use parking_lot::RwLock;
 use pii_abi::{NodeId, NodeInput, Outcome, PiiError, PortName, ResumeKey, RunEvent, RunId};
 use pii_core::{BudgetShare, CancelToken, CapKind, CapSet, Ctx, Principal};
 
-use crate::agent_calls::CallRecorder;
 use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
 
 use super::barrier::run_with_barrier;
+use super::early_calls::{self, Calls};
 use crate::sched::state::{EdgeState, RunState};
 use crate::spec::{EdgeKind, GraphSpec, NodeSpec};
 mod apply;
@@ -266,19 +266,18 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
             None
         };
         // Spec 217: the node's agent-call observations are journalled as the engine saw them, before its own
-        // NodeFinished; the node's returned value is never read for them.
-        let recorder = Arc::new(CallRecorder::new(ns.id.clone(), Arc::clone(ctx.observer())));
-        let node_ctx = ctx.observed_by(recorder.clone());
-        let result = run_with_barrier(env, || {
+        // NodeFinished; the node's returned value is never read for them. Spec 289: they reach the journal while the
+        // node runs, through the barrier's watcher; what the watcher has not taken is drained here.
+        let (calls, wake) = Calls::start(ns.id.clone(), Arc::clone(ctx.observer()));
+        let node_ctx = ctx.observed_by(calls.observer());
+        let (result, early) = run_with_barrier(env, &calls, wake, || {
             run_caught(env, &ns.id, || node.run(&node_ctx, input))
         });
         let dur_ms = ctx.elapsed_ms().saturating_sub(at_ms);
-        for observation in recorder.take() {
-            if let Err(e) = env.jr.append(&observation) {
-                return DispatchOutcome::Failed {
-                    error: e.to_string(),
-                };
-            }
+        if let Err(e) = early.and_then(|()| early_calls::journal(env, &calls)) {
+            return DispatchOutcome::Failed {
+                error: e.to_string(),
+            };
         }
         if let (Some(key), Ok(Outcome::Next { port, value })) = (&effect_key, &result)
             && let Err(e) = env.jr.append(&RunEvent::EffectConfirmed {
