@@ -287,7 +287,7 @@ else
     python3 scripts/autonomy/state.py set "$ITEM" status=pending attempts="$ATTEMPTS" \
       "last=requeued: provider limit hit (${RESET:-reset time not printed}) — resume the same session, do not restart" >/dev/null 2>&1
     say "QUOTA: $ITEM back on the queue — ${RESET:-reset unknown}"
-    echo "OUTCOME=requeued-quota ITEM=$ITEM SESSION=$RECOVER"; exit 0
+    echo "OUTCOME=requeued-quota ITEM=$ITEM SESSION=${RECOVER:-}"; exit 0
   fi
   python3 scripts/autonomy/state.py set "$ITEM" last=worker-ok "session=${NEWSID:-}"
 fi
