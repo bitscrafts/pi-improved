@@ -445,7 +445,10 @@ impl Engine {
         graph: &str,
         input: &serde_json::Value,
     ) -> Result<RunId, PiiError> {
-        let spec = self.load_spec(graph)?;
+        let (src, woven) = self.load_woven(graph)?;
+        // Spec 288: a call's `needs` the input cannot supply refuses here, before any run exists.
+        engine::preflight::check_needs(&woven.calls, &src, input)?;
+        let spec = woven.spec;
         let run_id = self.store.next_run_id()?;
         let prompt = input
             .get("prompt")
@@ -476,6 +479,15 @@ impl Engine {
     /// # Errors
     /// [`PiiError::NotFound`] naming every dir searched; loader errors otherwise.
     pub fn load_spec(&self, name: &str) -> Result<GraphSpec, PiiError> {
+        self.load_woven(name).map(|(_, w)| w.spec)
+    }
+
+    /// [`Engine::load_spec`] with the host's source text and the call records the load expanded (spec 288: the start
+    /// preflight reads both). The `default` graph has no source text and no calls.
+    ///
+    /// # Errors
+    /// As [`Engine::load_spec`].
+    pub fn load_woven(&self, name: &str) -> Result<(String, pii_graph::fragment::Woven), PiiError> {
         let dirs = graph_search_dirs(&self.cfg.graph_dir, &self.cfg.store_path);
         if let Some(path) = find_graph(&dirs, name) {
             let src = std::fs::read_to_string(&path)
@@ -483,11 +495,20 @@ impl Engine {
             // Spec 219: a graph that attaches fragments is woven here, before it is validated or run.
             let dir = path.parent().unwrap_or(&self.cfg.graph_dir);
             let fragments = dir.join("fragments");
-            return pii_graph::fragment::load_host_with_graphs(&src, &fragments, &dirs, &self.reg)
-                .map(|w| w.spec);
+            let woven =
+                pii_graph::fragment::load_host_with_graphs(&src, &fragments, &dirs, &self.reg)?;
+            return Ok((src, woven));
         }
         if name == "default" {
-            return pii_graph::load_toml_with_registry(engine::registry::DEFAULT_TOML, &self.reg);
+            let woven = pii_graph::fragment::Woven {
+                spec: pii_graph::load_toml_with_registry(
+                    engine::registry::DEFAULT_TOML,
+                    &self.reg,
+                )?,
+                sequence: Vec::new(),
+                calls: Vec::new(),
+            };
+            return Ok((String::new(), woven));
         }
         Err(graph_not_found(name, &dirs))
     }

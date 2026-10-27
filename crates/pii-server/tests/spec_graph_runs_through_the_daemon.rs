@@ -17,8 +17,7 @@ mod spec_graph_daemon;
 
 use pii_abi::RunStatus;
 use spec_graph_daemon::{
-    Case, DOCS_BREAK, DOCS_OK, failures, graphs_copy, in_child, observed, settle, started,
-    tracked_graphs,
+    Case, DOCS_BREAK, DOCS_OK, graphs_copy, in_child, observed, settle, started, tracked_graphs,
 };
 
 const CRITERION: &str = "test -f built.txt";
@@ -189,34 +188,20 @@ async fn CONTROL_a_missing_docs_brief_refuses_the_called_graph() {
     };
     let case = Case::new(&bin, CRITERION);
     let engine = case.engine(&tracked_graphs());
-    let run = engine
-        .start_run("spec", &case.input(false))
-        .expect("the spec graph starts");
-    let (status, journal) = settle(&engine, &run).await;
+    // Spec 288: the call's need is checked at start, so the refusal is the start's and no run exists for it.
+    let Err(err) = engine.start_run("spec", &case.input(false)) else {
+        panic!("a missing docs need refuses the run at start");
+    };
     assert!(
-        matches!(status, RunStatus::Failed),
-        "{status:?}: {journal:?}"
+        err.to_string()
+            .contains("graph.call.need: call 'docs' graph 'docs' needs 'brief'"),
+        "the call refuses on its need, naming call, graph and key: {err}"
     );
-    let refusals = failures(&journal);
+    // Refused at start, nothing spawned: neither the host's `code` coder nor the called graph's runs.
     assert!(
-        refusals.iter().any(|(_, e)| e.contains("graph.call.need")
-            && e.contains("call 'docs' graph 'docs' needs 'brief'")),
-        "the call refuses on its need, naming call, graph and key: {refusals:?}"
-    );
-    // The host's `code` coder has already run when the called graph's `require` refuses: exactly one coder spawned, and
-    // it is the host's. No node of the called graph (`docs__…`) spawns a coder.
-    let spawned: Vec<String> = observed(&journal, "coder.spawned")
-        .into_iter()
-        .map(|(node, _)| node)
-        .collect();
-    assert_eq!(
-        spawned,
-        vec!["code".to_owned()],
-        "only the host's code spawns"
-    );
-    assert!(
-        !spawned.iter().any(|n| n.starts_with("docs__")),
-        "no coder of the called graph spawns: {spawned:?}"
+        case.agent_argv().is_empty(),
+        "nothing started: {:?}",
+        case.agent_argv()
     );
 }
 
