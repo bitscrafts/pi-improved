@@ -42,8 +42,13 @@ reads these commands, so a wall stop looks like a worker defect.
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Files
-- crates/pii-cli/tests/run_failure_reason.rs
+- `crates/pii-cli/tests/run_failure_reason.rs`
+- `crates/pii-cli/src/cmd_sys.rs`
+- `crates/pii-cli/src/cmd_trace/run.rs`
+- `crates/pii-cli/src/cmd_trace/analysis.rs`
+- `crates/pii-server/src/engine/dispatch.rs`
 
 ## Guardrails
+- The file set above is the measured surface: `pii run get` prints the daemon's `run.get` answer verbatim (`cmd_sys.rs:115 run_get_line`, offline path `get_from_store`), the `run.get` answer is built in `crates/pii-server/src/engine/dispatch.rs:246 run_header` and that module already reads journals (`:417`), the `explain` sentence is printed in `crates/pii-cli/src/cmd_trace/run.rs:158-172`, and the judge row's `crit=` is `crates/pii-cli/src/cmd_trace/analysis.rs:280`. If the change genuinely needs a file outside this set, STOP and report the shape mismatch instead of widening it silently.
 - Do NOT change what a succeeded or cancelled run prints. Do NOT weaken or edit an existing assertion.
 - Mutations to kill: reason always empty, reason printed for a succeeded run, reason printed only for wall stops.

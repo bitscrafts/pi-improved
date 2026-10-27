@@ -47,8 +47,8 @@ change the default.
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Files
-- scripts/run-batchC-pii.sh
-- scripts/autonomy/tests/lane-graph-select.test.sh
+- `scripts/run-batchC-pii.sh`
+- `scripts/autonomy/tests/lane-graph-select.test.sh`
 
 ## Guardrails
 - Do NOT change the default graph or `PII_WORKER`'s default. Do NOT start a daemon, spawn an agent or spend in a test (`--dry-run` only). Do NOT edit an existing assertion.

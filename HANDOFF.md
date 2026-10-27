@@ -2479,3 +2479,10 @@ offers it), everything else done, skipped or revoked.
   `py_compile`. Row: 7 columns, 17 criteria → 17 commands, 4 files → 4 paths.
 - **Selftest on the committed tree (before authoring): `41 passed, 0 failed — ALL MECHANISMS PASS`** (17 s,
   background, verdict read from the tee'd log).
+- **Rows A157/A158 were refused NO-FILES, so the loop idled as `queue-empty` (2026-10-27 12:17Z).**
+  `row-paths.py` reads a spec's `## Files` entries only where a line carries two backticks, and both specs
+  were written with bare paths; spec 293 also declared one file where its row listed three, and its row named
+  `cmd_run.rs` (graph-run helpers) instead of the measured surface — `run get` prints the daemon's `run.get`
+  answer (`cmd_sys.rs:115`), built in `pii-server/src/engine/dispatch.rs:246`, with `explain` in
+  `cmd_trace/run.rs:158` and the judge `crit=` in `cmd_trace/analysis.rs:280`. Files blocks backticked, the
+  set converged, `row-paths.py check-all` reads `OK A157 5` / `OK A158 2`, pick names A157.
