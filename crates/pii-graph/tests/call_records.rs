@@ -286,3 +286,70 @@ fn a_pin_mismatch_yields_no_record() {
         .expect_err("a wrong pin must not load");
     assert!(err.to_string().contains("fragment.pin.mismatch"), "{err}");
 }
+
+/// The `call-from` mark on the node `head` of the loaded graph. The mark is what the run journals, so a record that
+/// never reaches the head is a call the run does not show.
+fn head_mark(w: &Woven, head: &str) -> serde_json::Value {
+    let node = w
+        .spec
+        .nodes
+        .iter()
+        .find(|n| n.id.as_str() == head)
+        .unwrap_or_else(|| panic!("no node {head} in the loaded graph"));
+    node.cfg
+        .get("call-from")
+        .cloned()
+        .unwrap_or_else(|| panic!("{head} carries no call-from mark: {:?}", node.cfg))
+}
+
+#[test]
+fn the_head_carries_the_record_fields() {
+    let h = host(
+        "\"fs_read\"",
+        "\"fs_read\"",
+        "docs",
+        &sha256_hex(SUB.as_bytes()),
+    );
+    let w = load(&h, &[("docs", SUB)]).expect("load");
+    // No `needs` and no `parent`: a top-level call with no declared needs carries neither, not a null.
+    assert_eq!(
+        head_mark(&w, "docs__in"),
+        serde_json::json!({
+            "graph": "docs",
+            "sha256": sha256_hex(SUB.as_bytes()),
+            "caps": ["fs_read"],
+            "exit": "a",
+            "input_keys": ["title"],
+        })
+    );
+}
+
+#[test]
+fn the_head_carries_needs_when_the_subgraph_declares_them() {
+    let sub = SUB.replace("exit = \"a\"\n", "exit = \"a\"\nneeds = [\"title\"]\n");
+    let w = load(&host_for(&sub), &[("docs", &sub)]).expect("load");
+    assert_eq!(
+        head_mark(&w, "docs__in")["needs"],
+        serde_json::json!(["title"])
+    );
+}
+
+#[test]
+fn a_nested_head_names_its_parent() {
+    const INNER: &str = "name = \"inner\"\nexit = \"a\"\n\n[[node]]\nid = \"a\"\nkind = \"transform\"\nvalue = \"deep\"\n";
+    const OUTER: &str = "name = \"outer\"\nexit = \"tail\"\n\n[[node]]\nid = \"n\"\nkind = \"call\"\ngraph = \"inner\"\nsha256 = \"INNER\"\ncaps = []\n\n[[node]]\nid = \"tail\"\nkind = \"transform\"\nvalue = \"t\"\n\n[[edge]]\nfrom = \"n\"\nport = \"ok\"\nto = \"tail\"\nkind = \"data\"\n";
+    let outer = OUTER.replace("INNER", &sha256_hex(INNER.as_bytes()));
+    let h = host("", "", "outer", &sha256_hex(outer.as_bytes()));
+    let w = load(&h, &[("outer", &outer), ("inner", INNER)]).expect("load");
+    assert_eq!(
+        head_mark(&w, "docs__n__in"),
+        serde_json::json!({
+            "graph": "inner",
+            "sha256": sha256_hex(INNER.as_bytes()),
+            "caps": [],
+            "exit": "a",
+            "input_keys": [],
+            "parent": "docs",
+        })
+    );
+}

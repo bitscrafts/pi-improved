@@ -1,59 +1,59 @@
-# COMPOSITION MUTATION SWEEP — first run (spec 286)
+# COMPOSITION MUTATION SWEEP
 
-2026-10-26, on commit `3e91402` plus the uncommitted spec-286 files (the sweep ran on the working tree, which holds no
-change under `crates/*/src` or `graphs`). Run with `bash scripts/mutate/composition.sh`; it takes about a minute on a
-warm target dir. Its self-test is `bash scripts/mutate/tests/composition-sweep-test.sh` (PASS: 8 FAIL: 0).
+Run with `bash scripts/mutate/composition.sh`; it takes about a minute on a warm target dir. Its self-test is
+`bash scripts/mutate/tests/composition-sweep-test.sh`. Each row is one mutation, applied alone to a scratch copy of the
+tree; only the row's named test file is run there. The table is `scripts/mutate/composition_mutations.py`.
 
-Result: `MUTATION-SWEEP: required 15/18 probes 2`, exit 1. Three required rows are not RED: two SURVIVED and one
-BASELINE-RED. The sweep exits nonzero until they are resolved.
+## Latest run — spec 291 (2026-10-27)
 
-Each row is one mutation, applied alone to a scratch copy of the tree; only the named test file is run there. The
-table is `scripts/mutate/composition_mutations.py`.
+Result: `MUTATION-SWEEP: required 18/18 probes 2`, exit 0. Every required row is RED. The three survivors of the first
+run (m08, m09, m17) are killed by tests added or re-pointed in spec 291, not by renaming the mutations.
 
-| id | kind | file | test | result |
-|---|---|---|---|---|
-| m01 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | RED |
-| m02 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | RED |
-| m03 | required | crates/pii-graph/src/fragment/call_needs.rs | pii-graph/call_needs | RED |
-| m04 | required | crates/pii-graph/src/fragment/call_needs.rs | pii-graph/call_needs | RED |
-| m05 | required | crates/pii-graph/src/fragment/call_needs.rs | pii-graph/call_needs | RED |
-| m06 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | RED |
-| m07 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | RED |
-| m08 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | SURVIVED |
-| m09 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_records | SURVIVED |
-| m10 | required | crates/pii-graph/src/run/call_events.rs | pii-graph/run_journals_calls | RED |
-| m11 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | RED |
-| m12 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | RED |
-| m13 | required | crates/pii-graph/src/fragment/call.rs | pii-graph/call_inlines_a_graph | RED |
-| m14 | required | crates/pii-server/src/node_kinds/nodes/coder/budget.rs | pii-server/coder_charges_run_budget | RED |
-| m15 | required | crates/pii-server/src/node_kinds/nodes/coder/graph_node.rs | pii-server/coder_charges_run_budget | RED |
-| m16 | required | crates/pii-server/src/node_kinds/nodes/coder/session_path.rs | pii-server/coder_session_per_node | RED |
-| m17 | required | crates/pii-server/src/engine/runs.rs | pii-server/spec_graph_runs_through_the_daemon | BASELINE-RED |
-| m18 | required | crates/pii-graph/src/fragment/check.rs | pii-graph/call_inlines_a_graph | RED |
-| m19 | probe | crates/pii-graph/src/fragment/call_needs.rs | pii-graph/call_needs | RED |
-| m20 | probe | crates/pii-graph/src/fragment/call_needs.rs | pii-graph/call_needs | RED |
+Spec 291 changed two things: m17's named test went from `spec_graph_runs_through_the_daemon` (BASELINE-RED on the live
+tree) to `composition_failure_matrix`, whose M5 case already turns m17 red; and m08 and m09 gained their own cases.
 
-MUTATION-SWEEP: required 15/18 probes 2
+## Survivors: none
 
-Every anchor occurred exactly once in its file, so no row is NO-APPLY. Every restored scratch file matched the digest
-of its live file, so the sweep did not abort.
+One line per required row, with what turns it RED. Rows 01–07, 10–16 and 18 were RED in the first run and are unchanged
+in this one; their line names the test file, not a re-measured assertion.
 
-## Survivors
+- **m01** — `call_inlines_a_graph`: the sha256 pin check (RED in both runs).
+- **m02** — `call_inlines_a_graph`: the required `sha256` key and the pin check (RED in both runs).
+- **m03** — `call_needs`: the host-id `needs` scan (RED in both runs).
+- **m04** — `call_needs`: the declared-key check (RED in both runs).
+- **m05** — `call_needs`: the empty-segment filter (RED in both runs).
+- **m06** — `call_inlines_a_graph`: the depth limit, `depth_five_is_refused_and_depth_four_loads` (RED in both runs).
+- **m07** — `call_inlines_a_graph`: the self-cycle check (RED in both runs).
+- **m08** — `call_inlines_a_graph`, new `a_call_widening_the_host_is_refused_at_the_call_site`: a pure `transform`
+  sub-graph and a call asking `proc, spawn` on a `proc` host is refused with `call 'docs' grants spawn`. The node-level
+  check cannot see this case, so only the call-site check refuses it. The near-miss (`proc` alone) and the empty ask
+  both load.
+- **m09** — `call_records`, new `the_head_carries_the_record_fields`: after a load, `docs__in` carries the `call-from`
+  mark with the record's graph, sha256, caps, exit and input keys, and no `needs` or `parent` on a top-level call.
+  `the_head_carries_needs_when_the_subgraph_declares_them` and `a_nested_head_names_its_parent` pin the other two fields.
+- **m10** — `run_journals_calls`: the journalled `graph.call` observation (RED in both runs).
+- **m11** — `call_inlines_a_graph`: the namespaced node ids (RED in both runs).
+- **m12** — `call_inlines_a_graph`: the call's `in` mapping (RED in both runs).
+- **m13** — `call_inlines_a_graph`: the edge rewiring at the call site (RED in both runs).
+- **m14** — `coder_charges_run_budget`: the coder's budget charge (RED in both runs).
+- **m15** — `coder_charges_run_budget`: the start gate (RED in both runs).
+- **m16** — `coder_session_per_node`: the per-node session path (RED in both runs).
+- **m17** — `composition_failure_matrix`, case `m5_budget_exhausted_inside_a_called_graph`: with `[limits]
+  max_micro_usd = 100000` the first coder's $0.40 exhausts the budget and the run ends `Failed`; with the budget built
+  without `[limits]` the run succeeds and the status assertion fails. The first run's named test
+  (`spec_graph_runs_through_the_daemon`) was BASELINE-RED on the live tree, so it could not judge the row.
+- **m18** — `call_inlines_a_graph`: the has-call check in `check.rs` (RED in both runs).
+- **m19** (probe) — `call_needs`: RED.
+- **m20** (probe) — `call_needs`: RED.
 
-- **m08 — the call-site caps check** (`call.rs`, `if !widen.is_empty()`), named test `call_inlines_a_graph`. Removing
-  the check still passes the test, because the node-level check in `load_sub` (`graph.call.widen` on each sub-graph
-  node) refuses the same widening. The call-site check is redundant for that test, so the sweep cannot tell them apart.
-  The next spec must add a case the node-level check does not catch: a call whose own `caps` widens, with no sub-graph
-  node that needs the extra capability.
-- **m09 — the call record is not attached to the call head** (`call.rs`, the `call_needs::mark` in `splice`), named
-  test `call_records`. It passes without the record. It is caught by `run_journals_calls` (probed separately: RED), so
-  the named file does not hold the record's attachment. The next spec should move the record assertion into
-  `call_records` (or name `run_journals_calls` as the catcher in the table).
-- **m17 — the daemon path builds the budget without `[limits]`** (`engine/runs.rs`), named test
-  `spec_graph_runs_through_the_daemon`, which is **BASELINE-RED**. Its `CONTROL_a_missing_docs_brief_refuses_before_any_agent`
-  case fails on the live tree too, before any mutation, so the row cannot be judged. This is not a scratch-tree artifact.
-  A probe run with `pii-server/spec_graph_spend_limit_bites` instead gives SURVIVED, so no other named test catches
-  the removal either. The next spec should repair the red CONTROL case, then re-judge m17.
+## First run (spec 286, 2026-10-26)
+
+On commit `3e91402` plus the uncommitted spec-286 files. Result: `MUTATION-SWEEP: required 15/18 probes 2`, exit 1. Three
+required rows were not RED: m08 and m09 SURVIVED, and m17 was BASELINE-RED because `spec_graph_runs_through_the_daemon`
+had a red `CONTROL_a_missing_docs_brief_refuses_before_any_agent` case on the live tree. A probe of m17 under
+`spec_graph_spend_limit_bites` also survived. The survivors were recorded as: m08 is redundant with the node-level
+check for `call_inlines_a_graph`; m09 is caught only by `run_journals_calls`; m17 needs a repaired control or a different
+test. The first run's table is superseded by the table above.
 
 ## Method notes
 
@@ -62,6 +62,7 @@ of its live file, so the sweep did not abort.
 - Each row restores the scratch file from the live file and compares its sha256 with the live file's; a mismatch
   aborts the sweep. The live tree is never written.
 - A row whose test is red before any mutation is `BASELINE-RED` and does not count.
-- A mutation that stops the test from compiling is `BROKEN` and does not count; no row was BROKEN in this run.
+- A mutation that stops the test from compiling is `BROKEN` and does not count.
 - The sweep needs `TMPDIR` writable for the linker; `/tmp` is read-only in this sandbox, so `composition.sh` defaults
   `TMPDIR` to `_tmp/tmp`. The uv cache and managed Python go under `_tmp/uv` for the same reason.
+- `cargo` is not on the default `PATH` in this sandbox; it lives under `/root/.cargo/bin`.

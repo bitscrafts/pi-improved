@@ -234,6 +234,37 @@ fn a_subgraph_within_the_grant_loads() {
     assert!(load(&host, &[("docs", &sub)]).is_ok());
 }
 
+/// The host granting `proc`, with a `docs` call asking `call_caps`. `SUB` is a single transform: it needs no capability,
+/// so only the call-site check can refuse a call that widens the host.
+fn widening_host(call_caps: &str) -> String {
+    host_for(SUB)
+        .replace("name = \"host\"", "name = \"host\"\ncaps = [\"proc\"]")
+        .replace("caps = []", &format!("caps = [{call_caps}]"))
+}
+
+#[test]
+fn a_call_widening_the_host_is_refused_at_the_call_site() {
+    let msg = load_err(&widening_host("\"proc\", \"spawn\""), &[("docs", SUB)]);
+    assert!(
+        msg.contains("call 'docs' grants"),
+        "call-site wording: {msg}"
+    );
+    assert!(
+        msg.contains("spawn"),
+        "names the widening capability: {msg}"
+    );
+}
+
+#[test]
+fn a_call_asking_exactly_the_host_grant_loads() {
+    assert!(load(&widening_host("\"proc\""), &[("docs", SUB)]).is_ok());
+}
+
+#[test]
+fn a_call_asking_no_caps_loads() {
+    assert!(load(&widening_host(""), &[("docs", SUB)]).is_ok());
+}
+
 #[test]
 fn a_graph_that_calls_itself_is_refused() {
     let host = HOST

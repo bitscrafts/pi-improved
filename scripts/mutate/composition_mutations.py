@@ -96,7 +96,7 @@ m17 = dict(id="m17", file="crates/pii-server/src/engine/runs.rs", edits=[
     ("pii_core::Budget::new(\n            spec.limits.max_tokens,\n            spec.limits.max_tool_calls,"
      "\n            spec.limits.max_micro_usd,\n            spec.limits.max_wall_ms,\n        )",
      "pii_core::Budget::unlimited()"),
-], test="pii-server/spec_graph_runs_through_the_daemon", kind="required")
+], test="pii-server/composition_failure_matrix", kind="required")
 
 m18 = dict(id="m18", file=f"{FRAG}/check.rs", edits=[
     ("if super::call::has_call(&doc) {", "if false && super::call::has_call(&doc) {"),
