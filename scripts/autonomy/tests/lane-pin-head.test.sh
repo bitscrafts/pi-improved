@@ -57,6 +57,11 @@ if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CO
 C=$(mkclone preflight-only); printf '# worker edit\n' >> "$C/graphs/preflight.toml"; run_dry "$C" spec
 if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CONTROL_a_preflight_edit_is_refused_by_head"; else bad "CONTROL_a_preflight_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
 
+# CONTROL 7 (review of A166): a spec.toml edit alone is refused by HEAD. Every earlier case edits docs.toml or preflight.toml, or repairs the pin through spec.toml,
+# so a check that skipped spec.toml survived mutation. The pin still matches docs.toml here, so only the HEAD comparison can refuse it.
+C=$(mkclone spec-only); printf '# worker edit\n' >> "$C/graphs/spec.toml"; run_dry "$C" spec
+if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out" && grep -q 'graphs/spec.toml' "$C.out"; then ok "CONTROL_a_spec_only_edit_is_refused_by_head"; else bad "CONTROL_a_spec_only_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
+
 trash
 echo "PASS: $PASS FAIL: $FAIL"
 [ "$FAIL" -eq 0 ]
