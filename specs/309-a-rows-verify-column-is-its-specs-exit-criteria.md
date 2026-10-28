@@ -102,9 +102,9 @@ worker is bought). This spec closes column 5 with the same seam, the same output
 
 ## Exit Criteria
 - [ ] `bash scripts/autonomy/tests/row-verify-test.sh 2>&1 | tail -1 | grep -q 'RESULT: PASS'`
-- [ ] `python3 scripts/autonomy/row-verify.py check A170 | grep -q '^OK A170 9$'`
-- [ ] `python3 scripts/autonomy/row-verify.py criteria specs/306-every-call-has-an-entry-counter-so-no-subgraph-is-entered-without-bound.md | grep -c . | grep -qx 9`
-- [ ] `python3 scripts/autonomy/row-verify.py check-all >/dev/null`
+- [ ] `uv run --no-project python scripts/autonomy/row-verify.py check A170 | grep -q '^OK A170 9$'`
+- [ ] `uv run --no-project python scripts/autonomy/row-verify.py criteria specs/306-every-call-has-an-entry-counter-so-no-subgraph-is-entered-without-bound.md | grep -c . | grep -qx 9`
+- [ ] `uv run --no-project python scripts/autonomy/row-verify.py check-all >/dev/null`
 - [ ] `grep -q 'row-verify' scripts/autonomy/state.py`
 - [ ] `git diff --quiet -- specs scripts/autonomy/plan.tsv`
 
