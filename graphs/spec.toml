@@ -26,6 +26,8 @@ spec = "$.input.spec"
 workdir = "$.input.workdir"
 brief = "$.input.brief"
 max_budget_usd = "$.input.max_budget_usd"
+# Spec 303: the resumed session. Optional: absent (or null) in the input means a fresh session, as the one-node graph's coder has it.
+sid = "$.input.sid"
 timeout_ms = 3000000
 env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]
 
