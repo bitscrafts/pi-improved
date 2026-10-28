@@ -12,6 +12,7 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 - R1: the spec graph accepts an optional `sid` in its run input for the `code` coder (the coder node already supports `sid` in the one-node graph; reuse that key, no new engine concept). With `--resume <sid>` in the spec lane the lane puts `sid` in the input JSON and keeps `LANE=spec`: no fallback to the coder lane. The message `LANE-GRAPH: coder (resume is not supported by the spec graph)` is removed.
 - R2: if the session transcript cannot be found in the container the lane still starts a fresh composed run (a resume is an optimisation, never a reason to refuse), but prints `RESUME: session <sid> not found in the devbox, starting fresh` AND writes the same line to the worker log. The lookup path is taken from the place the session was actually captured (see R3), not hard-coded to `/root/.claude/projects/*/`.
 - R3: measured in TDD: after a composed run, find where the container keeps the claude session of `r000000000463`/`r000000000460` (the lane already captures `SID` from the first `coder.spawned`). The lookup in R2 uses that location. If the CLAUDE_CODE_TMPDIR/`devbox-test/tmp` location is the only one, the lookup searches it and the spec says so; the finding goes in the spec's Verified Premises before the change is made.
+- R5 (found by the first run of this spec, r000000000465): spec 302's check that the three graphs equal HEAD refuses a dry run once a row has edited a graph, which makes any test that reads the working-tree graphs unpassable inside a row that must edit one. The check gains ONE explicit opt-out, the environment variable `PII_GRAPH_EDIT_OK=1`: with it the lane skips the HEAD comparison and prints `NOTE: graph edits allowed (PII_GRAPH_EDIT_OK)`. Default unchanged: unset or any other value keeps the abort. Only `scripts/autonomy/tests/lane-input-matches-graph.test.sh` sets it (on its own dry runs); `cycle.sh`, `env.sh` and the lane never set it, and the lane ignores it when not in a dry run (a real start with edited graphs still aborts).
 - R4: every commit made by the cycle for a row carries one trailer line `Lane: spec` or `Lane: coder` (read from the worker log's `LANE-GRAPH:` line, the LAST one), appended to the queue's commit message. `cycle.sh`'s commit step is the only place edited there; the trailer is absent when the log has no `LANE-GRAPH:` line (old logs).
 
 ### Non-Functional
@@ -42,6 +43,9 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 - [ ] `bash scripts/autonomy/tests/lane-input-matches-graph.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
 - [ ] `bash scripts/autonomy/tests/lane-graph-select.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
 - [ ] `bash scripts/autonomy/tests/lane-preflight.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
+- [ ] `grep -q 'PII_GRAPH_EDIT_OK' scripts/autonomy/tests/lane-input-matches-graph.test.sh`
+- [ ] `bash scripts/autonomy/tests/lane-pin-head.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
+- [ ] `test "$(grep -rl PII_GRAPH_EDIT_OK scripts/autonomy | grep -v tests/ | wc -l)" -eq 0`
 - [ ] `bash -n scripts/run-batchC-pii.sh`
 - [ ] `bash -n scripts/autonomy/cycle.sh`
 - [ ] `git diff --quiet -- crates scripts/autonomy/env.sh`
@@ -53,9 +57,20 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 - `graphs/spec.toml`
 - `scripts/autonomy/tests/lane-resume.test.sh`
 - `scripts/autonomy/tests/cycle-lane-trailer.test.sh`
+- `scripts/autonomy/tests/lane-input-matches-graph.test.sh`
+- `scripts/autonomy/tests/lane-pin-head.test.sh`
+
+
+### Added by the amendment (R5)
+| Test | Input | Expected |
+|---|---|---|
+| `lane-pin-head.test.sh` `CONTROL_the_opt_out_unset_still_aborts` | an edited spec.toml clone, dry run, `PII_GRAPH_EDIT_OK` unset, and again set to `0` | exit 2, `differs from HEAD` both times |
+| `lane-pin-head.test.sh` `opt_out_allows_a_dry_run` | the same clone with `PII_GRAPH_EDIT_OK=1`, dry run | exit 0, `NOTE: graph edits allowed` |
+| `lane-pin-head.test.sh` `CONTROL_the_opt_out_does_not_cover_a_real_start` | same clone, `PII_GRAPH_EDIT_OK=1`, NOT a dry run, stub ssh/daemon | exit 2, `differs from HEAD`, nothing started |
+| `lane-input-matches-graph.test.sh` | its dry runs | set `PII_GRAPH_EDIT_OK=1` and pass |
 
 ## Guardrails
 - `graphs/spec.toml`: only the optional `sid` on `code`. The docs pin is NOT touched (docs.toml is not edited). If the pin needs no change nothing else moves; if `lane-input-matches-graph` needs the lane to supply `sid`, that is part of R1.
-- Do NOT edit `crates/`, `env.sh`, or an existing assertion. cycle.sh: only the commit message expression. Scratch under `_tmp/` inside the repository.
+- Do NOT edit `crates/`, `env.sh`, or an existing assertion (new cases and the opt-out line are additions). cycle.sh: only the commit message expression. Scratch under `_tmp/` inside the repository.
 - The appearance-only implementation: a lane that keeps `LANE=spec` on resume but drops `sid` from the input (so the "resume" starts a fresh session silently). The test that catches it: `resume_stays_on_the_spec_lane` reads `"sid"` from the input JSON the lane really wrote.
 - Mutations the tests must kill: the fallback restored; `sid` omitted from the input; the not-found line missing from the log; the trailer read from the first `LANE-GRAPH:` line; a trailer when no lane line exists.
