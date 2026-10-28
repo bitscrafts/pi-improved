@@ -79,3 +79,21 @@ Criterion 9 reads shell files only (`--include='*.sh'`) and that is not a relaxa
 - Do NOT edit `crates/`, `env.sh`, or an existing assertion (new cases and the opt-out line are additions). cycle.sh: only the commit message expression. Scratch under `_tmp/` inside the repository.
 - The appearance-only implementation: a lane that keeps `LANE=spec` on resume but drops `sid` from the input (so the "resume" starts a fresh session silently). The test that catches it: `resume_stays_on_the_spec_lane` reads `"sid"` from the input JSON the lane really wrote.
 - Mutations the tests must kill: the fallback restored; `sid` omitted from the input; the not-found line missing from the log; the trailer read from the first `LANE-GRAPH:` line; a trailer when no lane line exists.
+
+## Closure
+Closed by the orchestrator, 2026-10-28 00:44Z, commit `275c2af`.
+
+- **Criteria:** all 13 run by the orchestrator on the tree the cycle was about to commit, `rc=0` each, and then re-run by the cycle itself (`_tmp/autonomy/logs/cycle-20261028T002344Z.log`: every `verify:` line `rc=0`).
+- **Gate:** the cycle's routine gate, 15 steps, `gate PASS`, coverage **measured** (not skipped) at `00:44:17Z`; `head-builds: HEAD 275c2af builds`.
+- **Reddened by the orchestrator's own mutations, each restored byte-identical (`sha256sum` before/after, file `touch`ed, test re-run green):**
+  | mutation | file | outcome |
+  |---|---|---|
+  | the opt-out also covers a real start (`&& [ "$DRY" = 1 ]` removed) | `run-batchC-pii.sh` | `CONTROL_the_opt_out_does_not_cover_a_real_start` red (10 ok / 1 FAIL) |
+  | the opt-out never fires (`if false`) | `run-batchC-pii.sh` | `opt_out_allows_a_dry_run` red (10 / 1) |
+  | `sid` dropped from the run input | `run-batchC-pii.sh` | `resume_stays_on_the_spec_lane` and `CONTROL_found_transcript_resumes` red (4 / 2) |
+  | the trailer reads the FIRST `LANE-GRAPH:` line | `cycle.sh` | `last_lane_line_wins` and `first_lane_line_does_not_win` red (3 / 2) |
+  | a production file sets `PII_GRAPH_EDIT_OK` (planted as `export` in `cycle.sh`) | `cycle.sh` | criterion 9 red, `cycle.sh` named; green once the plant was removed |
+  Restores hashed: `run-batchC-pii.sh` `ddeb4fa347fffed0254ddedd9d51f7ae28be7ce370b5c4353419050a1e66c552`, `cycle.sh` `b9d3c3bc1c700fefce8d29e928f0f4d5a0ba9811c9cb2076c6378eddae3ff8b6`.
+- **The prerequisite, as R6 records it:** the graph declaration (`sid` on `code`) went in first (`4fab34b`) because spec 302's pin refuses every spec-lane case while the row that must edit the graph holds it uncommitted — measured 15 cases over four test files, none of them a graph test.
+- **What this commit does NOT prove (measured, not claimed):** `275c2af` carries **no** `Lane:` trailer although the worker log `_tmp/claude-batchC/303-….1793146913.log` has `LANE-GRAPH: coder`. Cause: `cycle.sh:260` assigns `WLOG` only inside the dispatch branch, so a commit produced after a phase-marker resume (`SKIP_DISPATCH`) reads an empty handle and R4's trailer is skipped without a word. A second hole in the same line: the newest log was run `r000000000466`, a 5-second run with `tree_changed=no`, `cost_usd=0.000000`, while the tree came from `r000000000465` in the spec lane — with `WLOG` fixed alone the trailer would have named the wrong lane. Spec 304 / row A168 carries the fix.
+- **Also not done here:** the lane knob `_tmp/autonomy/lane-graph` reads `coder` (mtime `00:19:08Z`, not set by this tick), so no run this tick used the composed lane; the next dispatch reads the knob as it stands. The work the orchestrator finished (R5's dry-run opt-out, the two superseded `lane-graph-select` cases) was verified by the same 13 criteria and the five mutations above, not by a fresh worker session — the row was resumed at verify deliberately, after a worker run on the stale problem.
