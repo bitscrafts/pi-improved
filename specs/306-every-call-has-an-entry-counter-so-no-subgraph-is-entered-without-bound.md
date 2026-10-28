@@ -7,9 +7,10 @@ A `call` is inlined at load (`<call>__in` head plus the sub-graph's nodes). Toda
 
 ## Requirements
 ### Functional
-- R1: a `call` node accepts an optional integer `max_entries` (>= 1). The default, when absent, is **16**. A call is *entered* each time its head `<call>__in` executes.
+- R1: a `call` node accepts an optional integer `max_entries` (>= 1). The default, when absent, is **8** (Opus review: no shipped graph enters a call more than once, and 8 covers a 2 x 3 nested retry while halving the worst case). A call is *entered* each time its head `<call>__in` executes.
 - R2: the (`max_entries`+1)-th entry ends the run `Failed` with a reason that names the call and the limit: `call 'docs' entered more than max_entries (3) times`. The N-th entry still runs. A call that is entered once is unaffected at `max_entries = 1`.
-- R3: the counter is per call node per run, enforced at execution (not by a lint), and it is carried across `pii run resume` (the journal already records node executions: derive the count from it, or journal it).
+- R3: the counter is per EXPANDED call instance (ids are namespaced `<call>__<n>`), cumulative for the run, never reset by an enclosing loop (resetting per parent entry would multiply the limits, 16^4). It counts COMPLETIONS of the head `<call>__in`, in `apply_completion`, so `replay` rebuilds it on resume with no new journal field. The check is made at DISPATCH of the (N+1)-th entry; the refused entry journals nothing. Do NOT reuse the `loop_budget` `if it == b` arm (`sched/state.rs:233`): it fails the node on its LAST allowed pass.
+- R3b: the refusal names the FULL path (`call 'outer__inner'`). Document that an inner retry loop inside a looped outer call reaches its own limit early; the author raises the inner limit explicitly.
 - R4: `CALL_KEYS` in `crates/pii-graph/src/fragment/call.rs` gains `max_entries`; a non-integer, zero or negative value is refused at load with `graph.call.max_entries: ...`.
 - R5: no shipped graph changes: `graphs/spec.toml` calls `docs` once and must run unchanged. The `spec` graph's digest pin and `lane-input-matches-graph` stay green.
 
@@ -27,16 +28,19 @@ A `call` is inlined at load (`<call>__in` head plus the sub-graph's nodes). Toda
 |---|---|---|
 | `a_call_in_a_loop_stops_after_max_entries` | host loops a call 10 times, `max_entries = 3` | exactly 3 entries ran, the run is Failed, the reason names the call and `3` |
 | `CONTROL_a_loop_that_needs_two_entries_passes` | the same host, loop ends after 2, `max_entries = 3` | the run Succeeds |
-| `the_default_is_sixteen` | a call in an unbounded-but-V3-valid loop, no `max_entries` | 16 entries, then Failed naming 16 |
+| `the_default_is_eight` | a call in a V3-valid loop whose own `loop_budget` is ABOVE 8, no `max_entries` | 8 entries, then Failed naming 8 (without the higher loop budget the loop budget fires first) |
 | `a_single_call_is_fine_at_one` | `max_entries = 1`, no loop | Succeeds |
 | `a_bad_value_is_refused_at_load` | `max_entries = 0`, `-1`, `"x"`, `1.5` | each refused with `graph.call.max_entries` |
-| `the_count_survives_a_resume` | enter twice, stop the run, resume | the third entry is counted as the third |
+| `BOUNDARY_exactly_max_entries_succeeds` | a loop that exits after EXACTLY 3 entries, `max_entries = 3` | the run SUCCEEDS (kills the off-by-one that `== N` semantics would introduce; the other rows do not) |
+| `the_count_survives_a_resume` | enter twice, stop the run by TRUNCATING the journal and replaying it (not a timer), resume | the third entry is counted as the third |
+| `a_nested_call_names_its_full_path` | an inner call exceeds its limit inside an outer call | the reason contains `outer__inner` |
+| `an_enclosing_loop_does_not_reset_the_count` | an outer loop re-enters a call, each time once | the count is cumulative and the limit is reached |
 | `two_calls_count_apart` | two call nodes of the same graph in one loop | each has its own count |
 | `crates/pii-server/tests/composition_failure_matrix.rs` (existing looped case) | unchanged | still passes |
 
 ## Exit Criteria
 - [ ] `cargo test -q -p pii-graph --test call_max_entries 2>&1 | tail -3 | grep -q "test result: ok"`
-- [ ] `test "$(grep -c '^#\[test\]' crates/pii-graph/tests/call_max_entries.rs)" -ge 7`
+- [ ] `test "$(grep -c '^#\[test\]' crates/pii-graph/tests/call_max_entries.rs)" -ge 10`
 - [ ] `cargo test -q -p pii-server --test composition_failure_matrix 2>&1 | tail -3 | grep -q "test result: ok"`
 - [ ] `cargo test -q -p pii-graph 2>&1 | grep -c "test result: ok" | grep -qv '^0$'`
 - [ ] `grep -q 'max_entries' crates/pii-graph/src/fragment/call.rs`
@@ -54,4 +58,4 @@ A `call` is inlined at load (`<call>__in` head plus the sub-graph's nodes). Toda
 ## Guardrails
 - Do NOT edit `graphs/`, `scripts/`, an existing assertion, or the digest of `graphs/docs.toml`. Scratch under `_tmp/` inside the repository.
 - The appearance-only implementation: a lint that refuses loops around calls (nothing runs, nothing is counted) or a counter that counts parses instead of executions. The tests above run real loops and count real entries.
-- Mutations the tests must kill: the default removed (unbounded); the limit off by one in either direction; the count reset on resume; one counter shared by two calls; the check applied at load instead of at execution; a refusal that does not name the call.
+- Mutations the tests must kill: the default removed (unbounded); the limit off by one in either direction (the BOUNDARY row is what kills the `== N` form); the count reset on resume; one counter shared by two calls; the check applied at load instead of at execution; a refusal that does not name the call.
