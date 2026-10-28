@@ -56,7 +56,11 @@ pub fn cancel_run_with(
     }
     let mut error = format!("cancelled: {reason}");
     let mut close = true;
-    if engine.is_in_flight(run_id.as_str()) {
+    if engine.cancel_queued(run_id.as_str()) {
+        // Spec 308 R3: queued in the run pool, so no node is open and nothing can be refused. The
+        // claim keeps its thread from executing it; the handle goes with the cancel.
+        engine.cancel(run_id.as_str());
+    } else if engine.is_in_flight(run_id.as_str()) {
         let node = executing_node(engine, run_id)?;
         if !kill {
             engine.log().event(

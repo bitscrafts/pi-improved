@@ -83,6 +83,8 @@ mod graph_paths;
 pub struct RunHandle {
     /// Cancel token the node contexts observe.
     pub cancel: pii_core::CancelToken,
+    /// Whether a run thread has claimed the run yet (spec 308 R3).
+    pub claim: engine::run_pool::Claim,
 }
 
 /// The server-side engine.
@@ -147,6 +149,8 @@ pub struct Engine {
     pub started_at: Instant,
     pub(crate) sessions: parking_lot::Mutex<BTreeMap<String, Session>>,
     runs: parking_lot::Mutex<BTreeMap<String, RunHandle>>,
+    /// The threads runs execute on (spec 308): runs never take the shared blocking pool.
+    pub run_pool: Arc<engine::run_pool::RunPool>,
     /// Shared handle the `spawn` node uses to launch child runs (spec 32 R1).
     /// `None` until the daemon (or a test) calls [`Engine::attach_spawn_engine`]
     /// after construction — the registry is built inside `Engine::new`, so the
@@ -290,9 +294,13 @@ impl Engine {
         }));
         let entities = engine::registry::register_entity_nodes(&mut reg);
         let tools = ToolSet::builtin(cfg.workspace.clone());
+        let run_pool = Arc::new(engine::run_pool::RunPool::new(
+            engine::run_pool::configured_threads(),
+        )?);
         Ok(Arc::new(Self {
             cfg,
             store,
+            run_pool,
             approvals,
             heals,
             queue,
@@ -528,11 +536,49 @@ impl Engine {
         Err(graph_not_found(name, &dirs))
     }
 
-    /// Registers a spawned run's cancel token.
-    pub fn register_run(&self, run_id: &RunId, cancel: pii_core::CancelToken) {
+    /// Registers a spawned run's cancel token; the returned claim is the run's place in the run pool.
+    pub fn register_run(
+        &self,
+        run_id: &RunId,
+        cancel: pii_core::CancelToken,
+    ) -> engine::run_pool::Claim {
+        self.register_with(run_id, cancel, engine::run_pool::Claim::executing())
+    }
+
+    /// As [`Engine::register_run`] for a run that waits in the run pool (spec 308): its claim is
+    /// `QUEUED` until a pool thread starts it, so a cancel can take it first.
+    pub fn register_queued_run(
+        &self,
+        run_id: &RunId,
+        cancel: pii_core::CancelToken,
+    ) -> engine::run_pool::Claim {
+        self.register_with(run_id, cancel, engine::run_pool::Claim::default())
+    }
+
+    fn register_with(
+        &self,
+        run_id: &RunId,
+        cancel: pii_core::CancelToken,
+        claim: engine::run_pool::Claim,
+    ) -> engine::run_pool::Claim {
+        self.runs.lock().insert(
+            run_id.to_string(),
+            RunHandle {
+                cancel,
+                claim: claim.clone(),
+            },
+        );
+        claim
+    }
+
+    /// Spec 308 R3: claims a run that no pool thread has started, so it will never execute.
+    /// False when the run is unknown, already running, or already cancelled.
+    #[must_use]
+    pub fn cancel_queued(&self, run_id: &str) -> bool {
         self.runs
             .lock()
-            .insert(run_id.to_string(), RunHandle { cancel });
+            .get(run_id)
+            .is_some_and(|h| h.claim.cancel_queued())
     }
 
     /// Releases the run handle once a run has reached a terminal disposition

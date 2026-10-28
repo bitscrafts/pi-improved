@@ -1,4 +1,4 @@
-//! Run registry (F2.3): spawn on `spawn_blocking`, return immediately
+//! Run registry (F2.3): spawn on the run pool (spec 308), return immediately
 //! (< 50 ms, N4). The journal→bus bridge rides the run context's observer.
 
 use std::sync::Arc;
@@ -8,6 +8,7 @@ use pii_graph::spec::GraphSpec;
 
 use crate::Engine;
 use crate::engine::bus::BridgeObserver;
+use crate::engine::run_pool::skip_queued;
 
 pub use super::runs_cancel::{KILL_WAIT, cancel_run, cancel_run_with};
 
@@ -29,7 +30,7 @@ pub fn spawn_run(
 ) -> Result<(), PiiError> {
     require_runtime()?;
     let cancel = pii_core::CancelToken::new();
-    engine.register_run(&run_id, cancel.clone());
+    let claim = engine.register_queued_run(&run_id, cancel.clone());
     let bridge = BridgeObserver {
         run_id: run_id.clone(),
         tx: engine.bus.subscribe_tx(),
@@ -70,7 +71,7 @@ pub fn spawn_run(
             run: run_id.clone(),
             span: 0,
         },
-        cancel,
+        cancel.clone(),
     );
     // Spec 115 R4: the lifecycle clock starts when the run is accepted.
     let accepted = std::time::Instant::now();
@@ -89,7 +90,11 @@ pub fn spawn_run(
             (None, refuse_start(&engine, &run_id, &spec.name, &e))
         }
     };
-    tokio::runtime::Handle::current().spawn_blocking(move || {
+    let pool = Arc::clone(&engine.run_pool);
+    pool.submit(move || {
+        if skip_queued(&engine, &run_id, &cancel, &claim) {
+            return;
+        }
         let terminal = execute_or_log(&engine, &spec, &ctx, &run_id, started);
         // Spec 221: a run whose agent call was refused is journalled `Refused`, though its terminal may read success.
         let refused = refused
@@ -117,7 +122,7 @@ pub fn spawn_run(
 }
 
 /// Spec 178: a start from a plain thread (the cron re-arm) is refused by name,
-/// not left to panic inside `spawn_blocking` and crash-loop the supervisor.
+/// not left to panic on a run thread and crash-loop the supervisor.
 fn require_runtime() -> Result<(), PiiError> {
     tokio::runtime::Handle::try_current()
         .map(drop)
@@ -459,7 +464,7 @@ pub fn spawn_resume_node(
             .map_err(|e| refuse("invalid scope_root", &e))?;
     }
     let cancel = pii_core::CancelToken::new();
-    engine.register_run(&run_id, cancel.clone());
+    let claim = engine.register_queued_run(&run_id, cancel.clone());
     let bridge = BridgeObserver {
         run_id: run_id.clone(),
         tx: engine.bus.subscribe_tx(),
@@ -476,9 +481,13 @@ pub fn spawn_resume_node(
             run: run_id.clone(),
             span: 0,
         },
-        cancel,
+        cancel.clone(),
     );
-    tokio::task::spawn_blocking(move || {
+    let pool = Arc::clone(&engine.run_pool);
+    pool.submit(move || {
+        if skip_queued(&engine, &run_id, &cancel, &claim) {
+            return;
+        }
         let result = retry_node.as_ref().map_or_else(
             || {
                 pii_graph::run::resume(

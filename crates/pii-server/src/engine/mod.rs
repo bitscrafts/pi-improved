@@ -39,6 +39,7 @@ pub mod preflight;
 mod reconcile_tests;
 pub mod refusal;
 pub mod registry;
+pub mod run_pool;
 pub mod run_scope;
 pub mod runs;
 pub mod runs_cancel;

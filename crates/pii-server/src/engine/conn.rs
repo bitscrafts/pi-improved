@@ -209,9 +209,12 @@ pub(crate) async fn serve_connection_with<S>(
 
 /// True for the methods that do blocking work (store/redb I/O, process
 /// supervision, prompt setup) and must not run on the async worker (spec 80).
-fn is_heavy(method: Method) -> bool {
-    matches!(
-        method,
+/// Spec 308 R4: a `run cancel --kill` waits on its node for up to 30 s, so it is heavy too.
+fn is_heavy(req: &Request) -> bool {
+    let kill = req.method == Method::RunCancel
+        && req.params.get("kill").and_then(serde_json::Value::as_bool) == Some(true);
+    kill || matches!(
+        req.method,
         Method::MemorySearch
             | Method::MemoryPut
             | Method::MemoryConsolidate
@@ -240,7 +243,7 @@ async fn run_handler(
     wtx: &mpsc::UnboundedSender<String>,
     subs: &Arc<SubscriptionRegistry>,
 ) -> Response {
-    if !is_heavy(req.method) {
+    if !is_heavy(&req) {
         return handler(engine, &req, peer, wtx, subs);
     }
     let id = req.id.clone();
