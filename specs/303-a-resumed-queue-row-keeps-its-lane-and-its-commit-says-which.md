@@ -9,10 +9,11 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 
 ## Requirements
 ### Functional
-- R1: the spec graph accepts an optional `sid` in its run input for the `code` coder (the coder node already supports `sid` in the one-node graph; reuse that key, no new engine concept). With `--resume <sid>` in the spec lane the lane puts `sid` in the input JSON and keeps `LANE=spec`: no fallback to the coder lane. The message `LANE-GRAPH: coder (resume is not supported by the spec graph)` is removed.
+- R1: the spec graph accepts an optional `sid` in its run input for the `code` coder (the coder node already supports `sid` in the one-node graph; reuse that key, no new engine concept). With `--resume <sid>` in the spec lane the lane puts `sid` in the input JSON and keeps `LANE=spec`: no fallback to the coder lane. The message `LANE-GRAPH: coder (resume is not supported by the spec graph)` is removed. The test that asserted the removed fallback is `resume_falls_back` in `scripts/autonomy/tests/lane-graph-select.test.sh`; it is replaced by `resume_stays_on_the_spec_lane` over the same fixture (LANE-GRAPH spec, `sid` in the input, no fallback line), and `spec_graph_is_selected` gains `sid` in its expected key list. No other existing assertion is edited.
 - R2: if the session transcript cannot be found in the container the lane still starts a fresh composed run (a resume is an optimisation, never a reason to refuse), but prints `RESUME: session <sid> not found in the devbox, starting fresh` AND writes the same line to the worker log. The lookup path is taken from the place the session was actually captured (see R3), not hard-coded to `/root/.claude/projects/*/`.
 - R3: measured in TDD: after a composed run, find where the container keeps the claude session of `r000000000463`/`r000000000460` (the lane already captures `SID` from the first `coder.spawned`). The lookup in R2 uses that location. If the CLAUDE_CODE_TMPDIR/`devbox-test/tmp` location is the only one, the lookup searches it and the spec says so; the finding goes in the spec's Verified Premises before the change is made.
-- R5 (found by the first run of this spec, r000000000465): spec 302's check that the three graphs equal HEAD refuses a dry run once a row has edited a graph, which makes any test that reads the working-tree graphs unpassable inside a row that must edit one. The check gains ONE explicit opt-out, the environment variable `PII_GRAPH_EDIT_OK=1`: with it the lane skips the HEAD comparison and prints `NOTE: graph edits allowed (PII_GRAPH_EDIT_OK)`. Default unchanged: unset or any other value keeps the abort. Only `scripts/autonomy/tests/lane-input-matches-graph.test.sh` sets it (on its own dry runs); `cycle.sh`, `env.sh` and the lane never set it, and the lane ignores it when not in a dry run (a real start with edited graphs still aborts).
+- R5 (found by the first run of this spec, r000000000465): spec 302's check that the three graphs equal HEAD refuses a dry run once a row has edited a graph, which makes any test that reads the working-tree graphs unpassable inside a row that must edit one. The check gains ONE explicit opt-out, the environment variable `PII_GRAPH_EDIT_OK=1`: with it the lane skips the HEAD comparison and prints `NOTE: graph edits allowed (PII_GRAPH_EDIT_OK)`. Default unchanged: unset or any other value keeps the abort. Only the tests set it, on their own dry runs: `scripts/autonomy/tests/lane-input-matches-graph.test.sh` and the three `lane-pin-head.test.sh` cases that exercise the opt-out itself. `cycle.sh`, `env.sh` and the lane never set it, and the lane ignores it when not in a dry run (a real start with edited graphs still aborts).
+- R6 (measured while this spec was being finished, 2026-10-28 00:1xZ): the pin also blocks the ROW THAT EDITS A GRAPH from passing its own criteria — with `graphs/spec.toml` dirty, 15 lane cases aborted on `differs from HEAD` (lane-preflight 10 of 12, lane-graph-select 4 of 8, lane-pin-head 1 of 7), and not one of them is a graph test. So the graph half of R1 (`sid` on `code`) is committed as a PREREQUISITE before the row is dispatched (`4fab34b`), the worker does not edit a graph, and the opt-out stays a dry-run door for the next row that must edit one.
 - R4: every commit made by the cycle for a row carries one trailer line `Lane: spec` or `Lane: coder` (read from the worker log's `LANE-GRAPH:` line, the LAST one), appended to the queue's commit message. `cycle.sh`'s commit step is the only place edited there; the trailer is absent when the log has no `LANE-GRAPH:` line (old logs).
 
 ### Non-Functional
@@ -23,6 +24,7 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 - **CONFIRMED** (Opus review) for A160's `be22f443…` and A161's `8d08c324…`: `ls /root/.claude/projects/*/<sid>.jsonl` finds nothing in the container; `find` locates only a temp dir under `_tmp/devbox-test/tmp/claude-0/-projects-pi-improved/<sid>`.
 - **INFERRED** the sessions are written under `CLAUDE_CODE_TMPDIR` (`/projects/pi-improved/_tmp/devbox-test/tmp`) because the daemon sets it; R3's first TDD step proves or refutes this with `find` before the code changes.
 - **CONFIRMED** `run-batchC-pii.sh:77-80` is the fallback; `:85-91` is the lookup.
+- **MEASURED** (2026-10-28 00:15–00:25Z, this row's own tree): with `graphs/spec.toml` edited and uncommitted, every spec-lane case that runs the lane on the real repository aborts at the pin — `lane-preflight` 2 pass / 10 fail, `lane-graph-select` 4/4, `lane-pin-head` 6/1, `lane-input-matches-graph` 0/1. After the graph declaration went in at `4fab34b`: 12/0, 6/2 (the two cases R1 rewrites), 11/0 (7 original + 3 opt-out cases + controls), 1/0. The remaining failures were the two assertions that encode the pre-303 behaviour, not the pin.
 
 ## TDD Contract
 | Test (scripts/autonomy/tests/lane-resume.test.sh) | Input | Expected |
@@ -53,11 +55,13 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 - [ ] `bash scripts/autonomy/tests/lane-preflight.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
 - [ ] `grep -q 'PII_GRAPH_EDIT_OK' scripts/autonomy/tests/lane-input-matches-graph.test.sh`
 - [ ] `bash scripts/autonomy/tests/lane-pin-head.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
-- [ ] `test "$(grep -rl PII_GRAPH_EDIT_OK scripts/autonomy | grep -v tests/ | wc -l)" -eq 0`
+- [ ] `test "$(grep -rl PII_GRAPH_EDIT_OK scripts/autonomy --include='*.sh' | grep -v tests/ | wc -l)" -eq 0`
 - [ ] `bash -n scripts/run-batchC-pii.sh`
 - [ ] `bash -n scripts/autonomy/cycle.sh`
 - [ ] `git diff --quiet -- crates scripts/autonomy/env.sh`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
+
+Criterion 9 reads shell files only (`--include='*.sh'`) and that is not a relaxation: the marker can only be set by shell code, and the queue row's own verify text lives in `scripts/autonomy/plan.tsv`, which carries this criterion's literal string. Measured 2026-10-28: the unfiltered grep reports `plan.tsv` and can never reach 0 once the row exists — an unsatisfiable criterion, not a strict one.
 
 ## Files
 - `scripts/run-batchC-pii.sh`
