@@ -52,7 +52,7 @@ Work in the foreground; no background processes. If you run out of budget, write
 /projects/pi-improved/_tmp/claude-batchC/HANDOFF-294-the-queue-worker-can-start-the-composed-spec-graph.md and stop honestly; never compress the work to fake completion.
 Final line: SPEC-DONE 294 criteria=<passed>/<total>, with every criterion command and its exit code listed.
 '''
-env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
 timeout_ms = 3000000
 
 [[node]]

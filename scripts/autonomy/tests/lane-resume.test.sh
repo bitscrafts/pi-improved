@@ -27,7 +27,10 @@ cat > "$SCRATCH/ssh-stub.sh" <<'STUB'
 CMD="$*"
 printf '%s\n' "$CMD" >> "$SCRATCH_CMDS"
 case "$CMD" in
-  *"find "*"devbox-test/tmp"*) [ "${STUB_FOUND:-yes}" = yes ] ;;
+  *"find "*)
+    # STUB_TREE: a real find over a fake devbox tree, the devbox-test path mapped onto it; otherwise STUB_FOUND answers
+    if [ -n "${STUB_TREE:-}" ]; then LOOK=${CMD//\/projects\/pi-improved\/_tmp\/devbox-test/$STUB_TREE}; bash -c "${LOOK#*podman exec pii-devbox }"
+    else [ "${STUB_FOUND:-yes}" = yes ]; fi ;;
   *"coder.spawned"*) echo '{"kind":"coder.spawned","session":"stub-sid"}' ;;
   *"run start"*|*"/start-"*) echo "run r000000000463 started" ;;
   *"run get"*) echo '{"status":"succeeded"}' ;;
@@ -77,9 +80,27 @@ if [ "$RC" = 0 ] && ! printf '%s\n' "$OUT" | grep -q 'not found in the devbox' &
 else bad "CONTROL_found_transcript_resumes: exit $RC, input sid [$(input_sid "$I")]"; fi
 
 echo "== the lookup uses the location the session was captured in, not /root/.claude"
-if grep -q 'devbox-test/tmp' "$SCRATCH_CMDS" && ! grep -q '/root/.claude' "$SCRATCH_CMDS"; then
-  ok "lookup_uses_the_captured_location: searches _tmp/devbox-test/tmp"
+if grep -q 'devbox-test/claude' "$SCRATCH_CMDS" && ! grep -q 'devbox-test/tmp' "$SCRATCH_CMDS" && ! grep -q '/root/.claude' "$SCRATCH_CMDS"; then
+  ok "lookup_uses_the_captured_location: searches _tmp/devbox-test/claude (the daemon's config dir), not tmp and not /root/.claude"
 else bad "lookup_uses_the_captured_location: commands were:"; cat "$SCRATCH_CMDS"; fi
+
+echo "== a directory named for the session is not a transcript: the run starts fresh (coder lane, the graph is the evidence)"
+TREE="$SCRATCH/tree"; mkdir -p "$TREE/tmp/claude-0/p/$SID/tasks"
+OUT=$(STUB_TREE="$TREE" PII_LANE_GRAPH=coder PII_SSH="$SCRATCH/ssh-stub.sh" PII_DAEMON_SH="$SCRATCH/daemon-stub.sh" PII_POLL_SECONDS=0 \
+  timeout 300 bash "$S" 303 --resume "$SID" 2>&1); RC=$?
+G=$(field "$OUT" GRAPH)
+if [ "$RC" = 0 ] && printf '%s\n' "$OUT" | grep -q 'not found' && ! { [ -f "$G" ] && grep -q "^sid = " "$G"; }; then
+  ok "empty_tasks_directory_is_not_a_transcript: not found, no sid line in the graph"
+else bad "empty_tasks_directory_is_not_a_transcript: exit $RC"; printf '%s\n' "$OUT" | tail -8; fi
+
+echo "== a real conversation file under the config dir: the run resumes with the sid"
+TREE="$SCRATCH/tree2"; mkdir -p "$TREE/claude/projects/p" && : > "$TREE/claude/projects/p/$SID.jsonl"
+OUT=$(STUB_TREE="$TREE" PII_LANE_GRAPH=coder PII_SSH="$SCRATCH/ssh-stub.sh" PII_DAEMON_SH="$SCRATCH/daemon-stub.sh" PII_POLL_SECONDS=0 \
+  timeout 300 bash "$S" 303 --resume "$SID" 2>&1); RC=$?
+G=$(field "$OUT" GRAPH)
+if [ "$RC" = 0 ] && printf '%s\n' "$OUT" | grep -q 'RESUMING' && [ -f "$G" ] && grep -qxF "sid = \"$SID\"" "$G"; then
+  ok "real_transcript_resumes: RESUMING, sid = \"$SID\" in the graph"
+else bad "real_transcript_resumes: exit $RC"; printf '%s\n' "$OUT" | tail -8; fi
 
 mkdir -p "$REPO/_tmp/_trash" && mv "$SCRATCH" "$REPO/_tmp/_trash/lane-resume-$(date +%s)"
 echo "PASS: $PASS FAIL: $FAIL"

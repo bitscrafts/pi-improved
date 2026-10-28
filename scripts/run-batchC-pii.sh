@@ -22,6 +22,8 @@ REPO=/projects/pi-improved
 LOGD=$REPO/_tmp/claude-batchC
 HOST=${DEVBOX_HOST:-mvcorrea@10.10.10.217}
 C=/projects/pi-improved/_tmp/devbox-test
+# the claude config dir the daemon starts its coders with (modules/devbox/daemon.sh, spec 307): the conversation file is <config dir>/projects/<cwd>/<sid>.jsonl
+CFG=$C/claude
 # PII_SSH names the ssh binary; the lane puts /usr/bin ahead of PATH, so a test cannot shadow `ssh` through PATH (measured: the stub was never run). Default: ssh.
 SSH=("${PII_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout=15 "$HOST")
 cd "$REPO" || exit 2
@@ -98,7 +100,7 @@ fi
 SID_LINE=""; RESUME_NOTE=""
 if [ -n "$RESUME_SID" ] && [ "$AGENT" = claude ]; then
   if [ "$DRY" = 1 ]; then SID_LINE="sid = \"$RESUME_SID\""; echo "== dry run: session $RESUME_SID is not checked in the devbox"
-  elif "${SSH[@]}" "podman exec pii-devbox sh -c 'test -n \"\$(find $C/tmp -name \"$RESUME_SID*\" -print -quit 2>/dev/null)\"'"; then
+  elif "${SSH[@]}" "podman exec pii-devbox sh -c 'test -n \"\$(find $CFG -name \"$RESUME_SID.jsonl\" -type f -print -quit 2>/dev/null)\"'"; then
     SID_LINE="sid = \"$RESUME_SID\""; echo "== RESUMING claude session $RESUME_SID (found in the devbox)"
   else
     RESUME_NOTE="RESUME: session $RESUME_SID not found in the devbox, starting fresh"; echo "$RESUME_NOTE"
@@ -130,7 +132,7 @@ spec = "$SPECREL"
 brief = '''
 $(cat "$BRIEF")
 '''
-env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
 timeout_ms = ${PII_NODE_TIMEOUT_MS:-3000000}
 
 [[node]]
