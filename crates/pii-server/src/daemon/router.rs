@@ -152,7 +152,12 @@ fn poll_once(
         if channel.kind() == "mqtt" {
             add_mqtt_fields(&mut input, &msg);
         }
-        let run_id = match engine.start_run(&graph, &input) {
+        // Spec 305 R4: registered before the run can finish, so its reply lookup cannot miss it.
+        let run_id = match engine.start_run_with(&graph, &input, |id| {
+            ctx.channel_runs
+                .lock()
+                .insert(id.to_string(), (name.to_owned(), msg.chat.clone()));
+        }) {
             Ok(id) => id,
             Err(err) => {
                 engine.log().event(
@@ -169,9 +174,6 @@ fn poll_once(
             }
         };
         let _ = ctx.channel_store.advance(name, msg.cursor, run_id.as_str());
-        ctx.channel_runs
-            .lock()
-            .insert(run_id.to_string(), (name.to_owned(), msg.chat.clone()));
         engine.bus.broadcast(Event::ChannelMessage {
             channel: name.to_owned(),
             chat: msg.chat,

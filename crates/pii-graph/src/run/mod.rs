@@ -22,13 +22,13 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use pii_abi::{NodeId, PiiError, ResumeKey, RunEvent, RunId, Terminal};
+use pii_abi::{NodeId, PiiError, ResumeKey, RunEvent, RunHeader, RunId, Terminal};
 use pii_core::Ctx;
 use pii_store::Store;
 
 use crate::blackboard::Blackboard;
 use crate::journal::Journaler;
-use crate::node::NodeRegistry;
+use crate::node::{GraphNode, NodeRegistry};
 use crate::run::engine::Engine;
 use crate::run_helpers::{build_nodes, fresh_tokens, validate_for_exec};
 use crate::sched::state::RunState;
@@ -75,6 +75,35 @@ pub fn run_with_validate(
     input: serde_json::Value,
     validate: bool,
 ) -> Result<Terminal, PiiError> {
+    let started = start(store, spec, reg, ctx, run_id, input, validate)?;
+    execute(store, spec, reg, ctx, run_id, started)
+}
+
+/// A run whose header and `Started` event are already durable (spec 305 R1):
+/// what [`start`] hands to [`execute`], so the caller can acknowledge the id.
+pub struct Started {
+    header: RunHeader,
+    bb: Arc<RwLock<Blackboard>>,
+    built: BTreeMap<NodeId, Box<dyn GraphNode>>,
+}
+
+/// Validates and builds the graph, then journals the accepted run.
+///
+/// The header, `Started`, the woven and call events are flushed before this
+/// returns. A refusal here writes nothing; the caller journals its terminal.
+///
+/// # Errors
+/// Returns [`PiiError::Invalid`] for cyclic specs (Phase-1 boundary) or node
+/// build failures, store errors from journaling.
+pub fn start(
+    store: &Store,
+    spec: &GraphSpec,
+    reg: &NodeRegistry,
+    ctx: &Ctx,
+    run_id: &RunId,
+    input: serde_json::Value,
+    validate: bool,
+) -> Result<Started, PiiError> {
     if validate {
         validate_for_exec(spec, reg)?;
     }
@@ -118,7 +147,29 @@ pub fn run_with_validate(
     // Spec 154: the accepted run (header + `Started`) is durable before the
     // first node executes — one synchronous write per run, not per event.
     jr.flush()?;
+    // Spec 305 R1: the persisted header carries the flushed seq, so `execute` adopts it.
+    let header = store
+        .get_run(run_id)?
+        .ok_or_else(|| PiiError::Internal(format!("run {run_id}: header missing after start")))?;
+    Ok(Started { header, bb, built })
+}
 
+/// Runs a [`start`]ed run to its terminal disposition. Writes no `Started`:
+/// the journal already holds it.
+///
+/// # Errors
+/// [`PiiError::Cancelled`] when the root context is torn down mid-run, and
+/// store errors from journaling.
+pub fn execute(
+    store: &Store,
+    spec: &GraphSpec,
+    reg: &NodeRegistry,
+    ctx: &Ctx,
+    run_id: &RunId,
+    started: Started,
+) -> Result<Terminal, PiiError> {
+    let Started { header, bb, built } = started;
+    let jr = Journaler::adopt(store, ctx.observer().clone(), header, Arc::clone(&bb));
     let tokens = fresh_tokens(ctx, spec);
     let mut st = RunState::from_spec(spec);
     let mut fin = Vec::new();

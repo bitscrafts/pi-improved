@@ -14,6 +14,9 @@ pub use super::runs_cancel::{KILL_WAIT, cancel_run, cancel_run_with};
 /// Spawns the graph on a blocking thread with a bus-bridging context and
 /// returns at once (F2.3).
 ///
+/// Spec 305 R1: the run is validated and journalled (header and `Started`)
+/// before this returns, on the calling thread.
+///
 /// # Errors
 /// None currently; kept `Result` for the F2.3 contract.
 pub fn spawn_run(
@@ -71,41 +74,23 @@ pub fn spawn_run(
     );
     // Spec 115 R4: the lifecycle clock starts when the run is accepted.
     let accepted = std::time::Instant::now();
-    tokio::runtime::Handle::current().spawn_blocking(move || {
-        // F5: merge any extra graph input (test_command/workspace) into the
-        // run input so verify-fix graphs receive their params.
-        let mut input = serde_json::json!({ "prompt": prompt, "session": session_id });
-        if let Some(extra) = extra_input
-            && let Some(obj) = extra.as_object()
-        {
-            for (k, v) in obj {
-                input
-                    .as_object_mut()
-                    .map(|m| m.insert(k.clone(), v.clone()));
-            }
+    let input = run_input(prompt, &session_id, extra_input);
+    // R4 (spec 33): captured before `input` moves into `prepare` below —
+    // a heal-fix run whose loop_budget is exhausted fails STRUCTURALLY
+    // inside the engine's dispatch loop (no node runs to record it), so
+    // this is the one ledger write that must happen post-run.
+    let heal_input = input.clone();
+    // Spec 305 R1: the header and `Started` are durable before this returns, so the caller's id is
+    // already in the store. A refused start is journalled `Failed` here too (spec 115 R1).
+    let (started, refused) = match prepare(&engine, &spec, &ctx, &run_id, input) {
+        Ok(started) => (Some(started), false),
+        Err(e) => {
+            report_run_failed(&run_id, &e);
+            (None, refuse_start(&engine, &run_id, &spec.name, &e))
         }
-        // R4 (spec 33): captured before `input` moves into `run()` below —
-        // a heal-fix run whose loop_budget is exhausted fails STRUCTURALLY
-        // inside the engine's dispatch loop (no node runs to record it), so
-        // this is the one ledger write that must happen post-run.
-        let heal_input = input.clone();
-        // The Phase-1 `run` journals every event (bridge → bus) and writes
-        // the terminal to the journal; nothing else writes redb.
-        let mut refused = false;
-        let started = start_or_refuse(&engine, &spec, &ctx, &run_id, input);
-        let terminal = match started {
-            Ok(t) => Some(t),
-            Err(e) => {
-                // No tracing dep wired yet (Phase-2-scale addition); stderr is the
-                // only channel for a run failure that predates journal write.
-                #[allow(clippy::print_stderr)]
-                {
-                    eprintln!("pii: run {run_id} failed: {e}");
-                }
-                refused = refuse_start(&engine, &run_id, &spec.name, &e);
-                None
-            }
-        };
+    };
+    tokio::runtime::Handle::current().spawn_blocking(move || {
+        let terminal = execute_or_log(&engine, &spec, &ctx, &run_id, started);
         // Spec 221: a run whose agent call was refused is journalled `Refused`, though its terminal may read success.
         let refused = refused
             || matches!(engine.store.get_run(&run_id), Ok(Some(h)) if h.status == pii_abi::RunStatus::Refused);
@@ -139,28 +124,75 @@ fn require_runtime() -> Result<(), PiiError> {
         .map_err(|_| PiiError::Invalid("spawn_run called outside a Tokio runtime".into()))
 }
 
-/// Runs the graph, or refuses it by name when a promotion quarantines it (spec 125).
+/// The run input: the prompt and session, with any extra graph input merged over them. F5: `test_command`/`workspace`
+/// reach verify-fix graphs this way.
+fn run_input(
+    prompt: String,
+    session_id: &str,
+    extra_input: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut input = serde_json::Map::from_iter([
+        ("prompt".to_owned(), serde_json::Value::from(prompt)),
+        ("session".to_owned(), serde_json::Value::from(session_id)),
+    ]);
+    if let Some(serde_json::Value::Object(extra)) = extra_input {
+        input.extend(extra);
+    }
+    serde_json::Value::Object(input)
+}
+
+/// Runs a journalled run to its terminal, or `None` when it cannot finish (logged to stderr).
+fn execute_or_log(
+    engine: &Engine,
+    spec: &GraphSpec,
+    ctx: &pii_core::Ctx,
+    run_id: &RunId,
+    started: Option<pii_graph::run::Started>,
+) -> Option<pii_abi::Terminal> {
+    let started = started?;
+    // The Phase-1 `execute` journals every event (bridge → bus) and writes
+    // the terminal to the journal; nothing else writes redb.
+    match pii_graph::run::execute(&engine.store, spec, &engine.reg, ctx, run_id, started) {
+        Ok(t) => Some(t),
+        Err(e) => {
+            report_run_failed(run_id, &e);
+            None
+        }
+    }
+}
+
+/// The one place a run failure that predates the journal write is reported.
+/// No tracing dep is wired yet (Phase-2-scale addition); stderr is the only
+/// channel for it, and two call sites share this line instead of each
+/// carrying a raw print (the observability lint budgets this file at two).
+fn report_run_failed(run_id: &RunId, e: &PiiError) {
+    #[allow(clippy::print_stderr)]
+    {
+        eprintln!("pii: run {run_id} failed: {e}");
+    }
+}
+
+/// Validates and journals the run, or refuses it by name when a promotion quarantines it (spec 125).
 /// Spec 131: the refusal is a decision; it is recorded, never gated on that.
-fn start_or_refuse(
+/// Spec 305 R1: on `Ok` the header and `Started` are already durable.
+fn prepare(
     engine: &Engine,
     spec: &GraphSpec,
     ctx: &pii_core::Ctx,
     run_id: &RunId,
     input: serde_json::Value,
-) -> Result<pii_abi::Terminal, PiiError> {
-    quarantine_of(engine, &spec.name).map_or_else(
-        || pii_graph::run::run(&engine.store, spec, &engine.reg, ctx, run_id, input),
-        |(promo, reason)| {
-            crate::engine::refusal::record_quarantine_refusal(
-                engine,
-                &promo,
-                &reason,
-                run_id,
-                ctx.now_ms(),
-            );
-            Err(PiiError::Denied(reason))
-        },
-    )
+) -> Result<pii_graph::run::Started, PiiError> {
+    if let Some((promo, reason)) = quarantine_of(engine, &spec.name) {
+        crate::engine::refusal::record_quarantine_refusal(
+            engine,
+            &promo,
+            &reason,
+            run_id,
+            ctx.now_ms(),
+        );
+        return Err(PiiError::Denied(reason));
+    }
+    pii_graph::run::start(&engine.store, spec, &engine.reg, ctx, run_id, input, true)
 }
 
 /// Spec 125 R1: the named reason when a promotion in effect quarantines `graph`.

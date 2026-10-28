@@ -445,11 +445,26 @@ impl Engine {
         graph: &str,
         input: &serde_json::Value,
     ) -> Result<RunId, PiiError> {
+        self.start_run_with(graph, input, |_| {})
+    }
+
+    /// [`Engine::start_run`] with `on_id` called once the id is allocated and before the run is spawned (spec 305 R4): a caller that
+    /// registers the run from its id can do so before the run can finish.
+    ///
+    /// # Errors
+    /// As [`Engine::start_run`].
+    pub fn start_run_with(
+        self: &Arc<Self>,
+        graph: &str,
+        input: &serde_json::Value,
+        on_id: impl FnOnce(&RunId),
+    ) -> Result<RunId, PiiError> {
         let (src, woven) = self.load_woven(graph)?;
         // Spec 288: a call's `needs` the input cannot supply refuses here, before any run exists.
         engine::preflight::check_needs(&woven.calls, &src, input)?;
         let spec = woven.spec;
         let run_id = self.store.next_run_id()?;
+        on_id(&run_id);
         let prompt = input
             .get("prompt")
             .and_then(serde_json::Value::as_str)
