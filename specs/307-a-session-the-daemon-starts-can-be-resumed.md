@@ -14,6 +14,8 @@ The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches tha
 - R2: `scripts/checks/resume-through-daemon.sh` proves R1 with a REAL claude (haiku, two one-line prompts, a few cents) through a PRIVATE daemon started the way `daemon.sh` starts it (its own runtime dir, store and graph dir; the production daemon is never touched, never restarted). It runs a one-node coder graph that asks "Reply with exactly: PONG", reads the session id from the journal's `coder.spawned`, then starts a second run with that `sid` and a prompt that can only be answered from the first ("What single word did I ask you to reply with?") and asserts the answer contains PONG. Output ends `RESUME-THROUGH-DAEMON: OK` or `... FAIL <why>`. CONTROL, in the same script: with `CLAUDE_CONFIG_DIR` unset, the same two steps FAIL with `No conversation found`, so the check can fail. Both outcomes are printed as rows.
 - R3: `scripts/run-batchC-pii.sh` decides "found" by the conversation file itself: `find <config dir> -name "<sid>.jsonl"`, where the config dir is the one R1 chose. A directory named for the session is not a hit. When it is not found the existing `RESUME: session <sid> not found in the devbox, starting fresh` line is printed (stdout and worker log). `scripts/autonomy/tests/lane-resume.test.sh` gains a case with an EMPTY `tasks` directory named for the session that must print `not found`, and a case with a real `<sid>.jsonl` that must print `RESUMING`.
 
+- R7 (found by the host verify, MEASURED 2026-10-28: criterion 6 fails 7/8): `scripts/autonomy/tests/lane-graph-select.test.sh` keeps a golden copy of the coder lane's graph, and R3 adds `CLAUDE_CONFIG_DIR` to that graph's `env_pass`. Exactly ONE line of the golden changes: its `env_pass` line gains `"CLAUDE_CONFIG_DIR"` as the last entry. No assertion, comparison or other golden line changes. The control is the test itself: it must still FAIL when any other part of the graph differs (the worker proves this by changing one other golden byte, seeing the test go red, and restoring it).
+
 ### Non-Functional
 - Shell only. Never restart the production daemon from a criterion. No credential value is printed or written to a file in the repository; the symlink target is the image's existing mount.
 
@@ -43,12 +45,13 @@ The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches tha
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
 
 ## Files
+- `scripts/autonomy/tests/lane-graph-select.test.sh`
 - `modules/devbox/daemon.sh`
 - `scripts/checks/resume-through-daemon.sh`
 - `scripts/run-batchC-pii.sh`
 - `scripts/autonomy/tests/lane-resume.test.sh`
 
 ## Guardrails
-- Do NOT edit `crates/`, `graphs/`, `cycle.sh`, or an existing assertion. Do NOT run `daemon.sh refresh` or restart the production daemon: the check uses its own private daemon. Scratch under `_tmp/` inside the repository.
+- Do NOT edit `crates/`, `graphs/`, `cycle.sh`, or an existing assertion (R7 permits the one golden `env_pass` line and nothing else in that test). Do NOT run `daemon.sh refresh` or restart the production daemon: the check uses its own private daemon. Scratch under `_tmp/` inside the repository.
 - The appearance-only implementation: a lane that now looks for `*.jsonl` anywhere but a check that never resumes with a real claude. R2's second step is the proof; a stand-in that prints PONG for any prompt does not count, which is why the second prompt can only be answered from the first run's conversation.
 - Mutations the tests must kill: the lane accepting the empty task directory again; the config dir not passed to the private daemon (the control row); the lane looking in the wrong directory; the resume step omitting `sid`.
