@@ -36,6 +36,14 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 | `last_lane_line_wins` | a log with `coder` then `spec` | `Lane: spec` |
 | `spec_graph_declares_sid_optional` | `graphs/spec.toml` | the `code` node reads `sid` from the input with a default of empty, and `lane-input-matches-graph.test.sh` still passes |
 
+### Added by the amendment (R5)
+| Test | Input | Expected |
+|---|---|---|
+| `lane-pin-head.test.sh` `CONTROL_the_opt_out_unset_still_aborts` | an edited spec.toml clone, dry run, `PII_GRAPH_EDIT_OK` unset, and again set to `0` | exit 2, `differs from HEAD` both times |
+| `lane-pin-head.test.sh` `opt_out_allows_a_dry_run` | the same clone with `PII_GRAPH_EDIT_OK=1`, dry run | exit 0, `NOTE: graph edits allowed` |
+| `lane-pin-head.test.sh` `CONTROL_the_opt_out_does_not_cover_a_real_start` | same clone, `PII_GRAPH_EDIT_OK=1`, NOT a dry run, stub ssh/daemon | exit 2, `differs from HEAD`, nothing started |
+| `lane-input-matches-graph.test.sh` | its dry runs | set `PII_GRAPH_EDIT_OK=1` and pass |
+
 ## Exit Criteria
 - [ ] `bash scripts/autonomy/tests/lane-resume.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
 - [ ] `test "$(bash scripts/autonomy/tests/lane-resume.test.sh 2>&1 | grep -c '^ok')" -ge 5`
@@ -60,14 +68,6 @@ A row is resumed whenever a window parks it, a quota requeues it, or a person re
 - `scripts/autonomy/tests/lane-input-matches-graph.test.sh`
 - `scripts/autonomy/tests/lane-pin-head.test.sh`
 
-
-### Added by the amendment (R5)
-| Test | Input | Expected |
-|---|---|---|
-| `lane-pin-head.test.sh` `CONTROL_the_opt_out_unset_still_aborts` | an edited spec.toml clone, dry run, `PII_GRAPH_EDIT_OK` unset, and again set to `0` | exit 2, `differs from HEAD` both times |
-| `lane-pin-head.test.sh` `opt_out_allows_a_dry_run` | the same clone with `PII_GRAPH_EDIT_OK=1`, dry run | exit 0, `NOTE: graph edits allowed` |
-| `lane-pin-head.test.sh` `CONTROL_the_opt_out_does_not_cover_a_real_start` | same clone, `PII_GRAPH_EDIT_OK=1`, NOT a dry run, stub ssh/daemon | exit 2, `differs from HEAD`, nothing started |
-| `lane-input-matches-graph.test.sh` | its dry runs | set `PII_GRAPH_EDIT_OK=1` and pass |
 
 ## Guardrails
 - `graphs/spec.toml`: only the optional `sid` on `code`. The docs pin is NOT touched (docs.toml is not edited). If the pin needs no change nothing else moves; if `lane-input-matches-graph` needs the lane to supply `sid`, that is part of R1.
