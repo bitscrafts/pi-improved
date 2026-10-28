@@ -32,7 +32,7 @@ A caller that has been given an id and then loses the daemon (SIGKILL, OOM, powe
 | `a_second_started_is_never_written` | one run to completion | exactly one `Started` event in its journal |
 | `crates/pii-server/tests/channel_adapters.rs` `webhook_post_makes_a_run_and_the_reply_is_posted_to_the_sink` (existing, unchanged) | the gate's command | passes |
 | `a_run_is_registered_before_it_can_finish` (acked_run_survives_kill.rs) | `start_run_with` on a graph that finishes at once, the callback records the id | the callback ran before the run's terminal event, 50 times |
-| `the_start_stays_fast` | 50 sequential `start_run` calls | the slowest is under 50 ms (print the median and max) |
+| `the_start_stays_fast` | 50 sequential `start_run` calls on a graph that blocks | every run is still `Running` when its id comes back, the median is under 50 ms, the maximum under 5 s (a hang detector: a hard maximum failed under the gate's instrumented coverage build) |
 
 ## Exit Criteria
 - [ ] `cargo test -q -p pii-server --test acked_run_survives_kill 2>&1 | tail -3 | grep -q "test result: ok"`
