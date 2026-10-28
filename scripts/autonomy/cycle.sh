@@ -192,6 +192,9 @@ fi
 # the dispatcher takes a spec NUMBER, not a filename (it resolves specs/<N>-*.md itself)
 N=$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')
 [ -n "$N" ] || { say "cannot read a spec number out of '$SPEC'"; echo "OUTCOME=bad-plan ITEM=$ITEM"; exit 6; }
+# spec 304: WLOG is resolved for BOTH paths, before the dispatch branch: a resume at verify (SKIP_DISPATCH) buys nothing and reaches the
+# commit with this handle. The dispatch path resolves it again below, once its own run has written its log.
+WLOG=$(ls -t _tmp/claude-batchC/"$N"-*.log 2>/dev/null | head -1)
 if [ -n "$SKIP_DISPATCH" ]; then
   NEWSID="$RSID"
 else
@@ -253,11 +256,19 @@ else
   WRC=$?
   NEWSID=$(awk '{print $1}' _tmp/claude-batchC/session-"$N"-*.txt 2>/dev/null | tail -1)
   say "worker rc=$WRC session=${NEWSID:-none}"
-  report loop.dispatch "item=$ITEM session=${NEWSID:-none} rc=$WRC"
   # The worker may have been refused by the account's WINDOW rather than stopped by its work. The 1-turn probe can
   # say OPEN while the worker is refused (measured 2026-10-13), so read the worker's OWN log for the CLI's words and
   # honour the reset it states — never blind-retry, never shrink scope (the project's oldest operational rule).
   WLOG=$(ls -t _tmp/claude-batchC/"$N"-*.log 2>/dev/null | head -1)
+  # lane-record:begin
+  # spec 304: the lane this run used is the LAST `LANE-GRAPH:` line of its own log; it is recorded on the row only when the run changed the
+  # tree (the first coder.exited, the host's, as the FACTS line reads it). A run that changed nothing leaves the previous record standing,
+  # so a commit is never attributed to a run that produced no tree of its own.
+  RUN_LANE=$(grep -a '^LANE-GRAPH: ' "${WLOG:-}" 2>/dev/null | tail -1 | sed -n 's/^LANE-GRAPH: \(spec\|coder\)$/\1/p')
+  RUN_CHANGED=$(grep -a -m1 '^== coder.exited: ' "${WLOG:-}" 2>/dev/null | grep -o '"tree_changed":"[a-z]*"' | head -1 | cut -d'"' -f4)
+  if [ "$RUN_CHANGED" = yes ] && [ -n "$RUN_LANE" ]; then python3 scripts/autonomy/state.py set "$ITEM" "lane=$RUN_LANE"; fi
+  # lane-record:end
+  report loop.dispatch "item=$ITEM session=${NEWSID:-none} rc=$WRC lane=${RUN_LANE:-none}"
   WUNTIL=$(bash scripts/autonomy/window.sh parse "$WLOG" 2>/dev/null || true)
   if [ -n "$WUNTIL" ]; then
     echo "$WUNTIL" > "$STATEDIR/window-closed-until"
@@ -400,8 +411,10 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
     exit 0
   fi
   # lane-trailer:begin
-  # spec 303: the commit says which lane produced it: the LAST `LANE-GRAPH:` line of the worker log; no such line (an old log), no trailer
-  LANE_TRAILER=$(grep -a '^LANE-GRAPH: ' "${WLOG:-}" 2>/dev/null | tail -1 | sed -n 's/^LANE-GRAPH: \(spec\|coder\)$/\1/p')
+  # spec 304: the commit's lane is, in order, the lane the tree-changing run recorded on the row (a resume at verify has no fresh log, so the
+  # record is what carries it), then the LAST `LANE-GRAPH:` line of the worker log (spec 303), then none: an invented lane is worse than none
+  LANE_TRAILER=$(python3 scripts/autonomy/state.py get "${ITEM:-}" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("lane",""))' 2>/dev/null)
+  case "$LANE_TRAILER" in spec|coder) ;; *) LANE_TRAILER=$(grep -a '^LANE-GRAPH: ' "${WLOG:-}" 2>/dev/null | tail -1 | sed -n 's/^LANE-GRAPH: \(spec\|coder\)$/\1/p') ;; esac
   COMMIT_MSG="$SPEC: automated pass — $TITLE (spec + criteria in specs/$SPEC; gate green)"
   [ -n "$LANE_TRAILER" ] && COMMIT_MSG=$(printf '%s\n\nLane: %s' "$COMMIT_MSG" "$LANE_TRAILER")
   # lane-trailer:end
