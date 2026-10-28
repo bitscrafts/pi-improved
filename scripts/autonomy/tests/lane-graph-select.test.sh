@@ -93,18 +93,20 @@ OUT=$(PII_LANE_GRAPH=spec timeout 60 bash "$S" 294 --dry-run 2>&1); RC=$?
 I=$(field "$OUT" INPUT)
 if [ "$RC" = 0 ] && printf '%s\n' "$OUT" | grep -q '^LANE-GRAPH: spec$' && [ -f "$I" ]; then
   KEYS=$(uv run --no-project python -I -c 'import json,sys; print(" ".join(sorted(json.load(open(sys.argv[1])))))' "$I" 2>&1)
-  WANT="agent base brief docs_brief max_budget_usd model provider spec workdir"
-  if [ "$KEYS" = "$WANT" ]; then ok "spec_graph_is_selected: LANE-GRAPH spec, input with all nine keys"
+  WANT="agent base brief docs_brief max_budget_usd model provider sid spec workdir"
+  if [ "$KEYS" = "$WANT" ]; then ok "spec_graph_is_selected: LANE-GRAPH spec, input with all ten keys"
   else bad "spec_graph_is_selected: input keys [$KEYS], want [$WANT]"; fi
   trash "$I"
 else bad "spec_graph_is_selected: exit $RC, LANE-GRAPH line or input missing"; printf '%s\n' "$OUT" | head -20; fi
 
-echo "== resume with the spec lane falls back to the one-node graph"
+echo "== resume with the spec lane stays on the spec lane and hands the session to the graph (spec 303 R1; this case replaces the 294 fallback)"
 OUT=$(PII_LANE_GRAPH=spec timeout 60 bash "$S" 294 --resume abc --dry-run 2>&1); RC=$?
-if [ "$RC" = 0 ] && printf '%s\n' "$OUT" | grep -qx 'LANE-GRAPH: coder (resume is not supported by the spec graph)' \
-   && printf '%s\n' "$OUT" | grep -q '^LANE-GRAPH: coder$'; then ok "resume_falls_back: fallback line and LANE-GRAPH coder"
-else bad "resume_falls_back: exit $RC"; printf '%s\n' "$OUT" | head -20; fi
-trash "$(field "$OUT" GRAPH)"
+I=$(field "$OUT" INPUT)
+if [ "$RC" = 0 ] && printf '%s\n' "$OUT" | grep -q '^LANE-GRAPH: spec$' \
+   && ! printf '%s\n' "$OUT" | grep -q 'resume is not supported' \
+   && [ -f "$I" ] && grep -q '"sid": *"abc"' "$I"; then ok "resume_stays_on_the_spec_lane: LANE-GRAPH spec, sid in the input, no fallback line"
+else bad "resume_stays_on_the_spec_lane: exit $RC"; printf '%s\n' "$OUT" | head -20; fi
+trash "$I" "$(field "$OUT" GRAPH)"
 
 # the controls run the script from a scratch repo: its REPO is rewritten, so the real graphs/ and specs/ are never touched
 mkdir -p "$SCRATCH/repo/graphs" "$SCRATCH/repo/specs"

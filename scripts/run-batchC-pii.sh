@@ -21,6 +21,7 @@ export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:
 REPO=/projects/pi-improved
 LOGD=$REPO/_tmp/claude-batchC
 HOST=${DEVBOX_HOST:-mvcorrea@10.10.10.217}
+C=/projects/pi-improved/_tmp/devbox-test
 # PII_SSH names the ssh binary; the lane puts /usr/bin ahead of PATH, so a test cannot shadow `ssh` through PATH (measured: the stub was never run). Default: ssh.
 SSH=("${PII_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout=15 "$HOST")
 cd "$REPO" || exit 2
@@ -54,12 +55,9 @@ TS=$(date +%s); LOG="$LOGD/$TAG.$TS.log"
 GRAPH_NAME="q$N-$TS"; GRAPH="$REPO/_tmp/devbox-test/graphs/$GRAPH_NAME.toml"
 BRIEF="$LOGD/brief-$TAG.md"
 # ---- the lane (spec 294): PII_LANE_GRAPH=spec starts the tracked `spec` graph; anything else keeps the one-node coder graph below.
-# The spec graph has no session input, so a resume stays on the one-node graph. Decided before the brief, which names the scratch. Printed before anything is spent.
+# A resume stays on the spec lane too: the spec graph's `code` takes the session as `sid` (spec 303). Decided before the brief, which names the scratch. Printed before anything is spent.
 LANE=coder
-if [ "${PII_LANE_GRAPH:-}" = spec ]; then
-  if [ -n "$RESUME_SID" ]; then echo "LANE-GRAPH: coder (resume is not supported by the spec graph)"
-  else LANE=spec; GRAPH_NAME=spec; fi
-fi
+if [ "${PII_LANE_GRAPH:-}" = spec ]; then LANE=spec; GRAPH_NAME=spec; fi
 echo "LANE-GRAPH: $LANE"
 
 # the scratch the brief names (spec 301): the spec lane's is _tmp inside the repository, which the daemon's judge may write (the workspace landlock
@@ -94,14 +92,16 @@ if [ "$LANE" = spec ]; then
   DEADLINE=$(( SPEC_WALL_MS / 1000 + WAIT_MARGIN_S ))
 fi
 
-# ---- resume handle: claude's own session, only if the container still has it (the old lane's sessions live elsewhere)
-SID_LINE=""
+# ---- resume handle: claude's own session, only if the container still has it. The lane captured the session under CLAUDE_CODE_TMPDIR, which
+# the daemon sets to $C/tmp (spec 303, measured: the transcript is under $C/tmp/claude-0/<project>/<sid>, not /root/.claude/projects).
+# A missing transcript starts fresh: the note goes to stdout and to the worker log (written once the log exists, below).
+SID_LINE=""; RESUME_NOTE=""
 if [ -n "$RESUME_SID" ] && [ "$AGENT" = claude ]; then
   if [ "$DRY" = 1 ]; then SID_LINE="sid = \"$RESUME_SID\""; echo "== dry run: session $RESUME_SID is not checked in the devbox"
-  elif "${SSH[@]}" "podman exec pii-devbox sh -c 'ls /root/.claude/projects/*/$RESUME_SID.jsonl >/dev/null 2>&1'"; then
+  elif "${SSH[@]}" "podman exec pii-devbox sh -c 'test -n \"\$(find $C/tmp -name \"$RESUME_SID*\" -print -quit 2>/dev/null)\"'"; then
     SID_LINE="sid = \"$RESUME_SID\""; echo "== RESUMING claude session $RESUME_SID (found in the devbox)"
   else
-    echo "== NOT resuming: session $RESUME_SID is not in the devbox (it was made by another lane); starting fresh on the tree as it is"
+    RESUME_NOTE="RESUME: session $RESUME_SID not found in the devbox, starting fresh"; echo "$RESUME_NOTE"
   fi
 fi
 
@@ -162,10 +162,16 @@ fi
 # max_budget_usd is the queue's PII_MAX_BUDGET_USD (default 1.00), never above the graph's own [limits] max_micro_usd.
 if [ "$LANE" = spec ]; then
   # spec 302: the three graphs must equal HEAD (the reviewed graph), not the working tree; an untracked one is refused too. Runs in a dry run as well
-  for G in spec docs preflight; do
-    git diff --quiet HEAD -- "graphs/$G.toml" && [ -z "$(git ls-files --others --exclude-standard -- "graphs/$G.toml")" ] \
-      || { echo "ABORT: graphs/$G.toml differs from HEAD (the pin protects the reviewed graph): nothing started"; exit 2; }
-  done
+  # spec 303 (R5): ONE explicit opt-out, PII_GRAPH_EDIT_OK=1, and only for a DRY run — a row that must edit a graph otherwise cannot run a single test that
+  # dry-runs the lane on the tree holding its own uncommitted edit. A real start still compares with HEAD: the reviewed graph is not optional when a run spends.
+  if [ "${PII_GRAPH_EDIT_OK:-}" = 1 ] && [ "$DRY" = 1 ]; then
+    echo "NOTE: graph edits allowed (PII_GRAPH_EDIT_OK)"
+  else
+    for G in spec docs preflight; do
+      git diff --quiet HEAD -- "graphs/$G.toml" && [ -z "$(git ls-files --others --exclude-standard -- "graphs/$G.toml")" ] \
+        || { echo "ABORT: graphs/$G.toml differs from HEAD (the pin protects the reviewed graph): nothing started"; exit 2; }
+    done
+  fi
   PIN=$(grep -o 'sha256 = "[0-9a-f]*"' "$REPO/graphs/spec.toml" | head -1 | cut -d'"' -f2)
   DIG=$(sha256sum "$REPO/graphs/docs.toml" 2>/dev/null | cut -c1-64)
   [ -n "$DIG" ] && [ "$PIN" = "$DIG" ] || { echo "ABORT: graphs/docs.toml digest '$DIG' is not the pin in graphs/spec.toml ('$PIN'): nothing started"; exit 2; }
@@ -173,13 +179,15 @@ if [ "$LANE" = spec ]; then
   IN_PROVIDER=$PROVIDER; [ "$AGENT" = claude ] && IN_PROVIDER=anthropic
   DOCS_BRIEF="Documentation step. Create the file _tmp/docs-notes/NOTES-$N.md (make the directory first) with a short note on what the spec changed. Do not modify any other file, do not modify anything under specs/, and do not commit anything."
   INPUT="$LOGD/input-$TAG.json"
+  # spec 303: `sid` is the resumed session, present only when the lookup found it; without one the key is null (the graph's optional `sid` is then absent)
+  SPEC_SID=""; [ -n "$SID_LINE" ] && SPEC_SID=$RESUME_SID
   uv run --no-project python - "$INPUT" "$AGENT" "$MODEL" "$IN_PROVIDER" "$SPECREL" "$(git rev-parse HEAD)" "$REPO" "$BRIEF" "$DOCS_BRIEF" \
-    "${PII_MAX_BUDGET_USD:-1.00}" "$REPO/graphs/spec.toml" <<'PY' || { echo "ABORT: could not build the input"; exit 2; }
+    "${PII_MAX_BUDGET_USD:-1.00}" "$REPO/graphs/spec.toml" "$SPEC_SID" <<'PY' || { echo "ABORT: could not build the input"; exit 2; }
 import json, sys, tomllib
-p, agent, model, provider, spec, base, workdir, brief, docs_brief, cap, graph = sys.argv[1:]
+p, agent, model, provider, spec, base, workdir, brief, docs_brief, cap, graph, sid = sys.argv[1:]
 limit = tomllib.load(open(graph, "rb"))["limits"]["max_micro_usd"] / 1e6
 open(p, "w").write(json.dumps({"agent": agent, "model": model, "provider": provider, "spec": spec, "base": base, "workdir": workdir,
-    "brief": open(brief).read(), "docs_brief": docs_brief, "max_budget_usd": min(float(cap), limit)}))
+    "brief": open(brief).read(), "docs_brief": docs_brief, "max_budget_usd": min(float(cap), limit), "sid": sid or None}))
 PY
 fi
 
@@ -192,6 +200,9 @@ if [ "$LANE" = spec ]; then echo "INPUT    : $INPUT"; else echo "GRAPH    : $GRA
 echo "LOG      : $LOG"
 [ "$LANE" = spec ] && echo "WAIT     : up to ${DEADLINE}s (graph max_wall_ms $SPEC_WALL_MS + $WAIT_MARGIN_S)"
 { echo "== $TAG via pii: agent=$AGENT model=$MODEL provider=$PROVIDER"; echo "== graph $GRAPH_NAME"; } > "$LOG"
+# the lane and a missing transcript go to the worker log too: cycle.sh reads the LANE-GRAPH line there for the commit's Lane trailer (spec 303)
+[ -n "$RESUME_NOTE" ] && echo "$RESUME_NOTE" >> "$LOG"
+echo "LANE-GRAPH: $LANE" >> "$LOG"
 
 # ---- the container preflight (spec 298, 301): uv must exist in the devbox (a criterion may call it), checked here; the scratch is proven by
 # the judge run below, after the daemon is up. A missing one refuses the run BEFORE anything is spent (the judges run the criteria in the container)
@@ -212,7 +223,7 @@ echo "DAEMON   : $(printf '%s' "$DOUT" | tail -1)"
 [ "$LANE" = spec ] && { cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$REPO/_tmp/devbox-test/graphs/" || exit 2; }
 
 git status --porcelain -- specs | sort > "$LOGD/.specs-before-$TAG"
-C=/projects/pi-improved/_tmp/devbox-test; PIIB=$C/bin/pii
+PIIB=$C/bin/pii
 X() { "${SSH[@]}" "podman exec -w /projects/pi-improved pii-devbox $*"; }
 poll() { X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run get ${1:-$RID} 2>&1'" | grep -o '"status":"[a-z_]*"' | head -1; }
 

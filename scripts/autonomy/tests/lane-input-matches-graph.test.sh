@@ -30,8 +30,9 @@ compare() { # <graph-keys> <lane-keys> -> FAIL lines for graph keys the lane lac
   [ -z "$miss" ]
 }
 
-# the real lane input
-OUT=$(PII_LANE_GRAPH=spec timeout 120 bash "$S" 296 --dry-run 2>&1); RC=$?
+# the real lane input. PII_GRAPH_EDIT_OK (spec 303 R5): this test only dry-runs, and it must still work inside a row that edits a graph;
+# the opt-out is a dry-run-only door — a real start compares the graphs with HEAD whatever it says.
+OUT=$(PII_LANE_GRAPH=spec PII_GRAPH_EDIT_OK=1 timeout 120 bash "$S" 296 --dry-run 2>&1); RC=$?
 I=$(field "$OUT" INPUT)
 if [ "$RC" != 0 ] || [ ! -f "$I" ]; then echo "FAIL the dry run wrote no input (exit $RC): $(printf '%s' "$OUT" | tail -2 | tr '\n' ' ')"; echo "PASS: 0 FAIL: 1"; exit 1; fi
 GK=$SCRATCH/graph-keys.txt; LK=$SCRATCH/lane-keys.txt

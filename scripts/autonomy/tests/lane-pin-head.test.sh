@@ -62,6 +62,25 @@ if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CO
 C=$(mkclone spec-only); printf '# worker edit\n' >> "$C/graphs/spec.toml"; run_dry "$C" spec
 if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out" && grep -q 'graphs/spec.toml' "$C.out"; then ok "CONTROL_a_spec_only_edit_is_refused_by_head"; else bad "CONTROL_a_spec_only_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
 
+# spec 303 (R5): ONE opt-out, PII_GRAPH_EDIT_OK=1, and only for a dry run. A row that must edit a graph otherwise cannot run a single test that dry-runs
+# the lane on the tree holding its own uncommitted edit; the reviewed graph is still required whenever a run can spend.
+C=$(mkclone edit-opt-out); printf '# worker edit\n' >> "$C/graphs/spec.toml"
+PII_LANE_GRAPH=spec PII_GRAPH_EDIT_OK=1 bash "$C/scripts/run-batchC-pii.sh" 302 --dry-run > "$C.opt.out" 2>&1; ORC=$?
+if [ "$ORC" = 0 ] && grep -q 'NOTE: graph edits allowed (PII_GRAPH_EDIT_OK)' "$C.opt.out" && grep -q 'DRY RUN' "$C.opt.out"; then ok "opt_out_allows_a_dry_run"; else bad "opt_out_allows_a_dry_run (rc [$ORC])"; fi
+
+# CONTROL: the opt-out is exactly "1"; unset and the string "0" both keep the refusal
+for V in unset 0; do
+  if [ "$V" = unset ]; then env -u PII_GRAPH_EDIT_OK PII_LANE_GRAPH=spec bash "$C/scripts/run-batchC-pii.sh" 302 --dry-run > "$C.$V.out" 2>&1; VRC=$?
+  else PII_LANE_GRAPH=spec PII_GRAPH_EDIT_OK=0 bash "$C/scripts/run-batchC-pii.sh" 302 --dry-run > "$C.$V.out" 2>&1; VRC=$?; fi
+  if [ "$VRC" = 2 ] && grep -q 'differs from HEAD' "$C.$V.out" && ! grep -q 'NOTE: graph edits allowed' "$C.$V.out"; then ok "CONTROL_the_opt_out_${V}_still_aborts"
+  else bad "CONTROL_the_opt_out_${V}_still_aborts (rc [$VRC])"; fi
+done
+
+# CONTROL: the opt-out does not cover a real start — the graphs are compared with HEAD whenever a run can spend
+PII_LANE_GRAPH=spec PII_GRAPH_EDIT_OK=1 bash "$C/scripts/run-batchC-pii.sh" 302 > "$C.real.out" 2>&1; RRC=$?
+if [ "$RRC" = 2 ] && grep -q 'differs from HEAD' "$C.real.out" && ! grep -q 'NOTE: graph edits allowed' "$C.real.out"; then ok "CONTROL_the_opt_out_does_not_cover_a_real_start"
+else bad "CONTROL_the_opt_out_does_not_cover_a_real_start (rc [$RRC])"; fi
+
 trash
 echo "PASS: $PASS FAIL: $FAIL"
 [ "$FAIL" -eq 0 ]

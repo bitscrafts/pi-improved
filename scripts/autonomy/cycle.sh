@@ -399,8 +399,14 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
     echo "OUTCOME=done-satisfied ITEM=$ITEM CARRY=$CARRY"
     exit 0
   fi
+  # lane-trailer:begin
+  # spec 303: the commit says which lane produced it: the LAST `LANE-GRAPH:` line of the worker log; no such line (an old log), no trailer
+  LANE_TRAILER=$(grep -a '^LANE-GRAPH: ' "${WLOG:-}" 2>/dev/null | tail -1 | sed -n 's/^LANE-GRAPH: \(spec\|coder\)$/\1/p')
+  COMMIT_MSG="$SPEC: automated pass — $TITLE (spec + criteria in specs/$SPEC; gate green)"
+  [ -n "$LANE_TRAILER" ] && COMMIT_MSG=$(printf '%s\n\nLane: %s' "$COMMIT_MSG" "$LANE_TRAILER")
+  # lane-trailer:end
   git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" commit -q \
-    -m "$SPEC: automated pass — $TITLE (spec + criteria in specs/$SPEC; gate green)" || { say "commit failed"; exit 11; }
+    -m "$COMMIT_MSG" || { say "commit failed"; exit 11; }
   say "committed: $(git log --oneline -1)"
   report loop.commit "item=$ITEM rev=$(git rev-parse --short HEAD)"
   # 6b) spec 245: the gate measured the working tree; this reads the COMMIT. HEAD_BUILDS defaults to the real script.
