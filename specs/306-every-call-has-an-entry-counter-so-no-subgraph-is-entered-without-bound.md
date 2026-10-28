@@ -1,0 +1,57 @@
+# Spec 306: every `call` has an entry counter, so no subgraph can be entered without bound
+
+## Overview
+**Project**: /projects/pi-improved
+**Phase**: production — composability, loop safety (user request 2026-10-28: "add a counter to every subgraph to avoid infinite loops")
+A `call` is inlined at load (`<call>__in` head plus the sub-graph's nodes). Today a call inside a cycle is bounded only by the cycle's own `loop_budget` (rule V3, at least one member must carry one) and by the whole run's `max_steps` (1000) and `max_wall_ms`. Every pass through a call can spawn a real agent and spend money, so "1000 steps" is not a bound anyone wants. MEASURED: `composition_failure_matrix.rs` m-looped runs a call inside a loop that ends on its budget, so the loader accepts a call in a loop, and only the loop's own node limits it.
+
+## Requirements
+### Functional
+- R1: a `call` node accepts an optional integer `max_entries` (>= 1). The default, when absent, is **16**. A call is *entered* each time its head `<call>__in` executes.
+- R2: the (`max_entries`+1)-th entry ends the run `Failed` with a reason that names the call and the limit: `call 'docs' entered more than max_entries (3) times`. The N-th entry still runs. A call that is entered once is unaffected at `max_entries = 1`.
+- R3: the counter is per call node per run, enforced at execution (not by a lint), and it is carried across `pii run resume` (the journal already records node executions: derive the count from it, or journal it).
+- R4: `CALL_KEYS` in `crates/pii-graph/src/fragment/call.rs` gains `max_entries`; a non-integer, zero or negative value is refused at load with `graph.call.max_entries: ...`.
+- R5: no shipped graph changes: `graphs/spec.toml` calls `docs` once and must run unchanged. The `spec` graph's digest pin and `lane-input-matches-graph` stay green.
+
+### Non-Functional
+- Rust, clippy and fmt at zero; files under 450 effective lines; reuse the existing `loop_budget` machinery (`sched/state.rs`) rather than a second counter if it can express R2 exactly, and say in the PR text which you chose and why.
+
+## Verified Premises
+- **CONFIRMED** `crates/pii-graph/src/fragment/call.rs:28` `MAX_DEPTH = 4`, `:31` `CALL_KEYS` has six keys and no counter.
+- **CONFIRMED** `crates/pii-graph/src/sched/state.rs:195-240` `loop_budget` semantics: the budget-th execution completes and the run then fails (budget=3 means exactly 3 runs); a cycle with no budgeted member is refused by V3 (`validate.rs:274`).
+- **CONFIRMED** a call inside a loop loads and runs (`composition_failure_matrix.rs`, looped host with `loop_budget = 2` on `again`).
+- **INFERRED** reusing `loop_budget` on the head would fail a call on its LAST allowed entry (budget-th execution fails); R2 says the N-th entry runs and the next fails, so a plain reuse is wrong unless adjusted. The first TDD step settles this with a test before any change.
+
+## TDD Contract
+| Test (crates/pii-graph/tests/call_max_entries.rs) | Input | Expected |
+|---|---|---|
+| `a_call_in_a_loop_stops_after_max_entries` | host loops a call 10 times, `max_entries = 3` | exactly 3 entries ran, the run is Failed, the reason names the call and `3` |
+| `CONTROL_a_loop_that_needs_two_entries_passes` | the same host, loop ends after 2, `max_entries = 3` | the run Succeeds |
+| `the_default_is_sixteen` | a call in an unbounded-but-V3-valid loop, no `max_entries` | 16 entries, then Failed naming 16 |
+| `a_single_call_is_fine_at_one` | `max_entries = 1`, no loop | Succeeds |
+| `a_bad_value_is_refused_at_load` | `max_entries = 0`, `-1`, `"x"`, `1.5` | each refused with `graph.call.max_entries` |
+| `the_count_survives_a_resume` | enter twice, stop the run, resume | the third entry is counted as the third |
+| `two_calls_count_apart` | two call nodes of the same graph in one loop | each has its own count |
+| `crates/pii-server/tests/composition_failure_matrix.rs` (existing looped case) | unchanged | still passes |
+
+## Exit Criteria
+- [ ] `cargo test -q -p pii-graph --test call_max_entries 2>&1 | tail -3 | grep -q "test result: ok"`
+- [ ] `test "$(grep -c '^#\[test\]' crates/pii-graph/tests/call_max_entries.rs)" -ge 7`
+- [ ] `cargo test -q -p pii-server --test composition_failure_matrix 2>&1 | tail -3 | grep -q "test result: ok"`
+- [ ] `cargo test -q -p pii-graph 2>&1 | grep -c "test result: ok" | grep -qv '^0$'`
+- [ ] `grep -q 'max_entries' crates/pii-graph/src/fragment/call.rs`
+- [ ] `bash scripts/autonomy/tests/lane-input-matches-graph.test.sh 2>&1 | tail -1 | grep -q "FAIL: 0"`
+- [ ] `cargo clippy -q -p pii-graph -p pii-server --all-targets -- -D warnings`
+- [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
+- [ ] `git diff --quiet -- graphs scripts`
+
+## Files
+- `crates/pii-graph/src/fragment/call.rs`
+- `crates/pii-graph/src/fragment/call_needs.rs`
+- `crates/pii-graph/src/sched/state.rs`
+- `crates/pii-graph/tests/call_max_entries.rs`
+
+## Guardrails
+- Do NOT edit `graphs/`, `scripts/`, an existing assertion, or the digest of `graphs/docs.toml`. Scratch under `_tmp/` inside the repository.
+- The appearance-only implementation: a lint that refuses loops around calls (nothing runs, nothing is counted) or a counter that counts parses instead of executions. The tests above run real loops and count real entries.
+- Mutations the tests must kill: the default removed (unbounded); the limit off by one in either direction; the count reset on resume; one counter shared by two calls; the check applied at load instead of at execution; a refusal that does not name the call.
