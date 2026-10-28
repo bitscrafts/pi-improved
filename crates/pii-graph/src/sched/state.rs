@@ -49,6 +49,8 @@ pub struct RunState {
     pub failed: BTreeSet<NodeId>,
     /// Per-node loop re-entry count (F4.5), keyed by node id.
     pub iters: BTreeMap<NodeId, u32>,
+    /// Completed entries of each call head `<call>__in` (spec 306), keyed by head id; cumulative for the run.
+    pub entries: BTreeMap<NodeId, u32>,
 }
 
 impl RunState {
@@ -62,8 +64,24 @@ impl RunState {
             cancelled: BTreeSet::new(),
             failed: BTreeSet::new(),
             iters: BTreeMap::new(),
+            entries: BTreeMap::new(),
         }
     }
+}
+
+/// Spec 306 R2: the refusal for entering call head `n` once more, when its completed entries already reach the
+/// `max_entries` its node carries. `None` for a node with no limit or one that may still be entered.
+#[must_use]
+pub fn entry_refusal(spec: &GraphSpec, st: &RunState, n: &NodeId) -> Option<String> {
+    let max = spec.node(n)?.cfg.get("max_entries")?.as_u64()?;
+    let done = u64::from(st.entries.get(n).copied().unwrap_or(0));
+    if done < max {
+        return None;
+    }
+    let call = n.as_str().strip_suffix("__in").unwrap_or(n.as_str());
+    Some(format!(
+        "call '{call}' entered more than max_entries ({max}) times"
+    ))
 }
 
 fn is_fired(e: &EdgeState) -> bool {
@@ -182,6 +200,9 @@ pub fn apply_completion(
     port: &pii_abi::PortName,
     value: &serde_json::Value,
 ) -> Result<(), String> {
+    // Mark `n` executed before the re-entry reset below: a reset that walks back round a cycle to `n` must clear it
+    // (spec 306: otherwise `n` stays executed, and its next pass re-enters the loop head once more).
+    st.executed.insert(n.clone());
     // Detect re-entry BEFORE firing any edge: an outbound edge on the taken
     // port whose target is already executed.
     for (i, e) in spec.edges.iter().enumerate() {
@@ -213,7 +234,13 @@ pub fn apply_completion(
         let _ = i;
     }
 
-    st.executed.insert(n.clone());
+    // Spec 306: a call head counts its completed entries here, so a replay on resume rebuilds the count.
+    if spec
+        .node(n)
+        .is_some_and(|t| t.cfg.get("max_entries").is_some())
+    {
+        *st.entries.entry(n.clone()).or_insert(0) += 1;
+    }
     // Count every execution of a budgeted node; the (budget+1)th is a
     // terminal failure (F4.5: budget=3 → exactly 3 runs). This is checked on
     // execution, not re-entry, so a non-budgeted loop member resetting the

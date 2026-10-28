@@ -10,6 +10,11 @@
 //! [`super::call_needs`] refuses every other input or host-node read before the rewrite. The rewrite governs `$.`
 //! expressions only; Rust-side reads of `NodeInput.input` (the coder's `scope_root`, `heal_record`) see the host's
 //! run input regardless, and a node with no inbound Data edge gets the run input as its payload.
+//!
+//! Spec 306: a call's head counts its entries, and the run fails once a call is entered more than `max_entries` times
+//! (default 8). The count is cumulative for the run and never reset by an enclosing loop, so an inner call inside a
+//! looped outer call reaches its own limit after that many entries across all the outer passes; the author raises the
+//! inner `max_entries` explicitly when that is too few.
 
 use std::path::PathBuf;
 
@@ -27,8 +32,11 @@ use super::check::sha256_hex;
 /// The deepest chain of nested calls a load accepts (spec 255 R7).
 const MAX_DEPTH: usize = 4;
 
-/// The keys a `call` node may carry (spec 255, spec 261 R7).
-const CALL_KEYS: [&str; 6] = ["id", "kind", "graph", "sha256", "caps", "in"];
+/// The entries a call may make before the run fails, when the call gives no `max_entries` (spec 306 R1).
+const DEFAULT_MAX_ENTRIES: i64 = 8;
+
+/// The keys a `call` node may carry (spec 255, spec 261 R7, spec 306 R4).
+const CALL_KEYS: [&str; 7] = ["id", "kind", "graph", "sha256", "caps", "in", "max_entries"];
 
 /// A sub-graph read from its file, expanded, and checked against its call.
 pub(super) struct Sub {
@@ -138,6 +146,7 @@ fn expand_one(
         })?,
     };
 
+    let max_entries = max_entries_of(call, &id)?;
     let widen = call_caps & !grant;
     if !widen.is_empty() {
         return Err(PiiError::Invalid(format!(
@@ -171,7 +180,7 @@ fn expand_one(
         nodes: &sub.nodes,
     };
     call_needs::check(&scope, doc, chain)?;
-    splice(doc, &id, &input, sub, &own)?;
+    splice(doc, &id, &input, sub, &own, max_entries)?;
     Ok(std::iter::once(own).chain(nested).collect())
 }
 
@@ -257,20 +266,36 @@ fn load_sub(
     })
 }
 
+/// The most entries a call may make (spec 306 R1, R4): an integer of at least 1, or the default when absent.
+fn max_entries_of(call: &Table, id: &str) -> Result<i64, PiiError> {
+    call.get("max_entries").map_or(Ok(DEFAULT_MAX_ENTRIES), |v| {
+        v.as_integer().filter(|n| *n >= 1).ok_or_else(|| {
+            PiiError::Invalid(format!(
+                "graph.call.max_entries: call '{id}' must give 'max_entries' as an integer of at least 1"
+            ))
+        })
+    })
+}
+
 /// Adds the call's head, input nodes and sub-graph to the host, rewires the host edges that touched the call, and
-/// refuses an id the host already has.
+/// refuses an id the host already has. The head carries the call's `max_entries`, which the run counts (spec 306).
 fn splice(
     doc: &mut Table,
     id: &str,
     input: &Table,
     sub: Sub,
     own: &CallRecord,
+    max_entries: i64,
 ) -> Result<(), PiiError> {
     let keys: Vec<String> = input.keys().cloned().collect();
     let head = format!("{id}__in");
     let entry = format!("{id}__{}", sub.entry);
     let (mut added, mut new_edges) =
         call_needs::chain(id, &sub.graph, sub.needs.as_deref(), input, &entry);
+    // `chain` puts the head first.
+    if let Some(first) = added.first_mut() {
+        first.insert("max_entries".into(), Value::Integer(max_entries));
+    }
     call_needs::mark(&mut added, std::slice::from_ref(own))?;
 
     for mut node in sub.nodes {

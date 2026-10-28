@@ -53,9 +53,31 @@ A `call` is inlined at load (`<call>__in` head plus the sub-graph's nodes). Toda
 - `crates/pii-graph/src/fragment/call.rs`
 - `crates/pii-graph/src/fragment/call_needs.rs`
 - `crates/pii-graph/src/sched/state.rs`
+- `crates/pii-graph/src/run/engine.rs` — the dispatch-time refusal R3 requires (added by the orchestrator after the first
+  worker run: the original list omitted it, so a correct change to it read as `unlisted-changes`).
 - `crates/pii-graph/tests/call_max_entries.rs`
 
 ## Guardrails
 - Do NOT edit `graphs/`, `scripts/`, an existing assertion, or the digest of `graphs/docs.toml`. Scratch under `_tmp/` inside the repository.
 - The appearance-only implementation: a lint that refuses loops around calls (nothing runs, nothing is counted) or a counter that counts parses instead of executions. The tests above run real loops and count real entries.
 - Mutations the tests must kill: the default removed (unbounded); the limit off by one in either direction (the BOUNDARY row is what kills the `== N` form); the count reset on resume; one counter shared by two calls; the check applied at load instead of at execution; a refusal that does not name the call.
+
+## Closure
+Reviewed by the orchestrator on the tree the worker left (session `1b9282e2`), not on a report:
+
+- **9 of 9 exit criteria green**, run from the row's own `verify` column (the column equals `## Exit Criteria` command for
+  command, 9 of 9 counted programmatically); `call_max_entries.rs` holds the required 10 tests.
+- **The refusal is load-bearing where R3 says it must be.** Mutation: `crates/pii-graph/src/run/engine.rs` restored to
+  HEAD (the dispatch-time `entry_refusal` check removed, `state.rs` untouched) reds 5 of the 10 tests —
+  `a_call_in_a_loop_stops_after_max_entries`, `the_default_is_eight`, `an_enclosing_loop_does_not_reset_the_count`,
+  `a_nested_call_names_its_full_path`, `the_count_survives_a_resume` — each failing on the enclosing `loop_budget`
+  because the entry limit no longer fires first. Restored from the saved copy and `touch`ed:
+  `sha256 ca63260f96e5b02cd430f90b2f710834db6d49a13e97c9094704412f84a2ca91` before and after, then `10 passed; 0 failed`.
+- **`fresh-gate --worktree`: `quality-gate: ALL PASS`** over HEAD plus the reviewed files.
+- **Spec defect found and repaired here, not worked around by the worker.** The first run stopped with
+  `unlisted-changes: crates/pii-graph/src/run/engine.rs`: R3 requires the check at DISPATCH of the (N+1)-th entry, and
+  the dispatch loop lives in `run/engine.rs`, which the `## Files` list omitted. The change was correct; the list was
+  short. It is now named in `## Files` and in the row's commit-path column (`run/engine.rs` added, `call_needs.rs`
+  kept as declared).
+- Not done here: nothing in `graphs/` changed (R5 holds — criterion 9 and `lane-input-matches-graph` both green).
+

@@ -20,7 +20,7 @@ use crate::run_helpers::{CancelTokenSet, terminal_determination};
 use crate::sched::dispatch::{
     DispatchOutcome, Env, FinishedNode, apply, build_node_input, cancel_losers, dispatch,
 };
-use crate::sched::state::{Readiness, RunState, propagate_dead, readiness};
+use crate::sched::state::{Readiness, RunState, entry_refusal, propagate_dead, readiness};
 use crate::spec::{GraphSpec, NodeSpec};
 pub(super) struct Engine<'a> {
     pub(super) spec: &'a GraphSpec,
@@ -156,6 +156,10 @@ impl Engine<'_> {
                     error: format!("loop_budget exceeded for node '{}'", n.id),
                 };
                 return self.finish(&terminal, RunStatus::Failed);
+            }
+            // Spec 306 R2: a call entered past its `max_entries` fails the run at dispatch, before the tick is journaled.
+            if let Some(error) = batch.iter().find_map(|n| entry_refusal(spec, st, &n.id)) {
+                return self.finish(&Terminal::Failure { error }, RunStatus::Failed);
             }
             if batch.is_empty() {
                 let terminal = terminal_determination(spec, st, fin, failure.as_deref());
