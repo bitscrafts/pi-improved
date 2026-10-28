@@ -16,6 +16,8 @@ The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches tha
 
 - R7 (found by the host verify, MEASURED 2026-10-28: criterion 6 fails 7/8): `scripts/autonomy/tests/lane-graph-select.test.sh` keeps a golden copy of the coder lane's graph, and R3 adds `CLAUDE_CONFIG_DIR` to that graph's `env_pass`. Exactly ONE line of the golden changes: its `env_pass` line gains `"CLAUDE_CONFIG_DIR"` as the last entry. No assertion, comparison or other golden line changes. The control is the test itself: it must still FAIL when any other part of the graph differs (the worker proves this by changing one other golden byte, seeing the test go red, and restoring it).
 
+- R8 (found by the host verify, MEASURED 2026-10-28: criterion 3 fails): `scripts/autonomy/tests/lane-resume.test.sh` has one assertion, `lookup_uses_the_captured_location`, that greps the lane's commands for the OLD search location `devbox-test/tmp`. R1 moves the lookup to the daemon's config directory (`devbox-test/claude`), so that one assertion must name the new location. It is the only assertion in the repository that names the old one (checked with grep). It becomes: the commands search `devbox-test/claude`, do NOT search `devbox-test/tmp`, and do NOT search `/root/.claude`. No other assertion in the file changes, and the worker's added cases stay.
+
 ### Non-Functional
 - Shell only. Never restart the production daemon from a criterion. No credential value is printed or written to a file in the repository; the symlink target is the image's existing mount.
 
@@ -52,6 +54,6 @@ The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches tha
 - `scripts/autonomy/tests/lane-resume.test.sh`
 
 ## Guardrails
-- Do NOT edit `crates/`, `graphs/`, `cycle.sh`, or an existing assertion (R7 permits the one golden `env_pass` line and nothing else in that test). Do NOT run `daemon.sh refresh` or restart the production daemon: the check uses its own private daemon. Scratch under `_tmp/` inside the repository.
+- Do NOT edit `crates/`, `graphs/`, `cycle.sh`, or an existing assertion (R7 permits the one golden `env_pass` line and nothing else in that test; R8 permits the one `lookup_uses_the_captured_location` assertion in `lane-resume.test.sh`). Do NOT run `daemon.sh refresh` or restart the production daemon: the check uses its own private daemon. Scratch under `_tmp/` inside the repository.
 - The appearance-only implementation: a lane that now looks for `*.jsonl` anywhere but a check that never resumes with a real claude. R2's second step is the proof; a stand-in that prints PONG for any prompt does not count, which is why the second prompt can only be answered from the first run's conversation.
 - Mutations the tests must kill: the lane accepting the empty task directory again; the config dir not passed to the private daemon (the control row); the lane looking in the wrong directory; the resume step omitting `sid`.
