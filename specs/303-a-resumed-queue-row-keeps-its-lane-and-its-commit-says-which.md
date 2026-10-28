@@ -70,6 +70,7 @@ Criterion 9 reads shell files only (`--include='*.sh'`) and that is not a relaxa
 - `scripts/autonomy/tests/lane-resume.test.sh`
 - `scripts/autonomy/tests/cycle-lane-trailer.test.sh`
 - `scripts/autonomy/tests/lane-input-matches-graph.test.sh`
+- `scripts/autonomy/tests/lane-graph-select.test.sh`
 - `scripts/autonomy/tests/lane-pin-head.test.sh`
 
 
