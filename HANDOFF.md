@@ -1,5 +1,16 @@
 # Pii — Session Handoff
 
+## 2026-10-28 18:4xZ — A170 landed after the spec's own file list was found short; the queue drained, so spec 309 refills it
+
+State: HEAD `a957d2a` · control `RUNNING at 2026-10-28T14:09:19Z (resumed by human)` · watchdog alive (pid 811768) · queue: **A173 dispatchable** (spec 309) · selftest **42 passed, 0 failed / ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261028T1830Z.log`).
+
+- **A170 (spec 306) sat `needs-review` with `unlisted-changes: crates/pii-graph/src/run/engine.rs`.** The change was right and the SPEC was short: R3 requires the (N+1)-th entry to be refused at DISPATCH, and the dispatch loop lives in `run/engine.rs`, which the `## Files` block omitted. The list and the row's commit-path column now name it. Worker WIP: `entries` count in `RunState`, `entry_refusal` in `sched/state.rs`, the head carrying `max_entries` in `fragment/call.rs`, 10 tests in `tests/call_max_entries.rs`.
+- **Verified on the worker's tree, not on a report:** 9/9 criteria `rc=0` (the row's verify column equals the spec's criteria command for command, counted programmatically), then the mutation — `engine.rs` back at HEAD reds 5 of 10 tests (`a_call_in_a_loop_stops_after_max_entries`, `the_default_is_eight`, `an_enclosing_loop_does_not_reset_the_count`, `a_nested_call_names_its_full_path`, `the_count_survives_a_resume`, each on the enclosing `loop_budget` because the entry limit no longer fires first) — restored from the saved copy, `touch`ed, `sha256 ca63260f…c2a91` identical before and after, then 10 passed. `fresh-gate --worktree`: `quality-gate: ALL PASS`. Committed `08592bb` by explicit paths.
+- **The queue drained** after A172, and the ranked list in 059 §4 is exhausted: all ten of its items already carry specs (135/136/137/138/139/141/142 built; rank 1 is a deploy that needs the user's host actions, rank 10 is user decisions). Nothing was authored from it because nothing there is left.
+- **Spec 309 authored from the plan's own unenforced rule** (`plan.tsv:10`: the verify column is the spec's Exit Criteria copied verbatim — no check exists). Measured today: 169 rows, 92 equal, **77 differ** (74 done, 2 skipped, 1 revoked — none open), and A55/188 lost a failure to the `;` split. `scripts/autonomy/row-verify.py` + a refusal in `state.py`'s `pick` (the same seam spec 283 used for column 6) + a test script with the near-miss controls. Row **A173** queued and `pick` offers it; `row-paths.py check A173` = `OK A173 3`. Committed `a957d2a`.
+- **What is NOT in this tick:** no fresh-gate over `a957d2a` (a spec and a queue row, no code); the 77 closed rows were reported, not re-adjudicated — some predate the house shape and some specs were amended after their commit, so their columns are not evidence of a bad run.
+
+
 ## 2026-10-28 00:4xZ — A167 closed after a resume at verify; the graph declaration had to land before the row could pass a single test
 
 State: HEAD `275c2af` · control `RUNNING at 2026-10-28T00:11:58Z (resumed by human)` · lane knob `_tmp/autonomy/lane-graph` = `coder` (gitignored; set at 00:19:08Z by someone other than this tick) · watchdog alive (pid 811768) · queue: **A168 dispatchable** (spec 304) · selftest **42 passed, 0 failed / ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261028T002305Z.log`).
