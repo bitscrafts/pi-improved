@@ -16,14 +16,20 @@ mkdir -p "$T"
 trap 'find "$T" -depth -delete 2>/dev/null' EXIT
 ST=$T/state.json
 PL=$T/plan.tsv
+# a scratch spec, so the row judges (spec 283, spec 309) read a ## Files list and an ## Exit Criteria that match the rows.
+# Before this, the rows named the real spec 280 and the paths column "-", so every row was refused (NO-FILES) and this
+# whole fixture read 6 ok / 5 FAIL while passing nothing through the rule it tests (measured 2026-10-29).
+SPECS=$T/specs
+mkdir -p "$SPECS"
+printf '%s\n' '# scratch spec' '## Files' '- `scripts/autonomy/state.py`' '## Exit Criteria' '- [ ] `true`' > "$SPECS/900-scratch.md"
 # row <id>: one plan row, seven tab-separated fields (id spec brief title verify paths gate)
-row(){ printf '%s\t280\t-\ttitle %s\ttrue\t-\t1\n' "$1" "$1"; }
+row(){ printf '%s\t900-scratch.md\t-\ttitle %s\ttrue\tscripts/autonomy/state.py\t1\n' "$1" "$1"; }
 # plan <id...>: writes the plan rows in the order given
 plan(){ : >"$PL"; for i in "$@"; do row "$i" >>"$PL"; done; }
 # state <json>: writes the state file
 state(){ printf '%s' "$1" >"$ST"; }
 # pick: what state.py pick prints on stdout for the current scratch files
-pick(){ PII_STATE="$ST" PII_PLAN="$PL" $PY pick 2>/dev/null; }
+pick(){ PII_STATE="$ST" PII_PLAN="$PL" PII_SPECS="$SPECS" $PY pick 2>/dev/null; }
 # first <tsv>: the first field, the row id (or NONE)
 first(){ printf '%s' "$1" | cut -f1; }
 # last <tsv>: the last field, the session of a dispatched row
@@ -37,9 +43,9 @@ check "(a) a window-parked row is offered" "$(first "$OUT")" "X1"
 check "(a) its session is the last field" "$(last "$OUT")" "S1"
 
 # (b) CONTROL: needs-review with another last, even with a session, stays skipped
-state '{"X1":{"status":"needs-review","last":"worker-rc=9","session":"S1"}}'
+state '{"X1":{"status":"needs-review","last":"lane-auth-failed","session":"S1"}}'
 plan X1
-check "(b) CONTROL a needs-review row with last=worker-rc=9 is NONE" "$(pick)" "NONE"
+check "(b) CONTROL a needs-review row with last=lane-auth-failed is NONE" "$(pick)" "NONE"
 
 # (c) CONTROL: window-closed with an EMPTY session has nothing to resume
 state '{"X1":{"status":"needs-review","last":"window-closed","session":""}}'
@@ -70,7 +76,7 @@ plan X1
 check "(g) CONTROL a done row is NONE" "$(pick)" "NONE"
 
 # (h) a window-parked row first and another needs-review row second: only the first is offered
-state '{"X1":{"status":"needs-review","last":"window-closed","session":"S1"},"X2":{"status":"needs-review","last":"worker-rc=9","session":"S2"}}'
+state '{"X1":{"status":"needs-review","last":"window-closed","session":"S1"},"X2":{"status":"needs-review","last":"lane-auth-failed","session":"S2"}}'
 plan X1 X2
 OUT=$(pick)
 check "(h) the window-parked row first is offered" "$(first "$OUT")" "X1"

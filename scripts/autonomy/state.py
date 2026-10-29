@@ -6,7 +6,7 @@ os.rename'd into place, so a cycle killed mid-write cannot leave a truncated sta
 (that is the whole reason this is not `>>` on a log).
 
 usage:
-  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window with a session: spec 280), or "NONE"
+  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window or by a worker that stopped early (worker-rc=N), with a session: spec 280, spec 312), or "NONE"
   state.py get <id> [<state>]             -> that row as JSON
   state.py set <id> k=v [k=v ...]         -> update fields (status/attempts/evidence/session/last)
   state.py list                           -> every row, TSV, for reporting
@@ -75,8 +75,10 @@ def main():
         for r in rows():
             s = st.get(r["id"], {}).get("status", "pending")
             # a needs-review row parked by a closed window waits for the clock, not a person: once the window guard lets
-            # a cycle start, it is offered again with its session (spec 280)
-            window = s == "needs-review" and st[r["id"]].get("last") == "window-closed" and st[r["id"]].get("session")
+            # a cycle start, it is offered again with its session (spec 280). A worker that stopped early (worker-rc=N) left
+            # its session for the next cycle to resume, so it is offered again too (spec 312)
+            last = st.get(r["id"], {}).get("last", "")
+            window = s == "needs-review" and st[r["id"]].get("session") and (last == "window-closed" or last.startswith("worker-rc="))
             # a parked / needs-review row waits for a person and must not hold the queue behind it (spec 169):
             # skip it for dispatch order only - its state is never touched - and name it on stderr
             if s in ("parked", "needs-review") and not window:

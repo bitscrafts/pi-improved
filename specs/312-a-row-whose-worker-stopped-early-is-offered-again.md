@@ -139,6 +139,39 @@ person's, and they stay skipped.
    the leftover stashed (spec 311), is the next question — and it must respect the same three-attempt ceiling.
 
 ## Closure
-(pending — the orchestrator records both readings here: the six criteria on the committed tree, and
-`bash scripts/autonomy/selftest.sh`'s verdict, plus the mutation that reddens the new test and its byte-identical
-restore, before this spec is closed.)
+**CLOSED 2026-10-29 by the orchestrator on the worker's tree.** History worth keeping: the cycle at 06:18:27Z
+dispatched this row (A176) and its worker stopped early (rc 1, session `0635a358-3aa3-42b4-82e7-2dd597fcf08c`), leaving
+its work uncommitted — so the row that fixes "a stopped worker is never offered again" was itself never offered
+again, and the queue reported `queue empty — nothing pending` for the rest of the day. The WIP was finished and
+verified here rather than re-derived.
+
+**Criteria on the tree — 6 of 6, each run exactly as written above:** `pick-resumes-worker-rc.test.sh` 14 ok / 0 FAIL;
+its `! grep -q "^FAIL"` twin; `pick-resumes-window-closed.test.sh` 11 ok / 0 FAIL; `cycle-disk-wiring.test.sh` 8 ok /
+0 FAIL; `py_compile` 0; `bash -n cycle.sh` 0.
+
+**Mutations, each restored byte-identical (sha256 read before and after, then the tree re-run green):**
+- M1 drop `or last.startswith("worker-rc=")` from `state.py`: 4 of 14 assertions red (`a-worker-rc-row-is-offered`,
+  its session field, `the-attempts-travel-with-the-row`, `order-is-plan-order (X1 first)`). restore sha256
+  `b49cd54e894d7889a61cc4958b08bc15f5432409b7b48338394cd544f2cc6499` before and after; 14 ok.
+- M2 drop `last == "window-closed" or` from `state.py`: 4 of 11 red in the window fixture. Same digest before and
+  after; 11 ok.
+- M3 drop ` attempts=$((ATTEMPTS+1))` from `cycle.sh`: 1 of 14 red (`the-cycle-counts-the-attempt`). sha256
+  `a4910173c8797d09fba57eefccca8657c7c0fac1d1a3f5a991acabaff609ed8c` before and after; 14 ok.
+
+**A defect found while closing, on a path this spec's criteria run through.** `pick-resumes-window-closed.test.sh` was
+**red on the committed tree, independently of this work**: with HEAD's `state.py` in place it read 6 ok / 5 FAIL
+(measured by writing HEAD's file over the WIP, running the fixture, then restoring the WIP — digests compared both
+ways). Cause: its scratch rows named the real `specs/280-a-window-parked-row-resumes.md` with the paths column `-`, so
+since spec 283 landed (`0303d0a`) `pick` refused every row as `NO-FILES` and the fixture never reached the rule it
+exists to test. The repair is data only — every assertion's text, comparison and expected value is unchanged: the
+fixture now writes its own scratch spec under `_tmp/` and points `PII_SPECS` at it, exactly as the worker-rc fixture
+already does, and assertion (b)'s label names its own input (`last=lane-auth-failed`), because a `needs-review` row
+with `last=worker-rc=N` and a session is dispatchable under this spec. Before: 6 ok / 5 FAIL. After: 11 ok / 0 FAIL,
+and mutation M2 above reds 4 of them — so the repair did not make the fixture vacuous, which the old red never
+proved.
+
+**Selftest on this tree:** `RESULT: 42 passed, 0 failed` / `VERDICT: ALL MECHANISMS PASS`
+(`_tmp/autonomy/logs/selftest-20261029T121815Z.log`, 12 s).
+
+**Gate:** `cargo run -q -p xtask -- fresh-gate --worktree` over HEAD plus the four changed files:
+`_tmp/autonomy/logs/freshgate-a176-*.log`.

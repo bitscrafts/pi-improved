@@ -297,7 +297,7 @@ else
     say "AUTH FAILURE: the worker's login is dead — the row keeps its attempts and the queue is PAUSED for a person"
     echo "OUTCOME=lane-auth-failed ITEM=$ITEM"; exit 16
   fi
-  python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC
+  python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC attempts=$((ATTEMPTS+1))
   [ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
   # QUOTA IS NOT A FAILURE (user rule 2026-10-19: "eventually it will exaust, let it run to the end then put it again on
   # the queue"). A spend/rate limit must not park the row for a person: capture the reset the CLI itself printed, put the

@@ -1,5 +1,25 @@
 # Pii — Session Handoff
 
+## 2026-10-29 (later) — A176 landed: a stopped worker's row is resumed, and the fixture that hid it is repaired
+
+State: spec 312 closed on the worker's tree (the 06:18Z cycle's worker stopped rc 1 and left the work uncommitted; the
+row that fixes "a stopped worker is never offered again" was itself never offered again, and the queue said
+`queue empty` for the rest of the day).
+
+- **The change**: `state.py pick` offers a `needs-review` row again when its `last` is `worker-rc=N` **and** it holds a
+  session (spec 280's rule, extended), so `cycle.sh` resumes that session; the worker-rc path now increments
+  `attempts`, which is what makes the existing three-attempt cap at `cycle.sh:212` reachable at all.
+- **Verified, not reported**: six criteria green; three mutations each red with the restore digest equal before and
+  after (`state.py` `b49cd54e…6499`, `cycle.sh` `a4910173…ed8c`); selftest `42 passed, 0 failed — ALL MECHANISMS PASS`.
+- **A red fixture was hiding under the green**: `pick-resumes-window-closed.test.sh` had been failing 5 of 11
+  assertions on the committed tree since spec 283 landed — its rows named the real spec 280 with the paths column `-`,
+  so `pick` refused them `NO-FILES` before reaching the rule the fixture exists to test. Repaired as data only (a
+  scratch spec of its own + `PII_SPECS`), assertions byte-identical; 11 ok / 0 FAIL now, and the mutation reds 4 of
+  them. Lesson: a fixture whose setup is refused upstream reads as a red on the rule and a green in a summary that
+  only counts assertions.
+- **Next**: A177 / spec 313 — the tick still texts `needs a hand (worker-rc-N)` for a row it is about to resume; the
+  line should say "resuming with its session" when the tick's own `pick` names the item.
+
 ## 2026-10-29 — composability exercised to its limits with real agents: what is proved, how to re-run it, what is open
 
 State: HEAD at the time of writing `2b8579a` (+ the other writer's spec 312 work in the tree, not mine) · queue drained for my rows
