@@ -64,6 +64,15 @@ forward, and that they are carried into the next worker's gate.
 - Every test row builds its OWN git fixture under `_tmp/` (created by the test, never `/tmp`), and the live worktree,
   the live `plan.tsv` and the live `state.json` are never read or written.
 - `bash scripts/autonomy/selftest.sh` stays green and gains no row from this change.
+- **The selftest is the ORCHESTRATOR's check, not an exit criterion (amended 2026-10-29, measured).** It was written as
+  criterion 6 and the first worker pass reported 6 of 7 with that one red. It is not the implementation: the same
+  selftest read `42 passed, 0 failed / VERDICT: ALL MECHANISMS PASS` on that worker's own tree
+  (`M scripts/autonomy/cycle.sh`, `?? leftover.sh`, `?? leftover-test.sh`, HEAD `4c0a877`) when the orchestrator ran
+  it at 00:57Z, while the lane's verify sandbox failed it — the selftest drives `tick.sh`, `uv`, a fake `hermes` and
+  the repo's `_tmp`, none of which the judge sandbox is obliged to have. A criterion that cannot run where the item is
+  verified is a defect of the spec, not of the work (the same class as a `--lib` criterion that collects no tests).
+  The review duty is therefore explicit: **the orchestrator runs `selftest.sh` on the worker's tree and again after
+  the commit before this spec is closed**, and records both readings in `## Closure`.
 
 ## Verified Premises
 - **CONFIRMED (read)** `cycle.sh:143-167` is the dirty-tree branch: `DIRTY=$(git status --porcelain | wc -l)`, the
@@ -96,7 +105,6 @@ forward, and that they are carried into the next worker's gate.
 - [ ] `grep -q 'leftover.sh' scripts/autonomy/cycle.sh`
 - [ ] `grep -q 'OUTCOME=dirty-tree' scripts/autonomy/cycle.sh`
 - [ ] `grep -c 'git checkout\|git reset --hard\|git clean -fd' scripts/autonomy/leftover.sh | grep -qx 0`
-- [ ] `bash scripts/autonomy/selftest.sh 2>&1 | tail -2 | grep -q 'VERDICT: ALL MECHANISMS PASS'`
 - [ ] `git diff --quiet -- specs scripts/autonomy/plan.tsv`
 
 ## Files
