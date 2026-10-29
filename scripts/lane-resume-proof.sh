@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PROOF of the lane-resume miss. Two real haiku runs of the shipped `spec` graph on a trivial spec, differing in ONE line: graph specA = graphs/spec.toml unchanged (renamed); graph specB = the same with "CLAUDE_CONFIG_DIR" added to the code node's env_pass. After each run, look for the code node's session transcript under the daemon's config dir (the place the lane's resume lookup searches). Expected: A has none (the measured miss), B has one (the control that shows the fix). Spend: two tiny haiku runs. Loop paused by the caller.
+# REGRESSION CHECK (was the proof) for the lane-resume miss: the shipped spec graph must write its code session where the resume lookup searches. Two real haiku runs of the shipped `spec` graph on a trivial spec, differing in ONE line: graph specA = graphs/spec.toml unchanged (renamed); graph specB = the same with "CLAUDE_CONFIG_DIR" added to the code node's env_pass. After each run, look for the code node's session transcript under the daemon's config dir (the place the lane's resume lookup searches). Expected: A has none (the measured miss), B has one (the control that shows the fix). Spend: two tiny haiku runs. Loop paused by the caller.
 set -u
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 cd /projects/pi-improved || exit 2
@@ -13,19 +13,17 @@ HEAD=$(git rev-parse --short=12 HEAD)
 DOUT=$(bash modules/devbox/daemon.sh up 2>&1); REV=$(printf '%s' "$DOUT" | grep -o '"revision":"[^"]*"' | tail -1 | cut -d'"' -f4)
 case "$REV" in "$HEAD"*) ;; *) echo "ABORT: daemon $REV is not HEAD $HEAD"; exit 2;; esac
 cp graphs/docs.toml graphs/preflight.toml "$GD/" || exit 2
-LINE='env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR"]'
-[ "$(grep -cF "$LINE" graphs/spec.toml)" = 2 ] || [ "$(grep -cF "$LINE" graphs/spec.toml)" = 1 ] || { echo "ABORT: the env_pass line is not as expected"; exit 2; }
-sed -e 's/^name = "spec"$/name = "specA"/' graphs/spec.toml > "$GD/specA.toml"
-# B: add the name only on the line of the node `code`
-uv run --no-project python - "$REPO/graphs/spec.toml" "$GD/specB.toml" <<'PY' || exit 2
-import sys, re
-s = open(sys.argv[1]).read().replace('name = "spec"\n', 'name = "specB"\n', 1)
+# specB = the shipped graph as it is (renamed); specA = the CONTROL: the same file with CLAUDE_CONFIG_DIR removed from the code node
+sed -e 's/^name = "spec"$/name = "specB"/' graphs/spec.toml > "$GD/specB.toml"
+uv run --no-project python - "$REPO/graphs/spec.toml" "$GD/specA.toml" <<'PY' || exit 2
+import sys
+s = open(sys.argv[1]).read().replace('name = "spec"\n', 'name = "specA"\n', 1)
 i = s.index('id = "code"'); j = s.index('env_pass = [', i); k = s.index(']', j)
-assert 'CLAUDE_CONFIG_DIR' not in s[j:k]
-s = s[:k] + ', "CLAUDE_CONFIG_DIR"' + s[k:]
+assert 'CLAUDE_CONFIG_DIR' in s[j:k], "the shipped code node does not pass CLAUDE_CONFIG_DIR"
+s = s[:j] + s[j:k].replace(', "CLAUDE_CONFIG_DIR"', '') + s[k:]
 open(sys.argv[2], "w").write(s)
 PY
-diff <(sed 's/specA/spec/' "$GD/specA.toml") graphs/spec.toml >/dev/null && row ok "specA is graphs/spec.toml unchanged (name only)" || row no "specA differs from spec.toml"
+diff <(sed 's/specB/spec/' "$GD/specB.toml") graphs/spec.toml >/dev/null && row ok "specB is graphs/spec.toml unchanged (name only)" || row no "specB differs from spec.toml"
 [ "$(diff "$GD/specA.toml" "$GD/specB.toml" | grep -c '^[<>]')" = 4 ] && row ok "specB differs from specA by the env_pass line and the name only" || row no "specA and specB differ by more than the intended lines"
 mk() { local n=$1 W=$REPO/_tmp/devbox-test/resume-$TS-$1; mkdir -p "$W/repo/specs"; printf '# Spec: write PONG\n\n## Exit Criteria\n- [ ] `test -f hello.txt`\n- [ ] `grep -qx PONG hello.txt`\n' > "$W/repo/specs/real.md"
   git -C "$W/repo" init -q && git -C "$W/repo" add -A && git -C "$W/repo" -c user.email=f@local -c user.name=f commit -qm base
@@ -46,8 +44,8 @@ for pair in "a specA" "b specB"; do set -- $pair; n=$1; g=$2
   S=$(waitrun $R); [ "$S" = succeeded ] && row ok "$g run succeeded" || row no "$g status $S"
   SID=$(codesid); echo "  $g code session: ${SID:-none}"
   FOUND=$(X sh -c "'find $C/claude -name \"$SID.jsonl\" -type f 2>/dev/null | head -1'")
-  if [ "$n" = a ]; then [ -z "$FOUND" ] && row ok "specA (graph as shipped): NO transcript under the daemon's config dir: the resume lookup cannot find it" || row no "specA already has a transcript: the theory is wrong"
-  else [ -n "$FOUND" ] && row ok "specB (one env_pass name added): the transcript IS under the config dir ($(basename "$FOUND"))" || row no "specB still has no transcript: the missing env_pass name is not the whole cause"; fi
+  if [ "$n" = a ]; then [ -z "$FOUND" ] && row ok "CONTROL specA (shipped graph minus CLAUDE_CONFIG_DIR): NO transcript under the config dir" || row no "CONTROL specA has a transcript: the name is not what decides it"
+  else [ -n "$FOUND" ] && row ok "specB (the shipped graph): the transcript IS under the config dir ($(basename "$FOUND")), so a resume finds it" || row no "specB (the shipped graph) has no transcript: the lane cannot resume"; fi
   LB=$(X sh -c "'wc -l < $C/pii.log'" | tr -d ' ')
 done
 echo "RESUME-PROOF: $P pass $F fail"
