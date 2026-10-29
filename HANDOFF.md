@@ -1,5 +1,43 @@
 # Pii — Session Handoff
 
+## 2026-10-29 00:3xZ — A173 and A174 closed; one fixture red stopped both gates, and the selftest found the same defect twice more
+
+State: HEAD `b74da7e` · control `RUNNING at 2026-10-28T21:41:28Z (resumed by human)` · watchdog alive (pid 811768) · queue: **EMPTY** (A173 and A174 closed; `state.py pick` = `NONE`) · selftest **42 passed, 0 failed / ALL MECHANISMS PASS**.
+
+- **Where the loop stood.** A173 (spec 309) and A174 (spec 310) had both been `needs-review / gate-failed` since
+  21:49Z and 22:03Z, and 21 cycles in a row reported `queue empty — nothing pending` because `pick` skips parked rows.
+  Nothing was in flight and the tree held both items' work.
+- **One red behind both gates, and it was not either worker's code.**
+  `crates/pii-graph/tests/pick_skips_parked.rs::a_parked_head_does_not_freeze_the_queue` failed with
+  `left: "NONE\n" right: "P2"`. Reproduced by hand on a fixture of the same shape: the real `pick` answers
+  `refused P2: NO-CRITERIA spec.md`. Spec 309's R4 was doing exactly what it specified; what R1–R6 missed is that
+  every test that drives `pick` builds its own fixture, and a fixture written under the old contract declares no
+  `## Exit Criteria`. **The spec was the defective part, not the implementation** — the worker's own suite was green
+  (8/8) while the gate was red.
+- **A174's gate was collateral.** `cycle.sh:163` copies a dirty tree's diff to `_tmp/autonomy/leftovers/` and says so
+  in its own words — *"the tree is left as it was"* — so the next item's gate measures the previous item's change.
+  A174's nine criteria were all green on that tree; it was never at fault.
+- **Repair, in three places, all fixture DATA with every assertion byte-identical:** `pick_skips_parked.rs`,
+  `selftest.sh`'s fixture plan (five rows) and `row-paths-test.sh`'s pick control each gain an `## Exit Criteria`
+  block holding `` `true` `` and carry it in column 5. Spec 309 gained R7, three fixture paths in `## Files`, a
+  guardrail carve-out (fixture data, never assertion) and two criteria — the row's column 5 is now GENERATED from
+  the spec by `row-verify.py criteria`, never hand-copied (`check A173` = `OK A173 9`).
+- **The selftest caught what the criteria could not, and the first closure was wrong because of it.** Criteria read
+  7/7 green while `selftest.sh` read **36 passed, 6 failed** — five `expected=X1 actual=NONE`. The closure now says
+  so and states which reading covers which tree. Order matters: **run the mechanism gate before writing the
+  closure**, not after.
+- **Verified on the committed tree:** A173 9/9 and A174 9/9 criteria `rc=0`; routine gate `quality-gate: ALL PASS`,
+  coverage 83.20% >= 74.00%; selftest 42/0. Mutations: m1 (`judge` accepts everything) reds 8/8 rows — blunt, it
+  reds the controls too; **m2** (only the COUNT/DIFF refusal removed, count kept) reds the 4 refusal rows and
+  leaves the 4 controls green — the reading that proves the check is a check. Both restored byte-identical,
+  `sha256 e2de2b06…a0bc` before and after, `touch`ed before the re-run.
+- Committed by explicit paths: `5844dc2` (309), `a0467a4` (310), `eda5bc0` (309 follow-up), `b74da7e` (closure).
+- **NOT in this tick, and named so the next one starts here:** the **leftover-inheritance defect** discovered above
+  has no spec yet — a cycle that finds a dirty tree with no session keeps the patch aside and then dispatches the
+  next item into the same dirty tree, so two gate runs bought a red that belonged to neither item. Candidate spec
+  311: the leftover is saved AND the tree is made clean (recoverable) before a worker is bought, or the cycle stops
+  with rc 7 as this skill's own table says. The ranked list in 059 §4 is still exhausted (see the 2026-10-28 entry).
+
 ## 2026-10-28 18:4xZ — A170 landed after the spec's own file list was found short; the queue drained, so spec 309 refills it
 
 State: HEAD `a957d2a` · control `RUNNING at 2026-10-28T14:09:19Z (resumed by human)` · watchdog alive (pid 811768) · queue: **A173 dispatchable** (spec 309) · selftest **42 passed, 0 failed / ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261028T1830Z.log`).
