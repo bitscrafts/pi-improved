@@ -68,6 +68,9 @@ N=$(journal | grep -a 'coder.spawned' | grep -o '"pid":[0-9]*' | sort -u | wc -l
 cli run trace "$RA" > "$LOGD/composed-chain-$TS.A.trace" 2>&1
 for k in via2 via1 docs; do grep -q "$k" "$LOGD/composed-chain-$TS.A.trace" && row ok "A: the trace names the call level '$k'" || row no "A: the trace lacks '$k'"; done
 grep -q ' 0 orphans' "$LOGD/composed-chain-$TS.A.trace" && row ok "A: run trace: 0 orphans" || row no "A: orphans reported"
+DA=$(cli run get "$RA" | grep -o '"dur_ms":[0-9]*' | head -1 | cut -d: -f2); [ "${DA:-0}" -ge 1000 ] && row ok "A OBSERVABILITY: the finished run reports a real duration (${DA} ms)" || row no "A OBSERVABILITY: duration ${DA:-?} ms"
+grep 'via2__via1__docs__docs' "$LOGD/composed-chain-$TS.A.trace" | grep -q 'abandoned' && row no "A OBSERVABILITY CONTROL: a leaf that FINISHED is marked abandoned" || row ok "A OBSERVABILITY CONTROL: the finished leaf's trace line is not marked abandoned"
+cli run explain "$RA" | grep -q 'succeeded in 0ms' && row no "A OBSERVABILITY: explain says 0ms for a run that ran" || row ok "A OBSERVABILITY: explain does not say 0ms"
 
 # ---- B: a real cancel in the middle of the chain
 make_input b "$SLOW"; OUT=$(start_raw b); RB=$(echo "$OUT" | rid_of)
@@ -81,6 +84,10 @@ journal | grep -a "\"run\":\"$RB\"" | grep -aq '"kind":"run.cancelled"' && row o
 sleep 3; A=$(alive "$P1"); [ "$A" = gone ] && row ok "B: the real leaf agent is GONE after the cancel (pid $P1)" || row no "B: the leaf $P1 is still $A"
 [ -e "$W_b/repo/NOTES.md" ] && [ "$(wc -l < "$W_b/repo/NOTES.md")" -ge 20 ] && row no "B: the leaf finished its work before the cancel: nothing was proven" || row ok "B: the leaf had not finished (cancelled mid-work)"
 cli run trace "$RB" > "$LOGD/composed-chain-$TS.B.trace" 2>&1; grep -q ' 0 orphans' "$LOGD/composed-chain-$TS.B.trace" && row ok "B: run trace: 0 orphans" || row no "B: orphans reported"
+DB=$(cli run get "$RB" | grep -o '"dur_ms":[0-9]*' | head -1 | cut -d: -f2); [ "${DB:-0}" -ge 1000 ] && row ok "B OBSERVABILITY: the cancelled run reports a real duration (${DB} ms; it was 0 before spec 310)" || row no "B OBSERVABILITY: the cancelled run's duration is ${DB:-?} ms"
+cli run explain "$RB" | grep -q 'in 0ms' && row no "B OBSERVABILITY: explain still says 0ms for the cancelled run" || row ok "B OBSERVABILITY: explain does not say 0ms"
+grep 'via2__via1__docs__docs' "$LOGD/composed-chain-$TS.B.trace" | grep -q . && row ok "B OBSERVABILITY: the trace has a line for the killed leaf" || row no "B OBSERVABILITY: the trace has no line for the killed leaf"
+grep 'via2__via1__docs__docs' "$LOGD/composed-chain-$TS.B.trace" | grep -q 'abandoned' && row ok "B OBSERVABILITY: that line says the node was abandoned" || row no "B OBSERVABILITY: the leaf line does not say abandoned"
 
 # ---- C: tamper with the MIDDLE graph; the pin must refuse it
 printf '# one extra line\n' >> "$GD/chain1.toml"
