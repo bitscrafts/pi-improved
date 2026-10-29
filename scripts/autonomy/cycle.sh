@@ -145,8 +145,7 @@ say "tree: $DIRTY changed paths before dispatch"
 if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
   # A leftover from the last item must not stop the loop (measured 2026-10-13: spec 139's guide update was not
   # in its plan row's paths, so the tree stayed dirty and every cycle refused - the loop idled for hours).
-  # Keep the diff as a patch, commit the paths as a named leftover, and carry on: nothing is lost, and the
-  # commit is reversible.
+  # Keep it saved (leftover.sh, spec 311), clean only the row the loop owns, and carry on: nothing is lost.
   # Before treating a dirty tree as a leftover, look for a session to RESUME: a worker cut off mid-flight leaves
   # its session id in its own log even when the dispatcher never got to write it (measured 2026-10-13).
   RECOVER=$(bash scripts/autonomy/session.sh recover "$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')" 2>/dev/null || true)
@@ -155,14 +154,24 @@ if [ "$DIRTY" -ne 0 ] && [ -z "$RSID" ]; then
     say "dirty tree WITH a session recovered from the worker's log ($RECOVER): resuming, not restarting"
     RSID="$RECOVER"; ARGS=(--resume "$RECOVER")
   else
-  LEFT=$STATEDIR/leftovers; mkdir -p "$LEFT"
-  git diff >"$LEFT/$CID-tracked.patch" 2>/dev/null || true
-  git status --porcelain | awk '{print $2}' >"$LEFT/$CID-paths.txt"
-  # GATE BYPASS CLOSED (2026-10-20): a leftover used to be committed here with no gate
-  # at all, to master. It is now kept ONLY as the patch and path list above, for review.
-  # Nothing is staged or committed by the loop; the tree is left as it was.
-  say "DIRTY TREE with no session: kept the leftover as $LEFT/$CID-tracked.patch (not committed; the gate never saw it)"
-  bash scripts/autonomy/control.sh ask "found a leftover from the previous item and kept it as a patch for review (cycle $CID). Nothing was committed." >/dev/null 2>&1 || true
+  # spec 311: SAVE first (a clean without a save is the only unrecoverable path), then ATTRIBUTE, then CLEAN.
+  # The row the loop itself left unfinished is stashed, so this worker's gate measures only its own change
+  # (measured 2026-10-29: A174 inherited A173's leftover and its gate failed on A173's test). A tree no row owns
+  # is a person's: nothing is cleaned and no worker is bought beside it (GATE BYPASS CLOSED 2026-10-20: never committed).
+  LEFT=$STATEDIR/leftovers
+  if ! bash scripts/autonomy/leftover.sh save "$LEFT" "$CID" >/dev/null; then
+    say "could not save the leftover under $LEFT: nothing cleaned, nothing dispatched"; echo "OUTCOME=dirty-tree ITEM=$ITEM"; exit 7
+  fi
+  OWN=$(bash scripts/autonomy/leftover.sh owner); ORC=$?
+  if [ "$ORC" = 0 ]; then
+    CLEANED=$(bash scripts/autonomy/leftover.sh clean "$CID"); CRC=$?
+    say "leftover of ${OWN#OWNER } saved under $LEFT, tree cleaned: $CLEANED"
+    if [ "$CRC" != 0 ]; then echo "OUTCOME=dirty-tree ITEM=$ITEM"; exit 7; fi
+  else
+    say "DIRTY TREE that no queue row owns ($OWN): saved under $LEFT ($(ls "$LEFT/$CID"-* 2>/dev/null | xargs -n1 basename | tr '\n' ' ')), nothing cleaned, nothing dispatched"
+    bash scripts/autonomy/control.sh ask "a dirty tree no queue row owns was saved under $LEFT (cycle $CID) and the cycle stopped: nothing cleaned, nothing committed." >/dev/null 2>&1 || true
+    echo "OUTCOME=dirty-tree ITEM=$ITEM"; exit 7
+  fi
   fi
 fi
 ARGS=(); [ -n "$RSID" ] && ARGS=(--resume "$RSID")
