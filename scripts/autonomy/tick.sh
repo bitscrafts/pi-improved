@@ -134,8 +134,14 @@ NEXT=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f1,4)
 
 case "$OUT" in
   done)          say_once "done:$ITEM:$HEAD" "pii autonomy · $ITEM done" "$HEAD" ;;
-  verify-failed|gate-failed|worker-rc-*|dirty-tree|bad-plan)
+  verify-failed|gate-failed|dirty-tree|bad-plan)
                  say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM needs a hand ($OUT)" "log: ${LASTLOG##*/}" ;;
+  worker-rc-*)   # resumed only when the queue's own pick names this item (spec 313)
+                 if [ -n "$ITEM" ] && [ -n "${NEXT:-}" ] && [ "${NEXT%%$'\t'*}" = "$ITEM" ]; then
+                   say_once "resumed:$ITEM:$OUT" "pii autonomy · $ITEM resuming with its session ($OUT)" "log: ${LASTLOG##*/}"
+                 else
+                   say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM stopped early with no session to resume — needs a hand ($OUT)" "log: ${LASTLOG##*/}"
+                 fi ;;
   window-closed) say_once "closed:$(cut -c1-20 <<<"$(grep -o 'resets [^ ]* [^ ]*' "$LASTLOG" 2>/dev/null | tail -1)")" \
                    "pii autonomy · the Anthropic window is closed — nothing spent, the queue is untouched" ;;
 esac
