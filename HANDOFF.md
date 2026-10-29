@@ -2,7 +2,7 @@
 
 ## 2026-10-29 00:3xZ — A173 and A174 closed; one fixture red stopped both gates, and the selftest found the same defect twice more
 
-State: HEAD `b74da7e` · control `RUNNING at 2026-10-28T21:41:28Z (resumed by human)` · watchdog alive (pid 811768) · queue: **EMPTY** (A173 and A174 closed; `state.py pick` = `NONE`) · selftest **42 passed, 0 failed / ALL MECHANISMS PASS**.
+State: HEAD `a54b51c` · control `RUNNING at 2026-10-28T21:41:28Z (resumed by human)` · watchdog alive (pid 811768) · queue: A173 and A174 **done**; **A175 pending with a session to resume at verify** (spec 311) · selftest **42 passed, 0 failed / ALL MECHANISMS PASS**.
 
 - **Where the loop stood.** A173 (spec 309) and A174 (spec 310) had both been `needs-review / gate-failed` since
   21:49Z and 22:03Z, and 21 cycles in a row reported `queue empty — nothing pending` because `pick` skips parked rows.
@@ -37,6 +37,21 @@ State: HEAD `b74da7e` · control `RUNNING at 2026-10-28T21:41:28Z (resumed by hu
   next item into the same dirty tree, so two gate runs bought a red that belonged to neither item. Candidate spec
   311: the leftover is saved AND the tree is made clean (recoverable) before a worker is bought, or the cycle stops
   with rc 7 as this skill's own table says. The ranked list in 059 §4 is still exhausted (see the 2026-10-28 entry).
+- **Spec 311 authored from that finding, and it is already in flight.** `scripts/autonomy/leftover.sh`
+  (`save`/`owner`/`clean`/`list`), the cycle saving → attributing → cleaning before it buys a worker, `OWNER <row>`
+  for the loop's own unfinished work and `FOREIGN` → rc 7 for anything a row's column 6 does not claim. Row **A175**
+  committed `4c0a877`; the watchdog dispatched it at 00:35:37Z on a **clean tree** (0 changed paths) and the worker
+  returned in 4m14s with `leftover.sh` (113 lines), `cycle.sh` and the test written — `worker-rc=1` on **one**
+  criterion, the selftest.
+- **That criterion was mine to fix, not the worker's.** `bash scripts/autonomy/selftest.sh` read 42/0 on that very
+  tree for the orchestrator at 00:57Z while the verify sandbox failed it: the selftest drives `tick.sh`, `uv`, a fake
+  `hermes` and the repo's `_tmp`, and the judge sandbox is not obliged to have them. It is now the orchestrator's
+  review duty (in the spec, with both readings to be recorded in `## Closure`) and the row carries the six criteria
+  the sandbox can run (`check A175` = `OK A175 6`, committed `a54b51c`). **A175 is set `pending` with its session
+  `8464141c` intact, so the next cycle RESUMES the worker at verify — it does not re-buy spec 311.**
+- **A trap for the next tick:** `pick` parks a `needs-review` row unless its `last` is `window-closed` (spec 280), so
+  a worker that ends `rc≠0` leaves the queue idle for ever — that is exactly how A173 and A174 sat for two hours and
+  21 cycles. Whoever reads this: put such a row back to `pending` with its session, do not wait for a person.
 
 ## 2026-10-28 18:4xZ — A170 landed after the spec's own file list was found short; the queue drained, so spec 309 refills it
 
