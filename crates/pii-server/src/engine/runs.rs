@@ -321,6 +321,14 @@ pub(super) fn close_failed(
     }
     let mut header = header;
     header.status = pii_abi::RunStatus::Failed;
+    // Spec 310 R1: a run closed from outside its process records how long it was open; a duration its own finish set stays.
+    if header.dur_ms == 0 && header.created_ms != 0 {
+        use pii_core::Clock as _;
+        let open_ms = pii_core::SystemClock
+            .now_ms()
+            .saturating_sub(header.created_ms);
+        header.dur_ms = u32::try_from(open_ms).unwrap_or(u32::MAX);
+    }
     let terminal = pii_abi::Terminal::Failure { error };
     let output_hash = serde_json::to_vec(&terminal)
         .map(|b| pii_store::hash(&b))

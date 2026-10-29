@@ -57,3 +57,18 @@ CAUSE (read in the code): `close_failed` (`crates/pii-server/src/engine/runs.rs`
 - Do NOT edit `graphs/`, `scripts/`, an existing assertion, or any journal event or header field definition. Scratch under `_tmp/` inside the repository.
 - The appearance-only implementation: a trace line printed from the header instead of the journal, or `dur_ms` computed in `explain` only (the stored header would still say 0). The tests read the stored header and the journal.
 - Mutations the tests must kill: the duration set only when the run was cancelled (not abandoned); the duration overwritten on a finished run; the abandoned line emitted for a node that DID finish; the abandoned node left out of the node count.
+
+## Closure
+**Closed 2026-10-29 by the orchestrator.** Worker session `976bc805-0068-4a32-914f-ee425150ed59` (A174, attempt 1).
+
+- **Its gate failure was collateral, not its own.** The cycle ran 11 minutes after A173's, on a tree that still
+  carried A173's `scripts/autonomy/state.py` seam (the previous cycle copied that diff aside as
+  `_tmp/autonomy/leftovers/20261028T214917Z-tracked.patch` but the file stayed modified). Both gates therefore failed
+  on the same pre-existing spec 169 fixture, `pick_skips_parked.rs::a_parked_head_does_not_freeze_the_queue`, which
+  R4 of spec 309 refuses. Repaired at its root there (spec 309 R7 + the fixture's data), not here.
+- **Evidence on this tree.** 9 of 9 of this spec's criteria green, including the two suites it must not disturb
+  (`run_trace_names_the_call`, `cancel_kill`) and `clippy -p pii-server -p pii-cli --all-targets -D warnings`;
+  routine gate `quality-gate: ALL PASS`, coverage 83.20% >= 74.00%.
+- The change is the worker's: `close_failed` stamps `dur_ms` from `created_ms` to the close and leaves a header that
+  already has one alone; `node_lines` emits a line for a node with `NodeStarted` and no finish, in journal order, and
+  the summary counts it. No event kind, header field or wire name changed.

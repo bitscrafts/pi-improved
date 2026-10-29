@@ -134,10 +134,12 @@ pub(super) fn observe_call(calls: &mut Vec<AgentCall>, kind: &str, fields: &serd
     }
 }
 
-/// The trace lines of a journal, in journal order: one per node that finished or failed. A node the journal shows
-/// making an agent observation is `coder`; any other node is `-`.
+/// The trace lines of a journal, in journal order: one per node that finished or failed, and one per node that started
+/// and never did (spec 310 R2). A node the journal shows making an agent observation is `coder`; any other node is `-`.
 pub(super) fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
     let mut started: std::collections::BTreeMap<String, i64> = std::collections::BTreeMap::new();
+    let mut opened: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut closed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut observed: std::collections::BTreeMap<String, Vec<AgentCall>> =
         std::collections::BTreeMap::new();
     let mut woven: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -148,6 +150,7 @@ pub(super) fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
         match event {
             RunEvent::NodeStarted { node, at_ms } => {
                 started.insert(node.to_string(), i64::from(*at_ms));
+                opened.insert(node.to_string(), *seq);
             }
             RunEvent::NodeObserved { node, kind, fields } if kind == "woven" => {
                 woven.insert(node.to_string(), str_field(fields, "woven-from"));
@@ -185,8 +188,10 @@ pub(super) fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
                 );
                 done.verdict = verdict(value);
                 lines.push(done);
+                closed.insert(node.to_string());
             }
             RunEvent::NodeFailed { node, error, .. } => {
+                closed.insert(node.to_string());
                 let start = started.get(&node.to_string()).copied().unwrap_or_default();
                 let mut failed = line(
                     *seq,
@@ -203,7 +208,33 @@ pub(super) fn node_lines(journal: &[(u64, RunEvent)]) -> Vec<NodeLine> {
             _ => {}
         }
     }
+    lines.extend(abandoned_lines(
+        &opened, &closed, &started, &observed, &refusals, &woven,
+    ));
+    lines.sort_by_key(|l| l.seq);
     lines
+}
+
+/// Spec 310 R2: a node that started and never finished (its run was cancelled while it worked) keeps its line, at the
+/// place its start holds in the journal.
+fn abandoned_lines(
+    opened: &std::collections::BTreeMap<String, u64>,
+    closed: &std::collections::BTreeSet<String>,
+    started: &std::collections::BTreeMap<String, i64>,
+    observed: &std::collections::BTreeMap<String, Vec<AgentCall>>,
+    refusals: &std::collections::BTreeMap<String, Refusal>,
+    woven: &std::collections::BTreeMap<String, String>,
+) -> Vec<NodeLine> {
+    opened
+        .iter()
+        .filter(|(node, _)| !closed.contains(*node))
+        .map(|(node, seq)| {
+            let start = started.get(node).copied().unwrap_or_default();
+            let mut abandoned = line(*seq, node.clone(), start, None, observed, refusals, woven);
+            abandoned.failure = Some(String::from("abandoned: started and never finished"));
+            abandoned
+        })
+        .collect()
 }
 
 pub(super) fn line(
