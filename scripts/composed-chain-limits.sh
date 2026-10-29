@@ -5,11 +5,12 @@
 # concurrent four 3-level chains at once: four distinct sessions, each repo with its own result, nothing shared.
 # pi         the same chain with pi (ollama-cloud) at the leaf instead of claude.
 # loop       a call inside a loop with max_entries = 2 (spec 306): exactly 2 real agent spawns, then the run fails NAMING the call; CONTROL: the same loop with a higher limit stops on the loop budget instead.
+# midfail    a 3-level chain whose MIDDLE graph refuses after its call returned: explain and the trace must name the refusing node by its call path and give the reason; CONTROL: the same graphs without the refuse node succeed.
 # The loop must be paused and no worker in flight. Nothing is committed by a worker.
 set -u
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 REPO=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
-SCEN=${1:-}; case "$SCEN" in restart|concurrent|pi|loop) ;; *) echo "usage: $0 restart|concurrent|pi|loop"; exit 2;; esac
+SCEN=${1:-}; case "$SCEN" in restart|concurrent|pi|loop|midfail) ;; *) echo "usage: $0 restart|concurrent|pi|loop|midfail"; exit 2;; esac
 HOST=${DEVBOX_HOST:-mvcorrea@10.10.10.217}; SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST")
 C=/projects/pi-improved/_tmp/devbox-test; PIIB=$C/bin/pii; GD=$REPO/_tmp/devbox-test/graphs
 TS=$(date +%s); export TS; LOGD=$REPO/_tmp/claude-batchC; mkdir -p "$LOGD"; LOG=$LOGD/composed-limits-$SCEN-$TS.log
@@ -45,6 +46,19 @@ D2=$(sha256sum "$GD/chain2.toml" | cut -d' ' -f1)
 printf 'name = "chain3"\nentry = "via2"\n%s\ncaps = ["spawn", "proc"]\n\n[[node]]\nid = "via2"\nkind = "call"\ngraph = "chain2"\nsha256 = "%s"\ncaps = ["spawn", "proc"]\n\n[[node]]\nid = "fin"\nkind = "transform"\nvalue = "done"\n\n[[edge]]\nfrom = "via2"\nport = "ok"\nto = "fin"\nkind = "data"\n' "$NEEDS" "$D2" > "$GD/chain3.toml"
 # the loop host: start -> docs(call, max_entries M) -> again(loop_budget B) -> start ; M and B differ between the run and its control
 loophost() { printf 'name = "%s"\nentry = "start"\n%s\ncaps = ["spawn", "proc"]\n\n[[node]]\nid = "start"\nkind = "transform"\nexpr = "$.payload"\n\n[[node]]\nid = "docs"\nkind = "call"\ngraph = "docs"\nsha256 = "%s"\ncaps = ["spawn", "proc"]\nmax_entries = %s\n\n[node.in]\nbrief = "$.input.docs_brief"\n\n[[node]]\nid = "again"\nkind = "transform"\nexpr = "$.payload"\nloop_budget = %s\n\n[[edge]]\nfrom = "start"\nport = "ok"\nto = "docs"\nkind = "data"\n\n[[edge]]\nfrom = "docs"\nport = "ok"\nto = "again"\nkind = "data"\n\n[[edge]]\nfrom = "again"\nport = "ok"\nto = "start"\nkind = "data"\n' "$1" "$NEEDS" "$D0" "$2" "$3" > "$GD/$1.toml"; }
+# midfail: fchainN is the chain with a refuse node after the call in the middle graph; okchainN is the same without it
+if [ "$SCEN" = midfail ]; then
+  mid() { # NAME(prefix) WITHREFUSE(1/0)
+    local pre=$1 bad=$2
+    if [ "$bad" = 1 ]; then OUTN='[[node]]\nid = "out"\nkind = "transform"\nexpr = "$.payload"\n\n[[node]]\nid = "bad"\nkind = "refuse"\nhook = "judge"\nreason = "the middle graph refused its leaf"\n\n[[edge]]\nfrom = "via1"\nport = "ok"\nto = "out"\nkind = "data"\n\n[[edge]]\nfrom = "via1"\nport = "ok"\nto = "bad"\nkind = "data"\n'; EXITL='exit = "out"\n'; else OUTN='[[node]]\nid = "out"\nkind = "transform"\nexpr = "$.payload"\n\n[[edge]]\nfrom = "via1"\nport = "ok"\nto = "out"\nkind = "data"\n'; EXITL='exit = "out"\n'; fi
+    printf 'name = "%s1"\nentry = "docs"\nexit = "out"\n%s\ncaps = ["spawn", "proc"]\n\n[[node]]\nid = "docs"\nkind = "call"\ngraph = "docs"\nsha256 = "%s"\ncaps = ["spawn", "proc"]\n\n[node.in]\nbrief = "$.input.docs_brief"\n\n[[node]]\nid = "out"\nkind = "transform"\nexpr = "$.payload"\n\n[[edge]]\nfrom = "docs"\nport = "ok"\nto = "out"\nkind = "data"\n' "$pre" "$NEEDS" "$D0" > "$GD/${pre}1.toml"
+    local e1; e1=$(sha256sum "$GD/${pre}1.toml" | cut -d' ' -f1)
+    printf "name = \"${pre}2\"\nentry = \"via1\"\n${EXITL}%s\ncaps = [\"spawn\", \"proc\"]\n\n[[node]]\nid = \"via1\"\nkind = \"call\"\ngraph = \"${pre}1\"\nsha256 = \"%s\"\ncaps = [\"spawn\", \"proc\"]\n\n${OUTN}" "$NEEDS" "$e1" > "$GD/${pre}2.toml"
+    local e2; e2=$(sha256sum "$GD/${pre}2.toml" | cut -d' ' -f1)
+    printf 'name = "%s3"\nentry = "via2"\n%s\ncaps = ["spawn", "proc"]\n\n[[node]]\nid = "via2"\nkind = "call"\ngraph = "%s2"\nsha256 = "%s"\ncaps = ["spawn", "proc"]\n\n[[node]]\nid = "fin"\nkind = "transform"\nvalue = "done"\n\n[[edge]]\nfrom = "via2"\nport = "ok"\nto = "fin"\nkind = "data"\n' "$pre" "$NEEDS" "$pre" "$e2" > "$GD/${pre}3.toml"
+  }
+  mid fchain 1; mid okchain 0
+fi
 LB=$("${SSH[@]}" "podman exec pii-devbox sh -c 'wc -l < $C/pii.log'" 2>/dev/null | tr -d ' ')
 
 make_input() {   # NAME DOCS_BRIEF : a scratch repo and its input; sets W_<NAME>
@@ -107,6 +121,20 @@ loop)
   S=$(wait_status "$RC" 300); [ "$S" = failed ] && row ok "CONTROL: it failed too, on a different bound ($S)" || row no "CONTROL: status $S"
   journal | grep -a "entered more than max_entries" | grep -aq "$RC" && row no "CONTROL: the call's counter fired although its limit (6) is above the loop budget (3)" || row ok "CONTROL: the call's counter did NOT fire (limit 6 > loop budget 3)"
   N=$(journal | grep -a 'coder.spawned' | grep -o '"pid":[0-9]*' | sort -u | wc -l); [ "$N" -ge 3 ] && row ok "CONTROL: it ran $N real spawns, more than the capped run's 2" || row no "CONTROL: only $N spawns" ;;
+midfail)
+  make_input a "$CHAINQ"; OUT=$(start_raw a fchain3); RID=$(echo "$OUT" | rid_of)
+  [ -n "$RID" ] && row ok "started the chain whose middle graph refuses ($RID)" || { row no "no run id: $(echo "$OUT" | head -2 | tr '\n' ' ' | cut -c1-200)"; say "COMPOSED-LIMITS $SCEN: $P pass $F fail"; exit 1; }
+  S=$(wait_status "$RID" 240); [ "$S" = failed ] || [ "$S" = refused ] && row ok "the run ended $S (not succeeded)" || row no "status $S"
+  [ -s "$W_a/repo/NOTES.md" ] && row ok "the LEAF finished its work (NOTES.md), so the failure is at the middle level" || row no "the leaf did not finish: the failure is not where the scenario says"
+  EX=$(cli run explain "$RID"); say "explain: $(echo "$EX" | head -2 | tr '\n' ' ' | cut -c1-300)"
+  echo "$EX" | grep -q 'via2__bad' && row ok "explain NAMES the refusing node by its call path (via2__bad: the refuse node lives in the middle graph, which the top graph calls as via2)" || row no "explain does not name via2__bad"
+  echo "$EX" | grep -q 'the middle graph refused its leaf' && row ok "explain gives the refusal reason" || row no "explain does not give the reason"
+  cli run trace "$RID" > "$LOGD/composed-limits-midfail-$TS.trace" 2>&1
+  grep -q 'via2__bad' "$LOGD/composed-limits-midfail-$TS.trace" && row ok "the trace has a line for the refusing node" || row no "the trace has no line for via2__bad"
+  grep -q 'via2__via1__docs__docs' "$LOGD/composed-limits-midfail-$TS.trace" && row ok "the trace still shows the leaf that ran below it" || row no "the leaf is missing from the trace"
+  make_input b "$CHAINQ"; RC=$(start_raw b okchain3 | rid_of); [ -n "$RC" ] && row ok "CONTROL: the same graphs without the refuse node started ($RC)" || { row no "CONTROL: no run id"; exit 1; }
+  S=$(wait_status "$RC" 240); [ "$S" = succeeded ] && row ok "CONTROL: it SUCCEEDED, so the refusal above is the refuse node and nothing else" || row no "CONTROL: status $S"
+  cli run explain "$RC" | grep -q 'via2__bad' && row no "CONTROL: a run without the refuse node names it" || row ok "CONTROL: explain does not name a refuse node that is not there" ;;
 esac
 say "COMPOSED-LIMITS $SCEN: $P pass $F fail  (log $LOG)"
 [ "$F" = 0 ]
