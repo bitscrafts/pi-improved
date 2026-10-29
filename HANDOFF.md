@@ -1,5 +1,49 @@
 # Pii — Session Handoff
 
+## 2026-10-29 — composability exercised to its limits with real agents: what is proved, how to re-run it, what is open
+
+State: HEAD at the time of writing `2b8579a` (+ the other writer's spec 312 work in the tree, not mine) · queue drained for my rows
+(A169–A175 landed: 305, 307, 308, 306, 309, 310, 311) · every script below is committed and re-runnable.
+
+**Proved on real agents through the production devbox daemon (real transport), each with a control that can fail:**
+- `scripts/composed-chain-real.sh` (25 rows): a 3-level call chain (`chain3 -> chain2 -> chain1 -> docs`) with a real claude at the leaf —
+  one run, exactly ONE agent spawn, real work on disk, trace names every level; a real mid-chain cancel kills the real leaf (paired with
+  an "alive before" row), the cancelled run reports a real duration and the trace has a line for the killed leaf; a one-line change to the
+  middle graph is refused by its pin (`fragment.pin.mismatch`, both digests named).
+- `scripts/composed-chain-limits.sh concurrent|pi|loop|restart|midfail` (8/6/8/9/10 rows): four chains at once (four sessions, nothing
+  shared); pi on ollama-cloud at the leaf; a looped call with `max_entries = 2` makes exactly 2 real spawns then fails naming the call
+  (control: limit above the loop budget does not fire); daemon SIGKILL leaves the leaf an orphan (control) and the new daemon reaps it;
+  a refuse node in the MIDDLE graph is named in `run explain` and the trace as `via2__bad` (control: same graphs without it succeed).
+- `scripts/lane-resume-e2e.sh` (10 rows): a composed row is RESUMED with a real claude — run 2 writes a token only run 1's conversation
+  held; a fresh control cannot (the criterion carries the token's SHA-256, never the token).
+- `scripts/lane-resume-proof.sh` (8 rows): the shipped `spec` graph must write its code session where the resume lookup searches.
+- Stand-in simulations on the landed code: `_tmp/composition-sim.py` (scratch, not committed) 48 pass / 0 fail: 40 runs/80 sessions at
+  once, 36 chaos runs, depth 2/3/4 one spawn each, width 4/12, cancel 6/6, kill-loop 3 rounds, 0/30 lost run ids, 12 runs in flight with
+  `run get` at 0.0 s.
+
+**Defects found by exercising it, each fixed through the queue with a failing test first:** a handed-back run id was lost on SIGKILL
+(305); `run get`/trace starved behind in-flight runs (308: own run pool, queued-run cancel); a cancelled run said 0 ms and its trace
+dropped the killed node (310); the resume lookup never found a session (307, and the shipped `spec` graph did not pass
+`CLAUDE_CONFIG_DIR` — `454c436`); the loop counter (306, default 8, counted at dispatch).
+
+**Open, stated plainly:**
+- Scheduler quirk, parked, NOT in the shipped graph (it has no loops): on a loop re-entry the loop's entry node can be dispatched in the
+  same batch as the re-entering node (trace in `_tmp/finding-entry-in-cycle.md`; the boundary test `exactly max_entries succeeds` was
+  flaky ~2/14 on a host whose entry node was the call). Needs its own spec + an Opus review before any code.
+- A real quota refusal cannot be provoked on demand (only stand-ins that print the CLI's refusal shape).
+- A resumed `docs` step carries no session (a docs failure does not resume the code session; not needed today).
+- `run explain` still does not say why a run hit its wall limit (spec 293, known gap).
+- Four old `git stash` entries (A169/A170/A171 work parked on 2026-10-28) are now stale — the rows LANDED through the queue. They are
+  kept, not dropped (no deletion without the user); `git stash list` names them.
+
+**Lessons that cost a day (also in the skills):**
+- A waiter must NOT hold the queue lock: a `flock`-ing waiter blocked the dispatcher's tick for 26 minutes ("SUPERVISOR DEAD").
+- Run a pre-flight with the gate's WHOLE step list (`gate-steps.txt`), one step at a time, before re-pending a row — a guessed subset
+  missed `net-check` and cost a gate attempt. Criteria run in a login shell after `scripts/autonomy/env.sh`, not a plain shell.
+- The devbox judge has `uv`, no `python3`: a criterion that calls `python3` passes on the host and fails in the judge.
+- A control must not be answerable from what the agent can read (a token in the spec's own criterion made the fresh control pass).
+- Do not stack two queue rows on one tree: a dispatcher tick takes the next row the moment the previous one reads `needs-review`.
+
 ## 2026-10-29 06:2xZ — the queue was empty and 059 §4 is drained: spec 312 authored from the loop's own broken rc-8 contract
 
 State: HEAD `2b8579a` · control `RUNNING at 2026-10-29T01:33:59Z (resumed by human)` · lock free, no cycle in flight ·
