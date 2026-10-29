@@ -186,3 +186,16 @@ same red stopped A174's gate afterwards, whose tree still carried this change.
     shows the check is a check and not a wall: the near misses still take the normal path.
 - The row's column 5 was generated FROM this spec's `## Exit Criteria` by `row-verify.py criteria`, not hand-copied,
   and column 6 gained the fixture path; `row-verify.py check A173` answers `OK A173 7`.
+- **Correction, same tick, after running the selftest.** The first closure above was written before the mechanism
+  gate was run, and it was too optimistic: `bash scripts/autonomy/selftest.sh` read **36 passed, 6 failed**. Five of
+  the six were `expected=X1 actual=NONE` — the selftest's own fixture plan and the
+  `CONTROL-a-pick-with-a-refused-row-still-offers-the-next` row of `row-paths-test.sh` drive the real `pick` with
+  rows whose column 5 was `-`, so the new refusal answered `NONE` and the mechanisms that read `pick` all looked
+  broken. That is the same defect as R7, twice more, and it means the earlier `7 of 7` was true of the criteria and
+  false of the mechanism the spec's Non-Functional section requires to stay green. Repaired as fixture DATA in both
+  files, committed as `eda5bc0`; the spec now carries three fixture paths in `## Files` and two more criteria
+  (row-paths-test and the selftest's own VERDICT line), and the row carries all nine. Final reading, on `eda5bc0`:
+  **9 of 9 criteria green**, `selftest 42 passed, 0 failed / VERDICT: ALL MECHANISMS PASS`.
+- The routine gate (`quality-gate: ALL PASS`, coverage 83.20% >= 74.00%) was measured on the code tree before this
+  follow-up; the follow-up touches two shell fixtures, this spec and the queue row, and no Rust, so that reading
+  still stands for the code it covered.
