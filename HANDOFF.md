@@ -1,5 +1,36 @@
 # Pii — Session Handoff
 
+## 2026-10-29 18:2xZ — queue drained and 059 §4 drained: spec 314 authored from open-items §9b (the default gate runs no tests)
+
+State: lock free, no cycle in flight, tree clean before this entry · control `RUNNING` · queue was **empty**
+(`state.py pick` → `NONE`; 174 rows: 170 done, 3 skipped with reasons, 1 revoked) · selftest **42 passed, 0 failed —
+ALL MECHANISMS PASS** (`_tmp/autonomy/logs/selftest-20261029T181643Z.log`, 18:16Z).
+
+- **Why a new spec.** Every cycle since 17:59Z printed `queue empty — nothing pending`; 059 §4 is drained (ranks 2-9
+  all carry committed specs, rank 1 is a deploy needing user host actions, rank 10 is user decisions). The source is
+  therefore a measured item, as on 2026-10-24/27/29: `_docs/05-operations/open-items.md` §9b, which ends with
+  "The gate change still needs its own spec".
+- **The defect (measured 2026-10-18, §9b).** `bash quality-gate.sh` — the documented local gate — reads
+  `gate-steps-quick.txt` (`env.sh:47`), which holds `fmt`, `clippy`, `build` and **no test step**, so it prints
+  `ALL PASS` on a tree it never tested. `03e729a` left `cargo test -p pii-server --lib` at 127 passed / 2 failed at
+  HEAD and no cycle noticed for 1.5 h. Cost is already measured for the fix: 293 s full workspace cold, 96 s one
+  crate, so a diff-scoped step is affordable. The queue is unaffected (`cycle.sh:367` exports
+  `GATE_STEPS=gate-steps.txt`, spec 262).
+- **Authored A178 / spec 314** — the default gate runs the tests of the crates a change touches: a committed helper
+  maps `git status --porcelain -z` paths to workspace packages (name read from each `Cargo.toml`, never assumed from
+  the directory), `Cargo.toml`/`Cargo.lock` name every member, nothing-to-test is a printed line, an unresolvable
+  `crates/` path exits 2, and a non-git export prints why it did nothing. Row verified before committing: 7 fields,
+  `pick` names A178, and the verify column is **byte-identical** to the spec's 8 exit criteria (diffed by script,
+  not eyeballed).
+- **Negative result, recorded so it is not re-bought.** The parked loop-re-entry finding
+  (`_tmp/finding-entry-in-cycle.md`) does **not** reproduce in its simple shape at HEAD: a two-pass loop whose head
+  is fed by the entry with `join=Any` ran the head exactly 3 times for `loop_budget = 3` (`start=1 head=3 gate=2
+  again=2`), and with `join=All` the head never became ready at all (`head=0`). So the "stale fired edge keeps it
+  ready" variant is wrong as stated; the double dispatch needs the composed/call shape the finding traced
+  (`docs__in`). Do not author a spec on the simple shape — re-measure in the composed graph first. The scratch
+  reproduction is kept at `_tmp/edits/20261029/zz-repro-entry-20261029.rs` (moved aside, not deleted).
+- **Next**: the 18:20Z watchdog beat dispatches A178 (spec 314).
+
 ## 2026-10-29 (later) — A176 landed: a stopped worker's row is resumed, and the fixture that hid it is repaired
 
 State: spec 312 closed on the worker's tree (the 06:18Z cycle's worker stopped rc 1 and left the work uncommitted; the
