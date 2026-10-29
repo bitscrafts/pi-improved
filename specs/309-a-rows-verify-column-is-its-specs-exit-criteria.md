@@ -69,6 +69,17 @@ worker is bought). This spec closes column 5 with the same seam, the same output
 - **R6. Nothing already closed is retro-failed.** The check runs on dispatchable rows only (R4); the 77 closed rows
   that differ today stay closed and are reported, never rewritten. No row's column is edited by this change, and no
   spec's criteria are edited by it: this spec adds a reader, a refusal and their tests.
+- **R7. The fixtures that drive `pick` are brought under the same contract (added 2026-10-29, after the gate).** The
+  refusal in R4 is not confined to `plan.tsv`: every test that drives the real `pick` writes its own fixture plan
+  and fixture spec, and a fixture whose row carries no criteria is now refused, so the test sees `NONE` instead of
+  the row it asserts. Measured on this tree: `crates/pii-graph/tests/pick_skips_parked.rs` (spec 169) failed
+  `a_parked_head_does_not_freeze_the_queue` with `left: "NONE\n" right: "P2"`, and that one red stopped the gate
+  for A173 and then for A174, whose tree still carried the change. The fixture is repaired, not the check: its
+  fixture spec gains an `## Exit Criteria` block holding one criterion (`true`), and its rows' column 5 becomes that
+  criterion, so the fixture is a legal spec under 283 and 309 both. Every assertion in that file stays byte
+  identical — the parked head is still asserted to be skipped and named, and `all_parked_says_so_and_picks_none`
+  still asserts `NONE` for two parked rows. That makes the file the control this spec needs: the new check must not
+  fire on a legal fixture, and the failure it must still produce is the one R4 names.
 
 ### Non-Functional
 - Python 3 stdlib only, no Rust and no new crate; `row-verify.py` under 200 lines; the test script under 450 lines;
@@ -99,6 +110,7 @@ worker is bought). This spec closes column 5 with the same seam, the same output
 | `a-spec-without-criteria-is-refused` | a spec with no `## Exit Criteria` block | rc=2, `NO-CRITERIA`, never `OK` |
 | `a-criterion-holding-the-separator-is-refused` | criterion 2 is `grep -q A; grep -q B` | rc=1, `SPLIT 2` |
 | `pick-refuses-the-mismatched-row-and-offers-the-next` | fixture plan: row1 mismatched, row2 exact | stderr `refused row1`, stdout row2's TSV, row1's state unchanged |
+| `CONTROL-crates/pii-graph/tests/pick_skips_parked.rs` | the spec 169 fixture, now declaring `## Exit Criteria` `true` and carrying it in column 5 | both tests green (`ok. 2 passed`), so the new refusal does not fire on a legal fixture |
 
 ## Exit Criteria
 - [ ] `bash scripts/autonomy/tests/row-verify-test.sh 2>&1 | tail -1 | grep -q 'RESULT: PASS'`
@@ -106,16 +118,21 @@ worker is bought). This spec closes column 5 with the same seam, the same output
 - [ ] `uv run --no-project python scripts/autonomy/row-verify.py criteria specs/306-every-call-has-an-entry-counter-so-no-subgraph-is-entered-without-bound.md | grep -c . | grep -qx 9`
 - [ ] `uv run --no-project python scripts/autonomy/row-verify.py check-all >/dev/null`
 - [ ] `grep -q 'row-verify' scripts/autonomy/state.py`
+- [ ] `cargo test -q -p pii-graph --test pick_skips_parked 2>&1 | tail -3 | grep -qE "test result: ok\. 2 passed"`
 - [ ] `git diff --quiet -- specs scripts/autonomy/plan.tsv`
 
 ## Files
 - `scripts/autonomy/row-verify.py`
 - `scripts/autonomy/state.py`
 - `scripts/autonomy/tests/row-verify-test.sh`
+- `crates/pii-graph/tests/pick_skips_parked.rs`
 
 ## Guardrails
 - Do NOT edit `specs/`, `scripts/autonomy/plan.tsv`, an existing assertion, or any row's column. The spec and the row
-  are the author's; this change is the reader and the refusal.
+  are the author's; this change is the reader and the refusal. The ONE exception is R7: a fixture that drives `pick`
+  may have its fixture DATA brought under the new contract (an `## Exit Criteria` block and a matching column 5),
+  never its assertions — a fixture repaired by deleting the assertion it exists to make is a green that proves
+  nothing.
 - Do NOT normalise a real difference away to make a row pass: whitespace at the edges is the ONLY tolerance, so a
   changed argument, a dropped criterion or a reordering stays red.
 - Do NOT make the check advisory. It refuses at `pick` (R4), which is the boundary where a worker would be bought;
@@ -125,3 +142,35 @@ worker is bought). This spec closes column 5 with the same seam, the same output
 - Scratch under `_tmp/` inside the repository; never `/tmp`.
 
 ## Closure
+**Closed 2026-10-29 by the orchestrator.** Worker session `7cb8a5ab-2d50-4108-b546-0e0cddfdb076` (A173, attempt 1)
+produced `row-verify.py`, the `state.py` seam and the 8-row test script; the cycle's gate then failed at
+`crates/pii-graph/tests/pick_skips_parked.rs::a_parked_head_does_not_freeze_the_queue` with
+`assertion left == right failed: head needs-review must be skipped: NONE` (`left: "NONE\n" right: "P2"`), and the
+same red stopped A174's gate afterwards, whose tree still carried this change.
+
+- **The red was not the worker's code.** Reproduced by hand on a fixture of its own shape (a `plan.tsv` of one
+  `needs-review` and one `pending` row, a fixture spec with `## Files` only): the real `pick` answers
+  `refused P2: NO-CRITERIA spec.md` and then `NONE`. R4's refusal was working exactly as specified; what R1–R6 did
+  not account for is that every test which drives `pick` builds its own fixture, and a fixture written under the old
+  contract declares no `## Exit Criteria`. Measured: the worker's own suite was green (8/8, `RESULT: PASS`) while the
+  gate was red, so the spec was the defective part, not the implementation.
+- **The repair is R7, added above**, with the Files entry, the guardrail carve-out and one exit criterion (counting
+  `ok. 2 passed` so the criterion cannot be satisfied by deleting a test). `crates/pii-graph/tests/pick_skips_parked.rs`
+  had its fixture DATA brought under the contract — the fixture spec gains `## Exit Criteria` holding
+  `` - [ ] `true` `` and each row's column 5 carries `true` — and **every assertion in that file is byte-identical**;
+  the parked head is still asserted to be skipped and named, and `all_parked_says_so_and_picks_none` still asserts
+  `NONE`.
+- **Evidence.** 7 of 7 criteria green on this tree (criterion 7 after the spec/row commit); routine gate
+  `quality-gate: ALL PASS`, coverage 83.20% >= 74.00%. Two mutations, both restored byte-identical
+  (`sha256 e2de2b06d856392baa5421d546de58f8a55df030c6b6725f4ed7b577b065a0bc` before and after, `touch`ed before the
+  re-run to avoid the `cp -p` stale-binary false red):
+  - **m1** — `judge` returns `OK id 0` for every row: **8 of 8** test rows red. Blunt: it also reds the controls,
+    because the count is part of what the controls assert.
+  - **m2** — only the refusal removed (`return 0, [OK id len(have)]` in place of the COUNT/DIFF returns): **4 red**
+    (`a-paraphrased-criterion-is-refused`, `a-dropped-criterion-is-refused`, `a-reordered-row-is-refused`,
+    `pick-refuses-the-mismatched-row-and-offers-the-next`) and **4 controls green**
+    (`CONTROL-an-exact-row-is-accepted`, `CONTROL-trailing-whitespace-is-not-a-difference`,
+    `a-spec-without-criteria-is-refused`, `a-criterion-holding-the-separator-is-refused`). This is the reading that
+    shows the check is a check and not a wall: the near misses still take the normal path.
+- The row's column 5 was generated FROM this spec's `## Exit Criteria` by `row-verify.py criteria`, not hand-copied,
+  and column 6 gained the fixture path; `row-verify.py check A173` answers `OK A173 7`.

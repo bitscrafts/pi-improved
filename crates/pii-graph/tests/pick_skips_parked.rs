@@ -38,13 +38,15 @@ fn fixture(states: &[(&str, &str)]) -> tempfile::TempDir {
         let _ = std::fmt::Write::write_fmt(
             &mut plan,
             // column 6 must be the spec's ## Files set (spec 283), not the `-` this fixture carried before
-            format_args!("{id}\tspec.md\t-\ttitle {id}\t-\tscripts/autonomy/state.py\t0\n"),
+            // column 5 must be the spec's ## Exit Criteria, verbatim (spec 309), so the fixture spec below declares
+            // one criterion and the row carries it — otherwise pick refuses the row and this test measures nothing
+            format_args!("{id}\tspec.md\t-\ttitle {id}\ttrue\tscripts/autonomy/state.py\t0\n"),
         );
         st.insert((*id).into(), serde_json::json!({ "status": status }));
     }
     std::fs::write(
         dir.path().join("spec.md"),
-        "# fixture spec for pick_skips_parked\n\n## Files\n- `scripts/autonomy/state.py`\n",
+        "# fixture spec for pick_skips_parked\n\n## Files\n- `scripts/autonomy/state.py`\n\n## Exit Criteria\n- [ ] `true`\n",
     )
     .unwrap();
     std::fs::write(dir.path().join("plan.tsv"), plan).unwrap();

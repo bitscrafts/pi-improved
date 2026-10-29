@@ -90,6 +90,12 @@ def main():
                 if rc:
                     print(f"refused {r['id']}: {', '.join(lines)}", file=sys.stderr)
                     continue
+                # spec 309: a row whose column 5 is not its spec's ## Exit Criteria, command for command, is refused the same way
+                rowverify = importlib.import_module("row-verify")  # hyphenated file: import_module, not `import`
+                rc, lines = rowverify.judge(r)
+                if rc:
+                    print(f"refused {r['id']}: {', '.join(lines)}", file=sys.stderr)
+                    continue
                 if skipped:
                     print("pick: skip parked " + ", ".join(skipped) + " -> dispatching " + r["id"], file=sys.stderr)
                 # a row imported from a review is re-verified at pick (doc 066 Q2): a broken anchor is a plan-error
