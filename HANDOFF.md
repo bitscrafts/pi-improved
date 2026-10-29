@@ -110,7 +110,7 @@ State: HEAD `a54b51c` · control `RUNNING at 2026-10-28T21:41:28Z (resumed by hu
   21:49Z and 22:03Z, and 21 cycles in a row reported `queue empty — nothing pending` because `pick` skips parked rows.
   Nothing was in flight and the tree held both items' work.
 - **One red behind both gates, and it was not either worker's code.**
-  `crates/pii-graph/tests/pick_skips_parked.rs::a_parked_head_does_not_freeze_the_queue` failed with
+  `crates/pii-graph/tests/pick_skips_parked.rs` (test `a_parked_head_does_not_freeze_the_queue`) failed with
   `left: "NONE\n" right: "P2"`. Reproduced by hand on a fixture of the same shape: the real `pick` answers
   `refused P2: NO-CRITERIA spec.md`. Spec 309's R4 was doing exactly what it specified; what R1–R6 missed is that
   every test that drives `pick` builds its own fixture, and a fixture written under the old contract declares no
