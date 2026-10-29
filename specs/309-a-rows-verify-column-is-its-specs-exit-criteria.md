@@ -80,6 +80,14 @@ worker is bought). This spec closes column 5 with the same seam, the same output
   identical — the parked head is still asserted to be skipped and named, and `all_parked_says_so_and_picks_none`
   still asserts `NONE` for two parked rows. That makes the file the control this spec needs: the new check must not
   fire on a legal fixture, and the failure it must still produce is the one R4 names.
+  **The same repair was owed in two more places, found only because the selftest was run** (the first pass had left it
+  red at `36 passed, 6 failed`): `scripts/autonomy/selftest.sh` writes one fixture plan of five rows and one fixture
+  spec, and `scripts/autonomy/tests/row-paths-test.sh`'s `CONTROL-a-pick-with-a-refused-row-still-offers-the-next`
+  writes two more — six selftest rows plus that one control read `NONE` for exactly this reason. All three fixtures
+  now carry `## Exit Criteria` with `- [ ] \`true\`` and put `true` in their rows' column 5; no assertion and no
+  expected value changed. The lesson is recorded because it generalised three times in one night: **a refusal added
+  to `pick` is a contract change for every fixture that drives `pick`, and the spec that adds it must enumerate
+  them.**
 
 ### Non-Functional
 - Python 3 stdlib only, no Rust and no new crate; `row-verify.py` under 200 lines; the test script under 450 lines;
@@ -119,6 +127,8 @@ worker is bought). This spec closes column 5 with the same seam, the same output
 - [ ] `uv run --no-project python scripts/autonomy/row-verify.py check-all >/dev/null`
 - [ ] `grep -q 'row-verify' scripts/autonomy/state.py`
 - [ ] `cargo test -q -p pii-graph --test pick_skips_parked 2>&1 | tail -3 | grep -qE "test result: ok\. 2 passed"`
+- [ ] `bash scripts/autonomy/tests/row-paths-test.sh 2>&1 | tail -1 | grep -q 'RESULT: PASS'`
+- [ ] `bash scripts/autonomy/selftest.sh 2>&1 | tail -2 | grep -q 'VERDICT: ALL MECHANISMS PASS'`
 - [ ] `git diff --quiet -- specs scripts/autonomy/plan.tsv`
 
 ## Files
@@ -126,6 +136,8 @@ worker is bought). This spec closes column 5 with the same seam, the same output
 - `scripts/autonomy/state.py`
 - `scripts/autonomy/tests/row-verify-test.sh`
 - `crates/pii-graph/tests/pick_skips_parked.rs`
+- `scripts/autonomy/selftest.sh`
+- `scripts/autonomy/tests/row-paths-test.sh`
 
 ## Guardrails
 - Do NOT edit `specs/`, `scripts/autonomy/plan.tsv`, an existing assertion, or any row's column. The spec and the row

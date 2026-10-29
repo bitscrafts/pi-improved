@@ -24,7 +24,7 @@ run_check(){ OUT=$(PII_PLAN="$1/plan.tsv" PII_SPECS="$1/specs" python3 "$RP" che
 verdict(){
   if [ "$2" = yes ]; then echo "PASS $1"; else echo "FAIL $1: $3"; FAILS=$((FAILS+1)); fi
 }
-TWO='# Spec S\n\n## Files\n- `crates/x/src/a.rs`\n- `crates/x/src/b.rs`\n'
+TWO='# Spec S\n\n## Files\n- `crates/x/src/a.rs`\n- `crates/x/src/b.rs`\n\n## Exit Criteria\n- [ ] `true`\n'
 
 D=$(scratch); fixture "$D" "$TWO" "crates/x/src/a.rs"; run_check "$D"
 case "$OUT" in *"MISSING crates/x/src/b.rs"*) m=yes ;; *) m=no ;; esac
@@ -52,9 +52,10 @@ case "$OUT" in NOT-A-FILE*) dir=yes ;; *) dir=no ;; esac
 if [ "$RC" = 3 ] && [ "$dir" = yes ]; then verdict a-directory-entry-is-not-a-file-list yes
 else verdict a-directory-entry-is-not-a-file-list no "rc=$RC, want 3 and NOT-A-FILE; out: $OUT"; fi
 
-# pick: A1 lists one of its two spec files (refused), A2 lists both (offered); both rows are pending
+# pick: A1 lists one of its two spec files (refused), A2 lists both (offered); both rows are pending.
+# Column 5 must be the spec's ## Exit Criteria (spec 309), or pick refuses BOTH rows and this control reads NONE.
 D=$(scratch); mkdir -p "$D/specs"; printf '%b' "$TWO" >"$D/specs/S.md"
-printf 'A1\tS.md\t-\tshort\t-\tcrates/x/src/a.rs\t0\nA2\tS.md\t-\tfull\t-\tcrates/x/src/a.rs;crates/x/src/b.rs\t0\n' >"$D/plan.tsv"
+printf 'A1\tS.md\t-\tshort\ttrue\tcrates/x/src/a.rs\t0\nA2\tS.md\t-\tfull\ttrue\tcrates/x/src/a.rs;crates/x/src/b.rs\t0\n' >"$D/plan.tsv"
 printf '{"A1": {"status": "pending"}, "A2": {"status": "pending"}}' >"$D/state.json"
 PII_PLAN="$D/plan.tsv" PII_STATE="$D/state.json" PII_SPECS="$D/specs" python3 "$ST" pick >"$D/pick.out" 2>"$D/pick.err"; PRC=$?
 PICKED=$(cut -f1 "$D/pick.out")

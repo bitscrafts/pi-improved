@@ -21,8 +21,11 @@ export PII_QUESTIONS=$T/questions.md PII_NOTES=$T/notes.md PII_STATE=$T/state.js
 BIN=$T/bin; mkdir -p "$BIN"
 # spec 283: pick refuses a row whose column 6 is not its spec's ## Files set. The fixture rows below therefore name
 # fixture specs under $T/specs that declare exactly the path their row lists; the real specs are not read by them.
+# spec 309: pick also refuses a row whose column 5 is not its spec's ## Exit Criteria, so the fixture spec declares
+# one criterion and every fixture row carries it. Without that, pick answers NONE and six rows below read as
+# regressions (measured 2026-10-29 on A173's first pass).
 export PII_SPECS=$T/specs; mkdir -p "$T/specs"
-printf '# fixture\n\n## Files\n- `scripts/autonomy/state.py`\n' >"$T/specs/fake-spec.md"
+printf '# fixture\n\n## Files\n- `scripts/autonomy/state.py`\n\n## Exit Criteria\n- [ ] `true`\n' >"$T/specs/fake-spec.md"
 cp "$T/specs/fake-spec.md" "$T/specs/fake-2.md"
 PASS=0; FAIL=0
 row(){ # row <name> <expected> <actual>
@@ -44,7 +47,7 @@ fake_cmd(){ local n="$1" b="$2"; printf '#!/bin/sh\n%s\n' "$b" >"$BIN/$n"; chmod
 fake_cmd hermes "echo 'Gateway is running (PID: fake-selftest)'"
 
 echo "== 1. queue bookkeeping (state.py, atomic)"
-PII_PLAN=$T/plan.tsv printf 'X1\tfake-spec.md\t-\tthe fake item\t-\tscripts/autonomy/state.py\t0\n' >"$T/plan.tsv"
+PII_PLAN=$T/plan.tsv printf 'X1\tfake-spec.md\t-\tthe fake item\ttrue\tscripts/autonomy/state.py\t0\n' >"$T/plan.tsv"
 row "pick finds the first row" "X1" "$(PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py pick | cut -f1)"
 PII_PLAN=$T/plan.tsv python3 scripts/autonomy/state.py set X1 status=needs-review attempts=2 >/dev/null
 row "set writes and get reads back" "2" "$(python3 scripts/autonomy/state.py get X1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["attempts"])')"
@@ -121,7 +124,7 @@ E2=$(bash scripts/autonomy/window.sh parse "$W" 2>/dev/null); row "a plain error
 
 echo; echo "== 8. a worker cut off by the window keeps its resume handle"
 # the test uses its own plan row (X2) and never a real item id: the loop is running and owns A17
-printf 'X2\tfake-2.md\t-\tthe resume-handle item\t-\tscripts/autonomy/state.py\t0\n' > $T/plan2.tsv
+printf 'X2\tfake-2.md\t-\tthe resume-handle item\ttrue\tscripts/autonomy/state.py\t0\n' > $T/plan2.tsv
 python3 scripts/autonomy/state.py set X2 status=in-progress session=test-session-1234 last=window-closed >/dev/null 2>&1
 H=$(PII_PLAN=$T/plan2.tsv python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f9)
 row "the state still offers the session (pick field 9 = the resume handle)" "test-session-1234" "$H"
