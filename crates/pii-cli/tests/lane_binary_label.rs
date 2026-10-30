@@ -153,13 +153,27 @@ fn git_unreadable_aborts_with_unknown_sha() {
     assert!(matches!(guard("unknown", None, false), Guard::Run));
     let lane = Lane::new("git-unreadable");
     git(&lane.root, &["update-ref", "-d", "HEAD"]);
-    let out = lane.spawn(false, None, &[], &[("PII_STALE_BIN_OK", "")]);
-    assert_eq!(out.status.code(), Some(2), "{}", text(&out));
-    assert!(
-        text(&out).contains("HEAD is unknown — rebuild:"),
-        "{}",
-        text(&out)
-    );
+    // An empty value means unset (spec 317 R3), which falls back to the Lane fixture's knob=1;
+    // this test needs the guard ACTIVE, so pass the explicit non-1 value.
+    let out = lane.spawn(false, None, &[], &[("PII_STALE_BIN_OK", "0")]);
+    // In a clean export the binary's own stamp is 'unknown' (no .git): with an unreadable head
+    // there is nothing to compare and the guard runs (measured 2026-10-30). The live abort is
+    // assertable only where the binary carries a real stamp.
+    if REVISION == "unknown" {
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "nothing to compare: {}",
+            text(&out)
+        );
+    } else {
+        assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+        assert!(
+            text(&out).contains("HEAD is unknown — rebuild:"),
+            "{}",
+            text(&out)
+        );
+    }
 }
 
 #[test]
