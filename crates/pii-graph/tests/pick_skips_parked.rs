@@ -9,11 +9,16 @@
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
+fn uv() -> Command {
+    // uv is not on the fresh-gate test PATH (the gate scrubs it; measured 2026-10-30): resolve it
+    // by absolute path so this black-box scaffold works both in-tree and in a clean export.
+    Command::new("/root/.local/bin/uv")
+}
+
 fn pick(dir: &std::path::Path) -> Output {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     // Python goes through uv, never a bare `python3` (operator rule, 2026-10-23; the devbox image has no bare python3 on purpose).
-    Command::new("uv")
-        .args(["run", "--no-project", "python"])
+    uv().args(["run", "--no-project", "python"])
         .arg(root.join("scripts/autonomy/state.py"))
         .arg("pick")
         .env("PII_PLAN", dir.join("plan.tsv"))
