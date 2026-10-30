@@ -6,7 +6,7 @@ os.rename'd into place, so a cycle killed mid-write cannot leave a truncated sta
 (that is the whole reason this is not `>>` on a log).
 
 usage:
-  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window or by a worker that stopped early (worker-rc=N), with a session: spec 280, spec 312), or "NONE"
+  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window, by a worker that stopped early (worker-rc=N), or by a refused commit (precommit-broken / precommit-timeout), with a session: spec 280, spec 312, spec 316), or "NONE"
   state.py get <id> [<state>]             -> that row as JSON
   state.py set <id> k=v [k=v ...]         -> update fields (status/attempts/evidence/session/last)
   state.py list                           -> every row, TSV, for reporting
@@ -43,6 +43,14 @@ def rows():
     return out
 
 
+def resumable(status, row):
+    # one rule for "a session can pick this row up again" (specs 280, 312, 316): a needs-review row that has a session and
+    # was parked by a closed window, a worker that stopped early, or a refused commit. Every other row waits for a person.
+    last = row.get("last", "")
+    return (status == "needs-review" and bool(row.get("session"))
+            and (last == "window-closed" or last.startswith(("worker-rc=", "precommit-broken", "precommit-timeout"))))
+
+
 def load():
     try:
         return json.load(open(STATE))
@@ -77,8 +85,7 @@ def main():
             # a needs-review row parked by a closed window waits for the clock, not a person: once the window guard lets
             # a cycle start, it is offered again with its session (spec 280). A worker that stopped early (worker-rc=N) left
             # its session for the next cycle to resume, so it is offered again too (spec 312)
-            last = st.get(r["id"], {}).get("last", "")
-            window = s == "needs-review" and st[r["id"]].get("session") and (last == "window-closed" or last.startswith("worker-rc="))
+            window = resumable(s, st.get(r["id"], {}))
             # a parked / needs-review row waits for a person and must not hold the queue behind it (spec 169):
             # skip it for dispatch order only - its state is never touched - and name it on stderr
             if s in ("parked", "needs-review") and not window:

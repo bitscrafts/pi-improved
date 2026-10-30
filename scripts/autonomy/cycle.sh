@@ -427,11 +427,11 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
   if [ "$PCRC" -ne 0 ]; then
     printf '%s\n' "$PC" >>"$LOG"
     if [ "$PCRC" -eq 124 ]; then
-      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=precommit-timeout — the check was KILLED, not failed"
+      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=worker-ok; precommit-timeout — the check was KILLED, not failed"
       say "pre-commit TIMED OUT after ${PRE_COMMIT_TIMEOUT:-600}s — NOT COMMITTED, the check was killed, not failed"
     else
       PCSYM=$(printf '%s\n' "$PC" | grep -m1 -E '^error' | cut -c1-160)
-      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=precommit-broken: ${PCSYM:-$(printf '%s\n' "$PC" | head -1 | cut -c1-160)}"
+      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=worker-ok; precommit-broken: ${PCSYM:-$(printf '%s\n' "$PC" | head -1 | cut -c1-160)}"
       say "NOT COMMITTED: the pending tree does not build — the index stays staged"
     fi
     echo "OUTCOME=precommit-broken ITEM=$ITEM"; exit 18

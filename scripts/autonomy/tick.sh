@@ -142,6 +142,12 @@ case "$OUT" in
                  else
                    say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM stopped early with no session to resume — needs a hand ($OUT)" "log: ${LASTLOG##*/}"
                  fi ;;
+  precommit-*)   # a refused commit (spec 316): resumed only when the queue's own pick names this item; neither line says the item is done
+                 if [ -n "$ITEM" ] && [ -n "${NEXT:-}" ] && [ "${NEXT%%$'\t'*}" = "$ITEM" ]; then
+                   say_once "regate:$ITEM:$OUT" "pii autonomy · $ITEM re-gating with its session (the commit was refused: the pending tree did not build)" "log: ${LASTLOG##*/}"
+                 else
+                   say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM's commit was refused and no cycle can resume it — needs a hand ($OUT)" "log: ${LASTLOG##*/}"
+                 fi ;;
   window-closed) say_once "closed:$(cut -c1-20 <<<"$(grep -o 'resets [^ ]* [^ ]*' "$LASTLOG" 2>/dev/null | tail -1)")" \
                    "pii autonomy · the Anthropic window is closed — nothing spent, the queue is untouched" ;;
 esac
