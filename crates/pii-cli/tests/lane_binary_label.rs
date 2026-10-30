@@ -70,7 +70,9 @@ fn a_matching_label_runs_past_the_guard() {
 #[test]
 fn a_stale_label_aborts_with_the_rebuild_command() {
     let lane = Lane::new("stale-abort");
-    let out = lane.spawn(false, None, &[], &[("PII_STALE_BIN_OK", "")]);
+    // An empty value means unset (spec 317 R3), which falls back to the Lane fixture's knob=1;
+    // this test needs the guard ACTIVE, so pass the explicit non-1 value.
+    let out = lane.spawn(false, None, &[], &[("PII_STALE_BIN_OK", "0")]);
     let head = head_short(&lane.root);
     assert_eq!(out.status.code(), Some(2), "{}", text(&out));
     assert_eq!(
