@@ -5,12 +5,14 @@ use super::clock;
 use super::devbox;
 use super::env::{self, LaneEnv};
 use super::git;
+use super::label::{self, Guard};
 use super::now_secs;
 use super::plan;
 use super::preflight::{self, PreflightRepo};
 use super::run;
 use super::transport;
 use super::{Devbox, DryDevbox, LanePlan};
+use pii_server::daemon::identity::REVISION;
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -24,6 +26,10 @@ pub(crate) fn cmd_lane(args: &mut std::env::ArgsOs) -> ExitCode {
     match it.next().as_deref() {
         Some("plan") => lane(&mut it, false),
         Some("run") => lane(&mut it, true),
+        Some("rev") => {
+            let _ = writeln!(std::io::stdout(), "{}", label::one_line(REVISION));
+            ExitCode::SUCCESS
+        }
         _ => {
             let _ = writeln!(std::io::stderr(), "{LANE_USAGE}");
             ExitCode::from(2)
@@ -86,11 +92,14 @@ fn lane(it: &mut impl Iterator<Item = String>, start: bool) -> ExitCode {
     let Ok(cwd) = std::env::current_dir() else {
         return ExitCode::from(2);
     };
+    let env0 = LaneEnv::read();
     let Some(root) = root_arg.map(PathBuf::from).or_else(|| git::toplevel(&cwd)) else {
         let _ = writeln!(std::io::stderr(), "pii lane: not inside a git repository");
         return ExitCode::from(2);
     };
-    if root.components().any(|c| c.as_os_str() == "_tmp") {
+    // Spec 321: the _tmp/ refusal stays the default; the exactly-1 knob makes the run deliberate,
+    // with the NOTE on stdout naming the root before anything else is printed.
+    if root.components().any(|c| c.as_os_str() == "_tmp") && !env0.tmp_root_ok {
         let _ = writeln!(
             std::io::stderr(),
             "pii lane: {} is inside _tmp/: refused",
@@ -98,14 +107,34 @@ fn lane(it: &mut impl Iterator<Item = String>, start: bool) -> ExitCode {
         );
         return ExitCode::from(2);
     }
+    if root.components().any(|c| c.as_os_str() == "_tmp") {
+        let _ = writeln!(
+            std::io::stdout(),
+            "NOTE: the lane root {} is inside _tmp/ (PII_LANE_TMP_ROOT_OK=1)",
+            root.display()
+        );
+    }
     let agent_root = agent_arg.map_or_else(|| root.clone(), PathBuf::from);
     let parsed = Args::parse(&words);
     let real = start && !parsed.dry;
+    let env = env0; // read once (spec 317 R3); the _tmp check used it earlier
+    let snap = git::gather(&root, &agent_root, parsed.brief.as_deref());
+    // Spec 320: a real run refuses a binary built at another commit than HEAD before anything is written or spent.
+    if real {
+        match label::guard(REVISION, snap.head.as_deref(), env.stale_bin_ok) {
+            Guard::Run => {}
+            Guard::Note(line) => {
+                let _ = writeln!(std::io::stdout(), "{line}");
+            }
+            Guard::Abort(line) => {
+                let _ = writeln!(std::io::stdout(), "{line}");
+                return ExitCode::from(2);
+            }
+        }
+    }
     for dir in ["_tmp/claude-batchC", "_tmp/devbox-test/graphs"] {
         let _ = fs::create_dir_all(root.join(dir));
     }
-    let env = LaneEnv::read();
-    let snap = git::gather(&root, &agent_root, parsed.brief.as_deref());
     let ssh = transport::Ssh::new(
         env.ssh.clone().unwrap_or_else(|| "ssh".to_owned()),
         env.devbox_host

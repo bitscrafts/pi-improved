@@ -1,6 +1,7 @@
 //! The lane's environment, read once (spec 317 R3). `var_os` with an empty value treated as unset.
 
 /// Every environment variable the lane reads, already decided.
+#[allow(clippy::struct_excessive_bools)] // reason: each flag is one exact-value knob the shell reads (spec 317 R3, spec 320 R4)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LaneEnv {
     /// `ALLOW_DIRTY`: any non-empty value allows a dirty tree.
@@ -27,6 +28,10 @@ pub(crate) struct LaneEnv {
     pub(crate) poll_seconds: Option<String>,
     /// `PII_DAEMON_SH`: the daemon script (default `modules/devbox/daemon.sh`).
     pub(crate) daemon_sh: Option<String>,
+    /// `PII_STALE_BIN_OK=1` exactly: the binary-label guard is set aside (spec 320 R4).
+    pub(crate) stale_bin_ok: bool,
+    /// `PII_LANE_TMP_ROOT_OK=1` exactly: a `_tmp/` lane root is deliberate (spec 321 R2).
+    pub(crate) tmp_root_ok: bool,
 }
 
 /// The devbox host the lane uses when `DEVBOX_HOST` is unset (the only place the literal lives).
@@ -57,6 +62,8 @@ impl LaneEnv {
             container: var("PII_DEVBOX_CONTAINER"),
             poll_seconds: var("PII_POLL_SECONDS"),
             daemon_sh: var("PII_DAEMON_SH"),
+            stale_bin_ok: var("PII_STALE_BIN_OK").as_deref() == Some("1"),
+            tmp_root_ok: var("PII_LANE_TMP_ROOT_OK").as_deref() == Some("1"),
         }
     }
 }

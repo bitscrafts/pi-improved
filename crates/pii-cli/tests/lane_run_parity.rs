@@ -251,6 +251,9 @@ impl Lane {
             .env("PII_DAEMON_SH", &self.stub.daemon)
             .env("PII_POLL_SECONDS", "0")
             .env("PII_WAIT_MARGIN_S", "0")
+            // The scratch repo's HEAD is a fixture commit, not the binary's build ref: the stale-
+            // binary guard is about production runs, and its own tests live in lane_binary_label.rs.
+            .env("PII_STALE_BIN_OK", "1")
             .args(["lane", "run", "319"])
             .args(extra)
             .args(["--root"])
@@ -357,6 +360,9 @@ fn differential(spec: bool, status: &str, exited: &str) {
         .env("PII_SSH", &bin_stub.ssh)
         .env("PII_DAEMON_SH", &bin_stub.daemon)
         .env("PII_POLL_SECONDS", "0")
+        // Spec 321 R3: wherever this suite runs (the CI-model export lives under _tmp/), both halves
+        // must read the same tree — the binary half takes the deliberate-root knob.
+        .env("PII_LANE_TMP_ROOT_OK", "1")
         .args([
             "lane",
             "run",
@@ -371,12 +377,14 @@ fn differential(spec: bool, status: &str, exited: &str) {
     }
     let bin = bin.output().unwrap();
 
+    let bin_err = String::from_utf8_lossy(&bin.stderr);
     assert_eq!(
         bin.status.code(),
         shell.status.code(),
-        "exit codes differ\nshell: {}\nbinary: {}",
+        "exit codes differ\nshell: {}\nbinary: {}\nbinary stderr: {}",
         text(&shell),
-        text(&bin)
+        text(&bin),
+        bin_err,
     );
     let want: Vec<String> = shell_stub
         .calls()
@@ -769,4 +777,61 @@ fn no_hardcoded_host_in_the_source() {
         hit.contains("env.rs") && hit.contains("DEFAULT_HOST"),
         "{hit}"
     );
+}
+
+// ---- spec 321: the _tmp/ refusal keeps its default and gains an exactly-1 knob ----
+
+/// A lane root under a path component literally named `_tmp`, per spec 321 (fresh-gate exports).
+fn tmp_named_root(tag: &str) -> PathBuf {
+    let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("lane321-{tag}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    let root = base.join("_tmp").join("lane-root");
+    fs::create_dir_all(&root).unwrap();
+    root
+}
+
+fn lane(args: &[&str], knob: Option<&str>) -> Output {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_pii"));
+    c.args(["lane", "plan"]).args(args).env_clear().env("PATH", "/usr/bin:/bin");
+    if let Some(k) = knob {
+        c.env("PII_LANE_TMP_ROOT_OK", k);
+    }
+    c.output().unwrap()
+}
+
+/// R1: without the knob, the refusal is byte-for-byte: stderr names the root, stdout is empty, rc 2.
+#[test]
+fn a_tmp_root_is_refused_without_the_knob() {
+    let root = tmp_named_root("refused");
+    let o = lane(&["1", "--root", root.to_str().unwrap()], None);
+    assert_eq!(o.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains(&format!("pii lane: {} is inside _tmp/: refused", root.display())), "{err}");
+    assert!(o.stdout.is_empty(), "refusal prints nothing on stdout");
+}
+
+/// R2: with the knob exactly `1`, planning continues and the NOTE (with the root) hits stdout first.
+#[test]
+fn a_tmp_root_runs_with_the_knob_and_says_so() {
+    let root = tmp_named_root("knobbed");
+    let o = lane(&["1", "--root", root.to_str().unwrap()], Some("1"));
+    // The run may fail later (no git repo in the scratch), but it MUST get past the refusal: no
+    // `is inside _tmp/` line, and the NOTE printed on stdout.
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(!err.contains("is inside _tmp/"), "refusal must not fire with the knob: {err}");
+    let out = String::from_utf8_lossy(&o.stdout);
+    let note = format!("NOTE: the lane root {} is inside _tmp/ (PII_LANE_TMP_ROOT_OK=1)", root.display());
+    assert!(out.contains(&note), "NOTE names the root: {out}\n{err}");
+}
+
+/// R2 exactness control: `0`, `01`, `true` and empty do NOT open the hatch.
+#[test]
+fn the_tmp_knob_needs_exactly_1() {
+    for bad in ["0", "01", "true", ""] {
+        let root = tmp_named_root(&format!("exact-{bad}"));
+        let o = lane(&["1", "--root", root.to_str().unwrap()], Some(bad));
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert_eq!(o.status.code(), Some(2), "knob {bad:?} must not open the hatch");
+        assert!(err.contains("is inside _tmp/: refused"), "knob {bad:?}: {err}");
+    }
 }

@@ -20,6 +20,7 @@ mod git;
 mod graph;
 mod guard;
 mod input;
+mod label;
 mod preflight;
 mod run;
 mod shell;
