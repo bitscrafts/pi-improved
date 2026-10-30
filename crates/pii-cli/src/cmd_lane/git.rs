@@ -122,3 +122,20 @@ pub(crate) fn gather(root: &Path, agent_root: &Path, extra: Option<&str>) -> Rep
         extra,
     }
 }
+
+/// One git call from `root` (spec 319: the run half's preflight repo and `git status` reads).
+pub(crate) fn run(root: &Path, args: &[&str]) -> Option<ProcOutput> {
+    git(&ctx(), root, args).filter(|o| o.exit_code == 0)
+}
+
+/// `git status --porcelain`, raw, optionally limited to `paths` (after `--`).
+pub(crate) fn porcelain(root: &Path, paths: &[&str]) -> Vec<u8> {
+    let mut args = vec!["status", "--porcelain"];
+    if !paths.is_empty() {
+        args.push("--");
+        args.extend_from_slice(paths);
+    }
+    git(&ctx(), root, &args)
+        .map(|o| o.stdout)
+        .unwrap_or_default()
+}

@@ -17,7 +17,20 @@ pub(crate) struct LaneEnv {
     pub(crate) max_budget: Option<String>,
     pub(crate) node_timeout_ms: Option<String>,
     pub(crate) wait_margin_s: Option<String>,
+    /// `PII_SSH`: the ssh binary (default `ssh`).
+    pub(crate) ssh: Option<String>,
+    /// `DEVBOX_HOST`, default [`DEFAULT_HOST`].
+    pub(crate) devbox_host: Option<String>,
+    /// `PII_DEVBOX_CONTAINER`, default `pii-devbox`.
+    pub(crate) container: Option<String>,
+    /// `PII_POLL_SECONDS`, default 5.
+    pub(crate) poll_seconds: Option<String>,
+    /// `PII_DAEMON_SH`: the daemon script (default `modules/devbox/daemon.sh`).
+    pub(crate) daemon_sh: Option<String>,
 }
+
+/// The devbox host the lane uses when `DEVBOX_HOST` is unset (the only place the literal lives).
+pub(crate) const DEFAULT_HOST: &str = "mvcorrea@10.10.10.217";
 
 fn var(name: &str) -> Option<String> {
     std::env::var_os(name)
@@ -39,6 +52,11 @@ impl LaneEnv {
             max_budget: var("PII_MAX_BUDGET_USD"),
             node_timeout_ms: var("PII_NODE_TIMEOUT_MS"),
             wait_margin_s: var("PII_WAIT_MARGIN_S"),
+            ssh: var("PII_SSH"),
+            devbox_host: var("DEVBOX_HOST"),
+            container: var("PII_DEVBOX_CONTAINER"),
+            poll_seconds: var("PII_POLL_SECONDS"),
+            daemon_sh: var("PII_DAEMON_SH"),
         }
     }
 }

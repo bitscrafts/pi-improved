@@ -12,19 +12,28 @@
 mod args;
 mod brief;
 mod checks;
+mod clock;
+mod devbox;
 mod env;
+mod facts;
 mod git;
 mod graph;
+mod guard;
 mod input;
+mod preflight;
+mod run;
+mod shell;
+mod transport;
+mod wait;
 
 use args::{Args, Resume};
 use env::LaneEnv;
 use git::RepoSnapshot;
 use graph::Agent;
 use std::fmt::Write as _;
-use std::io::Write as _;
 use std::path::PathBuf;
-use std::process::ExitCode;
+
+pub(crate) use shell::cmd_lane;
 
 const USAGE: &str =
     "usage: run-batchC-pii.sh <spec-number> [--resume <session-id>] [extra-brief-file]";
@@ -396,93 +405,4 @@ fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
-}
-
-const LANE_USAGE: &str = "usage: pii lane plan <N> [--resume <sid>] [<extra-brief>] [--dry-run] [--root <dir>] [--agent-root <dir>] [--emit]";
-
-/// `pii lane plan …`: the thin shell. Writes the files and streams `plan()` returns.
-pub(crate) fn cmd_lane(args: &mut std::env::ArgsOs) -> ExitCode {
-    let mut it = args.map(|a| a.to_string_lossy().into_owned());
-    if it.next().as_deref() != Some("plan") {
-        let _ = writeln!(std::io::stderr(), "{LANE_USAGE}");
-        return ExitCode::from(2);
-    }
-    let (mut root_arg, mut agent_arg, mut emit) = (None, None, false);
-    let mut words = Vec::new();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--root" => root_arg = it.next(),
-            "--agent-root" => agent_arg = it.next(),
-            "--emit" => emit = true,
-            _ => words.push(a),
-        }
-    }
-    let Ok(cwd) = std::env::current_dir() else {
-        return ExitCode::from(2);
-    };
-    let Some(root) = root_arg.map(PathBuf::from).or_else(|| git::toplevel(&cwd)) else {
-        let _ = writeln!(
-            std::io::stderr(),
-            "pii lane plan: not inside a git repository"
-        );
-        return ExitCode::from(2);
-    };
-    if root.components().any(|c| c.as_os_str() == "_tmp") {
-        let _ = writeln!(
-            std::io::stderr(),
-            "pii lane plan: {} is inside _tmp/: refused",
-            root.display()
-        );
-        return ExitCode::from(2);
-    }
-    let agent_root = agent_arg.map_or_else(|| root.clone(), PathBuf::from);
-    let parsed = Args::parse(&words);
-    for dir in ["_tmp/claude-batchC", "_tmp/devbox-test/graphs"] {
-        let _ = std::fs::create_dir_all(root.join(dir));
-    }
-    let env = LaneEnv::read();
-    let snap = git::gather(&root, &agent_root, parsed.brief.as_deref());
-    let lp = plan(&env, &parsed, &snap, &DryDevbox, now_secs());
-    // Only the dry run is ported: a run that would start is refused before anything is written (spec 317 part 2 starts it).
-    if !parsed.dry && lp.exit == 0 {
-        let _ = writeln!(
-            std::io::stderr(),
-            "pii lane plan: only --dry-run is ported (the start is part 2 of spec 317): nothing started"
-        );
-        return ExitCode::from(2);
-    }
-    for (path, bytes) in &lp.files {
-        if let Err(e) = std::fs::write(path, bytes) {
-            let _ = writeln!(
-                std::io::stderr(),
-                "pii lane plan: cannot write {}: {e}",
-                path.display()
-            );
-            return ExitCode::from(2);
-        }
-    }
-    let _ = std::io::stdout().write_all(&lp.stdout);
-    let _ = std::io::stderr().write_all(&lp.stderr);
-    if emit {
-        let fields = [
-            format!("TAG={}", lp.tag),
-            format!("GRAPH_NAME={}", lp.graph_name),
-            format!("LOG={}", lp.log.display()),
-            format!(
-                "INPUT={}",
-                lp.input
-                    .as_deref()
-                    .map_or_else(String::new, |i| i.display().to_string())
-            ),
-            format!(
-                "DEADLINE_S={}",
-                lp.deadline_s.map_or_else(String::new, |d| d.to_string())
-            ),
-            format!("SID={}", lp.sid.unwrap_or_default()),
-        ];
-        for f in fields {
-            let _ = writeln!(std::io::stdout(), "{f}");
-        }
-    }
-    ExitCode::from(u8::try_from(lp.exit).unwrap_or(1))
 }
