@@ -53,6 +53,9 @@ Tests that must exist and pass: `daemon_down_aborts_before_anything`, `preflight
 ## Files
 - `crates/pii-cli/src/main.rs`
 - `crates/pii-cli/src/cmd_lane/mod.rs`
+- `crates/pii-cli/src/cmd_lane/env.rs`
+- `crates/pii-cli/src/cmd_lane/git.rs`
+- `crates/pii-cli/src/cmd_lane/shell.rs`
 - `crates/pii-cli/src/cmd_lane/transport.rs`
 - `crates/pii-cli/src/cmd_lane/devbox.rs`
 - `crates/pii-cli/src/cmd_lane/clock.rs`
