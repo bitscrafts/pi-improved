@@ -71,3 +71,28 @@ Tests that must exist and pass: `daemon_down_aborts_before_anything`, `preflight
 - Do NOT port `modules/devbox/daemon.sh`: call it, name it.
 - Appearance-only implementations to refuse: matching stdout while changing a remote command; a stub that answers whatever it is asked (it must fail on an unexpected argument); a `Clock` that never advances.
 - Mutations the tests must kill: the preflight skipped on the spec lane; `--kill` dropped from the wait-expiry cancel; the reason text changed; `LINES_BEFORE` taken after the start; the session grep matching `coder.exited`; the facts taken from the last line instead of the first on the spec lane; the docs refusal ignored; the reset time printed when absent; the `specs` snapshot taken after the start; exit 9 swallowed; `tree after` unbounded; the poll count not bounded by the node timeout.
+
+## Closure
+**Read by the orchestrator 2026-10-30 18:5xZ at HEAD `96df40e` — the item is NOT done: its own criteria are green, the gate that
+models CI is red.**
+
+- **Nine of nine Exit Criteria green on the committed tree**, read with the spec's own commands (`_tmp/verify-319.sh`, cargo on
+  `PATH`): `lane_run_parity` 22 passed; the four named tests 4 passed; `lane_plan_parity` green; build, clippy, `lint-files`,
+  `net-check` green; 17 files in `cmd_lane/` (≥ 12); `git diff --quiet HEAD -- graphs scripts crates/pii-cli/tests/golden` empty.
+- **Two mutations red on the assertion they target, restored byte-identical** (`sha256 f5413ee920612f11…fbea616237` before and
+  after, the file touched after the copy so no stale test binary can be read as evidence):
+  1. `--kill` dropped from the wait-expiry cancel (`run.rs:280`) → `wait_expiry_cancels_with_kill_and_the_reason` FAILED, 21
+     others passed (rc 101).
+  2. `self.r.exit = 9` → `1` in the spec guard (`run.rs:361`) → `agent_edit_under_specs_exits_9_and_lists_it` FAILED, 21 passed.
+  Both are on R6's own list of mutations the tests must kill; the controls around them stayed green.
+- **`cargo run -q -p xtask -- fresh-gate` over HEAD FAILED** — `failed steps: ["test (lib/bins/tests)"]; failing tests:
+  ["the_recorded_ssh_sequence_equals_the_shells"]`, the spec's own headline oracle (`/projects/_tmp/fresh-gate-3943206`,
+  `_tmp/fresh-gate-319-closure.log`). In the export the shell reference exits 0 and the binary exits 2 **with no stdout at all**.
+- **Cause, measured, not inferred**: `crates/pii-cli/src/cmd_lane/shell.rs:96` refuses a root whose path lies inside `_tmp/`
+  (`pii lane: <path> is inside _tmp/: refused`, exit 2) — R1 of spec 317 — and `fresh-gate` exports HEAD into
+  `/projects/_tmp/fresh-gate-<pid>`. The shell half is unaffected because `scripts/run-batchC-pii.sh` hardcodes
+  `REPO=/projects/pi-improved`, so in the export the two implementations are not even reading the same tree. The parity oracle
+  therefore holds only in `/projects/pi-improved` itself: `quality-gate.sh` on the dev tree is green, the CI-model door is red.
+- **Consequence for the loop**: nothing is blocked (each cycle's gate is the dev-tree one), but this spec's acceptance is unmet
+  and the next item must clear it before more lane work lands on it. Follow-up: spec 321 / row A185 (the refusal keeps its
+  default and gains an exactly-`1` knob, and the differential sets it), ordered ahead of A184.
