@@ -141,10 +141,14 @@ fn an_unknown_label_aborts_when_the_tree_is_comparable() {
 
 #[test]
 fn git_unreadable_aborts_with_unknown_sha() {
+    // The stamp must be a literal: in a clean export REVISION itself is 'unknown' (no .git), and
+    // unknown/unknown is the Run case (nothing to compare). A KNOWN stamp with an unreadable tree
+    // has nothing to compare against either, and refuses — the honest default.
     assert!(matches!(
-        guard(REVISION, None, false),
+        guard("cc468d060caf", None, false),
         Guard::Abort(line) if line.ends_with("HEAD is unknown — rebuild: cargo build -p pii-cli --bin pii")
     ));
+    assert!(matches!(guard("unknown", None, false), Guard::Run));
     let lane = Lane::new("git-unreadable");
     git(&lane.root, &["update-ref", "-d", "HEAD"]);
     let out = lane.spawn(false, None, &[], &[("PII_STALE_BIN_OK", "")]);
