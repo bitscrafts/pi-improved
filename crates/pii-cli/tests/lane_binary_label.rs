@@ -17,7 +17,7 @@ mod label;
 #[path = "lane_support/mod.rs"]
 mod support;
 
-use label::Guard;
+use label::{Guard, guard};
 use pii_server::daemon::identity::REVISION;
 use std::fs;
 use std::path::Path;
@@ -61,13 +61,10 @@ fn lane_rev_prints_a_dirty_label_verbatim() {
 #[test]
 fn a_matching_label_runs_past_the_guard() {
     assert!(matches!(
-        label::guard("abc123def456", Some(SHA), false),
+        guard("abc123def456", Some(SHA), false),
         Guard::Run
     ));
-    assert!(matches!(
-        label::guard("abc123def456", Some(SHA), true),
-        Guard::Run
-    ));
+    assert!(matches!(guard("abc123def456", Some(SHA), true), Guard::Run));
 }
 
 #[test]
@@ -122,31 +119,30 @@ fn a_stale_label_writes_no_log_and_no_file() {
 #[test]
 fn the_dirty_suffix_is_not_a_mismatch() {
     assert!(matches!(
-        label::guard("abc123def456-dirty", Some(SHA), false),
+        guard("abc123def456-dirty", Some(SHA), false),
         Guard::Run
     ));
     assert!(matches!(
-        label::guard("abc123def456", Some(SHA), false),
+        guard("abc123def456", Some(SHA), false),
         Guard::Run
     ));
 }
 
 #[test]
-fn an_unknown_label_aborts() {
+fn an_unknown_label_aborts_when_the_tree_is_comparable() {
     assert!(matches!(
-        label::guard("unknown", Some(SHA), false),
+        guard("unknown", Some(SHA), false),
         Guard::Abort(_)
     ));
-    assert!(matches!(
-        label::guard("unknown", None, false),
-        Guard::Abort(_)
-    ));
+    // Control: unknown stamp AND unknown head is the clean-export case — nothing to compare
+    // (measured on the 2026-10-30 fresh-gate run; a clean export has no .git).
+    assert!(matches!(guard("unknown", None, false), Guard::Run));
 }
 
 #[test]
 fn git_unreadable_aborts_with_unknown_sha() {
     assert!(matches!(
-        label::guard(REVISION, None, false),
+        guard(REVISION, None, false),
         Guard::Abort(line) if line.ends_with("HEAD is unknown — rebuild: cargo build -p pii-cli --bin pii")
     ));
     let lane = Lane::new("git-unreadable");
@@ -204,4 +200,19 @@ fn the_guard_reads_head_not_the_working_tree() {
         "the abort did not name HEAD: {}",
         text(&out)
     );
+}
+
+/// Control from the 2026-10-30 fresh-gate run: a clean export has no .git, so both the build stamp
+/// and the tree HEAD are unknown — there is nothing to compare and nothing to refuse.
+#[test]
+fn unknown_stamp_and_unknown_head_run_with_no_comparison() {
+    assert!(
+        matches!(guard("unknown", None, false), Guard::Run),
+        "unknown/unknown is the clean-export case: nothing to compare"
+    );
+    // A known stamp with unknown head refuses: the stamp names a commit, the tree cannot.
+    assert!(matches!(
+        guard("cc468d060caf", None, false),
+        Guard::Abort(_)
+    ));
 }

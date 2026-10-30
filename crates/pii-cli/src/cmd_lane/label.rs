@@ -26,6 +26,11 @@ fn commit(label: &str) -> &str {
 /// `head` is HEAD's full sha, None when git could not say. Only HEAD is compared, never the working tree (spec 320 R6).
 pub(crate) fn guard(label: &str, head: Option<&str>, stale_ok: bool) -> Guard {
     let sha = head.and_then(|h| h.get(..SHA_LEN)).unwrap_or(UNKNOWN);
+    // Nothing to compare: a clean export has no .git, so the build stamp and HEAD are both
+    // unknown (measured 2026-10-30, fresh-gate run). Comparing nothing refuses everything.
+    if label == UNKNOWN && sha == UNKNOWN {
+        return Guard::Run;
+    }
     if label != UNKNOWN && sha != UNKNOWN && commit(label) == sha {
         return Guard::Run;
     }

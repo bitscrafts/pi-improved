@@ -783,7 +783,8 @@ fn no_hardcoded_host_in_the_source() {
 
 /// A lane root under a path component literally named `_tmp`, per spec 321 (fresh-gate exports).
 fn tmp_named_root(tag: &str) -> PathBuf {
-    let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("lane321-{tag}-{}", std::process::id()));
+    let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("lane321-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&base);
     let root = base.join("_tmp").join("lane-root");
     fs::create_dir_all(&root).unwrap();
@@ -792,7 +793,10 @@ fn tmp_named_root(tag: &str) -> PathBuf {
 
 fn lane(args: &[&str], knob: Option<&str>) -> Output {
     let mut c = Command::new(env!("CARGO_BIN_EXE_pii"));
-    c.args(["lane", "plan"]).args(args).env_clear().env("PATH", "/usr/bin:/bin");
+    c.args(["lane", "plan"])
+        .args(args)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin");
     if let Some(k) = knob {
         c.env("PII_LANE_TMP_ROOT_OK", k);
     }
@@ -806,7 +810,13 @@ fn a_tmp_root_is_refused_without_the_knob() {
     let o = lane(&["1", "--root", root.to_str().unwrap()], None);
     assert_eq!(o.status.code(), Some(2));
     let err = String::from_utf8_lossy(&o.stderr);
-    assert!(err.contains(&format!("pii lane: {} is inside _tmp/: refused", root.display())), "{err}");
+    assert!(
+        err.contains(&format!(
+            "pii lane: {} is inside _tmp/: refused",
+            root.display()
+        )),
+        "{err}"
+    );
     assert!(o.stdout.is_empty(), "refusal prints nothing on stdout");
 }
 
@@ -818,9 +828,15 @@ fn a_tmp_root_runs_with_the_knob_and_says_so() {
     // The run may fail later (no git repo in the scratch), but it MUST get past the refusal: no
     // `is inside _tmp/` line, and the NOTE printed on stdout.
     let err = String::from_utf8_lossy(&o.stderr);
-    assert!(!err.contains("is inside _tmp/"), "refusal must not fire with the knob: {err}");
+    assert!(
+        !err.contains("is inside _tmp/"),
+        "refusal must not fire with the knob: {err}"
+    );
     let out = String::from_utf8_lossy(&o.stdout);
-    let note = format!("NOTE: the lane root {} is inside _tmp/ (PII_LANE_TMP_ROOT_OK=1)", root.display());
+    let note = format!(
+        "NOTE: the lane root {} is inside _tmp/ (PII_LANE_TMP_ROOT_OK=1)",
+        root.display()
+    );
     assert!(out.contains(&note), "NOTE names the root: {out}\n{err}");
 }
 
@@ -831,7 +847,14 @@ fn the_tmp_knob_needs_exactly_1() {
         let root = tmp_named_root(&format!("exact-{bad}"));
         let o = lane(&["1", "--root", root.to_str().unwrap()], Some(bad));
         let err = String::from_utf8_lossy(&o.stderr);
-        assert_eq!(o.status.code(), Some(2), "knob {bad:?} must not open the hatch");
-        assert!(err.contains("is inside _tmp/: refused"), "knob {bad:?}: {err}");
+        assert_eq!(
+            o.status.code(),
+            Some(2),
+            "knob {bad:?} must not open the hatch"
+        );
+        assert!(
+            err.contains("is inside _tmp/: refused"),
+            "knob {bad:?}: {err}"
+        );
     }
 }
