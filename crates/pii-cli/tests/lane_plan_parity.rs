@@ -913,3 +913,27 @@ fn matches_the_shell_reference_in_a_scratch_clone() {
         );
     }
 }
+
+/// Spec 320 no-compare, measured on the 2026-10-30 fresh-gate run: an export has no .git, so the
+/// reviewed-graph pin has no HEAD to differ from — the lane must run, not abort.
+#[test]
+fn a_no_git_tree_runs_without_the_pin() {
+    let s = Scratch::new(&Opts::default());
+    fs::remove_dir_all(s.root.join(".git")).unwrap();
+    let out = s.pii(
+        &[("PII_LANE_GRAPH", "spec"), ("ALLOW_DIRTY", "1")],
+        &["309", "--dry-run", "--root", s.root.to_str().unwrap()],
+    );
+    let out_text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !out_text.contains("differs from HEAD"),
+        "no HEAD: {out_text}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stdout: {} | stderr: {}",
+        out_text,
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

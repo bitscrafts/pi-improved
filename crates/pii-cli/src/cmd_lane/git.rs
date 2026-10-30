@@ -76,10 +76,16 @@ fn io_text(e: &std::io::Error) -> String {
 /// Gathers the snapshot. `extra` is the extra-brief path as given (relative to `root`).
 pub(crate) fn gather(root: &Path, agent_root: &Path, extra: Option<&str>) -> RepoSnapshot {
     let ctx = ctx();
+    // HEAD decides comparability (spec 320's no-compare rule, measured on the 2026-10-30
+    // fresh-gate run): without a resolvable HEAD the pin checks are uncomparable — 'differs' must
+    // not fire from a git failure (a no-.git export would mark every reviewed graph as changed).
+    let head = git(&ctx, root, &["rev-parse", "HEAD"])
+        .filter(|o| o.exit_code == 0 && !String::from_utf8_lossy(&o.stdout).trim().is_empty());
     let graph = |name: &str| {
         let rel = format!("graphs/{name}.toml");
-        let differs = git(&ctx, root, &["diff", "--quiet", "HEAD", "--", &rel])
-            .is_none_or(|o| o.exit_code != 0);
+        let differs = head.is_some()
+            && git(&ctx, root, &["diff", "--quiet", "HEAD", "--", &rel])
+                .is_none_or(|o| o.exit_code != 0);
         let untracked = git(
             &ctx,
             root,
