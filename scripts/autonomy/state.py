@@ -6,7 +6,7 @@ os.rename'd into place, so a cycle killed mid-write cannot leave a truncated sta
 (that is the whole reason this is not `>>` on a log).
 
 usage:
-  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window, by a worker that stopped early (worker-rc=N), or by a refused commit (precommit-broken / precommit-timeout), with a session: spec 280, spec 312, spec 316), or "NONE"
+  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window, by a worker that stopped early (worker-rc=N), or by a refused commit (precommit-broken / precommit-timeout), or by a failed gate or criterion, with a session: spec 280, spec 312, spec 316, spec 318), or "NONE"
   state.py get <id> [<state>]             -> that row as JSON
   state.py set <id> k=v [k=v ...]         -> update fields (status/attempts/evidence/session/last)
   state.py list                           -> every row, TSV, for reporting
@@ -44,11 +44,13 @@ def rows():
 
 
 def resumable(status, row):
-    # one rule for "a session can pick this row up again" (specs 280, 312, 316): a needs-review row that has a session and
-    # was parked by a closed window, a worker that stopped early, or a refused commit. Every other row waits for a person.
+    # one rule for "a session can pick this row up again" (specs 280, 312, 316, 318): a needs-review row that has a session and
+    # was parked by a closed window, a worker that stopped early, a refused commit, or a failed gate or criterion. Every other
+    # row waits for a person. The gate's marker form (worker-ok; gate-failed: ...) is offered too: it is what the cycle writes.
     last = row.get("last", "")
     return (status == "needs-review" and bool(row.get("session"))
-            and (last == "window-closed" or last.startswith(("worker-rc=", "precommit-broken", "precommit-timeout"))))
+            and (last == "window-closed" or last.startswith(("worker-rc=", "precommit-broken", "precommit-timeout",
+                                                             "gate-failed", "verify-failed", "worker-ok; gate-failed"))))
 
 
 def load():

@@ -387,8 +387,10 @@ if [ -n "$GATE_ON" ]; then
       say "gate TIMED OUT after ${GATE_TIMEOUT}s — NOT MEASURED, not a failure; the item is retried at verify"
       echo "OUTCOME=gate-timeout ITEM=$ITEM SECS=$GATE_TIMEOUT"; exit 14
     else
-      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-failed
+      # spec 318: the marker-then-outcome shape of the timeout branch, so the next cycle resumes at verify with no worker bought
       GSTEP=$(grep -E 'failed steps:' "$LOG" 2>/dev/null | tail -1 | cut -c1-200)
+      GFIRST=${GSTEP#*failed steps:}; GFIRST=${GFIRST# }; GFIRST=${GFIRST%%,*}
+      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) "last=worker-ok; gate-failed: ${GFIRST:-not named in the log}"
       report loop.gate.verdict "item=$ITEM FAILED ${GSTEP:-failing step not named in the log}"
       say "gate FAILED — see $LOG"; echo "OUTCOME=gate-failed ITEM=$ITEM"; exit 10
     fi

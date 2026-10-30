@@ -134,7 +134,19 @@ NEXT=$(python3 scripts/autonomy/state.py pick 2>/dev/null | cut -f1,4)
 
 case "$OUT" in
   done)          say_once "done:$ITEM:$HEAD" "pii autonomy · $ITEM done" "$HEAD" ;;
-  verify-failed|gate-failed|dirty-tree|bad-plan)
+  gate-failed)   # resumed at verify only when the queue's own pick names this item (spec 318); neither line says the item is done
+                 if [ -n "$ITEM" ] && [ -n "${NEXT:-}" ] && [ "${NEXT%%$'\t'*}" = "$ITEM" ]; then
+                   say_once "regate:$ITEM:$OUT" "pii autonomy · $ITEM re-gating with its session (the gate failed: nothing was spent on a worker)" "log: ${LASTLOG##*/}"
+                 else
+                   say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM needs a hand ($OUT)" "log: ${LASTLOG##*/}"
+                 fi ;;
+  verify-failed) # re-dispatched with its session only when the queue's own pick names this item (spec 318)
+                 if [ -n "$ITEM" ] && [ -n "${NEXT:-}" ] && [ "${NEXT%%$'\t'*}" = "$ITEM" ]; then
+                   say_once "retry:$ITEM:$OUT" "pii autonomy · $ITEM re-implementing with its session (its criteria failed)" "log: ${LASTLOG##*/}"
+                 else
+                   say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM needs a hand ($OUT)" "log: ${LASTLOG##*/}"
+                 fi ;;
+  dirty-tree|bad-plan)
                  say_once "bad:$ITEM:$OUT" "pii autonomy · $ITEM needs a hand ($OUT)" "log: ${LASTLOG##*/}" ;;
   worker-rc-*)   # resumed only when the queue's own pick names this item (spec 313)
                  if [ -n "$ITEM" ] && [ -n "${NEXT:-}" ] && [ "${NEXT%%$'\t'*}" = "$ITEM" ]; then
