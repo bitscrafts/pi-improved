@@ -117,6 +117,16 @@ because the cost is unmeasured (a cold export build per item) and `067 §Q3` ask
 measure one overlay gate, then decide between gating the whole pending tree and gating only the crates the item
 touches.
 
+**MEASURED 2026-10-30 — the cost, and the decision.** `git archive HEAD` into
+`/projects/_tmp/stage-gate-cost-20261030T002931Z`: `cargo metadata --locked` **0 s**; `cargo check -q --workspace`
+in a **new** target dir **38 s**; the same check of a second export against that target **8 s**. So the affordable
+door is not "a fresh-gate before every commit" (45-48 min, §9b) but the build of the pending tree against the warm
+`_tmp/head-builds-target` spec 245 already keeps: ~8 s per item. The choice between the two options above falls to
+"gate the whole pending tree, with a build check, not the test list" — the tests stay at 314's touched-crate step.
+Authored as **spec 315 / row A179**. One further fact decides the design: `head-builds.sh` exists and its own header
+calls `--worktree` "the pre-commit door", but `cycle.sh:435` runs it **after** `git commit` and without `--worktree`
+— detection of a broken `HEAD`, not prevention, and keyed on the worktree rather than the index a commit carries.
+
 ### 9. Smaller filed items
 - the two audit trails should be unified — see #1;
 - ~~a CLI `learn revert` racing the daemon's sweep (filed with 125)~~ — closed by spec 149: a daemon-owned store takes the revert as a request; without one the CLI applies it directly under a cross-process writer lock (`learn/.writer.lock`) and prints `path=direct`;
