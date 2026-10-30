@@ -1,2 +1,2 @@
 env: PII_LANE_GRAPH=spec
-args: 309 /projects/pi-improved/_tmp/lane-capture-nbYpVK/no-such-file.md --dry-run
+args: 309 <SCRATCH>/no-such-file.md --dry-run
