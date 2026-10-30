@@ -1,5 +1,39 @@
 # Pii — Session Handoff
 
+## 2026-10-30 06:2xZ — queue empty and 059 §4 drained again: spec 316 authored from what spec 315 left behind
+
+State: lock free, no cycle in flight, tree clean · control `RUNNING` · queue was **empty**
+(`state.py pick` → `NONE`; 176 rows: 172 done, 3 skipped with reasons, 1 revoked) · selftest **42 passed, 0 failed —
+ALL MECHANISMS PASS**. HEAD before this entry `e8a04f2`.
+
+- **Why a new spec.** Every cycle since the A179 dispatch printed `queue empty — nothing pending`, and 059 §4 is
+  drained (ranks 2-9 carry committed specs, rank 1 needs user host actions, rank 10 is user decisions). The source is
+  again a measured item: the outcome spec 315 added an hour earlier, read against the code that consumes it.
+- **Three defects, measured on `e8a04f2` before authoring** (each independently enough to strand the item):
+  1. `state.py:81` offers a `needs-review` row again only for `window-closed` / `worker-rc=N`, so a
+     `precommit-broken` row with a session prints **`NONE`** — measured live against scratch state/plan/specs, with
+     `worker-rc=1` printing the row as the control. The worker's staged work would never be looked at again.
+  2. `cycle.sh:427-437` writes `last=precommit-broken: …`, which overwrites the `worker-ok` marker `cycle.sh:312`
+     wrote, and `cycle.sh:139` resumes at verify only on `*verified*|*gated*|*worker-ok*`. So even an offered row is
+     re-dispatched into the worker — the spec's own promise ("resumes at verify instead of re-buying") is not what
+     the code does. The precedent that keeps the marker is three lines up: `cycle.sh:386` writes
+     `last=worker-ok; gate-timeout after …`.
+  3. `tick.sh`'s `case "$OUT"` has no arm for the outcome (`grep -c precommit` = **0**), so a refused commit reaches
+     the operator as silence — the same class spec 313 closed for `worker-rc`.
+- **Authored A180 / spec 316** — one resume predicate `resumable(status, row)` in `state.py` (the shipped two prefixes
+  keep their behaviour; no session or any other status is never offered), the two `last=` literals prefixed with
+  `worker-ok; `, and one `precommit-*)` tick arm with the 313 shape (`regate:` key when `pick` names the item,
+  `bad:` + "needs a hand" otherwise, neither claiming the item is done). Guardrail added because this worker edits a
+  script a live cycle is executing: all three files are written complete and `mv`-ed into place (DO-NOT-REPEAT 2.15).
+- **The fixture is the check that cannot be satisfied by a paraphrase**: Part A drives the real `state.py pick`, Part
+  B extracts the live `case` block from `tick.sh` at run time, and Part C matches the `last=` literal cycle.sh writes
+  against the live `SKIP_DISPATCH` glob — with a control that the unmarked literal 315 shipped must NOT match.
+- **The row was generated, not typed** (`_tmp/autonomy/add-row-a180.py`), and it refused its own first draft: one
+  criterion carried the plan's `;` separator. Rewritten as two `[[:punct:]]` greps. Final: 7 columns, 9 criteria → 9
+  commands, 4 files → 4 paths, `row-paths.py check A180` and `row-verify.py check A180` both OK, `pick` names A180.
+- **Next**: the 5-minute watchdog dispatches A180 (spec 316). Its first act is `state.py`'s pick rule, whose evidence
+  is the fixture — read the cycle log, not the worker's report.
+
 ## 2026-10-30 00:3xZ — spec 314 closed by the orchestrator's own reading; the queue was empty, so 315 follows
 
 State: lock free, no cycle in flight, tree clean before this entry · control `RUNNING` · queue was **empty**
