@@ -1,5 +1,36 @@
 # Pii — Session Handoff
 
+## 2026-10-30 18:2xZ — the queue was empty after A183, so spec 320/A184 authored: the lane refuses a binary that is not its tree
+
+State: HEAD `96df40e` · tree clean after this commit · control `RUNNING` · window CLOSED until 18:50 UTC (the CLI's own
+text: `You've hit your session limit · resets 6:50pm (UTC)`, every cycle since 17:47 printed `OUTCOME=window-closed`,
+nothing spent) · queue **A184 / spec 320** (`pick` names it, `row-paths.py check A184` OK 5, `row-verify.py check A184`
+OK 9) · selftest **42 passed, 0 failed — ALL MECHANISMS PASS**.
+
+- **Why this item.** A183/spec 319 landed `pii lane run`, so the composed lane now exists inside the binary and the
+  remaining step of that strangler is that `cycle.sh` dispatches through it instead of `bash scripts/run-batchC-pii.sh`.
+  That flip is unsafe **today** for a measured reason: the program that would run is not necessarily the tree it runs on.
+  `/root/.local/bin/pii` is dated 2026-10-20 and its usage line has no `lane` subcommand — measured this tick — so a
+  dispatch through "the binary" would silently reproduce three weeks of old code, the same class spec 279 fixed on the
+  devbox side (`daemon.sh refresh` copied a stale binary and reported success while installing nothing new). The lane
+  already checks its *inputs* against the tree (the graph pin, spec 302); nothing checked the *program*.
+- **Spec 320 is the guard the flip depends on, and only the guard**: `pii lane rev` prints the build label, and a real
+  `pii lane run` compares that label's commit with the HEAD `plan` already took (`RepoSnapshot::head`, no second git
+  call) as its FIRST act — before the daemon-up call of `run.rs:184`, before any `ssh`, before any file. Mismatch,
+  `unknown`, or a git failure → one `ABORT: this binary was built at <label>; HEAD is <sha> — rebuild: …` line, exit 2.
+  `PII_STALE_BIN_OK=1` exactly (not `true`) is the deliberate escape hatch, with its own NOTE line.
+- **Premises measured, not assumed**: `pii_server::daemon::identity::REVISION` is `pub const … = env!("PII_GIT_REV")`
+  behind `pub mod identity` and `pii-cli` already depends on `pii-server`, so no second build script is needed or wanted;
+  `pii-server/build.rs` is `rev-parse --short=12 HEAD` + `-dirty` + `unknown`, re-run on `.git/HEAD` and `.git/index`.
+  The spec tells the worker to STOP if either premise no longer holds rather than invent an identity.
+- **Not touched by this spec**: `cycle.sh`, `scripts/`, the part-1 goldens, and `pii lane plan`'s printed block. The
+  flip itself (dispatch through the binary, a resolved binary path, a rebuild path) is the following item and is named
+  in the spec's Overview so the series stays legible.
+- **The row was generated, not typed** (`_tmp/autonomy/add-row-a184.py`): 9 criteria → 9 commands, 5 files → 5 paths; it
+  refuses a criterion carrying the plan's `;` separator, and reports the two files the worker will create.
+- **Next**: the window resets at 18:50 UTC; the watchdog dispatches A184 on the first tick after that. Read the cycle
+  log for its verify, then the gate.
+
 ## 2026-10-30 12:3xZ — A182/spec 318 authored from the seven idle hours: a row the gate refused is offered again
 
 State: HEAD `fe8099a`, tree clean after this entry · control `RUNNING` · queue **one row** (A182, pending) ·
