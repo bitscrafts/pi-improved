@@ -1,0 +1,2 @@
+env: PII_AGENT=bogus
+args: 309 --dry-run

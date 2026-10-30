@@ -1,0 +1,2 @@
+LANE-GRAPH: spec
+ABORT: graphs/docs.toml differs from HEAD (the pin protects the reviewed graph): nothing started

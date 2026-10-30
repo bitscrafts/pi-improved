@@ -1,0 +1,2 @@
+STOPPED: dirty tree (set ALLOW_DIRTY=1 only to resume this spec's own WIP):
+?? junk-untracked

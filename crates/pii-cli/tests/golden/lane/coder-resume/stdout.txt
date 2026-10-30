@@ -1,0 +1,10 @@
+LANE-GRAPH: coder
+== dry run: session abc123 is not checked in the devbox
+AGENT    : claude   (run by pii, not by the agent CLI directly)
+MODEL    : claude-haiku-5-5
+PROVIDER : anthropic (the claude login file inside the devbox)
+SPEC     : specs/309-a-rows-verify-column-is-its-specs-exit-criteria.md
+BRIEF    : <REPO>/_tmp/claude-batchC/brief-309-a-rows-verify-column-is-its-specs-exit-criteria.md (1405 bytes)
+GRAPH    : <REPO>/_tmp/devbox-test/graphs/q309-<TS>.toml
+LOG      : <REPO>/_tmp/claude-batchC/309-a-rows-verify-column-is-its-specs-exit-criteria.<TS>.log
+DRY RUN: nothing started, nothing spent

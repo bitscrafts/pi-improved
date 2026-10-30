@@ -1,0 +1,11 @@
+LANE-GRAPH: spec
+AGENT    : pi   (run by pii, not by the agent CLI directly)
+MODEL    : deepseek-v4.1-flash:cloud
+PROVIDER : ollama-cloud
+SPEC     : specs/309-a-rows-verify-column-is-its-specs-exit-criteria.md
+BRIEF    : <REPO>/_tmp/claude-batchC/brief-309-a-rows-verify-column-is-its-specs-exit-criteria.md (1413 bytes)
+INPUT    : <REPO>/_tmp/claude-batchC/input-309-a-rows-verify-column-is-its-specs-exit-criteria.json
+LOG      : <REPO>/_tmp/claude-batchC/309-a-rows-verify-column-is-its-specs-exit-criteria.<TS>.log
+WAIT     : up to 6600s (graph max_wall_ms 6000000 + 600)
+PREFLIGHT: skipped (dry run)
+DRY RUN: nothing started, nothing spent
