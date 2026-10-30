@@ -27,6 +27,7 @@ pii-tools = { path = "../pii-tools" }
 pii-tui = { path = "../pii-tui" }
 serde_json = { workspace = true }
 sha2 = "0.10"
+toml = { workspace = true }
 dunce = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 

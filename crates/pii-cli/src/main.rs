@@ -18,6 +18,7 @@ mod cmd_health;
 mod cmd_incidents;
 mod cmd_index;
 mod cmd_index_docs;
+mod cmd_lane;
 mod cmd_learn;
 mod cmd_loop;
 mod cmd_metrics;
@@ -255,6 +256,9 @@ fn main() -> ExitCode {
     }
     if cmd == "deploy-card" {
         return cmd_deploy_card::cmd_deploy_card(&mut args);
+    }
+    if cmd == "lane" {
+        return cmd_lane::cmd_lane(&mut args);
     }
     if cmd == "run" {
         return cmd_sys::cmd_run_ctl(&mut args);
