@@ -109,7 +109,7 @@ FAIL count is 0. Each row names what it drives; the controls are the near misses
 - [ ] `bash scripts/autonomy/tests/precommit-refusal.test.sh 2>&1 | tail -1 | grep -qE "^[0-9]+ ok, 0 FAIL"`
 - [ ] `! bash scripts/autonomy/tests/precommit-refusal.test.sh 2>&1 | grep -q "^FAIL"`
 - [ ] `bash -n scripts/autonomy/cycle.sh && bash -n scripts/autonomy/tick.sh`
-- [ ] `python3 -m py_compile scripts/autonomy/state.py`
+- [ ] `uv run --no-project python -m py_compile scripts/autonomy/state.py`
 - [ ] `[ "$(grep -c 'resumable(' scripts/autonomy/state.py)" -ge 2 ]`
 - [ ] `grep -qF 'precommit-*)' scripts/autonomy/tick.sh`
 - [ ] `grep -qE "last=worker-ok[[:punct:]][[:space:]]precommit-broken" scripts/autonomy/cycle.sh`
