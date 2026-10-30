@@ -1,5 +1,29 @@
 # Pii — Session Handoff
 
+## 2026-10-30 18:2xZ — A183/spec 319 reviewed and NOT closed: fresh-gate at HEAD is red; spec 321/A185 authored ahead of A184
+
+State: HEAD `24d1df5` · tree clean after this commit · control `RUNNING` · window CLOSED until 18:50 UTC · queue **A185 / spec 321,
+then A184 / spec 320** (`pick` names A185; `row-paths.py` OK 3/5, `row-verify.py` OK 7/9) · selftest 42/0.
+
+- **The independent reading.** Spec 319's nine Exit Criteria are green on `96df40e` (22 parity tests, build, clippy, lints, 17 files in
+  `cmd_lane/`, goldens untouched) and two of my own mutations reddened the exact assertions they target, restored byte-identical
+  (`sha256 f5413ee9…616237`): `--kill` dropped from the wait-expiry cancel, and `exit 9` → `1` in the spec guard.
+- **But `fresh-gate` over HEAD FAILS**, on the spec's own headline oracle: `the_recorded_ssh_sequence_equals_the_shells`. The shell half
+  exits 0, the binary exits 2 with no stdout. Cause measured: R1 of spec 317 refuses a lane root inside `_tmp/`
+  (`cmd_lane/shell.rs:96`) and `fresh-gate` exports HEAD into `/projects/_tmp/fresh-gate-<pid>`; the shell half never sees the refusal
+  because `scripts/run-batchC-pii.sh` hardcodes `REPO=/projects/pi-improved`. So the differential only holds in the repo itself — the very
+  "green here, red in a clean clone" class AGENTS.md says to believe fresh-gate about. A183's row note now carries the finding; the item
+  is recorded as not done in spec 319's `## Closure` (`24d1df5`).
+- **The fix is its own row, ahead of the rest**: spec 321 keeps the `_tmp/` refusal byte-for-byte as the default and adds the exactly-`1`
+  escape hatch the repo already uses for this shape (`PII_GRAPH_EDIT_OK`), with a NOTE line naming the root; the differential sets it so
+  both halves read the same tree wherever the suite runs. Its deciding criterion is `fresh-gate --worktree` — a green dev-tree suite is
+  explicitly not the acceptance.
+- **Why ahead of A184**: A184 (the stale-binary guard, `937dfd6`) is orthogonal, and no lane work should land on a HEAD whose CI-model gate
+  is red. Both rows were generated, not typed (`_tmp/autonomy/add-row-a184.py`, `add-row-a185.py`), and A185 was **inserted** before A184
+  through a temp file + rename, because `cycle.sh` reads `plan.tsv` on every tick.
+- **Next**: the window opens at 18:50 UTC; the watchdog dispatches A185. Expect ~12 minutes of `fresh-gate` inside its verify — that is the
+  item, not a stall. Then A184.
+
 ## 2026-10-30 18:2xZ — the queue was empty after A183, so spec 320/A184 authored: the lane refuses a binary that is not its tree
 
 State: HEAD `96df40e` · tree clean after this commit · control `RUNNING` · window CLOSED until 18:50 UTC (the CLI's own

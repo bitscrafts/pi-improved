@@ -73,7 +73,7 @@ Tests that must exist and pass: `daemon_down_aborts_before_anything`, `preflight
 - Mutations the tests must kill: the preflight skipped on the spec lane; `--kill` dropped from the wait-expiry cancel; the reason text changed; `LINES_BEFORE` taken after the start; the session grep matching `coder.exited`; the facts taken from the last line instead of the first on the spec lane; the docs refusal ignored; the reset time printed when absent; the `specs` snapshot taken after the start; exit 9 swallowed; `tree after` unbounded; the poll count not bounded by the node timeout.
 
 ## Closure
-**Read by the orchestrator 2026-10-30 18:5xZ at HEAD `96df40e` — the item is NOT done: its own criteria are green, the gate that
+**Read by the orchestrator 2026-10-30 18:2xZ at HEAD `96df40e` — the item is NOT done: its own criteria are green, the gate that
 models CI is red.**
 
 - **Nine of nine Exit Criteria green on the committed tree**, read with the spec's own commands (`_tmp/verify-319.sh`, cargo on
