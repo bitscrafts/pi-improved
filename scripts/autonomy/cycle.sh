@@ -419,6 +419,23 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
     echo "OUTCOME=done-satisfied ITEM=$ITEM CARRY=$CARRY"
     exit 0
   fi
+  # 5b) spec 315: the commit is the object under test. The door builds HEAD + the index BEFORE the commit exists, so a
+  # tree that does not build is never committed (spec 245's head-builds still runs after, as detection). The index stays
+  # staged on a red: the next cycle resumes at verify. attempts is NOT spent — a broken tree is not a worker failure.
+  PC=$(timeout "${PRE_COMMIT_TIMEOUT:-600}" bash "${PRE_COMMIT_BUILDS:-scripts/autonomy/pre-commit-builds.sh}" 2>&1); PCRC=$?
+  say "pre-commit: $(printf '%s' "$PC" | head -1)"
+  if [ "$PCRC" -ne 0 ]; then
+    printf '%s\n' "$PC" >>"$LOG"
+    if [ "$PCRC" -eq 124 ]; then
+      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=precommit-timeout — the check was KILLED, not failed"
+      say "pre-commit TIMED OUT after ${PRE_COMMIT_TIMEOUT:-600}s — NOT COMMITTED, the check was killed, not failed"
+    else
+      PCSYM=$(printf '%s\n' "$PC" | grep -m1 -E '^error' | cut -c1-160)
+      python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "last=precommit-broken: ${PCSYM:-$(printf '%s\n' "$PC" | head -1 | cut -c1-160)}"
+      say "NOT COMMITTED: the pending tree does not build — the index stays staged"
+    fi
+    echo "OUTCOME=precommit-broken ITEM=$ITEM"; exit 18
+  fi
   # lane-trailer:begin
   # spec 304: the commit's lane is, in order, the lane the tree-changing run recorded on the row (a resume at verify has no fresh log, so the
   # record is what carries it), then the LAST `LANE-GRAPH:` line of the worker log (spec 303), then none: an invented lane is worse than none
