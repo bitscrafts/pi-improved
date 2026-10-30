@@ -1,5 +1,33 @@
 # Pii — Session Handoff
 
+## 2026-10-30 12:3xZ — A182/spec 318 authored from the seven idle hours: a row the gate refused is offered again
+
+State: HEAD `fe8099a`, tree clean after this entry · control `RUNNING` · queue **one row** (A182, pending) ·
+`row-paths.py check A182` and `row-verify.py check A182` both OK · `pick` names A182 · selftest 42/0 in this window.
+
+- **The measured item.** The seven hours A181 spent parked were not a worker problem: `state.py:46-51`'s
+  `resumable()` offers a `needs-review` row again only for `window-closed`, `worker-rc=`, `precommit-broken` and
+  `precommit-timeout`, so `gate-failed` — and `verify-failed` with it — is parked forever while every cycle prints
+  `queue empty`. Both are outcomes the loop itself writes (`cycle.sh:331`, `cycle.sh:390`) and both are outcomes it can
+  act on.
+- **The second half, and the one that costs money if only the first half is fixed**: the gate branch writes a bare
+  `last=gate-failed`, which `cycle.sh:139`'s `SKIP_DISPATCH` glob (`*verified*|*gated*|*worker-ok*`) does not match,
+  so an offered row would be re-dispatched and the same spec paid for twice — the defect spec 316 fixed for
+  `precommit-broken`, whose precedent (`last=worker-ok; gate-timeout …`) sits three lines above.
+- **The third**: `tick.sh`'s combined `verify-failed|gate-failed|dirty-tree|bad-plan)` arm tells the phone "needs a
+  hand" for work the loop will retry (the class 313/316 closed). The spec splits it into `regate:` and `retry:` keys.
+- **Deliberate asymmetry**: `verify-failed` keeps its bare literal and gets **no** marker — a re-gate of a tree whose
+  criteria fail would fail again and burn the attempts cap without touching the code, so that row resumes the
+  worker's own session through the dispatch path (spec 312). The fixture has a control asserting the verify literal
+  does not match the glob, so a later "helpful" marking is caught.
+- **Authoring discipline**: the row was generated (`_tmp/autonomy/add-row-a182.py`), not typed — 7 columns, 9
+  criteria → 9 commands, 4 files → 4 paths. The fixture follows 316's three-part shape (real `pick`, the live
+  `tick.sh` case block, the live `SKIP_DISPATCH` glob), with a scratch spec under `_tmp/` so the 283/309 judges reach
+  the rule instead of refusing every scratch row `NO-FILES`.
+- **Next**: the 5-minute watchdog dispatches A182. Read the cycle log for its verify, then the gate; the guardrail it
+  must honour is writing `cycle.sh`/`tick.sh` complete and `mv`-ing them into place (a live cycle may be executing
+  them).
+
 ## 2026-10-30 12:3xZ — A181/spec 317 closed: the gate never ran the parity test; the port itself was right
 
 State: implementation in `a9487a2`, spec/plan/HANDOFF in the commit after it, tree clean · control `RUNNING` ·
