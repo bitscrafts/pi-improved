@@ -1,5 +1,35 @@
 # Pii — Session Handoff
 
+## 2026-10-30 12:3xZ — A181/spec 317 closed: the gate never ran the parity test; the port itself was right
+
+State: implementation in `a9487a2`, spec/plan/HANDOFF in the commit after it, tree clean · control `RUNNING` ·
+queue was empty for ~7 h because A181 sat `needs-review` / `gate-failed` and every cycle printed
+`queue empty — nothing pending` · selftest **42 passed, 0 failed — ALL MECHANISMS PASS**.
+
+- **The row.** A181 (spec 317, `pii lane plan`) was dispatched; the worker wrote the port plus 40 golden tests and
+  the gate refused it. Both refusals were in the test scaffold, not the port. (1) `Scratch::new` rooted its clone at
+  `CARGO_TARGET_TMPDIR`, which follows cargo's `--target-dir`; the goldens' byte counts need a 51-byte root, so the
+  padding is `REPO_LEN - base.len() - 1` — under the gate the base is 53 bytes (`_tmp/gate-target/test-gate/tmp`)
+  and 58 under coverage, so it **underflowed and 0 of 40 tests ran**. (2) Rooting the clone in the tree's own
+  `_tmp/` was refused by the port itself (R1 refuses any root with a `_tmp` component) and a fresh-gate export
+  lives under `/projects/_tmp/`, so every clone printed nothing. Repaired: the base is the first of
+  `XDG_RUNTIME_DIR`, `CARGO_TARGET_TMPDIR`, `/var/tmp` that has no `_tmp` component and fits the golden length, and
+  a `Drop` removes a passing test's clone (a panic keeps it as evidence; `PII_KEEP_SCRATCH=1` keeps it either way).
+  Never `/tmp`, per the project's rule.
+- **Plan defect.** Spec 317's `## Files` and the row's column 6 both omitted `crates/pii-cli/src/cmd_lane/graph.rs`,
+  which `mod.rs` declares — the commit would have been incomplete in a clean clone. Both now name it and
+  `row-paths.py check-all` answers `OK A181 12`.
+- **Evidence, all on the worker's tree**: 40/40 with `CARGO_TARGET_DIR=_tmp/gate-target/test-gate` (the exact
+  configuration that had failed), the row's own 10 criteria green through `cycle.sh`'s login-shell form,
+  `fresh-gate --worktree` PASS (`quality-gate: ALL PASS`, `lane_plan_parity` 40 passed inside the export), selftest
+  42 passed / 0 failed. Mutation: dropping the space after `input::render`'s first key separator reddens 14 of 40
+  tests; restored byte-identical (`sha256 de83570b…` before and after) and the same 40 pass again.
+- **Discarded**: restoring with `cp -p` (the stale-binary false red, spec 187's lesson — used `cp` + `touch` +
+  sha256 check instead); and moving the scratch under `target/`, because a fresh-gate export itself sits in `_tmp/`.
+- **Next**: no dispatchable row. Spec 317 is part 1 of two; part 2 is the devbox half (ssh resume lookup, `uv`
+  preflight, start/poll/facts/quota text and the spec guard, lines 219-343 of `scripts/run-batchC-pii.sh`) and then
+  the script retires. That is the next spec to author; 059 §4 stays drained.
+
 ## 2026-10-30 06:2xZ — queue empty and 059 §4 drained again: spec 316 authored from what spec 315 left behind
 
 State: lock free, no cycle in flight, tree clean · control `RUNNING` · queue was **empty**

@@ -76,6 +76,7 @@ The queue refuses directory paths, so the layout is fixed here. Every file below
 - `crates/pii-cli/src/cmd_lane/checks.rs`
 - `crates/pii-cli/src/cmd_lane/input.rs`
 - `crates/pii-cli/src/cmd_lane/git.rs`
+- `crates/pii-cli/src/cmd_lane/graph.rs`
 - `crates/pii-cli/Cargo.toml`
 - `Cargo.lock`
 - `crates/pii-cli/tests/lane_plan_parity.rs`
@@ -85,3 +86,30 @@ The queue refuses directory paths, so the layout is fixed here. Every file below
 - Do NOT normalise anything the substitutions do not name. A difference you cannot explain is the finding.
 - Appearance-only implementations to refuse: a port that prints the right lines but writes different files; a `contains` check on any artefact; a live oracle that touches the real `_tmp/claude-batchC`.
 - Mutations the tests must kill (each killed by a named test above): log and graph with different timestamps; `base` or the root taken from the cwd; the graph's brief unstripped, or the input's stripped; a missing extra-brief file treated as an error; `pi` + `--resume` printing the line or setting the sid; `ALLOW_DIRTY == "1"` instead of non-empty; `Spec` matched case-insensitively; `PII_GRAPH_EDIT_OK` as a truthy parse; the index compared instead of `HEAD`; the pin from the last match; the wall from a TOML parser; the dirty check after the agent check; the wall check after the HEAD check; a log written before the checks; characters counted instead of bytes; a spec match without the dash; a locale sort.
+
+## Closure
+
+Closed 2026-10-30 by the orchestrator. The worker's session `0277d06b-17b8-4478-b2dc-d1a3fc2c6708` left the
+implementation complete and a `gate-failed` row: the gate refused it twice over one scaffold defect and one plan
+defect, neither of them in the port.
+
+1. **The scratch clone was rooted at `CARGO_TARGET_TMPDIR`, which follows cargo's `--target-dir`.** The goldens'
+   byte counts were captured in a 51-byte root, so `Scratch::new` pads a unique name up to it. Under the gate the
+   base is 53 bytes (`_tmp/gate-target/test-gate/tmp`) and 58 under coverage (`…/llvm-cov-target/tmp`), so
+   `REPO_LEN - base.len() - 1` underflowed and **0 of 40 tests ran** — a panic in the scaffold, not a product
+   failure. Rooting it in the tree's own `_tmp/` instead fails for a second reason: the port refuses any root with
+   a `_tmp` component (R1) and a fresh-gate export itself lives under `/projects/_tmp/`, so every clone was refused
+   with empty stdout. The base is now the first of `XDG_RUNTIME_DIR`, `CARGO_TARGET_TMPDIR`, `/var/tmp` that has no
+   `_tmp` component, fits the golden length and accepts `create_dir_all`; a `Drop` removes a passing test's clone
+   (a failing test keeps it as evidence, and `PII_KEEP_SCRATCH=1` keeps it either way). Never `/tmp`, per the
+   project's rule. Measured: 40 passed / 0 failed with `CARGO_TARGET_DIR=_tmp/gate-target/test-gate`, the
+   configuration that had failed, and 40 passed inside the `fresh-gate --worktree` export.
+2. **The `## Files` block and the plan row's commit paths both omitted `crates/pii-cli/src/cmd_lane/graph.rs`**,
+   which `mod.rs` declares — the commit would have been incomplete in a clean clone. Both now name it and
+   `row-paths.py check-all` answers `OK A181 12`.
+
+Verified on the worker's tree: the row's own 10 criteria green, each run through `cycle.sh`'s login-shell form;
+`fresh-gate --worktree` PASS (`quality-gate: ALL PASS`, `lane_plan_parity` 40 passed inside the export); selftest
+42 passed / 0 failed — ALL MECHANISMS PASS. Mutation, restored byte-identical (`sha256 de83570b…` before and
+after): dropping the space after the first key separator in `input::render` reddens 14 of 40 tests, and the same
+40 pass again after the restore.
