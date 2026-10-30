@@ -122,5 +122,33 @@ drives the helper **through its live interface** — it never re-types the mappi
    spec a forgotten variable is no longer a silent untested gate, which is the reason the default can stay.
 
 ## Closure
-(pending — the orchestrator records the criteria on the worker's tree, the mutation that reddens the new test with
-its byte-identical restore, and `fresh-gate`'s verdict.)
+**Verified by the orchestrator on 2026-10-30, on the committed tree — HEAD `2dee03d`, worktree clean.**
+
+- **Exit criteria, run by hand on that tree:** **8 of 8 green** (criterion 6 ran the helper for real:
+  `-p pii-abi --lib --bins --tests` → 47 passed, 0 failed, `took 1s (exit 0)`; criterion 5 printed
+  `gate-touched-crates: no crate touched`, not silence). The fixture printed **18 ok, 0 FAIL**.
+- **The item was reddened three times by the orchestrator's own mutations**, each restored byte-identical:
+  1. `gate-steps-quick.txt` last line `… --run` → `… |true` (a step that tests nothing — the defect class of this
+     spec): **16 ok, 2 FAIL** — `CONTROL: the step line runs the helper with --run` and
+     `CONTROL: the step line, run on a clean tree, names nothing`. Restored (plain `cp`, then `touch`):
+     `sha256 3359b06c842b4399be83be324382753b90849c071d0de27b6e997bc706bf35ed`, identical before and after;
+     green again at 18 ok, 0 FAIL.
+  2. `scripts/gate-touched-crates.sh` R4 narrowed — the `Cargo.toml | Cargo.lock)` case appends nothing:
+     **15 ok, 3 FAIL** (`the manifest names pii-graph`, `… xtask`, `… every member`). Restored:
+     `sha256 13f1a1ee52bceadf358ec2c3d1caf17ea913f0d7a421e1460da5cf6795861abc`, identical both sides.
+  3. The same helper's R5 silence — an unresolvable `crates/` path returns without setting `BAD`:
+     **16 ok, 2 FAIL** (`an unknown crate path refuses with exit 2`, `… names itself`). Restored: same
+     `sha256 13f1a1ee…1abc`, identical both sides; green at 18 ok, 0 FAIL.
+- **`fresh-gate` on HEAD: PASS** — `_tmp/autonomy/logs/fresh-gate-a178-20261030T001628Z.log`, rc 0,
+  `quality-gate: ALL PASS`, `fresh-gate: PASS`. **Honest gap:** that run carried `QG_SKIP_COVERAGE=1`, so the
+  `coverage-floor` step read `SKIPPED` and the floor was *not* measured in this run; the two `FAIL unreadable` /
+  `FAIL store down` lines in the log are `cli_util`'s own scenario output inside a passing test, not gate steps.
+- **What committed it was the in-place gate, not a fresh-gate.** The cycle that landed `2dee03d`
+  (`_tmp/autonomy/logs/cycle-20261029T182004Z.log`) ended `quality-gate: ALL PASS` on the working tree; this
+  Closure supplies the export-of-HEAD verdict it did not have. That difference is exactly §9a of
+  `_docs/05-operations/open-items.md`, still unauthored.
+- **Selftest:** `42 passed, 0 failed — VERDICT: ALL MECHANISMS PASS` (`_tmp/autonomy/logs/selftest-20261030T001617Z.log`).
+- **Finding worth keeping.** The step this spec adds is the one that would have caught the defect it documents
+  (§9b: `03e729a` left two `pii-server` tests red at HEAD for 1.5 h behind `ALL PASS`), and mutation 1 shows the
+  fixture refuses a step wired to anything else — the control reads the real `gate-steps-quick.txt` line at run
+  time rather than re-typing the command beside it.
