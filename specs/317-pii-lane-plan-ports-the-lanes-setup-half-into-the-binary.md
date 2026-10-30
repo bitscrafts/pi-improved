@@ -57,7 +57,7 @@ Each test uses its own scratch repo. Names that must exist and pass:
 ## Exit Criteria
 - [ ] `cargo test -q -p pii-cli --test lane_plan_parity 2>&1 | grep -q "test result: ok"`
 - [ ] `cargo test -q -p pii-cli --test lane_plan_parity -- --exact spec_lane_matches_the_golden coder_lane_matches_the_golden resume_found_and_not_found_match_their_goldens wall_check_precedes_head_and_pin pin_is_the_first_match graph_brief_is_stripped_input_brief_is_not input_equals_python_json_dumps matches_the_shell_reference_in_a_scratch_clone 2>&1 | grep -q "8 passed"`
-- [ ] `git ls-files --error-unmatch crates/pii-cli/tests/golden/lane/CAPTURE.md crates/pii-cli/tests/golden/lane/spec-309.txt`
+- [ ] `git ls-files --error-unmatch crates/pii-cli/tests/golden/lane/CAPTURE.md crates/pii-cli/tests/golden/lane/spec-lane/stdout.txt`
 - [ ] `git diff --quiet HEAD -- crates/pii-cli/tests/golden`
 - [ ] `cargo build -q -p pii-cli --bin pii`
 - [ ] `cargo clippy -q -p pii-cli --all-targets -- -D warnings`
@@ -65,10 +65,19 @@ Each test uses its own scratch repo. Names that must exist and pass:
 - [ ] `cargo run -q -p xtask -- net-check`
 - [ ] `git diff --quiet HEAD -- graphs scripts/run-batchC-pii.sh`
 
+- [ ] `test $(find crates/pii-cli/src/cmd_lane -name '*.rs' -size +0 | wc -l) -ge 6`
 ## Files
+The queue refuses directory paths, so the layout is fixed here. Every file below must exist and be non-empty when the row ends, and none may exceed 450 effective lines.
 - `crates/pii-cli/src/main.rs`
 - `crates/pii-cli/src/cmd_lane/mod.rs`
+- `crates/pii-cli/src/cmd_lane/args.rs`
+- `crates/pii-cli/src/cmd_lane/env.rs`
+- `crates/pii-cli/src/cmd_lane/brief.rs`
+- `crates/pii-cli/src/cmd_lane/checks.rs`
+- `crates/pii-cli/src/cmd_lane/input.rs`
+- `crates/pii-cli/src/cmd_lane/git.rs`
 - `crates/pii-cli/Cargo.toml`
+- `Cargo.lock`
 - `crates/pii-cli/tests/lane_plan_parity.rs`
 
 ## Guardrails
