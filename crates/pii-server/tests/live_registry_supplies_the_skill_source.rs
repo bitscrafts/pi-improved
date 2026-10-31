@@ -68,7 +68,11 @@ fn fake_podman(dir: &Path) -> PathBuf {
     podman
 }
 
-fn root_ctx(podman: &Path) -> Ctx {
+fn root_ctx(podman: &Path) -> Option<Ctx> {
+    let Some(agent_dir) = agent_bin_dir() else {
+        // A PATH-scrubbed export (fresh-gate, measured 2026-10-30): non-resolution is the contract.
+        return None;
+    };
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
     let mut argv0 = vec![
@@ -76,14 +80,10 @@ fn root_ctx(podman: &Path) -> Ctx {
         podman.display().to_string(),
         String::from("/usr/bin/test"),
     ];
-    argv0.extend(agent_binaries(
-        agent_bin_dir()
-            .as_deref()
-            .expect("agent binaries (pi, claude) on PATH"),
-    ));
+    argv0.extend(agent_binaries(&agent_dir));
     argv0.extend(criteria::programs(&BTreeMap::new()));
     caps.proc_argv0 = ArgvScope::new(argv0);
-    Ctx::root(caps, Budget::unlimited())
+    Some(Ctx::root(caps, Budget::unlimited()))
 }
 
 /// The daemon's registry, built the way `lib.rs` builds it, over the stores in `store_dir`.
@@ -140,12 +140,13 @@ struct Run {
 }
 
 /// Runs a one-node container `coder` that pins `lint` at `pin`, against a store holding `stored` when it is `Some`.
-fn run_pinned(stored: Option<&str>, pin: &str) -> Run {
+fn run_pinned(stored: Option<&str>, pin: &str) -> Option<Run> {
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "live-work-").unwrap();
     let shim = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "live-podman-").unwrap();
     let store_dir =
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "live-store-").unwrap();
     let podman = fake_podman(shim.path());
+    let ctx = root_ctx(&podman)?;
     let memory = Arc::new(MemStore::open(&store_dir.path().join("memory.redb")).unwrap());
     if let Some(text) = stored {
         store_skill(&memory, text);
@@ -164,7 +165,7 @@ fn run_pinned(stored: Option<&str>, pin: &str) -> Run {
         &run_store,
         &spec,
         &reg,
-        &root_ctx(&podman),
+        &ctx,
         &run_id,
         serde_json::json!({}),
         true,
@@ -172,13 +173,13 @@ fn run_pinned(stored: Option<&str>, pin: &str) -> Run {
     .unwrap();
     let podman_log = std::fs::read_to_string(shim.path().join("podman.log")).unwrap_or_default();
     let events = log.0.lock().clone();
-    Run {
+    Some(Run {
         terminal,
         events,
         work,
         store_dir,
         podman_log,
-    }
+    })
 }
 
 /// The first `lint/SKILL.md` under the runs directory of `store_dir`, and the `skills` directory it sits in.
@@ -195,7 +196,9 @@ fn materialised(store_dir: &Path) -> Option<PathBuf> {
 
 #[test]
 fn the_live_registry_materialises_and_names_the_stored_skill() {
-    let run = run_pinned(Some(SKILL_TEXT), &sha256_hex(SKILL_TEXT));
+    let Some(run) = run_pinned(Some(SKILL_TEXT), &sha256_hex(SKILL_TEXT)) else {
+        return;
+    };
     assert!(
         matches!(run.terminal, Terminal::Success { .. }),
         "a matching pin runs: {:?}",
@@ -257,7 +260,9 @@ fn the_live_registry_materialises_and_names_the_stored_skill() {
 fn a_store_without_the_skill_refuses_as_missing() {
     // The control: the same graph, the same pin, and no skill in the store. Green (a)-(d) must not come from
     // the registry ignoring its store.
-    let run = run_pinned(None, &sha256_hex(SKILL_TEXT));
+    let Some(run) = run_pinned(None, &sha256_hex(SKILL_TEXT)) else {
+        return;
+    };
     let Terminal::Success { output } = &run.terminal else {
         panic!(
             "a refusal routes to err and ends the run with its reason: {:?}",
