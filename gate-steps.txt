@@ -62,6 +62,11 @@ doc-drift-check|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- doc-
 # go red on them: measured 2026-10-31, tick-message-worker-rc.test.sh was red for two days after spec 318
 # changed tick.sh's phone line, and every gate in that window was green.
 autonomy (shell tests)|bash scripts/autonomy/run-tests.sh
+# Spec 327: an open row's verify column is a cache of its spec's Exit Criteria. A spec edited without
+# regenerating its row leaves the row promising commands the document no longer holds -- the gate runs the
+# wrong list, which is worse than running none. In a fresh-gate export the queue's state is absent, so the step
+# can only check that every row names a spec with usable criteria; in the dev tree it also checks the caches.
+plan-verify|bash scripts/autonomy/sync-verify.sh --check
 
 # Spec 250: the devbox module's claims (image pin, no secret, project path, uv-only, ...) hold; offline, pure text.
 devbox-check|bash modules/devbox/check.sh

@@ -20,6 +20,28 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 STATE = os.environ.get("PII_STATE") or os.path.join(ROOT, "_tmp", "autonomy", "state.json")
 
 
+SPECS = os.environ.get("PII_SPECS") or os.path.join(ROOT, "specs")
+OPEN = ("pending", "in-progress", "needs-review")
+
+
+def derived_verify(spec_name):
+    """The Exit Criteria of a spec, in order, as one `;`-joined string — or None when unreadable/empty.
+
+    Spec 327: for an OPEN row the verify column is a CACHE of this value, never an independent copy. A copy
+    drifts (30 of 183 rows dropped a criterion outright, A154 losing its coder-demo grep), and the drift is
+    invisible until the gate runs the wrong list. A finished row is the opposite case: its text is FROZEN
+    history, because regenerating it from a spec that was amended later would claim the work was held to
+    criteria that did not exist when it ran.
+    """
+    import re
+    try:
+        body = open(os.path.join(SPECS, spec_name)).read()
+    except OSError:
+        return None
+    crit = re.findall(r"- \[ \] `(.+?)`", body)
+    return ";".join(c.strip() for c in crit) if crit else None
+
+
 def rows():
     plan = os.environ.get("PII_PLAN") or os.path.join(ROOT, "scripts", "autonomy", "plan.tsv")
     out = []
@@ -30,7 +52,15 @@ def rows():
         f = line.split("\t")
         if len(f) < 7:
             raise SystemExit(f"plan.tsv row needs 7 tab-separated fields: {line!r}")
-        out.append(dict(zip(("id", "spec", "brief", "title", "verify", "paths", "gate"), f)))
+        row = dict(zip(("id", "spec", "brief", "title", "verify", "paths", "gate"), f))
+        # spec 327: an open row's verify column is derived from its spec, so a row cannot be dispatched against
+        # a criterion list that has drifted from the document it belongs to. The stored text is a cache; the
+        # staleness check in sync-verify.sh is what keeps the file honest.
+        if load().get(row["id"], {}).get("status", "pending") in OPEN:
+            fresh = derived_verify(row["spec"])
+            if fresh is not None:
+                row["verify"] = fresh
+        out.append(row)
     # The id IS the key the state is stored under, so two rows sharing one is not a cosmetic mistake: the second row
     # inherits the first's status and is never picked. Measured 2026-10-14: A20/151 (done) and A20/152 (queued, its
     # spec and brief already committed) both said A20, so every cycle for ~5 h reported "queue empty" with that work

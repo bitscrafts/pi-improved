@@ -17,7 +17,28 @@ import importlib, os, re, subprocess, sys
 SPECS = os.environ.get("PII_SPECS") or "specs"
 sys.path.insert(0, "scripts/autonomy")
 state = importlib.import_module("state")
-plan = state.rows()
+plan_path = os.environ.get("PII_PLAN") or os.path.join(state.ROOT, "scripts", "autonomy", "plan.tsv")
+
+
+def stored_rows(path):
+    """The plan as the FILE says it, not as the dispatcher would derive it (spec 327).
+
+    `state.rows()` derives an open row's verify from its spec, so auditing through it would compare the spec
+    with itself and a stale file could never be seen. This checker exists to catch exactly that.
+    """
+    out = []
+    for line in open(path):
+        line = line.rstrip("\n")
+        if not line or line.startswith("#"):
+            continue
+        f = line.split("\t")
+        if len(f) < 7:
+            continue
+        out.append(dict(zip(("id", "spec", "brief", "title", "verify", "paths", "gate"), f)))
+    return out
+
+
+plan = stored_rows(plan_path)
 st = state.load()
 
 bad, audited, historical, unjudged = [], 0, 0, 0
