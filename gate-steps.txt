@@ -67,6 +67,9 @@ autonomy (shell tests)|bash scripts/autonomy/run-tests.sh
 # wrong list, which is worse than running none. In a fresh-gate export the queue's state is absent, so the step
 # can only check that every row names a spec with usable criteria; in the dev tree it also checks the caches.
 plan-verify|bash scripts/autonomy/sync-verify.sh --check
+# Spec 328: the flow's item ids are their work's spec numbers, so the queue and the flow name one object.
+# The minilam store is untracked project state, so an export has nothing to check and the step says so.
+item-ids|bash scripts/autonomy/item-ids.sh --check
 
 # Spec 250: the devbox module's claims (image pin, no secret, project path, uv-only, ...) hold; offline, pure text.
 devbox-check|bash modules/devbox/check.sh
