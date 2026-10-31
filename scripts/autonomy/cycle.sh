@@ -449,6 +449,10 @@ if [ -n "$PATHS" ] && [ "$PATHS" != "-" ]; then
   git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" commit -q \
     -m "$COMMIT_MSG" || { say "commit failed"; exit 11; }
   say "committed: $(git log --oneline -1)"
+  # spec 326 R5: the row names its work and its work's commit, written by the step that learns them. Until this
+  # existed the sha lived only inside `last`, as prose, and the spec only in the plan's column 2.
+  python3 scripts/autonomy/state.py annotate "$ITEM" --spec "specs/$SPEC" --commit "$(git rev-parse HEAD)" \
+    >>"$LOG" 2>&1 || say "annotate: the row could not name its commit (see the log) — check-row-truth.sh will say so"
   report loop.commit "item=$ITEM rev=$(git rev-parse --short HEAD)"
   # 6b) spec 245: the gate measured the working tree; this reads the COMMIT. HEAD_BUILDS defaults to the real script.
   HB=$(timeout "${HEAD_BUILDS_TIMEOUT:-1800}" bash "${HEAD_BUILDS:-scripts/autonomy/head-builds.sh}" 2>&1); HBRC=$?

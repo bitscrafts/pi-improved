@@ -8,6 +8,8 @@ os.rename'd into place, so a cycle killed mid-write cannot leave a truncated sta
 usage:
   state.py repair <id> <note...>          -> a park whose cause is repaired: status -> needs-review (or pending without\n                                             a session), last -> 'park-cause-repaired: <note>' (spec 323)\n  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window, by a worker that stopped early (worker-rc=N), or by a refused commit (precommit-broken / precommit-timeout), or by a failed gate or criterion, with a session: spec 280, spec 312, spec 316, spec 318), or "NONE"
   state.py get <id> [<state>]             -> that row as JSON
+  state.py annotate <id> [--spec <path>] [--commit <sha>]
+                                          -> the row names its work and its commit; both are proven first (spec 326)
   state.py set <id> k=v [k=v ...]         -> update fields (status/attempts/evidence/session/last)
   state.py list                           -> every row, TSV, for reporting
 A `plan.tsv` row is: id <tab> spec <tab> brief <tab> title <tab> verify(cmd;cmd) <tab> paths(a;b) <tab> gate
@@ -78,10 +80,15 @@ def main():
         raise SystemExit(__doc__)
     cmd = a[0]
     if cmd == "list":
+        # spec 326 R3: the row names its work and its work's commit. The two new columns are APPENDED, so a
+        # reader that takes the first six fields positionally keeps working; a missing field is "-", never a
+        # blank, because a blank reads as "not applicable" and it is not.
         for r in rows():
             st = load().get(r["id"], {})
+            num = r["spec"].split("-")[0] if r["spec"][:1].isdigit() else "-"
+            sha = str(st.get("commit") or "-")[:10]
             print("\t".join([r["id"], r["spec"], r["title"], st.get("status", "pending"),
-                             str(st.get("attempts", 0)), st.get("last", "")]))
+                             str(st.get("attempts", 0)), st.get("last", ""), num, sha]))
         return
     if cmd == "pick":
         st = load()
@@ -143,6 +150,37 @@ def main():
         row["status"] = "needs-review" if row.get("session") else "pending"
         save(d)
         print(json.dumps(row, indent=1))
+        return
+    if cmd == "annotate":
+        # spec 326 R2: the two facts only the commit step knows. A field that can hold a lie is worse than a
+        # missing one, so both are proven before they are written: the spec file exists, and git knows the sha.
+        if len(a) < 4:
+            raise SystemExit("usage: state.py annotate <id> [--spec <path>] [--commit <sha>]")
+        ident, spec, commit, rest = a[1], None, None, a[2:]
+        while rest:
+            if rest[0] == "--spec" and len(rest) >= 2:
+                spec, rest = rest[1], rest[2:]
+            elif rest[0] == "--commit" and len(rest) >= 2:
+                commit, rest = rest[1], rest[2:]
+            else:
+                raise SystemExit(f"annotate: unknown argument {rest[0]!r}")
+        d = load()
+        row = d.setdefault(ident, {})
+        plan_row = next((r for r in rows() if r["id"] == ident), None)
+        if spec is not None:
+            if not os.path.isfile(os.path.join(ROOT, spec)):
+                raise SystemExit(f"annotate: no such spec {spec} — nothing written")
+            if plan_row and os.path.basename(spec) != plan_row["spec"]:
+                # a row annotated with somebody else's spec is a reference that points at the wrong document
+                raise SystemExit(f"annotate: {ident} owns {plan_row['spec']}, not {spec} — nothing written")
+            row["spec"] = spec
+        if commit is not None:
+            ok = os.system(f"git -C {ROOT} cat-file -e {commit}^{{commit}} 2>/dev/null") == 0
+            if not ok:
+                raise SystemExit(f"annotate: git does not know {commit} — nothing written")
+            row["commit"] = commit
+        save(d)
+        print(json.dumps(row, indent=1, sort_keys=True))
         return
     if cmd == "set":
         d = load()
