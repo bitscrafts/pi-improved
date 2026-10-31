@@ -3142,3 +3142,32 @@ commit; a finished row that named no commit is counted as historical, never as a
 **Next, in the agreed order.** (3) derive the verify column from the spec instead of copying it — it is the
 permanent fix for those 76; (4) one ledger: the minilam item id becomes the spec number. Both are their own
 items, and neither may be edited while a cycle is in flight.
+
+## 2026-10-31T23:17:22Z — the agreed identity plan is complete (326, 327, 328)
+
+**Four items, four gated commits.** `e8c3507` health verdicts · `2dda9fa` the row names its work and its commit
+· `5a29e96` an open row's verify is derived, a finished row's is frozen · `bac2569` one ledger: item ids are
+spec numbers.
+
+**The chain now has one key.** A unit of work is `pii/325`-shaped everywhere: the queue row's id (from spec 326
+on), the spec's number, the flow item's id (320, 322 after the live migration), the brief and session file
+names, the commit message, and `state.json` fields `spec` + `commit` (both proven before they are written).
+
+**Guards that now hold without a person:**
+```
+check-ids.sh          an A-id is legal only as a declared alias for an older row
+check-row-truth.sh    a committed row is audited against the spec AT THAT COMMIT; a finished row with no
+                      commit is counted historical, never as a pass
+sync-verify.sh        an open row's verify column is a cache of its spec; a stale cache turns the gate red
+item-ids.sh           an item's id is its work's number; a legacy id must declare its alias
+```
+All four run inside `fresh-gate` as gate steps.
+
+**Measured, deliberately not "fixed":** 76 of 183 rows cannot be reconciled with today's spec text (30 a dropped
+tail, A154 losing its `coder-demo.toml` grep). Regenerating them would claim the work was held to criteria that
+did not exist then. They are frozen history, and the audit says so.
+
+**Open decision (item 4's second half, written into spec 328 R6):** the cycle does not create flow items at
+dispatch — an item created and never advanced is a dead row in a second ledger. Advancing one means mapping the
+cycle's phases (dispatch, verify, gate, commit) onto the method's states, which is a change to the kit's model
+of the work, not glue. Do not start it as a refactor; it needs its own spec and a decision.
