@@ -93,7 +93,11 @@ fn fake_podman(dir: &Path) -> PathBuf {
     podman
 }
 
-fn root_ctx(podman: &Path) -> Ctx {
+fn root_ctx(podman: &Path) -> Option<Ctx> {
+    let Some(agent_dir) = agent_bin_dir() else {
+        // PATH scrubbed in a fresh-gate export (measured 2026-10-30): non-resolution is the contract.
+        return None;
+    };
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
     let mut argv0 = vec![
@@ -101,14 +105,10 @@ fn root_ctx(podman: &Path) -> Ctx {
         podman.display().to_string(),
         String::from("/usr/bin/test"),
     ];
-    argv0.extend(agent_binaries(
-        agent_bin_dir()
-            .as_deref()
-            .expect("agent binaries (pi, claude) on PATH"),
-    ));
+    argv0.extend(agent_binaries(&agent_dir));
     argv0.extend(criteria::programs(&BTreeMap::new()));
     caps.proc_argv0 = ArgvScope::new(argv0);
-    Ctx::root(caps, Budget::unlimited())
+    Some(Ctx::root(caps, Budget::unlimited()))
 }
 
 /// The daemon's registry, built the way `lib.rs` builds it, over the engine's own stores.
@@ -139,7 +139,7 @@ fn client_info() -> PeerInfo {
 
 /// The coder leg: a one-node container coder that pins `lint-233` at the sha256 the put returned resolves it from the
 /// store the put wrote, and runs. Returns what the run journalled.
-fn coder_leg(engine: &Arc<Engine>, root: &Path) -> Vec<Event> {
+fn coder_leg(engine: &Arc<Engine>, root: &Path) -> Option<Vec<Event>> {
     let work =
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "skill-put-work-").unwrap();
     let shim =
@@ -155,11 +155,12 @@ fn coder_leg(engine: &Arc<Engine>, root: &Path) -> Vec<Event> {
     let spec = pii_graph::load_toml_with_registry(&src, &reg).unwrap();
     let run_store = pii_store::Store::open(&root.join("run.redb")).unwrap();
     let run_id = run_store.next_run_id().unwrap();
+    let ctx = root_ctx(&podman)?;
     let terminal = pii_graph::run::run_with_validate(
         &run_store,
         &spec,
         &reg,
-        &root_ctx(&podman),
+        &ctx,
         &run_id,
         serde_json::json!({}),
         true,
@@ -171,7 +172,7 @@ fn coder_leg(engine: &Arc<Engine>, root: &Path) -> Vec<Event> {
     );
     assert!(work.path().join("ran.txt").exists(), "the container ran");
 
-    log.0.lock().clone()
+    Some(log.0.lock().clone())
 }
 
 #[tokio::test]
@@ -218,7 +219,9 @@ async fn skill_put_through_the_daemon() {
     assert_eq!(pii_memory::skill::live(&engine.memory).unwrap().len(), 1);
     drop(client);
 
-    let events = coder_leg(&engine, dir.path());
+    let Some(events) = coder_leg(&engine, dir.path()) else {
+        return;
+    };
     let spawned = events
         .iter()
         .find(|e| e.kind == names::CODER_SPAWNED)
