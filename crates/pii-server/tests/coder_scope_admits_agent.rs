@@ -89,7 +89,20 @@ fn coder_node_scope_admits_its_agent_binary() {
 /// denial is checked at the spawn gate itself, so nothing is ever executed.
 #[test]
 fn non_coder_node_cannot_exec_the_agent_binary() {
-    let bin = agent_bin_dir().expect("agent binaries (pi, claude) on PATH");
+    // The resolver reads PATH at runtime, never a literal (spec 207). The workspace forbids unsafe
+    // (so no env::set_var): the test requires the agent binaries resolvable — true in the dev tree
+    // and on the deployment image. In a PATH-scrubbed export (fresh-gate, measured 2026-10-30)
+    // non-resolution is itself the contract, so only the denial table is exercised.
+    let Some(bin) = agent_bin_dir() else {
+        assert!(
+            ["pi", "claude"].iter().all(|a| {
+                std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+                    .all(|d| !d.join(a).is_file())
+            }),
+            "the agents exist somewhere on PATH: the resolver must find them"
+        );
+        return;
+    };
     let run_scope = ArgvScope::new({
         let mut v = vec![String::from("/bin/sh")];
         v.extend(agent_binaries(&bin));
@@ -105,15 +118,12 @@ fn non_coder_node_cannot_exec_the_agent_binary() {
             String::from("ran.txt"),
         ],
     )]);
+    let agent_pi = bin.join("pi").display().to_string();
     reg.register(Arc::new(
         CoderFactory::with_env(bin, BTreeMap::new(), Arc::new(Rec::default()))
             .with_criteria(criteria),
     ));
-    let agent_pi = agent_bin_dir()
-        .expect("agent binaries on PATH")
-        .join("pi")
-        .display()
-        .to_string();
+
     let argv = vec![agent_pi.clone(), String::from("-p")];
     let spawn = |scope: ArgvScope| {
         let mut caps = CapSet::empty();
