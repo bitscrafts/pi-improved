@@ -203,6 +203,9 @@ pub const TIMER_RESUME_REFUSED: &str = "timer.resume.refused";
 pub const RUN_RECONCILED: &str = "run.reconciled";
 /// Event: a node panicked; the run is failed, the daemon survives (`run`, `node`, `message`).
 pub const NODE_PANICKED: &str = "node.panicked";
+/// Event: the daemon is starting — written before the store opens, the engine is built or the socket
+/// is bound, so a start that dies early still leaves a line (spec 322).
+pub const DAEMON_STARTING: &str = "daemon.starting";
 /// Event: the daemon finished starting and is serving.
 pub const DAEMON_STARTED: &str = "daemon.started";
 /// Event: the daemon is shutting down (`reason`: signal or forced).
@@ -485,6 +488,7 @@ pub const ALL: &[&str] = &[
     TIMER_RESUME_REFUSED,
     NODE_PANICKED,
     RUN_RECONCILED,
+    DAEMON_STARTING,
     DAEMON_STARTED,
     DAEMON_STOPPED,
     DAEMON_PEER_REFUSED,

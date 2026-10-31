@@ -2952,3 +2952,47 @@ offers it), everything else done, skipped or revoked.
   answer (`cmd_sys.rs:115`), built in `pii-server/src/engine/dispatch.rs:246`, with `explain` in
   `cmd_trace/run.rs:158` and the judge `crit=` in `cmd_trace/analysis.rs:280`. Files blocks backticked, the
   set converged, `row-paths.py check-all` reads `OK A157 5` / `OK A158 2`, pick names A157.
+
+## 2026-10-31T07:26:40Z — spec 322 written and verified at tree level; NO COMMIT: the gate is disk-blocked
+
+Night run, orchestrator only (minilam item **A186**, walked spec → red → implement → verify → refactor →
+criteria).
+
+- **The gap, measured on the deployed log** (copy of `/root/.local/state/pii/pii.log`, 5.6 MB):
+  `starts_considered=108, incidents=1937` → `run-stalled 1851`, `daemon-restart-unexpected 74`,
+  `refusal-repeated 12`, **`daemon-start-not-ready 0`** — and that zero was **vacuous**: the scan keys
+  on a start mark (`daemon.sandbox.in_force`) that production never writes (0 occurrences). A start
+  that died before the socket bound left no line at all.
+- **Spec 322** (`specs/322-a-start-that-dies-before-it-serves-leaves-a-line.md`) makes a start
+  observable from its first moment: `daemon.starting` is written right after the log opens (line 127),
+  **before** the engine/store is built (line 333); the runtime scan pairs mark → `daemon.started` and
+  fires `daemon-start-not-ready` when the pair is broken, with a 60 s grace so a scan racing a healthy
+  boot stays silent. The legacy sandbox mark still pairs, so old logs keep their meaning.
+- **Evidence** (all seven of the spec's exit criteria rc=0, `_tmp/night/verify-322.sh`):
+  `incidents_runtime_start_mark` 6/6, `incidents_runtime` 5/5, `daemon_start_mark` 1/1 (a daemon given an
+  unopenable store writes `daemon.starting` first and never claims `daemon.started`), clippy 0, fmt 0,
+  `pii-learn`+`pii-cli` suite **371 passed / 0 failed**, and the deployed log still yields **0**
+  `daemon-start-not-ready`.
+- **NOT COMMITTED, on purpose.** This repo's rule is gate-before-commit and the gate cannot run:
+  `cargo test` died with `No space left on device` + `ld … Bus error`, and
+  `quality-gate.sh --routine` died at `coverage-floor` with `rustc-LLVM ERROR: IO failure on output
+  stream`. `/` is at 3.8 GB free. Details and the exact one-line reclamations (all pre-existing):
+  `_docs/05-operations/DISK-BLOCKER-2026-10-31.md`.
+- **To finish in the morning**, in this order: free one pre-existing trash (`rm -rf /tmp/_trash-podman`
+  restores ~33 GB) → `bash _tmp/night/verify-322.sh` → `cargo run -q -p xtask -- fresh-gate` → commit
+  spec 322 + the three source files + two test files → answer A186's gate step and commit step.
+- **Also measured tonight**: the deployed pii is supervised by the host's `pii.service` with
+  `Restart=on-failure`, `RestartSec=30`, running `podman exec hermes … pii daemon --store
+  /root/.local/state/pii/store.redb --workspace /root/.local/state/pii --log-file …/pii.log` — 063
+  Phase A's "supervisor + argv" shape is in place; the start-mark gap this spec closes was Phase B's.
+
+### 2026-10-31T07:33:47Z — correction: the base gate is GREEN
+
+The `fresh-gate` started at 06:57:52Z **passed** at 07:08:28Z (`quality-gate: ALL PASS`, `fresh-gate: PASS`,
+`gate rc=0`, `/tmp/pii-night-gate.out`) over an export of **HEAD `59cfd4c`** — its export dir carries no
+`specs/322`, so the night's working-tree change was not in it. I killed that process afterwards, wrongly
+believing the disk had already doomed it (the disk filled at 07:13, five minutes later).
+
+So the honest position is: **the committed tree is green**, and spec 322 is **verified at tree level but
+ungated**. One gate run over the working tree is all that separates it from a commit — after ~33 GB is
+freed (`rm -rf /tmp/_trash-podman`, the user's decision; agents do not delete pre-existing paths).

@@ -121,6 +121,13 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         return ExitCode::from(2);
     };
     let log = open_log(&log, &cfg, &store_parent, switches.audit);
+    // Spec 322: the mark goes down before anything that can fail (store, engine, socket), so a start
+    // that never serves is visible in the record instead of only in the supervisor's journal.
+    log.event(
+        &Event::new("daemon", Level::Info, names::DAEMON_STARTING)
+            .field("pid", u64::from(std::process::id()))
+            .field("store_parent", store_parent.display().to_string()),
+    );
     // The profile in force is stated at every start — an unconfined daemon is
     // reported loudly (stderr + log + audit trail), never silently. So is a
     // switched-off surface.

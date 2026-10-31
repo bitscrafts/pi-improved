@@ -19,6 +19,10 @@ use crate::incident::IncidentConfig;
 
 /// Event that marks a start attempt (emitted before the daemon is ready).
 const START_MARK: &str = pii_observe::names::DAEMON_SANDBOX_IN_FORCE;
+/// Spec 322: how long a start mark may wait for `daemon.started` before the scan calls the start lost.
+/// A scan that runs while a healthy daemon is booting must stay silent; ten minutes of silence after a
+/// mark is a start that never served.
+const START_MARK_GRACE_SECS: i64 = 60;
 /// Kinds whose repetition is a refusal incident.
 const REFUSALS: [&str; 3] = [
     pii_observe::names::RUN_START_REFUSED,
@@ -174,7 +178,7 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
         };
         let ts = ms / 1000;
         log_end = log_end.max(ts);
-        if kind == START_MARK {
+        if kind == START_MARK || kind == pii_observe::names::DAEMON_STARTING {
             mark_ms = Some(ms);
             if let Some(t) = starting.replace(ts) {
                 out.push(mk("daemon-start-not-ready".to_owned(), 1, t, t, ts));
@@ -213,7 +217,9 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
                 || kind == pii_observe::names::RUN_START_REFUSED;
         }
     }
-    if let Some(t) = starting {
+    if let Some(t) = starting
+        && log_end - t >= START_MARK_GRACE_SECS
+    {
         out.push(mk("daemon-start-not-ready".to_owned(), 1, t, t, log_end));
     }
     if !lifecycle {
