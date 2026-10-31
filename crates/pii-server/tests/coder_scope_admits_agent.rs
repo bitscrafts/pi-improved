@@ -94,12 +94,12 @@ fn non_coder_node_cannot_exec_the_agent_binary() {
     // and on the deployment image. In a PATH-scrubbed export (fresh-gate, measured 2026-10-30)
     // non-resolution is itself the contract, so only the denial table is exercised.
     let Some(bin) = agent_bin_dir() else {
+        // The resolver refuses unless ONE dir holds both agents; in a PATH-scrubbed export the
+        // honest contract check is exactly that refusal condition mirrored — no dir holds both.
         assert!(
-            ["pi", "claude"].iter().all(|a| {
-                std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-                    .all(|d| !d.join(a).is_file())
-            }),
-            "the agents exist somewhere on PATH: the resolver must find them"
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+                .all(|d| !d.join("pi").is_file() || !d.join("claude").is_file()),
+            "a PATH dir holds both agents: the resolver must find it"
         );
         return;
     };
