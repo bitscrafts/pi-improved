@@ -3114,3 +3114,31 @@ State: HEAD `ae10568` · tree clean apart from this commit's two paths · contro
   loop has not yet re-verified. It is the step after A187, and 325 is what makes it checkable instead of hopeful.
 - **Next**: the watchdog dispatches A187 (six criteria, the last one `fresh-gate --worktree`); then the deploy
   itself, whose gate becomes `pii health` returning 0 *and* `posted` moving off zero.
+
+## 2026-10-31T19:51:07Z — A187 closed, and the row now names its work and its commit
+
+**Done.** `e8c3507` — `pii health` returns three verdicts (0 this build, 2 no daemon, 3 a daemon that is not
+this build or an unprovable comparison), one `DRIFT:`/`UNVERIFIED:` line on stderr, the payload untouched,
+plus a `client:` line in the human render. `2dda9fa` — the queue's row names its work and its commit:
+`state.py annotate`, two new `list` columns, `check-row-truth.sh`, `check-ids.sh`, and the cycle annotating
+the row right after it commits (spec 326).
+
+**Why A187 parked three times.** Not the worker: a fresh-gate export is `git archive`, so
+`identity::REVISION` is `unknown` on both sides and R3 makes every health call there exit 3. Two existing
+tests asserted success as a proxy for "health answered". Spec 325 gained R6 (an export has no revision, so a
+test whose subject is not the verdict accepts the three documented codes) and R7 (the stub daemon is a
+sanctioned test-fake and joins net-check's allowlist with its reason). `net-check` also prints `PASS:` now
+instead of nothing on success.
+
+**Verified.** 8 criteria green on a tree that did not move during the run (`862caae` before and after),
+`fresh-gate --worktree` PASS; the two revision-dependent tests also run green in a hand-built export with no
+`.git`, which is the only place `unknown` can happen. Live: `A187 · 325 · e8c3507`, and `check-row-truth.sh`
+reports 1 row audited against `specs/325` **as of that commit**, 0 violations.
+
+**Measured, not fixed.** 76 of 183 rows cannot be reconciled with today's spec text (30 are a dropped tail —
+A154 lost its `coder-demo.toml` grep). A committed row is therefore audited against the spec at its own
+commit; a finished row that named no commit is counted as historical, never as a pass.
+
+**Next, in the agreed order.** (3) derive the verify column from the spec instead of copying it — it is the
+permanent fix for those 76; (4) one ledger: the minilam item id becomes the spec number. Both are their own
+items, and neither may be edited while a cycle is in flight.
