@@ -3027,3 +3027,41 @@ Then, in order:
 uncommitted, that check gates HEAD and can pass while the change under test is invisible: a vacuous
 green, the exact defect HARD RULE 0b names. The fix is one word in `checks.json` (and the same for
 `unit`): add `--worktree`. Recorded here rather than changed mid-item.
+
+## 2026-10-31T14:10:31Z — the loop's stall fixed, A185 closed, the build cache centralised, minilam gap B6 proven
+
+Four pieces, in the order they were agreed.
+
+**1. Spec 323 — a park whose cause was repaired is offered again (`df4aa20`).** A185 was parked after three
+attempts; commit `558759e` repaired its cause and wrote that into the row's `last` as prose while the status
+stayed `parked`. `pick` treats parked as terminal by design, so the row was never offered and the cycle at
+13:31:39Z printed `OUTCOME=queue-empty` with the queue not empty. Fixed by making the repair a transition:
+`state.py repair <id> <note>` sets `needs-review` (or `pending` without a session), writes
+`last=park-cause-repaired: …`, and never touches `attempts`. `resumable()` accepts the marker, so `pick`
+offers the row with its session. 17 assertions with the controls that matter (3-strikes stays terminal, the
+untranslated marker stays unpicked, a repaired park does not jump a pending row). Gate PASS 13:50:20Z.
+
+**2. A185 / spec 321 closed (`e6b4a9a`).** All seven criteria re-run on the committed tree: fresh-gate
+PASS, `lane_run_parity` 25/0, the two exact tests 2 passed, `lane_plan_parity` PASS, clippy 0, lint-files
+PASS, golden paths quiet. Closure section written into the spec.
+
+**3. A stale test spec 318 left behind (`da22fe9`).** `tick.sh` changed in `8b1cb08` (spec 318 R4: a verify
+failure is retried, a gate failure re-gated) while `tick-message-worker-rc.test.sh` stayed on spec 313's
+sentence — 16 ok / 2 FAIL for two days. Measured by running the live case block: its output is exactly spec
+318's wording, so the code was right and the test was stale. The deeper gap stays open: **the autonomy shell
+tests are not part of `cargo test`, so the gate cannot go red on them.**
+
+**4. Central build artefacts (`sccache` + one target root).** `sccache 0.10.0` installed; `~/.cache/sccache`
+symlinked to `/projects/_cache/sccache`; `/usr/local/cargo/config.toml` (NOT `~/.cargo` — this image sets
+`CARGO_HOME=/usr/local/cargo`, so the first attempt was silently ignored) now has
+`target-dir = "/projects/_cache/targets"`, `rustc-wrapper = "/usr/bin/sccache"`, `incremental = false`
+(sccache cannot cache incremental builds — that was why the first measurements showed 0 hits).
+`/usr/local/bin/build-guard` refuses a build below 15 GB free on the target's volume. Measured: a fresh
+fresh-gate export compiled in **17.4 s** instead of 4–5 minutes, and a dependency cleaned with
+`cargo clean -p serde_json` rebuilt as a **cache hit**. Gate on the new dir: PASS, rc 0, 14:06:27Z.
+Trade-off recorded in the config: `cargo clean` there is global; scope it with `cargo clean -p <crate>`.
+
+**minilam gap B6 closed (`fcc2d90`).** A *refused* answer through the MCP surface had never been exercised —
+only success. Three tests drive the real stdio server: an answer the flow does not accept returns `isError`,
+the item's state and history do not move, the event line carries `door:"server"` and `ok:false`, and a call
+with no answer field takes the same path (control). 3 passed, suite 30 result lines ok, clippy 0, fmt clean.
