@@ -2953,7 +2953,7 @@ offers it), everything else done, skipped or revoked.
   `cmd_trace/run.rs:158` and the judge `crit=` in `cmd_trace/analysis.rs:280`. Files blocks backticked, the
   set converged, `row-paths.py check-all` reads `OK A157 5` / `OK A158 2`, pick names A157.
 
-## 2026-10-31T07:26:40Z — spec 322 written and verified at tree level; NO COMMIT: the gate is disk-blocked
+## 2026-10-31T07:26:40Z — spec 322 written and verified at tree level (superseded: see the 12:52Z completion below)
 
 Night run, orchestrator only (minilam item **A186**, walked spec → red → implement → verify → refactor →
 criteria).
@@ -2996,3 +2996,34 @@ believing the disk had already doomed it (the disk filled at 07:13, five minutes
 So the honest position is: **the committed tree is green**, and spec 322 is **verified at tree level but
 ungated**. One gate run over the working tree is all that separates it from a commit — after ~33 GB is
 freed (`rm -rf /tmp/_trash-podman`, the user's decision; agents do not delete pre-existing paths).
+
+## 2026-10-31T13:11:20Z — spec 322 COMPLETE: committed `6a6f0d6`, gated, item A186 done
+
+The disk block was cleared by `cargo clean`, as instructed, in this order:
+
+| target dir | freed |
+|---|---|
+| `/projects/minilam/target` | 94.2 MiB |
+| `/projects/pi-improved/target` | **79.8 GiB** |
+| `/var/tmp/pii-target` (via `CARGO_TARGET_DIR`) | **34.7 GiB** |
+
+`/` went from 0 MB to **37.6 GB** free and `/projects` to **102 GB** — which also took the host off 99%
+and ended the amem outage class.
+
+Then, in order:
+
+1. `_tmp/night/verify-322.sh` → **ALL 7 PASS**, rc=0 (12:18:39Z), cold build after the clean.
+2. The full `unit` check went red on `pii-cli --test lane_run_parity`. **Not my change:** the autonomy
+   loop committed twice (12:23:07 `558759e`, 12:24:42 `5d9f483`), moving HEAD under a binary built at
+   `558759e-dirty`, and spec 320's guard aborts exactly that. Rebuilt (`cargo build -p pii-cli --bin pii`)
+   → **25 passed / 0 failed**.
+3. `fresh-gate --worktree` → **PASS**, rc=0 (12:52:28Z) — the real gate over the uncommitted change
+   (`--worktree` overlays modified *and* untracked-not-ignored files; the plain form gates HEAD only).
+4. Committed **`6a6f0d6`** with the neutral identity, 8 files staged explicitly, 399 insertions.
+5. minilam **A186 → done** (history 11: spec → red → green → verify → refactor → criteria → gate → commit).
+
+**Gap found in the oracle while doing this:** minilam's `checks.json` gate argv is
+`cargo run -q -p xtask -- fresh-gate` — **without `--worktree`**. For an item whose work is still
+uncommitted, that check gates HEAD and can pass while the change under test is invisible: a vacuous
+green, the exact defect HARD RULE 0b names. The fix is one word in `checks.json` (and the same for
+`unit`): add `--worktree`. Recorded here rather than changed mid-item.
