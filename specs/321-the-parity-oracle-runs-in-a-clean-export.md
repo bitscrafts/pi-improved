@@ -133,3 +133,27 @@ a commit that does not touch the lane at all, `the_recorded_ssh_sequence_equals_
 stale-binary guard, refusing a `pii` still labelled `59cfd4c` while HEAD was `558759e`. A plain
 `cargo build -q -p pii-cli --bin pii` fixed it and the suite went back to 25 passed / 0 failed. The guard is
 right; the remedy is the rebuild it prints, never a weakened assertion.
+
+## Closure — 2026-10-31T13:51:35Z
+
+Closed by the orchestrator, not by a fresh dispatch: A185 was parked after three attempts because one
+criterion (`the_knob_needs_exactly_1`) could never print "2 passed", and its park cause was repaired in
+`558759e`. The repair had been written into the row's `last` as prose while the status stayed `parked`, so
+`pick` skipped it and the loop reported `OUTCOME=queue-empty` from 13:31:39Z onwards — which is why spec 323
+(a repaired park is now a recorded transition, `state.py repair`) exists.
+
+All seven exit criteria were re-run on the committed tree and are green:
+
+| # | criterion | result |
+|---|---|---|
+| 1 | `fresh-gate --worktree` | PASS (`fresh-gate: PASS`, rc 0, 13:50:20Z) |
+| 2 | `lane_run_parity` | 25 passed / 0 failed |
+| 3 | the two exact tests | 2 passed |
+| 4 | `lane_plan_parity` | PASS |
+| 5 | `clippy -p pii-cli --all-targets -D warnings` | rc 0 |
+| 6 | `lint-files` | PASS |
+| 7 | `git diff --quiet HEAD -- graphs scripts crates/pii-cli/tests/golden` | quiet |
+
+The oracle now runs in a clean export where `REVISION` and `HEAD` are both `unknown`, so the label guard
+does not compare nothing and refuse everything (`label.rs`, spec 320 R6).
+
