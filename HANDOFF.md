@@ -3086,3 +3086,31 @@ Evidence: `fresh-gate --worktree` PASS at 14:56:37Z with the step inside it repo
 5 skipped in the export** and **28 passed** in the dev tree; the contract test is 14 assertions, including
 that a red test fails the runner, an empty directory exits 2, and a test still finds `uv` under
 `env -i PATH=/usr/bin:/bin`.
+
+## 2026-10-31T18:2xZ — the queue was drained and the deployed daemon is 11 days old: spec 325/A187 authored
+
+State: HEAD `ae10568` · tree clean apart from this commit's two paths · control `RUNNING` · plan **A187 / spec 325**
+(`pick` names it; `row-paths.py` OK 4, `row-verify.py` OK 6) · selftest **42 passed, 0 failed — ALL MECHANISMS PASS**.
+
+- **The measurement that chose this item.** A client built at HEAD (`pii lane rev` → `ae10568c0456`) asked the
+  running daemon who it is: `pii health` answered **`pii 0.1.0 (0a78d6da0c20, …)`** and **exited 0**. The installed
+  `/root/.local/bin/pii` is dated **2026-10-20**, its usage line has no `lane` subcommand (so it predates specs
+  317/319/320), and the daemon process (pid 491273) has been up **11 days 3 h** on it. `since_deploy` in the same
+  answer reads `revision: 0a78d6da0c20, runs: 13, posted: 0`, so rank 1 of 059 §4 ("`pii health` identity equals
+  the deployed rev; `pii_channel_posts_total` ≥ 7 over 7 days") fails on **both** halves — and no command said so.
+- **Why it is a spec and not a deploy action.** The comparison is missing, not the deploy: `sys.status` carries
+  `/build/revision` (spec 99), the client carries `identity::REVISION` (spec 320 prints it), and `pii health`
+  prints only the daemon's, so `rc 0` means "a daemon answered", never "it is this build". `deploy/pii.service`
+  and `105-runbook.md` both document the weaker reading (`non-zero = not running`) — which the stale binary
+  satisfies while being wrong about the only question that matters.
+- **Spec 325** (`specs/325-a-health-answer-that-is-not-this-build-says-so.md`) makes the answer say which build
+  it is: `0` = answered by this build, `2` = no daemon (unchanged), `3` = answered by another build *or* a
+  revision that is `unknown`; one `DRIFT:` line on stderr naming both revisions; one `client: <rev>` line in the
+  human render; `--json` untouched; the two documentation lines updated in the same change. The drift case is
+  tested against a stub whose payload is the **live** `sys.status` with exactly one field changed, so the fixture
+  cannot drift from the wire shape.
+- **Not fixed tonight, deliberately**: the daemon restart that would put HEAD on production is a host action, and
+  restarting it from here would also drop the store lock under 11 days of accumulated state for a build this
+  loop has not yet re-verified. It is the step after A187, and 325 is what makes it checkable instead of hopeful.
+- **Next**: the watchdog dispatches A187 (six criteria, the last one `fresh-gate --worktree`); then the deploy
+  itself, whose gate becomes `pii health` returning 0 *and* `posted` moving off zero.
