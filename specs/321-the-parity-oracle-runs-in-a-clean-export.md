@@ -47,7 +47,7 @@ differential setting it.
   block, the goldens, the refusal text or any exit code moves.
 - R5 (two new tests, both in `lane_run_parity.rs`): `a_tmp_root_is_refused_without_the_knob` — a root inside `_tmp/` with no knob refuses
   with the exact text and exit 2, and records **no transport call**; `a_tmp_root_runs_with_the_knob_and_says_so` — with `1` the NOTE is
-  the first line of stdout and the run proceeds. Control: `the_knob_needs_exactly_1` — `PII_LANE_TMP_ROOT_OK=true` still refuses.
+  the first line of stdout and the run proceeds. Control: `the_tmp_knob_needs_exactly_1` — `PII_LANE_TMP_ROOT_OK=true` still refuses.
 
 ### Non-Functional
 - Rust, clippy and fmt at zero; the knob is read once in `LaneEnv` with every other variable (a `tmp_root_ok: bool`, `var(...).as_deref()
@@ -69,14 +69,14 @@ Acceptance test: `crates/pii-cli/tests/lane_run_parity.rs` (the existing file; t
 The requirement a plausible implementation gets wrong is **R2's exactness** — a `var(...).is_some()` reads as obviously right and silently
 widens the hatch to `PII_LANE_TMP_ROOT_OK=0`.
 Tests that must exist and pass: `a_tmp_root_is_refused_without_the_knob`, `a_tmp_root_runs_with_the_knob_and_says_so`,
-`the_knob_needs_exactly_1`, and the pre-existing `the_recorded_ssh_sequence_equals_the_shells` and its siblings, unchanged.
+`the_tmp_knob_needs_exactly_1`, and the pre-existing `the_recorded_ssh_sequence_equals_the_shells` and its siblings, unchanged.
 Mutations the tests must kill: the refusal removed outright; `is_some()` instead of `== "1"`; the NOTE after the printed block; the NOTE
 without the root; the knob honoured on the shell half as well; exit 1 instead of 2 on the refusal.
 
 ## Exit Criteria
 - [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q "fresh-gate: PASS"`
 - [ ] `cargo test -q -p pii-cli --test lane_run_parity 2>&1 | grep -q "test result: ok"`
-- [ ] `cargo test -q -p pii-cli --test lane_run_parity -- --exact a_tmp_root_is_refused_without_the_knob the_knob_needs_exactly_1 2>&1 | grep -q "2 passed"`
+- [ ] `cargo test -q -p pii-cli --test lane_run_parity -- --exact a_tmp_root_is_refused_without_the_knob the_tmp_knob_needs_exactly_1 2>&1 | grep -q "2 passed"`
 - [ ] `cargo test -q -p pii-cli --test lane_plan_parity 2>&1 | grep -q "test result: ok"`
 - [ ] `cargo clippy -q -p pii-cli --all-targets -- -D warnings`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
@@ -100,3 +100,27 @@ without the root; the knob honoured on the shell half as well; exit 1 instead of
   under a `_tmp` base: both are premises measured at HEAD `96df40e`.
 
 ## Closure
+
+### 2026-10-31 12:3xZ — criterion 3 was unsatisfiable, not failing (orchestrator)
+
+The item sat parked after three attempts on "the same mechanical failure". The cause is in this spec, not
+in the implementation: criterion 3 filtered `lane_run_parity` for `a_tmp_root_is_refused_without_the_knob`
+**and `the_knob_needs_exactly_1`** — but that second name is spec 320's stale-binary-label knob, which lives
+in `crates/pii-cli/tests/lane_binary_label.rs`. Under `--exact` in this file it collects nothing, so the
+filtered run printed `1 passed` and `grep -q "2 passed"` could never match: no implementation could satisfy
+it. The `_tmp` knob's own control in this file is `the_tmp_knob_needs_exactly_1`.
+
+Repaired in three places (R5 prose, the TDD list, Exit Criteria 3) to name the test that exists. The
+assertion is unchanged — both tests still must run and pass. Control that the repair is not vacuous, measured
+on this tree at HEAD `59cfd4c`:
+
+```
+cargo test -q -p pii-cli --test lane_run_parity -- --exact a_tmp_root_is_refused_without_the_knob the_knob_needs_exactly_1
+  -> test result: ok. 1 passed; 0 failed; 24 filtered out      (the old criterion: cannot print "2 passed")
+cargo test -q -p pii-cli --test lane_run_parity -- --exact a_tmp_root_is_refused_without_the_knob the_tmp_knob_needs_exactly_1
+  -> test result: ok. 2 passed; 0 failed; 23 filtered out      (the criterion, rc 0)
+```
+
+The other six criteria are green on the tree (`lane_run_parity` 25 passed, `lane_plan_parity` 41 passed,
+`clippy -D warnings` rc 0, `lint-files` rc 0 with max effective 446, and the goldens/graphs/scripts diff
+rc 0). Criterion 1 (`fresh-gate --worktree`) is the one that still decides the item and is not claimed here.

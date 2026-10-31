@@ -122,3 +122,26 @@ without the label; the label read from the environment instead of the parameter.
 - The guard must not fire on `--dry-run`: a dry run spends nothing and is how a person inspects the plan of a tree with an older binary.
 
 ## Closure
+
+### 2026-10-31 12:3xZ — the exit criteria re-run by the orchestrator, independently of the worker's report
+
+All nine criteria rc 0 on the tree at HEAD `59cfd4c` (the worktree also carried an uncommitted, unrelated
+`spec 322` change in `cmd_daemon.rs` / `pii-learn` / `pii-observe`; nothing this spec lists):
+
+```
+build -q -p pii-cli --bin pii                     rc 0
+pii lane rev                                      rev 59cfd4c34d6f-dirty   (the -dirty suffix is the label's documented form)
+cargo test -p pii-cli --test lane_binary_label     13 passed, 0 failed
+  -- --exact a_stale_label_records_no_transport_call the_dirty_suffix_is_not_a_mismatch the_knob_needs_exactly_1
+                                                   3 passed, 0 failed
+cargo test -p pii-cli --test lane_run_parity       25 passed, 0 failed
+cargo test -p pii-cli --test lane_plan_parity      41 passed, 0 failed
+cargo clippy -p pii-cli --all-targets -D warnings  rc 0
+cargo run -p xtask -- lint-files                   rc 0 (405 files, max effective 446)
+git diff --quiet HEAD -- crates/pii-cli/tests/golden graphs scripts  rc 0
+```
+
+The gate half was the run recorded the same day: `fresh-gate` over an export of HEAD `59cfd4c` printed
+`quality-gate: ALL PASS` / `fresh-gate: PASS` / `gate rc=0` at 07:08:28Z (`/tmp/pii-night-gate.out`). The
+state row's `parked` was stale bookkeeping — the commits that carry this spec's work landed after it
+(`593a936`, `bdb404d`, `c531856`, `c8c2f7b`, `db2f10b`, `eb7a3d1`, `385f78b`…`59cfd4c`).
