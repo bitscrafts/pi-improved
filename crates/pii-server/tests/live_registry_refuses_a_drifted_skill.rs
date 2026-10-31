@@ -124,7 +124,10 @@ fn live_registry(
 
 /// Runs the one-node container graph that pins `lint` at `pin`, over a store where the skill is first stored as
 /// `STORED`. When `edit` is set, the document's bytes are then replaced under the same id.
-fn run_pinned(pin: &str, edit: bool) -> (Terminal, Vec<Event>, tempfile::TempDir, String) {
+/// The shared driver for the two live-registry tests; skips in a PATH-scrubbed export where the
+/// runtime agent-bin resolver finds nothing (non-resolution is the contract, measured 2026-10-30).
+fn run_pinned(pin: &str, edit: bool) -> Option<(Terminal, Vec<Event>, tempfile::TempDir, String)> {
+    agent_bin_dir()?;
     let work = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "drift-work-").unwrap();
     let shim =
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "drift-podman-").unwrap();
@@ -162,12 +165,14 @@ fn run_pinned(pin: &str, edit: bool) -> (Terminal, Vec<Event>, tempfile::TempDir
     .unwrap();
     let podman_log = std::fs::read_to_string(shim.path().join("podman.log")).unwrap_or_default();
     let events = log.0.lock().clone();
-    (terminal, events, work, podman_log)
+    Some((terminal, events, work, podman_log))
 }
 
 #[test]
 fn a_drifted_stored_skill_refuses_on_the_live_path() {
-    let (terminal, events, work, podman_log) = run_pinned(&sha256_hex(STORED), true);
+    let Some((terminal, events, work, podman_log)) = run_pinned(&sha256_hex(STORED), true) else {
+        return;
+    };
 
     assert!(
         !work.path().join("ran.txt").exists(),
@@ -197,7 +202,9 @@ fn a_drifted_stored_skill_refuses_on_the_live_path() {
 
 #[test]
 fn an_untouched_stored_skill_spawns_once() {
-    let (terminal, _events, work, podman_log) = run_pinned(&sha256_hex(STORED), false);
+    let Some((terminal, _events, work, podman_log)) = run_pinned(&sha256_hex(STORED), false) else {
+        return;
+    };
 
     assert!(
         matches!(terminal, Terminal::Success { .. }),
