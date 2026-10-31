@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# requires: dev-tree
+# why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: a resumed row keeps the spec lane (spec 303). The lane runs in a scratch copy of the repo (its REPO is rewritten), with a stub for the
 # devbox ssh (PII_SSH) and a stub daemon (PII_DAEMON_SH): no real ssh, daemon or agent. The dry runs write the input and exit before the daemon.
 # Controls: no --resume (no sid), and a transcript that IS found (the sid is kept, no "not found" line).

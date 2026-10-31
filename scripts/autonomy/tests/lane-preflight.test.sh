@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# requires: dev-tree
+# why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: the spec lane preflights the devbox before it spends, and logs why a refused run was refused (spec 298). The real lane script runs with a
 # stub `ssh` first on PATH: it records every remote command and answers from a fixture directory, so no daemon starts and nothing is spent.
 # The coder lane (PII_LANE_GRAPH unset) must keep today's behaviour: no preflight.

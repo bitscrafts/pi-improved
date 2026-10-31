@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# requires: dev-tree
+# why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: the spec lane requires its graphs (spec.toml, docs.toml, preflight.toml) to equal their content at HEAD, before the pin comparison (spec 302).
 # Every refusal here is a dry run, so nothing is started and nothing is spent. The edited cases work in a scratch clone under _tmp/ whose copy of the
 # lane script names the clone as its repository (the production script hard-codes the live one). The coder lane (PII_LANE_GRAPH unset) ignores the graphs.

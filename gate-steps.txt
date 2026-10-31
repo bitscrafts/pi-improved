@@ -58,5 +58,10 @@ net-check|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- net-check
 
 # Spec 118: backticked repo paths in HANDOFF.md must exist. Offline and deterministic.
 doc-drift-check|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- doc-drift-check
+# Spec 324: the autonomy shell tests, which `cargo test` does not reach. Without this step the gate cannot
+# go red on them: measured 2026-10-31, tick-message-worker-rc.test.sh was red for two days after spec 318
+# changed tick.sh's phone line, and every gate in that window was green.
+autonomy (shell tests)|bash scripts/autonomy/run-tests.sh
+
 # Spec 250: the devbox module's claims (image pin, no secret, project path, uv-only, ...) hold; offline, pure text.
 devbox-check|bash modules/devbox/check.sh

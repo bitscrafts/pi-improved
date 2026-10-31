@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# requires: dev-tree
+# why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: a quota refusal by EITHER coder of the spec lane reaches the worker log, where window.sh reads it (spec 300, F3). The real lane
 # script runs with a stub `ssh` first on PATH: it answers from a fixture directory, so no daemon starts and nothing is spent. Each case
 # runs a scratch copy of the script whose repo root is a scratch tree. PII_POLL_SECONDS and PII_WAIT_MARGIN_S keep the waits short.
