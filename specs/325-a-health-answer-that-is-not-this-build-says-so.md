@@ -68,10 +68,25 @@ bytes, because the client re-serialises the value it parsed).
 returning `Same | Drift | Unverified(<side>)`, unit-tested for same, different, unknown on either side, and
 missing on either side. The daemon-serving cases are integration tests.
 
+**R6 — an export has no revision, so `3` is the right answer there (amended 2026-10-31).** A fresh-gate export
+is `git archive` of HEAD: no `.git`, so `identity::REVISION` is `unknown` on both sides and R3 makes every
+`pii health` in that tree exit `3`. Consequence for anything asserting success: a test whose subject is NOT the
+verdict must accept the three documented codes (`0`, `2`, `3`) rather than `success()`. Measured: the first
+three attempts at this spec parked on
+`control_plane_is_not_behind_runs::a_kill_cancel_does_not_freeze_the_async_workers`
+(`assert!(health.status.success())`, line 285) — the code was right, the assertion predated R1.
+
+**R7 — the stub daemon is a sanctioned test-fake.** `health_drift.rs` serves its own `control.sock` answering
+`sys.hello`, because a real daemon on this build can never answer with a foreign revision. `net-check` refuses
+any `UnixListener::bind` outside `pii-net`, so the file joins that checker's allowlist with its reason —
+the same class as the entries for specs 118/200/230/241/252/263.
+
 ## Files
 
 - `crates/pii-cli/src/cmd_health.rs`
 - `crates/pii-cli/tests/health_drift.rs`
+- `crates/pii-cli/tests/control_plane_is_not_behind_runs.rs` (R6: the verdict set, timing subject untouched)
+- `xtask/src/net_check.rs` (R7: the allowlist entry and its reason)
 - `_docs/05-operations/105-runbook.md`
 - `deploy/pii.service`
 
@@ -100,6 +115,8 @@ shape the daemon really produces.
 - [ ] `cargo test -q -p pii-cli --bins health_verdict 2>&1 | grep -qE "test result: ok\. [1-9]"`
 - [ ] `cargo clippy -q -p pii-cli --all-targets -- -D warnings`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | tail -1 | grep -q "lint-files:"`
+- [ ] `cargo test -q -p pii-cli --test control_plane_is_not_behind_runs 2>&1 | grep -qE "test result: ok\. [1-9]"`
+- [ ] `cargo run -q -p xtask -- net-check 2>&1 | tail -1 | grep -q "PASS: net-check"`
 - [ ] `grep -q "0 = running and this build, 2 = no daemon, 3 = a daemon that is not this build" deploy/pii.service && grep -q "0 = running and this build, 2 = no daemon, 3 = a daemon that is not this build" _docs/05-operations/105-runbook.md`
 - [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q "fresh-gate: PASS"`
 

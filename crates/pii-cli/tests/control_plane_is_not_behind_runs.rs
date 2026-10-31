@@ -282,7 +282,15 @@ fn a_kill_cancel_does_not_freeze_the_async_workers() {
     let end = Instant::now() + Duration::from_secs(3);
     while Instant::now() < end {
         let (health, took) = timed(&["health"], dir);
-        assert!(health.status.success(), "{}", text(&health));
+        // Spec 325 gave `health` three verdicts: 0 this build, 2 no daemon, 3 a daemon that is not this build
+        // (or a revision that cannot be compared). In a fresh-gate export there is no .git, so the client's
+        // revision is "unknown" and 3 is the CORRECT answer -- this test's subject is the latency of the
+        // control plane while kills are in flight, so it accepts any documented verdict and never a crash.
+        assert!(
+            matches!(health.status.code(), Some(0 | 2 | 3)),
+            "health answered with an undocumented code: {}",
+            text(&health)
+        );
         assert!(took < Duration::from_secs(2), "health took {took:?}");
         std::thread::sleep(Duration::from_millis(100));
     }

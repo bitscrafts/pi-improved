@@ -8,7 +8,7 @@
 #   install -m 0644 deploy/pii.service /etc/systemd/system/pii.service
 #   systemctl daemon-reload && systemctl enable --now pii
 #
-# Probe:   PII_RUNTIME_DIR=/run/pii pii health --json   (non-zero = not running)
+# Probe:   PII_RUNTIME_DIR=/run/pii pii health --json   (0 = running and this build, 2 = no daemon, 3 = a daemon that is not this build)
 # Why did it die:  journalctl -u pii   and   tail /var/log/pii/pii.log
 [Unit]
 Description=Pii daemon

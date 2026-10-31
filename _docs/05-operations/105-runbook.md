@@ -17,7 +17,7 @@ Short and operational. Paths assume the shipped systemd unit
 
     systemctl start pii          # or: pii daemon --foreground --store ... (foreground)
     systemctl stop pii           # SIGTERM; the daemon exits 0 within 2 s
-    PII_RUNTIME_DIR=/run/pii pii health --json    # probe: non-zero exit = not running
+    PII_RUNTIME_DIR=/run/pii pii health --json    # probe: 0 = running and this build, 2 = no daemon, 3 = a daemon that is not this build
 
 ## Read health and metrics
 

@@ -85,6 +85,10 @@ pub const ALLOWLIST: &[&str] = &[
     "crates/pii-server/tests/image_digest_is_never_a_bare_prefix.rs",
     // Spec 263: the same sanctioned fake again, serving a framed container log so the container path's head-and-tail capture is driven through the real runtime client.
     "crates/pii-server/tests/coder_output_keeps_the_tail.rs",
+    // Spec 325: health must see a daemon that answers with a FOREIGN build revision, which no real daemon in a
+    // test can be. This test therefore serves its own control.sock stub answering `sys.hello` — the same
+    // sanctioned test-fake class as the entries above, injecting the one field the rule compares.
+    "crates/pii-cli/tests/health_drift.rs",
 ];
 
 /// Scans one in-memory file; returns `NET-CHECK FAIL:` violation lines.

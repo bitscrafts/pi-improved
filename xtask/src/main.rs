@@ -116,7 +116,16 @@ fn main() -> ExitCode {
     let rest: Vec<String> = std::env::args().skip(2).collect();
     match cmd.as_deref() {
         Some("deps-check") => report(deps::run()),
-        Some("net-check") => report(net_check::run()),
+        Some("net-check") => {
+            // Spec 325 amendment: a gate step that says nothing on success cannot be observed — a criterion
+            // written as `tail -1 | grep -q PASS` then fails on a correct tree (measured), and a reader cannot
+            // tell "passed" from "did not run". State the verdict like every other step does.
+            let r = net_check::run();
+            if r.is_ok() {
+                println!("PASS: net-check");
+            }
+            report(r)
+        }
         Some("reachability-check") => report(reachability::run(&workspace_root())),
         Some("doc-drift-check") => report(doc_drift::run(&workspace_root())),
         Some("silent-noop-check") => {
