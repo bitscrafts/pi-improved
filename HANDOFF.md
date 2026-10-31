@@ -3065,3 +3065,24 @@ Trade-off recorded in the config: `cargo clean` there is global; scope it with `
 only success. Three tests drive the real stdio server: an answer the flow does not accept returns `isError`,
 the item's state and history do not move, the event line carries `door:"server"` and `ok:false`, and a call
 with no answer field takes the same path (control). 3 passed, suite 30 result lines ok, clippy 0, fmt clean.
+
+## 2026-10-31T15:01:29Z — spec 324: the gate now runs the autonomy shell tests (the gap that hid the stale test)
+
+The two-day red `tick-message-worker-rc.test.sh` was possible because `cargo test` never reaches
+`scripts/autonomy/tests/`. Spec 324 (`32937c7`) closes it:
+
+- `scripts/autonomy/run-tests.sh` runs every `*.test.sh`, keeps the failing file's last 25 lines, and fails
+  closed (missing or empty directory → exit 2, never a green on nothing).
+- **The runner sets its own PATH.** First gate run showed `uv: command not found` — the five `uv run` tests
+  failed inside the gate and passed by hand, because a non-interactive shell does not inherit the interactive
+  path. This is the same rule the repo already states for dispatch scripts.
+- Tests that cannot run in a clean export **declare** it (`# requires: dev-tree`); the runner prints `SKIP`
+  with the reason and never counts it as a pass. An unknown requirement is refused, so a typo cannot quietly
+  skip a test. The five `lane-*` tests clone `/projects/pi-improved` by absolute path, so in an export they
+  would test the dev repo, not the export.
+- Both step lists carry the step: the local gate and `fresh-gate` run the same thing.
+
+Evidence: `fresh-gate --worktree` PASS at 14:56:37Z with the step inside it reporting **23 passed, 0 failed,
+5 skipped in the export** and **28 passed** in the dev tree; the contract test is 14 assertions, including
+that a red test fails the runner, an empty directory exits 2, and a test still finds `uv` under
+`env -i PATH=/usr/bin:/bin`.
