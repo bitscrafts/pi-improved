@@ -3171,3 +3171,26 @@ did not exist then. They are frozen history, and the audit says so.
 dispatch — an item created and never advanced is a dead row in a second ledger. Advancing one means mapping the
 cycle's phases (dispatch, verify, gate, commit) onto the method's states, which is a change to the kit's model
 of the work, not glue. Do not start it as a refactor; it needs its own spec and a decision.
+
+## 2026-10-31T23:54:59Z — production is the tree, and the instrument said so before I touched it
+
+**Deployed 669f5803d90a over a daemon that had been serving since 2026-10-20** (pid 491273 → 75729), via the
+card-gated installer and one counted restart. `pii health`: client == daemon == HEAD, rc 0, `since_deploy.revision`
+reset, and a real `pii memory search` answered on all three lanes (`degraded:false`).
+
+**The order was the point, and it is worth repeating:** install first, *then* measure `health` against the OLD
+daemon — it printed `DRIFT: the daemon answers from 0a78d6da0c20; this client is 669f5803d90a` and exited 3 — and
+only then restart. The install therefore never touched production before the drift was proven, and the restart
+script rolls back to the aside binary automatically if health does not return 0 within 20 s.
+
+**Two drifts found in the deploy path itself, both now in the runbook (105):**
+```
+· this container has no systemd user bus, so the unit the installer writes is never used; the daemon is a
+  hand-started foreground process whose argv must be read from /proc, not retyped
+· install-pii.sh REGENERATES pii.toml from the template, carrying only `model` forward. On this run the old and
+  new differed in comments only (sections and every key=value identical, checked), but a template change would
+  quietly reset an operator's sections — so diff the moved-aside file before restarting.
+```
+
+**Left running: two stale test daemons** (`_tmp/tools-gate/debug/pii`, 8 days old, stores under `_tmp`) — not
+mine to kill silently, but they hold ports and memory and should be reaped deliberately.

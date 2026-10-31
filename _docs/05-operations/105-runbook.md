@@ -19,6 +19,31 @@ Short and operational. Paths assume the shipped systemd unit
     systemctl stop pii           # SIGTERM; the daemon exits 0 within 2 s
     PII_RUNTIME_DIR=/run/pii pii health --json    # probe: 0 = running and this build, 2 = no daemon, 3 = a daemon that is not this build
 
+### This container has no systemd bus: the daemon is started by hand
+
+Measured 2026-10-31: `systemctl --user` fails here with *"Failed to connect to user scope bus via local
+transport"*, so the unit in `~/.config/systemd/user/` is written by the installer but never used. The live
+daemon runs in the foreground under a user scope, with this argv (read it from `/proc/<pid>/cmdline`, never
+retype it):
+
+    /root/.local/bin/pii daemon --foreground --config /root/.config/pii/pii.toml \
+      --store /root/.local/state/pii/store.redb --workspace /root/.local/state/pii \
+      --log-file /root/.local/state/pii/pii.log --log-rotate-bytes 10485760 --log-keep-files 5
+
+A deploy onto this host is therefore three steps, and the third is the one that can leave the service down:
+
+    SKIP_BUILD=1 BIN_SRC=<repo>/target/release LLAMA_HOST=http://10.10.10.217:8084/v1 \
+      bash deploy/install-pii.sh                 # card-gated (spec 197); moves the old binaries aside
+    pii health                                   # 3 + a DRIFT line: the new client vs the OLD daemon
+    bash <restart script> <old pid> <aside dir>   # one counted start, rollback armed
+
+`pii health` returning `3` right after the install is the expected, correct reading — it is the instrument
+proving the deployment is not the tree yet. Only after the restart does it return `0` with both revisions on
+the new build. Note that `install-pii.sh` also regenerates `pii.toml` from the template (carrying only `model`
+forward), so diff the file it moved aside against the new one before restarting: on 2026-10-31 the two differed
+in comments only, but a template change would quietly reset an operator's sections.
+
+
 ## Read health and metrics
 
     pii health            # human text: build, config hash, stores with format_version, mounts, counts
