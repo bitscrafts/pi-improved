@@ -1,5 +1,27 @@
 # Pii — Session Handoff
 
+## 2026-10-31 03:4xZ — A184/spec 320 CLOSED: fresh-gate green through minilam, 6 export defects fixed
+
+State: HEAD `22856f8` (+ config commits in the minilam repo) · tree clean except untracked `.minilam/` · A184 **done** (15 history
+entries, every transition carrying its own recorded check) · fresh-gate **rc 0**, 12/12 steps PASS (45 PASS lines, log
+`/tmp/pii-fg-r15.out`) · spec 320 exit criteria 9/9 rc 0 (`/projects/_tmp/spec320-criteria-20261031T031322Z.log`).
+
+- **The gate ran through the oracle, not through my word.** `minilam call answer` executed `checks.json.gate`
+  (`cargo run -p xtask -- fresh-gate`, 1800 s budget, target dir declared in the argv) and recorded `check_rc 0` + hash before the
+  item moved. Two earlier attempts were refused with the result recorded — missing evidence, then a timeout — and the item stayed.
+- **Six export-only defects were found by the gate, one per run, each fixed red-first**: the `_tmp` root knob (321), the
+  unknown/unknown stale-binary guard, the reviewed-graph pin firing without a readable HEAD, `uv` resolved by PATH, the
+  agent-bin resolver in two live tests, and the skill-drift/skill-source/skill-edit/skill-put resolver sites.
+- **Three defects in the oracle itself, found because the oracle was used in anger** (minilam repo):
+  check stderr was invisible (a disk-floor refusal read as a bare `rc 1`); check output went to a pipe nobody drained, so a
+  twelve-minute gate was killed at its budget and reported as a timeout; and the handoff renderer **overwrote this file**
+  (2,932 lines replaced by a 40-line brief — restored from HEAD, the render now refuses files it did not write).
+- **One flow defect the flow itself surfaced**: `gate` asked for `ok` while its table accepted only `pass`, so a green gate landed
+  in `gate-fix`. Fixed in both copies, and `lint` now refuses any step whose ask names a reply its table rejects — it immediately
+  caught a second instance (`tdd.implement` asked for `green`, accepted only `done`).
+- **Next**: A185/spec 321 row commit, then the minilam queue — autoresearch method JSON + option-B doc, MCP-extension probe — and
+  `observe.rs`'s split (485 lines against the 450 rule).
+
 ## 2026-10-30 18:2xZ — A183/spec 319 reviewed and NOT closed: fresh-gate at HEAD is red; spec 321/A185 authored ahead of A184
 
 State: HEAD `24d1df5` · tree clean after this commit · control `RUNNING` · window CLOSED until 18:50 UTC · queue **A185 / spec 321,
