@@ -6,7 +6,7 @@ os.rename'd into place, so a cycle killed mid-write cannot leave a truncated sta
 (that is the whole reason this is not `>>` on a log).
 
 usage:
-  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window, by a worker that stopped early (worker-rc=N), or by a refused commit (precommit-broken / precommit-timeout), or by a failed gate or criterion, with a session: spec 280, spec 312, spec 316, spec 318), or "NONE"
+  state.py repair <id> <note...>          -> a park whose cause is repaired: status -> needs-review (or pending without\n                                             a session), last -> 'park-cause-repaired: <note>' (spec 323)\n  state.py pick [<state>]                 -> the top dispatchable item as TSV (parked/needs-review rows are skipped, except a needs-review row parked by a closed window, by a worker that stopped early (worker-rc=N), or by a refused commit (precommit-broken / precommit-timeout), or by a failed gate or criterion, with a session: spec 280, spec 312, spec 316, spec 318), or "NONE"
   state.py get <id> [<state>]             -> that row as JSON
   state.py set <id> k=v [k=v ...]         -> update fields (status/attempts/evidence/session/last)
   state.py list                           -> every row, TSV, for reporting
@@ -48,9 +48,13 @@ def resumable(status, row):
     # was parked by a closed window, a worker that stopped early, a refused commit, or a failed gate or criterion. Every other
     # row waits for a person. The gate's marker form (worker-ok; gate-failed: ...) is offered too: it is what the cycle writes.
     last = row.get("last", "")
+    # spec 323: a park whose cause was repaired is offered again. The marker is written by `repair`, which also
+    # moves the status to needs-review -- a row still `parked` with the marker is NOT offered, so the record never
+    # says "parked" about a row the queue is working.
     return (status == "needs-review" and bool(row.get("session"))
             and (last == "window-closed" or last.startswith(("worker-rc=", "precommit-broken", "precommit-timeout",
-                                                             "gate-failed", "verify-failed", "worker-ok; gate-failed"))))
+                                                             "gate-failed", "verify-failed", "worker-ok; gate-failed",
+                                                             "park-cause-repaired"))))
 
 
 def load():
@@ -125,6 +129,20 @@ def main():
         return
     if cmd == "get":
         print(json.dumps(load().get(a[1], {}), indent=1))
+        return
+    if cmd == "repair":
+        # R1: the repair is an operation, not a note. Attempts are untouched: the 3-strikes cap is a safety
+        # property, so a repaired row that fails again parks again on its own merits.
+        if len(a) < 3:
+            raise SystemExit("usage: state.py repair <id> <note...>")
+        d = load()
+        row = d.get(a[1])
+        if row is None:
+            raise SystemExit(f"repair: no such row {a[1]}")
+        row["last"] = "park-cause-repaired: " + " ".join(a[2:])
+        row["status"] = "needs-review" if row.get("session") else "pending"
+        save(d)
+        print(json.dumps(row, indent=1))
         return
     if cmd == "set":
         d = load()
