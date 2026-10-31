@@ -124,3 +124,12 @@ cargo test -q -p pii-cli --test lane_run_parity -- --exact a_tmp_root_is_refused
 The other six criteria are green on the tree (`lane_run_parity` 25 passed, `lane_plan_parity` 41 passed,
 `clippy -D warnings` rc 0, `lint-files` rc 0 with max effective 446, and the goldens/graphs/scripts diff
 rc 0). Criterion 1 (`fresh-gate --worktree`) is the one that still decides the item and is not claimed here.
+
+### 2026-10-31 12:3xZ — a commit that advances HEAD makes the built binary stale, and the oracle says so
+
+Measured while this was being closed, and worth knowing before reading the next red as a code failure: after
+a commit that does not touch the lane at all, `the_recorded_ssh_sequence_equals_the_shells` failed with
+`left: Some(2) / right: Some(0)` and stderr `rebuild: cargo build -p pii-cli --bin pii` — spec 320's
+stale-binary guard, refusing a `pii` still labelled `59cfd4c` while HEAD was `558759e`. A plain
+`cargo build -q -p pii-cli --bin pii` fixed it and the suite went back to 25 passed / 0 failed. The guard is
+right; the remedy is the rebuild it prints, never a weakened assertion.
