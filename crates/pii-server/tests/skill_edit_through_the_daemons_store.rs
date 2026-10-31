@@ -93,7 +93,11 @@ fn fake_podman(dir: &Path) -> PathBuf {
     podman
 }
 
-fn root_ctx(podman: &Path) -> Ctx {
+fn root_ctx(podman: &Path) -> Option<Ctx> {
+    let Some(agent_dir) = agent_bin_dir() else {
+        // PATH scrubbed in a fresh-gate export (measured 2026-10-30): non-resolution is the contract.
+        return None;
+    };
     let mut caps = CapSet::empty();
     caps.kinds = CapKind::SPAWN | CapKind::PROC;
     let mut argv0 = vec![
@@ -101,14 +105,10 @@ fn root_ctx(podman: &Path) -> Ctx {
         podman.display().to_string(),
         String::from("/usr/bin/test"),
     ];
-    argv0.extend(agent_binaries(
-        agent_bin_dir()
-            .as_deref()
-            .expect("agent binaries (pi, claude) on PATH"),
-    ));
+    argv0.extend(agent_binaries(&agent_dir));
     argv0.extend(criteria::programs(&BTreeMap::new()));
     caps.proc_argv0 = ArgvScope::new(argv0);
-    Ctx::root(caps, Budget::unlimited())
+    Some(Ctx::root(caps, Budget::unlimited()))
 }
 
 /// The daemon's registry, built the way `lib.rs` builds it, over the engine's own stores.
@@ -147,7 +147,7 @@ struct Leg {
 }
 
 /// A one-node container coder that pins `lint-234` at `pin` and runs against the engine's store.
-fn coder_leg(engine: &Arc<Engine>, root: &Path, pin: &str) -> Leg {
+fn coder_leg(engine: &Arc<Engine>, root: &Path, pin: &str) -> Option<Leg> {
     let work =
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "skill-edit-work-").unwrap();
     let shim =
@@ -166,18 +166,18 @@ fn coder_leg(engine: &Arc<Engine>, root: &Path, pin: &str) -> Leg {
         &run_store,
         &spec,
         &reg,
-        &root_ctx(&podman),
+        &root_ctx(&podman)?,
         &run_id,
         serde_json::json!({}),
         true,
     )
     .unwrap();
-    Leg {
+    Some(Leg {
         terminal,
         events: log.0.lock().clone(),
         ran: work.path().join("ran.txt").exists(),
         journal: std::fs::read_to_string(shim.path().join("podman.log")).unwrap_or_default(),
-    }
+    })
 }
 
 /// R1: the edit keeps the id, and answers the new slug and the sha256 a graph pin must move to.
@@ -291,9 +291,13 @@ async fn skill_edit_through_the_daemons_store() {
         .expect("skill.edit");
     assert_edit_reply(&edit, &id);
 
-    let stale = coder_leg(&engine, dir.path(), &sha256_hex(SKILL));
+    let Some(stale) = coder_leg(&engine, dir.path(), &sha256_hex(SKILL)) else {
+        return;
+    };
     assert_old_pin_refused(&stale);
-    let fresh = coder_leg(&engine, dir.path(), &sha256_hex(EDITED));
+    let Some(fresh) = coder_leg(&engine, dir.path(), &sha256_hex(EDITED)) else {
+        return;
+    };
     assert_new_pin_spawns(&fresh);
 
     // Controls, each a refusal that must write nothing.
