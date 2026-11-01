@@ -17,18 +17,27 @@
 # usage: arm-digest.sh [--apply] [--dry-run]
 set -uo pipefail
 REPO=${REPO:-/projects/pi-improved}
-CONFIG_DIR=${CONFIG_DIR:-/root/.config/pii}
+CONFIG_DIR=${CONFIG_DIR:-/root/.config/pii}   # CONFIG_DIR is overridable so --print-host can be driven by a test
 ENVFILE="$CONFIG_DIR/pii.env"
 APPLY=0
+PRINT_HOST=0
 for a in "$@"; do
   case "$a" in
     --apply) APPLY=1 ;;
     --dry-run) APPLY=0 ;;
+    --print-host) PRINT_HOST=1 ;;
     *) echo "usage: arm-digest.sh [--apply]" >&2; exit 2 ;;
   esac
 done
 say(){ printf '%s\n' "$*"; }
 die(){ say "ARM: REFUSED — $*"; exit 1; }
+
+# 0) THE HOST MUST COME FROM THE [llama] SECTION, NOT FROM THE FIRST URL IN THE FILE. The first version of this script
+# grepped the file for a URL and took the first match, which was a COMMENT ("# loopback, http://127.0.0.1:8080/v1");
+# it passed LLAMA_HOST=127.0.0.1:8080 to the installer, whose merge wrote it into [llama] host -- and production's
+# model is granite-4.2-3b on :8084, while :8080 serves laguna-xs-2.1. Every model call would have failed.
+llama_host(){ awk '/^\[/{s=$0} s=="[llama]" && /^host *= */{gsub(/^host *= *"|".*$/,""); print; exit}' "$CONFIG_DIR/pii.toml"; }
+if [ "$PRINT_HOST" = 1 ]; then llama_host; exit 0; fi
 
 # 1) the credential must be there, and we must not print it
 [ -f "$ENVFILE" ] || die "no $ENVFILE: there is nothing to arm with"
@@ -68,10 +77,14 @@ ASIDE="$CONFIG_DIR/pii.toml.arm-$(date -u +%Y%m%dT%H%M%SZ)"
 cp -p "$CONFIG_DIR/pii.toml" "$ASIDE" || die "could not copy the live config aside"
 say "ARM: config copied to $ASIDE"
 
-# the live model host is part of the argv, and install-pii.sh defaults to a different port (8082 vs the live 8084)
-LLAMA_LIVE=$(grep -oE 'http://[0-9.]+:[0-9]+/v1' "$CONFIG_DIR/pii.toml" | head -1)
-[ -n "$LLAMA_LIVE" ] || die "could not read the live model host from the config; refusing to guess"
-say "ARM: model host kept as $LLAMA_LIVE"
+# THE HOST MUST COME FROM THE [llama] SECTION, NOT FROM THE FIRST URL IN THE FILE. The first version of this script
+# grepped the file for a URL and took the first match, which was a COMMENT ("# loopback, http://127.0.0.1:8080/v1");
+# it then passed LLAMA_HOST=127.0.0.1:8080 to the installer, whose merge dutifully wrote it into [llama] host -- and
+# production's model is granite-4.2-3b, which lives on :8084, while :8080 serves laguna-xs-2.1. Every model call
+# would have failed. The value is read from the section, and verified by VALUE afterwards.
+LLAMA_LIVE=$(llama_host)
+[ -n "$LLAMA_LIVE" ] || die "could not read [llama] host from $CONFIG_DIR/pii.toml; refusing to guess"
+say "ARM: [llama] host kept as $LLAMA_LIVE"
 
 set -a
 # shellcheck disable=SC1090
@@ -93,7 +106,18 @@ if ! python3 deploy/pii-config-merge.py verify "$ASIDE" "$CONFIG_DIR/pii.toml" >
   cp -p "$ASIDE" "$CONFIG_DIR/pii.toml"
   die "the new config dropped something the old one had (see /tmp/arm-digest-verify.log); restored"
 fi
-say "ARM: every table and key of the previous config survives"
+# A key that exists with a different VALUE passes a key-level verify and still breaks production: that is exactly
+# how the host was clobbered. These two values decide every model call, so they are compared as values.
+for k in '^model *= ' '^host *= '; do
+  A=$(grep -m1 "$k" "$ASIDE" | sed 's/#.*//; s/ *$//')
+  B=$(grep -m1 "$k" "$CONFIG_DIR/pii.toml" | sed 's/#.*//; s/ *$//')
+  if [ "$A" != "$B" ]; then
+    cp -p "$ASIDE" "$CONFIG_DIR/pii.toml"
+    die "the new config changed '$k' (was '$A', now '$B'); restored -- an armed digest must not cost the model"
+  fi
+  say "ARM: verified unchanged: $B"
+done
+say "ARM: every table, key and the two model values of the previous config survive"
 
 # 5) one counted restart, with the environment, and rollback if health does not answer
 kill -TERM "$PID" 2>/dev/null
