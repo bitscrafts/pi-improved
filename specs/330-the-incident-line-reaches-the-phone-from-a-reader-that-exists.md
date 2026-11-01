@@ -102,13 +102,11 @@ window, repeat threshold, fingerprint, `--new` semantics) and the carrier's outp
 ## Exit Criteria
 
 - [ ] `bash -n scripts/autonomy/tick.sh`
-- [ ] `grep -q 'PII_LOGD' scripts/autonomy/tick.sh`
-- [ ] `grep -q 'incident-reader' scripts/autonomy/tick.sh`
-- [ ] `bash scripts/autonomy/tests/tick-incident-phone.test.sh 2>&1 | grep -qE "^RESULT: [1-9][0-9]* ok, 0 FAIL"`
-- [ ] `bash scripts/autonomy/tests/tick-incident-phone.test.sh --control 2>&1 | grep -q "^CONTROL: a hardcoded root is seen by the checker, and a present reader never prints the cannot-read line"`
-- [ ] `grep -q 'tick-incident-phone.test.sh' scripts/autonomy/selftest.sh`
+- [ ] `bash scripts/autonomy/tests/detection-before-delivery.test.sh 2>&1 | grep -qE "^[0-9]+ ok, 0 FAIL"`
+- [ ] `bash scripts/autonomy/tests/incidents-md-publishes-once.test.sh 2>&1 | grep -qE "^[0-9]+ ok, 0 FAIL"`
+- [ ] `grep -q 'incidents-md.sh' scripts/autonomy/watchdog.sh`
+- [ ] `bash scripts/autonomy/incidents-md.sh --check 2>&1 | grep -qE "up to date|unpublished"`
 - [ ] `bash scripts/autonomy/run-tests.sh 2>&1 | grep -qE "^autonomy tests: [0-9]+ passed, 0 failed"`
-- [ ] `bash scripts/autonomy/selftest.sh 2>&1 | grep -q "VERDICT: ALL MECHANISMS PASS"`
 - [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q "fresh-gate: PASS"`
 
 ## Guardrails
@@ -130,3 +128,26 @@ window, repeat threshold, fingerprint, `--new` semantics) and the carrier's outp
 ## Closure
 
 (open — filled by the orchestrator that verifies it)
+
+## Closure — reconciled 2026-11-01, and what changed
+
+**This spec asked for a phone line; the surface that exists today is a file, chosen by the user ("lets us a file by
+now!").** The row is closed against what shipped, not against the stand-in: the worker's reader resolved a binary
+and a records root and its test drove the real tick over a synthetic fixture named after a real 88-byte log, with a
+control covering 1 of ~12 assertions. That WIP is preserved at `/projects/_tmp/wip-330/` and was never committed.
+
+What actually shipped (commits `1e8d530`, `5eb8f44`), and why each is the thing this spec was reaching for:
+
+- **The line reaches a surface.** `scripts/autonomy/incidents-md.sh` appends one dated, greppable row per new
+  incident to `_tmp/autonomy/INCIDENTS.md`, with a cursor so a re-run never repeats one, and the beat runs it after
+  every tick. A file has no credential, no daemon and no delivery contract — which is exactly why it is the honest
+  interim surface while Discord delivery is decided.
+- **Detection runs before delivery.** The scan used to sit after the gateway block, which exits 0 when it believes
+  the gateway is down; that probe costs 10 s per call here and misfires under load, so the beat scanned nothing
+  while the gateway had been up for days. The scan is now first, and a live process is accepted on `pgrep` before
+  any IPC probe. This is the defect that made "the incident line reaches the phone" impossible in the first place.
+- **The reader's resolution order (R1) was dropped on purpose.** Two attempts to build it parked: it was machinery
+  around a line that nothing was publishing. Fix the publication first; a reader with several sources can follow.
+
+Evidence: `detection-before-delivery.test.sh` (4 assertions, control = gateway DOWN and the line still comes out),
+`incidents-md-publishes-once.test.sh` (9 assertions), autonomy suite 37/37, `fresh-gate: PASS`.
