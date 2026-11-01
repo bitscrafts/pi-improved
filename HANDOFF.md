@@ -3223,3 +3223,27 @@ script rolls back to the aside binary automatically if health does not return 0 
 
 **Left running: two stale test daemons** (`_tmp/tools-gate/debug/pii`, 8 days old, stores under `_tmp`) — not
 mine to kill silently, but they hold ports and memory and should be reaped deliberately.
+
+## 2026-11-01T02:21:08Z — a parallel session's abandoned WIP adopted, and gap 3 narrowed
+
+**Spec 329 landed** (`bc20995`): a re-install no longer regenerates `pii.toml`. The replaced file is the base;
+`deploy/pii-config-merge.py` applies only the keys the installer owns, adds missing tables/keys from the
+template, appends `[[channel]]`/`[[cron]]` only when no block of that name exists, and the promotion is then
+*verified* against the file it replaced (a miss restores the aside copy and exits non-zero). `CONFIG_ONLY=1`
+lets the test drive the real promotion path: 10 cases with a control that loses channel, cron and worker. The
+gate runs it as `install-config`. Row 329 closed (`329 · done · bc20995`), row-truth audits 2 rows, 0 violations.
+
+**How it arrived matters.** Another session wrote the spec and the row at 00:20, its worker failed three times
+and the row parked, then its implementation was left uncommitted in the tree for ~1h45m while the queue reported
+`NONE`. I ran its test (10/10, control fails by design), reviewed the merge, gated the tree
+(`fresh-gate --worktree` PASS), committed it and closed the row — and updated the runbook paragraph that had
+described the old regenerating behaviour. If that session resumes, its next `git status` will show its work
+already committed under the neutral identity.
+
+**071 gap 3 narrowed instead of claimed** (`23dc477`): the stream contradiction was temporal — all 22
+occurrences of the TLS close error are 2026-10-19 03:45–06:04Z, the fix landed 06:40Z the same day, and every
+log file from 10-15 to now was checked. The absence since proves nothing, though: hosted-provider traffic exists
+on exactly one day (150 calls on 10-19, zero since; the daemon runs the local plain-HTTP lane), and the
+end-to-end exercise is not buildable as shipped because `pii-net` pins `webpki_roots` and no CA override exists.
+The honest status is "site proven, path unexercised", and the proof needs either a provider credential or a
+gated trust override — a decision about attack surface, not a test hack.
