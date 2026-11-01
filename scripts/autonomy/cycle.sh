@@ -188,7 +188,11 @@ if [ -n "$RSID" ]; then
       { echo "# Corrective brief — $ITEM ($SPEC). The previous attempt ended: $PRV"; echo
         echo "Your earlier pass on this spec did not survive the orchestrator's check. Evidence:"
         echo '```'
-        grep -E 'failed steps:|failing tests:|panicked at|FAIL: |^OUTCOME=' "$LASTCYCLE" 2>/dev/null | head -20
+        # The verify line is shaped `<n> verify - … crit=<p>/<t> fail=<command> rc=<-`. None of the gate's
+        # patterns match it, so this block came out EMPTY and a worker retried blind three times (measured
+        # 2026-11-01, row 330: "the brief's evidence block is empty again"). brief-evidence.sh matches the
+        # shapes the cycle really writes and falls back to the log's tail, so it can never print nothing.
+        bash scripts/autonomy/brief-evidence.sh "$LASTCYCLE"
         echo '```'
         echo "Fix the CAUSE, not the symptom: do not weaken, skip, ignore or delete an assertion, do not raise"
         echo "a timeout, do not add a sleep, and do not touch anything outside this spec's scope."

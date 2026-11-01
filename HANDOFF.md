@@ -1,5 +1,41 @@
 # Pii — Session Handoff
 
+## 2026-11-01T12:2xZ — row 330 parked blind: the corrective brief's evidence block was empty, and the fix is the generator
+
+State: HEAD `1032386` · tree NOT clean (`leftover.sh` + its new test belong to another lane, left untouched) ·
+control `RUNNING` · queue: only **330**, parked at 3 attempts · selftest **42 passed, 0 failed — ALL MECHANISMS
+PASS** · autonomy suite **34 passed, 0 failed** (was 32).
+
+- **Why 330 parked, measured and not guessed.** All three resumes logged `crit=6/9` with the same failing
+  criterion: `bash scripts/autonomy/run-tests.sh 2>&1 | grep -qE "^autonomy tests: [0-9]+ passed, 0 failed"`. So
+  criteria 1-6 (the worker's own markers and its own test) passed, and the suite criterion was red — i.e. the red
+  test was the one the worker adds, run *under the runner* rather than invoked by hand.
+- **The real defect was upstream of the work.** `cycle.sh:191` built every corrective brief with
+  `grep -E 'failed steps:|failing tests:|panicked at|FAIL: |^OUTCOME='` over the previous cycle log, but the line
+  that carries a failed verify is shaped `13 verify - … crit=6/9 fail=<command> rc=-` — none of those patterns
+  match it. The brief shipped with an empty `Evidence:` fence, three times, and the worker said so in its own
+  report: *"the brief's evidence block is empty again, so I still cannot see what `worker-rc=1` was."* It repeated
+  the same mechanical failure because it was never told what failed; the park then blamed the worker.
+- **Fix (root, testable).** The pattern set and the quoting moved into `scripts/autonomy/brief-evidence.sh`: it
+  matches the shapes the cycle really writes (`crit=p/t … fail=<letter>`, `run.refused`, `== why the run was not
+  accepted`) and falls back to the log's own tail, so an empty block is impossible. `cycle.sh` calls it.
+  `scripts/autonomy/tests/brief-evidence.test.sh` (10 assertions, now a `run-tests.sh` row) pins it — including a
+  near-miss control that a GREEN `crit=9/9 fail=-` line is never quoted as a failure.
+- **The test was reddened with the defect, not with a paraphrase.** First mutation stayed GREEN because the
+  fixture was 5 lines and the tail fallback rescued it — the fixture was rebuilt so the verify line sits beyond
+  `tail -20`; a second mutation attempt left a trailing `|` (an empty alternative matches every line, so the
+  second red was an artefact and was discarded). The mutation that counts — PAT set to the defect's exact original
+  one-liner — reddens exactly the three targeted assertions (`verify line NOT quoted`, `failing command not named`,
+  `refusal not quoted`) with both controls green; helper restored byte-identical, sha256
+  `e8aa9e4ed3a4210337e2f76ede50049cb1b31ee5e0a1953662eb27aba41b3ca4` before and after.
+- **Live proof, not a fixture.** On the real `cycle-20261101T062905Z.log` the helper now prints the `crit=6/9`
+  line and the judge's refusal; the old pattern prints nothing — exactly the empty block the worker received.
+- **Row 330 has no implementation on disk.** `grep -c PII_LOGD|incident-reader scripts/autonomy/tick.sh` = 0, no
+  `scripts/autonomy/tests/tick-incident-phone.test.sh`, no stash, no leftover tar for today — and the
+  `_tmp/wip-330/` directory the previous entry says the test was moved into **does not exist**. The move was
+  recorded in the handoff but is not on disk; nothing else holds the work. That is why the resume carries an
+  explicit "re-apply, nothing survived" instruction instead of assuming its old edits are still there.
+
 ## 2026-11-01T06:2xZ — the queue was empty after 329, so spec 330 / row `330`: an incident cannot reach the phone from a reader that is not there
 
 State: HEAD before this tick `4f4788d` · tree clean · control `RUNNING` · queue **330 / spec 330** (`pick` names it,
