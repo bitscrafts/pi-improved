@@ -61,3 +61,33 @@ R5. Rust, no new dependency, no model call, no network. A scan over a 500-line l
 - Do NOT use a model, a cloud call, or Hermes' logs.
 - Do NOT let a benign fingerprint in through a config default nobody can find: it must be one list, in config.
 - Do NOT touch `/tmp`, `/dev`, `/proc`, `/sys`, `/root`; scratch under `/projects/_tmp/`.
+
+## Closure (2026-11-01)
+
+Criterion by criterion, measured on the deployed tree:
+
+```
+cargo test -p pii-learn --test incidents     ->  test result: ok. 7 passed
+fixture                                      ->  crates/pii-learn/tests/fixtures/cycle-last-detached.trimmed.log
+                                                 (6 394 B, a trim of the real _tmp/autonomy/logs/cycle-last-detached.log,
+                                                  the run whose head carries the 496-refusal episode) + fixtures/production/
+criterion 3                                  ->  the command as written names package `pii`, which does not exist
+                                                 (`error: package(s) pii not found`); the binary is `pii` from `pii-cli`,
+                                                 so it was run as the installed binary
+```
+
+**The replay, on the real corpus** (`pii incidents scan --root _tmp/autonomy/logs`, exit 0, 11 incidents):
+
+```
+dirty-tree     count=496  one incident, first 2026-10-11T21:01:44Z   <- the whole point: 496 refusals, 1 record
+locked         count=31   verify-failed 3 (three windows)   add-failed 9   plan-error 6
+no-change      count=3    gate-failed 2 (two windows)       parked 2
+window-closed  none — zero benign fingerprints opened an incident
+```
+
+The per-fingerprint counts differ from the 061 judgement's replay (1 dirty-tree / 1 verify-failed) because the
+corpus has grown from 551 outcomes to the full log set; the property under test is unchanged and visible:
+**one incident per fingerprint per window**, with repeats incrementing `count`.
+
+**What is still not measured**: M1's second half — a live incident line reaching the phone within a day. The
+mechanism opens records; delivery to the operator has not been observed end to end.
