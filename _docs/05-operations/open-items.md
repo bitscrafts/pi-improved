@@ -127,6 +127,16 @@ Authored as **spec 315 / row A179**. One further fact decides the design: `head-
 calls `--worktree` "the pre-commit door", but `cycle.sh:435` runs it **after** `git commit` and without `--worktree`
 — detection of a broken `HEAD`, not prevention, and keyed on the worktree rather than the index a commit carries.
 
+### 9c. The live config schedules nothing — the digest occurrence cannot happen (found 2026-10-31)
+
+Measured while proving the deployment: `/root/.config/pii/pii.toml` has **no `[[cron]]` entry** and the live
+daemon reports `cron_entries: 0`, `armed: 0`. The installer's template `examples/pii.production.toml` has none
+either, and mentions no digest, so a fresh install never arms one. The 12:00Z occurrence that 071 §2 measured on
+`121fb6de67e1` cannot fire on today's deployment — not because a cancelled run fires (196 PASS, proven on the
+deployed binary), but because nothing is scheduled at all. Whether the digest is meant to be scheduled by
+`[[cron]]`, by a channel-graph timer, or by an external cron job is a decision, not a bug to patch: decide it,
+then make the template ship whatever the answer is, so a reinstall cannot silently drop the schedule again.
+
 ### 9. Smaller filed items
 - the two audit trails should be unified — see #1;
 - ~~a CLI `learn revert` racing the daemon's sweep (filed with 125)~~ — closed by spec 149: a daemon-owned store takes the revert as a request; without one the CLI applies it directly under a cross-process writer lock (`learn/.writer.lock`) and prints `path=direct`;

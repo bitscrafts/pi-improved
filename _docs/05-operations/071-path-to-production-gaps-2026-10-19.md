@@ -23,6 +23,22 @@ runs a scratch daemon with a timer three minutes ahead, cancels the run, drops t
 clock: the pre-fix deployed binary executed and posted 2 runs, this tree executed and posted 0. What is still
 missing is a repeat against the **deployed post-196 binary**, i.e. production terms, not code.
 
+**CLOSED 2026-10-31, against the deployed binary.** The daemon was moved onto `669f5803d90a` (see the runbook's
+"started by hand" section) and the exercise was then run with `PII_BIN=/root/.local/bin/pii`:
+
+```
+armed: r000000000001 at 00:14:09Z; firing minute: 17
+cron entry removed from the config, daemon restarted at 00:14:10Z; only a surviving wheel entry could fire
+cancelled the re-armed run r000000000002 (no cron entry remains to arm another)
+after the instant: total runs=2, runs that EXECUTED=0, failed-without-executing=2, posts=0
+196 PASS — the cancelled run's instant arrived and nothing fired (pre-fix: the 09:00Z shape)
+```
+
+Artefact: `/tmp/ex196-deployed.out`; scratch daemon and store kept at `/projects/_tmp/ex196-lxLC7m`. The
+cancelled instant arrived with the deployed binary serving and nothing fired, twice (the original arm and the
+re-armed occurrence), with zero posts. Section 1's gap is now a property of the deployment, not a claim.
+
+
 ### 2 THE 12:00Z OCCURRENCE — MEASURED, AND IT PASSED
 
 070 step 2 is the reading that earns the verdict: at 12:01Z exactly **+1 run and +1 post**, unchanged at 12:05Z.
