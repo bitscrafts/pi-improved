@@ -21,7 +21,9 @@ T="$PWD/_tmp/leftover-owns.$$"
 trap 'find "$T" -depth -delete 2>/dev/null' EXIT
 rm -rf "$T"; mkdir -p "$T/repo/scripts/autonomy"
 cp scripts/autonomy/leftover.sh "$T/repo/scripts/autonomy/leftover.sh"
-git show HEAD:scripts/autonomy/leftover.sh > "$T/repo/scripts/autonomy/leftover-old.sh"
+# pinned to the commit BEFORE the fix: `git show HEAD:` would be the fixed script once this landed, and a control
+# that compares the fix with itself proves nothing. If that commit ever disappears the test fails loudly.
+git show 1032386:scripts/autonomy/leftover.sh > "$T/repo/scripts/autonomy/leftover-old.sh"
 cd "$T/repo" || exit 1
 git init -q . && git config user.email t@t && git config user.name t
 printf '%s\n' a > a.txt; printf '%s\n' b > b.txt; printf '%s\n' c > c.txt

@@ -31,7 +31,7 @@ PASS** · autonomy suite **34 passed, 0 failed** (was 32).
 - **Live proof, not a fixture.** On the real `cycle-20261101T062905Z.log` the helper now prints the `crit=6/9`
   line and the judge's refusal; the old pattern prints nothing — exactly the empty block the worker received.
 - **Row 330 has no implementation on disk.** `grep -c PII_LOGD|incident-reader scripts/autonomy/tick.sh` = 0, no
-  `scripts/autonomy/tests/tick-incident-phone.test.sh`, no stash, no leftover tar for today — and the
+  `_tmp/wip-330/attempt4-tick-incident-phone.test.sh` (moved out of the tree 2026-11-01), no stash, no leftover tar for today — and the
   `_tmp/wip-330/` directory the previous entry says the test was moved into **does not exist**. The move was
   recorded in the handoff but is not on disk; nothing else holds the work. That is why the resume carries an
   explicit "re-apply, nothing survived" instruction instead of assuming its old edits are still there.
@@ -61,7 +61,7 @@ State: HEAD before this tick `4f4788d` · tree clean · control `RUNNING` · que
 - **Shape of the fix.** R1 resolves the reader (`PII_BIN` verbatim, then the dev tree, then `PATH`) and records the
   choice in `_tmp/autonomy/incident-reader`; R2 reports a missing reader once instead of silence, then still
   dispatches (detection must not gate the builder); R3 makes `PII_LOGD` the records root; R4 adds
-  `_tmp/wip-330/tick-incident-phone.test.sh.moved` (moved out of the tree on 2026-11-01 while row 330 is parked), which drives the real tick over the fixture and carries a
+  `_tmp/wip-330/attempt4-tick-incident-phone.test.sh` (moved out of the tree on 2026-11-01 while row 330 is parked), which drives the real tick over the fixture and carries a
   control that mutates a COPY of the tick back to the hardcoded root; R5 gives the selftest one row and points its
   tick rows at a scratch root so a test cannot consume a live incident.
 - **Red proof recorded** (cycle's own invocation shape, `bash -lc ". scripts/autonomy/env.sh; <criterion>"`):

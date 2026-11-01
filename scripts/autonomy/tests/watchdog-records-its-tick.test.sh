@@ -21,7 +21,7 @@ printf '%s\n' '#!/usr/bin/env bash' 'echo "incident dirty-tree count=496 first_s
 chmod +x "$T/scripts/autonomy/tick.sh"
 # the real watchdog, pointed at the stub by running it from $T with one very short beat and a fast kill
 cp scripts/autonomy/watchdog.sh "$T/scripts/autonomy/watchdog.sh"
-( AUTONOMY_WATCHDOG_PID="$T/wd.pid" AUTONOMY_LOGD="$T/logs" AUTONOMY_TICK="$T/scripts/autonomy/tick.sh" WATCHDOG_INTERVAL=1 \
+( PII_HOLD="$T/hold" AUTONOMY_WATCHDOG_PID="$T/wd.pid" AUTONOMY_LOGD="$T/logs" AUTONOMY_TICK="$T/scripts/autonomy/tick.sh" WATCHDOG_INTERVAL=1 \
   timeout 3 bash scripts/autonomy/watchdog.sh >/dev/null 2>&1 ) || true
 
 LOG=$(ls "$T"/logs/tick-*.log 2>/dev/null | head -1)
@@ -34,7 +34,7 @@ check "the line is recorded on every beat" "$( [ "${BEATS:-0}" -ge 1 ] && echo y
 # CONTROL: the old shape must fail this test — prove it by running a watchdog that still discards.
 sed 's|>>"\$LOGD/tick-$(date -u +%Y%m%d).log" 2>&1|>/dev/null 2>\&1|' scripts/autonomy/watchdog.sh > "$T/scripts/autonomy/watchdog-old.sh"
 rm -rf "$T/_tmp"
-( AUTONOMY_WATCHDOG_PID="$T/wd2.pid" AUTONOMY_LOGD="$T/logs2" AUTONOMY_TICK="$T/scripts/autonomy/tick.sh" WATCHDOG_INTERVAL=1 \
+( PII_HOLD="$T/hold2" AUTONOMY_WATCHDOG_PID="$T/wd2.pid" AUTONOMY_LOGD="$T/logs2" AUTONOMY_TICK="$T/scripts/autonomy/tick.sh" WATCHDOG_INTERVAL=1 \
   timeout 3 bash scripts/autonomy/watchdog-old.sh >/dev/null 2>&1 ) || true
 check "CONTROL: the discarding shape records nothing" "$(ls "$T"/logs2/tick-*.log 2>/dev/null | wc -l)" "0"
 

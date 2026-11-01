@@ -29,6 +29,9 @@ while :; do
   # a held tree is not the beat's to touch -- the tick can dispatch a cycle, so it waits for the holder to finish
   if bash scripts/autonomy/hold.sh check >/dev/null 2>&1; then
     bash "$TICK" >>"$LOGD/tick-$(date -u +%Y%m%d).log" 2>&1 || true
+    # the incident surface that exists today is a file: the tick formats the line, this publishes it where a person
+    # can read it (the delivering cron job has been disabled since 2026-10-19; Discord delivery is a later decision)
+    bash scripts/autonomy/incidents-md.sh >>"$LOGD/tick-$(date -u +%Y%m%d).log" 2>&1 || true
   else
     echo "watchdog: $(bash scripts/autonomy/hold.sh check | sed 's/^hold: //') -- beat skipped" \
       >>"$LOGD/tick-$(date -u +%Y%m%d).log"

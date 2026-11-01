@@ -25,6 +25,20 @@ say_once() { # say_once <key> <line...>   — print only when <key> differs from
   printf '%s\n' "$@"
 }
 
+# 0) DETECTION COMES BEFORE DELIVERY. The incident scan used to sit after the gateway block, and that block
+#    exits 0 whenever it believes the gateway is down -- so a delivery fault silently suppressed detection, which
+#    is why no incident line ever reached a surface (measured 2026-11-01: the tick's own log said 'the gateway is
+#    down and would not start' while the gateway had been up for days).
+# 0b) an incident is opened from our own records (spec 150): N identical outcomes within 30 min, no model. One
+#     phone line per NEW incident; `--new` prints nothing when none is new, so this is silent in the normal case.
+#     Needs the built binary; a missing one is skipped, never compiled here (a tick must not start a build).
+PII_BIN=${PII_BIN:-target/debug/pii}
+if [ -x "$PII_BIN" ]; then
+  "$PII_BIN" incidents scan --root "$LOGD" --new 2>/dev/null | while read -r _ FP COUNT FIRST _; do
+    echo "pii autonomy · INCIDENT $FP — ${COUNT#count=} times since ${FIRST#first_seen=} (see $LOGD/incidents.jsonl)"
+  done
+fi
+
 # 0) the gateway delivers this loop's messages and runs the other scheduler. It died on 2026-10-11 and nothing
 #    revived it: no systemd in this container, and its own log said it exited "so systemd Restart=on-failure can
 #    revive the gateway". For two days nothing reached the phone because of it. Revive it here, but only when no
@@ -34,8 +48,12 @@ say_once() { # say_once <key> <line...>   — print only when <key> differs from
 # A SINGLE probe is a coin toss under load: measured 2026-10-19, 2 of 25 probes failed while a cargo test ran,
 # and every false negative cost the whole beat — no cycle was dispatched from 09:12Z to 10:15Z while the
 # gateway was up the entire time. Probe three times, two seconds apart, before believing it is down.
+gw_proc_up() { pgrep -f 'hermes gateway run' >/dev/null 2>&1; }
 gw_up() {
   local i
+  # a live process is instant evidence and cannot be missed under load. The CLI probe below costs 10s per call in
+  # this container (measured 2026-11-01) and fails ~2 of 25 times during a build, which used to cost a whole beat.
+  gw_proc_up && return 0
   for i in 1 2 3; do
     hermes gateway status 2>/dev/null | grep -q 'Gateway is running' && return 0
     [ "$i" -lt 3 ] && sleep 2
@@ -55,16 +73,6 @@ if command -v hermes >/dev/null 2>&1 && ! gw_up; then
     fi
   fi
   exit 0
-fi
-
-# 0b) an incident is opened from our own records (spec 150): N identical outcomes within 30 min, no model. One
-#     phone line per NEW incident; `--new` prints nothing when none is new, so this is silent in the normal case.
-#     Needs the built binary; a missing one is skipped, never compiled here (a tick must not start a build).
-PII_BIN=${PII_BIN:-target/debug/pii}
-if [ -x "$PII_BIN" ]; then
-  "$PII_BIN" incidents scan --root "$LOGD" --new 2>/dev/null | while read -r _ FP COUNT FIRST _; do
-    echo "pii autonomy · INCIDENT $FP — ${COUNT#count=} times since ${FIRST#first_seen=} (see $LOGD/incidents.jsonl)"
-  done
 fi
 
 # 0c) paused by the operator (Discord: `control.sh pause`) — say it once, start nothing.
