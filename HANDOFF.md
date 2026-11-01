@@ -1,5 +1,34 @@
 # Pii — Session Handoff
 
+## 2026-11-01T00:3xZ — the queue was empty after 328, so spec 329 / row `329` authored: a re-install was losing the operator's config
+
+State: HEAD `aa821f8` · tree clean · control `RUNNING` · queue **329 / spec 329** (`pick` names it, 6 criteria →
+6 commands, 4 paths, `row-verify` OK 6, `row-paths` OK 4, `sync-verify` 0 stale 0 broken, `check-ids` 1
+canonical, `check-row-truth` 0 violations) · selftest **42 passed, 0 failed — ALL MECHANISMS PASS**.
+
+- **Why this item.** 059 §4 is drained and every remainder there is a user decision, so the tick read
+  `_docs/05-operations/open-items.md` and the deploy path instead. `deploy/install-pii.sh` is the only door
+  production comes through, and its section 4 moves the operator's `pii.toml` aside, writes the template, and
+  carries exactly one value forward (`model`, lines 123-141). Measured this tick by running that pipeline
+  verbatim against a plausible prior config: `[channel] name="ops"`, `[cron] name="weekly"`, `[worker]`,
+  `[net].grants = ["10.0.0.9:8084"]` and `core.session_runs_cap = 512` all disappear, and the install still
+  prints `INSTALLED`. The runbook's answer is "diff the moved-aside file before restarting" — advice, and this
+  repo's rule is that enforcement beats advice.
+- **The shape of the fix, and what it is not.** No merge engine and no new dependency: the replaced file becomes
+  the base, the installer applies only the five keys it owns, the template supplies only what is missing, and the
+  appended `[[channel]]`/`[[cron]]` blocks are keyed by `name` so a second install adds nothing. The promotion is
+  then verified against the aside copy by parsing both files with `tomllib` — not by grepping the text: the first
+  attempt at this spec grepped and "found" `session_runs_cap` in the template's own commented line.
+  `CONFIG_ONLY=1` exists so a test drives sections 4/4a of the real script (no build, no card, no binaries, no
+  network), which is what makes the criteria count as evidence rather than a re-enactment.
+- **Also measured, not acted on.** The live production config carries `[[channel]]` and **no `[[cron]]`**, and
+  `pii health` reports `armed: 0` — so the deployed daemon has an empty schedule; the digest cron only gets
+  written when `PII_DISCORD_TOKEN` and `PII_DISCORD_CHANNEL_ID` are both present at install time, which is the
+  user's host action (open-items #7c). Left alone deliberately.
+- **Next**: the 5-minute dispatcher picks `329` on its first tick; its verify ends with `fresh-gate --worktree`
+  (~12-45 min — that is the item, not a stall), then the cycle's gate and the commit.
+
+
 ## 2026-10-31 03:4xZ — A184/spec 320 CLOSED: fresh-gate green through minilam, 6 export defects fixed
 
 State: HEAD `22856f8` (+ config commits in the minilam repo) · tree clean except untracked `.minilam/` · A184 **done** (15 history
