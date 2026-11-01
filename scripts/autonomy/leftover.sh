@@ -63,9 +63,14 @@ owner(){
     st=${status[$id]:-pending}; ses=${session[$id]:-}
     case "$st" in done|skipped|revoked) continue ;; esac
     [ -n "$ses" ] || continue
-    hit=0; IFS=';' read -ra cols <<<"$paths"
-    for c in "${cols[@]}"; do
-      for d in "${dirty[@]}"; do [ "$c" = "$d" ] && hit=1; done
+    # Opus review 2026-11-01: this used to count a row the moment ONE dirty path matched it. A row that names two
+    # files of ten said OWNER, and clean() then stashed the other eight -- other people's work. A row owns this
+    # tree only if EVERY dirty path is one it names; anything else is FOREIGN and must be left where it is.
+    hit=1; IFS=';' read -ra cols <<<"$paths"
+    for d in "${dirty[@]}"; do
+      found=0
+      for c in "${cols[@]}"; do [ "$c" = "$d" ] && { found=1; break; }; done
+      [ "$found" = 1 ] || { hit=0; break; }
     done
     [ "$hit" = 1 ] && { hits=$((hits + 1)); who=$id; }
   done <<<"$ROWS"
@@ -74,13 +79,46 @@ owner(){
   return 7
 }
 
+# foreign_paths <row-id>: the dirty paths that row does NOT name. Empty when the row owns the whole tree, which is
+# the only case clean() may act on. This is what makes the refusal nameable instead of just "FOREIGN 10".
+foreign_paths(){
+  local PLAN=${PII_PLAN:-$ROOT/scripts/autonomy/plan.tsv} want c d found
+  local -a cols dirty
+  want=$(awk -F'\t' -v id="$1" '!/^#/ && $1 == id {print $6; exit}' "$PLAN" 2>/dev/null)
+  IFS=';' read -ra cols <<<"$want"
+  mapfile -t dirty < <(dirty_paths)
+  for d in "${dirty[@]}"; do
+    found=0
+    for c in "${cols[@]}"; do [ "$c" = "$d" ] && { found=1; break; }; done
+    [ "$found" = 1 ] || printf '%s\n' "$d"
+  done
+}
+
 clean(){
-  local cid=$1 REF LEFT
+  local cid=$1 REF WHO FOREGN OWNED before after
   if [ -z "$(git status --porcelain)" ]; then echo "CLEAN nothing to stash"; return 0; fi
-  if git stash push --include-untracked -m "pii-leftover-$cid" >/dev/null 2>&1 && [ -z "$(git status --porcelain)" ]; then
+  # A stash is a tree-wide act. It may only happen when ONE row names every dirty path, and even then it carries
+  # only that row's paths, so an unrelated edit can never disappear into it.
+  WHO=$(owner) || true
+  case "$WHO" in
+    OWNER\ *) OWNED=${WHO#OWNER } ;;
+    *) echo "REFUSED $WHO -- the tree holds work no single open row names; a tree-wide stash would swallow it"
+       dirty_paths | sed 's/^/  /'
+       return 8 ;;
+  esac
+  if [ -n "$(foreign_paths "$OWNED")" ]; then
+    echo "REFUSED OWNER $OWNED does not name every dirty path"
+    foreign_paths "$OWNED" | sed 's/^/  /'
+    return 8
+  fi
+  IFS=$'\n' read -r -d '' -a PATHS < <(dirty_paths; printf '\0')
+  before=$(dirty_paths | wc -l)
+  if git stash push --include-untracked -m "pii-leftover-$cid" -- "${PATHS[@]}" >/dev/null 2>&1; then
+    after=$(dirty_paths | wc -l)
     REF=$(git stash list --format='%gd %gs' | grep -m1 -F "pii-leftover-$cid" | cut -d' ' -f1)
-    echo "STASH $REF  (restore: git stash pop $REF)"
-    return 0
+    echo "STASH $REF of $OWNED ($before path(s))  (restore: git stash pop $REF)"
+    [ "$after" -eq 0 ] && return 0
+    echo "INCOMPLETE: $after path(s) still dirty"; dirty_paths | sed 's/^/  /'; return 8
   fi
   echo "NOT-CLEANED"
   dirty_paths | sed 's/^/  /'

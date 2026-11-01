@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+# The tree hold (2026-11-01): a cycle writes the tree -- worker edits, commits, gate exports -- and an interactive
+# turn can be holding it with no lock of its own. A cron-side cycle yields with one line and exit 0, the same benign
+# refusal drain.sh makes for a held lock, so a held tree never looks like a fault.
+if [ "${PII_HOLD_FROM_CRON:-0}" = 1 ] || [ "${PII_CRON:-}" = 1 ]; then
+  bash scripts/autonomy/hold.sh check >/dev/null 2>&1
+  if [ $? -eq 3 ]; then
+    bash scripts/autonomy/hold.sh check | sed 's/^hold: /cycle: /'
+    echo "OUTCOME=tree-held"; exit 0
+  fi
+fi
 # THE LOCK SPANS THE WHOLE CYCLE (2026-10-15). The launcher exits immediately, so a lock taken by the launcher is
 # released the moment the cycle starts: that is how four cycles ran at once and their builds queued on cargo.
 if [ -z "${PII_CYCLE_LOCKED:-}" ]; then

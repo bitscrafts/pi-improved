@@ -16,6 +16,14 @@
 # Env: MAX_CYCLES (default 8), PII_DRAIN_QUIET=1 to print only the summary.
 set -uo pipefail
 cd /projects/pi-improved || exit 1
+# The tree hold (2026-11-01): an interactive turn can be editing this tree with no lock of its own, so a dispatcher
+# that only checks the cycle's flock cannot know. Passing --from-cron is what makes this a BACKGROUND caller: it
+# yields and exits 0, which reduces its rights and can never gain any.
+bash scripts/autonomy/hold.sh check >/dev/null 2>&1
+if [ $? -eq 3 ]; then
+  bash scripts/autonomy/hold.sh check | sed 's/^hold: /drain: /'
+  exit 0
+fi
 . scripts/autonomy/env.sh 2>/dev/null
 # THE WORKER IS DECLARED HERE, so the scheduled dispatcher is self-sufficient (user, 2026-10-19: "it should be automatic").
 # claude + haiku is the implementation workhorse; a closed window makes cycle.sh return OUTCOME=window-closed and the NEXT

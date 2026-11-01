@@ -26,6 +26,12 @@ LOGD="${AUTONOMY_LOGD:-_tmp/autonomy/logs}"          # overridable so a test can
 TICK="${AUTONOMY_TICK:-scripts/autonomy/tick.sh}"   # touching the real logs or running the real tick
 mkdir -p "$LOGD"
 while :; do
-  bash "$TICK" >>"$LOGD/tick-$(date -u +%Y%m%d).log" 2>&1 || true
+  # a held tree is not the beat's to touch -- the tick can dispatch a cycle, so it waits for the holder to finish
+  if bash scripts/autonomy/hold.sh check >/dev/null 2>&1; then
+    bash "$TICK" >>"$LOGD/tick-$(date -u +%Y%m%d).log" 2>&1 || true
+  else
+    echo "watchdog: $(bash scripts/autonomy/hold.sh check | sed 's/^hold: //') -- beat skipped" \
+      >>"$LOGD/tick-$(date -u +%Y%m%d).log"
+  fi
   sleep "${WATCHDOG_INTERVAL:-300}s"
 done
