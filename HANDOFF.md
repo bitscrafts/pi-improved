@@ -25,7 +25,7 @@ State: HEAD before this tick `4f4788d` · tree clean · control `RUNNING` · que
 - **Shape of the fix.** R1 resolves the reader (`PII_BIN` verbatim, then the dev tree, then `PATH`) and records the
   choice in `_tmp/autonomy/incident-reader`; R2 reports a missing reader once instead of silence, then still
   dispatches (detection must not gate the builder); R3 makes `PII_LOGD` the records root; R4 adds
-  `scripts/autonomy/tests/tick-incident-phone.test.sh`, which drives the real tick over the fixture and carries a
+  `_tmp/wip-330/tick-incident-phone.test.sh.moved` (moved out of the tree on 2026-11-01 while row 330 is parked), which drives the real tick over the fixture and carries a
   control that mutates a COPY of the tick back to the hardcoded root; R5 gives the selftest one row and points its
   tick rows at a scratch root so a test cannot consume a live incident.
 - **Red proof recorded** (cycle's own invocation shape, `bash -lc ". scripts/autonomy/env.sh; <criterion>"`):
