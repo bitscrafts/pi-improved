@@ -1,5 +1,38 @@
 # Pii — Session Handoff
 
+## 2026-11-01T06:2xZ — the queue was empty after 329, so spec 330 / row `330`: an incident cannot reach the phone from a reader that is not there
+
+State: HEAD before this tick `4f4788d` · tree clean · control `RUNNING` · queue **330 / spec 330** (`pick` names it,
+9 criteria → 9 commands, 4 paths, `row-paths` OK 4, `row-verify` OK 9, `sync-verify` 0 stale 0 broken, `check-ids`
+2 canonical 0 violations) · selftest **42 passed, 0 failed — ALL MECHANISMS PASS**.
+
+- **Why this item.** 059 §4 is drained and the plan's 184 rows are closed, so the tick read the milestone table the
+  last commit wrote (`4f4788d`) and picked the only open half that is code rather than a user decision: M1's
+  "one incident line reaches the phone within a day — delivery has never been seen end to end". Its replay half was
+  re-measured first and is sound: 11 incidents over a copy of the real records, zero benign fingerprints.
+- **Three measurements, all on the live path.** (1) `PII_BIN=/nonexistent/pii` with every other knob on scratch →
+  the tick prints the dry line and nothing about incidents (`grep -c` 0): branch 0b is `[ -x "$PII_BIN" ]` with no
+  else, and `PII_BIN` defaults to `target/debug/pii`, which `cargo clean`, a fresh export and the devbox tree all
+  lack — detection off, silently. (2) With a wrapper recording the carrier's argv and `PII_LOCK`, `PII_CONTROL`,
+  `PII_QUESTIONS`, `PII_REPORTED`, `PII_STATE`, `PII_PLAN` all on scratch, the carrier was still called
+  `incidents scan --root _tmp/autonomy/logs --new`: the records root is the one knob the tick does not honour, and
+  `--new` writes it — so the selftest's two tick runs (`selftest.sh:88,105`) can mark a live incident reported while
+  their output goes to a scratch file nobody reads. (3) `grep -c incident scripts/autonomy/selftest.sh` = 0 and no
+  `tests/*.test.sh` names it, so since spec 324 the gate cannot see the branch either.
+- **The carrier is not the defect.** `pii incidents scan --new` over the committed fixture returns exactly two
+  incidents — `dirty-tree count=6 first_seen=2026-10-11T21:01:44Z` and `verify-failed count=3` — from both the dev
+  binary and the installed one; it is untouched by 330.
+- **Shape of the fix.** R1 resolves the reader (`PII_BIN` verbatim, then the dev tree, then `PATH`) and records the
+  choice in `_tmp/autonomy/incident-reader`; R2 reports a missing reader once instead of silence, then still
+  dispatches (detection must not gate the builder); R3 makes `PII_LOGD` the records root; R4 adds
+  `scripts/autonomy/tests/tick-incident-phone.test.sh`, which drives the real tick over the fixture and carries a
+  control that mutates a COPY of the tick back to the hardcoded root; R5 gives the selftest one row and points its
+  tick rows at a scratch root so a test cannot consume a live incident.
+- **Red proof recorded** (cycle's own invocation shape, `bash -lc ". scripts/autonomy/env.sh; <criterion>"`):
+  criteria 2,3,4,5,6 rc=1; guards 1 (`bash -n`), 7 (`run-tests`) and 8 (selftest) rc=0.
+- **Next**: the 5-minute dispatcher picks `330`; its verify ends with `fresh-gate --worktree` (~12-45 min — that is
+  the item, not a stall), then the cycle's gate and the commit.
+
 ## 2026-11-01T00:3xZ — the queue was empty after 328, so spec 329 / row `329` authored: a re-install was losing the operator's config
 
 State: HEAD `aa821f8` · tree clean · control `RUNNING` · queue **329 / spec 329** (`pick` names it, 6 criteria →
