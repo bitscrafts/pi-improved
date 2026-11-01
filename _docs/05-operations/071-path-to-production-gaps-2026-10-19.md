@@ -75,6 +75,42 @@ it — and `http.rs`'s head loop, `chat_streaming`, and the SSE `feed` are all c
 GAP: the ollama-cloud switch is deployed with a truncation defect whose site is **not proven**. This is the least certain
 thing on this page and deserves independent attention more than anything else here.
 
+**NARROWED 2026-10-31, by measurement — the contradiction was TEMPORAL, and the gap is smaller than it reads.**
+
+1. **The site is one place, and it is explicit.** `crates/pii-net/src/service/conn.rs:194-204` maps a read error to
+   end-of-stream when it is `ErrorKind::UnexpectedEof` **or** its text contains `close_notify`; every other read
+   error still becomes `unavailable: net: read: …`. The comment above it (lines 185-193) records the measured
+   arm, and says the diagnostic was removed after the measurement — so "the diagnostic never printed" was
+   consistent with the arm firing, not in contradiction with it.
+2. **Ordering explains the rest.** Across every log file (`pii.log.2`, `.1`, `pii.log`, covering
+   `2026-10-15T20:01Z → 2026-10-31T23:54Z` continuously) the error text occurs **22 times, all of them on
+   2026-10-19 between 03:45:35Z and 06:04:46Z**, provider `openai`. The fix landed at **06:40:28Z the same
+   day** (`1c41bd1`, spec 191) — 36 minutes after the last occurrence. The "same error text kept appearing"
+   was the pre-fix binary still serving, not a surviving site.
+3. **But the absence after that day proves NOTHING, and my first reading of it was vacuous.** The log carries
+   hosted-provider traffic on **one day only**: `2026-10-19 openai=150` calls (22 errors), and **zero** calls
+   on any day since — the daemon has run on the local llama.cpp lane, which is plain HTTP and never reaches
+   the TLS close path. There is also no provider credential in this environment (only a docker key), so the
+   path cannot be exercised tonight.
+
+GAP (corrected): the defect's site is proven by code and by ordering; what is missing is not a site but an
+**exercise of the fixed path**, and the honest statement is "not exercised since 2026-10-19", not "does not
+recur". The local lane means this is not a live risk **today**; it becomes live the moment a hosted provider is
+configured again. The cheapest real proof is one of: a streaming turn against a hosted provider on a scratch
+daemon (needs a key), or an exercise that runs the deployed binary against a truncating TLS peer (the in-crate
+tests at `crates/pii-net/tests/stream_close_is_eof.rs` and `crates/pii-model/tests/stream_close_is_eof.rs` already
+do exactly that, but against the library, not the binary).
+
+**And the second of those is not buildable as shipped (measured 2026-10-31).** `pii-net` builds its trust store
+from `webpki_roots` compiled into the binary (`crates/pii-net/src/dial.rs:60-61`) — public CAs only. A local
+truncating TLS peer therefore cannot be trusted by the deployed binary at all, and no CA override exists
+(`grep extra_ca|ca_file|PII_TLS` in `crates/` finds nothing). So the end-to-end proof has exactly two possible
+shapes: a real provider credential (none in this environment — the only key present is a docker one), or a
+deliberate, gated trust override in the product, which is a decision about attack surface, not a test hack.
+Until one of those exists, "196-style" proof of this fix is impossible against the shipped binary, and the
+honest status is the one above: the site is proven, the path is unexercised.
+
+
 ### 4 THE EXERCISES ARE PARTLY CLAIMED, NOT ALL EVIDENCED
 
 E5/E6 were run with the deployed binary as a control (`9045484`). E1/E2/E3/E8 and the 187 restart proof need reading in
