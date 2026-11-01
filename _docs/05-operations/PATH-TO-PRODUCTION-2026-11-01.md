@@ -61,3 +61,45 @@ For pii's own channel work, the daemon still needs step 3's credential.
 The product's *detection* now runs and its *record* is readable. The product's *delivery* — the thing that makes it
 a daily presence rather than a log — is one credential and one restart away, and that restart is the only outward
 step left: after it, M5 stops being a claim and starts being a measurement.
+
+## Armed, 2026-11-01 — and what that did and did not prove
+
+`deploy/arm-digest.sh --apply` ran against production. The live `pii.toml` now carries
+
+```toml
+[[cron]]
+name = "digest"
+graph = "discord-digest"
+schedule = "0 12 * * *"
+input = { to = "1558589728671146105" }   # interpolated from PII_DISCORD_CHANNEL_ID
+```
+
+and the daemon (pid 1744962) holds both `PII_DISCORD_*` variables in its environment — measured by reading
+`/proc/<pid>/environ`, not assumed from the file being present.
+
+**Proved:**
+- the digest is armed in the daemon: `pii graph list` → `discord-digest · ce7445f0962b · nodes 6 · timer 0 12 * * * ·
+  armed 1 · same`, and the journal shows `cron.rearmed` for `digest` with run ids (`r000000004356`, …);
+- the channel **delivers**: `channel.verification_posted` twice, text `pii 0.1.0 is up (revision 669f5803d90a)`, and
+  15 `channel.posted` before them. The 41 `errors` on the channel entry are the historical
+  `not started: PII_DISCORD_TOKEN … not set` and `no address reachable for discord.com` warnings from every start
+  before today.
+
+**Not provable outside the daemon, by design:** a standalone `pii graph run graphs/discord-digest.toml` cannot
+exercise the digest — the recall nodes need `memory_read`, which only the daemon grants:
+
+```
+capability denied: memory: read not granted (the graph and the node need the memory_read capability)
+```
+
+and a manual run of the real graph simply re-suspends on its timer (`in_ms` ≈ 44 178 269, i.e. the next 12:00Z). So
+the digest's proof is the 12:00Z run and nothing else. **A daily observer now watches that moment**: cron job
+`745f25ecd51a` runs `pii-digest-check.sh` at 12:20Z, counting *digest* posts since noon and explicitly excluding
+verification posts — counting those would make the check pass on a day the digest never delivered, which is the exact
+false green this page exists to prevent.
+
+**One regression paid for on the way** (`1944bcb`): the arm script read the model host as "the first URL in the
+config", which was a comment pointing at `127.0.0.1:8080` — a server that answers 200 but serves `laguna-xs-2.1`,
+while the configured model `granite-4.2-3b` lives on `:8084`. Nothing failed loudly. The host is now read from the
+`[llama]` section only and the post-install check compares the **values** of `model` and `[llama] host`, because a key
+that exists with a changed value passes a key-level verify and still breaks production.
