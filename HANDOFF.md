@@ -3247,3 +3247,50 @@ on exactly one day (150 calls on 10-19, zero since; the daemon runs the local pl
 end-to-end exercise is not buildable as shipped because `pii-net` pins `webpki_roots` and no CA override exists.
 The honest status is "site proven, path unexercised", and the proof needs either a provider credential or a
 gated trust override — a decision about attack surface, not a test hack.
+
+## 2026-11-01T02:53:04Z — the path to production, step by step, with who owns what is left
+
+`153 → 150 → 154 → 151 → 152 → M5 → M6 → M7` — the order in production-progression.md, worked tonight.
+
+**Two steps closed with their own proofs** (`db82221`), both of which had been implemented months ago and never
+closed, so nobody had run them:
+
+```
+153  operator records are not test fixtures
+     scripts/checks/operator-records-untouched.sh -> UNTOUCHED, rc 0 (hashes six records, runs the selftest,
+     re-hashes); selftest -> VERDICT: ALL MECHANISMS PASS; operator-acts.log -> 181 act lines
+150  an incident is opened from our own records
+     7 tests green; fixture committed (6 394-byte trim of the real cycle-last-detached.log);
+     pii incidents scan --root _tmp/autonomy/logs -> 11 incidents, exit 0:
+       dirty-tree count=496 in ONE record (the 496 refusals that once cost 41.5 h), locked 31, add-failed 9,
+       plan-error 6, no-change 3, verify-failed 3 (three windows), gate-failed 2, parked 2, window-closed: none
+     criterion 3 as written names package `pii`, which does not exist; the binary is `pii` from `pii-cli`
+```
+
+**The milestone table as it actually stands:**
+
+```
+M0  builder loop trustworthy ..... DONE — selftest ALL MECHANISMS PASS (42 rows measured by the cron lane)
+M1  detection from own records ... mechanism DONE (replay above); "one incident line reaches the phone in a
+                                    day" NOT observed — delivery to the operator has never been seen end to end
+M2  evidence on a crash (154) ..... CLOSED spec
+M3  resolution on a branch (151) .. CLOSED spec (pre-registered: only if >=3 of 7 historical failures yield a
+                                    mechanical fix at < $1)
+M4  the deploy card (152) ......... CLOSED spec; enforced in code (installer refuses without a card) and now
+                                    verified against the file it replaced (329)
+M5  first real deploy ............. identity == deployed rev DONE tonight (669f5803d90a, health 0); the rest is
+                                    not ours: >=7 posts over 7 days needs a Discord credential, and "the unit
+                                    survives 24 h" is a host promise because this container has no systemd bus
+M6  reads its own runtime logs .... mechanism DONE (incidents scan --source runtime); "a real incident from
+                                    production records within a week" needs a week of the daemon running
+M7  retire the dormant surface ..... SIX DECISIONS FOR YOU: gemini, telegram/matrix/webhook, gpiod HAL, the local
+                                    ollama.service, the forum-as-home switch
+```
+
+**Correction recorded** (open-items 9c): I had filed "the live config schedules nothing" as a lost schedule. It is
+not: `install-pii.sh` appends the digest `[[cron]]` only when `HAVE_CHANNEL=1`, i.e. when both Discord variables
+are set, and neither is on this host. `cron_entries: 0` is intended behaviour, and the remaining item is M5's
+"you" half — the credential — not a defect.
+
+**Also still true:** two stale test daemons from `_tmp/tools-gate/debug/pii` (8+ days old) hold ports and memory;
+they are not mine to kill silently.
