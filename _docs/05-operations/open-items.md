@@ -137,11 +137,20 @@ installer says so in its own output (`no pii.env written, the daemon will report
 `cron_entries: 0` and `armed: 0` are the correct, intended readings — a digest that cannot post is not scheduled
 at all, which is better than one that fires and refuses.
 
-So the remaining item is M5's **"you" half**, not a defect: placing the Discord credential (`pii.env`, mode 0600)
-is what makes the 12:00Z digest exist. Re-running `install-pii.sh` with both variables exported will append the
-cron block, and the daemon then arms it. What is still a real decision is narrower: whether a schedule should
-exist on a host with **no** channel — if yes, the template needs a variant that schedules a run whose post is
-refused on purpose, and that is a product choice nobody has made.
+**CORRECTED AGAIN 2026-11-01 (Opus review) — the credential is on disk and I said it was not.**
+`/root/.config/pii/pii.env` exists, mode 0600, 245 bytes, 2026-10-19, and holds **both** `PII_DISCORD_TOKEN`
+(72 chars) and `PII_DISCORD_CHANNEL_ID`. So nothing needs to be "placed". Two things are actually missing:
+
+1. **The hand-started daemon has none of it.** The unit carries `EnvironmentFile=-/root/.config/pii/pii.env`, so a
+   *systemd* start would load the env; this container has no systemd bus, the daemon is started by hand, and
+   `/proc/<pid>/environ` holds no `PII_DISCORD` variable at all (measured). The daemon therefore reports
+   `channels: []` and cannot post even though the credential is right there.
+2. **The config has no `[[cron]] digest`** because that block is appended only when `HAVE_CHANNEL=1` at *install*
+   time, and the install ran without the variables exported.
+
+The fix is one command sequence, not a code change: source `pii.env`, re-run `deploy/install-pii.sh` (its config
+half appends the digest block), then start the daemon with that same environment. It has not been done because
+the first digest would post to a real channel — that is the operator's decision, not the loop's.
 
 ### 9. Smaller filed items
 - the two audit trails should be unified — see #1;

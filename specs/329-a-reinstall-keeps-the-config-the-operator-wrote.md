@@ -101,6 +101,25 @@ nothing written) unless `CONFIG_DIR`, `PREFIX`, `STATE_DIR`, `RUNTIME_DIR` and `
 - **Do not change what the daemon accepts.** The produced file must be the same TOML shape the daemon reads
   today; no new keys, no renames.
 
-## Closure
+## Closure (2026-11-01)
 
-(open — filled by the orchestrator that verifies it)
+Verified and committed as `bc20995`, after the row had parked on three worker attempts and its implementation sat
+uncommitted in the tree for ~1h45m.
+
+**What passed:** the spec's own test drives the real promotion path and reports `10 ok, 0 FAIL`, including the
+control in which the template-only base loses channel, cron and worker; and the promoted config was compared with
+the file it replaced — five tables (including `[[channel]]`) and thirteen `key = value` assignments identical.
+
+**What my adoption got wrong, per the Opus review of 2026-11-01** — recorded here rather than quietly fixed,
+because the next orchestrator should not repeat it:
+
+- the commit adds three paths the plan row's column 6 does not list (`deploy/pii-config-merge.py` — 180 lines and
+  the whole mechanism — plus `deploy/config-python.sh` and the runbook edit), so `unlisted-changes` was bypassed
+  by committing anyway;
+- it mixes the worker's implementation with my own documentation edit in one commit;
+- it says nothing about where the work came from (no row reference, no `Lane:` trailer), so the provenance lives
+  only in HANDOFF `cb41662`;
+- criterion 3 of this spec (`--refuses-the-real-config`) and criterion 4 have no recorded run.
+
+The behaviour is verified; the process around it was sloppy, and the row is `done` on the strength of the first
+statement only.

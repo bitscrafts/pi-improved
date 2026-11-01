@@ -3327,3 +3327,27 @@ are set, and neither is on this host. `cron_entries: 0` is intended behaviour, a
 
 **Also still true:** two stale test daemons from `_tmp/tools-gate/debug/pii` (8+ days old) hold ports and memory;
 they are not mine to kill silently.
+
+## 2026-11-01T09:55Z — Opus review: nine defects, five of them mine
+
+Reviewed read-only with Opus 5.5 (probe `PONG55 || modelUsage=claude-opus-5-5`; report at
+`/projects/_tmp/opus-review-330/`). Verified afterwards, and these stand:
+
+- **HEAD moved under the brief** — `c1d101d` (06:21:34, committed by the skill lane) sits on top of the
+  `4f4788d` I had reported. My "current HEAD" claims are only true at the moment I type them.
+- **The actors ARE distinguishable**, which contradicts what I told the user an hour ago: 32 of the last 40
+  commits are `<mvcorrea@lnx>` (interactive) and 8 are `<mvcorrea@gmail.com>` from `cycle.sh:449` and the skill
+  lane, and loop commits carry a `Lane:` trailer. One neutral identity per actor would be better, but "git log
+  cannot tell them apart" was false.
+- **The uncommitted `tick.sh` was running in production**: `watchdog.sh` (pid 811768, 11 days) runs `tick.sh`
+  every few minutes, and `_tmp/autonomy/incident-reader` was written at 09:38:24Z by it. Restored `tick.sh` from
+  HEAD and preserved the WIP in `/projects/_tmp/wip-330/` — a live loop must not execute unapproved code.
+- **No live path delivers the tick's line**: the job that delivered it (`37ff4aecb8b0`) is disabled since
+  2026-10-19; the watchdog redirects to `/dev/null`; `cycle.sh:475` writes it to a log. Spec 330's premise is
+  therefore necessary but not sufficient — the phone line is /dev/null regardless.
+- **The Discord credential exists on disk** (`pii.env`, 0600, 245 B, both variables) and the daemon has none of
+  it, because the unit's `EnvironmentFile` only applies to a systemd start and this host has no systemd bus.
+- **§9c was wrong in conclusion twice**; it now states the credential's existence and the two real gaps.
+- **M5 is not DONE**: it is a four-part AND and only the identity part holds (`posted: 0`, `runs: 0`, no unit).
+- **My adoption of 329** (`bc20995`) added files outside the row's column 6, mixed the worker's work with mine,
+  and left the spec's Closure open. All three are now recorded in that spec's Closure.
