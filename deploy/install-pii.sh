@@ -16,6 +16,9 @@
 #   UNIT_DIR      where the unit file goes     (user: $HOME/.config/systemd/user, system: /etc/systemd/system)
 #   SKIP_BUILD=1  do not run cargo; install from BIN_SRC
 #   BIN_SRC       built binaries dir           (default <repo>/target/release)
+#   CONFIG_ONLY=1 rewrite only the runtime config and channel credentials (spec 329): no build, no deploy card,
+#                 no binaries, no unit, no llama probe. The config is promoted exactly as in a full install.
+#   PII_PYTHON    Python 3.11+ for tomllib     (default: python3 on PATH, else uv into _tmp/; see config-python.sh)
 # Preconditions (checked before anything is moved): graphs/discord-{triage,digest}.toml exist, llama host answers, PREFIX is creatable.
 # PII_DISCORD_TOKEN / PII_DISCORD_CHANNEL_ID are optional: without them no pii.env is written and the daemon
 # starts with `channels: []` (spec 157).
@@ -52,10 +55,99 @@ DEPLOY_CARD_DIR="${DEPLOY_CARD_DIR:-$REPO/_tmp/deploy}"   # spec 197: overridabl
 BINS=(pii pii-web pii-evolve)   # swapped in place
 STAGED=(pii-mcp)                # installed as <name>.new only: the pii-mcp swap is a separate step (runbook)
 TS="$(date +%s)"
+ASIDE="${PREFIX}.old-${TS}"
+. "$REPO/deploy/config-python.sh"
+PY="$(config_python "$REPO")" || { echo "ABORT: no Python 3.11+ (tomllib); set PII_PYTHON" >&2; exit 2; }   # spec 329: reads and verifies the config
+MERGE="$REPO/deploy/pii-config-merge.py"
 
 abort() { echo "ABORT (nothing was changed): $*" >&2; exit 1; }
 
+# ---- 4 + 4a: the runtime config and the channel credentials (spec 329) ----
+# A re-install starts from the operator's file, not the template: the replaced file is the base, the template supplies
+# only what that base lacks, and the installer edits only the keys it owns. The promotion is refused unless every table
+# and key path of the replaced file is still in the candidate; the replaced file is then restored (R4).
+fail_restore() {
+  if [ -n "${PRIOR:-}" ]; then cp -p "$PRIOR" "$CONF"; fi
+  rm -f "$TMPCONF" "$TMPCONF.channel" "$TMPCONF.cron"
+  echo "ABORT: $*" >&2
+  exit 1
+}
+write_config() {
+  mkdir -p "$CONFIG_DIR" "$STATE_DIR/trajectory"
+  CONF="$CONFIG_DIR/pii.toml"
+  PRIOR=""
+  if [ -e "$CONF" ]; then
+    # Checked before the file moves: an unparseable config is refused with the prior file byte-identical.
+    "$PY" -I "$MERGE" check "$CONF" || abort "the config to be replaced does not parse as TOML (named above)"
+    mkdir -p "$ASIDE"
+    mv "$CONF" "$ASIDE/pii.toml"
+    PRIOR="$ASIDE/pii.toml"
+  fi
+  TMPCONF="$(mktemp "$CONFIG_DIR/pii.toml.XXXXXX")"
+  cat > "$TMPCONF.channel" <<TOML
+
+# --- appended by deploy/install-pii.sh (spec 142) ---
+# ONE Discord forum channel. The token (PII_DISCORD_TOKEN) comes only from the unit's
+# environment file, never from here. The forum id is written into the cron's input below
+# (it is an id, not a secret).
+[[channel]]
+name = "discord"
+kind = "discord"
+graph = "discord-triage"
+TOML
+  MERGE_ARGS=(--template "$REPO/examples/pii.production.toml" --out "$TMPCONF" --block "$TMPCONF.channel"
+    --set "core.runtime_dir=$RUNTIME_DIR" --set "core.trajectory_dir=$STATE_DIR/trajectory"
+    --set "core.log_file=$STATE_DIR/pii.log" --set "llama.host=$LLAMA_HOST")
+  if [ -n "$PRIOR" ]; then MERGE_ARGS+=(--prior "$PRIOR"); fi
+  if [ "$HAVE_CHANNEL" = 1 ]; then
+    cat > "$TMPCONF.cron" <<TOML
+
+# ONE daily digest at 12:00Z = 09:00 Brazil (UTC-3). `schedule` is the display mirror; firing is
+# driven by the graph's timer node, which carries the same 12:00Z knob (measured 2026-10-19: the
+# mirror and the timer node must say the same hour, and the name must match what a replaced
+# install already recorded — a re-install regresses the operator truth otherwise).
+[[cron]]
+name = "digest"
+graph = "discord-digest"
+schedule = "0 12 * * *"
+input = { to = "$PII_DISCORD_CHANNEL_ID" }
+TOML
+    MERGE_ARGS+=(--block "$TMPCONF.cron")
+  fi
+  "$PY" -I "$MERGE" merge "${MERGE_ARGS[@]}" || fail_restore "the config could not be built (named above)"
+  # R4: every table and key path of the replaced file must survive; a loss restores the replaced file.
+  if [ -n "$PRIOR" ] && ! "$PY" -I "$MERGE" verify "$PRIOR" "$TMPCONF"; then
+    fail_restore "the promoted config lost keys the replaced config had (named above); refused"
+  fi
+  mv "$TMPCONF" "$CONF"
+  rm -f "$TMPCONF.channel" "$TMPCONF.cron"
+
+  # ---- 4a: the channel credentials, by reference to the operator's environment (spec 157) ----
+  # The file lives next to pii.toml, outside the repo, mode 0600, and is the only place the values go.
+  ENVF="$CONFIG_DIR/pii.env"
+  if [ "$HAVE_CHANNEL" = 1 ]; then
+    if [ -e "$ENVF" ]; then
+      mkdir -p "$ASIDE"
+      mv "$ENVF" "$ASIDE/pii.env"
+    fi
+    TMPENV="$(mktemp "$CONFIG_DIR/pii.env.XXXXXX")"   # mktemp creates it 0600
+    printf 'PII_DISCORD_TOKEN=%s\nPII_DISCORD_CHANNEL_ID=%s\n' "$PII_DISCORD_TOKEN" "$PII_DISCORD_CHANNEL_ID" > "$TMPENV"
+    chmod 0600 "$TMPENV"
+    mv "$TMPENV" "$ENVF"
+  fi
+}
+
 # ---- R3: preconditions, before anything is built or moved ----
+HAVE_CHANNEL=0
+[ -n "${PII_DISCORD_TOKEN:-}" ] && [ -n "${PII_DISCORD_CHANNEL_ID:-}" ] && HAVE_CHANNEL=1
+
+# ---- R5: the config half alone: no build, no card, no binaries, no unit, no network precondition ----
+if [ "${CONFIG_ONLY:-0}" = 1 ]; then
+  write_config
+  echo "CONFIG ONLY: $CONF (no build, no deploy card, no binaries, no unit, no llama probe)"
+  exit 0
+fi
+
 # Spec 197 (070 step 5): no install without the deploy card for the revision about to be built.
 # Cards are keyed by the 7-char short revision; the binary reports 12. Either keying passes.
 REV7="$(git -C "$REPO" rev-parse --short=7 HEAD)" || abort "cannot read HEAD of $REPO — is it a git checkout?"
@@ -66,8 +158,6 @@ fi
 command -v curl >/dev/null || abort "curl not found"
 curl -sf --max-time 5 "${LLAMA_HOST%/}/models" >/dev/null \
   || abort "llama.cpp host ${LLAMA_HOST} does not answer GET ${LLAMA_HOST%/}/models"
-HAVE_CHANNEL=0
-[ -n "${PII_DISCORD_TOKEN:-}" ] && [ -n "${PII_DISCORD_CHANNEL_ID:-}" ] && HAVE_CHANNEL=1
 if [ ! -d "$PREFIX" ]; then
   mkdir -p "$PREFIX" 2>/dev/null || abort "target prefix $PREFIX does not exist and cannot be created"
 fi
@@ -99,7 +189,6 @@ for b in "${BINS[@]}" "${STAGED[@]}"; do
 done
 
 # ---- 2: move existing binaries aside (dated; never delete) ----
-ASIDE="${PREFIX}.old-${TS}"
 moved=0
 for b in "${BINS[@]}"; do
   if [ -e "$PREFIX/$b" ]; then
@@ -113,73 +202,8 @@ done
 for b in "${BINS[@]}"; do install -m 0755 "$BIN_SRC/$b" "$PREFIX/$b"; done
 for b in "${STAGED[@]}"; do install -m 0755 "$BIN_SRC/$b" "$PREFIX/$b.new"; done
 
-# ---- 4: runtime config from the production example ----
-mkdir -p "$CONFIG_DIR" "$STATE_DIR/trajectory"
-CONF="$CONFIG_DIR/pii.toml"
-if [ -e "$CONF" ]; then
-  mkdir -p "$ASIDE"
-  mv "$CONF" "$ASIDE/pii.toml"
-fi
-# The template's model is the FRESH-install default only. A re-install replaces a config the
-# operator may have edited, and regressing it to the template default would silently demote the
-# daemon to a model the operator moved off (measured 2026-10-19: a re-install swapped a running
-# openai:glm-5.3-flash for the template's llamacpp-server default). Carry the replaced config's
-# model forward; keep the template default for a first install.
-PRIOR_MODEL=""
-MODEL_NOTE=""
-if [ -e "$ASIDE/pii.toml" ]; then
-  PRIOR_MODEL="$(sed -n 's|^model = "\([^"]*\)".*$|\1|p' "$ASIDE/pii.toml" | head -1)"
-  [ -n "$PRIOR_MODEL" ] && MODEL_NOTE="   # carried forward by install-pii.sh from the replaced config"
-fi
-TMPCONF="$(mktemp "$CONFIG_DIR/pii.toml.XXXXXX")"
-sed \
-  -e "s|^model = .*|model = \"${PRIOR_MODEL:-llamacpp-server:granite-4.2-3b}\"${MODEL_NOTE}|" \
-  -e "s|^runtime_dir = .*|runtime_dir = \"$RUNTIME_DIR\"|" \
-  -e "s|^# trajectory_dir = .*|trajectory_dir = \"$STATE_DIR/trajectory\"|" \
-  -e "s|^log_file = .*|log_file = \"$STATE_DIR/pii.log\"|" \
-  -e "s|^host = .*|host = \"$LLAMA_HOST\"|" \
-  "$REPO/examples/pii.production.toml" > "$TMPCONF"
-cat >> "$TMPCONF" <<TOML
-
-# --- appended by deploy/install-pii.sh (spec 142) ---
-# ONE Discord forum channel. The token (PII_DISCORD_TOKEN) comes only from the unit's
-# environment file, never from here. The forum id is written into the cron's input below
-# (it is an id, not a secret).
-[[channel]]
-name = "discord"
-kind = "discord"
-graph = "discord-triage"
-
-TOML
-if [ "$HAVE_CHANNEL" = 1 ]; then
-  cat >> "$TMPCONF" <<TOML
-
-# ONE daily digest at 12:00Z = 09:00 Brazil (UTC-3). `schedule` is the display mirror; firing is
-# driven by the graph's timer node, which carries the same 12:00Z knob (measured 2026-10-19: the
-# mirror and the timer node must say the same hour, and the name must match what a replaced
-# install already recorded — a re-install regresses the operator truth otherwise).
-[[cron]]
-name = "digest"
-graph = "discord-digest"
-schedule = "0 12 * * *"
-input = { to = "$PII_DISCORD_CHANNEL_ID" }
-TOML
-fi
-mv "$TMPCONF" "$CONF"
-
-# ---- 4a: the channel credentials, by reference to the operator's environment (spec 157) ----
-# The file lives next to pii.toml, outside the repo, mode 0600, and is the only place the values go.
-ENVF="$CONFIG_DIR/pii.env"
-if [ "$HAVE_CHANNEL" = 1 ]; then
-  if [ -e "$ENVF" ]; then
-    mkdir -p "$ASIDE"
-    mv "$ENVF" "$ASIDE/pii.env"
-  fi
-  TMPENV="$(mktemp "$CONFIG_DIR/pii.env.XXXXXX")"   # mktemp creates it 0600
-  printf 'PII_DISCORD_TOKEN=%s\nPII_DISCORD_CHANNEL_ID=%s\n' "$PII_DISCORD_TOKEN" "$PII_DISCORD_CHANNEL_ID" > "$TMPENV"
-  chmod 0600 "$TMPENV"
-  mv "$TMPENV" "$ENVF"
-fi
+# ---- 4 + 4a: the runtime config and the channel credentials ----
+write_config
 
 # ---- 4b: graphs into the persistent state dir (the unit places them in the runtime dir on each start) ----
 mkdir -p "$STATE_DIR/graphs"

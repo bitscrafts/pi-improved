@@ -39,9 +39,15 @@ A deploy onto this host is therefore three steps, and the third is the one that 
 
 `pii health` returning `3` right after the install is the expected, correct reading — it is the instrument
 proving the deployment is not the tree yet. Only after the restart does it return `0` with both revisions on
-the new build. Note that `install-pii.sh` also regenerates `pii.toml` from the template (carrying only `model`
-forward), so diff the file it moved aside against the new one before restarting: on 2026-10-31 the two differed
-in comments only, but a template change would quietly reset an operator's sections.
+the new build.
+
+The install **merges** `pii.toml` rather than regenerating it (spec 329, `deploy/pii-config-merge.py`): the
+operator's file is the base, and the template only adds the tables and active keys it lacks, the installer's own
+keys are set, and a table whose `[[name]]` is already present is never duplicated. Comments, order and values
+survive, and the installer then *verifies* that every table and key path of the replaced file is present in the
+candidate, naming each miss instead of proceeding. Before that change a re-install rewrote the file from the
+template and carried only `model` forward, which is what dropped an operator's sections; if you are installing
+with an older script, still diff the moved-aside file before restarting.
 
 
 ## Read health and metrics

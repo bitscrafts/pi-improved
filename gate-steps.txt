@@ -73,3 +73,7 @@ item-ids|bash scripts/autonomy/item-ids.sh --check
 
 # Spec 250: the devbox module's claims (image pin, no secret, project path, uv-only, ...) hold; offline, pure text.
 devbox-check|bash modules/devbox/check.sh
+
+# Spec 329: a re-install keeps the operator's config (the promotion drives install-pii.sh's CONFIG_ONLY half and reads
+# the result with tomllib). Needs Python 3.11+ as python3 (or PII_PYTHON). Without this step the gate cannot go red on it.
+install-config|bash deploy/install-config-keeps.test.sh
