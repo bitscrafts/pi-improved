@@ -119,3 +119,24 @@ shell whose *text* mentioned a worker script, so the loop sat still reporting "a
 
 Measured 2026-11-02: one Opus review = **$3.35** (54 turns, plan mode) plus a $0.11 probe. A worker cycle on
 `claude-haiku-5-5` ≈ **$0.002**. A night with two reviews and six rows is therefore ≈ **$7**, dominated by Opus.
+
+## Three traps that only appear once the night is running
+
+- **A one-shot cron job is consumed by a manual test.** Firing a `repeat: once` job with `cronjob run` to prove its
+  delivery marks it `completed`, `1/1`, `next_run_at: null` — and the 07:00 report never happens. Test delivery with
+  a **separate** job (or accept that the test IS the run), then arm the real one and read `next_run_at` back.
+- **`pgrep -f` matches prose.** A pattern like `run-batchC-pii|cycle.sh` matches any shell whose *command line*
+  mentions those words — including the grep that looks for them. Anchor it: `^bash (.*/)?(scripts/autonomy/cycle|
+  scripts/run-batchC-pii)\.sh`.
+- **A guard can eat the work it protects.** The supervisor's "dirty tree across two firings → move it aside" fired
+  while a worker's finished-but-uncommitted row was in the tree, and moved the row's four files to `_trash`. The
+  evidence survived, and it had to be copied back. If a person is at the keyboard, land the row before the next
+  supervisor firing; if nobody is, prefer a longer streak over a faster unblock.
+
+## The night of 2026-11-02, in numbers
+
+Six rows seeded, six closed (`335` the host probe, `336` the mqtt allowlist, `337` the durable stores, `338` the
+installer, `339` plain-shell health, `340` the incident publisher). Three Opus analyses: the audit at 05:34, a
+review at 07:26 and a review at 08:01. Twenty-one commits. Every row needed a person to land it: the workers parked
+after three attempts each, and the dispatcher never closed one on its own — that is the honest headline of the
+night, and the reason the review's first recommendation is still about the loop, not the code.
