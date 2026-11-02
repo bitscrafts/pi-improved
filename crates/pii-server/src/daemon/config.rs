@@ -229,8 +229,14 @@ pub struct ChannelSection {
     pub hosts: Vec<String>,
 }
 
+/// Discord answers `GET /channels/{id}/messages` at roughly five requests per five seconds per route, so
+/// one request per second is the ceiling and anything faster is refused with `429 retry_after`.
+///
+/// Measured 2026-11-02 on production: `poll_interval_ms` defaulted to 500 and the daemon collected **173**
+/// `channel.poll.failed 429` in a few hours, never reading a message. 1500 ms leaves the bucket room to
+/// refill between reads.
 const fn default_poll_ms() -> u64 {
-    500
+    1_500
 }
 
 const fn default_mqtt_poll_ms() -> u64 {

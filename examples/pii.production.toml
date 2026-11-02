@@ -108,7 +108,7 @@ path = ""
 # name = "inbox"               # required
 # kind = "cli"                 # required: "cli" or "discord"
 # graph = "assistant"          # required: graph run per inbound message
-# poll_interval_ms = 500       # default 500
+# poll_interval_ms = 1500      # default 1500; Discord is floored at 1000 (its read route allows ~5 per 5 s)
 # inbox = "/var/lib/pii/inbox.txt"   # "cli" kind only
 # outbox = "/var/lib/pii/outbox.txt" # "cli" kind only
 

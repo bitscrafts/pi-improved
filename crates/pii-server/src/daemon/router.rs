@@ -21,14 +21,14 @@ pub fn spawn_all(
     ctx.channels
         .lock()
         .iter()
-        .map(|(n, c)| (n.clone(), c.poll_interval_ms))
-        .collect::<Vec<(String, u64)>>()
+        .map(|(n, c)| (n.clone(), c.poll_interval_ms, c.channel.kind().to_owned()))
+        .collect::<Vec<(String, u64, String)>>()
         .into_iter()
-        .map(|(name, interval_ms)| {
+        .map(|(name, interval_ms, kind)| {
             let engine = Arc::clone(engine);
             let ctx = Arc::clone(ctx);
             tokio::spawn(async move {
-                let interval = interval_ms.max(10);
+                let interval = poll_interval_for(&kind, interval_ms);
                 let mut consecutive: u32 = 0;
                 loop {
                     // `poll_once` is fully synchronous (the `Channel` trait
@@ -66,6 +66,21 @@ const MAX_POLL_PAUSE_MS: u64 = 300_000;
 /// How long the loop sleeps after a poll (spec 194): the interval after a success
 /// (`err_text` `None`); after a failure, the larger of the interval and the provider's
 /// `retry_after`, else `interval * 2^min(consecutive-1, 4)`; never above 300 s.
+/// The shortest pause a channel may poll at.
+///
+/// A test channel may poll at 10 ms; Discord may not. Its read route allows about five requests per five
+/// seconds, so a configured interval below one second is not a preference — it is a request to be rate
+/// limited, and measured 2026-11-02 it was exactly that: 173 `429`s and not one message read.
+const DISCORD_MIN_POLL_MS: u64 = 1_000;
+
+pub(crate) fn poll_interval_for(kind: &str, configured_ms: u64) -> u64 {
+    if kind == "discord" {
+        configured_ms.max(DISCORD_MIN_POLL_MS)
+    } else {
+        configured_ms.max(10)
+    }
+}
+
 pub(crate) fn poll_pause(err_text: Option<&str>, consecutive: u32, interval_ms: u64) -> u64 {
     let Some(text) = err_text else {
         return interval_ms.min(MAX_POLL_PAUSE_MS);
@@ -308,6 +323,19 @@ mod tests {
         let t = r#"discord: poll status 429: {"retry_after":132.176}"#;
         assert_eq!(poll_pause(Some(t), 1, 1200), 132_176);
         assert_eq!(poll_pause(Some(r#""retry_after":0.001"#), 1, 1200), 1200);
+    }
+
+    #[test]
+    fn a_discord_poll_cannot_be_configured_below_the_provider_limit() {
+        // The defect, measured on production 2026-11-02: 500 ms against a ~1 req/s route.
+        assert_eq!(super::poll_interval_for("discord", 500), 1_000);
+        assert_eq!(super::poll_interval_for("discord", 20), 1_000);
+        // an operator asking for more than the floor keeps it
+        assert_eq!(super::poll_interval_for("discord", 5_000), 5_000);
+        // CONTROL: the floor is Discord's, not a general slowdown — a test channel still polls at 10 ms.
+        assert_eq!(super::poll_interval_for("cli", 20), 20);
+        assert_eq!(super::poll_interval_for("mqtt", 100), 100);
+        assert_eq!(super::poll_interval_for("webhook", 1), 10);
     }
 
     #[test]
