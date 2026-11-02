@@ -103,3 +103,38 @@ config", which was a comment pointing at `127.0.0.1:8080` — a server that answ
 while the configured model `granite-4.2-3b` lives on `:8084`. Nothing failed loudly. The host is now read from the
 `[llama]` section only and the post-install check compares the **values** of `model` and `[llama] host`, because a key
 that exists with a changed value passes a key-level verify and still breaks production.
+
+## 2026-11-02, later — three of the four standing items answered by measurement
+
+**Delivery answers "now".** The digest's standing decision is that it is asked for, not scheduled. Asking
+`discord-digest` to run answers `suspended`: its entry node is a `timer`, so it cannot answer *now* by
+construction. `graphs/digest-now.toml` — the same two reads and the same post with the timer removed — answers
+instead:
+
+```
+$ pii run start digest-now --input '{"to":"1566652720214188134"}'
+{"run_id":"r000000004578"}
+$ pii run get r000000004578
+{"dur_ms":1587,"status":"succeeded","seq":15}
+$ …pii.log
+{"fields":{"bytes":81,"channel":"discord","destination":"1566652720214188134"},"kind":"channel.posted","run":"r000000004578"}
+```
+
+So M5's "≥7 posts over 7 days" is superseded: what matters is that the surface answers when asked, and one run
+of the deployed daemon proves it. The post went into the `pii · status` topic, not the forum root.
+
+**M3's mechanism is measured; its economics are not.** `incident-to-branch.sh` prints
+`legs: base_rc=1 branch_rc=0 gate=PASS master_before=a86e85cae115 master_after=a86e85cae115` and
+`INCIDENT-BRANCH OK`; `incident-budget.sh` prints `BUDGET OK` including the near-miss where a different
+fingerprint the same day is still dispatched; `--control master-moved` refuses and names both tips. Spec 151's
+Closure now carries those lines and says in the same breath that the injected worker is **scripted** — the loop
+is proven, a real model reaching a fix is not, and the ≥3-of-7-under-$1 economics has not been re-measured.
+
+**The stash hole is closed** (`a3aeceb`, spec 334): the index is saved, the save precedes the stash, a failed save
+forbids the stash, and a refusal states `NOT-CLEANED`. Two rows of `leftover-test.sh` were already red at HEAD and
+are now green.
+
+**The broker is at the end of the queue** (operator, 2026-11-02): pii stays an MQTT client. Recorded in
+`m7-decisions.md`, because a decision that lives only in a chat is a decision that gets re-litigated.
+
+**Still a clock, and honestly so:** M6 needs one real incident from the deployed daemon inside a week.
