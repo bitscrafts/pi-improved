@@ -2205,6 +2205,7 @@ dependencies = [
  "dunce",
  "landlock",
  "pii-abi",
+ "pii-channels",
  "pii-core",
  "pii-model",
  "pii-observe",
