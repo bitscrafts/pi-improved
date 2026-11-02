@@ -36,5 +36,12 @@ while :; do
     echo "watchdog: $(bash scripts/autonomy/hold.sh check | sed 's/^hold: //') -- beat skipped" \
       >>"$LOGD/tick-$(date -u +%Y%m%d).log"
   fi
+  # once a UTC day: bound the loop's own logs. Measured 2026-11-02: 49 MB in 7015 files, nothing pruned them;
+  # pii's daemon log rotates by size and Hermes rotates its own, this directory was the one nobody owned.
+  STAMP="$LOGD/.rotated-$(date -u +%Y%m%d)"
+  if [ ! -f "$STAMP" ]; then
+    bash scripts/autonomy/log-rotate.sh --apply >>"$LOGD/tick-$(date -u +%Y%m%d).log" 2>&1 || true
+    : >"$STAMP" 2>/dev/null || true
+  fi
   sleep "${WATCHDOG_INTERVAL:-300}s"
 done
