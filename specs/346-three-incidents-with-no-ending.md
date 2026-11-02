@@ -15,63 +15,77 @@ The honest question is: *what does the log say, and what should a reader conclud
 **Project**: /projects/pi-improved
 **Phase**: production hardening — the last unexplained residue in the incident reader.
 
-## Verified premises (2026-11-02, on the host log)
+## Verified premises — READ FROM THE LOG, 2026-11-02 22:14Z
 
-- `pii incidents scan --source runtime` → `starts_considered=14 incidents=3 files=1`.
-- The three are `run-stalled`, first seen 05:03:11–05:03:36, latencies 1–2 s.
-- `crates/pii-learn/src/incident_runtime.rs` counts a run finished on `run.outcome`, `run.start_refused` and
-  `run.cancelled`; a run with none of those and an old last event is `run-stalled`.
-- The 05:03 window also carries the daemon's own restart, so "no terminal event" may be the restart, not the run.
+The three incidents are NOT three stalls. The host log says what each run was:
+
+```
+r000000004356  cron.rearmed x5  ->  cron.disarmed{"disarmed":0,"reason":"digest is on demand (operator decision)"}
+               stood down by an operator decision; it never ran and never ended. Not a stall.
+
+r000000004577  trajectory.write.failed{"error":"Permission denied (os error 13)"}  ->  channel.posted{"bytes":94}
+r000000004578  trajectory.write.failed{"error":"Permission denied (os error 13)"}  ->  channel.posted{"bytes":81}
+               both runs DID their work and posted to Discord. What failed was the TRAJECTORY WRITE, so the run
+               cannot be reconstructed afterwards. That is a real defect, and it is invisible today because the
+               scanner only ever asks "did this run end".
+
+Measured: `~/.local/state/pii/trajectory/` was created at 17:03 today, AFTER those 05:03 runs, and no
+trajectory.write.failed has appeared since the deploy — so the EACCES belongs to the pre-deploy binary and is not
+recurring. That does not make it harmless: it is the only class of failure that destroys the evidence needed to
+diagnose the next one.
+```
 
 ## Requirements
 
 ### Functional
 
-1. **Model first, in minilam's language.** `crates/pii-learn/tests/fixtures/incidents-0503.json` is a data model of
-   the rule (events → verdicts) for the same log; `minilam` says what each run's verdict should be. The diff against
-   `pii incidents scan` is the evidence, printed side by side.
-2. **The scan must distinguish three states** and say which it means:
-   - `run-stalled` — the log continues after the run's last event and the run never ended;
-   - `run-unfinished` — the log ENDS before the run ended (the log itself stops, so nothing can be concluded);
-   - `run-restarted` — a `daemon.stopped`/`daemon.starting` follows the run's last event, so the run was cut short
-     by the restart, and the incident names the restart.
-3. **The three 05:03 incidents must land in one of those**, with the evidence quoted (the event before and after the
-   run's last event, or the end of the log).
-4. **A control proves each verdict can fail**: a run that never ends while the log continues is `run-stalled`; a log
-   that stops mid-run is `run-unfinished`; a restart after the last event is `run-restarted`.
+1. **A stood-down run is not an incident.** `cron.disarmed{reason}` after a run's last event ends it as
+   `run-disarmed`, and that is NOT reported as an incident: an operator decision is not a fault. The reason string
+   travels into the evidence line so a reader sees whose decision it was.
+2. **A posted run is not stalled.** `channel.posted` for the run after its last start means the run did its work;
+   it is not `run-stalled`, whatever else is missing.
+3. **A lost trajectory is its own incident** — `observability-lost:{run}`, carrying the error and the run id. This is
+   the opposite of a stall: the run may have finished perfectly, and the evidence of it is gone. It is the failure
+   that makes every later diagnosis harder, so it must be visible on its own line.
+4. **The scan over the real host window reports**: 0 `run-stalled`, 1 `run-disarmed` (r4356), 2
+   `observability-lost` (r4577, r4578). Any other count is a regression.
+5. **The fixture is a real copy, anchored by extraction**: `crates/pii-learn/tests/fixtures/production/runtime-0503.jsonl`
+   is produced by `scripts/checks/copy-runtime-window.sh <host>` — which copies every line of the daemon's log
+   between the `daemon.started` before the window and the one after it, unedited. Never hand-written.
 
 ### Non-Functional
 
-- The rule stays data-driven and testable without a daemon: fixtures in, verdicts out.
-- No widening "just in case": a verdict needs an event that supports it.
-- minilam is the ORACLE here, never the driver (its A1 drive half is open).
+- Verdicts stay data-driven and testable without a daemon.
+- A verdict needs the event that supports it; the evidence line quotes the event's own fields.
 
 ## TDD Contract
 
 | Test (`crates/pii-learn/tests/incidents_unfinished.rs`) | Assertion |
 |---|---|
-| `a_log_that_stops_mid_run_is_unfinished_not_stalled` | truncated fixture → `run-unfinished`, names the run |
-| `CONTROL_the_same_run_in_a_continuing_log_is_stalled` | same events + later unrelated events → `run-stalled` |
-| `a_restart_after_the_last_event_is_restarted` | `daemon.stopping` + `daemon.started` after → `run-restarted` |
-| `CONTROL_a_run_that_ended_is_no_incident` | with `run.outcome` → none |
-| `the_0503_log_yields_its_verdicts` | the real log copy → each of the three lands in one state, with its evidence line |
+| `a_disarmed_cron_is_not_an_incident` | `cron.disarmed` after the last event → `run-disarmed`, and it appears in no incident list |
+| `CONTROL_a_disarmed_run_that_then_keeps_logging_is_stalled` | the same run with later run events and no ending → `run-stalled` |
+| `a_posted_run_is_not_stalled` | `channel.posted` after the last start → no `run-stalled` |
+| `a_lost_trajectory_is_observability_lost` | `trajectory.write.failed` → `observability-lost:{run}` naming the error |
+| `CONTROL_a_run_that_never_ends_and_never_posts_is_still_stalled` | the near-miss that must keep the old verdict |
+| `the_0503_window_yields_its_verdicts` | the real fixture → exactly 0 stalled, 1 disarmed, 2 observability-lost |
 
 ## Exit Criteria
 
-- [ ] `cargo test -q -p pii-learn --test incidents_unfinished`
+- [ ] `cargo test -q -p pii-learn --test incidents_unfinished 2>&1 | grep -q '6 passed'`
 - [ ] `cargo test -q -p pii-learn --test incidents_runtime`
 - [ ] `bash scripts/checks/gates.sh`
 
 ## Guardrails
 
-- Do NOT keep reporting a log that simply ends as `run-stalled`: it accuses the run of a fault nobody can see.
-- Do NOT re-classify the three 05:03 incidents by hand — the fixture decides, and the control proves it can.
-- Do NOT add a fourth verdict without a test that fails when it is removed.
+- Do NOT report `run-disarmed` as an incident: an operator decision is not a fault, and treating it as one trains
+  the reader to ignore the list.
+- Do NOT infer a stall from a missing terminal event when the log says the run posted.
+- Do NOT hand-write the fixture: extract it, and record the command in its header.
+- Do NOT fix the trajectory EACCES here — it is a separate defect with its own evidence (see Closure).
 
 ## Files
 
 - `crates/pii-learn/src/incident_runtime.rs`
 - `crates/pii-learn/tests/incidents_unfinished.rs`
-- `crates/pii-learn/tests/fixtures/runtime-unfinished.jsonl`
-- `crates/pii-learn/tests/fixtures/runtime-restarted.jsonl`
-- `crates/pii-learn/tests/fixtures/incidents-0503.json`
+- `crates/pii-learn/tests/fixtures/production/runtime-0503.jsonl`
+- `scripts/checks/copy-runtime-window.sh`

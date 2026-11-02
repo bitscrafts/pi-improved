@@ -39,8 +39,17 @@ spec 215), and one **made git commits**, which breaks the rule that only the orc
 4. `queue.toml` becomes callable: `exit = "record"`, a `needs` list, paths from input, and its peer lookups as
    expressions (spec 343 R5). `spec.toml` gains `exit` and `needs`, and its refusals leave on an exit port rather
    than ending the host run.
-5. The night stops on exhaustion: when the queue has no open row, the run reaches `review` and posts, rather than
-   failing inside `record`.
+5. **The night stops on exhaustion.** When the queue has no open row the run reaches `review` and posts, instead of
+   ending at `sdd__select`. The mechanism is data, not a new kind — and it is forced by how `call` routes:
+   - `fragment/call.rs:357` rewrites every host edge `from = <call>` onto `<call>__<exit>`, so a host can ONLY reach
+     the exit node's ports. `select`'s `empty` and `blocked` ports are unreachable from the night.
+   - therefore the queue must carry exhaustion THROUGH its exit: `graphs/queue.toml` gains `select.empty -> record`
+     and `select.blocked -> record`, and `record` stops failing with "record: no item was selected".
+   - `record` reads its `select` peer (already namespaced via `peer_of`) for the outcome, and emits
+     `{"status":"empty"|"blocked","reason":…}` on its `ok` port instead of `Outcome::Fail`.
+   - the night's `sdd ok -> review` edge then fires for a night that found nothing to do.
+   Rejected: exposing arbitrary child ports through the call (`out = { empty = "review" }`) — it is a new feature in
+   `call.rs` with its own caps and cycle consequences, bought for one edge that the queue can carry itself.
 
 ### Non-Functional
 
@@ -73,6 +82,8 @@ night.toml
 | `night_stops_on_exhaustion` | an exhausted queue reaches `review`, not `sdd__dispatch` |
 | `night_call_sets_max_entries_at_least_its_loop_budget` | the call's `max_entries` ≥ the loop count it declares |
 | `night_routes_an_empty_queue_to_review` | an exhausted queue reaches `review` and posts, instead of ending at `sdd__select` |
+| `CONTROL_an_empty_queue_writes_no_verdict_to_any_item` | the empty case writes nothing to the queue store |
+| `CONTROL_a_claimed_item_still_records_its_verdict` | the normal path is unchanged: a claimed item still gets its verdict |
 
 ## Exit Criteria
 
