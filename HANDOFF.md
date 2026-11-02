@@ -1,5 +1,37 @@
 # Pii — Session Handoff
 
+## 2026-11-02T00:3xZ — the queue was empty after 330, so spec 331 / row `331` authored: the gate inherits the daemons its tests start
+
+State: HEAD `9e87635` · tree clean at the start of the tick · control `RUNNING` · queue **was empty** — every cycle
+from 23:44Z read `OUTCOME=queue-empty` (5-minute dispatcher, ~4 probe calls a tick), `pick` → NONE, and the plan's
+185 rows are terminal (181 `done`, 3 `skipped`, 1 `revoked`) · selftest **42 passed, 0 failed — ALL MECHANISMS
+PASS** (run 00:15:42Z, 8 s) · now: **spec 331 / row `331`**, judged `row-paths OK 331 16`, `row-verify OK 331 9`,
+`check-ids` 0 violations, `pick` names it.
+
+- **Why this item.** 059 §4 is drained and the milestone table's open halves are not code: M1's delivery is observed
+  at 12:20Z by cron `745f25ecd51a`, M6 needs a week of runtime, M5 needs the operator, M7 is six retirement
+  decisions. The one measured defect the last 24 h produced is open-items #10: two `_tmp/tools-gate/debug/pii
+  daemon` processes started by a gate on 2026-10-22 were still running nine days later (21 MB and 18 MB, redb
+  stores open, zero listening sockets) and were reaped at 23:59:57Z. The reaping is done; **the shape that leaked
+  them is not**, and it is why this is a spec.
+- **Measured on `9e87635` this tick.** 11 files in `crates/pii-cli/tests/` spawn a live `pii daemon` and there are
+  15 `.kill()` sites among them. Five files declare their own kill-on-drop guard (six identical lines each, plus
+  `LiveDaemon`); five spawn with **no** guard and reach `child.kill()` only after every `unwrap()` and *before* the
+  final `assert!` (`daemon_log_wiring.rs:39-57` is the shape). And the guard is not enough where one spawn bypasses
+  it: `project_config_layers_live.rs:33-60` has `LiveDaemon` and still spawns raw inside `start_and_read_log`.
+  Rust's `Child` has no `Drop` that kills, so a failing assertion — the failing half of TDD — turns a red test into
+  a daemon the gate inherits, holding a store the next gate may open.
+- **Shape of the fix (spec 331, R1-R5).** One shared `DaemonGuard` in `crates/pii-cli/tests/daemon_guard/mod.rs`
+  (`kill_now` idempotent, `Drop` kills), every spawn site wrapped, the six local guard types deleted; the proof is a
+  test that panics inside `catch_unwind` and asserts `/proc/<pid>` is gone — **with the defect kept as its control**:
+  a raw dropped `Child` must still be running, then be killed explicitly. `scripts/checks/daemon-tests-are-guarded.sh`
+  scans the real test files (a spawning file must name `DaemonGuard` and must not call `.kill()`), proves itself with
+  `--control` in both directions, and runs as one cheap `gate-steps.txt` step so a hand-killer cannot land again.
+- **Not touched:** the production daemon (pid 1744962, `669f5803d90a`) and the two `daemon_*` files that run the
+  binary to completion (`.output()`, no child to leak) — they are the checker's near-miss control.
+- **Next:** the 5-minute dispatcher picks `331`; its verify ends with `fresh-gate --worktree` (~12-45 min), then the
+  cycle's gate and the commit.
+
 ## 2026-11-01T12:2xZ — row 330 parked blind: the corrective brief's evidence block was empty, and the fix is the generator
 
 State: HEAD `1032386` · tree NOT clean (`leftover.sh` + its new test belong to another lane, left untouched) ·
