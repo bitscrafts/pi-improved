@@ -40,6 +40,17 @@ fn build(
     port: u16,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> (Arc<Engine>, Arc<Daemon>) {
+    // The durable stores under the state dir are exclusive, and the operator's are held by any daemon already
+    // running on this machine, so the daemon this test builds owns its own state (measured 2026-11-02: three
+    // tests in this file failed together whenever a daemon of another build was up).
+    let own_state = dir.join("state").display().to_string();
+    let env = move |k: &str| {
+        if k == "PII_STATE_DIR" {
+            Some(own_state.clone())
+        } else {
+            env(k)
+        }
+    };
     let hello = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase2/hello.json");
     std::fs::create_dir_all(dir.join("ws")).unwrap();
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
@@ -74,7 +85,7 @@ fn build(
         dir,
         cfg_path,
         Arc::new(pii_core::SystemClock),
-        env,
+        &env,
     )
     .expect("a missing credential must not fail the build");
     (engine, d)
