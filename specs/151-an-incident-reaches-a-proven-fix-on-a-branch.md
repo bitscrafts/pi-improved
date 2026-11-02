@@ -103,4 +103,50 @@ branch that passed both proof legs and the gate.
 
 ## Closure
 
-_(empty — the implementing cycle fills it with what it measured, per the house shape.)_
+Filled 2026-11-02. Every line below is output of a run made that day on this tree, not a claim about the design.
+
+**The harness, on a scratch clone of this repo, driving the loop's own entry point:**
+
+```
+$ bash scripts/checks/incident-to-branch.sh
+ok: an_incident_becomes_a_brief
+ok: a_fix_lands_on_a_branch_and_master_does_not_move (master a86e85cae115 == a86e85cae115)
+legs: base_rc=1 branch_rc=0 gate=PASS master_before=a86e85cae115 master_after=a86e85cae115
+ok: the_proof_is_red_on_base_and_green_on_branch
+ok: a_test_already_green_on_base_parks
+ok: a_gate_that_is_not_green_parks
+ok: a_proven_branch_fast_forwards_master
+INCIDENT-BRANCH OK
+```
+
+Both proof legs are real: the proving test exits **1 on the base revision and 0 on the branch**, the gate says
+PASS on the branch, and `master`'s tip is the same sha before and after. The two near-misses park: a test that is
+already green on base, and a gate that is not green.
+
+**The budget, with its near-miss control:**
+
+```
+$ bash scripts/checks/incident-budget.sh
+ok: the refusal and its reason are recorded
+ok: near-miss: a different fingerprint the same day is still dispatched
+ok: a new local day proceeds
+ok: the cost ceiling refuses, with its reason
+BUDGET OK
+```
+
+**The control that proves the master check can fail** — told to commit on `master`, the harness must notice:
+
+```
+$ bash scripts/checks/incident-to-branch.sh --control master-moved
+master-moved detected: a86e85cae11534e1f3bd836dac53adad763c90b7 -> ed3bb969d413be3822a7af7abbbe37782d32b556 (refused)
+legs seen: legs: base_rc=1 branch_rc=0 gate=PASS master_before=a86e85cae115 master_after=ed3bb969d413
+CONTROL OK
+```
+
+**What is NOT proven here, stated plainly.** The worker the harness injects is scripted (`git diff … | git apply`),
+so what is measured is the *loop*: brief, branch, the two proof legs, the gate, the merge decision, the budget.
+It is **not** a measurement of a real model reaching a fix, and it is not the pre-registered economics (≥3 of 7
+historical failures yielding a mechanical fix under $1 each). The default worker is a real
+`claude -p … --model sonnet` dispatch (default ceiling $5); exercising it needs a real incident whose proving test
+is red at the base revision, which the incident record does not carry today. M3 is therefore **mechanism proven,
+real-worker dispatch unmeasured** — and a later reader must not read this closure as more than that.
