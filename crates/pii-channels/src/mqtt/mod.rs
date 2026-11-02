@@ -321,11 +321,17 @@ struct Driver {
 impl Driver {
     async fn run(self, mut eventloop: rumqttc::EventLoop) {
         let mut failures: u32 = 0;
+        // Subscribing from INSIDE the poll handler cannot work: `try_subscribe` pushes into the request channel that
+        // this very loop drains, and rumqttc answers every failed push with the same string. Measured 2026-11-02
+        // against the real Zigbee broker: two topics, a 64-slot channel, and both were dropped as "queue full".
+        // The flag is set in the handler and acted on OUTSIDE it, with the awaited API, which cannot re-enter.
+        let mut subscribe_now = false;
         while !self.shared.stop.load(Ordering::SeqCst) {
             match eventloop.poll().await {
                 Ok(Wire::Incoming(Packet::ConnAck(_))) => {
                     failures = 0;
                     self.connected();
+                    subscribe_now = true;
                 }
                 Ok(Wire::Incoming(Packet::Publish(p))) => self.shared.accept(&p.topic, &p.payload),
                 Ok(_) => {}
@@ -343,6 +349,10 @@ impl Driver {
                     self.sleep(wait).await;
                 }
             }
+            if subscribe_now {
+                subscribe_now = false;
+                self.subscribe_all().await;
+            }
         }
     }
 
@@ -355,15 +365,19 @@ impl Driver {
         }
         sh.observer
             .event(&sh.event(Level::Info, names::MQTT_CONNECTED));
+    }
+
+    /// Subscribes to every configured filter, from OUTSIDE the event-loop handler. The awaited API waits for
+    /// capacity instead of guessing that there is none, and the reason reported on failure is the error itself.
+    async fn subscribe_all(&self) {
+        let sh = &self.shared;
         let qos = qos_of(self.cfg.qos).unwrap_or(QoS::AtMostOnce);
         for filter in &self.cfg.topics {
-            // Bounded request queue: a subscribe that does not fit is a
-            // reportable drop of the subscription, not a silent one.
-            if self.client.try_subscribe(filter, qos).is_err() {
+            if let Err(e) = self.client.subscribe(filter, qos).await {
                 sh.observer.event(
                     &sh.event(Level::Warn, names::MQTT_MESSAGE_DROPPED)
                         .field("topic", filter.as_str())
-                        .field("reason", "subscribe request queue full"),
+                        .field("reason", format!("subscribe failed: {e}")),
                 );
             }
         }
