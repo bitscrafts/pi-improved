@@ -79,6 +79,21 @@ impl Daemon {
                 .map(|(n, _)| n.clone())?
         };
         let to = env("PII_DISCORD_CHANNEL_ID").filter(|t| !t.is_empty())?;
+        // A FORUM turns every message into a thread (measured 2026-11-02: the destination is the `pii` forum,
+        // type 15), so a startup notice is not a line in a channel — it is a new thread. Restarting a few times
+        // would bury the digests under "pii is up" posts. Silent by default; `PII_VERIFY_POST=1` posts it.
+        if !env("PII_VERIFY_POST").is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
+            let ready = pii_observe::Event::new(
+                "channel",
+                pii_observe::Level::Info,
+                pii_observe::names::CHANNEL_READY,
+            )
+            .field("revision", identity::REVISION)
+            .field("note", "startup post disabled; PII_VERIFY_POST=1 posts it")
+            .field("channel", name);
+            self.engine.log().event(&ready);
+            return None;
+        }
         let text = format!(
             "pii {} is up (revision {})",
             env!("CARGO_PKG_VERSION"),

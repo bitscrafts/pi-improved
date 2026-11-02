@@ -140,6 +140,12 @@ pub const CHANNEL_POSTED: &str = "channel.posted";
 pub const CHANNEL_POST_REFUSED: &str = "channel.post_refused";
 /// Event: the startup post naming the deployed revision was delivered (`channel`, `text`; spec 157).
 pub const CHANNEL_VERIFICATION_POSTED: &str = "channel.verification_posted";
+
+/// The channel is ready to be talked to, and nothing was written to it.
+///
+/// The startup verification post is opt-in via `PII_VERIFY_POST=1`: a forum turns every message into a thread,
+/// so a restart must not create one.
+pub const CHANNEL_READY: &str = "channel.ready";
 /// Event: an MQTT channel connected to its broker (`channel`, `broker`).
 pub const MQTT_CONNECTED: &str = "mqtt.connected";
 /// Event: an MQTT channel lost or failed to reach its broker (`channel`, `broker`, `error`, `attempt`, `retry_in_ms`).
@@ -456,6 +462,7 @@ pub const ALL: &[&str] = &[
     CHANNEL_CURSOR_LAG,
     CHANNEL_POSTED,
     CHANNEL_POST_REFUSED,
+    CHANNEL_READY,
     CHANNEL_VERIFICATION_POSTED,
     MQTT_CONNECTED,
     MQTT_CONNECTION_LOST,

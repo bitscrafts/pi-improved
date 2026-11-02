@@ -121,6 +121,7 @@ async fn credentials_present_one_post_naming_the_revision_is_recorded() {
         "PII_DISCORD_TOKEN" => Some(TOKEN.to_owned()),
         "PII_DISCORD_CHANNEL_ID" => Some(CHANNEL.to_owned()),
         "PII_DISCORD_API_BASE" => Some(base.clone()),
+        "PII_VERIFY_POST" => Some(String::from("1")),
         _ => None,
     };
     let tmp = scratch("wiring-some");
@@ -168,6 +169,7 @@ async fn a_refused_verification_post_is_counted_not_fatal() {
         "PII_DISCORD_TOKEN" => Some(TOKEN.to_owned()),
         "PII_DISCORD_CHANNEL_ID" => Some(CHANNEL.to_owned()),
         "PII_DISCORD_API_BASE" => Some(base.clone()),
+        "PII_VERIFY_POST" => Some(String::from("1")),
         _ => None,
     };
     let tmp = scratch("wiring-refused");
@@ -180,6 +182,32 @@ async fn a_refused_verification_post_is_counted_not_fatal() {
     let st = status(&engine).await;
     assert_eq!(st["counts"]["channel_posts"], 0);
     assert_eq!(st["counts"]["channel_post_refusals"], 1);
+}
+
+/// THE CONTROL for the opt-in: the same credentials, the same destination, and NOT ONE request reaches the
+/// network. A forum turns every message into a thread, so silence is the property being asserted — and the
+/// opt-in test above is the near-miss that proves the switch still works.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_startup_notice_is_silent_unless_the_operator_asks_for_it() {
+    let fake = FakeHttpServer::start(ROUTES).unwrap();
+    let base = format!("http://127.0.0.1:{}", fake.addr.port());
+    let env = move |k: &str| match k {
+        "PII_DISCORD_TOKEN" => Some(TOKEN.to_owned()),
+        "PII_DISCORD_CHANNEL_ID" => Some(CHANNEL.to_owned()),
+        "PII_DISCORD_API_BASE" => Some(base.clone()),
+        _ => None,
+    };
+    let tmp = scratch("wiring-silent");
+    let (engine, d) = build(tmp.path(), fake.addr.port(), &env);
+    let d2 = Arc::clone(&d);
+    let outcome = tokio::task::spawn_blocking(move || d2.post_verification(&env))
+        .await
+        .unwrap();
+    assert!(outcome.is_none(), "nothing attempted: {outcome:?}");
+    assert!(fake.requests().is_empty(), "no request reached the network");
+    let st = status(&engine).await;
+    assert_eq!(st["counts"]["channel_posts"], 0, "{st}");
+    assert_eq!(st["counts"]["channel_post_refusals"], 0, "{st}");
 }
 
 fn walk(root: &Path) -> Vec<std::path::PathBuf> {
