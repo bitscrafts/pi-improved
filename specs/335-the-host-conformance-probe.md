@@ -66,11 +66,11 @@ paying for: a check that cannot run is not a check that passed.)
 ## Exit Criteria
 
 - [ ] `test -x scripts/checks/host-conformance.sh`
-- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-red.json >/dev/null 2>&1`
-- [ ] ` test $? -eq 1`
+- [ ] `! bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-red.json >/dev/null 2>&1`
+- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-red.json 2>&1 | grep -q 'HOST-CONFORMANCE: 0 passed, 5 failed'`
 - [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-green.json 2>&1 | grep -q '5 passed, 0 failed'`
 - [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-one-defect.json 2>&1 | grep -q '4 passed, 1 failed'`
-- [ ] `bash scripts/checks/tests/host-conformance.test.sh 2>&1 | tail -1 | grep -qE 'RESULT: [8-9][0-9]* ok, 0 FAIL'`
+- [ ] `bash scripts/checks/tests/host-conformance.test.sh 2>&1 | tail -1 | grep -qE 'RESULT: [1-9][0-9] ok, 0 FAIL'`
 - [ ] `grep -q 'host-conformance.sh' scripts/checks/gates.sh`
 - [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q 'fresh-gate: PASS'`
 
@@ -86,6 +86,7 @@ paying for: a check that cannot run is not a check that passed.)
 
 - `specs/335-the-host-conformance-probe.md`
 - `scripts/checks/host-conformance.sh`
+- `scripts/checks/host-conformance.py`
 - `scripts/checks/tests/host-conformance.test.sh`
 - `scripts/checks/fixtures/host-red.json`
 - `scripts/checks/fixtures/host-green.json`

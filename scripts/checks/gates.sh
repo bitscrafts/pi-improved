@@ -12,7 +12,7 @@ cd "$(dirname "$0")/../.." || exit 1
 . scripts/autonomy/env.sh 2>/dev/null || true
 
 ONLY=${2:-}
-PASS=0; FAIL=0; FAILED=()
+PASS=0; FAIL=0; SKIPPED=0; FAILED=()
 declare -a ROWS=()
 
 run(){ # run <gate> <label> <command…>
@@ -20,6 +20,13 @@ run(){ # run <gate> <label> <command…>
   if [ -n "$ONLY" ] && [ "$ONLY" != "$gate" ]; then return 0; fi
   local out rc
   out=$(timeout "${GATE_TIMEOUT:-900}" bash -c "$*" 2>&1); rc=$?
+  # a row that cannot run on this machine says SKIP out loud and is never counted as a pass: a check that cannot
+  # run is not a check that succeeded (the host probe needs a host; the container has none).
+  if printf '%s' "$out" | grep -q '^SKIP '; then
+    SKIPPED=$((SKIPPED+1)); ROWS+=("SKIP  $gate  $label")
+    printf '%s\n' "$out" | sed 's/^/        | /'
+    return 0
+  fi
   if [ "$rc" -eq 0 ]; then
     PASS=$((PASS+1)); ROWS+=("PASS  $gate  $label")
   else
@@ -65,6 +72,10 @@ run M5 "identity: client == daemon"       '
   h=$(timeout 60 ssh -o BatchMode=yes mvcorrea@lnx "PII_RUNTIME_DIR=/run/user/1000/pii ~/.local/bin/pii health 2>&1")
   d=$(printf "%s" "$h" | head -1 | grep -o "([0-9a-f]*, " | tr -d "(, "); c=$(printf "%s" "$h" | sed -n "s/^client: //p")
   [ -n "$d" ] && [ "$d" = "$c" ]'
+# The gates run in this container; production runs on the host. This row is the one that looks at the host, and it
+# skips loudly when no host is configured rather than passing on the container's own configuration.
+run M5 "host conformance: five checks" 'if [ -z "${PII_HOST:-}" ]; then echo "SKIP (no PII_HOST)"; exit 0; fi; bash scripts/checks/host-conformance.sh >/dev/null'
+
 run M5 "the unit is enabled and active"   'timeout 60 ssh -o BatchMode=yes mvcorrea@lnx "systemctl --user is-active pii.service; systemctl --user is-enabled pii.service" | tr "\n" " " | grep -q "active enabled"'
 
 # ---- M6: pii reads its OWN runtime logs ---------------------------------------------------------------
@@ -82,6 +93,8 @@ run MQTT "mqtt channel end to end"        'cargo test -q -p pii-server --test mq
 
 printf '\n'
 for r in "${ROWS[@]}"; do say "${r%% *}" "" "${r#*  }"; done
-printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+printf '\n%d passed, %d failed' "$PASS" "$FAIL"
+[ "$SKIPPED" -gt 0 ] && printf ', %d skipped (not counted as passes)' "$SKIPPED"
+printf '\n'
 [ "$FAIL" -eq 0 ] || { printf 'VERDICT: FAIL — %s\n' "${FAILED[*]}"; exit 1; }
 printf 'VERDICT: ALL GATES PASS\n'

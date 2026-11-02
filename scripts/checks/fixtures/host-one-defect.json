@@ -1,0 +1,16 @@
+{
+ "config": "[core]\ntrajectory_dir = \"/home/mvcorrea/.local/state/pii/trajectory\"\n",
+ "health_text": "pii 0.1.0 (2d268f284b85, x86_64-unknown-linux-gnu)\nclient: 2d268f284b85\nstores:\n  main: /home/mvcorrea/.local/state/pii/store.redb (18812928 bytes, format_version=1)\n  memory: /home/mvcorrea/.local/state/pii/memory.redb (12587008 bytes, format_version=1)\n",
+ "runtime_ls": "/run/user/1000/pii/timer.redb",
+ "health_plain": {
+  "rc": 0,
+  "stderr": ""
+ },
+ "log": [
+  {
+   "kind": "daemon.started",
+   "ts": "t"
+  }
+ ],
+ "incidents": ""
+}
