@@ -137,13 +137,33 @@ summary(){
   {
     printf '# The night, %s → %s\n\n' "$(python3 -c "import json;print(json.load(open('$STATE')).get('started','?'))" 2>/dev/null)" "$NOW_Z"
     printf 'Tranches seeded: %s · Opus reviews: %s\n\n' "$(sf tranche)" "$(sf opus_runs)"
-    printf '## Rows\n\n```\n%s\n```\n\n' "$(python3 scripts/autonomy/state.py list 2>/dev/null | awk '$1>=335' | head -20)"
-    printf '## Commits made tonight\n\n```\n%s\n```\n' "$(git log --since="$UNTIL" --format='%h %ad %s' --date=format:'%H:%M' | head -20)"
+    # The rows THIS night seeded — read from the tranche files, not "everything with a number I guessed at". The
+    # first version compared `$1 >= 335` as text, and in awk "A51" > "335" is true, so the summary listed rows from
+    # nights ago. The commit window was `--since $UNTIL`, the DEADLINE, so the block was empty by construction.
+    ids=$(awk -F'\t' 'NF && $1 !~ /^#/ {print $1}' "${NIGHT_TRANCHES:-scripts/night}"/tranche-*.tsv 2>/dev/null | sort -u | paste -sd'|')
+    printf '## Rows\n\n```\n%s\n```\n\n' "$(python3 scripts/autonomy/state.py list 2>/dev/null | grep -E "^(${ids})\b" | head -20)"
+    printf '## Commits made tonight\n\n```\n%s\n```\n' "$(git log --since="$(python3 -c "import json;print(json.load(open('$STATE')).get('started',''))" 2>/dev/null || echo '-1 day')" --format='%h %ad %s' --date=format:'%H:%M' | head -30)"
   } >"$DIR/SUMMARY.md"
   say "night: summary written to $DIR/SUMMARY.md"
 }
 
+# The night's start is written once, by the first tick that runs: the summary's commit window needs it, and
+# "None" would quietly mean "since forever".
+if [ -z "$(python3 -c "import json;print(json.load(open('$STATE')).get('started') or '')" 2>/dev/null)" ] \
+   && [ "$MODE" != "--status" ] && [ "$MODE" != "--summary" ]; then
+  python3 - "$STATE" "$NOW_Z" <<'PY' 2>/dev/null || true
+import json,sys
+p,now=sys.argv[1],sys.argv[2]
+d=json.load(open(p)); d.setdefault("started",now); d["started"]=d["started"] or now
+json.dump(d,open(p,"w"),indent=1,sort_keys=True)
+PY
+fi
+
 case "$MODE" in
+  --summary)
+    summary
+    exit 0
+    ;;
   --status)
     echo "state     : $(cat "$STATE")"
     echo "deadline  : $UNTIL (past: $(past_deadline && echo yes || echo no))"
