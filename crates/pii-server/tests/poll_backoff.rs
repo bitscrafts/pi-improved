@@ -53,6 +53,7 @@ fn setup(dir: &std::path::Path, channel: Arc<dyn Channel>) -> (Arc<Engine>, Arc<
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        mqtt_tool_url: None,
     })
     .expect("engine");
     let net = Arc::new(pii_net::NetService::new(pii_net::NetConfig {

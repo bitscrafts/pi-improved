@@ -328,6 +328,9 @@ async fn run_daemon(
         tiers: cfg.model_tier.clone(),
         session_runs_cap: cfg.core.session_runs_cap(),
         llama_host: cfg.llama.host.clone(),
+        // The MODEL gets the mqtt tool only when a broker is configured: the tool is the door to the house's
+        // devices, and a model with no broker must not believe it can open it.
+        mqtt_tool_url: cfg.mqtt.first().map(|m| m.url.clone()),
         grant_ceiling,
     };
     let engine = match Engine::new(engine_cfg) {

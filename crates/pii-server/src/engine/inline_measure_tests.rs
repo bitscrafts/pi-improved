@@ -137,6 +137,7 @@ async fn rig() -> Rig {
         session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.path().join("graphs"),
+        mqtt_tool_url: None,
     })
     .expect("engine");
     // A real worker (the reference `pii worker-exec`) so `sys.reload`

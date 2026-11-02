@@ -646,6 +646,7 @@ mod tests {
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
             llama_host: None,
+            mqtt_tool_url: None,
         })
         .unwrap();
         (dir, engine)

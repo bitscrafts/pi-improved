@@ -128,6 +128,7 @@ async fn route_decision_is_journaled() {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        mqtt_tool_url: None,
     })
     .expect("engine");
     let _reg = pii_server::engine::registry::registry(
@@ -192,6 +193,7 @@ fn engine_cfg_of(engine: &Arc<pii_server::Engine>) -> pii_server::EngineConfig {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        mqtt_tool_url: None,
     }
 }
 

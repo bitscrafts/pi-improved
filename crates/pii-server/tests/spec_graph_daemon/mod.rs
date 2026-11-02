@@ -150,6 +150,7 @@ impl Case {
             session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
             llama_host: None,
             graph_dir: graphs.to_path_buf(),
+            mqtt_tool_url: None,
         })
         .expect("engine")
     }

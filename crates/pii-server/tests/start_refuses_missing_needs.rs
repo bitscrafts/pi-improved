@@ -91,6 +91,7 @@ fn engine_with(dir: &Path, graphs: &[(&str, String)]) -> Arc<Engine> {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir,
+        mqtt_tool_url: None,
     })
     .expect("engine")
 }

@@ -103,6 +103,7 @@ fn live_registry(
         tiers: Vec::new(),
         session_runs_cap: DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        mqtt_tool_url: None,
     };
     let approvals = pii_store::approval::ApprovalStore::open(&store_dir.join("approval.redb"));
     let heals = pii_store::heal::HealStore::open(&store_dir.join("heal.redb"));

@@ -46,6 +46,7 @@ fn fixture() -> Fixture {
         tiers: Vec::new(),
         session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        mqtt_tool_url: None,
     })
     .unwrap();
     engine.attach_daemon_ctx(test_ctx(&dir));

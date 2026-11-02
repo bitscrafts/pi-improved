@@ -23,6 +23,7 @@ fn engine_in(dir: &Path, fixture: &Path) -> Arc<Engine> {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.join("graphs"),
+        mqtt_tool_url: None,
     })
     .unwrap()
 }
@@ -107,6 +108,7 @@ fn survive_daemon_restart() {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.join("graphs"),
+        mqtt_tool_url: None,
     })
     .unwrap();
     let a = engine2.approvals.get_approval("ap-r").unwrap().unwrap();

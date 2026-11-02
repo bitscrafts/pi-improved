@@ -61,6 +61,9 @@ pub struct EngineConfig {
     pub grant_ceiling: Option<pii_core::CapKind>,
     /// `[[model_tier]]` table (spec 114). Empty = no tiers.
     pub tiers: Vec<daemon::config::ModelTierSection>,
+    /// Broker URL for the `mqtt` TOOL (the model's door to the devices). `None` = the tool is absent, which is the
+    /// honest default: a model with no broker configured must not believe it can drive the house.
+    pub mqtt_tool_url: Option<String>,
     /// Max runs retained per session in the in-memory `session_runs` index
     /// (D3/D6, 026 report 5.0.4 config key) — oldest run ids are evicted
     /// (LRU by insertion order) once a session's run list exceeds this so
@@ -293,7 +296,11 @@ impl Engine {
             log: log.clone(),
         }));
         let entities = engine::registry::register_entity_nodes(&mut reg);
-        let tools = ToolSet::builtin(cfg.workspace.clone());
+        let mut tools = ToolSet::builtin(cfg.workspace.clone());
+        if let Some(url) = cfg.mqtt_tool_url.as_deref() {
+            let observer: Arc<dyn pii_observe::Observer> = log.clone();
+            tools = tools.with_mqtt(url, observer)?;
+        }
         let run_pool = Arc::new(engine::run_pool::RunPool::new(
             engine::run_pool::configured_threads(),
         )?);

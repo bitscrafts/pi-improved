@@ -8,6 +8,7 @@
 pub mod bash;
 pub mod fs;
 pub mod memory;
+pub mod mqtt;
 mod observe;
 pub mod sandbox;
 pub mod search;
@@ -53,7 +54,7 @@ pub trait Tool: Send + Sync {
 pub struct ToolSet {
     tools: BTreeMap<&'static str, Arc<dyn Tool>>,
     /// Receives one event per reported call (see [`ToolSet::observe_call`]).
-    observer: Option<Arc<dyn pii_observe::Observer>>,
+    observer: Option<Arc<dyn Observer>>,
 }
 
 impl ToolSet {
@@ -96,6 +97,16 @@ impl ToolSet {
         }
     }
 
+    /// Adds the `mqtt` tool, backed by the broker at `url`: the model then has 11 tools instead of 10, and the
+    /// eleventh is the only one that can touch the house's devices.
+    ///
+    /// # Errors
+    /// Whatever the channel refuses when it cannot parse the url.
+    pub fn with_mqtt(self, url: &str, observer: Arc<dyn Observer>) -> Result<Self, PiiError> {
+        let ops: Arc<dyn MqttOps> = Arc::new(LiveOps::new(url, observer));
+        Ok(self.with_tool(Arc::new(MqttTool::new(ops))))
+    }
+
     /// A subset by name; unknown names are ignored (allowlist semantics).
     #[must_use]
     pub fn subset(&self, names: &[String]) -> Self {
@@ -131,8 +142,12 @@ impl ToolSet {
     }
 }
 
+use mqtt::{LiveOps, MqttOps, MqttTool};
+use pii_observe::Observer;
+
 #[cfg(test)]
 mod tests {
+
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::{BashTool, FsReadTool, GlobTool, GrepTool, Tool, ToolSet};

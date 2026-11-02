@@ -115,6 +115,7 @@ async fn run_tui(
             sandbox,
             graph_dir: store_dir.join("graphs"),
             route_policy: std::collections::BTreeMap::new(),
+            mqtt_tool_url: None,
             tiers: Vec::new(),
             session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
             llama_host: pii_server::daemon::config::Config::load_from_default_path()

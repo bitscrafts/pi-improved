@@ -9,6 +9,7 @@ description = "Built-in tools: fs read/write/edit, bash mediation, sandbox profi
 
 [dependencies]
 pii-abi = { path = "../pii-abi" }
+pii-channels = { path = "../pii-channels" }
 pii-core = { path = "../pii-core" }
 pii-model = { path = "../pii-model" }
 pii-observe = { path = "../pii-observe" }

@@ -80,6 +80,7 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Daemon>, Arc<Recorder>) {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.join("graphs"),
+        mqtt_tool_url: None,
     })
     .expect("engine");
     let log = Arc::new(Recorder::new());
@@ -279,6 +280,7 @@ fn a_wasm_dir_that_does_not_exist_is_refused_at_daemon_build() {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.path().join("graphs"),
+        mqtt_tool_url: None,
     })
     .unwrap();
     let p = dir.path().join("pii.toml");

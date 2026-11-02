@@ -22,6 +22,7 @@ mod cmd_lane;
 mod cmd_learn;
 mod cmd_loop;
 mod cmd_metrics;
+mod cmd_mqtt;
 mod cmd_oneshot;
 mod cmd_project;
 mod cmd_run;
@@ -241,6 +242,9 @@ fn main() -> ExitCode {
     }
     if cmd == "learn" {
         return cmd_learn::cmd_learn(&mut args);
+    }
+    if cmd == "mqtt" {
+        return cmd_mqtt::cmd_mqtt(&mut args);
     }
     if cmd == "incidents" {
         return cmd_incidents::cmd_incidents(&mut args);

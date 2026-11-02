@@ -21,6 +21,7 @@ fn engine_in(dir: &Path, fixture: &str) -> Arc<Engine> {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.join("graphs"),
+        mqtt_tool_url: None,
     })
     .unwrap()
 }
@@ -216,6 +217,7 @@ async fn session_runs_capped_with_lru_eviction() {
         graph_dir: dir.join("graphs"),
         session_runs_cap: cap,
         llama_host: None,
+        mqtt_tool_url: None,
     })
     .unwrap();
     let sid = engine.create_session(dir.display().to_string(), vec![], None);

@@ -30,6 +30,7 @@ fn engine(prefix: &str) -> (tempfile::TempDir, Arc<crate::Engine>) {
         session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.path().join("graphs"),
+        mqtt_tool_url: None,
     })
     .unwrap();
     (dir, engine)

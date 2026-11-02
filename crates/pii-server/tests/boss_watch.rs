@@ -91,6 +91,7 @@ fn engine_in_at(dir: &std::path::Path, graph_dir: PathBuf) -> Arc<Engine> {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir,
+        mqtt_tool_url: None,
     })
     .unwrap()
 }

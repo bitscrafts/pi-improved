@@ -629,6 +629,7 @@ mod tests {
             graph_dir: dir.clone(),
             route_policy: std::collections::BTreeMap::new(),
             tiers: Vec::new(),
+            mqtt_tool_url: None, // fixture engines have no broker
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
             llama_host: None,
         })
@@ -800,6 +801,7 @@ mod tests {
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
             llama_host: None,
+            mqtt_tool_url: None,
         })
         .unwrap();
 

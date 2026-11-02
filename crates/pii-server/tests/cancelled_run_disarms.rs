@@ -46,6 +46,7 @@ fn scratch_daemon() -> (tempfile::TempDir, Arc<Daemon>, Arc<Recorder>) {
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
         graph_dir: dir.join("graphs"),
+        mqtt_tool_url: None,
     })
     .expect("engine");
     let log = Arc::new(Recorder::new());
