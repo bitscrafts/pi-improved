@@ -114,6 +114,41 @@ cmd_channel_empty(){
   timeout 300 ssh -o BatchMode=yes "$HOST" "python3 - --forum $forum $yes" < "$REPO/deploy/tools/discord-forum-empty.py"
 }
 
+# The digest is ON DEMAND (standing decision, 2026-11-02): 1a/1b/1c are valuable when asked, not on a timer.
+# This removes the `[[cron]]` block whose graph is discord-digest, cancels any suspended run of it, restarts once
+# and shows that nothing is armed. The graph stays runnable by hand; only the schedule goes.
+cmd_digest_off(){
+  local tmp; tmp=$(mktemp -d /tmp/digest-off-XXXXXX)
+  scp -q "$HOST:.local/pii/pii.toml" "$tmp/pii.toml" || { echo "digest-off: cannot fetch config" >&2; rm -rf "$tmp"; return 2; }
+  python3 - "$tmp/pii.toml" <<'PY'
+import re, sys
+p = sys.argv[1]
+text = open(p).read()
+blocks = re.split(r'(?m)^(?=\[\[cron\]\])', text)
+out, removed = [], 0
+for b in blocks:
+    if b.startswith('[[cron]]') and 'discord-digest' in b:
+        removed += 1
+        continue
+    out.append(b)
+open(p, 'w').write(''.join(out))
+print(f"removed {removed} cron block(s) naming discord-digest")
+PY
+  timeout 60 ssh -o BatchMode=yes "$HOST" "cp -p ~/.local/pii/pii.toml ~/.local/pii/pii.toml.digestoff-\$(date +%s)" || { rm -rf "$tmp"; return 3; }
+  scp -q "$tmp/pii.toml" "$HOST:.local/pii/pii.toml.new" && rm -rf "$tmp"
+  timeout 120 ssh -o BatchMode=yes "$HOST" 'set -e
+    install -m 600 ~/.local/pii/pii.toml.new ~/.local/pii/pii.toml && rm -f ~/.local/pii/pii.toml.new
+    systemctl --user restart pii.service; sleep 3
+    export PII_RUNTIME_DIR=/run/user/1000/pii
+    for r in $(~/.local/bin/pii run ls --status suspended 2>/dev/null | awk "/r[0-9]/{print \$1}"); do
+      ~/.local/bin/pii run cancel "$r" --reason "digest is on demand now" >/dev/null 2>&1 && echo "cancelled $r"
+    done
+    echo "unit   : $(systemctl --user is-active pii.service)"
+    echo "cron   : $(grep -c "^\[\[cron\]\]" ~/.local/pii/pii.toml || true) block(s) in the config"
+    echo "digest : $(~/.local/bin/pii graph list 2>/dev/null | grep -i digest || echo none)"
+    echo "suspended: $(~/.local/bin/pii run ls --status suspended 2>/dev/null | wc -l) run(s)"'
+}
+
 case "${1:-}" in
   build)       cmd_build ;;
   install)     cmd_install ;;
@@ -123,5 +158,6 @@ case "${1:-}" in
   logs)        cmd_logs ;;
   dev-silence) cmd_dev_silence ;;
   channel-empty) shift; cmd_channel_empty "$@" ;;
+  digest-off)  cmd_digest_off ;;
   *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

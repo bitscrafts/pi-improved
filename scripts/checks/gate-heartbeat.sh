@@ -4,6 +4,11 @@
 # Each case copies the REAL quality-gate.sh + scripts/gate-lib.sh into a scratch gate dir with a tiny
 # gate-steps.txt, so the real runner is exercised without cargo. Scratch lives under /projects/_tmp.
 set -u
+# MEASURED 2026-11-02: scripts/autonomy/env.sh exports GATE_STEPS=gate-steps-quick.txt, and this harness calls the
+# real runner in a minimal tree that has only gate-steps.txt — so the runner tried to read a file the fixture never
+# wrote and six cases failed for a reason that had nothing to do with the gate. A check whose verdict depends on how
+# it was invoked is not a check: isolate the environment instead of inheriting the caller's.
+unset GATE_STEPS
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 base=/projects/_tmp
 mkdir -p "$base" || exit 2

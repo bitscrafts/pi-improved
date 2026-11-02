@@ -124,6 +124,24 @@ def cmd_merge(a):
         if wanted:
             text = text.rstrip("\n") + "\n\n" + frag.strip("\n") + "\n"
 
+    # R4 (added 2026-11-02): SAY WHY a value survived. scripts/checks/deploy-dry-run.sh asserted this note and
+    # nothing wrote it — the check was right about the intent and wrong to assume it was implemented. Without the
+    # note a reader cannot tell the operator's model from the template's, which is the whole point of the merge.
+    try:
+        prior_text = Path(a.prior).read_text(encoding="utf-8") if a.prior else ""
+        op_model = tomllib.loads(prior_text).get("core", {}).get("model") if prior_text else None
+        new_model = tomllib.loads(text).get("core", {}).get("model")
+        tmpl_model = tdoc.get("core", {}).get("model")
+        if op_model and new_model == op_model and op_model != tmpl_model:
+            note = (
+                "# carried forward by install-pii.sh: the operator's model, not the template's\n"
+            )
+            text, n = re.subn(r"(?m)^(model\s*=\s*.+)$", note + r"\1", text, count=1)
+            if n != 1:
+                note = None
+    except Exception:  # noqa: BLE001 - a missing note must never stop a merge that parses
+        note = None
+
     tomllib.loads(text)  # the candidate must parse; a broken edit stops here, before anything is written
     Path(a.out).write_text(text, encoding="utf-8")
     return 0
