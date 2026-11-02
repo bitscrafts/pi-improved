@@ -57,15 +57,20 @@ if [ "$dirty" -gt 0 ]; then
 fi
 : >"$STUCK"
 
-# 3b. retire rows that will never move: needs-review with three attempts spent. The dispatcher skips them anyway;
-# leaving them is how a queue looks busy while nothing advances.
-python3 scripts/autonomy/state.py list 2>/dev/null \
-  | awk -F'\t' '$4=="needs-review" && $5+0 >= 3 {print $1}' \
-  | while read -r rid; do
-      [ -n "$rid" ] || continue
-      python3 scripts/autonomy/state.py set "$rid" status=skipped last="watch: needs-review after 3 attempts, retired so the queue advances" >/dev/null 2>&1 \
-        && say "row $rid was stuck at 3 attempts: retired"
-    done
+# 3b. rows stuck at three attempts are NOT skipped: skipping would fake closure and let the Opus review run on a
+# queue that still holds an unfinished gap. They are named, every firing, so the morning report can say which gap
+# held the night.
+# and it is RETRIED, not abandoned: the operator's rule is that the next Opus review waits until every gap is
+# closed, so a parked row is repaired and handed back to the dispatcher rather than written off. If it parks again,
+# the night still has no review — and the morning report says which gap held it.
+stuck=$(python3 scripts/autonomy/state.py list 2>/dev/null | awk -F'\t' '$4=="parked" {print $1}' | tr '\n' ' ')
+if [ -n "$stuck" ]; then
+  for rid in $stuck; do
+    python3 scripts/autonomy/state.py repair "$rid" "watch: retrying a parked row so its gap can close" >/dev/null 2>&1 \
+      && say "row $rid was parked: repaired and handed back to the dispatcher (the review waits for it)"
+  done
+  exit 0
+fi
 
 # 4/5. the head row
 head=$(python3 scripts/autonomy/state.py pick 2>/dev/null | head -1)
@@ -80,9 +85,8 @@ case "$head" in
     fi
     st=$(python3 scripts/autonomy/state.py get "$id" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status"),d.get("attempts"))' 2>/dev/null)
     case "$st" in
-      parked*|needs-review\ [3-9]*|needs-review\ [1-9][0-9]*)
-        python3 scripts/autonomy/state.py set "$id" status=skipped last="watch: stuck after $st, moved on" >/dev/null 2>&1
-        say "row $id was $st: skipped so the queue keeps flowing"
+      parked*)
+        say "the head row $id is parked ($st) — the queue waits for a repair, not for a skip"
         exit 0 ;;
     esac
     say "row $id is dispatchable — the 5-minute dispatcher has it"

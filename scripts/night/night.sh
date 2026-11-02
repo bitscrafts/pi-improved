@@ -41,6 +41,17 @@ sf(){ python3 -c "import json,sys; d=json.load(open('$STATE')); print(d.get('$1'
 past_deadline(){ [ "$(date -u +%s)" -ge "$(date -u -d "$UNTIL" +%s)" ]; }
 
 queue_empty(){ python3 scripts/autonomy/state.py pick 2>/dev/null | grep -qx 'NONE'; }
+
+# open_rows: rows of THIS night that are still being worked or waiting for work. A review must not run while one
+# exists — the operator's rule, 2026-11-02: "it only will go to the next opus review after all gaps were closed".
+# A row that is parked is not open: it is a recorded failure with its evidence, and the review is exactly what
+# should look at it. A row that is skipped is not open either, but it is also not closed, and it is named in the
+# log line so the morning report can say so.
+open_rows(){
+  python3 scripts/autonomy/state.py list 2>/dev/null \
+    | awk -F'\t' '$1>=335 && $1<=340 && ($4=="pending" || $4=="running" || $4=="needs-review") {print $1}' \
+    | tr '\n' ' '
+}
 worker_busy(){ pgrep -f 'run-batchC-pii|scripts/autonomy/cycle.sh' >/dev/null 2>&1; }
 
 seed(){
@@ -155,9 +166,13 @@ fi
 case "$(sf tranche)" in
   none) seed a || { say "night: tranche a is missing — nothing to fill with"; exit 1; } ;;
   a)
+    open=$(open_rows)
+    if [ -n "$open" ]; then say "night: NO review yet — row(s) $open still open in tranche a"; exit 0; fi
     if [ "$(sf opus_runs)" -lt "$MAX_OPUS" ]; then review; fi
     if [ -f "$DIR/tranche-b.tsv" ]; then seed b; else say "night: no tranche b; the night is done"; summary; fi ;;
   b)
+    open=$(open_rows)
+    if [ -n "$open" ]; then say "night: NO review yet — row(s) $open still open in tranche b"; exit 0; fi
     if [ "$(sf opus_runs)" -lt "$MAX_OPUS" ]; then review; fi
     summary
     python3 - "$STATE" <<'PY'
