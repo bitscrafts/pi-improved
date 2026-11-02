@@ -20,6 +20,16 @@ fixture(){
 lo(){ local d=$1; shift; (cd "$d" && bash "$LO" "$@"); }
 # own <repo> <plan> <state>: run `leftover.sh owner` against fixture plan and state files
 own(){ (cd "$1" && PII_PLAN="$2" PII_STATE="$3" bash "$LO" owner); }
+# lo_owned <repo> <dir> <verb> [args]: run leftover.sh in a repo where ONE row names the dirty paths and holds a
+# session. clean() refuses a tree no row owns (the Opus ownership rule), and these cases are about the SAVE and the
+# STASH, not about ownership -- so they must hand it a tree it is allowed to act on, or they measure the refusal.
+lo_owned(){
+  local d=$1 dir=$2; shift 2
+  printf '%b' 'R1\tS.md\t-\tfixture row\ttrue\ta.txt;new.txt\t0\n' >"$dir/plan.tsv"
+  printf '%b' "$STATE_ONE_SESSION" >"$dir/state.json"
+  (cd "$d" && PII_PLAN="$dir/plan.tsv" PII_STATE="$dir/state.json" PII_LEFTOVER_DIR="$dir/leftovers" \
+     bash "$LO" "$@")
+}
 # verdict <name> <ok: yes|no> <why>: one PASS or FAIL line per row
 verdict(){
   if [ "$2" = yes ]; then echo "PASS $1"; else echo "FAIL $1: $3"; FAILS=$((FAILS+1)); fi
@@ -32,7 +42,7 @@ STATE_TWO_SESSIONS='{\n "R1": {\n  "session": "s1",\n  "status": "needs-review"\
 # 1. a modified tracked file is saved as a patch, and clean leaves the tree empty
 D=$(scratch); fixture "$D/repo"; echo changed >>"$D/repo/a.txt"
 lo "$D/repo" save "$D/leftovers" 311a >"$D/save.out" 2>&1; SRC=$?
-lo "$D/repo" clean 311a >"$D/clean.out" 2>&1; CRC=$?
+lo_owned "$D/repo" "$D" clean 311a >"$D/clean.out" 2>&1; CRC=$?
 PORC=$(cd "$D/repo" && git status --porcelain)
 if [ "$SRC" = 0 ] && [ -s "$D/leftovers/311a-tracked.patch" ] && [ "$CRC" = 0 ] && [ -z "$PORC" ]; then
   verdict a-tracked-change-is-saved-and-cleaned yes
@@ -44,7 +54,7 @@ fi
 D=$(scratch); fixture "$D/repo"; printf 'new bytes\n' >"$D/repo/new.txt"
 SUM=$(sha256sum "$D/repo/new.txt" | cut -d' ' -f1)
 lo "$D/repo" save "$D/leftovers" 311b >/dev/null 2>&1; SRC=$?
-lo "$D/repo" clean 311b >/dev/null 2>&1; CRC=$?
+lo_owned "$D/repo" "$D" clean 311b >/dev/null 2>&1; CRC=$?
 GONE=no; [ ! -e "$D/repo/new.txt" ] && GONE=yes
 (cd "$D/repo" && git stash pop >/dev/null 2>&1)
 SUM2=$(sha256sum "$D/repo/new.txt" 2>/dev/null | cut -d' ' -f1)

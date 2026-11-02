@@ -32,6 +32,7 @@ printf '{\n "900": {\n  "status": "needs-review",\n  "session": "sess-1"\n }\n}\
 # the scaffolding is COMMITTED, so the only dirty paths in this fixture are the ones the cases touch -- the first
 # version of this test left plan.tsv, state.json and the two scripts untracked, so "how many dirty paths?" counted
 # them and every assertion after that measured the fixture instead of the behaviour.
+printf '_tmp/\n' > .gitignore   # the real repo ignores _tmp/, and clean() writes its record there
 git add . && git commit -qm base
 export PII_PLAN="$PWD/scripts/autonomy/plan.tsv" PII_STATE="$PWD/state.json"
 N=scripts/autonomy/leftover.sh
@@ -57,7 +58,8 @@ check "CONTROL the old script calls this same tree OWNER" "$(bash $O owner | cut
 # CASE 3: owned again -> clean() stashes, and the tree ends clean
 git checkout -q -- c.txt; printf '%s\n' B3 > b.txt
 OUT=$(bash $N clean c2 2>&1)
-check "clean stashes an owned tree" "$(printf '%s' "$OUT" | cut -d' ' -f1)" "STASH"
+check "clean stashes an owned tree" "$(printf '%s' "$OUT" | tail -1 | cut -d' ' -f1)" "STASH"
+check "and saved the content before stashing" "$(printf '%s' "$OUT" | grep -c '^SAVED')" "2"
 check "and says whose paths it took" "$(printf '%s' "$OUT" | grep -c 'of 900')" "1"
 check "the tree is clean afterwards" "$(git status --porcelain | wc -l)" "0"
 

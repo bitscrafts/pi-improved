@@ -1,0 +1,73 @@
+# The digest, NOW: the same two reads and the same post as `discord-digest.toml`, with the timer removed.
+#
+# WHY A SECOND GRAPH RATHER THAN A FLAG. `discord-digest`'s entry node is a `timer`, so asking it to run
+# answers "suspended, in_ms ≈ 44 178 269" — it cannot answer *now* by construction. The standing decision
+# (2026-11-02) is that the digest is asked for, not scheduled: 1a/1b/1c are valuable when wanted. An
+# on-demand digest therefore has no timer at all, and its entry is the first read.
+#
+# INPUT: `{ "to": "<thread id inside the forum>" }`. The status thread is 1566652720214188134
+# ("pii · status"); a digest is a status update and goes there, never into the forum root.
+#
+# Caps: `memory_read` for the two recalls, `post` for the message. Only the daemon grants them, which is
+# why `pii run start digest-now --input …` is the way to exercise this and a standalone `pii graph run`
+# is not (measured: `capability denied: memory: read not granted`).
+name = "digest-now"
+entry = "devices"
+caps = ["memory_read", "post"]
+
+[[node]]
+id = "devices"
+kind = "recall"
+op = "by_kind"
+entity_kind = "device"
+rank = true
+limit = 50
+
+[[node]]
+id = "lessons"
+kind = "recall"
+op = "by_kind"
+entity_kind = "lesson"
+rank = true
+limit = 50
+
+[[node]]
+id = "digest"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.to"
+template = "pii digest: ${nodes.devices.count} device(s) known, ${nodes.lessons.count} lesson(s) remembered. (asked for, not scheduled)"
+key = "digest-now-${run}"
+tag = "status"
+timeout_ms = 5000
+
+[[node]]
+id = "refused_devices"
+kind = "transform"
+value = { text = "", outcome = "digest input refused: devices" }
+
+[[node]]
+id = "refused_lessons"
+kind = "transform"
+value = { text = "", outcome = "digest input refused: lessons" }
+
+[[edge]]
+from = "devices"
+port = "ok"
+to = "lessons"
+
+[[edge]]
+from = "lessons"
+port = "ok"
+to = "digest"
+
+[[edge]]
+from = "devices"
+port = "err"
+to = "refused_devices"
+
+[[edge]]
+from = "lessons"
+port = "err"
+to = "refused_lessons"
