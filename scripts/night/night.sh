@@ -141,6 +141,19 @@ case "$MODE" in
     exit 0 ;;
   --seed) seed "${2:?--seed needs a tranche name (a|b)}"; exit $? ;;
   --until) UNTIL=$2; say "night: deadline $UNTIL"; exit 0 ;;
+  --review-now)
+    # The review step is the one part of this loop that has to call a paid model, so it must be runnable on its own
+    # and on a clean tree — otherwise its first execution is at 07:00 with nobody awake. Guarded exactly as the
+    # night guards it: one review at a time, and never while a worker is editing the tree.
+    if pgrep -f 'night\.sh --tick' >/dev/null 2>&1 && [ "${2:-}" != "--allow-concurrent" ]; then
+      say "night: another fill/review step is running — refusing to start a second"; exit 3
+    fi
+    if pgrep -f 'run-batchC-pii|scripts/autonomy/cycle\.sh' >/dev/null 2>&1 && [ "${2:-}" != "--allow-dirty" ]; then
+      say "night: a worker is editing the tree — a review now would judge half-written work; refusing"; exit 3
+    fi
+    [ -z "$(git status --porcelain)" ] || { say "night: the tree is dirty; a review judges the tree, refusing"; exit 3; }
+    review
+    exit $? ;;
   --dry-run)
     echo "would: past_deadline=$(past_deadline && echo yes || echo no) queue_empty=$(queue_empty && echo yes || echo no) worker=$(worker_busy && echo busy || echo idle) tranche=$(sf tranche) opus_runs=$(sf opus_runs)"
     exit 0 ;;
