@@ -243,3 +243,20 @@ The standing decision is that the digest is asked for, not scheduled. Asking `di
 
 **What is still a clock, not a command:** M6 needs one real incident inside a week; M5's "≥7 posts over 7 days" is
 superseded by the on-demand decision and replaced by "a digest posts when asked", which the line above satisfies.
+
+### 14. CLOSED 2026-11-02 — the judge refused rows whose criteria passed by hand (the daemon's env, not the criteria)
+
+Two rows in one day ended `run.refused{hook=judge, reason=the spec's criteria failed}` while the same criteria
+passed when run with `scripts/autonomy/env.sh` sourced. The criteria were right; the **environment the judge ran
+them in** was not. The devbox daemon is started with an explicit `env` list (`modules/devbox/daemon.sh`), and that
+list carried no `FRESH_GATE_TARGET` — so each judgement built a ~28 GB compiler target inside a volume already 88 %
+full, the volume slowed, and the gate's `session.prompt < 50 ms` assertion went red. The judge was measuring the
+disk, and the disk was the judge's own footprint.
+
+Fixed in `087f7eb`: the daemon's env list carries `FRESH_GATE_TARGET` (the repo's warm gate cache) and
+`CARGO_BUILD_JOBS`. The guard is gate row 15, `scripts/checks/judge-gate-env.sh`, which reads the actual
+`podman exec -d … env …` line and has a control that strips the variable and requires the check to fail.
+
+**Not yet in effect on the running daemon** — it predates the change; the next `modules/devbox/daemon.sh up` picks
+it up. Until then a judgement can still pay the cold build, so a red on a latency assertion must still be read as
+`df` first (see §11).
