@@ -25,7 +25,11 @@ fn observer() -> Arc<dyn pii_observe::Observer> {
 }
 
 fn ctx() -> pii_core::Ctx {
-    pii_core::Ctx::root(pii_core::CapSet::empty(), pii_core::Budget::unlimited())
+    let caps = pii_core::CapSet {
+        kinds: pii_core::CapKind::MQTT_READ | pii_core::CapKind::MQTT_WRITE,
+        ..pii_core::CapSet::default()
+    };
+    pii_core::Ctx::root(caps, pii_core::Budget::unlimited())
 }
 
 fn url() -> String {
@@ -35,7 +39,7 @@ fn url() -> String {
 #[test]
 #[ignore = "needs a live broker: set PII_MQTT_URL"]
 fn live_list_reads_the_devices_that_are_actually_there() {
-    let tool = MqttTool::new(Arc::new(LiveOps::new(url(), observer())));
+    let tool = MqttTool::operator(Arc::new(LiveOps::new(url(), observer())));
     let listed = tool.call(&ctx(), &serde_json::json!({"op": "ls"})).unwrap();
     let count = listed["count"].as_u64().unwrap();
     println!("devices: {count} — {listed}");
@@ -55,7 +59,7 @@ fn live_list_reads_the_devices_that_are_actually_there() {
 #[test]
 #[ignore = "needs a live broker: set PII_MQTT_URL"]
 fn live_send_addresses_a_device_by_name() {
-    let tool = MqttTool::new(Arc::new(LiveOps::new(url(), observer())));
+    let tool = MqttTool::operator(Arc::new(LiveOps::new(url(), observer())));
     let listed = tool.call(&ctx(), &serde_json::json!({"op": "ls"})).unwrap();
     let Some(first) = listed["devices"].as_array().and_then(|a| a.first()) else {
         println!("no device to address; nothing to prove");
@@ -80,7 +84,7 @@ fn live_send_addresses_a_device_by_name() {
 #[test]
 #[ignore = "needs a live broker: set PII_MQTT_URL"]
 fn live_sub_reads_a_filter() {
-    let tool = MqttTool::new(Arc::new(LiveOps::new(url(), observer())));
+    let tool = MqttTool::operator(Arc::new(LiveOps::new(url(), observer())));
     let got = tool
         .call(
             &ctx(),
@@ -97,7 +101,7 @@ fn live_sub_reads_a_filter() {
 fn live_command_gets_an_answer() {
     // The round trip that "manage" means: publish a command, then hear the device's reply as an incoming message.
     // `Status 0` is read-only, so the worst case of a wrong device name is a log line on the device, not a change.
-    let tool = MqttTool::new(Arc::new(LiveOps::new(url(), observer())));
+    let tool = MqttTool::operator(Arc::new(LiveOps::new(url(), observer())));
     let listed = tool.call(&ctx(), &serde_json::json!({"op": "ls"})).unwrap();
     let Some(first) = listed["devices"].as_array().and_then(|a| a.first()) else {
         println!("no device to address");

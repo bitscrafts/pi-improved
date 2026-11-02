@@ -25,6 +25,8 @@ pub struct MqttConfig {
     pub client_id: Option<String>,
     /// Topic filters subscribed on every (re)connect.
     pub topics: Vec<String>,
+    /// Devices the model may command, by base (`tasmota_6DE85C`) or name; empty = none writable (spec 336).
+    pub allow_devices: Vec<String>,
     /// `QoS` (0..=2) used for the subscriptions.
     pub qos: u8,
     /// Broker user name (resolved from env/file by the caller, never config).
@@ -50,6 +52,7 @@ impl MqttConfig {
             url: url.to_owned(),
             client_id: None,
             topics: Vec::new(),
+            allow_devices: Vec::new(),
             qos: 0,
             username: None,
             password: None,
@@ -145,6 +148,7 @@ impl std::fmt::Debug for MqttConfig {
             .field("url", &self.url)
             .field("client_id", &self.client_id)
             .field("topics", &self.topics)
+            .field("allow_devices", &self.allow_devices)
             .field("qos", &self.qos)
             .field("username", &set(&self.username))
             .field("password", &set(&self.password))

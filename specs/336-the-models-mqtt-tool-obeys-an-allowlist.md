@@ -70,6 +70,12 @@ assert on the refusal text, so nothing in this spec needs a network.
 ## Files
 
 - `specs/336-the-models-mqtt-tool-obeys-an-allowlist.md`
+- `crates/pii-abi/src/cap.rs`
+- `crates/pii-channels/src/mqtt/config.rs`
 - `crates/pii-channels/src/mqtt/mod.rs`
+- `crates/pii-cli/src/cmd_mqtt.rs`
 - `crates/pii-tools/src/mqtt.rs`
+- `crates/pii-tools/tests/mqtt_live.rs`
 - `crates/pii-tools/tests/mqtt_tool_scope.rs`
+- `xtask/observability-allowlist.txt`
+- `crates/pii-tools/src/mqtt/live.rs`

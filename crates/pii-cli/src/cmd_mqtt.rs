@@ -12,6 +12,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use pii_abi::CapKind;
 use pii_core::{Budget, CapSet, Ctx};
 use pii_tools::Tool;
 use pii_tools::mqtt::{LiveOps, MqttTool};
@@ -53,8 +54,13 @@ pub(crate) fn cmd_mqtt(args: &mut std::env::ArgsOs) -> ExitCode {
         .unwrap_or_else(|| String::from("mqtt://127.0.0.1:1883"));
 
     let observer: Arc<dyn pii_observe::Observer> = Arc::new(pii_observe::NullObserver);
-    let tool = MqttTool::new(Arc::new(LiveOps::new(url, observer)));
-    let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+    // The operator owns the house: every verb, and both mqtt capabilities granted (spec 336).
+    let tool = MqttTool::operator(Arc::new(LiveOps::new(url, observer)));
+    let caps = CapSet {
+        kinds: CapKind::MQTT_READ | CapKind::MQTT_WRITE,
+        ..CapSet::default()
+    };
+    let ctx = Ctx::root(caps, Budget::unlimited());
 
     let args = match verb.as_str() {
         "ls" => serde_json::json!({ "op": "ls" }),

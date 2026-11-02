@@ -15,14 +15,17 @@
 //! wraps the channel the daemon already runs (`pii_channels::mqtt::MqttChannel`).
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use pii_abi::PiiError;
-use pii_core::{Budget, CapSet, Ctx};
+use pii_abi::{CapKind, PiiError};
+use pii_core::Ctx;
 use pii_model::ToolSpec;
 use serde_json::{Value, json};
 
 use crate::Tool;
+
+mod live;
+pub use live::LiveOps;
 
 /// How long a publish holds the connection open so the driver can flush it before the socket closes.
 pub const FLUSH_GRACE_MS: u64 = 400;
@@ -65,21 +68,66 @@ pub struct Device {
     pub online: Option<bool>,
 }
 
+/// What the model may do with the tool (spec 336). Absent on the operator's CLI, which keeps every verb.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Scope {
+    /// Devices the model may `send` to, by name or base. Empty means none is writable.
+    pub allow_devices: Vec<String>,
+    /// Topic filters `sub` is restricted to. Empty means any filter.
+    pub topics: Vec<String>,
+}
+
 /// The `mqtt` tool.
 pub struct MqttTool {
     ops: Arc<dyn MqttOps>,
     /// How long a listing waits for retained messages to arrive.
     window: Duration,
+    /// `Some` for the model (raw `pub` refused, `send` gated by the allowlist); `None` for the operator.
+    scope: Option<Scope>,
+}
+
+/// The capability a refusal names when the context lacks it.
+fn require(ctx: &Ctx, kind: CapKind, name: &str) -> Result<(), PiiError> {
+    if ctx.caps().kinds.contains(kind) {
+        Ok(())
+    } else {
+        Err(PiiError::Denied(name.to_owned()))
+    }
 }
 
 impl MqttTool {
-    /// A tool over `ops`, waiting [`DEFAULT_WINDOW`] for retained messages.
+    /// The model's tool over `ops`: nothing is writable until [`MqttTool::with_allow_devices`] names a device.
     #[must_use]
     pub fn new(ops: Arc<dyn MqttOps>) -> Self {
         Self {
             ops,
             window: DEFAULT_WINDOW,
+            scope: Some(Scope::default()),
         }
+    }
+
+    /// The operator's tool over `ops`: every verb, no allowlist. Only the CLI holds this.
+    #[must_use]
+    pub fn operator(ops: Arc<dyn MqttOps>) -> Self {
+        Self {
+            ops,
+            window: DEFAULT_WINDOW,
+            scope: None,
+        }
+    }
+
+    /// Devices the model may `send` to (`[[mqtt]] allow_devices`).
+    #[must_use]
+    pub fn with_allow_devices(mut self, allow: Vec<String>) -> Self {
+        self.scope.get_or_insert_with(Scope::default).allow_devices = allow;
+        self
+    }
+
+    /// Topic filters the model's `sub` is restricted to (`[[mqtt]] topics`).
+    #[must_use]
+    pub fn with_topics(mut self, topics: Vec<String>) -> Self {
+        self.scope.get_or_insert_with(Scope::default).topics = topics;
+        self
     }
 
     fn devices(&self) -> Result<Vec<Device>, PiiError> {
@@ -91,6 +139,49 @@ impl MqttTool {
             self.window,
         )?;
         Ok(parse_devices(&got))
+    }
+
+    /// The model's `sub` is restricted to the configured topics when that list is non-empty (spec 336).
+    fn may_read(&self, filter: &str) -> Result<(), PiiError> {
+        match &self.scope {
+            Some(scope)
+                if !scope.topics.is_empty() && !scope.topics.iter().any(|t| t == filter) =>
+            {
+                Err(PiiError::Denied(format!(
+                    "mqtt: filter {filter:?} is outside the configured topics {:?}",
+                    scope.topics
+                )))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// The model never publishes a raw topic: `pub` and its `retain` are the operator's alone (spec 336).
+    fn may_publish_raw(&self) -> Result<(), PiiError> {
+        match self.scope {
+            Some(_) => Err(PiiError::Denied(String::from(
+                "mqtt: raw publish is not available to the model; use `send` with an allowlisted device",
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    /// The model's `send` reaches only an allowlisted device, by name or base; an empty list writes nothing.
+    fn may_write(&self, device: &Device, known: &[&str]) -> Result<(), PiiError> {
+        let Some(scope) = &self.scope else {
+            return Ok(());
+        };
+        let listed = scope
+            .allow_devices
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case(&device.name) || a.eq_ignore_ascii_case(&device.base));
+        if listed {
+            return Ok(());
+        }
+        Err(PiiError::Denied(format!(
+            "mqtt: {:?} is not writable for the model; allow_devices: {:?}; known: {known:?}",
+            device.name, scope.allow_devices
+        )))
     }
 }
 
@@ -206,13 +297,14 @@ impl Tool for MqttTool {
         }
     }
 
-    fn call(&self, _ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
+    fn call(&self, ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
         let op = args
             .get("op")
             .and_then(Value::as_str)
             .ok_or_else(|| PiiError::Invalid(String::from("mqtt: `op` is required")))?;
         match op {
             "ls" => {
+                require(ctx, CapKind::MQTT_READ, "mqtt.read")?;
                 let devices = self.devices()?;
                 Ok(json!({
                     "count": devices.len(),
@@ -223,9 +315,11 @@ impl Tool for MqttTool {
                 }))
             }
             "sub" => {
+                require(ctx, CapKind::MQTT_READ, "mqtt.read")?;
                 let filter = args.get("filter").and_then(Value::as_str).ok_or_else(|| {
                     PiiError::Invalid(String::from("mqtt: `filter` is required for sub"))
                 })?;
+                self.may_read(filter)?;
                 let secs = args
                     .get("seconds")
                     .and_then(Value::as_u64)
@@ -242,6 +336,8 @@ impl Tool for MqttTool {
                 }))
             }
             "pub" => {
+                self.may_publish_raw()?;
+                require(ctx, CapKind::MQTT_WRITE, "mqtt.write")?;
                 let topic = args.get("topic").and_then(Value::as_str).ok_or_else(|| {
                     PiiError::Invalid(String::from("mqtt: `topic` is required for pub"))
                 })?;
@@ -255,6 +351,7 @@ impl Tool for MqttTool {
                 )
             }
             "send" => {
+                require(ctx, CapKind::MQTT_WRITE, "mqtt.write")?;
                 let name = args.get("device").and_then(Value::as_str).ok_or_else(|| {
                     PiiError::Invalid(String::from("mqtt: `device` is required for send"))
                 })?;
@@ -265,10 +362,11 @@ impl Tool for MqttTool {
                     )));
                 }
                 let devices = self.devices()?;
+                let known: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
                 let device = find(&devices, name).ok_or_else(|| {
-                    let known: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
                     PiiError::Invalid(format!("mqtt: no device named {name:?}; known: {known:?}"))
                 })?;
+                self.may_write(device, &known)?;
                 let (topic, payload) = command_parts(device, command);
                 self.ops.publish(&topic, &payload, 0, false)?;
                 Ok(
@@ -277,64 +375,6 @@ impl Tool for MqttTool {
             }
             other => Err(PiiError::Invalid(format!("mqtt: unknown op {other:?}"))),
         }
-    }
-}
-
-/// A live transport that opens the broker connection FOR THE CALL and closes it again.
-///
-/// A standing `#` subscription would double every message the daemon's own channel already carries, for a tool the
-/// model uses occasionally. So: start, act, drop — the channel's `Drop` stops the driver thread.
-pub struct LiveOps {
-    url: String,
-    observer: Arc<dyn pii_observe::Observer>,
-}
-
-impl LiveOps {
-    /// A transport that opens and closes a connection per call.
-    #[must_use]
-    pub fn new(url: impl Into<String>, observer: Arc<dyn pii_observe::Observer>) -> Self {
-        Self {
-            url: url.into(),
-            observer,
-        }
-    }
-
-    fn channel(&self, topics: &[String]) -> Result<Arc<pii_channels::mqtt::MqttChannel>, PiiError> {
-        let mut cfg = pii_channels::mqtt::MqttConfig::new("tool", &self.url);
-        cfg.client_id = Some(format!("pii-tool-{}", std::process::id()));
-        cfg.topics = topics.to_vec();
-        pii_channels::mqtt::MqttChannel::start(cfg, Arc::clone(&self.observer))
-    }
-}
-
-impl MqttOps for LiveOps {
-    fn publish(&self, topic: &str, payload: &str, qos: u8, retain: bool) -> Result<(), PiiError> {
-        let ch = self.channel(&[])?;
-        ch.publish(topic, payload.as_bytes(), qos, retain)?;
-        // MEASURED 2026-11-02: the channel hands the message to a driver thread and dropping the channel closes the
-        // socket, so a command published and immediately dropped never reaches the broker — the round trip got zero
-        // replies. The connection is held briefly while the driver flushes; QoS 1 alone would only mean "queued".
-        std::thread::sleep(Duration::from_millis(FLUSH_GRACE_MS));
-        Ok(())
-    }
-
-    fn collect(
-        &self,
-        filters: &[String],
-        window: Duration,
-    ) -> Result<Vec<(String, Vec<u8>)>, PiiError> {
-        use pii_channels::Channel;
-        let ch = self.channel(filters)?;
-        let deadline = Instant::now() + window;
-        let mut out = Vec::new();
-        while Instant::now() < deadline {
-            let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
-            for msg in ch.poll(&ctx, None)? {
-                out.push((msg.chat.clone(), msg.text.into_bytes()));
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        Ok(out)
     }
 }
 
@@ -347,6 +387,7 @@ impl MqttOps for LiveOps {
 )]
 mod tests {
     use super::*;
+    use pii_core::{Budget, CapSet};
     use std::sync::mpsc::{Receiver, Sender, channel};
 
     /// REAL payload shapes, copied from the live broker on 2026-11-02: a discovery config for the Zigbee bridge
@@ -399,8 +440,14 @@ mod tests {
     #[test]
     fn a_missing_name_is_refused_and_the_known_ones_are_named() {
         let (ops, _rx) = fakes(discovery());
-        let tool = MqttTool::new(ops);
-        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+        let tool = MqttTool::operator(ops);
+        let ctx = Ctx::root(
+            CapSet {
+                kinds: CapKind::MQTT_READ | CapKind::MQTT_WRITE,
+                ..CapSet::default()
+            },
+            Budget::unlimited(),
+        );
         let err = tool
             .call(
                 &ctx,
@@ -418,8 +465,14 @@ mod tests {
     #[test]
     fn send_publishes_to_the_device_topic_and_ls_lists_them() {
         let (ops, rx) = fakes(discovery());
-        let tool = MqttTool::new(ops);
-        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+        let tool = MqttTool::operator(ops);
+        let ctx = Ctx::root(
+            CapSet {
+                kinds: CapKind::MQTT_READ | CapKind::MQTT_WRITE,
+                ..CapSet::default()
+            },
+            Budget::unlimited(),
+        );
 
         let listed = tool.call(&ctx, &json!({"op": "ls"})).unwrap();
         assert_eq!(listed["count"], 2, "{listed}");
@@ -441,7 +494,7 @@ mod tests {
     #[test]
     fn a_bad_op_is_refused_rather_than_ignored() {
         let (ops, _rx) = fakes(vec![]);
-        let tool = MqttTool::new(ops);
+        let tool = MqttTool::operator(ops);
         let err = tool
             .call(
                 &Ctx::root(CapSet::empty(), Budget::unlimited()),

@@ -31,6 +31,10 @@ bitflags! {
         const MEMORY_READ = 256;
         /// Post a message into a configured channel (spec 128).
         const POST = 512;
+        /// Read the house's MQTT devices: list them and subscribe (spec 336).
+        const MQTT_READ = 1024;
+        /// Command a house's MQTT device through its allowlist (spec 336).
+        const MQTT_WRITE = 2048;
     }
 }
 
@@ -38,7 +42,7 @@ impl CapKind {
     /// The `snake_case` name of each capability set here, in declaration order (spec 215 refusals name them).
     #[must_use]
     pub fn names(self) -> Vec<&'static str> {
-        const ALL: [(CapKind, &str); 10] = [
+        const ALL: [(CapKind, &str); 12] = [
             (CapKind::FS_READ, "fs_read"),
             (CapKind::FS_WRITE, "fs_write"),
             (CapKind::NET, "net"),
@@ -49,6 +53,8 @@ impl CapKind {
             (CapKind::SPAWN, "spawn"),
             (CapKind::MEMORY_READ, "memory_read"),
             (CapKind::POST, "post"),
+            (CapKind::MQTT_READ, "mqtt_read"),
+            (CapKind::MQTT_WRITE, "mqtt_write"),
         ];
         ALL.iter()
             .filter(|(kind, _)| self.contains(*kind))
@@ -72,6 +78,8 @@ impl CapKind {
             "spawn" => Ok(Self::SPAWN),
             "memory_read" => Ok(Self::MEMORY_READ),
             "post" => Ok(Self::POST),
+            "mqtt_read" => Ok(Self::MQTT_READ),
+            "mqtt_write" => Ok(Self::MQTT_WRITE),
             other => Err(PiiError::Invalid(format!(
                 "unknown capability kind '{other}'"
             ))),

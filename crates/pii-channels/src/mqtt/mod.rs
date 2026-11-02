@@ -57,6 +57,7 @@ struct Shared {
     observer: Arc<dyn Observer>,
     queue: Mutex<VecDeque<Incoming>>,
     queue_cap: usize,
+    allow_devices: Vec<String>,
     link: Mutex<Link>,
     next_cursor: AtomicU64,
     received: AtomicU64,
@@ -154,6 +155,7 @@ impl MqttChannel {
             observer,
             queue: Mutex::new(VecDeque::new()),
             queue_cap: cfg.queue_cap,
+            allow_devices: cfg.allow_devices.clone(),
             link: Mutex::new(Link::default()),
             next_cursor: AtomicU64::new(pii_core::SystemClock.now_ms()),
             received: AtomicU64::new(0),
@@ -241,6 +243,12 @@ impl MqttChannel {
     #[must_use]
     pub fn reconnect_attempts(&self) -> u64 {
         self.shared.attempts.load(Ordering::Relaxed)
+    }
+
+    /// The devices the model may command (`[[mqtt]] allow_devices`, spec 336); empty means none are writable.
+    #[must_use]
+    pub fn allow_devices(&self) -> &[String] {
+        &self.shared.allow_devices
     }
 }
 
