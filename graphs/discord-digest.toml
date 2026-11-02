@@ -48,6 +48,10 @@ channel = "discord"
 to = "$.input.to"
 template = "pii digest: ${nodes.devices.count} device(s) known, ${nodes.lessons.count} lesson(s) remembered. (inputs: recall by_kind device, lesson)"
 key = "digest-${run}"
+# TOPIC (the forum's own tags): a digest is a status update, not a conversation. The `pii` forum carries
+# chat · task · spec · status · alert · done, and every automated post names the one it belongs to, so the forum
+# groups itself instead of becoming one flat list. `chat` is the default for replies.
+tag = "status"
 timeout_ms = 5000
 
 [[node]]
