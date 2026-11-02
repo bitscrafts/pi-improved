@@ -100,10 +100,13 @@ case_card_existing_store() {
   local c="$SCRATCH/existing-store"; fixture "$c"; plant_card "$c"; plant_store "$c"
   local before rc=0
   before="$(sum_of "$c/home/.local/state/pii/store.redb")"
-  run "$c" "$INSTALLER" --apply; [ $? = 2 ] || rc=1
-  grep -q "store.redb" "$c/last.out" && grep -q "mv " "$c/last.out" || rc=1
+  # An UPGRADE: the binary, the config and the unit are installed, and no store is copied (nothing is passed
+  # to copy one), so the live store must come out byte-identical.
+  run "$c" "$INSTALLER" --apply; [ $? = 0 ] || rc=1
+  grep -q "UPGRADE" "$c/last.out" || rc=1
+  grep -q "kept:.*store.redb" "$c/last.out" || rc=1
   [ "$(sum_of "$c/home/.local/state/pii/store.redb")" = "$before" ] || rc=1
-  # --seed-stores alone is refused while a target store exists: it would overwrite it
+  # CONTROL: --seed-stores over a live store is still refused, because that is the operation that destroys it.
   run "$c" "$INSTALLER" --seed-stores --apply; [ $? = 2 ] || rc=1
   grep -q -- "--force-seed" "$c/last.out" || rc=1
   [ "$(sum_of "$c/home/.local/state/pii/store.redb")" = "$before" ] || rc=1

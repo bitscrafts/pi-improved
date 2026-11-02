@@ -76,11 +76,16 @@ if [ "${#EXISTING[@]}" -gt 0 ]; then
   if [ "$SEED" = 1 ] && [ "$FORCE_SEED" = 1 ]; then
     say "FORCE-SEED: the container's stores will OVERWRITE these live stores on $HOST; the host's copies are destroyed:"
     for p in "${EXISTING[@]}"; do say "  destroyed: $p"; done
+  elif [ "$SEED" = 0 ]; then
+    # An upgrade: the binary, the config and the unit, and no store copied. R2 exists to stop the containers
+    # stores being written over the live ones, which cannot happen when nothing is passed to copy.
+    say "UPGRADE: live stores exist on $HOST and are left untouched (no store is copied without --seed-stores):"
+    for p in "${EXISTING[@]}"; do say "  kept: $p"; done
   else
     say "REFUSED (nothing was changed): a store already exists on $HOST, and this installer does not overwrite one:"
     for p in "${EXISTING[@]}"; do say "  $p"; done
     say "reason: store.redb and memory.redb hold what pii has learned; copying the container's stores over them destroys it."
-    if [ "$SEED" = 1 ]; then say "--seed-stores without --force-seed is refused: it would overwrite the stores above."; fi
+    say "--seed-stores without --force-seed is refused: it would overwrite the stores above."
     say "move them aside yourself on $HOST (this script moves nothing):"
     say "  ssh $HOST 'mkdir -p $STATE_REMOTE/aside-$TS && mv ${EXISTING[*]} $STATE_REMOTE/aside-$TS/'"
     exit 2
