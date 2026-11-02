@@ -44,3 +44,60 @@ Consequences measured today, all from this one cause:
 - the existing five failures of 152 re-gate green when the tree is green, i.e. the item closes;
 - load during a retry cycle falls, and the laya head's load time returns to its idle figure — the measurement that
   proves the whole chain was one cause.
+
+## Resuming a failed gate — the command, not the folklore
+
+The gate keeps two things on failure, and they are the resume: the **export that failed** (`export kept at …` in the
+error) and the **persistent target** (`$FRESH_GATE_TARGET`), so a re-run resumes compilation instead of rebuilding from
+zero. `quality-gate.sh` takes its step list from `$GATE_STEPS` (`gate-steps.txt` by default), which means one step can
+be run on its own.
+
+So a failure is resumed like this, and only the failed step pays:
+
+```bash
+# 1. the gate's own error names them: "failed steps: [\"fmt\", \"clippy\"]; ... export kept at <dir>"
+EXP=/projects/_tmp/fresh-gate-<pid>
+
+# 2. the failed steps, as a step file (labels exactly as gate-steps.txt spells them)
+grep -E '^(fmt|clippy|test \(lib/bins/tests\)|lint-scratch)\|' gate-steps.txt > /tmp/resume-steps.txt
+
+# 3. fix, then resume IN THE EXPORT — the source that actually failed
+cp -f crates/pii-cli/tests/whatever.rs "$EXP/crates/pii-cli/tests/"
+cd "$EXP" && FRESH_GATE_TARGET=… TEST_GATE_TARGET=… GATE_STEPS=/tmp/resume-steps.txt bash quality-gate.sh
+```
+
+When the resumed steps are green, run the whole gate once — that is the verdict a deploy card may quote. Resuming is
+for the loop; the card needs the whole thing.
+
+**Why this is written here.** Measured 2026-11-02: a gate failed on `fmt`/`clippy`/`test`/`lint-scratch`, and the
+answer to "and there is no resume procedure?" was that one existed and was in nobody's notes — so every retry paid a
+full export and a full build for one broken semicolon.
+
+## The disk is part of the harness — measured the hard way, 2026-11-02
+
+A full hour was spent diagnosing "flaky tests" that were not flaky. The shape of the mistake is worth recording because
+it is the exact rule this file already states, applied to the tooling instead of the code:
+
+```
+/tmp is on the ROOT volume (overlay, 288 G). Gate targets and clone targets were pointed there:
+  /tmp/clone-gate            32 G
+  /tmp/wt-target             3.5 G
+  /tmp/base-target           0.9 G
+plus one gate export on /projects: 29 G
+→ / at 100 %, 0 bytes available
+→ cargo: "failed to write full.rmeta: No space left on device"
+→ test daemons: could not create their stores, so `until(...)` spun to its budget
+→ five tests "failed" at every revision, including the one already in production
+```
+
+With 36 G free, the same two test files at the same revision passed in 10.3 s and 0.08 s. **Nothing was wrong with
+the tests.**
+
+Rules that follow:
+
+- **`$FRESH_GATE_TARGET` and every clone target belong on the same large volume as the repo** (`/projects`), never in
+  `/tmp`. The gate's own floor checks the workspace volume, so a full root filesystem passes every floor and fails
+  every build.
+- **Before believing a test failure that repeats at every revision, run `df -h /`.** A test that waits and times out is
+  the signature of a full disk, not of a race.
+- **Clean up what you create**: a gate export is ~29 G and a warm target ~32 G. Three of those end the afternoon.
