@@ -224,8 +224,11 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
             });
             r.first = r.first.min(ts);
             r.last = r.last.max(ts);
+            // A CANCELLED run is finished. MEASURED 2026-11-02: r000000004356 logged `run.cancelled` and was still
+            // reported as `run-stalled`, because only an outcome or a refused start counted as terminal.
             r.terminal |= kind == pii_observe::names::RUN_OUTCOME
-                || kind == pii_observe::names::RUN_START_REFUSED;
+                || kind == pii_observe::names::RUN_START_REFUSED
+                || kind == pii_observe::names::RUN_CANCELLED;
         }
     }
     if let Some(t) = starting

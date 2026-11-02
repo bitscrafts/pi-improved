@@ -41,6 +41,38 @@ fn a_stalled_run_is_one_incident_naming_the_run() {
 }
 
 #[test]
+fn a_cancelled_run_is_not_stalled() {
+    // The host's own run, 2026-11-02: r000000004356 logged `run.cancelled` after five `cron.rearmed` lines and was
+    // still reported as `run-stalled`, because only an outcome or a refused start counted as finished.
+    let (_d, p) = log_with(
+        &(ev("run.start", 0, Some("r4356"))
+            + &ev("cron.rearmed", 100, Some("r4356"))
+            + &ev("run.cancelled", 200, Some("r4356"))
+            + &ev("probe.tick", 4000, None)),
+    );
+    let inc = scan_runtime_log(&p, &IncidentConfig::default()).unwrap();
+    assert!(
+        !inc.iter().any(|i| i.fingerprint.contains("run-stalled")),
+        "{inc:?}"
+    );
+}
+
+#[test]
+fn control_a_run_that_never_ends_is_still_stalled() {
+    // the same log without the cancelled line: this one really did stall and must still be reported
+    let (_d, p) = log_with(
+        &(ev("run.start", 0, Some("r4356"))
+            + &ev("cron.rearmed", 100, Some("r4356"))
+            + &ev("probe.tick", 4000, None)),
+    );
+    let inc = scan_runtime_log(&p, &IncidentConfig::default()).unwrap();
+    assert!(
+        inc.iter().any(|i| i.fingerprint.contains("run-stalled")),
+        "{inc:?}"
+    );
+}
+
+#[test]
 fn the_clean_control_opens_nothing() {
     let inc =
         scan_runtime_log(&fixture("runtime-clean.jsonl"), &IncidentConfig::default()).unwrap();
