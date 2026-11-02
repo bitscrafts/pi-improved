@@ -69,3 +69,17 @@ from = "judge"
 port = "fail"
 to = "record"
 kind = "data"
+
+# Spec 342 R5: exhaustion leaves through the exit. A night (a host) reaches only `record`'s ports, so an empty or blocked
+# select is carried into `record`, which emits the status on its ok port and writes nothing to the store.
+[[edge]]
+from = "select"
+port = "empty"
+to = "record"
+kind = "data"
+
+[[edge]]
+from = "select"
+port = "blocked"
+to = "record"
+kind = "data"

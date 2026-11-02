@@ -26,12 +26,19 @@ in_ms = "$.input.in_ms"
 id = "sdd"
 kind = "call"
 graph = "queue"
-sha256 = "be960040389b10a8ca3ae4b294c167ef2fb1c284f167b5b3cbab51c6c8abe2b7"
+sha256 = "1e86404c88d7573c97cdc42f6056fbc25b9f7636e454370764ee92fb3aae0c0d"
 caps = ["spawn", "proc"]
 max_entries = 12
 
 [node.in]
 workdir = "$.input.workdir"
+
+[[node]]
+id = "review"
+kind = "transform"
+# Spec 342 R5: the call's ok port carries both a claimed item and an empty queue; review passes the record through, and
+# the report says which it was.
+expr = "$.payload"
 
 [[node]]
 id = "report"
@@ -51,6 +58,12 @@ kind = "data"
 
 [[edge]]
 from = "sdd"
+port = "ok"
+to = "review"
+kind = "data"
+
+[[edge]]
+from = "review"
 port = "ok"
 to = "report"
 kind = "data"

@@ -236,9 +236,22 @@ fn field(value: &serde_json::Value, key: &str) -> String {
 impl GraphNode for RecordNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         let Some(item) = selected(input, &self.select) else {
-            return Ok(Outcome::Fail {
-                error: "record: no item was selected".to_owned(),
-            });
+            // Spec 342 R5: exhaustion leaves through the exit, so a night that found nothing reaches review. Nothing is
+            // written to the queue store: there is no item to record a verdict on.
+            let outcome = input
+                .nodes
+                .get(self.select.as_str())
+                .map(|v| field(v, "outcome"))
+                .unwrap_or_default();
+            let status = if outcome == "queue-empty" {
+                "empty"
+            } else {
+                "blocked"
+            };
+            return Ok(port(
+                "ok",
+                serde_json::json!({ "status": status, "reason": outcome }),
+            ));
         };
         let id = field(item, "id");
         // The verdict is the judge's, or the dispatch's refusal when the judge never ran.
@@ -324,5 +337,115 @@ impl NodeFactory for RecordFactory {
             store: Arc::clone(&self.store),
             memory: self.memory.clone(),
         }))
+    }
+}
+
+// Spec 342 R5, the behavioural half. `night_graph_composes.rs` asserts that the EDGES from `select.empty` and
+// `select.blocked` reach `record` — a static check that would pass even if `record` still failed on an empty queue.
+// These drive `RecordNode` itself, because the claim is "an empty queue is not a failure and writes no verdict", and
+// only running the node can show that.
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod record_empty {
+    use super::*;
+    use pii_abi::NodeInput;
+    use pii_core::{Budget, CapKind, CapSet, Ctx, TraceCtx};
+    use pii_store::queue::{QueueStore, WorkItem};
+    use std::sync::Arc;
+
+    fn test_ctx() -> Ctx {
+        Ctx::with_observer(
+            CapSet {
+                kinds: CapKind::FS_READ | CapKind::FS_WRITE,
+                ..CapSet::default()
+            },
+            Budget::unlimited(),
+            Arc::new(pii_core::NullObserver),
+            TraceCtx {
+                run: pii_abi::RunId::new("r000000000001"),
+                span: 0,
+            },
+        )
+    }
+
+    fn scratch() -> tempfile::TempDir {
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/_tmp"));
+        std::fs::create_dir_all(&root).expect("crate _tmp");
+        tempfile::Builder::new()
+            .prefix("queue-record-")
+            .tempdir_in(root)
+            .expect("tempdir under _tmp")
+    }
+
+    fn node(store: Arc<QueueStore>) -> RecordNode {
+        RecordNode {
+            select: "select".to_owned(),
+            judge: "judge".to_owned(),
+            dispatch: "dispatch".to_owned(),
+            store,
+            memory: None,
+        }
+    }
+
+    #[test]
+    fn an_empty_queue_leaves_through_the_exit_and_writes_nothing() {
+        let dir = scratch();
+        let store = Arc::new(QueueStore::open(&dir.path().join("q.redb")).expect("queue store"));
+        let input = NodeInput {
+            input: serde_json::json!({}),
+            payload: serde_json::json!({}),
+            nodes: serde_json::json!({ "select": { "outcome": "queue-empty" } }),
+        };
+        let outcome = node(Arc::clone(&store))
+            .run(&test_ctx(), &input)
+            .expect("the empty path is not an error");
+        let Outcome::Next { port, value } = outcome else {
+            panic!("an empty queue must route on a port, not fail: {outcome:?}");
+        };
+        assert_eq!(port.as_str(), "ok", "the exit port");
+        assert_eq!(value["status"], "empty", "got {value}");
+        assert!(
+            value.get("id").is_none(),
+            "an empty queue has no item id, so nothing is recorded: {value}"
+        );
+        assert!(
+            store.list_items().expect("items").is_empty(),
+            "the empty path must not create or touch an item"
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)] // the name states what it controls for
+    fn CONTROL_a_claimed_item_still_records_its_verdict() {
+        let dir = scratch();
+        let store = Arc::new(QueueStore::open(&dir.path().join("q.redb")).expect("queue store"));
+        store
+            .put_item(&WorkItem::new("A1", &[]))
+            .expect("put the item");
+        let input = NodeInput {
+            input: serde_json::json!({}),
+            payload: serde_json::json!({}),
+            nodes: serde_json::json!({
+                "select": { "outcome": "claimed", "item": { "id": "A1" } },
+                "judge": { "verdict": "passed" }
+            }),
+        };
+        let outcome = node(Arc::clone(&store))
+            .run(&test_ctx(), &input)
+            .expect("record runs");
+        assert!(
+            matches!(outcome, Outcome::Next { .. }),
+            "a claimed item records and routes: {outcome:?}"
+        );
+        let item = store.get_item("A1").expect("get").expect("item exists");
+        assert!(
+            format!("{item:?}").contains("Done"),
+            "the verdict must be written to the item: {item:?}"
+        );
     }
 }

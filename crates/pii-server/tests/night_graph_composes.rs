@@ -131,3 +131,50 @@ fn night_call_sets_max_entries_at_least_its_loop_budget() {
         "max_entries {max_entries} does not cover a night's ticks"
     );
 }
+
+/// `(from, port, to)` of every `[[edge]]` in a graph.
+fn edges(src: &str) -> Vec<(String, String, String)> {
+    let doc: toml::Table = toml::from_str(src).expect("valid toml");
+    let field = |e: &toml::Value, k: &str| {
+        e.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned()
+    };
+    doc.get("edge")
+        .and_then(|e| e.as_array())
+        .map(|es| {
+            es.iter()
+                .map(|e| (field(e, "from"), field(e, "port"), field(e, "to")))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn night_routes_an_empty_queue_to_review() {
+    // Exhaustion leaves the queue through its exit: `select`'s empty and blocked ports feed `record`, and the call's
+    // ok edge reaches `review`, which posts. A host can reach only the exit node's ports (spec 343).
+    let queue = edges(&graph("queue"));
+    let has = |list: &[(String, String, String)], from: &str, port: &str, to: &str| {
+        list.iter()
+            .any(|(f, p, t)| f == from && p == port && t == to)
+    };
+    assert!(
+        has(&queue, "select", "empty", "record"),
+        "queue: select.empty -> record"
+    );
+    assert!(
+        has(&queue, "select", "blocked", "record"),
+        "queue: select.blocked -> record"
+    );
+    let night = edges(&graph("night"));
+    assert!(
+        has(&night, "sdd", "ok", "review"),
+        "night: sdd.ok -> review"
+    );
+    assert!(
+        has(&night, "review", "ok", "report"),
+        "night: review.ok -> report"
+    );
+}
