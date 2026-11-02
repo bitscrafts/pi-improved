@@ -104,7 +104,17 @@ behaviour that produced 516 runs in four minutes — and it is a step of `gate-s
 `quality-gate.sh --fresh`, the gate a deploy card must quote, is **red at HEAD**. Authored as spec 184 / row A51,
 which is now first in the queue.
 
-### 9a. The gate certifies the tree it sits in, not the tree it commits
+### 9a. CLOSED 2026-11-01 — the gate certifies the tree it sits in, and the commit step now gates the index
+
+**Verified closed today.** Spec 315 / row A179 landed as `e8a04f2` and I re-ran its proof rather than trusting the
+row: `pre-commit-builds.sh` builds `HEAD` + the staged index before the commit exists, `cycle.sh:441` calls it under a
+600 s timeout **above** the commit, a red leaves the index staged and does not spend an attempt, a timeout is reported
+as a killed check rather than a failure, and `pre-commit-builds.test.sh` passes 21/21 including
+`a-missing-repo-refuses-with-2` and `the-cycle-calls-it-before-the-commit`. The row had been marked `done` with **no
+commit recorded**, so it was one of the 182 "not judgeable" rows — annotated to `e8a04f2`, which brings the audited
+count to 5 and keeps violations at 0. The original text is kept below as the reasoning that led to the spec.
+
+
 `067 §Q1` decided the item boundary runs the quick gate **in place** and the release boundary runs `fresh-gate`.
 The hole that decision leaves was measured twice on 2026-10-17: `7f98624` (175) committed a call to
 `pii_server::resolve_graph_dir`, a function that existed only in the uncommitted working tree, so `HEAD` did not
