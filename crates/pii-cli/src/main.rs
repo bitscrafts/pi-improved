@@ -33,6 +33,7 @@ mod cmd_sop;
 mod cmd_store;
 mod cmd_sys;
 mod cmd_trace;
+mod cmd_treat;
 mod cmd_tui;
 mod cmd_worker_exec;
 mod daemon_log;
@@ -215,6 +216,9 @@ fn main() -> ExitCode {
     }
     if cmd == "heal" {
         return cmd_ctl::cmd_heal(&mut args);
+    }
+    if cmd == "treat" {
+        return cmd_treat::cmd_treat(&mut args);
     }
     if cmd == "cron" {
         return cmd_ctl::cmd_cron(&mut args);

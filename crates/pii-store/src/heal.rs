@@ -27,6 +27,13 @@ pub enum HealState {
     Escalated,
     /// A system decision denied something under this signature (spec 131).
     Denied,
+    /// A treatment bundle was imported from elsewhere; not yet proven here (spec 349).
+    Imported,
+    /// An applied treatment flipped its reproducer on this machine (spec 349).
+    Verified,
+    /// An applied treatment did not flip its reproducer; the tree was reverted (spec 349).
+    #[serde(rename = "not_a_treatment")]
+    NotATreatment,
 }
 
 /// The human decision attached to a promotion (spec 26 R3), bound to the id
