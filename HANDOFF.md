@@ -1,5 +1,26 @@
 # Pii — Session Handoff
 
+## 2026-11-02T06:3xZ — rows 335 and 336 closed and verified independently; the host probe's two impossible criteria corrected
+
+State at the start of this tick: HEAD `8c36eff` · tree dirty with row 336's nine MQTT paths and **two cycles
+refusing** (`OUTCOME=dirty-tree ITEM=337`, 06:10Z and 06:15Z) · 335 parked at 3 attempts, 336 parked at 3 ·
+selftest **42 passed, 0 failed — ALL MECHANISMS PASS** (06:19Z, ~8 s).
+
+- **336 (`8c36eff`, committed 06:15:54Z by the night lane).** Verified here: scope test 6/6, the three greps
+  hold, and my own mutation — `may_write` answering `if listed || true`, i.e. the allowlist stops refusing an
+  unlisted device — reddened exactly the two tests that exist for it (4 passed, 2 failed, rc 101), restored
+  byte-identical (`sha256 00bbec572af5…` before and after, `touch`ed first), 6/6 green again. Recorded in the
+  spec's `## Closure`, with the limit stated: the `[[mqtt]]` block is still not wired to the tool outside the CLI.
+- **335 (`3df5112`, committed 06:19:37Z by the night lane; I wrote the criterion fix it committed).** The row's
+  red-fixture criterion demanded **rc 0 from a command whose whole job is to exit 1**, and its count criterion
+  wanted eight assertions where the test carries sixteen — so 335 could never pass, whatever the worker did, and
+  each attempt paid for the same wall. Both criteria were corrected in the spec **and** the row (`! bash …` plus
+  a printed-verdict grep; count floor `[1-9][0-9]`), `check-row-truth 335` reads 0 violations, and my own
+  `fresh-gate --worktree` over HEAD `3df5112` is **PASS** (06:20–06:33Z).
+- **Not touched:** the night loop's own files (`scripts/night/*`), 337 and 338, and spec 335's implementation.
+  The loop lock was held through the gate and the mutation so no dispatcher could pay into a tree being judged.
+
+
 ## 2026-11-02T00:3xZ — the queue was empty after 330, so spec 331 / row `331` authored: the gate inherits the daemons its tests start
 
 State: HEAD `9e87635` · tree clean at the start of the tick · control `RUNNING` · queue **was empty** — every cycle

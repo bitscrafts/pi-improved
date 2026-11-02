@@ -79,3 +79,23 @@ assert on the refusal text, so nothing in this spec needs a network.
 - `crates/pii-tools/tests/mqtt_tool_scope.rs`
 - `xtask/observability-allowlist.txt`
 - `crates/pii-tools/src/mqtt/live.rs`
+
+## Closure
+
+Reviewed by the orchestrator on the committed tree, 2026-11-02:
+
+- `cargo test -q -p pii-tools --test mqtt_tool_scope` — 6 passed, 0 failed on `8c36eff`, and the three greps the
+  row names hold (`allow_devices` in `mqtt/mod.rs`, `fn call(&self, ctx: &Ctx` in `mqtt.rs`, no `retain: true`).
+- `fresh-gate --worktree` **PASS** over HEAD `3df5112`, which carries `8c36eff` (06:20–06:33Z): all eight gate
+  steps green, `quality-gate: ALL PASS`, `fresh-gate: PASS`.
+- **Mutation, made by the orchestrator.** `may_write` was changed from `if listed {` to `if listed || true {`, so
+  the allowlist stops refusing an unlisted device (`bd2cc33c00f3…`): the scope test went **4 passed, 2 failed**,
+  rc 101 — `send_to_an_unlisted_device_is_refused_and_names_the_allowlist` and
+  `control_an_empty_allowlist_makes_every_device_unwritable` are the two that catch it.
+- **Restore.** Copied back from the pre-mutation file, `touch`ed (the `cp -p` false-red lesson), `sha256`
+  `00bbec572af5…` before and after, test green again 6/6 rc 0.
+
+So the defect the spec names is fixed at the place it was measured: the tool consults the context, an unlisted
+device is refused, and the operator's CLI keeps every verb. What this review does **not** prove is production
+behaviour: the `[[mqtt]]` block is still not wired to the tool's construction outside the CLI, which the worker
+flagged on its first pass and no criterion here covers.
