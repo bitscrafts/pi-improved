@@ -1,0 +1,56 @@
+# Spec 342: the night, as a composition of graphs pii already has.
+#
+# There is no `night_pick` and no `night_land` here. `queue` is called by pin (spec 255, extended by 343): the load
+# inlines it and namespaces its ids (`sdd__select`, `sdd__record`), the run is ONE run with ONE journal, and a
+# suspension inside the queue — a judge waiting on a gate, a timer — suspends the night at that node. The report is
+# spec 128's `post`. Every kind in this file exists in a graph it composes: `timer`, `call`, `post`.
+#
+# `max_entries` must be at least the loop budget: the call is re-entered on every tick, and `max_entries` survives a
+# resume (it is in the stored spec), so a night that outlives its budget dies on the next tick rather than looping
+# forever.
+name = "night"
+entry = "tick"
+exit = "report"
+caps = ["spawn", "proc", "post"]
+
+[limits]
+# A night's ticks plus two coder passes plus a judge, checked before each next node.
+max_wall_ms = 7200000
+
+[[node]]
+id = "tick"
+kind = "timer"
+in_ms = "$.input.in_ms"
+
+[[node]]
+id = "sdd"
+kind = "call"
+graph = "queue"
+sha256 = "be960040389b10a8ca3ae4b294c167ef2fb1c284f167b5b3cbab51c6c8abe2b7"
+caps = ["spawn", "proc"]
+max_entries = 12
+
+[node.in]
+workdir = "$.input.workdir"
+
+[[node]]
+id = "report"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.to"
+template = "night: ${nodes.sdd__record.status} — ${nodes.sdd__record.verdict}"
+key = "night-${run}"
+topic = "status"
+
+[[edge]]
+from = "tick"
+port = "fired"
+to = "sdd"
+kind = "data"
+
+[[edge]]
+from = "sdd"
+port = "ok"
+to = "report"
+kind = "data"

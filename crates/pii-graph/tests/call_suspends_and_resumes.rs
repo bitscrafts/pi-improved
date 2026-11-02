@@ -256,3 +256,52 @@ fn a_call_that_finished_before_the_suspend_is_not_rerun() {
         "resuming must not re-enter the call from its top"
     );
 }
+
+#[test]
+fn an_edit_of_the_called_graph_after_dispatch_cannot_change_a_suspended_run() {
+    // The expanded spec is stored content-addressed at run start, so a resume must continue on the copy it started
+    // with. Re-reading `graphs/sub.toml` "for safety" would make a resume non-deterministic — and would let an edit
+    // silently change the meaning of work already in flight.
+    let sub = SUB_TIMER.to_owned();
+    let f = fixture(&sub);
+    let host = HOST.replace("PIN", &pin(&sub));
+    let woven = fragment::load_host_with_graphs(
+        &host,
+        &f.fragments,
+        std::slice::from_ref(&f.graphs),
+        &NodeRegistry::builtin(),
+    )
+    .expect("host loads");
+    let dir = tempfile::Builder::new()
+        .prefix("store-")
+        .tempdir_in(tmp_root())
+        .expect("tempdir");
+    let store = Store::open(&dir.path().join("db.redb")).expect("store open");
+    let run_id = store.next_run_id().expect("run id");
+    let reg = NodeRegistry::builtin();
+    let first = run::run(
+        &store,
+        &woven.spec,
+        &reg,
+        &ctx(run_id.clone()),
+        &run_id,
+        serde_json::json!({}),
+    )
+    .expect("dispatch");
+    assert!(matches!(first, Terminal::Suspended { .. }), "got {first:?}");
+
+    // The operator edits the called graph: its exit now says something else entirely.
+    let edited = SUB_TIMER.replace("value = \"done\"", "value = \"changed-after-dispatch\"");
+    std::fs::write(f.graphs.join("sub.toml"), &edited).expect("edit the sub");
+
+    std::thread::sleep(Duration::from_millis(25));
+    let second = run::resume(&store, &reg, &ctx(run_id.clone()), &run_id, None).expect("resume");
+    let Terminal::Success { output } = second else {
+        panic!("resume must succeed, got {second:?}");
+    };
+    assert_eq!(
+        output,
+        serde_json::json!("done"),
+        "the resume must run the copy the run started with, not the edited file"
+    );
+}

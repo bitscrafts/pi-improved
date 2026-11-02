@@ -17,13 +17,14 @@ use pii_store::queue::{Claim, ItemStatus, QueueStore};
 
 use super::agent_worker::{Verdict, learn_fact};
 use super::judge_spec::SpecJudgeNode;
+use super::peer::peer_of;
 
 /// How long one criterion command may run before it is killed.
 const CRITERION_TIMEOUT: Duration = Duration::from_mins(10);
 
-/// The blackboard entry of the `select` node.
-fn selected(input: &NodeInput) -> Option<&serde_json::Value> {
-    input.nodes.get("select").and_then(|v| v.get("item"))
+/// The blackboard entry of the `select` node, in `select`'s namespace.
+fn selected<'a>(input: &'a NodeInput, select: &str) -> Option<&'a serde_json::Value> {
+    input.nodes.get(select).and_then(|v| v.get("item"))
 }
 
 fn port(name: &str, value: serde_json::Value) -> Outcome {
@@ -115,11 +116,12 @@ pub struct JudgeFactory;
 
 struct JudgeNode {
     workdir: PathBuf,
+    select: String,
 }
 
 impl GraphNode for JudgeNode {
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        let Some(item) = selected(input) else {
+        let Some(item) = selected(input, &self.select) else {
             return Ok(Outcome::Fail {
                 error: "judge: no item was selected".to_owned(),
             });
@@ -195,7 +197,10 @@ impl NodeFactory for JudgeFactory {
             .and_then(serde_json::Value::as_str)
             .map(PathBuf::from)
             .ok_or_else(|| PiiError::Internal("judge: config needs `workdir`".to_owned()))?;
-        Ok(Box::new(JudgeNode { workdir }))
+        Ok(Box::new(JudgeNode {
+            workdir,
+            select: peer_of(cfg, "select"),
+        }))
     }
 }
 
@@ -212,6 +217,9 @@ pub struct RecordFactory {
 }
 
 struct RecordNode {
+    select: String,
+    judge: String,
+    dispatch: String,
     store: Arc<QueueStore>,
     memory: Option<Arc<MemStore>>,
 }
@@ -227,14 +235,17 @@ fn field(value: &serde_json::Value, key: &str) -> String {
 
 impl GraphNode for RecordNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        let Some(item) = selected(input) else {
+        let Some(item) = selected(input, &self.select) else {
             return Ok(Outcome::Fail {
                 error: "record: no item was selected".to_owned(),
             });
         };
         let id = field(item, "id");
         // The verdict is the judge's, or the dispatch's refusal when the judge never ran.
-        let (status, verdict) = match (input.nodes.get("judge"), input.nodes.get("dispatch")) {
+        let (status, verdict) = match (
+            input.nodes.get(self.judge.as_str()),
+            input.nodes.get(self.dispatch.as_str()),
+        ) {
             (Some(judge), _) if judge["verdict"] == "passed" => (
                 ItemStatus::Done,
                 Verdict::Passed {
@@ -305,8 +316,11 @@ impl NodeFactory for RecordFactory {
         Ok(vec![PortName::from("ok")])
     }
 
-    fn build(&self, _cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
         Ok(Box::new(RecordNode {
+            select: peer_of(cfg, "select"),
+            judge: peer_of(cfg, "judge"),
+            dispatch: peer_of(cfg, "dispatch"),
             store: Arc::clone(&self.store),
             memory: self.memory.clone(),
         }))

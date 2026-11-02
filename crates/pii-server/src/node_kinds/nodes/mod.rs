@@ -26,6 +26,7 @@ pub mod heal;
 pub mod judge_spec;
 pub mod memory;
 pub mod mqtt;
+pub mod peer;
 pub mod post;
 pub mod queue;
 pub mod sop;

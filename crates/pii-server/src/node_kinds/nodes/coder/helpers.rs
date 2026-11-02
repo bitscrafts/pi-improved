@@ -121,10 +121,12 @@ pub fn session_of(argv: &[String]) -> String {
         .unwrap_or_default()
 }
 pub(super) fn with_selected_spec(cfg: &serde_json::Value, input: &NodeInput) -> serde_json::Value {
+    // resolve the peer BEFORE `cfg` is shadowed by its clone: the id comes from the untouched config
+    let select = super::super::peer::peer_of(cfg, "select");
     let mut cfg = cfg.clone();
     let selected = input
         .nodes
-        .get("select")
+        .get(select.as_str())
         .and_then(|v| v.get("item"))
         .and_then(|i| i.get("spec"))
         .cloned();
