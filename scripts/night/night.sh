@@ -55,7 +55,7 @@ open_rows(){
 # A worker is a cycle or a batch runner, matched on the INTERPRETER + script, never on a bare substring: a shell
 # whose own command line mentions the pattern (a grep, a test, an editor) would otherwise look like a running worker
 # and the whole night would sit still. Measured 2026-11-02: that is exactly what happened.
-worker_busy(){ pgrep -f 'bash .*(run-batchC-pii\.sh|scripts/autonomy/cycle\.sh)' >/dev/null 2>&1; }
+worker_busy(){ pgrep -f '^bash (.*/)?(scripts/autonomy/cycle|scripts/run-batchC-pii)\.sh' >/dev/null 2>&1; }
 
 seed(){
   local t=$1 file=${NIGHT_TRANCHES:-scripts/night}/tranche-$1.tsv n=0
@@ -85,7 +85,7 @@ write_brief(){
     printf '## Where the tree is\n\n```\nHEAD      %s\ntree      %s changed path(s)\nqueue     %s\ngates     %s\n```\n\n' \
       "$(git log --format='%h %s' -1)" "$(git status --porcelain | wc -l | tr -d ' ')" \
       "$(python3 scripts/autonomy/state.py pick 2>/dev/null | head -1)" \
-      "$(bash scripts/checks/gates.sh 2>&1 | tail -1)"
+      "$(bash scripts/checks/gates.sh 2>&1 | tail -2 | tr '\n' ' ')"
     printf '## What this night was for\n\n'
     printf 'The previous audit (`_docs/06-research/opus-status-and-path-20261102.md`) ranked a single next action first: a\nread-only host conformance probe, because the gates run in the container and production runs on the host. Tonight the\nqueue was filled from that audit'"'"'s seven-day list and drained by the standing dispatcher:\n\n'
     for s in specs/335-*.md specs/336-*.md specs/337-*.md specs/338-*.md specs/339-*.md specs/340-*.md; do
@@ -159,7 +159,7 @@ case "$MODE" in
     if pgrep -f 'night\.sh --tick' >/dev/null 2>&1 && [ "${2:-}" != "--allow-concurrent" ]; then
       say "night: another fill/review step is running — refusing to start a second"; exit 3
     fi
-    if pgrep -f 'bash .*(run-batchC-pii\.sh|scripts/autonomy/cycle\.sh)' >/dev/null 2>&1 && [ "${2:-}" != "--allow-dirty" ]; then
+    if pgrep -f '^bash (.*/)?(scripts/autonomy/cycle|scripts/run-batchC-pii)\.sh' >/dev/null 2>&1 && [ "${2:-}" != "--allow-dirty" ]; then
       say "night: a worker is editing the tree — a review now would judge half-written work; refusing"; exit 3
     fi
     [ -z "$(git status --porcelain)" ] || { say "night: the tree is dirty; a review judges the tree, refusing"; exit 3; }

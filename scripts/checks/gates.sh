@@ -20,9 +20,10 @@ run(){ # run <gate> <label> <command…>
   if [ -n "$ONLY" ] && [ "$ONLY" != "$gate" ]; then return 0; fi
   local out rc
   out=$(timeout "${GATE_TIMEOUT:-900}" bash -c "$*" 2>&1); rc=$?
-  # a row that cannot run on this machine says SKIP out loud and is never counted as a pass: a check that cannot
-  # run is not a check that succeeded (the host probe needs a host; the container has none).
-  if printf '%s' "$out" | grep -q '^SKIP '; then
+  # A Skip is EXPLICIT and narrow: the row must exit 77 AND say SKIP. Matching on the text alone would let any row
+  # escape its exit code by printing a line that starts with "SKIP" — measured by the 07:12 review, which called it
+  # "every gate unable to fail on one condition".
+  if [ "$rc" -eq 77 ] && printf '%s' "$out" | grep -q '^SKIP '; then
     SKIPPED=$((SKIPPED+1)); ROWS+=("SKIP  $gate  $label")
     printf '%s\n' "$out" | sed 's/^/        | /'
     return 0
@@ -74,7 +75,7 @@ run M5 "identity: client == daemon"       '
   [ -n "$d" ] && [ "$d" = "$c" ]'
 # The gates run in this container; production runs on the host. This row is the one that looks at the host, and it
 # skips loudly when no host is configured rather than passing on the container's own configuration.
-run M5 "host conformance: five checks" 'if [ -z "${PII_HOST:-}" ]; then echo "SKIP (no PII_HOST)"; exit 0; fi; bash scripts/checks/host-conformance.sh >/dev/null'
+run M5 "host conformance: five checks" 'if [ -z "${PII_HOST:-}" ]; then echo "SKIP (no PII_HOST)"; exit 77; fi; bash scripts/checks/host-conformance.sh >/dev/null'
 
 run M5 "the unit is enabled and active"   'timeout 60 ssh -o BatchMode=yes mvcorrea@lnx "systemctl --user is-active pii.service; systemctl --user is-enabled pii.service" | tr "\n" " " | grep -q "active enabled"'
 
