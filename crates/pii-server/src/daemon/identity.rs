@@ -326,12 +326,12 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
         if let Some(ctx) = ctx {
             out.stores.push(aux_store(
                 "channel",
-                &ctx.runtime_dir.join("channel.redb"),
+                &ctx.durable_dir.join("channel.redb"),
                 ctx.channel_store.format_version().ok(),
             ));
             out.stores.push(aux_store(
                 "timer",
-                &ctx.runtime_dir.join("timer.redb"),
+                &ctx.durable_dir.join("timer.redb"),
                 ctx.timer_store.format_version().ok(),
             ));
         }

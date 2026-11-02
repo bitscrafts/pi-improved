@@ -73,6 +73,8 @@ pub struct DaemonContext {
     pub channels_scope: std::path::PathBuf,
     /// The resolved runtime directory (control socket, stores, crashes).
     pub runtime_dir: std::path::PathBuf,
+    /// The resolved durable-store directory (spec 337): the channel cursor and timer wheel.
+    pub durable_dir: std::path::PathBuf,
 }
 
 impl pii_observe::Health for ChannelRuntime {

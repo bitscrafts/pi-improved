@@ -59,7 +59,8 @@ async fn a_daily_timer_is_one_run_over_a_window_far_longer_than_its_re_arm() {
     engine.attach_log(log.clone());
     let cfg_path = dir.join("pii.toml");
     std::fs::write(&cfg_path, "[[cron]]\nname = \"d\"\ngraph = \"daily\"\n").unwrap();
-    let cfg = Config::load(&cfg_path).expect("config");
+    let mut cfg = Config::load(&cfg_path).expect("config");
+    cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
     let d = Daemon::build(engine, &cfg, dir, cfg_path, Arc::new(pii_core::SystemClock))
         .expect("daemon");
     let handles = d.spawn_background();

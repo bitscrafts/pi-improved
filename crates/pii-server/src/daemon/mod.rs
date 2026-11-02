@@ -197,11 +197,14 @@ impl Daemon {
             );
         }
 
+        // Spec 337: the durable stores live under the state dir, never the runtime dir (a tmpfs
+        // that a reboot empties). One resolution, both opens.
+        let durable_dir = resolve_durable_dir(cfg, &config::state_dir(env))?;
         let channel_store = Arc::new(pii_store::channel::ChannelStore::open(
-            &runtime_dir.join("channel.redb"),
+            &durable_dir.join("channel.redb"),
         )?);
         let wheel = Arc::new(pii_store::timer::TimerWheel::open(
-            &runtime_dir.join("timer.redb"),
+            &durable_dir.join("timer.redb"),
         )?);
 
         // Phase 5.0 D2: the channel fs scope is rooted under the resolved
@@ -225,6 +228,7 @@ impl Daemon {
             project_path,
             channels_scope,
             runtime_dir: runtime_dir.to_path_buf(),
+            durable_dir,
         });
         attach_ctx(&engine, &ctx, cfg);
         // Spec 32 R1: give the `spawn` node the engine handle it needs to
@@ -321,6 +325,15 @@ async fn reactive_loop(
             Err(_) => break,
         }
     }
+}
+
+/// Resolves and creates the durable-store dir (spec 337). A creation failure is a loud config
+/// error at daemon start, as for the channels scope.
+fn resolve_durable_dir(cfg: &config::Config, state_dir: &Path) -> Result<PathBuf, PiiError> {
+    let durable_dir = cfg.resolve_durable_dir(state_dir);
+    std::fs::create_dir_all(&durable_dir)
+        .map_err(|e| PiiError::Invalid(format!("durable dir '{}': {e}", durable_dir.display())))?;
+    Ok(durable_dir)
 }
 
 /// Resolves the channels fs-scope root under `runtime_dir` (Phase 5.0 D2:
@@ -596,6 +609,7 @@ mod tests {
             project_path: None,
             channels_scope: dir.join("channels"),
             runtime_dir: dir.to_path_buf(),
+            durable_dir: dir.to_path_buf(),
         })
     }
 

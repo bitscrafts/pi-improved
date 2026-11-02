@@ -87,6 +87,7 @@ fn setup(dir: &std::path::Path, channel: Arc<dyn Channel>) -> (Arc<Engine>, Arc<
         project_path: None,
         channels_scope: dir.join("channels"),
         runtime_dir: dir.to_path_buf(),
+        durable_dir: dir.to_path_buf(),
     });
     (engine, ctx)
 }

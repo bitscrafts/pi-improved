@@ -53,7 +53,8 @@ fn scratch_daemon() -> (tempfile::TempDir, Arc<Daemon>, Arc<Recorder>) {
     engine.attach_log(log.clone());
     let cfg_path = dir.join("pii.toml");
     std::fs::write(&cfg_path, "[[cron]]\nname = \"d\"\ngraph = \"digest\"\n").unwrap();
-    let cfg = Config::load(&cfg_path).expect("config");
+    let mut cfg = Config::load(&cfg_path).expect("config");
+    cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
     let d = Daemon::build(engine, &cfg, dir, cfg_path, Arc::new(SystemClock)).expect("daemon");
     (tmp, d, log)
 }

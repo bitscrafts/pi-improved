@@ -115,7 +115,8 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Daemon>, Arc<Recorder>) {
     engine.attach_log(log.clone());
     let cfg_path = dir.join("pii.toml");
     std::fs::write(&cfg_path, config_text).unwrap();
-    let cfg = Config::load(&cfg_path).expect("config");
+    let mut cfg = Config::load(&cfg_path).expect("config");
+    cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
     let d = Daemon::build(engine, &cfg, dir, cfg_path, Arc::new(pii_core::SystemClock))
         .expect("daemon");
     (d, log)
@@ -342,7 +343,8 @@ fn an_unknown_backend_or_a_bad_scope_entry_is_refused_at_daemon_build() {
         .unwrap();
         let p = dir.path().join("pii.toml");
         std::fs::write(&p, bad).unwrap();
-        let cfg = Config::load(&p).unwrap();
+        let mut cfg = Config::load(&p).unwrap();
+        cfg.core.durable_dir = Some(dir.path().join("durable").display().to_string());
         let err = Daemon::build(engine, &cfg, dir.path(), p, Arc::new(pii_core::SystemClock))
             .err()
             .expect("refused");

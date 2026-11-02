@@ -29,7 +29,9 @@ fn boot(engine: &Arc<Engine>, dir: &Path, n: usize) -> Arc<Daemon> {
     let rt = dir.join(format!("rt{n}"));
     std::fs::create_dir_all(&rt).unwrap();
     let cfg_path = dir.join("pii.toml");
-    let cfg = Config::load(&cfg_path).expect("config");
+    let mut cfg = Config::load(&cfg_path).expect("config");
+    // Per boot, as the runtime dir is: an in-process restart cannot reopen a store still held open.
+    cfg.core.durable_dir = Some(dir.join(format!("durable{n}")).display().to_string());
     Daemon::build(
         Arc::clone(engine),
         &cfg,

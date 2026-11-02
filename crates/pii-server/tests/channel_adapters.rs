@@ -64,7 +64,8 @@ fn daemon_in(dir: &Path, config_text: &str) -> Arc<Daemon> {
     .expect("engine");
     let cfg_path = dir.join("pii.toml");
     std::fs::write(&cfg_path, config_text).unwrap();
-    let cfg = Config::load(&cfg_path).expect("config");
+    let mut cfg = Config::load(&cfg_path).expect("config");
+    cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
     Daemon::build(engine, &cfg, dir, cfg_path, Arc::new(pii_core::SystemClock)).expect("daemon")
 }
 

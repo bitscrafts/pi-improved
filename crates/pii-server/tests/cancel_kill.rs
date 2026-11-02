@@ -325,7 +325,8 @@ fn the_timer_of_a_killed_run_is_disarmed() {
     let dir = tmp.path();
     let engine = engine_in(dir);
     std::fs::write(dir.join("pii.toml"), "").unwrap();
-    let cfg = Config::load(&dir.join("pii.toml")).expect("config");
+    let mut cfg = Config::load(&dir.join("pii.toml")).expect("config");
+    cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
     let d = Daemon::build(
         Arc::clone(&engine),
         &cfg,

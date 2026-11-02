@@ -52,7 +52,8 @@ fn engine_in(dir: &Path) -> Arc<Engine> {
 fn daemon_in(dir: &Path, engine: Arc<Engine>) -> Arc<Daemon> {
     let cfg_path = dir.join("pii.toml");
     std::fs::write(&cfg_path, "[[cron]]\nname = \"d\"\ngraph = \"daily\"\n").unwrap();
-    let cfg = Config::load(&cfg_path).expect("config");
+    let mut cfg = Config::load(&cfg_path).expect("config");
+    cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
     Daemon::build(engine, &cfg, dir, cfg_path, Arc::new(pii_core::SystemClock)).expect("daemon")
 }
 

@@ -48,7 +48,8 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Engine>, PathBuf) {
     .expect("engine");
     let cfg_path = dir.join("pii.toml");
     std::fs::write(&cfg_path, config_text).unwrap();
-    let cfg = Config::load(&cfg_path).expect("config");
+    let mut cfg = Config::load(&cfg_path).expect("config");
+    cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
     Daemon::build(
         Arc::clone(&engine),
         &cfg,
@@ -221,8 +222,10 @@ async fn every_store_reports_a_real_format_version() {
 
 /// Asserts the reported store files equal the store files on disk.
 fn assert_stores_cover_disk(reported: &[String], dir: &Path) {
-    let mut disk: Vec<String> = std::fs::read_dir(dir)
-        .unwrap()
+    // The durable stores (channel, timer) live under `durable/`, not beside the engine store.
+    let mut disk: Vec<String> = [dir.to_path_buf(), dir.join("durable")]
+        .iter()
+        .flat_map(|d| std::fs::read_dir(d).unwrap())
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .filter(|n| Path::new(n).extension().is_some_and(|x| x == "redb"))
         .collect();

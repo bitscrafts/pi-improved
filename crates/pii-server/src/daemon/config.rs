@@ -41,6 +41,9 @@ pub struct CoreSection {
     /// Default runtime dir (holds `control.sock`, `graphs/`). Overridden
     /// by `$PII_RUNTIME_DIR`.
     pub runtime_dir: Option<String>,
+    /// Directory for the durable stores (channel cursor, timer wheel) (spec 337).
+    /// Absent = `<state_dir>/durable`; never the runtime dir (a tmpfs on the host).
+    pub durable_dir: Option<String>,
     /// Max runs retained per session in the in-memory `session_runs` index
     /// (D3/D6, 026 report 5.0.4): oldest run ids are evicted (LRU) once a
     /// session's run count exceeds this. `None` (absent key) falls back to
@@ -652,6 +655,23 @@ impl Config {
             .map(std::path::PathBuf::from)
             .or_else(|| self.core.runtime_dir.clone().map(std::path::PathBuf::from))
     }
+
+    /// The durable-store dir (spec 337 R2): `[core].durable_dir` when set, else
+    /// `<state_dir>/durable`. Never defaulted to the runtime dir.
+    #[must_use]
+    pub fn resolve_durable_dir(&self, state_dir: &std::path::Path) -> std::path::PathBuf {
+        self.core
+            .durable_dir
+            .clone()
+            .map_or_else(|| state_dir.join("durable"), std::path::PathBuf::from)
+    }
+}
+
+/// The installer's state dir (spec 337 R1): `$HOME/.local/state/pii`.
+#[must_use]
+pub fn state_dir(env: &dyn Fn(&str) -> Option<String>) -> std::path::PathBuf {
+    let home = env("HOME").unwrap_or_else(|| String::from("/root"));
+    std::path::PathBuf::from(home).join(".local/state/pii")
 }
 
 /// A [`pii_net::grant::GrantStore`] giving every principal the same grant.

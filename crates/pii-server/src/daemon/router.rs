@@ -442,6 +442,7 @@ mod tests {
             project_path: None,
             channels_scope: tmp_root.join("router-test/channels"),
             runtime_dir: tmp_root.join("router-test"),
+            durable_dir: tmp_root.join("router-test"),
         })
     }
 

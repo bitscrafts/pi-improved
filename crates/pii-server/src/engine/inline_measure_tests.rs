@@ -152,7 +152,8 @@ async fn rig() -> Rig {
         ),
     )
     .expect("config");
-    let cfg = Config::load(&cfg_path).expect("cfg parse");
+    let mut cfg = Config::load(&cfg_path).expect("cfg parse");
+    cfg.core.durable_dir = Some(dir.path().join("durable").display().to_string());
     Daemon::build(
         Arc::clone(&engine),
         &cfg,

@@ -74,10 +74,11 @@ mod cron_refusal {
             mqtt_tool_url: None,
         })
         .unwrap();
-        let cfg = Config::parse(&format!(
+        let mut cfg = Config::parse(&format!(
             "[[cron]]\nname = \"entry-one\"\ngraph = \"{graph}\"\nschedule = \"x\"\n"
         ))
         .unwrap();
+        cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
         Daemon::build(
             engine,
             &cfg,
