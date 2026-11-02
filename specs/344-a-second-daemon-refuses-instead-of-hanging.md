@@ -37,6 +37,12 @@ second daemon hung, and every failure surfaced as
 
 - The refusal is a *probe* before the store open, not a timeout around it: no `sleep`, no retry loop.
 - One attempt, one message, one exit. Nothing in the daemon retries.
+- **The test harness must take a slot before it spawns** (`daemon_guard::spawn`, one per test
+  binary, released when the guard drops). Until it does, every binary whose tests each start a
+  daemon fails in parallel and passes with `--test-threads=1` — measured on
+  `project_config_layers_live` (6 passed serially in 0.60 s, 4 failed in parallel) and on
+  `control_plane_is_not_behind_runs` (6 passed in 32 s behind a lock, 5 failed without one).
+  The slot must be re-entrant per process, or a test that starts two daemons waits on itself.
 
 ## Architecture
 
