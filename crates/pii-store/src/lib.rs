@@ -13,6 +13,7 @@ pub mod backup;
 pub mod channel;
 mod codec;
 pub mod compact;
+pub mod durable;
 pub mod heal;
 mod identity;
 pub mod mem;

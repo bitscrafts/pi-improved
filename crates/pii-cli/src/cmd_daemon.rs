@@ -141,6 +141,27 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // in the same config file is now a valid third source, after
     // `$PII_MODEL` — see `Config::resolve_model`'s doc comment for the
     // precedence order this restores parity with `pii -p`/`pii tui`).
+    // Spec 344: a durable store another daemon holds is refused here, once, by name, before anything is bound.
+    // The same state resolution the daemon itself applies (`PII_STATE_DIR` first, then HOME).
+    let state_dir = pii_core::env_var("PII_STATE_DIR").map_or_else(
+        || pii_server::daemon::config::state_dir(&pii_core::env_var),
+        PathBuf::from,
+    );
+    let durable_dir = cfg.resolve_durable_dir(&state_dir);
+    if let Err(locked) = pii_store::durable::claim(&durable_dir) {
+        let store = locked.path.display().to_string();
+        let message = format!("store {store} is locked: another daemon holds it");
+        eprintln!("{message}");
+        log.event(
+            &Event::new("cli", Level::Error, names::CLI_FAILURE)
+                .field("stage", "daemon")
+                .field("reason", "store_locked")
+                .field("store", store)
+                .field("message", message),
+        );
+        return ExitCode::from(3);
+    }
+
     let model = cfg.resolve_model(None);
     let Some(model) = model else {
         // Keep the historical text on stderr; the log gets the same failure.
