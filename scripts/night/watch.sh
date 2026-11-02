@@ -35,7 +35,7 @@ if [ "$(date -u +%s)" -ge "$(date -u -d "$UNTIL" +%s)" ]; then
 fi
 
 # 2. a worker in flight: the dispatcher owns the queue
-if pgrep -f 'run-batchC-pii|scripts/autonomy/cycle\.sh' >/dev/null 2>&1; then
+if pgrep -f 'bash .*(run-batchC-pii\.sh|scripts/autonomy/cycle\.sh)' >/dev/null 2>&1; then
   : >"$STUCK"
   say "a worker is in flight — leaving it alone"
   exit 0

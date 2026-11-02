@@ -52,7 +52,10 @@ open_rows(){
     | awk -F'\t' '$1>=335 && $1<=340 && ($4=="pending" || $4=="running" || $4=="needs-review") {print $1}' \
     | tr '\n' ' '
 }
-worker_busy(){ pgrep -f 'run-batchC-pii|scripts/autonomy/cycle.sh' >/dev/null 2>&1; }
+# A worker is a cycle or a batch runner, matched on the INTERPRETER + script, never on a bare substring: a shell
+# whose own command line mentions the pattern (a grep, a test, an editor) would otherwise look like a running worker
+# and the whole night would sit still. Measured 2026-11-02: that is exactly what happened.
+worker_busy(){ pgrep -f 'bash .*(run-batchC-pii\.sh|scripts/autonomy/cycle\.sh)' >/dev/null 2>&1; }
 
 seed(){
   local t=$1 file=${NIGHT_TRANCHES:-scripts/night}/tranche-$1.tsv n=0
@@ -148,7 +151,7 @@ case "$MODE" in
     if pgrep -f 'night\.sh --tick' >/dev/null 2>&1 && [ "${2:-}" != "--allow-concurrent" ]; then
       say "night: another fill/review step is running — refusing to start a second"; exit 3
     fi
-    if pgrep -f 'run-batchC-pii|scripts/autonomy/cycle\.sh' >/dev/null 2>&1 && [ "${2:-}" != "--allow-dirty" ]; then
+    if pgrep -f 'bash .*(run-batchC-pii\.sh|scripts/autonomy/cycle\.sh)' >/dev/null 2>&1 && [ "${2:-}" != "--allow-dirty" ]; then
       say "night: a worker is editing the tree — a review now would judge half-written work; refusing"; exit 3
     fi
     [ -z "$(git status --porcelain)" ] || { say "night: the tree is dirty; a review judges the tree, refusing"; exit 3; }
