@@ -90,7 +90,11 @@ impl Drop for HeavyGuard {
 }
 
 fn only_one_heavy_test_at_a_time() -> HeavyGuard {
-    let path = std::env::temp_dir().join("pii-control-plane-heavy.lock");
+    // The lock lives under the tree's own _tmp, not the system temp dir: the repo's lint-scratch rule exists
+    // because scratch outside the tree is invisible to cleanup and outlives the run that made it.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("_tmp")
+        .join("control-plane-heavy.lock");
     let give_up = Instant::now() + Duration::from_mins(15);
     loop {
         match std::fs::OpenOptions::new()
