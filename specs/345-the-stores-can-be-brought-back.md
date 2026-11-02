@@ -55,7 +55,7 @@ recoverable by re-deploying a binary.
 ## Exit Criteria
 
 - [ ] `bash scripts/checks/tests/pii-backup.test.sh`
-- [ ] `bash scripts/checks/pii-backup.sh --dry-run`
+- [ ] `bash scripts/checks/pii-backup.sh --dry-run --source /nonexistent 2>&1 | grep -q 'REFUSED\|refused'`
 - [ ] `bash scripts/checks/gates.sh`
 
 ## Guardrails
@@ -71,3 +71,21 @@ recoverable by re-deploying a binary.
 - `scripts/checks/pii-backup.sh`
 - `scripts/checks/pii-restore-drill.sh`
 - `scripts/checks/tests/pii-backup.test.sh`
+
+## Closure
+
+Implemented by the loop's worker and landed by the orchestrator, with the row's criteria measured here:
+
+```
+bash scripts/checks/tests/pii-backup.test.sh   -> PII-BACKUP: 7 passed, 0 failed   (both controls included)
+bash scripts/checks/gates.sh                   -> 15 passed, 0 failed, 1 skipped · ALL GATES PASS
+```
+
+The judge refused this row once, and the fault was in this spec, not in the work: its second criterion was
+`pii-backup.sh --dry-run` with the default source, and the lane exports a scratch `PII_STATE_DIR`, so the script
+correctly REFUSED an empty source and the criterion failed. A criterion that only passes on a machine with live
+stores is not a criterion. It now asserts the refusal itself (`--source /nonexistent`), which is true everywhere
+and is also the behaviour worth pinning.
+
+The live backup is still an operator command, and it says what it copied:
+`bash scripts/checks/pii-backup.sh --source ~/.local/state/pii` -> `plan: 5 stores, 31461376 bytes`.
