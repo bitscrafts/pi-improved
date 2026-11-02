@@ -10,6 +10,10 @@
 // reason: the test runs the built `pii` binary and reads its stdout and stderr.
 #![allow(clippy::disallowed_methods)]
 
+#[path = "daemon_guard/mod.rs"]
+mod daemon_guard;
+
+use daemon_guard::DaemonGuard;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -53,18 +57,20 @@ fn an_outcome_is_recorded_once_and_a_repeat_reports_unchanged() {
         "[[worker]]\nname = \"w\"\nprogram = \"/nonexistent/pii-worker-prog\"\n",
     )
     .unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_pii"))
-        .arg("daemon")
-        .args(["--sandbox", "off", "--workspace"])
-        .arg(d.path())
-        .arg("--log-file")
-        .arg(d.path().join("daemon.log"))
-        .env("PII_RUNTIME_DIR", d.path())
-        .env("PII_CONFIG", &cfg)
-        .env("PII_MODEL", format!("scripted:{}", hello.display()))
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = DaemonGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_pii"))
+            .arg("daemon")
+            .args(["--sandbox", "off", "--workspace"])
+            .arg(d.path())
+            .arg("--log-file")
+            .arg(d.path().join("daemon.log"))
+            .env("PII_RUNTIME_DIR", d.path())
+            .env("PII_CONFIG", &cfg)
+            .env("PII_MODEL", format!("scripted:{}", hello.display()))
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
 
     let end = Instant::now() + Duration::from_secs(20);
     let mut first = None;
@@ -77,14 +83,12 @@ fn an_outcome_is_recorded_once_and_a_repeat_reports_unchanged() {
         }
     }
     let Some(first) = first else {
-        child.kill().unwrap();
-        child.wait().unwrap();
+        child.kill_now();
         panic!("the daemon never accepted memory.learn");
     };
     let second = learn(d.path(), "skipped", "spec superseded");
     let found = pii(&["memory", "search", "spec superseded"], d.path());
-    child.kill().unwrap();
-    child.wait().unwrap();
+    child.kill_now();
 
     let a: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
     let b: serde_json::Value = serde_json::from_slice(&second.stdout).unwrap();

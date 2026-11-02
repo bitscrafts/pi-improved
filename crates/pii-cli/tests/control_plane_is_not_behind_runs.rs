@@ -11,19 +11,13 @@
 // reason: the CONTROL_ test names are the spec contract.
 #![allow(non_snake_case)]
 
+#[path = "daemon_guard/mod.rs"]
+mod daemon_guard;
+
+use daemon_guard::DaemonGuard;
 use std::path::Path;
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
-
-/// A daemon that is killed and reaped when the test ends, even on a panic.
-struct Daemon(Child);
-
-impl Drop for Daemon {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 fn pii(args: &[&str], rt: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
@@ -69,7 +63,7 @@ fn scratch(tag: &str) -> tempfile::TempDir {
 }
 
 /// A daemon whose scripted model sleeps `sleep_ms` per call and holds `turns` answers.
-fn start_daemon(dir: &Path, sleep_ms: u64, turns: usize, env: &[(&str, &str)]) -> Daemon {
+fn start_daemon(dir: &Path, sleep_ms: u64, turns: usize, env: &[(&str, &str)]) -> DaemonGuard {
     let answer = r#"{"text": "ok", "tool_calls": [], "tokens_in": 1, "tokens_out": 1}"#;
     let body = vec![answer; turns].join(",");
     let model = dir.join("model.json");
@@ -92,7 +86,7 @@ fn start_daemon(dir: &Path, sleep_ms: u64, turns: usize, env: &[(&str, &str)]) -
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let daemon = Daemon(cmd.spawn().unwrap());
+    let daemon = DaemonGuard::new(cmd.spawn().unwrap());
     until("the daemon to answer", || {
         pii(&["sys", "status"], dir).status.success()
     });
@@ -229,7 +223,7 @@ fn CONTROL_at_most_run_threads_agents_are_alive() {
         ],
     );
     // The fixed pool holds exactly the configured run threads; a run queued behind them adds none.
-    let pool = run_threads(daemon.0.id());
+    let pool = run_threads(daemon.pid());
     assert_eq!(pool, 2, "run threads before any run starts");
     for _ in 0..4 {
         run_start(dir);
@@ -241,7 +235,7 @@ fn CONTROL_threads_stay_bounded_after_300_short_runs() {
     let tmp = scratch("churn");
     let dir = tmp.path();
     let daemon = start_daemon(dir, 0, 300, &[]);
-    let before = thread_count(daemon.0.id());
+    let before = thread_count(daemon.pid());
     for _ in 0..300 {
         let run = run_start(dir);
         until("a short run to succeed", || {
@@ -250,7 +244,7 @@ fn CONTROL_threads_stay_bounded_after_300_short_runs() {
                 .contains("succeeded")
         });
     }
-    let after = thread_count(daemon.0.id());
+    let after = thread_count(daemon.pid());
     assert!(
         after <= before + 4,
         "threads {before} before, {after} after"
@@ -266,17 +260,19 @@ fn a_kill_cancel_does_not_freeze_the_async_workers() {
     until("run 1 to hold a node", || is_executing(dir, &runs[0]));
 
     // Each kill waits up to 30 s for an agent that never leaves flight; they are reaped at the end.
-    let mut kills: Vec<Child> = runs
+    let mut kills: Vec<DaemonGuard> = runs
         .iter()
         .map(|run| {
-            Command::new(env!("CARGO_BIN_EXE_pii"))
-                .args(["run", "cancel", run, "--kill", "--reason", "hung"])
-                .env("PII_RUNTIME_DIR", dir)
-                .env("PII_CONNECT_TIMEOUT_MS", "500")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap()
+            DaemonGuard::new(
+                Command::new(env!("CARGO_BIN_EXE_pii"))
+                    .args(["run", "cancel", run, "--kill", "--reason", "hung"])
+                    .env("PII_RUNTIME_DIR", dir)
+                    .env("PII_CONNECT_TIMEOUT_MS", "500")
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap(),
+            )
         })
         .collect();
     let end = Instant::now() + Duration::from_secs(3);
@@ -295,8 +291,7 @@ fn a_kill_cancel_does_not_freeze_the_async_workers() {
         std::thread::sleep(Duration::from_millis(100));
     }
     for kill in &mut kills {
-        let _ = kill.kill();
-        let _ = kill.wait();
+        kill.kill_now();
     }
 }
 

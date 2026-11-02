@@ -10,10 +10,14 @@
 // reason: the test runs the built `pii` binary and binds test sockets.
 #![allow(clippy::disallowed_methods)]
 
+#[path = "daemon_guard/mod.rs"]
+mod daemon_guard;
+
+use daemon_guard::DaemonGuard;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output};
+use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
 use pii_proto::PROTOCOL_VERSION;
@@ -49,16 +53,7 @@ fn until(what: &str, mut f: impl FnMut() -> bool) {
 }
 
 /// A daemon on `dir`, killed when the test ends, panic or not.
-struct Daemon(Child);
-
-impl Drop for Daemon {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn start_daemon(dir: &Path) -> Daemon {
+fn start_daemon(dir: &Path) -> DaemonGuard {
     let model = dir.join("model.json");
     std::fs::write(
         &model,
@@ -78,7 +73,7 @@ fn start_daemon(dir: &Path) -> Daemon {
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    let daemon = Daemon(child);
+    let daemon = DaemonGuard::new(child);
     until("the daemon to answer", || {
         pii(&["sys", "status"], dir).status.success()
     });

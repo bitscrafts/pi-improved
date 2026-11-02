@@ -4,8 +4,12 @@
 // reason: the test runs the built `pii` binary.
 #![allow(clippy::disallowed_methods)]
 
+#[path = "daemon_guard/mod.rs"]
+mod daemon_guard;
+
+use daemon_guard::DaemonGuard;
 use std::path::Path;
-use std::process::{Child, Command, Output};
+use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
 fn pii(args: &[&str], rt: &Path) -> Output {
@@ -36,7 +40,7 @@ fn until(what: &str, mut f: impl FnMut() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
-fn start_daemon(dir: &Path) -> Child {
+fn start_daemon(dir: &Path) -> DaemonGuard {
     // A turn that outlasts every poll below, so the run stays in flight while it is cancelled.
     let slow = dir.join("slow-model.json");
     std::fs::write(
@@ -44,21 +48,23 @@ fn start_daemon(dir: &Path) -> Child {
         r#"{"sleep_ms": 15000, "turns": [{"text": "slow", "tool_calls": [], "tokens_in": 1, "tokens_out": 1}]}"#,
     )
     .unwrap();
-    let child = Command::new(env!("CARGO_BIN_EXE_pii"))
-        .arg("daemon")
-        .args(["--sandbox", "off", "--workspace"])
-        .arg(dir)
-        .arg("--log-file")
-        .arg(dir.join("daemon.log"))
-        .env("PII_RUNTIME_DIR", dir)
-        // The daemon must not read the operator's ~/.pii/pii.toml: its [[cron]] entries arm at
-        // boot and park suspended runs in this scratch store (measured 2026-10-20: the failing
-        // "has 1 runs" count was 2-3, wall-clock dependent). A missing file is an empty config.
-        .env("PII_CONFIG", dir.join("pii.toml"))
-        .env("PII_MODEL", format!("scripted:{}", slow.display()))
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    let child = DaemonGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_pii"))
+            .arg("daemon")
+            .args(["--sandbox", "off", "--workspace"])
+            .arg(dir)
+            .arg("--log-file")
+            .arg(dir.join("daemon.log"))
+            .env("PII_RUNTIME_DIR", dir)
+            // The daemon must not read the operator's ~/.pii/pii.toml: its [[cron]] entries arm at
+            // boot and park suspended runs in this scratch store (measured 2026-10-20: the failing
+            // "has 1 runs" count was 2-3, wall-clock dependent). A missing file is an empty config.
+            .env("PII_CONFIG", dir.join("pii.toml"))
+            .env("PII_MODEL", format!("scripted:{}", slow.display()))
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     until("the daemon to answer", || {
         pii(&["sys", "status"], dir).status.success()
     });
@@ -125,8 +131,7 @@ fn cancel_retires_a_suspended_run_and_refuses_an_executing_one() {
     });
     assert!(refusal.contains("cancel refused"), "{refusal}");
     let log = std::fs::read_to_string(dir.join("daemon.log")).unwrap();
-    daemon.kill().unwrap();
-    daemon.wait().unwrap();
+    daemon.kill_now();
 
     let line = |name: &str| {
         log.lines()

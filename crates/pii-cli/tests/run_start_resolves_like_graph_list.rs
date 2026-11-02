@@ -10,6 +10,10 @@
 // reason: the test runs the built `pii` binary and reads its stdout.
 #![allow(clippy::disallowed_methods)]
 
+#[path = "daemon_guard/mod.rs"]
+mod daemon_guard;
+
+use daemon_guard::DaemonGuard;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
@@ -50,16 +54,18 @@ fn list_shows_the_graph_and_run_start_finds_it() {
     );
 
     let hello = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase2/hello.json");
-    let mut daemon = Command::new(env!("CARGO_BIN_EXE_pii"))
-        .arg("daemon")
-        .args(["--sandbox", "off", "--workspace"])
-        .arg(root.path())
-        .env("HOME", &home)
-        .env("PII_RUNTIME_DIR", &runtime)
-        .env("PII_MODEL", format!("scripted:{}", hello.display()))
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut daemon = DaemonGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_pii"))
+            .arg("daemon")
+            .args(["--sandbox", "off", "--workspace"])
+            .arg(root.path())
+            .env("HOME", &home)
+            .env("PII_RUNTIME_DIR", &runtime)
+            .env("PII_MODEL", format!("scripted:{}", hello.display()))
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
 
     // The daemon answers once its socket is up. Until then `run start` cannot connect at all.
     let end = Instant::now() + Duration::from_secs(15);
@@ -81,7 +87,6 @@ fn list_shows_the_graph_and_run_start_finds_it() {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    daemon.kill().unwrap();
-    daemon.wait().unwrap();
+    daemon.kill_now();
     assert!(started, "run start did not return a run id: {last}");
 }

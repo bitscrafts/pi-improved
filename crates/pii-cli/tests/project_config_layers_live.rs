@@ -10,6 +10,10 @@
 // reason: the tests run the built `pii` binary.
 #![allow(clippy::disallowed_methods)]
 
+#[path = "daemon_guard/mod.rs"]
+mod daemon_guard;
+
+use daemon_guard::DaemonGuard;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -32,66 +36,60 @@ fn scratch(prefix: &str) -> tempfile::TempDir {
 /// Starts the daemon against `global` config + `workspace`, waits for its `daemon.started` line
 /// (or for it to exit), then stops it. Returns the log text.
 fn start_and_read_log(global: &Path, workspace: &Path, log: &Path) -> String {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_pii"))
-        .arg("daemon")
-        .args(["--sandbox", "off", "--workspace"])
-        .arg(workspace)
-        .arg("--log-file")
-        .arg(log)
-        .env("PII_RUNTIME_DIR", workspace)
-        .env("PII_CONFIG", global)
-        .env_remove("PII_MODEL")
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = DaemonGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_pii"))
+            .arg("daemon")
+            .args(["--sandbox", "off", "--workspace"])
+            .arg(workspace)
+            .arg("--log-file")
+            .arg(log)
+            .env("PII_RUNTIME_DIR", workspace)
+            .env("PII_CONFIG", global)
+            .env_remove("PII_MODEL")
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let end = Instant::now() + Duration::from_secs(20);
     let mut text = String::new();
     while Instant::now() < end {
         text = std::fs::read_to_string(log).unwrap_or_default();
-        if text.contains("daemon.started") || child.try_wait().unwrap().is_some() {
+        if text.contains("daemon.started") || child.child_mut().try_wait().unwrap().is_some() {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    child.kill_now();
     text
 }
 
 /// Starts the daemon and LEAVES IT RUNNING: `sys.reload` needs a live control socket, so these
 /// rows cannot use the start-then-stop harness above. The guard kills it on every exit path,
 /// including a panicking assertion.
-struct LiveDaemon(std::process::Child);
-
-impl Drop for LiveDaemon {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn start_live_daemon(global: &Path, workspace: &Path, log: &Path) -> LiveDaemon {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_pii"))
-        .arg("daemon")
-        .args(["--sandbox", "off", "--workspace"])
-        .arg(workspace)
-        .arg("--log-file")
-        .arg(log)
-        .env("PII_RUNTIME_DIR", workspace)
-        .env("PII_CONFIG", global)
-        .env_remove("PII_MODEL")
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+fn start_live_daemon(global: &Path, workspace: &Path, log: &Path) -> DaemonGuard {
+    let mut child = DaemonGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_pii"))
+            .arg("daemon")
+            .args(["--sandbox", "off", "--workspace"])
+            .arg(workspace)
+            .arg("--log-file")
+            .arg(log)
+            .env("PII_RUNTIME_DIR", workspace)
+            .env("PII_CONFIG", global)
+            .env_remove("PII_MODEL")
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let end = Instant::now() + Duration::from_secs(20);
     while Instant::now() < end {
         let text = std::fs::read_to_string(log).unwrap_or_default();
-        if text.contains("daemon.started") || child.try_wait().unwrap().is_some() {
+        if text.contains("daemon.started") || child.child_mut().try_wait().unwrap().is_some() {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    LiveDaemon(child)
+    child
 }
 
 /// One `pii` control verb against the live daemon's socket: `(code, stdout, stderr)`.
@@ -178,31 +176,32 @@ fn a_global_only_setting_in_the_project_file_stops_the_start() {
 
     // A bounded wait, not `.output()`: on a tree where the refusal does not happen the daemon
     // starts and serves, so an unbounded wait would hang the suite instead of failing it.
-    let mut child = Command::new(env!("CARGO_BIN_EXE_pii"))
-        .arg("daemon")
-        .args(["--sandbox", "off", "--workspace"])
-        .arg(&workspace)
-        .arg("--log-file")
-        .arg(&log)
-        .env("PII_RUNTIME_DIR", &workspace)
-        .env("PII_CONFIG", &global)
-        .env_remove("PII_MODEL")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child = DaemonGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_pii"))
+            .arg("daemon")
+            .args(["--sandbox", "off", "--workspace"])
+            .arg(&workspace)
+            .arg("--log-file")
+            .arg(&log)
+            .env("PII_RUNTIME_DIR", &workspace)
+            .env("PII_CONFIG", &global)
+            .env_remove("PII_MODEL")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let deadline = Instant::now() + Duration::from_secs(20);
     let mut status = None;
     while Instant::now() < deadline {
-        if let Some(s) = child.try_wait().unwrap() {
+        if let Some(s) = child.child_mut().try_wait().unwrap() {
             status = Some(s);
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
     if status.is_none() {
-        let _ = child.kill();
-        let _ = child.wait();
+        child.kill_now();
         panic!(
             "the daemon started despite a global-only project setting (log: {})",
             std::fs::read_to_string(&log).unwrap_or_default()
