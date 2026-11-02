@@ -42,76 +42,15 @@ fn text(o: &Output) -> String {
     )
 }
 
-/// Wait for `f` to become true, with a budget that means "the machine is busy", not "the daemon is hung".
-///
-/// MEASURED 2026-11-02: five tests in this file failed inside the full suite and passed on their own, twice, on an
-/// otherwise idle machine. The reason was this function: a flat 20 s wait, while `cargo test` runs the whole suite in
-/// parallel and every one of these tests spawns real `pii` processes. The suite starved the children, the wait
-/// expired, and the panic said only "timed out" — no child state, no output, nothing to diagnose.
-///
-/// So the budget is now generous, and the failure is a DIAGNOSIS: it reports how long it waited, whether the child
-/// process is still alive, and the daemon's last output, which is the difference between "slow" and "stuck".
 fn until(what: &str, mut f: impl FnMut() -> bool) {
-    until_with(what, Duration::from_secs(90), &mut f)
-}
-
-fn until_with(what: &str, budget: Duration, mut f: impl FnMut() -> bool) {
-    let started = Instant::now();
-    while started.elapsed() < budget {
+    let end = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < end {
         if f() {
             return;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let secs = started.elapsed().as_secs();
-    panic!(
-        "waited {secs}s for {what} — if this is the only failure, the suite starved it; if it repeats alone, {what} is stuck"
-    );
-}
-
-/// Six tests in this file each start one or more real `pii` daemons and then wait for the run pool to reach a state.
-/// Run together — which is what `cargo test` does — they starve each other: measured 2026-11-02, 1 passed and 5 failed,
-/// every one of them having waited the full budget. The property they check is about bounded threads, so it cannot be
-/// measured while the measuring machine is oversubscribed by its own tests.
-///
-/// They therefore take turns. A lock FILE rather than a Mutex, because `clippy.toml` bans `std::sync::Mutex` in this
-/// repo, and because a file lock is the only kind that survives the test binary's own process boundaries. A lock older
-/// than fifteen minutes is stolen: a killed test must not block the suite forever, and the timestamp is the record of
-/// how it got there.
-struct HeavyGuard(std::path::PathBuf);
-
-impl Drop for HeavyGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
-
-fn only_one_heavy_test_at_a_time() -> HeavyGuard {
-    let path = std::env::temp_dir().join("pii-control-plane-heavy.lock");
-    let give_up = Instant::now() + Duration::from_secs(900);
-    loop {
-        match std::fs::OpenOptions::new().create_new(true).write(true).open(&path) {
-            Ok(mut f) => {
-                use std::io::Write;
-                let _ = writeln!(f, "{}", std::process::id());
-                return HeavyGuard(path);
-            }
-            Err(e) => {
-                let stale = std::fs::metadata(&path)
-                    .and_then(|m| m.modified())
-                    .map(|t| t.elapsed().map(|d| d.as_secs() > 900).unwrap_or(false))
-                    .unwrap_or(false);
-                if stale {
-                    let _ = std::fs::remove_file(&path);
-                    continue;
-                }
-                if Instant::now() >= give_up {
-                    panic!("another heavy test held {path:?} for 900s ({e})");
-                }
-                std::thread::sleep(Duration::from_millis(200));
-            }
-        }
-    }
+    panic!("timed out waiting for {what}");
 }
 
 fn scratch(tag: &str) -> tempfile::TempDir {
@@ -237,7 +176,6 @@ fn thread_count(pid: u32) -> usize {
 
 #[test]
 fn trace_subscribe_and_cancel_answer_while_runs_fill_the_pool() {
-    let _heavy = only_one_heavy_test_at_a_time();
     let tmp = scratch("fill");
     let dir = tmp.path();
     let _daemon = start_daemon(
@@ -273,7 +211,6 @@ fn trace_subscribe_and_cancel_answer_while_runs_fill_the_pool() {
 
 #[test]
 fn CONTROL_at_most_run_threads_agents_are_alive() {
-    let _heavy = only_one_heavy_test_at_a_time();
     let tmp = scratch("alive");
     let dir = tmp.path();
     let daemon = start_daemon(
@@ -295,7 +232,6 @@ fn CONTROL_at_most_run_threads_agents_are_alive() {
 
 #[test]
 fn CONTROL_threads_stay_bounded_after_300_short_runs() {
-    let _heavy = only_one_heavy_test_at_a_time();
     let tmp = scratch("churn");
     let dir = tmp.path();
     let daemon = start_daemon(dir, 0, 300, &[]);
@@ -317,7 +253,6 @@ fn CONTROL_threads_stay_bounded_after_300_short_runs() {
 
 #[test]
 fn a_kill_cancel_does_not_freeze_the_async_workers() {
-    let _heavy = only_one_heavy_test_at_a_time();
     let tmp = scratch("kill");
     let dir = tmp.path();
     let _daemon = start_daemon(dir, 60_000, 4, &[]);
@@ -362,7 +297,6 @@ fn a_kill_cancel_does_not_freeze_the_async_workers() {
 
 #[test]
 fn a_cancel_without_kill_of_a_running_node_is_still_refused() {
-    let _heavy = only_one_heavy_test_at_a_time();
     let tmp = scratch("refused");
     let dir = tmp.path();
     let _daemon = start_daemon(dir, 20_000, 1, &[]);
@@ -378,7 +312,6 @@ fn a_cancel_without_kill_of_a_running_node_is_still_refused() {
 
 #[test]
 fn a_queued_run_is_cancelled_and_never_executes() {
-    let _heavy = only_one_heavy_test_at_a_time();
     let tmp = scratch("queued");
     let dir = tmp.path();
     // Two answers for three runs: a third execution would find the model exhausted.
