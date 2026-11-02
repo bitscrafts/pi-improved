@@ -56,13 +56,20 @@ if [ "$APPLY" -eq 1 ] && [ "$scripts" -gt 0 ]; then
 fi
 
 # Build output only: `target/` inside scratch copies. Live state and the gate cache are never candidates.
+# Build output, under every name this workspace has given it: `target` (cargo), `tgt` (a custom target dir), and a
+# nested `_tmp` inside a scratch COPY (cast-review keeps its build there). The rule is a BASENAME test plus an
+# exclusion list — the first version used path patterns and `-prune` without `-print`, so it silently found nothing
+# while 85 directories qualified. The trees themselves are never touched.
 maps=()
 while IFS= read -r t; do
+  [ "$t" = "$TMPD" ] && continue
   case "$t" in
     */autonomy/*|*/claude-batchC/*|*/gate-target*|*/digest-proof/*|*/deploy/*) continue ;;
   esac
-  maps+=("$t")
-done < <(find "$TMPD" -maxdepth 3 -type d -name target -prune 2>/dev/null)
+  case "$(basename "$t")" in
+    target|tgt|_tmp) maps+=("$t") ;;
+  esac
+done < <(find "$TMPD" -maxdepth 3 -type d \( -name target -o -name tgt -o -name _tmp \) -print 2>/dev/null)
 
 total=0
 for t in ${maps[@]+"${maps[@]}"}; do total=$(( total + $(du -sk "$t" 2>/dev/null | cut -f1) )); done
