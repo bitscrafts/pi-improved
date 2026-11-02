@@ -39,6 +39,19 @@ fn after_a_healthy_run(rest: &str) -> String {
 }
 
 #[test]
+fn one_boot_writes_two_marks_and_is_silent() {
+    // The host's own sequence, measured 2026-11-02 17:03:48 and 17:03:58: `daemon.starting`, then the sandbox
+    // mark, then `daemon.started` ten seconds later. Both marks belong to ONE boot; reading the second as a start
+    // that never served is what made the probe report `daemon-start-not-ready latency_secs=0` on every restart.
+    let inc = scan(&after_a_healthy_run(
+        &(ev("daemon.starting", 10)
+            + &ev("daemon.sandbox.in_force", 10)
+            + &ev("daemon.started", 20)),
+    ));
+    assert_eq!(count_not_ready(&inc), 0, "{inc:?}");
+}
+
+#[test]
 fn start_that_never_served_is_one_incident() {
     // two marks, no `daemon.started` between them: the first start died before serving
     let inc = scan(&after_a_healthy_run(

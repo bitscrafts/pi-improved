@@ -48,9 +48,16 @@ STORE_RE = re.compile(r"^\s+[a-z_]+:\s+(/\S+)")
 
 
 def stores_in(fx: dict) -> list[str]:
-    """Every store path the daemon reports, from the TEXT `pii health` prints, plus any .redb still in the runtime
-    directory. One parser for both modes: the host and the fixture produce the same text."""
+    """Every store path the daemon reports, from the TEXT `pii health` prints. The runtime directory is a FALLBACK,
+    used only when health printed nothing usable.
+
+    MEASURED 2026-11-02: the runtime dir still held `approval.redb` and eight siblings written on 2026-10-24 by a
+    previous install — nothing has touched them since. Listing files cannot tell a live store from a fossil, and a
+    fossil was reddening the check on a machine whose daemon reports all seven stores under ~/.local/state/pii. The
+    daemon's own answer is the live path; the listing is what it cannot see."""
     found = [m.group(1) for m in (STORE_RE.match(ln) for ln in fx.get("health_text", "").splitlines()) if m]
+    if found:
+        return found
     for ln in fx.get("runtime_ls", "").splitlines():
         ln = ln.strip()
         if ln.endswith(".redb"):
@@ -90,14 +97,47 @@ def check_failures(fx: dict) -> tuple[bool, str]:
     return True, "no *.failed event since the last daemon.started"
 
 
+def _epoch(iso: str) -> int:
+    """Seconds since the epoch for the incident's `first_seen=YYYY-MM-DDTHH:MM:SSZ`, or 0 if unreadable."""
+    import calendar
+    import time as _t
+    try:
+        return calendar.timegm(_t.strptime(iso, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return 0
+
+
 def check_alarm(fx: dict) -> tuple[bool, str]:
     text = fx.get("incidents", "")
     if "usage: pii incidents" in text:
         # the command was refused for a missing argument, so this check has NO input: refusing is honest, passing is not
         return False, "the incident scan printed its usage (a missing --log), so there is nothing to read"
-    hits = [ln for ln in text.splitlines() if "daemon-start-not-ready" in ln]
+    # MEASURED 2026-11-02: the log holds every start this machine has ever made, so a rule fixed today would still
+    # be judged by an alarm raised at 02:07 by a build that is no longer installed. The question this check asks is
+    # about the RUNNING deployment, exactly like "no failures since the last start". The boundary is where the last
+    # start BEGAN, not where it succeeded: an alarm raised at 17:03:48 belongs to the boot that completed at
+    # 17:03:58, and only alarms older than that boot's first mark are history.
+    log = fx.get("log", [])
+    last_started_idx = max((i for i, e in enumerate(log) if e.get("kind") == "daemon.started"), default=None)
+    if last_started_idx is None:
+        boundary = None
+    else:
+        marks = [int(log[i].get("ts_ms", 0)) // 1000 for i in range(last_started_idx)
+                 if log[i].get("kind") in ("daemon.starting", "daemon.sandbox.in_force")]
+        boundary = marks[-1] if marks else int(log[last_started_idx].get("ts_ms", 0)) // 1000
+    hits, historic = [], 0
+    for ln in text.splitlines():
+        if "daemon-start-not-ready" not in ln:
+            continue
+        m = re.search(r"first_seen=(\S+)", ln)
+        if boundary is not None and m and _epoch(m.group(1)) < boundary:
+            historic += 1
+            continue
+        hits.append(ln)
     if hits:
-        return False, f"{len(hits)} false start alarm(s), first: {hits[0][:70]}"
+        return False, f"{len(hits)} false start alarm(s) since the last start, first: {hits[0][:70]}"
+    if historic:
+        return True, f"no false start alarm since the last start ({historic} older one(s) predate this binary)"
     return True, "no daemon-start-not-ready for any start"
 
 

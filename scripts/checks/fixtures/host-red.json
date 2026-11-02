@@ -1,6 +1,6 @@
 {
  "config": "# pii config\n[core]\nmodel = \"granite-4.2-3b\"\ntrajectory_dir = \"/root/.local/state/pii/trajectory\"\nlog_file = \"/root/.local/state/pii/pii.log\"\n",
- "health_text": "pii 0.1.0 (2d268f284b85, x86_64-unknown-linux-gnu)\nclient: 2d268f284b85\nstores:\n  main: /home/mvcorrea/.local/state/pii/store.redb (18812928 bytes, format_version=1)\n  memory: /home/mvcorrea/.local/state/pii/memory.redb (12587008 bytes, format_version=1)\n",
+ "health_text": "pii 0.1.0 (2d268f284b85, x86_64-unknown-linux-gnu)\nclient: 2d268f284b85\nstores:\n  main: /run/user/1000/pii/store.redb (18812928 bytes, format_version=1)\n  memory: /home/mvcorrea/.local/state/pii/memory.redb (12587008 bytes, format_version=1)\n",
  "runtime_ls": "/run/user/1000/pii/channel.redb\n/run/user/1000/pii/timer.redb",
  "health_plain": {
   "rc": 2,

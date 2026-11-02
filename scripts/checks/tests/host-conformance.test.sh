@@ -35,7 +35,7 @@ import json,sys
 src,dst,which=sys.argv[1],sys.argv[2],sys.argv[3]
 d=json.load(open(src))
 if which=="config":       d["config"]='[core]\ntrajectory_dir = "/root/.local/state/pii/trajectory"\n'
-if which=="stores":       d["runtime_ls"]="/run/user/1000/pii/channel.redb"
+if which=="stores":       d["health_text"]="stores:\n  main: /run/user/1000/pii/store.redb (1 bytes, format_version=1)\n"
 if which=="health":       d["health_plain"]={"rc":2,"stderr":"no daemon answered"}
 if which=="failures":     d["log"]=[{"kind":"daemon.started","ts":"t"},{"kind":"channel.post.failed","level":"error","ts":"t2"}]
 if which=="alarm":        d["incidents"]="daemon-start-not-ready start ts=t time_to_notice_ms=144"
@@ -54,6 +54,63 @@ for which in config stores health failures alarm; do
     fail "control: only the $which defect reddens only its own check (got $n FAIL)"
   fi
 done
+
+# 4b. HISTORY IS NOT EVIDENCE: an alarm raised before the last start belongs to the previous binary, and must
+# not redden the running deployment — while the same alarm dated after the last start must.
+python3 - "$FX/host-green.json" "$W/alarm-historic.json" <<'PY'
+import calendar, json, sys, time
+src, dst = sys.argv[1], sys.argv[2]
+d = json.load(open(src))
+start = calendar.timegm(time.strptime("2026-11-02T17:03:58Z", "%Y-%m-%dT%H:%M:%SZ"))
+d["log"] = [{"kind": "daemon.starting", "ts_ms": (start - 10) * 1000},
+            {"kind": "daemon.started", "ts_ms": start * 1000}]
+d["incidents"] = ("incident daemon-start-not-ready count=1 first_seen=2026-11-02T02:07:57Z"
+                  " last_seen=2026-11-02T02:07:57Z latency_secs=0 window_secs=1800")
+json.dump(d, open(dst, "w"))
+PY
+out=$(bash "$P" --fixture "$W/alarm-historic.json" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && pass "a historic alarm does not redden the running deployment" \
+  || fail "a historic alarm does not redden the running deployment (rc=$rc)"
+printf '%s' "$out" | grep -q 'predate this binary' && pass "and the check says so" || fail "and the check says so"
+
+python3 - "$FX/host-green.json" "$W/alarm-fresh.json" <<'PY'
+import calendar, json, sys, time
+src, dst = sys.argv[1], sys.argv[2]
+d = json.load(open(src))
+start = calendar.timegm(time.strptime("2026-11-02T17:03:58Z", "%Y-%m-%dT%H:%M:%SZ"))
+d["log"] = [{"kind": "daemon.starting", "ts_ms": (start - 10) * 1000},
+            {"kind": "daemon.started", "ts_ms": start * 1000}]
+d["incidents"] = ("incident daemon-start-not-ready count=1 first_seen=2026-11-02T17:03:48Z"
+                  " last_seen=2026-11-02T17:03:48Z latency_secs=0 window_secs=1800")
+json.dump(d, open(dst, "w"))
+PY
+out=$(bash "$P" --fixture "$W/alarm-fresh.json" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && pass "control: an alarm at the last start still fails" \
+  || fail "control: an alarm at the last start still fails (rc=$rc)"
+
+# 4c. the runtime dir is a FALLBACK: a fossil in it must not outvote the stores the daemon reports, while a store
+# the daemon ITSELF reports under /run/ must still fail.
+python3 - "$FX/host-green.json" "$W/stores-fossil.json" <<'PY'
+import json, sys
+src, dst = sys.argv[1], sys.argv[2]
+d = json.load(open(src))
+d["runtime_ls"] = "/run/user/1000/pii/approval.redb\n/run/user/1000/pii/store.redb"
+json.dump(d, open(dst, "w"))
+PY
+out=$(bash "$P" --fixture "$W/stores-fossil.json" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && pass "a fossil in the runtime dir does not redden a healthy daemon" \
+  || fail "a fossil in the runtime dir does not redden a healthy daemon (rc=$rc)"
+
+python3 - "$FX/host-green.json" "$W/stores-live-tmpfs.json" <<'PY'
+import json, sys
+src, dst = sys.argv[1], sys.argv[2]
+d = json.load(open(src))
+d["health_text"] = "stores:\n  main: /run/user/1000/pii/store.redb (1 bytes, format_version=1)\n"
+json.dump(d, open(dst, "w"))
+PY
+out=$(bash "$P" --fixture "$W/stores-live-tmpfs.json" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && pass "control: a store the daemon reports on a tmpfs still fails" \
+  || fail "control: a store the daemon reports on a tmpfs still fails (rc=$rc)"
 
 # 5. an unreachable host REFUSES, and does not pass
 out=$(PII_HOST=10.255.255.1 PII_SSH_TIMEOUT=2 bash "$P" 2>&1); rc=$?

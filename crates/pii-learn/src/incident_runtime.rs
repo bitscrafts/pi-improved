@@ -168,6 +168,7 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
     let mut firings: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     let mut log_end = i64::MIN;
     let mut starting: Option<i64> = None;
+    let mut starting_kind: Option<String> = None;
     let mut running: Option<i64> = None;
     let mut starts = Vec::new();
     let mut mark_ms: Option<i64> = None;
@@ -180,8 +181,16 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
         log_end = log_end.max(ts);
         if kind == START_MARK || kind == pii_observe::names::DAEMON_STARTING {
             mark_ms = Some(ms);
+            let prev_kind = starting_kind.replace(kind.clone());
             if let Some(t) = starting.replace(ts) {
-                out.push(mk("daemon-start-not-ready".to_owned(), 1, t, t, ts));
+                // ONE boot writes two marks: `daemon.starting`, then the sandbox mark, then `daemon.started`. Two
+                // marks of the SAME kind are two boots. A different kind is the companion mark of the same boot
+                // unless it arrives so late that the first start really did hang — the grace makes that call.
+                if prev_kind.as_deref() == Some(kind.as_str())
+                    || ts.saturating_sub(t) >= START_MARK_GRACE_SECS
+                {
+                    out.push(mk("daemon-start-not-ready".to_owned(), 1, t, t, ts));
+                }
             }
         } else if kind == pii_observe::names::DAEMON_STARTED {
             lifecycle = true;
@@ -190,6 +199,7 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
                 started_ms: ms,
             });
             starting = None;
+            starting_kind = None;
             if let Some(t) = running.replace(ts) {
                 out.push(mk("daemon-restart-unexpected".to_owned(), 1, t, ts, ts));
             }
@@ -198,6 +208,7 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
             mark_ms = None;
             running = None;
             starting = None;
+            starting_kind = None;
         } else if let Some(r) = REFUSALS.iter().find(|r| **r == kind) {
             refusals.entry(r).or_default().push(ts);
         } else if kind == pii_observe::names::CRON_FIRED
