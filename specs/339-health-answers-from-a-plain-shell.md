@@ -60,7 +60,7 @@ service that would create it (`systemctl --user status pii`), instead of `is pii
 ## Files
 
 - `specs/339-health-answers-from-a-plain-shell.md`
+- `crates/pii-cli/src/cmd_health.rs`
 - `crates/pii-uds/src/lib.rs`
-- `crates/pii-server/src/daemon/mod.rs`
-- `crates/pii-uds/tests/one_default_socket.rs`
 - `crates/pii-cli/tests/health_without_env.rs`
+- `crates/pii-uds/tests/one_default_socket.rs`

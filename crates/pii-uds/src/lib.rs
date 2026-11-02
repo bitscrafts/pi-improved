@@ -17,29 +17,45 @@ use std::path::PathBuf;
 use pii_abi::PiiError;
 use pii_observe::{Event, Level, NullObserver, Observer, names};
 
-/// Resolves the runtime dir (F2.8, extended 2026-09-05).
+/// Resolves the runtime dir (F2.8, extended 2026-09-05; spec 339).
 ///
 /// Precedence: `$PII_RUNTIME_DIR` → `[core].runtime_dir` in the persistent
 /// config file (see `pii-server`'s `Config::default_path`) →
-/// `$XDG_RUNTIME_DIR/pii/<instance>` → `/run/user/<uid>/pii/<instance>`.
+/// `/run/user/<uid>/pii`. The `instance` argument no longer names a path
+/// segment: the daemon and every client resolve the same directory, which is
+/// the one the shipped user unit pins.
 /// The config-file lookup is a plain best-effort read (a malformed config
 /// here does not abort — `pii daemon`'s own startup path already surfaces
 /// config parse errors loudly; a lookup helper silently falling back to the
 /// next candidate is the right behavior for callers like `pii sys status`
 /// that just need SOME runtime dir to try).
 #[must_use]
-pub fn runtime_dir(instance: &str) -> Option<PathBuf> {
-    if let Some(d) = pii_core::env_var("PII_RUNTIME_DIR") {
-        return Some(PathBuf::from(d));
-    }
-    if let Some(d) = config_runtime_dir(&default_config_path()) {
-        return Some(d);
-    }
-    if let Some(x) = pii_core::env_var("XDG_RUNTIME_DIR") {
-        return Some(PathBuf::from(x).join("pii").join(instance));
-    }
-    let uid = rustix_uid();
-    Some(PathBuf::from(format!("/run/user/{uid}/pii/{instance}")))
+pub fn runtime_dir(_instance: &str) -> Option<PathBuf> {
+    Some(resolve_runtime_dir(
+        pii_core::env_var("PII_RUNTIME_DIR"),
+        config_runtime_dir(&default_config_path()),
+        current_uid(),
+    ))
+}
+
+/// The one resolution rule: an explicit directory wins verbatim, then the
+/// configured one, then the uid-derived default.
+#[must_use]
+pub fn resolve_runtime_dir(
+    explicit: Option<String>,
+    configured: Option<PathBuf>,
+    uid: u32,
+) -> PathBuf {
+    explicit
+        .map(PathBuf::from)
+        .or(configured)
+        .unwrap_or_else(|| uid_runtime_dir(uid))
+}
+
+/// The derived default for `uid`: `/run/user/<uid>/pii`.
+#[must_use]
+pub fn uid_runtime_dir(uid: u32) -> PathBuf {
+    PathBuf::from(format!("/run/user/{uid}/pii"))
 }
 
 /// The default config file path (`$PII_CONFIG` else `$HOME/.pii/pii.toml`),
@@ -68,7 +84,9 @@ fn config_runtime_dir(path: &std::path::Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn rustix_uid() -> u32 {
+/// The effective uid of this process (from `/proc/self/status`).
+#[must_use]
+pub fn current_uid() -> u32 {
     // rustix is intentionally not a dependency of this build; `nobody`-style
     // uid discovery goes through the libc-free path: `id -u` is overkill, so
     // fall back to 0 when `/proc/self/status` cannot be read.

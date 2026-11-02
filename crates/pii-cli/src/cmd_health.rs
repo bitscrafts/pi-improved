@@ -174,7 +174,7 @@ pub(crate) fn cmd_health(args: &mut std::env::ArgsOs) -> ExitCode {
         Err(e) => {
             let _ = writeln!(
                 std::io::stderr(),
-                "error: no daemon answered ({e}); is `pii daemon` running?"
+                "error: no daemon answered ({e}); the service that creates it is `systemctl --user status pii`"
             );
             ExitCode::from(2)
         }
