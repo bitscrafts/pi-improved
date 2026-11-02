@@ -72,9 +72,11 @@ night.toml
 | `night_graph_carries_no_absolute_project_paths` | no `/projects` or `/root` outside a comment |
 | `night_stops_on_exhaustion` | an exhausted queue reaches `review`, not `sdd__dispatch` |
 | `night_call_sets_max_entries_at_least_its_loop_budget` | the call's `max_entries` ≥ the loop count it declares |
+| `night_routes_an_empty_queue_to_review` | an exhausted queue reaches `review` and posts, instead of ending at `sdd__select` |
 
 ## Exit Criteria
 
+- [ ] `cargo test -q -p pii-server --test night_graph_composes night_routes_an_empty_queue_to_review 2>&1 | grep -q '1 passed'`
 - [ ] `cargo test -q -p pii-server --test night_graph_composes`
 - [ ] `pii graph lint graphs/night.toml`
 - [ ] `pii graph lint graphs/queue.toml`
@@ -101,7 +103,7 @@ night.toml
 Landed in `bc93fd0`: `graphs/night.toml` (timer → pinned call to `queue` → `post`), `graphs/queue.toml` callable
 (`exit`, workdirs from `input`), and the four checks in `crates/pii-server/tests/night_graph_composes.rs`.
 
-**Open — the one requirement without a criterion yet.** R5 says an exhausted queue reaches `review` and posts.
+**Open — and now carried by a criterion that fails today.** R5 says an exhausted queue reaches `review` and posts.
 Today the queue's `empty` and `blocked` ports are *inside* the call's namespace, so a night that finds no open row
 ends the run at `sdd__select` instead of routing to `review`: measured by `pii graph lint graphs/night.toml`, which
 reports `sdd__select` declaring `blocked`, `empty` and `running` with no outgoing edge (advisory, exit 0 — which is
