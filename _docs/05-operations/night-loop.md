@@ -108,10 +108,12 @@ is in flight; the mover moved a real abandoned tree and refused a row's own work
 criterion and repaired it; `night.sh`'s unit behaviour is 15/15; the report job **delivered to Discord** (read back
 through the API: `Cronjob Response: pii morning report …` at 05:57).
 
-**Not proven:** the review step assembled end to end (brief → Opus → filed report → tranche b). Its parts are each
-proven (the runner at 05:21, `PONG55 || modelUsage=claude-opus-5-5`; the brief writer; the filing; the tranche
-seeder), but the sequence has not run. `night.sh --review-now` exists to prove it on a clean tree; run it before
-trusting a night that nobody is watching.
+**Proven at 07:12 and 07:57 the same night:** the review step end to end — brief written by the script, Opus read the
+tree, the plan file landed in `_tmp/night/opus-<stamp>/`, the filer put it in `_docs/06-research/`, and the tranche was
+seeded after it. Two reviews, `$3.35` each. Getting there cost four silent bugs, now fixed and written down above:
+a workdir stamp with colons made the filer's `cd` fail while it exited 0; the tranche-b existence check read the
+wrong directory; the mover accepted a relative `_trash/` (creating dirt inside the repo); and `pgrep -f` matched any
+shell whose *text* mentioned a worker script, so the loop sat still reporting "a worker is in flight".
 
 ## Cost
 
