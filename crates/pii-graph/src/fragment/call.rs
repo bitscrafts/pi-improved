@@ -156,8 +156,9 @@ fn expand_one(
     }
     if chain.contains(&graph) {
         return Err(PiiError::Invalid(format!(
-            "graph.call.cycle: {} -> {graph}",
-            chain.join(" -> ")
+            "graph.call.cycle: {} -> {graph} (call '{id}' in graph '{}')",
+            chain.join(" -> "),
+            chain.last().map_or("?", String::as_str)
         )));
     }
     if chain.len() > MAX_DEPTH {
@@ -357,6 +358,8 @@ fn splice(
         }
     }
     host_edges.extend(new_edges);
+    // Spec 343 R2: the host can read the called graph's result by the CALL's id, not only by the inner exit's.
+    super::call_output::alias_outputs(doc, id, &sub.exit);
 
     let mut nodes = take_array(doc, "node");
     nodes.extend(added.into_iter().map(Value::Table));

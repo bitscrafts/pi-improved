@@ -14,6 +14,7 @@
 
 mod call;
 mod call_needs;
+mod call_output;
 mod call_record;
 mod call_rewrite;
 mod check;
