@@ -151,3 +151,23 @@ counted, not a habit.
 Given this page, the tree at `HEAD`, and 064-070: **is there a gap in this list that I have not seen** — and would you
 change the ORDER above? Specifically: is measuring the stream defect worth more than waiting for the 09:00 occurrence, or
 should the occurrence be read first regardless of what else is broken?
+
+### 3 — EXERCISED 2026-11-02: the path, against a hosted provider
+
+The gap said the *path* was unexercised: the daemon runs a local plain-HTTP lane, and `pii-net` pins webpki roots
+(no CA override), so a local truncating peer cannot be trusted. A hosted provider is the honest way to exercise it,
+and the operator authorised the ollama-cloud credentials for exactly this.
+
+```
+deploy/tools/live-hosted-exercise.sh
+  credential  env:OLLAMA_API_KEY (the source /root/.hermes/auth.json names), value never printed
+  endpoint    https://ollama.com/v1   (OpenAI-compatible; pii's provider kind is `openai`)
+  transport   the REAL pii-net service with an open egress grant — not a fake
+  live        crates/pii-model/tests/live_smoke.rs :: live_openai   → 1 passed, 1.04 s
+  truncation  crates/pii-model/tests/stream_close_is_eof.rs         → 2 passed
+```
+
+Both halves now hold: the **site** (`conn.rs`: `UnexpectedEof`/`close_notify` is end of stream) was already proven
+by tests, and the **path** has been run end to end over TLS against a real provider. What remains unproven is the
+*defect itself* — a provider that truncates mid-stream — which needs a peer that truncates on purpose, and that
+still needs either a CA override (an attack-surface decision) or a provider failure I cannot schedule.
