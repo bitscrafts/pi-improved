@@ -1,1 +1,0 @@
-/root/.hermes/skills/autonomous-ai-agents/night-loop/scripts/clear-stuck-tree.sh
