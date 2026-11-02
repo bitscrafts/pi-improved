@@ -1,83 +1,98 @@
-# Spec: The night is a graph in pii, not a cron of shell scripts
+# Spec: The night is a graph composed from the graphs pii already has
 
 ## Overview
 
-pii has a graph engine: nodes, `[[cron]]` entries, runs on disk, suspension, resume, capability scopes. The night of
-2026-11-02 was driven by nine shell scripts and four Python modules in a Hermes skill instead — because that is how a
-driver gets built quickly, not how a product keeps one. This spec puts the night where pii's own machinery already
-lives: a graph with a timer, a pick node, a worker node, a gate node, a landing node, a review node and a post node,
-each of them a thing the daemon knows how to run and resume.
+pii's composability is one of its most important features: a graph is a puzzle of pieces that already exist, and a
+capability that is missing is expressed as another graph, not as another node. The operator's picture:
 
-The Hermes skill (`night-loop`) keeps the *method* — which primitives carry a night, and the traps that cost money.
-It stops carrying pii's queue.
+> *"one graph that does tdd, one graph that does sdd, and other graphs composing them!"*
+
+The night of 2026-11-02 was nine shell scripts in a Hermes skill. The first attempt at moving it into pii proposed two
+new node kinds (`night_pick`, `night_land`). Both duplicated what exists:
+
+```
+graphs/queue.toml   select → coder → judge → record     the SDD loop already runs a row end to end
+graphs/spec.toml    coder → judge → call → judge → refuse   authoring a spec, with its own judge
+graphs/discord-digest.toml   recall → post              the report egress that already works
+node kinds          timer · select · coder · judge · record · gate · worker · agent_route · post · sop
+```
+
+So this spec adds **no node kind**. The night is those pieces, in that order, with pii's `[[cron]]` for the tick.
 
 **Project**: /projects/pi-improved
-**Phase**: after the 2026-11-02 night (rows 335–340) and the withdrawal of the port-to-binary idea
+**Phase**: after the 2026-11-02 night (rows 335–340); supersedes the withdrawn "port the shell into the binary" idea
 
 ## Requirements
 
 ### Functional
 
-- `graphs/night.toml` — one graph, `entry = "clock"`:
-  - `clock`: a `timer` node, `cron = "*/5 * * * *"`, so a firing is a tick and a night is many ticks, not one long
-    process.
-  - `pick`: reads the queue (`scripts/autonomy/plan.tsv` + `_tmp/autonomy/state.json`) and emits the next row, or
-    `none`.
-  - `work`: a `worker` node that dispatches the row's coding agent, with the row's spec and criteria as its brief.
-  - `verify`: runs the row's criteria (a `bash` node), failing the run with the criterion's own output as evidence.
-  - `land`: commits the row's declared paths with a neutral identity and records the commit in the queue state.
-  - `review`: when the queue has no open row, a `worker` node runs the frontier review and files it under
-    `_docs/06-research/`.
-  - `post`: a `channel` node posts the night's report to the Discord thread, tagged `status`.
-- Every node's failure leaves evidence a person can read: the node's output, its input, and the run id.
-- A night stops on the clock (`[night] until`), a count (`[night] rounds`), or exhaustion — the same three conditions
-  the operator asked for, now as graph configuration.
-- The queue's meaning stays pii's: rows, criteria, paths and commits are read and written by pii code, not by shell.
+- `graphs/night.toml`, `entry = "clock"`, one node per existing piece and **no new kind**:
+  - `clock` — `timer`, fired by a `[[cron]]` entry; a night is many firings, not one long process.
+  - `pick` — `select` (from `graphs/queue.toml`): the next open row, or `none`.
+  - `work` — `coder` (spec 207): dispatches the row's agent; the worker's handle is recorded so a resume has one.
+  - `judge` — `judge`: runs exactly the row's criteria argv, never a shell string.
+  - `record` — `record`: `done` with the commit, or the failure with its evidence.
+  - `spec` — when a row needs a spec that does not exist, the `spec.toml` sequence runs as a sub-sequence of nodes
+    (author → judge → refuse), not as an inline prompt.
+  - `review` — only when `pick` yields `none`: `agent_route` picks the frontier model and the existing `worker` runs the
+    review; the report is posted by the same `post` node `graphs/discord-digest.toml` uses.
+- Stop conditions stay configuration, the three the operator named (*"a time constraint … or a loop count like
+  (opus -> drain, opus -> drain) 2x … or finish when the intervention ends"*): `[night] until`, `[night] rounds`,
+  exhaustion.
+- A row needing a human decision uses the existing `gate` node (store-backed suspension), so a restart resumes it.
+- Reuse is by **name and pin**, not by copy: any fragment the composed graphs rely on (e.g. `graphs/fragments/…`) is
+  attached the way fragments already are — by name with a sha256.
 
 ### Non-Functional
 
-- Nothing in the graph reaches into `~/.hermes`; the graph is data pii's daemon loads and runs.
-- A night must survive a daemon restart: the run resumes from its store, not from a shell variable.
-- Capability scopes: the graph declares `[caps]` for what it may do (fs write under the repo, git, channel post).
-- No behaviour may depend on a model being reachable except `work` and `review`.
+- **The graph's kind set must be a subset of the kinds used by the graphs it composes.** If the night needs a piece
+  that does not exist, that piece is its own spec — never a `night_*` node.
+- The graph carries no absolute project paths in its body: paths come from the run's input, so the same graph serves a
+  second project.
+- It lints (`pii graph lint`), declares `[caps]`, and resumes after a daemon restart from its store.
+
+## What does NOT exist yet, and is not invented here
+
+Graph-includes-graph — one graph naming another by name + pin, the way fragments are attached — is **not** supported
+today. So "the night graph composes `queue.toml`" is true at the level of **kinds, fragments and sequences**, not by
+referencing the file. Making a graph reference another graph is composability's own next step; it is a spec of its own,
+and this night graph is the first customer that would justify it.
 
 ## Architecture
 
 ```
-graphs/night.toml
-  clock(timer) -> pick(fs+state) -> work(worker) -> verify(bash) -> land(bash+state)
-                                                                   |
-                                     queue still open? ------------+-- no --> review(worker) -> post(channel)
-                                     yes: next tick resumes at pick, run stays "suspended" on the timer
+[[cron]] every 5 min ──> clock(timer)
+   clock ─> pick(select) ─┬─ row ─> work(coder) ─> judge ─> record ─┐
+                          │                                        │
+                          └─ none ─> review(agent_route + worker) ─> post ─> suspended on the timer
+                                                                     (next firing resumes at pick)
 ```
 
 ## Files
 
 - `specs/342-the-night-is-a-graph-in-pii.md`
 - `graphs/night.toml`
-- `crates/pii-graph/src/nodes/night_pick.rs`
-- `crates/pii-graph/src/nodes/night_land.rs`
-- `crates/pii-cli/src/cmd_night.rs`
+- `crates/pii-server/tests/night_graph_composes.rs`
 
 ## TDD Contract
 
 | Test Name | Input | Expected Output |
 |---|---|---|
-| night_pick_returns_none_when_queue_is_empty | plan with every row done | `pick` emits `none`, no error |
-| night_pick_returns_the_first_open_row | one pending, one done | the pending row's id and spec |
-| night_land_refuses_a_dirty_path_it_does_not_declare | an untracked file outside the row | failure naming the path, nothing committed |
-| night_land_records_the_commit | a row whose criteria pass | state row `done` with that commit |
-| night_timer_resumes_the_run | a run suspended on the clock | the next firing continues at `pick`, same run id |
+| night_graph_uses_only_existing_kinds | `graphs/night.toml` built through the real registry | every kind resolves, and none of them is named `night_*` |
+| night_graph_kinds_are_a_subset_of_the_graphs_it_composes | the kinds in night vs union(queue, spec, discord-digest) | subset, listed by name |
+| night_graph_carries_no_absolute_project_paths | the graph's text | no `/projects/` and no `/home/` outside comments |
+| night_stops_on_exhaustion | a state file with every row done | `pick` yields `none`, the run reaches `review`, not `work` |
 
 ## Exit Criteria
 
-- [ ] `cargo test -q -p pii-graph --test night_nodes`
 - [ ] `pii graph lint graphs/night.toml`
+- [ ] `cargo test -q -p pii-server --test night_graph_composes`
 - [ ] `pii run start night --input '{"dry_run":true}'`
 
 ## Guardrails
 
-- Do NOT put shell logic in the graph's `bash` nodes beyond the gate command: the queue's meaning belongs in pii code.
-- Do NOT delete the Hermes skill: it stays the generic method for other projects, and its traps are the documentation
-  for why this graph looks the way it does.
-- Do NOT let a node hold the run open across a paid call without recording the worker's handle.
+- Do NOT add a node kind for the night, and do NOT keep `night_pick`/`night_land` in any branch: they are the exact
+  duplication this spec exists to prevent.
+- Do NOT copy node blocks out of `queue.toml` and then change them: reuse the kinds, keep one meaning.
+- Do NOT put `/projects/...` paths in the graph body.
+- Do NOT delete the shell reference until the composed graph passes the criteria those rows already satisfy.
