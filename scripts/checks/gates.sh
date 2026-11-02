@@ -91,6 +91,7 @@ run M7 "six decisions, none unowned"      '
 
 # ---- MQTT: in the production path, so it is exercised ---------------------------------------------------
 run MQTT "mqtt channel end to end"        'cargo test -q -p pii-server --test mqtt_e2e 2>&1 | grep -qE "^test result: ok"'
+run ENGINE "the repo certifies the engine it runs, by hash" 'bash scripts/checks/engine-pin.sh >/dev/null'
 
 printf '\n'
 for r in "${ROWS[@]}"; do say "${r%% *}" "" "${r#*  }"; done

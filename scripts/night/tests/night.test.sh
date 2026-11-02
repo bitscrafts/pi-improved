@@ -7,6 +7,15 @@
 set -uo pipefail
 cd "$(dirname "$0")/../../.." || exit 1
 N=scripts/night/night.sh
+# A night states its deadline; this suite's deadline is fixed, so the assertions never depend on what time it is
+# (three of them did: they relied on "today at 10:00Z" being in the future, and failed at noon with nothing changed).
+export NIGHT_UNTIL=${NIGHT_UNTIL:-2099-01-01T00:00:00Z}
+# NO PAID MODEL FROM A TEST. Measured 2026-11-02 11:49: a future deadline plus an empty queue sent this suite into a
+# real claude-opus-5-5 review (~$3) that filed _docs/06-research/night-review-20261102T114920Z.md. The engine is right
+# to review a drained queue; a test must never be able to. Stub the runner, and cap the rounds at zero.
+export NIGHT_OPUS_RUNNER=${NIGHT_OPUS_RUNNER:-/bin/false}
+export NIGHT_OPUS_FILER=${NIGHT_OPUS_FILER:-/bin/false}
+export NIGHT_MAX_OPUS=${NIGHT_MAX_OPUS:-0}
 ok=0; bad=0
 pass(){ ok=$((ok+1)); echo "ok   $1"; }
 fail(){ bad=$((bad+1)); echo "FAIL $1"; }

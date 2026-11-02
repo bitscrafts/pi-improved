@@ -1,0 +1,1 @@
+/root/.hermes/skills/autonomous-ai-agents/night-loop/scripts/doctor.sh
