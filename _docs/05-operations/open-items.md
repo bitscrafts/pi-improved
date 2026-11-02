@@ -172,3 +172,11 @@ bash /projects/_tmp/verify132-live.sh                    # the live Discord proo
 bash /projects/_tmp/verify131-live.sh                    # three refusals → the ledger row
 bash /projects/_tmp/conc-persist.sh 4                    # must report 0 of 4 collisions
 ```
+
+### 10. Two orphan test daemons from a gate run, nine days old (REAPED 2026-11-01)
+
+`_tmp/tools-gate/debug/pii daemon` pids 583964 (21 MB) and 585460 (18 MB), started 2026-10-22 by a gate's own test,
+holding their redb stores and no listening sockets. They were not production (pid 1744962 is) and nothing referenced
+them, but a running process must not be killed silently either — so they were reaped with argv, age, socket count and
+the production-survived check written to `/projects/_tmp/reaped-test-daemons-20261101T235957Z.log`. Cause: a gate
+step starts a daemon and does not reap it. **Follow-up worth one line in that step: kill what you start.**

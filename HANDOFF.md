@@ -3387,3 +3387,37 @@ Reviewed read-only with Opus 5.5 (probe `PONG55 || modelUsage=claude-opus-5-5`; 
 - **M5 is not DONE**: it is a four-part AND and only the identity part holds (`posted: 0`, `runs: 0`, no unit).
 - **My adoption of 329** (`bc20995`) added files outside the row's column 6, mixed the worker's work with mine,
   and left the spec's Closure open. All three are now recorded in that spec's Closure.
+
+## 2026-11-02T00:00:12Z — armed: the digest is in production, and three observers watch it
+
+**Production:** daemon pid 1744962 at `669f5803d90a`, health rc 0, tree `5884be7`+ with **0 Rust files changed
+since the deploy**. The daemon now holds both `PII_DISCORD_*` variables (measured in `/proc/<pid>/environ`) and
+`pii.toml` carries `[[cron]] digest → discord-digest, 0 12 * * *, input = { to = "1558…" }`. `pii graph list`:
+`discord-digest · ce7445f0962b · nodes 6 · timer 0 12 * * * · armed 1 · same`.
+
+**What arming cost, and the lesson:** `deploy/arm-digest.sh` took "the first URL in the config" as the model host —
+a comment pointing at `127.0.0.1:8080`, which answers 200 but serves `laguna-xs-2.1`, while the configured model
+`granite-4.2-3b` lives on `:8084`. Fixed in `1944bcb`: host read from `[llama]` only, `--print-host` so a fixture
+drives the extraction, and the post-install check compares the **values** of `model` and `[llama] host`. A key that
+exists with a changed value passes a key-level verify and still breaks production.
+
+**What cannot be forced:** a standalone `pii graph run` cannot exercise the digest — the recall nodes need
+`memory_read`, which only the daemon grants (`capability denied: memory: read not granted`), and a manual run of the
+real graph re-suspends on its timer. The proof is therefore the 12:00Z run, and it is observed, not assumed: cron
+`745f25ecd51a` runs `pii-digest-check.sh` at 12:20Z, counts **digest** posts since noon and excludes verification
+posts (counting those would pass on a day the digest never delivered).
+
+**Surfaces that now exist:** `_tmp/autonomy/INCIDENTS.md` (one dated row per incident, cursor, published by the beat
+via `incidents-md.sh`) and cron `cf97eea12eba` (`pii incidents to discord`, */15, silent unless a new row appears —
+wired, not yet fired, because no incident has been opened since detection started running).
+
+**Detection:** the incident scan now runs **before** the gateway gate; the gate used to exit 0 on believing the
+gateway down, its probe costs 10 s a call and misfired for days, so every such beat scanned nothing. `gw_proc_up`
+accepts a live process before any IPC probe.
+
+**Housekeeping:** the two 9-day-old `_tmp/tools-gate/debug/pii` test daemons were reaped on purpose with their
+argv/age/sockets recorded (`/projects/_tmp/reaped-test-daemons-20261101T235957Z.log`); production survived, health
+rc 0, one daemon left.
+
+**Queue:** empty — the four non-`done` rows are terminal (`skipped` ×3, `revoked`), `pick` → NONE.
+**Next:** 12:20Z (the digest observer), then M6's week, then M7's six retirement decisions.
