@@ -190,3 +190,28 @@ holding their redb stores and no listening sockets. They were not production (pi
 them, but a running process must not be killed silently either — so they were reaped with argv, age, socket count and
 the production-survived check written to `/projects/_tmp/reaped-test-daemons-20261101T235957Z.log`. Cause: a gate
 step starts a daemon and does not reap it. **Follow-up worth one line in that step: kill what you start.**
+
+### 11. The gate's red was DISK PRESSURE, and the gate was causing it (found and fixed 2026-11-02)
+
+`prompt_returns_before_run_finishes` (`crates/pii-server/tests/latency.rs:97`, a 50 ms budget on `session.prompt`)
+began failing consistently — 120, 161, 168, 194, 235, 309 ms — and it was **not** the code: the same `git archive
+HEAD` export passes in **0.03 s** on `/tmp` and fails on `/projects`, in a clean environment, on an idle 32-core box.
+
+The cause was the volume's latency under pressure: `/projects` is `ext4` and was **91 % full**, where a 4 KB
+write+fsync measured **21.9 ms median (69.2 ms max)** against **0.1 ms** on the overlay that backs `/tmp`.
+
+**The gate was filling the volume itself**: a failed gate keeps its export, and one of them
+(`/projects/_tmp/fresh-gate-2106840`) was **28 GB**. So: gate fails → keeps 28 GB → volume slower → the latency
+assertion fails → the next gate runs → and the loop feeds itself.
+
+Two fixes, both verified:
+1. **`FRESH_GATE_TARGET=/projects/_cache/targets`** when running the gate. `fresh_gate.rs:227` documents this as the
+   warm-cache door ("the export's TREE must be fresh; its COMPILER OUTPUT does not have to be"); it stops each run
+   from building its own 28 GB target. With it, `fresh-gate --worktree` returned **PASS, rc 0** and the disk *ended
+   healthier than it started* (49 G → 76 G free).
+2. Reclaiming the leftover export, with a manifest, under the repo's own rule that a non-kept `fresh-gate-*` dir is
+   safe to remove (`fresh_gate.rs:74,110`).
+
+**The lesson worth keeping:** a gate that measures latency is a gauge of the machine as much as of the code, and this
+one had a feedback loop into its own input. Before believing a red on a latency/composite assertion, check the volume
+and the export count — and read `df` before reading the diff.
