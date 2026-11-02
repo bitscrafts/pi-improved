@@ -1,35 +1,50 @@
 #!/usr/bin/env bash
 # pii.sh — the ONE operator tool for pii's production host. Replaces the pile of one-off scripts
-# (deploy-332/deploy-333/which-channel/reset-daemons/closeout/verify-331 …) that each did one step once.
+# (deploy-332/333, which-channel, reset-daemons, closeout, verify-331 …) that each did one step once.
 #
-# The shape it enforces: production is a NATIVE per-user install on lnx —
-#   ~/.local/bin/pii · config ~/.local/pii/pii.toml · state ~/.local/state/pii · systemd --user pii.service
-# development is the daemon inside the `hermes` container, with its own store and no scheduled posts.
+# The shape it enforces:
+#   PRODUCTION  native per-user on lnx — ~/.local/bin/pii · config ~/.local/pii/pii.toml ·
+#               state ~/.local/state/pii · systemd --user pii.service
+#   DEVELOPMENT the daemon inside the `hermes` container, own store, and NO Discord channel: it must not poll
+#               production's forum. Measured 2026-11-02: the dev daemon (old binary, 500 ms default) was reading
+#               the same channel as production and exhausting the shared route bucket — production saw 429s even
+#               after 34 s of silence, because the bucket was never ours alone.
 #
 # Usage: pii.sh <command> [args]
-#   build              cargo build --release -p pii-cli (warm cache from scripts/autonomy/env.sh)
-#   install            build → copy to the host (old binary kept as pii.old-<epoch>) → restart → health
-#   verify             revision, unit state, digest armed, channel counters, recent errors
-#   channel <id>       what a Discord channel id actually IS (name, type, guild) — read-only
-#   daemons            every pii daemon on the host and in the container, counted precisely
-#   logs               log size + rotation state on both sides
+#   build          cargo build --release -p pii-cli (warm cache from scripts/autonomy/env.sh)
+#   install        copy the binary to the host (old kept as pii.old-<epoch>) → restart → verify
+#   verify         revision, unit state, digest, channel counters, poll failures
+#   channel <id>   what a Discord channel id IS (read-only)
+#   daemons        every pii daemon, host and container
+#   logs           log size + rotation state, both sides
+#   dev-silence    stop the DEV daemon polling production's channel, then restart it
 set -uo pipefail
 
 HOST=${PII_HOST:-mvcorrea@lnx}
-USER_DIR=/home/mvcorrea
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 sshx(){ timeout "${SSH_TIMEOUT:-120}" ssh -o BatchMode=yes "$HOST" "$@"; }
 
-cmd_build(){
-  ( cd "$REPO" && . scripts/autonomy/env.sh && cargo build --release -p pii-cli ) || return 1
-  ls -l "$(bin)" | awk '{print "built:", $5, "bytes", $6, $7, $8}'
-}
-
 bin(){
+  local p
   for p in /projects/_cache/targets/release/pii "$REPO"/target/release/pii; do
-    [ -x "$p" ] && { echo "$p"; return 0; }
+    [ -x "$p" ] && { printf '%s\n' "$p"; return 0; }
   done
   return 1
+}
+
+cmd_build(){
+  ( cd "$REPO" && . scripts/autonomy/env.sh && cargo build --release -p pii-cli ) || return 1
+  local b; b=$(bin) || return 1
+  echo "built: $(stat -c %s "$b") bytes, $(date -r "$b" -u +%H:%M:%SZ)"
+}
+
+cmd_verify(){
+  sshx 'export PII_RUNTIME_DIR=/run/user/1000/pii
+    echo "unit     : $(systemctl --user is-active pii.service) / $(systemctl --user is-enabled pii.service)"
+    echo "health   : $(~/.local/bin/pii health 2>&1 | head -1)"
+    echo "digest   : $(~/.local/bin/pii graph list 2>/dev/null | grep -i digest | head -1)"
+    echo "since    : $(systemctl --user show pii.service -p ActiveEnterTimestamp --value)"
+    echo "counters : $(grep -c "poll.failed" ~/.local/state/pii/pii.log 2>/dev/null || echo 0) poll failure(s), log $(stat -c %s ~/.local/state/pii/pii.log 2>/dev/null || echo 0) bytes"'
 }
 
 cmd_install(){
@@ -44,44 +59,69 @@ cmd_install(){
   cmd_verify
 }
 
-cmd_verify(){
-  sshx 'export PII_RUNTIME_DIR=/run/user/1000/pii
-    echo "unit     : $(systemctl --user is-active pii.service) / $(systemctl --user is-enabled pii.service)"
-    echo "health   : $(~/.local/bin/pii health 2>&1 | head -1)"
-    echo "digest   : $(~/.local/bin/pii graph list 2>/dev/null | grep -i digest | head -1)"
-    echo "since    : $(systemctl --user show pii.service -p ActiveEnterTimestamp --value)"
-    echo "errors   : $(grep -c "\"level\":\"error\"" ~/.local/state/pii/pii.log 2>/dev/null || echo 0) error line(s), $(grep -c "poll.failed" ~/.local/state/pii/pii.log 2>/dev/null || echo 0) poll failure(s)"'
-}
-
 cmd_channel(){
   local id=${1:?usage: pii.sh channel <channel-id>}
   sshx "set -a; . \$HOME/.local/pii/pii.env; set +a
     printf 'header = \"Authorization: Bot %s\"\n' \"\$PII_DISCORD_TOKEN\" > /tmp/.pii-cfg; chmod 600 /tmp/.pii-cfg
-    curl -sS --config /tmp/.pii-cfg 'https://discord.com/api/v10/channels/$id' > /tmp/.pii-chan.json 2>/dev/null
+    body=\$(curl -sS --config /tmp/.pii-cfg 'https://discord.com/api/v10/channels/$id' 2>/dev/null)
     rm -f /tmp/.pii-cfg
-    python3 -c \"import json;d=json.load(open('/tmp/.pii-chan.json'));print('name:',d.get('name'),'| type:',d.get('type'),'(0 text, 15 forum)','| guild:',d.get('guild_id'))\" 2>/dev/null || echo 'could not read that channel'"
+    printf '%s' \"\$body\" | tr ',' '\n' | grep -E '\"(name|type|guild_id)\"' | head -3"
 }
 
 cmd_daemons(){
-  echo "-- host:"
-  sshx 'ps -eo pid,etime,rss,cmd | grep "[.]local/bin/pii daemon" | cut -c1-120'
+  echo "-- host side:"
+  sshx 'ps -eo pid,etime,rss,cmd | grep "[.]local/bin/pii daemon" | cut -c1-110'
   echo "-- container hermes:"
-  ( ps -eo pid,etime,rss,cmd | grep "[p]ii daemon" | cut -c1-120 ) || echo "   none"
+  ps -eo pid,etime,rss,cmd | grep "[p]ii daemon" | cut -c1-110 || echo "   none"
+  echo "   (a container process also appears on the host with a different pid — that is one daemon, not two)"
 }
 
 cmd_logs(){
   echo "-- production:"
-  sshx 'ls -l ~/.local/state/pii/pii.log* 2>/dev/null | awk "{print \$5, \$9}"; echo "   rotation: $(grep -o -- "--log-rotate-bytes [0-9]*" <(systemctl --user cat pii.service) | head -1) $(grep -o -- "--log-keep-files [0-9]*" <(systemctl --user cat pii.service) | head -1)"'
-  echo "-- loop (repo):"
-  ( cd "$REPO" && ls _tmp/autonomy/logs/*.log 2>/dev/null | wc -l | sed 's/^/   files: /' )
+  sshx 'ls -l ~/.local/state/pii/pii.log* 2>/dev/null | awk "{print \$5, \$9}"; systemctl --user cat pii.service | grep -o -- "--log-rotate-bytes [0-9]*\|--log-keep-files [0-9]*" | sed "s/^/   /"'
+  echo "-- loop:"
+  printf '   files: %s\n' "$(find "$REPO/_tmp/autonomy/logs" -maxdepth 1 -name '*.log' 2>/dev/null | wc -l)"
+}
+
+cmd_dev_silence(){
+  local cfg=/root/.config/pii/pii.toml
+  [ -f "$cfg" ] || { echo "dev-silence: no $cfg" >&2; return 2; }
+  cp -p "$cfg" "$cfg.before-dev-silence-$(date +%s)"
+  # comment every non-comment line of the [[channel]] block, and nothing else
+  awk '
+    /^\[\[channel\]\]/ { inside=1; print "# dev: no production channel poll  " $0; n++; next }
+    /^\[/ { inside=0 }
+    inside && $0 !~ /^[[:space:]]*#/ && $0 !~ /^[[:space:]]*$/ { print "# dev: no production channel poll  " $0; n++; next }
+    { print }
+    END { if (n) printf("commented %d line(s)\n", n) > "/dev/stderr" }
+  ' "$cfg" > "$cfg.new" && mv "$cfg.new" "$cfg" && chmod 600 "$cfg"
+  pkill -f '/root/.local/bin/pii daemon' 2>/dev/null; sleep 1
+  ( setsid nohup /root/.local/bin/pii daemon --foreground --config "$cfg" \
+      --store /root/.local/state/pii/store.redb --workspace /root/.local/state/pii \
+      --log-file /root/.local/state/pii/pii.log --log-rotate-bytes 10485760 --log-keep-files 5 \
+      >/dev/null 2>&1 & )
+  sleep 4
+  echo "dev daemon processes: $(pgrep -fc '/root/.local/bin/pii daemon' || echo 0)"
+  echo "dev channel blocks  : $(grep -c '^\[\[channel\]\]' "$cfg" || true)"
+  echo "dev commented lines : $(grep -c '^# dev: no production channel poll' "$cfg" || true)"
+}
+
+# Empty a FORUM channel: every post is a thread, so emptying the channel means deleting threads. The work is done
+# by deploy/tools/discord-forum-empty.py, run on the host so the token never leaves it. Without --yes it only lists.
+cmd_channel_empty(){
+  local forum=${1:?usage: pii.sh channel-empty <forum-id> [--yes]}
+  local yes=""; [ "${2:-}" = "--yes" ] && yes="--yes"
+  timeout 300 ssh -o BatchMode=yes "$HOST" "python3 - --forum $forum $yes" < "$REPO/deploy/tools/discord-forum-empty.py"
 }
 
 case "${1:-}" in
-  build)   cmd_build ;;
-  install) cmd_install ;;
-  verify)  cmd_verify ;;
-  channel) shift; cmd_channel "$@" ;;
-  daemons) cmd_daemons ;;
-  logs)    cmd_logs ;;
-  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  build)       cmd_build ;;
+  install)     cmd_install ;;
+  verify)      cmd_verify ;;
+  channel)     shift; cmd_channel "$@" ;;
+  daemons)     cmd_daemons ;;
+  logs)        cmd_logs ;;
+  dev-silence) cmd_dev_silence ;;
+  channel-empty) shift; cmd_channel_empty "$@" ;;
+  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
