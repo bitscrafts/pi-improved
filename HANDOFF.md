@@ -1,5 +1,50 @@
 # Pii — Session Handoff
 
+## 2026-11-02T21:2xZ — PRODUCTION: the host runs 177e4efbcf07 and the conformance probe is 5/5
+
+Headline: the path to production is closed. The host probe was **0 passed / 5 failed** all day; it now reads
+**5 passed, 0 failed**, with the deployed revision gated and stamped.
+
+- **Deployed (three installs, each gated and carded).** `e4bb787ed0fd` took the probe 0/5 → 3/5; `e2e6c765cf93` →
+  4/5; `177e4efbcf07` → **5/5**. Cards under `_tmp/deploy/card-*.json`; the installer only upgrades now (an install
+  onto a host that already had stores was refused by design — R2 protected a copy that does not happen without
+  `--seed-stores`, so an upgrade path was added with a control that still refuses the overwrite).
+- **The five checks.** config paths, durable stores (7 on disk, channel+timer in `~/.local/state/pii/durable`),
+  `ssh lnx pii health` from a plain shell, no failures since the last start, no false start alarm.
+- **Three product defects fixed by measurement, not guess.** (a) `daemon-start-not-ready` fired on EVERY clean
+  restart: one boot writes `daemon.starting`, then the sandbox mark, then `daemon.started`, and the rule read the
+  second mark as a start that never served — the host log dropped 14 incidents → 4 under the same rule. (b) a
+  cancelled run was reported as `run-stalled` (`run.cancelled` was not in the terminal set) → 4 → 3. (c) the
+  durable stores default to `$HOME/.local/state/pii/durable`, so a second daemon hangs instead of refusing —
+  **spec 344** makes that refusal loud; the worker is on it.
+- **Two checks were reading the archive, not the daemon.** `durable stores` failed on a nine-day-old `approval.redb`
+  left in `/run/user/1000/pii` by a previous install; `no false start alarm` counted alarms raised at 02:07 by a
+  binary nobody was running. Both now measure from where the last start began, or from what the daemon reports,
+  with controls proving a FRESH alarm and a LIVE tmpfs store still fail. 21 checks, 0 FAIL.
+- **Host note for the operator.** `/usr/local/bin/pii` was a root-owned binary from 02:05 that shadowed the
+  deployment for every non-login shell (it looked for the pre-339 socket). It is kept as
+  `/usr/local/bin/pii.stale-20261102T170520Z` and `/usr/local/bin/pii` is now a symlink to
+  `/home/mvcorrea/.local/bin/pii`.
+- **The expensive mistake, recorded.** 68 GB of clone targets and gate exports in `/tmp` (the ROOT volume) took
+  `/` to 0 bytes; cargo then failed to write `.rmeta`, daemons failed to create stores, and every daemon-waiting
+  test timed out — two hours were spent diagnosing "test isolation" that was a full disk, and the poisoned shared
+  target then linked a stale `pii-tools`/`pii-abi` for hours. Check `df /` before believing a test. Never place a
+  gate target or clone under `/tmp`; the doc now says so.
+- **Test harness, same class as the above.** Daemon-spawning tests take a slot before they spawn (re-entrant per
+  process, stolen after 180 s) and own their state via `PII_STATE_DIR`; `health_drift` went from 3-of-5 failing
+  after 90 s to 5 passed in 0.20 s. `channel_wiring` owns its state the same way.
+- **Composability, specified and queued, NOT built.** `specs/342-the-night-is-a-graph-in-pii.md` (the night is
+  `select → coder → judge → record` + `gate` + `post`, no new node kinds) and `specs/343-a-graph-includes-a-graph.md`
+  (include by name + sha256 pin, caps intersected, cycles refused) are committed; row 342 is in the plan.
+- **Open, in order:** the worker's 344 WIP is in the tree (`crates/pii-store/src/durable.rs`, `cmd_daemon.rs`,
+  `second_daemon_refuses.rs`, `pii-store/src/lib.rs`); three incidents remain in the host scan, all runs from
+  05:03 whose logs carry no terminal event at all — a question about the log, not the rule; 342/343 unimplemented;
+  the M3/M7 items in `_docs/06-research/opus-status-and-path-20261102.md` still stand.
+- **Gate discipline held:** every commit today was gated in a CLEAN CLONE (fresh-gate refuses a worktree), and the
+  card's verdict was filled only from a measured PASS. Nothing was committed on a red gate, and nothing was
+  deployed without a card.
+
+
 ## 2026-11-02T06:3xZ — rows 335 and 336 closed and verified independently; the host probe's two impossible criteria corrected
 
 State at the start of this tick: HEAD `8c36eff` · tree dirty with row 336's nine MQTT paths and **two cycles
