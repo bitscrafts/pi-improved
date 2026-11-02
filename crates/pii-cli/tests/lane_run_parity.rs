@@ -471,13 +471,17 @@ fn a_successful_run_has_no_quota_lines() {
 
 /// A fresh-gate export is a `git archive`: it carries no `.git`, and this comparison records what the lane
 /// does with one. The suite already treats that case explicitly (`client_can_prove_its_build` in
-/// health_drift): say so out loud rather than comparing two different machines.
+/// `health_drift`): say so out loud rather than comparing two different machines.
 fn export_without_git() -> bool {
     let has_git = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../.git")
         .exists();
     if !has_git {
-        eprintln!("SKIP the_recorded_ssh_sequence_equals_the_shells: export tree has no .git");
+        // Test binaries may print here; the suite reads the line as the explicit skip it is.
+        #[allow(clippy::print_stderr)]
+        {
+            eprintln!("SKIP the_recorded_ssh_sequence_equals_the_shells: export tree has no .git");
+        }
     }
     !has_git
 }
