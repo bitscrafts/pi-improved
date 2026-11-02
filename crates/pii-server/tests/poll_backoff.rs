@@ -68,6 +68,7 @@ fn setup(dir: &std::path::Path, channel: Arc<dyn Channel>) -> (Arc<Engine>, Arc<
             channel,
             poll_interval_ms: 10,
             graph: String::from("main"),
+            backoff: Arc::default(),
         },
     );
     let ctx = Arc::new(DaemonContext {

@@ -14,6 +14,7 @@ pub mod discord;
 pub mod matrix;
 pub mod mqtt;
 pub mod observe;
+pub mod poll;
 pub mod post;
 pub mod secret;
 pub mod telegram;

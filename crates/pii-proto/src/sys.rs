@@ -89,6 +89,9 @@ pub struct ChannelStatus {
     pub errors: u64,
     /// Last processed cursor.
     pub cursor: u64,
+    /// The `pii health` line while the channel is failing (spec 347).
+    #[serde(default)]
+    pub degraded: Option<String>,
 }
 
 /// Memory subsystem summary (F5.12).

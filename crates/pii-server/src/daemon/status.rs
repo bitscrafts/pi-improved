@@ -12,6 +12,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use pii_channels::Channel;
+use pii_channels::poll::PollBackoff;
 use pii_proto::sys::{ChannelStatus, ListenerStatus, MemoryStatus, StatusResult, WorkerStatus};
 
 /// One configured channel's runtime state.
@@ -22,6 +23,8 @@ pub struct ChannelRuntime {
     pub poll_interval_ms: u64,
     /// Graph run per inbound message (F6.5).
     pub graph: String,
+    /// The poll state the channel's loop keeps (spec 347): read by `pii health`.
+    pub backoff: Arc<Mutex<PollBackoff>>,
 }
 
 /// One `[[cron]]` entry, tracked so a finished run can be re-armed (F5.8).
@@ -88,6 +91,11 @@ impl pii_observe::Health for ChannelRuntime {
         if let Some(issue) = self.channel.health_issue() {
             h.state = pii_observe::State::Degraded;
             h.detail = Some(issue);
+        }
+        let outage = self.backoff.lock().outage();
+        if let Some(outage) = outage {
+            h.state = pii_observe::State::Degraded;
+            h.detail = Some(outage);
         }
         h
     }
@@ -170,6 +178,7 @@ impl DaemonContext {
                     kind: c.channel.kind().to_owned(),
                     errors: cursor.errors,
                     cursor: cursor.cursor,
+                    degraded: c.backoff.lock().health_line(c.channel.name()),
                 }
             })
             .collect();

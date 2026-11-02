@@ -146,6 +146,7 @@ impl Daemon {
                     channel,
                     poll_interval_ms: c.poll_interval_ms,
                     graph: c.graph.clone(),
+                    backoff: Arc::default(),
                 },
             );
         }
@@ -165,6 +166,7 @@ impl Daemon {
                     channel: conn,
                     poll_interval_ms: m.poll_interval_ms,
                     graph: m.graph.clone(),
+                    backoff: Arc::default(),
                 },
             );
         }

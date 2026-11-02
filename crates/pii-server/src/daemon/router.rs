@@ -14,6 +14,8 @@ use crate::daemon::status::DaemonContext;
 /// Spawns one polling task per configured channel (F6.5). Each task runs
 /// until aborted; a channel error is absorbed (F6.3, recorded on the
 /// channel cursor) and never kills the daemon.
+///
+/// The pacing and the state changes are `pii_channels::poll::run_loop` (spec 347).
 pub fn spawn_all(
     engine: &Arc<Engine>,
     ctx: &Arc<DaemonContext>,
@@ -21,51 +23,74 @@ pub fn spawn_all(
     ctx.channels
         .lock()
         .iter()
-        .map(|(n, c)| (n.clone(), c.poll_interval_ms, c.channel.kind().to_owned()))
-        .collect::<Vec<(String, u64, String)>>()
+        .map(|(n, c)| {
+            (
+                n.clone(),
+                c.poll_interval_ms,
+                c.channel.kind().to_owned(),
+                Arc::clone(&c.backoff),
+            )
+        })
+        .collect::<Vec<_>>()
         .into_iter()
-        .map(|(name, interval_ms, kind)| {
+        .map(|(name, interval_ms, kind, backoff)| {
             let engine = Arc::clone(engine);
             let ctx = Arc::clone(ctx);
             tokio::spawn(async move {
                 let interval = poll_interval_for(&kind, interval_ms);
-                let mut consecutive: u32 = 0;
-                loop {
-                    // `poll_once` is fully synchronous (the `Channel` trait
-                    // is blocking) and a channel poll may block on network
-                    // or file I/O for a long time. Run it on the blocking
-                    // thread pool so a slow poll never starves the async
-                    // executor's worker threads (TDD: poll must not starve
-                    // concurrent tokio tasks).
-                    let eng = Arc::clone(&engine);
-                    let ctx2 = Arc::clone(&ctx);
-                    let name2 = name.clone();
-                    let failure =
-                        tokio::task::spawn_blocking(move || poll_once(&eng, &ctx2, &name2))
-                            .await
-                            .ok()
-                            .and_then(Result::err);
-                    // Spec 194: the pause follows what the provider said, not the bare interval.
-                    consecutive = if failure.is_some() {
-                        consecutive.saturating_add(1)
-                    } else {
-                        0
-                    };
-                    let text = failure.map(|e| e.to_string());
-                    let pause = poll_pause(text.as_deref(), consecutive, interval);
-                    tokio::time::sleep(Duration::from_millis(pause)).await;
-                }
+                // `poll_once` is fully synchronous (the `Channel` trait
+                // is blocking) and a channel poll may block on network
+                // or file I/O for a long time. Run it on the blocking
+                // thread pool so a slow poll never starves the async
+                // executor's worker threads (TDD: poll must not starve
+                // concurrent tokio tasks).
+                pii_channels::poll::run_loop(
+                    interval,
+                    &backoff,
+                    || {
+                        let (eng, ctx2, name2) =
+                            (Arc::clone(&engine), Arc::clone(&ctx), name.clone());
+                        async move {
+                            tokio::task::spawn_blocking(move || poll_once(&eng, &ctx2, &name2))
+                                .await
+                                .unwrap_or(Ok(()))
+                        }
+                    },
+                    |ms| tokio::time::sleep(Duration::from_millis(ms)),
+                    |change, state| report_change(&engine, &name, change, state),
+                )
+                .await;
             })
         })
         .collect()
 }
 
-/// The longest the poll loop ever sleeps between polls (spec 194).
-const MAX_POLL_PAUSE_MS: u64 = 300_000;
+/// The daemon's record of a channel's state change (spec 347): one line when it starts failing and one when it
+/// answers again, never one per attempt.
+fn report_change(
+    engine: &Arc<Engine>,
+    name: &str,
+    change: pii_channels::poll::Change,
+    state: &pii_channels::poll::PollBackoff,
+) {
+    let (code, level) = match change {
+        pii_channels::poll::Change::Degraded => (
+            pii_observe::names::CHANNEL_DEGRADED,
+            pii_observe::Level::Warn,
+        ),
+        pii_channels::poll::Change::Recovered => (
+            pii_observe::names::CHANNEL_RECOVERED,
+            pii_observe::Level::Info,
+        ),
+    };
+    engine.log().event(
+        &pii_observe::Event::new("channel", level, code)
+            .field("channel", name)
+            .field("error", state.last_error().unwrap_or_default())
+            .field("failures", state.failures().to_string()),
+    );
+}
 
-/// How long the loop sleeps after a poll (spec 194): the interval after a success
-/// (`err_text` `None`); after a failure, the larger of the interval and the provider's
-/// `retry_after`, else `interval * 2^min(consecutive-1, 4)`; never above 300 s.
 /// The shortest pause a channel may poll at.
 ///
 /// A test channel may poll at 10 ms; Discord may not. Its read route allows about five requests per five
@@ -79,22 +104,6 @@ pub(crate) fn poll_interval_for(kind: &str, configured_ms: u64) -> u64 {
     } else {
         configured_ms.max(10)
     }
-}
-
-pub(crate) fn poll_pause(err_text: Option<&str>, consecutive: u32, interval_ms: u64) -> u64 {
-    let Some(text) = err_text else {
-        return interval_ms.min(MAX_POLL_PAUSE_MS);
-    };
-    let asked = pii_channels::retry_after_ms(&pii_abi::PiiError::Unavailable(text.to_owned()));
-    // Grow with consecutive failures EITHER WAY. Measured 2026-11-02: with retry_after present the exponential
-    // branch was bypassed entirely, so a provider that kept answering 429 with retry_after 0.3 got the same pause
-    // back forever — the loop settled into a permanent 429 and read nothing. A named pause is a floor, not the
-    // whole answer; a repeated refusal must be answered with a longer wait than the one before it.
-    let factor = 1u64 << consecutive.saturating_sub(1).min(4);
-    let base = asked.unwrap_or(interval_ms);
-    interval_ms
-        .max(base.saturating_mul(factor))
-        .min(MAX_POLL_PAUSE_MS)
 }
 
 pub(crate) fn channel_ctx(
@@ -238,7 +247,8 @@ pub fn reply(ctx: &Arc<DaemonContext>, channel: &str, chat: &str, text: &str) {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::{channel_ctx, poll_pause};
+    use super::channel_ctx;
+    use pii_channels::poll::pause_ms as poll_pause;
 
     /// Phase 5.0 D2: the channel fs scope is `<channels_scope>/<name>`,
     /// derived from the daemon's runtime dir — never a hardcoded literal.
@@ -305,7 +315,7 @@ mod tests {
 
     #[test]
     fn an_error_without_retry_after_uses_the_capped_backoff() {
-        let want = [1000, 2000, 4000, 8000, 16000, 16000];
+        let want = [1000, 2000, 4000, 8000, 16000, 32000];
         for (i, w) in want.iter().enumerate() {
             let c = u32::try_from(i).unwrap() + 1;
             assert_eq!(poll_pause(Some("unavailable: boom"), c, 1000), *w, "c={c}");
@@ -319,7 +329,7 @@ mod tests {
 
     #[test]
     fn a_success_returns_to_the_interval() {
-        assert_eq!(poll_pause(Some("x"), 7, 1200), 16 * 1200);
+        assert_eq!(poll_pause(Some("x"), 7, 1200), 64 * 1000);
         assert_eq!(poll_pause(None, 0, 1200), 1200);
     }
 
@@ -422,6 +432,7 @@ mod tests {
                 channel,
                 poll_interval_ms: 10,
                 graph: String::from("main"),
+                backoff: Arc::default(),
             },
         );
         Arc::new(crate::daemon::status::DaemonContext {

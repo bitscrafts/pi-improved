@@ -122,6 +122,10 @@ pub const CRON_FIRED: &str = "cron.fired";
 pub const CHANNEL_RUN_REFUSED: &str = "channel.run.refused";
 /// Event: a channel poll failed.
 pub const CHANNEL_POLL_FAILED: &str = "channel.poll.failed";
+/// Event: a channel began failing (spec 347): one line per outage, not per attempt.
+pub const CHANNEL_DEGRADED: &str = "channel.degraded";
+/// Event: a failing channel answered again (spec 347).
+pub const CHANNEL_RECOVERED: &str = "channel.recovered";
 /// Event: a channel send failed.
 pub const CHANNEL_SEND_FAILED: &str = "channel.send.failed";
 /// Event: a channel rejected a credential (an inbound request without the
@@ -455,6 +459,8 @@ pub const ALL: &[&str] = &[
     CRON_FIRED,
     CHANNEL_RUN_REFUSED,
     CHANNEL_POLL_FAILED,
+    CHANNEL_DEGRADED,
+    CHANNEL_RECOVERED,
     CHANNEL_SEND_FAILED,
     CHANNEL_AUTH_REJECTED,
     CHANNEL_EGRESS_DENIED,

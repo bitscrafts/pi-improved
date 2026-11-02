@@ -45,6 +45,10 @@ pub struct RuntimeIncident {
     pub opened_at: i64,
     /// The log file it was read from.
     pub source: String,
+    /// Unix seconds at which the condition stopped being true, when the log says so (spec 347): a
+    /// `channel.recovered` for the same channel after the last refusal. `None` means it is still failing, or
+    /// the log never said it recovered — which is not the same claim and must not be collapsed into it.
+    pub resolved_at: Option<i64>,
     /// What the log says that supports the verdict, e.g. the error of a lost trajectory. Empty when none.
     pub evidence: String,
 }
@@ -157,6 +161,8 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
     let files = paths.iter().map(|p| p.display().to_string()).collect();
     let source = log.display().to_string();
     let mk = |fp: String, count: u64, first: i64, last: i64, opened: i64| RuntimeIncident {
+        // set by the refusal branch below when the log says the outage ended
+        resolved_at: None,
         fingerprint: fp,
         count,
         first_seen: first,
@@ -170,6 +176,8 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
     // Run id -> (time, error) of its first failed trajectory write (spec 346).
     let mut lost: BTreeMap<String, (i64, String)> = BTreeMap::new();
     let mut refusals: BTreeMap<&'static str, Vec<i64>> = BTreeMap::new();
+    // Spec 347 R3: when the log says a channel answered again, it says when the outage ended — per channel.
+    let mut recovered: BTreeMap<String, i64> = BTreeMap::new();
     let mut firings: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     let mut log_end = i64::MIN;
     let mut starting: Option<i64> = None;
@@ -214,6 +222,11 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
             running = None;
             starting = None;
             starting_kind = None;
+        } else if kind == pii_observe::names::CHANNEL_RECOVERED {
+            // Spec 347 R3: the channel answered again, so the outage that refusal recorded has ended.
+            if let Some(channel) = field_of(line, "channel") {
+                recovered.insert(channel, ts);
+            }
         } else if let Some(r) = REFUSALS.iter().find(|r| **r == kind) {
             refusals.entry(r).or_default().push(ts);
         } else if kind == pii_observe::names::CRON_FIRED
@@ -270,13 +283,12 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
     }));
     for (kind, ts) in refusals {
         for (first, last, n, opened) in clusters(ts, cfg) {
-            out.push(mk(
-                format!("refusal-repeated:{kind}"),
-                n,
-                first,
-                last,
-                opened,
-            ));
+            let mut incident = mk(format!("refusal-repeated:{kind}"), n, first, last, opened);
+            // Spec 347 R3: a recovery at or after the last refusal resolves it. Log times have one-second
+            // resolution, so a recovery in the same second as the last refusal is after it; a recovery
+            // strictly before the refusal does not resolve it: that outage ended before this one started.
+            incident.resolved_at = recovered.values().copied().filter(|t| *t >= last).max();
+            out.push(incident);
         }
     }
     // Spec 193: the assertion is `runs_per_occurrence == 1`, so a second firing in a window is the defect.

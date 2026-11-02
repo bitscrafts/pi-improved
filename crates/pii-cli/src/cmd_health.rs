@@ -55,6 +55,19 @@ fn txt(v: &serde_json::Value, ptr: &str) -> String {
 }
 
 /// Renders the identity-bearing parts of a `sys.status` payload as text.
+/// Spec 347: a channel that is failing now is named here, with its error, count and last attempt.
+fn push_degraded(out: &mut String, v: &serde_json::Value) {
+    for line in v
+        .pointer("/channels")
+        .and_then(|c| c.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c.get("degraded").and_then(|d| d.as_str()))
+    {
+        let _ = writeln!(out, "{line}");
+    }
+}
+
 fn render(v: &serde_json::Value) -> String {
     let mut out = format!(
         "pii {} ({}, {})\nclient: {REVISION}\nconfig: {} sha256={}\nstores:\n",
@@ -118,6 +131,7 @@ fn render(v: &serde_json::Value) -> String {
             );
         }
     }
+    push_degraded(&mut out, v);
     out.push_str("counts:\n");
     for (k, _) in v
         .pointer("/counts")

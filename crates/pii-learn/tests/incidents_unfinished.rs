@@ -109,3 +109,38 @@ fn the_0503_window_yields_its_verdicts() {
         .unwrap_or_else(|| panic!("{inc:?}"));
     assert_eq!(refusal.count, 731, "{refusal:?}");
 }
+
+#[test]
+fn a_recovery_after_the_last_refusal_resolves_the_incident() {
+    // Spec 347 R3: `last_seen` says when it was failing; `resolved_at` says the log then saw it answer again.
+    // The two are different claims, and a reader must be able to tell an outage that ended from one that did not.
+    let dir = tempfile::Builder::new()
+        .prefix("recovered-")
+        .tempdir()
+        .expect("tempdir");
+    let log = dir.path().join("daemon.log");
+    let mut lines = vec![
+        r#"{"fields":{"model":"x","pid":1,"socket":"/run/x"},"kind":"daemon.started","level":"info","span":null,"subsystem":"daemon","ts_ms":1_793_660_000_000}"#.to_owned(),
+    ];
+    for i in 0..3 {
+        lines.push(format!(
+            r#"{{"fields":{{"channel":"discord","error":"Connection reset by peer"}},"kind":"channel.poll.failed","level":"warn","span":null,"subsystem":"channel","ts_ms":{}}}"#,
+            1_793_660_001_000_i64 + i64::from(i) * 1000
+        ));
+    }
+    lines.push(
+        r#"{"fields":{"channel":"discord","count":"3"},"kind":"channel.recovered","level":"info","span":null,"subsystem":"channel","ts_ms":1_793_660_060_000}"#.to_owned(),
+    );
+    std::fs::write(&log, lines.join("\n") + "\n").expect("write log");
+    let cfg = IncidentConfig::default();
+    let inc = scan_runtime_log(&log, &cfg).expect("scan");
+    let hit = inc
+        .iter()
+        .find(|i| i.fingerprint == "refusal-repeated:channel.poll.failed")
+        .unwrap_or_else(|| panic!("no refusal incident: {inc:?}"));
+    assert_eq!(
+        hit.resolved_at,
+        Some(1_793_660_060),
+        "the recovery at 1793660060Z must resolve it: {hit:?}"
+    );
+}

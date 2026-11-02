@@ -307,6 +307,7 @@ fn status_result_roundtrips() {
             kind: "discord".to_string(),
             errors: 0,
             cursor: 99,
+            degraded: None,
         }],
         memory: MemoryStatus { docs: 12 },
         ..StatusResult::default()
