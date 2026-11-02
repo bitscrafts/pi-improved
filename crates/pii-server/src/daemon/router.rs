@@ -86,10 +86,15 @@ pub(crate) fn poll_pause(err_text: Option<&str>, consecutive: u32, interval_ms: 
         return interval_ms.min(MAX_POLL_PAUSE_MS);
     };
     let asked = pii_channels::retry_after_ms(&pii_abi::PiiError::Unavailable(text.to_owned()));
-    let wait = asked.unwrap_or_else(|| {
-        interval_ms.saturating_mul(1u64 << consecutive.saturating_sub(1).min(4))
-    });
-    interval_ms.max(wait).min(MAX_POLL_PAUSE_MS)
+    // Grow with consecutive failures EITHER WAY. Measured 2026-11-02: with retry_after present the exponential
+    // branch was bypassed entirely, so a provider that kept answering 429 with retry_after 0.3 got the same pause
+    // back forever — the loop settled into a permanent 429 and read nothing. A named pause is a floor, not the
+    // whole answer; a repeated refusal must be answered with a longer wait than the one before it.
+    let factor = 1u64 << consecutive.saturating_sub(1).min(4);
+    let base = asked.unwrap_or(interval_ms);
+    interval_ms
+        .max(base.saturating_mul(factor))
+        .min(MAX_POLL_PAUSE_MS)
 }
 
 pub(crate) fn channel_ctx(
@@ -336,6 +341,17 @@ mod tests {
         assert_eq!(super::poll_interval_for("cli", 20), 20);
         assert_eq!(super::poll_interval_for("mqtt", 100), 100);
         assert_eq!(super::poll_interval_for("webhook", 1), 10);
+    }
+
+    #[test]
+    fn a_repeating_429_grows_the_pause_instead_of_repeating_it() {
+        // retry_after 0.3 s against a 1500 ms interval: the first answer is the interval, and every repeat
+        // after it must wait longer, so a provider that keeps refusing is not answered in kind forever.
+        let t = r#"discord: poll status 429: {"retry_after":0.3}"#;
+        let got: Vec<u64> = (1..=5).map(|c| poll_pause(Some(t), c, 1_500)).collect();
+        assert_eq!(got, vec![1_500, 1_500, 1_500, 2_400, 4_800], "{got:?}");
+        // CONTROL: the very same text does NOT slow a first failure below the interval
+        assert_eq!(poll_pause(Some(t), 1, 1_500), 1_500);
     }
 
     #[test]
