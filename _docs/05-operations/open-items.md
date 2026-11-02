@@ -215,3 +215,31 @@ Two fixes, both verified:
 **The lesson worth keeping:** a gate that measures latency is a gauge of the machine as much as of the code, and this
 one had a feedback loop into its own input. Before believing a red on a latency/composite assertion, check the volume
 and the export count — and read `df` before reading the diff.
+
+### 12. CLOSED 2026-11-02 — `leftover.sh clean` could put a person's staged edit only in a stash
+
+`n1` in the register read "Opus's `leftover.sh` whole-tree stash hazard — it can swallow uncommitted interactive
+edits". The ownership rule from that review (one row must name **every** dirty path) had already closed the
+"swallow someone else's work" half. Reading the code found a second, narrower hole nobody had named: `save()`
+captured `git diff` and untracked files, and **not the index** — while `git stash push` carries the index. A staged
+edit therefore existed only in a stash commit, and `clean()` never called `save()` at all.
+
+Fixed in `a3aeceb` (spec 334): `-staged.patch` from `git diff --cached`; `clean()` saves **before** it stashes and
+refuses to stash when the save failed; `still_dirty` no longer reports the leftovers dir as unfinished work; every
+refusal ends with `NOT-CLEANED`. The guard is a control — the same assertions against the script from git fail
+three of six. Two rows of `leftover-test.sh` were already red at HEAD before this (they called `clean()` on a tree
+no row owned); they now hand it an owning row.
+
+**Re-verify:** `bash scripts/autonomy/tests/leftover-saves-the-index.test.sh` (6 ok) and
+`PII_LEFTOVER_SH=<old script> bash scripts/autonomy/tests/leftover-saves-the-index.test.sh` (3 FAIL).
+
+### 13. The digest answers "now", and that needed a graph without a timer
+
+The standing decision is that the digest is asked for, not scheduled. Asking `discord-digest` to run answers
+`suspended` — its entry node is a `timer`, so it cannot answer *now* by construction (measured: `in_ms ≈ 44.2M`).
+`graphs/digest-now.toml` is the same two reads and the same post with the timer removed; `pii run start digest-now
+--input '{"to":"1566652720214188134"}'` returned `succeeded` in 1.6 s and the log holds
+`{"kind":"channel.posted","destination":"1566652720214188134","bytes":81,"run":"r000000004578"}`.
+
+**What is still a clock, not a command:** M6 needs one real incident inside a week; M5's "≥7 posts over 7 days" is
+superseded by the on-demand decision and replaced by "a digest posts when asked", which the line above satisfies.

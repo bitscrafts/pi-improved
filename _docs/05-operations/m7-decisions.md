@@ -13,6 +13,7 @@ service matches the word here; "postponed" means nobody touches it and it is not
 | 6 | local `ollama.service` (on lnx) | **retire** | operator (AGENTS.md), reaffirmed 2026-11-02 | nothing new may be wired to a local ollama; disabling the host service is a deployment step for the operator, not an agent action |
 | — | `mqtt` channel | **IN the production path** | operator, 2026-11-02 | must be exercised: its own poll interval and its own gate row (see `gates.sh`) |
 | — | Discord | **the surface, now** | operator, 2026-11-02 | `pii` forum, grouped by topic; see `discord-topics.md` |
+| — | embedding a broker in pii (`rumqttd`/`mqttd` as a plugin) | **END OF THE QUEUE** | operator, 2026-11-02 | pii stays an MQTT **client**; devices keep talking to mosquitto, which outlives a pii restart. Revisit only after the rest of the path is done, and only with a measured need. What exists today does not need it: `pii mqtt ls/sub/pub/send` and the model's `mqtt` tool both work over `rumqttc` |
 
 ## What "postponed" is not
 
