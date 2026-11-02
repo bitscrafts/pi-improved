@@ -57,6 +57,16 @@ if [ "$dirty" -gt 0 ]; then
 fi
 : >"$STUCK"
 
+# 3b. retire rows that will never move: needs-review with three attempts spent. The dispatcher skips them anyway;
+# leaving them is how a queue looks busy while nothing advances.
+python3 scripts/autonomy/state.py list 2>/dev/null \
+  | awk -F'\t' '$4=="needs-review" && $5+0 >= 3 {print $1}' \
+  | while read -r rid; do
+      [ -n "$rid" ] || continue
+      python3 scripts/autonomy/state.py set "$rid" status=skipped last="watch: needs-review after 3 attempts, retired so the queue advances" >/dev/null 2>&1 \
+        && say "row $rid was stuck at 3 attempts: retired"
+    done
+
 # 4/5. the head row
 head=$(python3 scripts/autonomy/state.py pick 2>/dev/null | head -1)
 case "$head" in

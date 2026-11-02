@@ -25,12 +25,22 @@ esac
 mapfile -t PATHS < <(git status --porcelain -z | while IFS= read -r -d '' rec; do printf '%s\n' "${rec:3}"; done)
 [ "${#PATHS[@]}" -gt 0 ] || { echo "CLEAN nothing to move"; exit 0; }
 
-# a path named by a dispatchable row is that row's work: refuse rather than move it
+# A dirty path that a dispatchable row DECLARES is that row's work: refuse rather than move it. Being a valid row
+# is not enough — every row in the queue is valid, and refusing on that basis would refuse always (measured
+# 2026-11-02: the first version did exactly that, because the head row was a different row's work entirely).
 owner=$(python3 scripts/autonomy/state.py pick 2>/dev/null | head -1)
 if [ -n "$owner" ] && [ "$owner" != "NONE" ]; then
   rid=${owner%%$'\t'*}
-  if python3 scripts/autonomy/row-paths.py check "$rid" >/dev/null 2>&1; then
-    echo "REFUSED: row $rid is dispatchable and owns this tree — its work is not garbage"
+  want=$(awk -F'\t' -v id="$rid" '$1==id {print $6; exit}' scripts/autonomy/plan.tsv)
+  hit=""
+  IFS=';' read -ra declared <<<"$want"
+  for p in "${PATHS[@]}"; do
+    for d in "${declared[@]}"; do
+      [ -n "$d" ] && [ "$p" = "$d" ] && hit=$p
+    done
+  done
+  if [ -n "$hit" ]; then
+    echo "REFUSED: row $rid declares $hit, which is dirty — that is its work, not garbage"
     exit 3
   fi
 fi
