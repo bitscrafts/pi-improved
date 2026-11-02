@@ -69,7 +69,7 @@ one.
 ## Exit Criteria
 
 - [ ] `bash scripts/checks/tests/incident-cases.test.sh`
-- [ ] `bash scripts/autonomy/incident-cases.sh --dry-run 2>&1 | grep -qv 'no new cases' || true` (a real run must not fail)
+- [ ] `bash scripts/autonomy/incident-cases.sh --dry-run`
 - [ ] `bash scripts/checks/gates.sh`
 
 ## Guardrails
