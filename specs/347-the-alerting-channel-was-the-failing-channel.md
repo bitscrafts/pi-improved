@@ -49,16 +49,17 @@ without backoff hammering a channel that is already unwell.
 
 | Test (`crates/pii-channels/tests/poll_backoff.rs`) | Assertion |
 |---|---|
-| `a_failing_poll_backs_off` | 100 failures in 60 s of virtual time → ≤ 20 attempts |
+| `a_failing_poll_backs_off` | the REAL poll loop attempts ≤ 20 times in 60 s while failing, not a standalone struct |
 | `CONTROL_a_healthy_poll_keeps_its_cadence` | a poll that succeeds every time keeps the base interval |
 | `a_success_after_failures_resets_the_interval` | after a success the next interval is the base again |
-| `health_reports_a_degraded_channel` | `pii health` names the channel, the error and the last attempt |
+| `health_reports_a_degraded_channel` | the REAL `pii health` output names the channel, the error and the last attempt — run against a daemon whose channel fails, not against a helper |
 | `the_state_change_is_logged_once_not_per_attempt` | one `channel.degraded` line for the outage, one `channel.recovered` |
 | `the_incident_carries_resolved_at_after_recovery` | `last_seen` set, then `resolved_at` once a poll succeeds |
 
 ## Exit Criteria
 
 - [ ] `cargo test -q -p pii-channels --test poll_backoff 2>&1 | grep -q '6 passed'`
+- [ ] `[ "$(grep -rn 'PollBackoff' --include='*.rs' crates/pii-channels/src crates/pii-server/src | grep -vc '/poll.rs:')" -ge 1 ]`
 - [ ] `bash scripts/checks/gates.sh`
 
 ## Guardrails
@@ -76,4 +77,20 @@ without backoff hammering a channel that is already unwell.
 - `crates/pii-channels/src/poll.rs`
 - `crates/pii-channels/tests/poll_backoff.rs`
 - `crates/pii-cli/src/cmd_health.rs`
+- `crates/pii-server/src/daemon/channels.rs`
 - `crates/pii-learn/src/incident_runtime.rs`
+
+## Closure
+
+**Not done — the first attempt built a library nothing calls (2026-11-02).** Measured: `PollBackoff` and
+`health_line` were defined in `crates/pii-channels/src/poll.rs` with six passing tests, and `grep -rn PollBackoff
+--include='*.rs' crates | grep -v poll_backoff.rs` returned only its own definition. Nothing in the poll loop used
+the backoff, and `pii health` did not report the channel, so both requirements had zero effect on the product while
+every test was green.
+
+This is the defect AGENTS.md §0b names: a check that passes while the live path is broken. The attempt is kept at
+`_trash/347-unwired-20261102T224315Z` as the starting point; the spec now requires each row of its contract to be
+proven THROUGH the running path — the poller's own attempts and the daemon's own `health` answer.
+
+The acceptance test must fail if the wiring is removed: that is the only way to tell a working backoff from a
+well-tested struct.
