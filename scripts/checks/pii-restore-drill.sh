@@ -30,6 +30,7 @@ echo "drill: restoring $SRC into $SCRATCH"
 # 1. restore, then every file matches the manifest
 fail=0
 while IFS=$'\t' read -r rel bytes sha; do
+  mkdir -p "$SCRATCH/$(dirname "$rel")" || { echo "MISMATCH $rel: cannot create its directory" >&2; fail=1; continue; }
   cp "$SRC/$rel" "$SCRATCH/$rel" || { echo "MISMATCH $rel: cannot restore" >&2; fail=1; continue; }
   got=$(sha256sum "$SCRATCH/$rel" | cut -d' ' -f1)
   if [ "$got" = "$sha" ]; then

@@ -23,9 +23,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# A missing source is a refusal, never an empty backup.
-[ -d "$SOURCE" ] || { echo "refused: source $SOURCE is not a directory" >&2; exit 2; }
-NAMES=$(find "$SOURCE" -maxdepth 1 -type f -name '*.redb' -printf '%f\n' | sort)
+# A missing source is a refusal, never an empty backup. A dry run only reports: it names the refusal and exits 0.
+if [ ! -d "$SOURCE" ]; then
+  [ "$DRY" -eq 1 ] && { echo "plan: source $SOURCE is missing; a real run would refuse (exit 2)"; exit 0; }
+  echo "refused: source $SOURCE is not a directory" >&2
+  exit 2
+fi
+NAMES=$( { find "$SOURCE" -maxdepth 1 -type f -name '*.redb' -printf '%f\n'
+           find "$SOURCE/durable" -maxdepth 1 -type f -name '*.redb' -printf 'durable/%f\n' 2>/dev/null || true
+         } | sort )
 [ -n "$NAMES" ] || { echo "refused: no stores (*.redb) in $SOURCE" >&2; exit 2; }
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
@@ -51,6 +57,9 @@ mkdir -p "$ROOT" && mkdir "$PART" || { echo "refused: cannot create $PART" >&2; 
 : > "$PART/manifest.tsv"
 total=0
 for name in $NAMES; do
+  # `name` is a relative path (`store.redb` or `durable/channel.redb`), and the backup keeps that path so a restore
+  # puts each store back where the daemon expects it.
+  mkdir -p "$(dirname "$PART/$name")"
   cp "$SOURCE/$name" "$PART/$name" || { echo "FAIL copy $name" >&2; exit 1; }
   # Test hook: shorten a copy before it is verified, so the refusal can be shown.
   if [ "${PII_BACKUP_SHORTEN:-}" = "$name" ]; then

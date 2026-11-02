@@ -75,10 +75,12 @@ fi
 
 # 4. dry run prints the plan and writes nothing
 out=$(bash "$B" --source "$SRC" --root "$W/root4" --dry-run 2>&1); rc=$?
-if [ "$rc" -eq 0 ] && [ ! -e "$W/root4" ] && printf '%s' "$out" | grep -q 'store.redb'; then
+out2=$(bash "$B" --source "$W/nonexistent" --root "$W/root4" --dry-run 2>&1); rc2=$?
+if [ "$rc" -eq 0 ] && [ ! -e "$W/root4" ] && printf '%s' "$out" | grep -q 'store.redb' \
+   && [ "$rc2" -eq 0 ] && printf '%s' "$out2" | grep -q 'would refuse' && [ ! -e "$W/root4" ]; then
   pass "dry_run_writes_nothing"
 else
-  fail "dry_run_writes_nothing (rc=$rc)"
+  fail "dry_run_writes_nothing (rc=$rc rc2=$rc2)"
 fi
 
 # 5. a real backup of a real daemon's state restores into scratch and answers health with the same stores
@@ -120,6 +122,25 @@ if [ -d "$W/root7/_trash/20200101T000000Z" ] && [ ! -e "$W/root7/20200101T000000
   pass "retention_moves_an_old_backup_it_never_deletes"
 else
   fail "retention_moves_an_old_backup_it_never_deletes"
+fi
+
+# 8. SPEC 345: the durable stores are stores too. The daemon keeps `channel` and `timer` under `durable/`, and a
+# backup that only walks the top level omits them SILENTLY — the drill then confirms the omission, because it
+# verifies the manifest it was handed. Measured on the host 2026-11-02: five stores in the manifest where `pii
+# health` lists seven. This case fails on that script and passes on one that descends.
+junk_state "$W/state8"
+mkdir -p "$W/state8/durable"
+head -c 64 /dev/urandom > "$W/state8/durable/channel.redb" 2>/dev/null || printf 'channel-bytes' > "$W/state8/durable/channel.redb"
+head -c 64 /dev/urandom > "$W/state8/durable/timer.redb" 2>/dev/null || printf 'timer-bytes' > "$W/state8/durable/timer.redb"
+out=$(bash "$B" --source "$W/state8" --root "$W/root8" 2>&1); rc=$?
+dir=$(stamped "$W/root8")
+if [ "$rc" -eq 0 ] && [ -n "$dir" ] \
+   && grep -q '^durable/channel\.redb' "$dir/manifest.tsv" \
+   && grep -q '^durable/timer\.redb' "$dir/manifest.tsv" \
+   && manifest_matches "$dir" "$W/state8"; then
+  pass "durable_stores_are_copied"
+else
+  fail "durable_stores_are_copied (manifest: $(cut -f1 "$dir/manifest.tsv" 2>/dev/null | tr '\n' ' '))"
 fi
 
 echo "PII-BACKUP: $ok passed, $bad failed"
