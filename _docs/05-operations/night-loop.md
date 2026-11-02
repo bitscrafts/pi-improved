@@ -1,8 +1,12 @@
-# The night loop — fill the queue, drain it, review, refill
+# The night loop — how the night of 2026-11-02 was run, and where it must go
 
-Written 2026-11-02, during the first night it ran. This is the operating manual for "work the queue all night,
-put an Opus analysis at the end of each drain, and repeat until the deadline". Every mechanism named here exists
-in the repo and is exercised by a script that can be re-run.
+> **Status, 2026-11-02:** the engine described here does **not** live in this repo and must not. It is a generic tool
+> (`~/.hermes/skills/autonomous-ai-agents/night-loop`), driven by a registry in Hermes; pii supplies only data — its
+> plan, specs, state file and gate command. The night's own data (tranches, brief) sits in `~/.hermes/night/pii/`.
+> **pii's own answer is a graph** (`specs/342-the-night-is-a-graph-in-pii.md`): a timer node, a pick node, a worker
+> node, a gate node, a landing node, a review node and a post node, run and resumed by the daemon. Until that graph
+> exists, this document is the record of how the night was actually driven — useful as the specification the graph has
+> to satisfy, not as a description of this tree.
 
 ## What it is, in one paragraph
 
