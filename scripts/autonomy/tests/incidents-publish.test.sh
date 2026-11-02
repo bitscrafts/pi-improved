@@ -7,7 +7,16 @@
 set -uo pipefail
 cd "$(dirname "$0")/../../.." || exit 1
 P=scripts/autonomy/incidents-publish.sh
-OLD=${PII_PUBLISH_SH:-/root/.hermes/scripts/pii-incidents-discord.sh}
+# The control must not point at a LIVE path: the night this defect was fixed, that path became the fix, and the
+# control started comparing the new behaviour with itself. Prefer the real backup (evidence), fall back to the
+# in-repo copy of the same twenty lines, and say which one ran.
+OLD=$(ls -1t /projects/_trash/hermes-scripts-*/*.old-* 2>/dev/null | head -1)
+if [ -z "$OLD" ]; then
+  OLD=scripts/autonomy/tests/fixtures/publisher-before-340.sh
+  echo "note: no backup of the old publisher on this machine — the control runs the in-repo copy"
+else
+  echo "note: the control runs the real backup $(basename "$OLD")"
+fi
 ok=0; bad=0
 pass(){ ok=$((ok+1)); echo "ok   $1"; }
 fail(){ bad=$((bad+1)); echo "FAIL $1"; }
@@ -21,6 +30,14 @@ out=$(PII_INCIDENTS_MD="$W/absent.md" PII_INCIDENTS_SENT="$W/sent" bash "$P" 2>&
 [ "$rc" -eq 2 ] && pass "a missing record exits 2" || fail "a missing record exits 2 (rc=$rc)"
 printf '%s' "$out" | grep -q 'the incident record is missing at' && pass "and names the path" || fail "and names the path"
 printf '%s' "$out" | grep -q "$W/absent.md" && pass "with the path it looked for" || fail "with the path it looked for"
+
+# 1b. the complaint is throttled: loud once, silent but still rc=2 inside the window, loud again at zero
+out=$(PII_INCIDENTS_MD="$W/absent2.md" PII_INCIDENTS_SENT="$W/sent2" bash "$P" 2>&1); rc=$?
+printf '%s' "$out" | grep -q 'the incident record is missing' && pass "the first firing complains" || fail "the first firing complains"
+out=$(PII_INCIDENTS_MD="$W/absent2.md" PII_INCIDENTS_SENT="$W/sent2" bash "$P" 2>&1); rc=$?
+if [ "$rc" -eq 2 ] && [ -z "$out" ]; then pass "the second firing is quiet and still exits 2"; else fail "the second firing is quiet and still exits 2 (rc=$rc out=$out)"; fi
+out=$(PII_PUBLISH_QUIET_H=0 PII_INCIDENTS_MD="$W/absent2.md" PII_INCIDENTS_SENT="$W/sent2" bash "$P" 2>&1)
+printf '%s' "$out" | grep -q 'the incident record is missing' && pass "a zero window complains again" || fail "a zero window complains again"
 
 # 2. CONTROL: the old publisher is silent for the same missing path — that is the defect
 if [ -x "$OLD" ] || [ -f "$OLD" ]; then

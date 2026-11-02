@@ -19,8 +19,19 @@ MD=${PII_INCIDENTS_MD:-_tmp/autonomy/INCIDENTS.md}
 CUR=${PII_INCIDENTS_SENT:-_tmp/autonomy/.incidents-sent}
 PUB=${PII_PUBLISH_CMD:-}
 
+# A missing record is an ERROR, but it is not news every quarter hour: a `no_agent` job delivers its stdout on every
+# firing, so an unthrottled complaint becomes the noise it was written to replace. Loud once, then quiet until the
+# window turns — still exit 2, so the job's status stays visibly wrong.
 if [ ! -f "$MD" ]; then
-  echo "incidents-publish: the incident record is missing at $MD — the detector has never written one"
+  STAMP="${CUR}.missing"
+  QUIET_H=${PII_PUBLISH_QUIET_H:-24}
+  NOW=$(date -u +%s)
+  LAST=$(cat "$STAMP" 2>/dev/null || echo 0)
+  case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+  if [ "$QUIET_H" -eq 0 ] || [ $((NOW - LAST)) -ge $((QUIET_H * 3600)) ]; then
+    echo "incidents-publish: the incident record is missing at $MD — the detector has never written one"
+    mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$NOW" >"$STAMP"
+  fi
   exit 2
 fi
 

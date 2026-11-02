@@ -69,4 +69,5 @@ to apply it; it does not edit `~/.hermes` by itself. The old script is `mv`-d to
 - `specs/340-the-incident-publisher-lives-in-the-repo.md`
 - `scripts/autonomy/incidents-publish.sh`
 - `scripts/autonomy/tests/incidents-publish.test.sh`
+- `scripts/autonomy/tests/fixtures/publisher-before-340.sh`
 - `deploy/point-incidents-job.sh`
