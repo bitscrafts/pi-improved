@@ -23,6 +23,9 @@ fn pii(args: &[&str], rt: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", rt)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", rt)
         .env("PII_CONNECT_TIMEOUT_MS", "500")
         .output()
         .unwrap()
@@ -52,7 +55,7 @@ fn text(o: &Output) -> String {
 /// So the budget is now generous, and the failure is a DIAGNOSIS: it reports how long it waited, whether the child
 /// process is still alive, and the daemon's last output, which is the difference between "slow" and "stuck".
 fn until(what: &str, mut f: impl FnMut() -> bool) {
-    until_with(what, Duration::from_secs(90), &mut f)
+    until_with(what, Duration::from_secs(90), &mut f);
 }
 
 fn until_with(what: &str, budget: Duration, mut f: impl FnMut() -> bool) {
@@ -88,9 +91,13 @@ impl Drop for HeavyGuard {
 
 fn only_one_heavy_test_at_a_time() -> HeavyGuard {
     let path = std::env::temp_dir().join("pii-control-plane-heavy.lock");
-    let give_up = Instant::now() + Duration::from_secs(900);
+    let give_up = Instant::now() + Duration::from_mins(15);
     loop {
-        match std::fs::OpenOptions::new().create_new(true).write(true).open(&path) {
+        match std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+        {
             Ok(mut f) => {
                 use std::io::Write;
                 let _ = writeln!(f, "{}", std::process::id());
@@ -99,15 +106,16 @@ fn only_one_heavy_test_at_a_time() -> HeavyGuard {
             Err(e) => {
                 let stale = std::fs::metadata(&path)
                     .and_then(|m| m.modified())
-                    .map(|t| t.elapsed().map(|d| d.as_secs() > 900).unwrap_or(false))
-                    .unwrap_or(false);
+                    .is_ok_and(|t| t.elapsed().is_ok_and(|d| d.as_secs() > 900));
                 if stale {
                     let _ = std::fs::remove_file(&path);
                     continue;
                 }
-                if Instant::now() >= give_up {
-                    panic!("another heavy test held {path:?} for 900s ({e})");
-                }
+                assert!(
+                    Instant::now() < give_up,
+                    "another heavy test held {} for 900s ({e})",
+                    path.display()
+                );
                 std::thread::sleep(Duration::from_millis(200));
             }
         }
@@ -140,6 +148,9 @@ fn start_daemon(dir: &Path, sleep_ms: u64, turns: usize, env: &[(&str, &str)]) -
         .arg("--log-file")
         .arg(dir.join("daemon.log"))
         .env("PII_RUNTIME_DIR", dir)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", dir)
         // The operator's ~/.pii/pii.toml must not arm cron entries in this scratch store.
         .env("PII_CONFIG", dir.join("pii.toml"))
         .env("PII_MODEL", format!("scripted:{}", model.display()))
@@ -147,7 +158,7 @@ fn start_daemon(dir: &Path, sleep_ms: u64, turns: usize, env: &[(&str, &str)]) -
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let daemon = DaemonGuard::new(cmd.spawn().unwrap());
+    let daemon = daemon_guard::spawn(&mut cmd);
     until("the daemon to answer", || {
         pii(&["sys", "status"], dir).status.success()
     });
@@ -328,15 +339,16 @@ fn a_kill_cancel_does_not_freeze_the_async_workers() {
     let mut kills: Vec<DaemonGuard> = runs
         .iter()
         .map(|run| {
-            DaemonGuard::new(
+            daemon_guard::spawn(
                 Command::new(env!("CARGO_BIN_EXE_pii"))
                     .args(["run", "cancel", run, "--kill", "--reason", "hung"])
                     .env("PII_RUNTIME_DIR", dir)
+                    // State (and its durable stores) must be this test's own: the operator's are
+                    // held by any daemon already running on the machine.
+                    .env("PII_STATE_DIR", dir)
                     .env("PII_CONNECT_TIMEOUT_MS", "500")
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .unwrap(),
+                    .stderr(Stdio::null()),
             )
         })
         .collect();

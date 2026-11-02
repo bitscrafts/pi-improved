@@ -16,6 +16,9 @@ fn pii(args: &[&str], rt: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", rt)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", rt)
         .env("PII_CONNECT_TIMEOUT_MS", "500")
         .output()
         .unwrap()
@@ -48,7 +51,7 @@ fn start_daemon(dir: &Path) -> DaemonGuard {
         r#"{"sleep_ms": 15000, "turns": [{"text": "slow", "tool_calls": [], "tokens_in": 1, "tokens_out": 1}]}"#,
     )
     .unwrap();
-    let child = DaemonGuard::new(
+    let child = daemon_guard::spawn(
         Command::new(env!("CARGO_BIN_EXE_pii"))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -56,14 +59,15 @@ fn start_daemon(dir: &Path) -> DaemonGuard {
             .arg("--log-file")
             .arg(dir.join("daemon.log"))
             .env("PII_RUNTIME_DIR", dir)
+            // State (and its durable stores) must be this test's own: the operator's are
+            // held by any daemon already running on the machine.
+            .env("PII_STATE_DIR", dir)
             // The daemon must not read the operator's ~/.pii/pii.toml: its [[cron]] entries arm at
             // boot and park suspended runs in this scratch store (measured 2026-10-20: the failing
             // "has 1 runs" count was 2-3, wall-clock dependent). A missing file is an empty config.
             .env("PII_CONFIG", dir.join("pii.toml"))
             .env("PII_MODEL", format!("scripted:{}", slow.display()))
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap(),
+            .stderr(std::process::Stdio::null()),
     );
     until("the daemon to answer", || {
         pii(&["sys", "status"], dir).status.success()

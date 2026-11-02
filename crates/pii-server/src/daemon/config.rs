@@ -670,6 +670,13 @@ impl Config {
 /// The installer's state dir (spec 337 R1): `$HOME/.local/state/pii`.
 #[must_use]
 pub fn state_dir(env: &dyn Fn(&str) -> Option<String>) -> std::path::PathBuf {
+    // `PII_STATE_DIR` first: state (and therefore the durable stores under it) is the thing an operator — or a
+    // test harness — must be able to move without touching HOME. Measured 2026-11-02: a test daemon that resolved
+    // state from HOME opened the operator's `~/.local/state/pii/durable/channel.redb`, which a running daemon
+    // already held, so it hung before binding its socket instead of starting.
+    if let Some(dir) = env("PII_STATE_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
     let home = env("HOME").unwrap_or_else(|| String::from("/root"));
     std::path::PathBuf::from(home).join(".local/state/pii")
 }

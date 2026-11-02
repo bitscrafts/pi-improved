@@ -36,13 +36,19 @@ fn pii(args: &[&str], rt: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", rt)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", rt)
         .env("PII_CONNECT_TIMEOUT_MS", "500")
         .output()
         .unwrap()
 }
 
 fn until(what: &str, mut f: impl FnMut() -> bool) {
-    let end = Instant::now() + Duration::from_secs(20);
+    // 90 s, not 20: with the daemon slot in force these tests start daemons one at a time, so each start
+    // pays for a cold store open instead of sharing a warm machine. Measured 2026-11-02: 20 s ran out with
+    // 3 of 5 failing on a start that was progressing, not stuck.
+    let end = Instant::now() + Duration::from_secs(90);
     while Instant::now() < end {
         if f() {
             return;
@@ -60,6 +66,7 @@ fn start_daemon(dir: &Path) -> DaemonGuard {
         r#"{"turns": [{"text": "ok", "tool_calls": [], "tokens_in": 1, "tokens_out": 1}]}"#,
     )
     .unwrap();
+    let slot = daemon_guard::slot();
     let child = Command::new(env!("CARGO_BIN_EXE_pii"))
         .arg("daemon")
         .args(["--sandbox", "off", "--workspace"])
@@ -67,13 +74,16 @@ fn start_daemon(dir: &Path) -> DaemonGuard {
         .arg("--log-file")
         .arg(dir.join("daemon.log"))
         .env("PII_RUNTIME_DIR", dir)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", dir)
         // The daemon must not read the operator's ~/.pii/pii.toml (its [[cron]] entries arm at boot).
         .env("PII_CONFIG", dir.join("pii.toml"))
         .env("PII_MODEL", format!("scripted:{}", model.display()))
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    let daemon = DaemonGuard::new(child);
+    let daemon = DaemonGuard::new(child, slot);
     until("the daemon to answer", || {
         pii(&["sys", "status"], dir).status.success()
     });

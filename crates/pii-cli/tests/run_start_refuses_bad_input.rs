@@ -20,6 +20,9 @@ fn pii_start(runtime: &Path, extra: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .env("HOME", &home)
         .env("PII_RUNTIME_DIR", runtime)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", runtime)
         .args(["run", "start", "g"])
         .args(extra)
         .output()

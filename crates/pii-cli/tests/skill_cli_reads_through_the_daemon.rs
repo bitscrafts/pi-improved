@@ -29,6 +29,9 @@ fn pii(args: &[&str], rt: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", rt)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", rt)
         .env("PII_CONNECT_TIMEOUT_MS", "500")
         .output()
         .unwrap()
@@ -62,6 +65,7 @@ fn start_daemon(dir: &Path) -> DaemonGuard {
         r#"{"turns": [{"text": "ok", "tool_calls": [], "tokens_in": 1, "tokens_out": 1}]}"#,
     )
     .unwrap();
+    let slot = daemon_guard::slot();
     let child = Command::new(env!("CARGO_BIN_EXE_pii"))
         .arg("daemon")
         .args(["--sandbox", "off", "--workspace"])
@@ -69,13 +73,16 @@ fn start_daemon(dir: &Path) -> DaemonGuard {
         .arg("--log-file")
         .arg(dir.join("daemon.log"))
         .env("PII_RUNTIME_DIR", dir)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", dir)
         // The daemon must not read the operator's ~/.pii/pii.toml (see trace_reads_through_the_daemon).
         .env("PII_CONFIG", dir.join("pii.toml"))
         .env("PII_MODEL", format!("scripted:{}", model.display()))
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    let daemon = DaemonGuard::new(child);
+    let daemon = DaemonGuard::new(child, slot);
     until("the daemon to answer", || {
         pii(&["sys", "status"], dir).status.success()
     });

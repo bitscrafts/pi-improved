@@ -13,7 +13,6 @@
 #[path = "daemon_guard/mod.rs"]
 mod daemon_guard;
 
-use daemon_guard::DaemonGuard;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
@@ -37,6 +36,9 @@ fn pii_as(home: &Path, runtime: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .env("HOME", home)
         .env("PII_RUNTIME_DIR", runtime)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", runtime)
         .args(args)
         .output()
         .unwrap()
@@ -54,7 +56,7 @@ fn list_shows_the_graph_and_run_start_finds_it() {
     );
 
     let hello = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase2/hello.json");
-    let mut daemon = DaemonGuard::new(
+    let mut daemon = daemon_guard::spawn(
         Command::new(env!("CARGO_BIN_EXE_pii"))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -62,9 +64,7 @@ fn list_shows_the_graph_and_run_start_finds_it() {
             .env("HOME", &home)
             .env("PII_RUNTIME_DIR", &runtime)
             .env("PII_MODEL", format!("scripted:{}", hello.display()))
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap(),
+            .stderr(std::process::Stdio::null()),
     );
 
     // The daemon answers once its socket is up. Until then `run start` cannot connect at all.

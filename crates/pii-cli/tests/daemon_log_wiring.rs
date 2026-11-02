@@ -9,7 +9,6 @@
 #[path = "daemon_guard/mod.rs"]
 mod daemon_guard;
 
-use daemon_guard::DaemonGuard;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -30,7 +29,7 @@ fn a_worker_state_change_reaches_the_daemon_log_file() {
     )
     .unwrap();
     let log = dir.path().join("daemon.log");
-    let mut child = DaemonGuard::new(
+    let mut child = daemon_guard::spawn(
         Command::new(env!("CARGO_BIN_EXE_pii"))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -40,9 +39,7 @@ fn a_worker_state_change_reaches_the_daemon_log_file() {
             .env("PII_RUNTIME_DIR", dir.path())
             .env("PII_CONFIG", &cfg)
             .env("PII_MODEL", format!("scripted:{}", hello.display()))
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap(),
+            .stderr(std::process::Stdio::null()),
     );
     let end = Instant::now() + Duration::from_secs(15);
     let mut found = false;

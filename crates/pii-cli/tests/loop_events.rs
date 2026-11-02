@@ -24,6 +24,9 @@ fn pii(args: &[&str], runtime: &Path) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", runtime)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", runtime)
         .env("PII_CONNECT_TIMEOUT_MS", "300")
         .stdin(Stdio::null())
         .output()

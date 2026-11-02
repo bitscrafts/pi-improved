@@ -64,6 +64,9 @@ fn run_verb(verb: &str, dir: &std::path::Path, db: &std::path::Path) -> String {
         .args(["run", verb, "run-refused", "--db"])
         .arg(db)
         .env("PII_RUNTIME_DIR", dir)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", dir)
         .output()
         .unwrap();
     assert!(

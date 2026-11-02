@@ -70,6 +70,9 @@ fn pii_run(dir: &std::path::Path, args: &[&str]) -> String {
         .args(["run"])
         .args(args)
         .env("PII_RUNTIME_DIR", dir)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", dir)
         .output()
         .unwrap();
     assert!(

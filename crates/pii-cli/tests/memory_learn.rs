@@ -13,7 +13,6 @@
 #[path = "daemon_guard/mod.rs"]
 mod daemon_guard;
 
-use daemon_guard::DaemonGuard;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -22,6 +21,9 @@ fn pii(args: &[&str], runtime: &Path) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", runtime)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", runtime)
         .env("PII_CONNECT_TIMEOUT_MS", "300")
         .stdin(Stdio::null())
         .output()
@@ -57,7 +59,7 @@ fn an_outcome_is_recorded_once_and_a_repeat_reports_unchanged() {
         "[[worker]]\nname = \"w\"\nprogram = \"/nonexistent/pii-worker-prog\"\n",
     )
     .unwrap();
-    let mut child = DaemonGuard::new(
+    let mut child = daemon_guard::spawn(
         Command::new(env!("CARGO_BIN_EXE_pii"))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -67,9 +69,7 @@ fn an_outcome_is_recorded_once_and_a_repeat_reports_unchanged() {
             .env("PII_RUNTIME_DIR", d.path())
             .env("PII_CONFIG", &cfg)
             .env("PII_MODEL", format!("scripted:{}", hello.display()))
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
+            .stderr(Stdio::null()),
     );
 
     let end = Instant::now() + Duration::from_secs(20);

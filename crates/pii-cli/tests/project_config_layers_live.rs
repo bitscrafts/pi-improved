@@ -36,7 +36,7 @@ fn scratch(prefix: &str) -> tempfile::TempDir {
 /// Starts the daemon against `global` config + `workspace`, waits for its `daemon.started` line
 /// (or for it to exit), then stops it. Returns the log text.
 fn start_and_read_log(global: &Path, workspace: &Path, log: &Path) -> String {
-    let mut child = DaemonGuard::new(
+    let mut child = daemon_guard::spawn(
         Command::new(env!("CARGO_BIN_EXE_pii"))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -44,11 +44,12 @@ fn start_and_read_log(global: &Path, workspace: &Path, log: &Path) -> String {
             .arg("--log-file")
             .arg(log)
             .env("PII_RUNTIME_DIR", workspace)
+            // State (and its durable stores) must be this test's own: the operator's are
+            // held by any daemon already running on the machine.
+            .env("PII_STATE_DIR", workspace)
             .env("PII_CONFIG", global)
             .env_remove("PII_MODEL")
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap(),
+            .stderr(std::process::Stdio::null()),
     );
     let end = Instant::now() + Duration::from_secs(20);
     let mut text = String::new();
@@ -67,7 +68,7 @@ fn start_and_read_log(global: &Path, workspace: &Path, log: &Path) -> String {
 /// rows cannot use the start-then-stop harness above. The guard kills it on every exit path,
 /// including a panicking assertion.
 fn start_live_daemon(global: &Path, workspace: &Path, log: &Path) -> DaemonGuard {
-    let mut child = DaemonGuard::new(
+    let mut child = daemon_guard::spawn(
         Command::new(env!("CARGO_BIN_EXE_pii"))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -75,11 +76,12 @@ fn start_live_daemon(global: &Path, workspace: &Path, log: &Path) -> DaemonGuard
             .arg("--log-file")
             .arg(log)
             .env("PII_RUNTIME_DIR", workspace)
+            // State (and its durable stores) must be this test's own: the operator's are
+            // held by any daemon already running on the machine.
+            .env("PII_STATE_DIR", workspace)
             .env("PII_CONFIG", global)
             .env_remove("PII_MODEL")
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap(),
+            .stderr(std::process::Stdio::null()),
     );
     let end = Instant::now() + Duration::from_secs(20);
     while Instant::now() < end {
@@ -97,6 +99,9 @@ fn ctl(workspace: &Path, args: &[&str]) -> (Option<i32>, String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", workspace)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", workspace)
         .env_remove("PII_MODEL")
         .output()
         .unwrap();
@@ -176,7 +181,7 @@ fn a_global_only_setting_in_the_project_file_stops_the_start() {
 
     // A bounded wait, not `.output()`: on a tree where the refusal does not happen the daemon
     // starts and serves, so an unbounded wait would hang the suite instead of failing it.
-    let mut child = DaemonGuard::new(
+    let mut child = daemon_guard::spawn(
         Command::new(env!("CARGO_BIN_EXE_pii"))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -187,9 +192,7 @@ fn a_global_only_setting_in_the_project_file_stops_the_start() {
             .env("PII_CONFIG", &global)
             .env_remove("PII_MODEL")
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap(),
+            .stderr(std::process::Stdio::piped()),
     );
     let deadline = Instant::now() + Duration::from_secs(20);
     let mut status = None;

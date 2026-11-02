@@ -22,6 +22,7 @@ fn spawn_daemon(prefix: &str) -> (Child, tempfile::TempDir) {
         .prefix(prefix)
         .tempdir_in(scratch)
         .unwrap();
+    let _slot = daemon_guard::slot();
     let child = Command::new(env!("CARGO_BIN_EXE_pii"))
         .arg("daemon")
         .args(["--sandbox", "off", "--workspace"])
@@ -63,10 +64,11 @@ fn gone_within(pid: u32, limit: Duration) -> bool {
 
 #[test]
 fn a_panicking_test_leaves_no_daemon() {
+    let slot = daemon_guard::slot();
     let (child, _dir) = spawn_daemon("guard-panic-");
     let pid = child.id();
     let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        let _daemon = DaemonGuard::new(child);
+        let _daemon = DaemonGuard::new(child, slot);
         assert!(proc_dir(pid).exists(), "the daemon {pid} must be running");
         panic!("the test fails while the daemon is up");
     }));
@@ -79,6 +81,7 @@ fn a_panicking_test_leaves_no_daemon() {
 
 #[test]
 fn a_dropped_child_survives_without_the_guard() {
+    let _slot = daemon_guard::slot();
     let (child, _dir) = spawn_daemon("guard-control-");
     let pid = child.id();
     // The defect, measured: dropping a raw `Child` does not stop the process.

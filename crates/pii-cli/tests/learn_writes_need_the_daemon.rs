@@ -9,6 +9,9 @@ fn pii(args: &[&str], runtime: &std::path::Path) -> std::process::Output {
     std::process::Command::new(env!("CARGO_BIN_EXE_pii"))
         .args(args)
         .env("PII_RUNTIME_DIR", runtime)
+        // State (and its durable stores) must be this test's own: the operator's are
+        // held by any daemon already running on the machine.
+        .env("PII_STATE_DIR", runtime)
         .output()
         .unwrap()
 }
