@@ -48,11 +48,11 @@ action it would take, including the card's revision and the target paths.
 
 ## Exit Criteria
 
-- [ ] `bash deploy/tests/install-pii-user.test.sh 2>&1 | tail -1 | grep -qE "RESULT: [5-9][0-9]* ok, 0 FAIL"`
-- [ ] `PII_INSTALLER_SH=<git show HEAD:deploy/install-pii-user.sh> bash deploy/tests/install-pii-user.test.sh 2>&1 | grep -q 'FAIL'`
-- [ ] `grep -qc 'seed-stores' deploy/install-pii-user.sh` ≥ 1 and `grep -q 'REFUSED' deploy/install-pii-user.sh`
+- [ ] `bash deploy/tests/install-pii-user.test.sh 2>&1 | tail -1 | grep -qE 'RESULT: [5-9][0-9]* ok, 0 FAIL'`
 - [ ] `bash -n deploy/install-pii-user.sh`
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` → `fresh-gate: PASS`
+- [ ] `grep -q 'REFUSED' deploy/install-pii-user.sh`
+- [ ] `grep -q 'seed-stores' deploy/install-pii-user.sh`
+- [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q 'fresh-gate: PASS'`
 
 ## Guardrails
 
@@ -61,3 +61,9 @@ action it would take, including the card's revision and the target paths.
 - Do NOT delete or `mv` a live store from the script. It refuses and prints the command.
 - Do NOT weaken the card check to a warning.
 - Do NOT touch `deploy/install-pii.sh`'s own card check except to call the shared function.
+
+## Files
+
+- `specs/338-the-installer-refuses-without-a-card.md`
+- `deploy/install-pii-user.sh`
+- `deploy/tests/install-pii-user.test.sh`

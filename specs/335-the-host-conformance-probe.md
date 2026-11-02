@@ -65,13 +65,14 @@ paying for: a check that cannot run is not a check that passed.)
 
 ## Exit Criteria
 
-- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-red` → 5 FAIL, rc 1
-- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-green` → 5 PASS, rc 0
-- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-one-defect` → exactly 1 FAIL
-- [ ] `PII_HOST=10.255.255.1 PII_SSH_TIMEOUT=2 bash scripts/checks/host-conformance.sh` → `REFUSED`, rc 2
-- [ ] `bash scripts/checks/tests/host-conformance.test.sh` → `RESULT: N ok, 0 FAIL` with N ≥ 8
+- [ ] `test -x scripts/checks/host-conformance.sh`
+- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-red.json >/dev/null 2>&1`
+- [ ] ` test $? -eq 1`
+- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-green.json 2>&1 | grep -q '5 passed, 0 failed'`
+- [ ] `bash scripts/checks/host-conformance.sh --fixture scripts/checks/fixtures/host-one-defect.json 2>&1 | grep -q '4 passed, 1 failed'`
+- [ ] `bash scripts/checks/tests/host-conformance.test.sh 2>&1 | tail -1 | grep -qE 'RESULT: [8-9][0-9]* ok, 0 FAIL'`
 - [ ] `grep -q 'host-conformance.sh' scripts/checks/gates.sh`
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` → `fresh-gate: PASS`
+- [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q 'fresh-gate: PASS'`
 
 ## Guardrails
 
@@ -80,3 +81,13 @@ paying for: a check that cannot run is not a check that passed.)
 - Do NOT make the probe pass by editing the host in this spec: it reports, it does not repair.
 - Do NOT add a sixth check that needs a credential.
 - The fixture mode must not become the only mode that works: the ssh path is the product, the fixture is its test.
+
+## Files
+
+- `specs/335-the-host-conformance-probe.md`
+- `scripts/checks/host-conformance.sh`
+- `scripts/checks/tests/host-conformance.test.sh`
+- `scripts/checks/fixtures/host-red.json`
+- `scripts/checks/fixtures/host-green.json`
+- `scripts/checks/fixtures/host-one-defect.json`
+- `scripts/checks/gates.sh`

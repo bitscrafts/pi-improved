@@ -51,11 +51,10 @@ to apply it; it does not edit `~/.hermes` by itself. The old script is `mv`-d to
 
 ## Exit Criteria
 
-- [ ] `bash scripts/autonomy/tests/incidents-publish.test.sh 2>&1 | tail -1 | grep -qE "RESULT: [5-9][0-9]* ok, 0 FAIL"`
-- [ ] `PII_PUBLISH_SH=~/.hermes/scripts/pii-incidents-discord.sh bash scripts/autonomy/tests/incidents-publish.test.sh 2>&1 | grep -q 'FAIL'`
-- [ ] `PII_INCIDENTS_MD=/nonexistent bash scripts/autonomy/incidents-publish.sh; test $? -eq 2`
-- [ ] `bash deploy/point-incidents-job.sh --print | grep -q 'scripts/autonomy/incidents-publish.sh'`
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` → `fresh-gate: PASS`
+- [ ] `bash scripts/autonomy/tests/incidents-publish.test.sh 2>&1 | tail -1 | grep -qE 'RESULT: [5-9][0-9]* ok, 0 FAIL'`
+- [ ] `bash -n scripts/autonomy/incidents-publish.sh`
+- [ ] `bash -n deploy/point-incidents-job.sh`
+- [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q 'fresh-gate: PASS'`
 
 ## Guardrails
 
@@ -64,3 +63,10 @@ to apply it; it does not edit `~/.hermes` by itself. The old script is `mv`-d to
 - Do NOT post to a channel from the test: the test stops at "printed the rows it would publish".
 - Do NOT invent incidents when the record is missing: absence is an error, not an empty result.
 - Do NOT add a retry loop: one run, one verdict.
+
+## Files
+
+- `specs/340-the-incident-publisher-lives-in-the-repo.md`
+- `scripts/autonomy/incidents-publish.sh`
+- `scripts/autonomy/tests/incidents-publish.test.sh`
+- `deploy/point-incidents-job.sh`

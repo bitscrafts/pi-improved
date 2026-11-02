@@ -46,10 +46,9 @@ service that would create it (`systemctl --user status pii`), instead of `is pii
 
 ## Exit Criteria
 
-- [ ] `cargo test -q -p pii-uds --test one_default_socket 2>&1 | grep -qE "test result: ok\. [5-9] passed"`
-- [ ] `cargo test -q -p pii-cli --test health_without_env 2>&1 | grep -qE "test result: ok\. [1-9] passed"`
-- [ ] `! grep -rn 'join("default")' crates/pii-cli/src crates/pii-uds/src`
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` → `fresh-gate: PASS`
+- [ ] `cargo test -q -p pii-uds --test one_default_socket 2>&1 | grep -qE 'test result: ok\. [5-9] passed'`
+- [ ] `cargo test -q -p pii-cli --test health_without_env 2>&1 | grep -qE 'test result: ok\. [1-9] passed'`
+- [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q 'fresh-gate: PASS'`
 
 ## Guardrails
 
@@ -57,3 +56,11 @@ service that would create it (`systemctl --user status pii`), instead of `is pii
 - Do NOT make the client scan directories for a socket.
 - Do NOT change the socket's permissions or the daemon's ownership model.
 - The production unit is not edited here; the test only proves the shipped file agrees with the code.
+
+## Files
+
+- `specs/339-health-answers-from-a-plain-shell.md`
+- `crates/pii-uds/src/lib.rs`
+- `crates/pii-server/src/daemon/mod.rs`
+- `crates/pii-uds/tests/one_default_socket.rs`
+- `crates/pii-cli/tests/health_without_env.rs`

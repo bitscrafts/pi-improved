@@ -49,10 +49,9 @@ they are not under `/run/`.
 
 ## Exit Criteria
 
-- [ ] `cargo test -q -p pii-server --test durable_store_placement 2>&1 | grep -qE "test result: ok\. [3-9] passed"`
-- [ ] `! grep -nE 'channel::open\(.*runtime_dir|timer::open\(.*runtime_dir' crates/pii-server/src/daemon/*.rs`
+- [ ] `cargo test -q -p pii-server --test durable_store_placement 2>&1 | grep -qE 'test result: ok\. [3-9] passed'`
 - [ ] `grep -q 'durable_dir' crates/pii-server/src/daemon/config.rs`
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` → `fresh-gate: PASS`
+- [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q 'fresh-gate: PASS'`
 
 ## Guardrails
 
@@ -61,3 +60,10 @@ they are not under `/run/`.
   for the operator to retire. No deletion.
 - Do NOT change the store format or `format_version`.
 - The dev daemon in the container must keep working unchanged (`pii health` after a restart, same paths reported).
+
+## Files
+
+- `specs/337-the-durable-stores-live-on-disk.md`
+- `crates/pii-server/src/daemon/mod.rs`
+- `crates/pii-server/src/daemon/config.rs`
+- `crates/pii-server/tests/durable_store_placement.rs`

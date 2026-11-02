@@ -53,11 +53,11 @@ assert on the refusal text, so nothing in this spec needs a network.
 
 ## Exit Criteria
 
-- [ ] `cargo test -q -p pii-tools --test mqtt_tool_scope 2>&1 | grep -qE "test result: ok\. [5-9] passed"`
-- [ ] `grep -q 'allow_devices' crates/pii-channels/src/mqtt/mod.rs` (the field exists in the channel config)
-- [ ] `grep -q 'fn call(&self, ctx: &Ctx' crates/pii-tools/src/mqtt.rs` (the underscore is gone)
+- [ ] `cargo test -q -p pii-tools --test mqtt_tool_scope 2>&1 | grep -qE 'test result: ok\. [5-9] passed'`
+- [ ] `grep -q 'allow_devices' crates/pii-channels/src/mqtt/mod.rs`
+- [ ] `grep -q 'fn call(&self, ctx: &Ctx' crates/pii-tools/src/mqtt.rs`
 - [ ] `! grep -q 'retain: true' crates/pii-tools/src/mqtt.rs`
-- [ ] `cargo run -q -p xtask -- fresh-gate --worktree` → `fresh-gate: PASS`
+- [ ] `cargo run -q -p xtask -- fresh-gate --worktree 2>&1 | tail -1 | grep -q 'fresh-gate: PASS'`
 
 ## Guardrails
 
@@ -66,3 +66,10 @@ assert on the refusal text, so nothing in this spec needs a network.
 - Do NOT default `allow_devices` to every known device: absent means none, because a default that grants is the
   defect this spec exists to remove.
 - Do NOT make `ls` require a broker in the tests: the fake is the seam.
+
+## Files
+
+- `specs/336-the-models-mqtt-tool-obeys-an-allowlist.md`
+- `crates/pii-channels/src/mqtt/mod.rs`
+- `crates/pii-tools/src/mqtt.rs`
+- `crates/pii-tools/tests/mqtt_tool_scope.rs`
