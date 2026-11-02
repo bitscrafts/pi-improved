@@ -17,9 +17,15 @@ cd /projects/pi-improved || exit 1
 DEST=${1:?usage: clear-stuck-tree.sh <destination-dir> [--apply]}
 APPLY=0; [ "${2:-}" = "--apply" ] && APPLY=1
 
+# The destination must be absolute and outside the repository. A relative `_trash/…` creates an untracked directory
+# INSIDE the tree — the very dirt being cleared — which is how this bit us at 07:25 on 2026-11-02.
 case "$DEST" in
-  _trash/*) ;;
-  *) echo "REFUSED: the destination must be under _trash/ (got $DEST)"; exit 2 ;;
+  /*) ;;
+  *) echo "REFUSED: the destination must be an ABSOLUTE path under /projects/_trash (got $DEST)"; exit 2 ;;
+esac
+case "$DEST" in
+  /projects/_trash/*) ;;
+  *) echo "REFUSED: the destination must be under /projects/_trash (got $DEST)"; exit 2 ;;
 esac
 
 mapfile -t PATHS < <(git status --porcelain -z | while IFS= read -r -d '' rec; do printf '%s\n' "${rec:3}"; done)

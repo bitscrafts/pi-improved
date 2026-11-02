@@ -1,0 +1,84 @@
+<!-- Filed 2026-11-02T07:26:50Z from an Opus plan-mode analysis run.
+     Produced by: Claude Code + claude-opus-5-5, plan mode, READ-ONLY (no project writes).
+     Repo HEAD at analysis time: 8163932 (tree: 1 changed paths)
+
+     STATUS: NOT a spec and NOT a plan of record. Nothing in this document is authorised work.
+     Every proposal needs its own pre-registered gate before implementation, and any idea previously
+     closed by a measurement stays closed until a NEW measurement reopens it.
+
+     Anything marked "asserted-from-memory" is NOT verified — treat it as a lead, not a fact. -->
+
+# Night review — pii, 2026-11-02 (read-only)
+
+## Context
+Script-written brief claims: 4 rows done, queue NONE, ALL GATES PASS. Every claim below was checked with a command.
+Production as of now: host revision `57129b83a0d4` (HEAD `8163932c2fe3`), and the live host probe
+`PII_HOST=mvcorrea@lnx bash scripts/checks/host-conformance.sh` → **HOST-CONFORMANCE: 0 passed, 5 failed**, the same
+five defects as 06:19. Nothing tonight reached production.
+
+## Corrections to the brief
+1. **"gates: ALL GATES PASS" is a `tail -1`** (`scripts/night/night.sh:88`). It drops the line above it, which carries
+   "N skipped". The host-probe row SKIPs on every run: `gates.sh:77` needs `PII_HOST`, and nothing sets it (not env.sh,
+   not night/, not devbox, not any ops doc). The neighbouring M5 rows already ssh to `mvcorrea@lnx` without it.
+2. **"done" was not reached by the dispatcher.** In `_tmp/autonomy/state.json`, all four rows show `status=done` and
+   `last="parked after 3 attempts…"`. The cycle parked each one (`cycle.sh:224-228`). A person then landed each one by
+   hand, and the commit bodies say so. For 338, the judge refused the worker's tree at 07:01 because fresh-gate failed
+   (`cycle-20261102T070112Z.log`). The hand-landing at 07:09 claims fresh-gate PASS, but I found no log of that run.
+3. **"queue NONE" is 4 of 6.** Tranche b (339, 340) was never seeded. `_tmp/night/state.json` reads
+   `{"tranche":"a","seeded":[],"opus_runs":0,"done":false}`.
+4. **8163932's claim is false as worded.** `pgrep -f 'bash .*(…cycle\.sh)'` still matches any `bash -c '…'` whose text
+   mentions `scripts/autonomy/cycle.sh`. Operator shells run as `bash -lic …`, and that is the false-busy case it says
+   it removed.
+
+## Q1 — real work vs a check that passes while the path is broken
+| Row | Verdict | Command that tells the truth | Case its own test cannot see |
+|---|---|---|---|
+| 335 probe | Real code. Its **gate cannot fail** (permanent SKIP). | `PII_HOST=mvcorrea@lnx bash scripts/checks/host-conformance.sh` → 0/5 | The test uses fixtures only. The gate row never runs in the container. |
+| 336 mqtt allowlist | Real at unit level. **The production path is broken.** | Trace: `cmd_daemon.rs:333` passes only `url` → `lib.rs:300` `with_mqtt` → `MqttTool::new` (empty allowlist). `allow_devices` reaches only the channel (`pii-channels/src/mqtt/mod.rs:158`). | Config → daemon → tool. After deploy, the model can `send` to no device, whatever the config says. The commit says so ("not wired outside the CLI"), but the row is marked done. |
+| 337 durable stores | Real code. **The upgrade path is unproven.** | After deploy: run the host probe "durable stores" check, plus a cursor read before and after `systemctl --user restart pii`. | The first start after upgrade opens an empty `~/.local/state/pii/durable/` and leaves the live cursor and timers on `/run/user/1000/pii`. Nothing migrates them, so the result is replay or loss once. Also, `config::state_dir` falls back to `/root` when `HOME` is unset, the same class of bug as host defect #1. |
+| 338 installer | Real code, tested against a fake ssh shim. **The card check is a filename check.** | `deploy_card_check` (`deploy/config-python.sh:24-27`) accepts any non-empty `card-<rev>.json`. Its contents are never compared to the revision. | A stale or garbage card passes. It has never been run against the real host. Re-run `cargo run -q -p xtask -- fresh-gate --worktree` at 72afb39 to back up the unlogged PASS. |
+
+## Q3 — what tonight made worse
+- **`gates.sh:25` makes every gate unable to fail on one condition.** Any row whose output has a line starting with
+  `SKIP ` is counted as skipped, and its rc is ignored. This is not limited to the host row.
+- **The brief's own gate line hides the skip.** See correction 1.
+- **336 changes production behaviour with no gate.** Once deployed, the model loses device control and config cannot
+  give it back.
+- **The state contradicts itself.** Rows read done and parked at the same time, and the brief reproduces it.
+- **The host defects with no spec at all:** #1 (`trajectory_dir` = `/root/...` in the host config; 338 prevents it
+  recurring but does not fix the live file) and #5 (false start alarm).
+
+## Q2 — the queue, re-ranked
+1. Make the host probe a real gate (below). It is cheap and every other ranking depends on it.
+2. Close the gaps in 336 (wire `[[mqtt]] allow_devices` into `ToolSet::with_mqtt`) and 337 (migrate the old
+   `/run/.../{channel,timer}.redb` on first start). Add a value check to 338's card.
+3. Fix the host: a config-only rewrite (`CONFIG_ONLY=1 deploy/install-pii.sh`) for #1, then a carded deploy of HEAD
+   through the new installer. **This is outward-facing, so it needs the operator's approval.**
+4. 339 (health from a plain shell). Seed tranche b.
+5. A new spec for #5, the false start alarm.
+6. 340 (incident publisher), then f₂ (harness defect #6 + a ~$3 re-run, which needs operator approval), then (e)
+   the gate caches.
+- **Drop:** (a) the $5 dispatch until f₂ lands, (b) waiting for M6's clock, (c) reconciling the 76 rows, and (d) amem.
+  The audit already ranks each of these as low or off-path. Also stop counting 335 as "done" until its gate row can
+  go red.
+
+## Next three actions
+1. **Host probe on, SKIP made honest.** In `gates.sh`, default `PII_HOST` to `mvcorrea@lnx` (the host the M5 rows
+   already use). Accept SKIP only on rc 77 with a single `SKIP` line. In `night.sh:88`, print the last two lines.
+   gates.sh is not called by fresh-gate or cycle.sh (grep confirmed), so a red here blocks no dispatch.
+   - *Worked:* `bash scripts/checks/gates.sh | tail -3` shows `FAIL M5 host conformance` and `VERDICT: FAIL`. A test
+     row printing `SKIP x; exit 1` counts as FAIL.
+   - *Did not work:* the verdict still says ALL PASS, or the row still says SKIP.
+2. **336 wiring + 337 migration, as one spec with controls.** Add a daemon-level test that builds the daemon from a
+   config with `allow_devices=["lamp"]`, then calls `send lamp` (ok) and `send heater` (refused). Add a startup test
+   that seeds a cursor at the old `/run` path and requires it at the new path.
+   - *Worked:* both tests are green, and each goes red when the wiring or migration line is reverted.
+   - *Did not work:* the test passes with the wiring line removed (it only exercised `with_allow_devices`).
+3. **Carded deploy to the host (operator-approved).**
+   - *Worked:* `host-conformance.sh` reaches ≥4/5 (all but #5), and host `pii health` reports revision = HEAD.
+   - *Did not work:* any of #1–#4 is still FAIL, or the cursor changes across the first restart.
+
+## Single next action
+**Action 1.** Cost: about a 10-line diff plus one test case, no model spend beyond a Sonnet implementer, and about 1
+minute of host ssh per gate run. Gate: `bash scripts/checks/gates.sh` must end **`VERDICT: FAIL — M5: host
+conformance: five checks`** today. The first correct result of this work is a red gate.

@@ -46,7 +46,7 @@ dirty=$(git status --porcelain | wc -l | tr -d ' ')
 if [ "$dirty" -gt 0 ]; then
   n=$(( $(cat "$STUCK" 2>/dev/null || echo 0) + 1 )); printf '%s\n' "$n" >"$STUCK"
   if [ "$n" -ge "$STUCK_AFTER" ]; then
-    dest=_trash/night-stuck-$(date -u +%Y%m%dT%H%M%SZ)
+    dest=/projects/_trash/night-stuck-$(date -u +%Y%m%dT%H%M%SZ)
     bash scripts/night/clear-stuck-tree.sh "$dest" --apply >/dev/null 2>&1
     : >"$STUCK"
     say "the tree stayed dirty for $n firing(s): moved aside to $dest (nothing deleted) so the queue can proceed"

@@ -107,17 +107,25 @@ review(){
   local brief res
   brief=$(write_brief "$(date -u +%Y%m%dT%H%M%SZ)")
   say "night: Opus review starting (brief: $brief)"
+  # the workdir stamp must not contain COLONS: a directory named …T07:12:54Z made the filer's `cd` fail, and it
+  # still exited 0, so the run reported "filed" with nothing filed.
+  local stamp; stamp=$(date -u +%Y%m%dT%H%M%SZ)
   res=$(bash /root/.hermes/skills/research/opus-review/scripts/run-opus-review.sh \
-        /projects/pi-improved "$brief" "${NIGHT_OPUS_WORKDIR:-_tmp/night/opus-$NOW_Z}" 2>&1 | tail -3)
+        /projects/pi-improved "$brief" "${NIGHT_OPUS_WORKDIR:-_tmp/night/opus-$stamp}" 2>&1 | tail -3)
   say "night: opus -> $(printf '%s' "$res" | tr '\n' ' ' | cut -c1-200)"
-  local plan
+  local plan dest
   plan=$(ls -t _tmp/night/opus-*/opus-review-plan-*.md 2>/dev/null | head -1)
-  if [ -n "$plan" ]; then
-    bash /root/.hermes/skills/research/opus-review/scripts/file-opus-review.sh \
-      /projects/pi-improved "$plan" "_docs/06-research/night-review-$(date -u +%Y%m%dT%H%M%SZ).md" >/dev/null 2>&1 \
-      && say "night: review filed under _docs/06-research/"
+  if [ -z "$plan" ]; then
+    say "night: NO plan file found — the review produced nothing this tick"; return 1
+  fi
+  dest="_docs/06-research/night-review-$stamp.md"
+  bash /root/.hermes/skills/research/opus-review/scripts/file-opus-review.sh \
+    /projects/pi-improved "$plan" "$dest" >/dev/null 2>&1 || true
+  # the exit code of the filer is not the proof: the FILE is.
+  if [ -s "$dest" ]; then
+    say "night: review filed at $dest ($(wc -c <"$dest" | tr -d ' ') bytes)"
   else
-    say "night: NO plan file found — the review produced nothing this tick"
+    say "night: the filer reported success but $dest does not exist — filing FAILED"
   fi
   python3 - "$STATE" <<'PY'
 import json,sys
@@ -185,7 +193,7 @@ case "$(sf tranche)" in
     open=$(open_rows)
     if [ -n "$open" ]; then say "night: NO review yet — row(s) $open still open in tranche a"; exit 0; fi
     if [ "$(sf opus_runs)" -lt "$MAX_OPUS" ]; then review; fi
-    if [ -f "$DIR/tranche-b.tsv" ]; then seed b; else say "night: no tranche b; the night is done"; summary; fi ;;
+    if [ -f "${NIGHT_TRANCHES:-scripts/night}/tranche-b.tsv" ]; then seed b; else say "night: no tranche b; the night is done"; summary; fi ;;
   b)
     open=$(open_rows)
     if [ -n "$open" ]; then say "night: NO review yet — row(s) $open still open in tranche b"; exit 0; fi
