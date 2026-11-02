@@ -427,3 +427,34 @@ Upgrade procedure: stop, `pii backup`, install the new binary, start, check
 3. If systemd had to SIGKILL it (no line, no `daemon.stopped` in the log file),
    the store is still a transactional redb file; the daemon reconciles
    interrupted runs on boot. Check `pii health` after restart.
+
+## The gate is a gauge of the machine too — read `df` before you read the diff (measured 2026-11-02)
+
+`prompt_returns_before_run_finishes` (`crates/pii-server/tests/latency.rs:97`) asserts `session.prompt` returns in
+under **50 ms**, and it began failing at 120–309 ms on an idle 32-core box. It was not the code: the same
+`git archive HEAD` passes in **0.03 s** on `/tmp` and fails on `/projects`.
+
+**What it actually measured.** `/projects` is `ext4`; a 4 KB write+fsync there measured **21.9 ms median, 69.2 ms
+max** at 91 % full, against **0.1 ms** on the overlay that backs `/tmp`. The test's prompt path touches that volume
+(fixture read, store write) inside the assertion's window, so the budget is unreachable when the volume is under
+pressure — and the pressure is ours:
+
+```
+/projects/_trash .................. 57 GB   (30-day retention, nothing due until 2026-11-19)
+pi-improved/_tmp/gate-target ...... 75 GB   (the warm compile cache FRESH_GATE_TARGET points at)
+/projects/_cache/{targets,sccache}  19 GB
+one kept gate export .............. 28 GB   (a FAILED gate keeps its export)
+```
+
+**Two rules that follow:**
+
+1. **Run a gate through the loop's environment**, `source scripts/autonomy/env.sh` (it exports
+   `FRESH_GATE_TARGET=/projects/pi-improved/_tmp/gate-target`, spec 174). A gate run that does not source it builds
+   its **own** 28 GB target inside the export — that is what filled the volume here, not the loop.
+2. **Before believing a red on a latency or composite assertion, run `df -h /projects`.** If it is above ~88 %, the
+   honest next move is space, not a patch: reclaiming one 28 GB export took fsync from 21.9 ms to 3.7 ms and the test
+   from red to green in the same minute, with the gate returning `PASS, rc 0`.
+
+The cache is rebuildable and the trash is retention: when free space drops below ~60 GB, cleaning
+`_tmp/gate-target` costs one cold build (the 40–60 minute number this cache exists to avoid) and buys back 75 GB. Do
+it deliberately and at a quiet moment, not in the middle of a cycle.
