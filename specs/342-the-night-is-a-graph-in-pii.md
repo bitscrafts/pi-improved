@@ -95,3 +95,15 @@ night.toml
 - `graphs/spec.toml`
 - `crates/pii-server/tests/night_graph_composes.rs`
 - `specs/checks/night-graph.sh`
+
+## Closure
+
+Landed in `bc93fd0`: `graphs/night.toml` (timer → pinned call to `queue` → `post`), `graphs/queue.toml` callable
+(`exit`, workdirs from `input`), and the four checks in `crates/pii-server/tests/night_graph_composes.rs`.
+
+**Open — the one requirement without a criterion yet.** R5 says an exhausted queue reaches `review` and posts.
+Today the queue's `empty` and `blocked` ports are *inside* the call's namespace, so a night that finds no open row
+ends the run at `sdd__select` instead of routing to `review`: measured by `pii graph lint graphs/night.toml`, which
+reports `sdd__select` declaring `blocked`, `empty` and `running` with no outgoing edge (advisory, exit 0 — which is
+exactly why it needs a criterion that can fail). The fix is a queue-side branch that carries an "empty" item through
+`record` to the exit, or a call-level port mapping; it needs its own spec and its own test, not a line in this one.
