@@ -45,6 +45,8 @@ pub struct RuntimeIncident {
     pub opened_at: i64,
     /// The log file it was read from.
     pub source: String,
+    /// What the log says that supports the verdict, e.g. the error of a lost trajectory. Empty when none.
+    pub evidence: String,
 }
 
 impl RuntimeIncident {
@@ -161,9 +163,12 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
         last_seen: last,
         opened_at: opened,
         source: source.clone(),
+        evidence: String::new(),
     };
     let mut out = Vec::new();
     let mut runs: BTreeMap<String, Run> = BTreeMap::new();
+    // Run id -> (time, error) of its first failed trajectory write (spec 346).
+    let mut lost: BTreeMap<String, (i64, String)> = BTreeMap::new();
     let mut refusals: BTreeMap<&'static str, Vec<i64>> = BTreeMap::new();
     let mut firings: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     let mut log_end = i64::MIN;
@@ -217,6 +222,10 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
             firings.entry(cron).or_default().push(ts);
         }
         if let Some(id) = run {
+            if kind == pii_observe::names::TRAJECTORY_WRITE_FAILED {
+                let error = field_of(line, "error").unwrap_or_default();
+                lost.entry(id.clone()).or_insert((ts, error));
+            }
             let r = runs.entry(id).or_insert(Run {
                 first: ts,
                 last: ts,
@@ -226,9 +235,11 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
             r.last = r.last.max(ts);
             // A CANCELLED run is finished. MEASURED 2026-11-02: r000000004356 logged `run.cancelled` and was still
             // reported as `run-stalled`, because only an outcome or a refused start counted as terminal.
+            // A POSTED run did its work (spec 346): the channel took its result, so a missing outcome is no stall.
             r.terminal |= kind == pii_observe::names::RUN_OUTCOME
                 || kind == pii_observe::names::RUN_START_REFUSED
-                || kind == pii_observe::names::RUN_CANCELLED;
+                || kind == pii_observe::names::RUN_CANCELLED
+                || kind == pii_observe::names::CHANNEL_POSTED;
         }
     }
     if let Some(t) = starting
@@ -252,6 +263,11 @@ pub fn scan_runtime(log: &Path, cfg: &IncidentConfig) -> std::io::Result<Runtime
                 )
             }),
     );
+    // The trajectory is lost, not the run: a separate verdict, so the evidence of the run is visible on its own line.
+    out.extend(lost.into_iter().map(|(id, (ts, error))| RuntimeIncident {
+        evidence: error,
+        ..mk(format!("observability-lost:{id}"), 1, ts, ts, ts)
+    }));
     for (kind, ts) in refusals {
         for (first, last, n, opened) in clusters(ts, cfg) {
             out.push(mk(
@@ -315,8 +331,13 @@ fn clusters(mut ts: Vec<i64>, cfg: &IncidentConfig) -> Vec<(i64, i64, u64, i64)>
 
 /// The `cron` field of one log line, if it names one.
 fn cron_of(line: &str) -> Option<String> {
+    field_of(line, "cron")
+}
+
+/// One string field of one log line's `fields`, if it has one.
+fn field_of(line: &str, name: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(line).ok()?;
-    let f = v.get("fields")?.get("cron")?.as_str()?;
+    let f = v.get("fields")?.get(name)?.as_str()?;
     Some(f.to_owned())
 }
 
