@@ -50,6 +50,10 @@ run M2 "kill -9 leaves a terminal run"    'bash scripts/checks/daemon-crash-leav
 
 # ---- M3: an incident becomes a proven fix on a branch -------------------------------------------------
 run M3 "incident to branch, loop entry"   'bash scripts/checks/incident-to-branch.sh >/dev/null'
+# A judgement is a gate run inside the devbox daemon. If that daemon's env lacks the gate's compiler cache, the
+# judge builds a 28 GB target per judgement on a full volume and the gate goes red on LATENCY -- which is how rows
+# 330 and 331 were refused while the same criteria passed by hand (measured 2026-11-02).
+run M3 "the judge's daemon carries the gate env" 'bash scripts/checks/judge-gate-env.sh >/dev/null'
 
 # ---- M4: one permission, the deploy card --------------------------------------------------------------
 run M4 "installer refuses without card"   'bash scripts/checks/installer-requires-a-card.sh >/dev/null'
