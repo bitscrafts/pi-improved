@@ -260,3 +260,41 @@ Fixed in `087f7eb`: the daemon's env list carries `FRESH_GATE_TARGET` (the repo'
 **Not yet in effect on the running daemon** — it predates the change; the next `modules/devbox/daemon.sh up` picks
 it up. Until then a judgement can still pay the cold build, so a red on a latency assertion must still be read as
 `df` first (see §11).
+
+### 15. Opus audited this status on 2026-11-02 and demoted five rows — read it before trusting §3
+
+Report: `_docs/06-research/opus-status-and-path-20261102.md` (Opus 5.5, plan-mode read-only, HEAD `f390f6a`; probe
+`PONG55 || modelUsage=claude-opus-5-5`). Every premise I checked against the wire was true. The rows it moves:
+
+- **M0 → mechanism-only.** `operator-acts.log` holds **85 pauses / 75 resumes** in a week, **84 tagged
+  `orchestrator`** (an interactive session, logged as `human`); the loop made **0 of 62** commits since 10-31 and
+  wrote **0** queue rows. It is a robot doing the work by hand with an executor hanging off it — not autonomous.
+- **M1 → mechanism-only, and its delivery check can pass while broken.** `_tmp/autonomy/INCIDENTS.md` and its
+  cursor **do not exist**, and `pii-incidents-discord.sh:9` is `[ -f "$MD" ] || exit 0`: "the record was never
+  written" and "no incident happened" are the same silence.
+- **M2 → reboot-unevidenced.** `channel.redb` and `timer.redb` live in `/run/user/1000/pii`, which is **tmpfs**
+  (`daemon/mod.rs:201,204`). A host reboot loses the channel cursor and the timer wheel. The host has been up
+  since 2026-09-16, so it has never been exercised.
+- **M3 → BREACHED.** The 7-cycle experiment **was** run on 2026-10-13/14: `_tmp/autonomy/experiment/results.tsv`,
+  9 rows, real `claude` workers, **$3.04, 0 proven** — every row's base run executed 0 tests (harness defect #6,
+  `experiment-harness-open-work.md:29-31`). The harness was never fixed and spec 151 was built anyway, against its
+  own stop rule. My §3 claim "economics unmeasured" was wrong: it was measured and void.
+- **M4 → stale.** Production was installed by `deploy/install-pii-user.sh`, which has **no deploy-card check**
+  (`grep -c card` → 0) and **copies the container's `store.redb memory.redb approval.redb heal.redb` over
+  production's** (lines 52-54). Re-running it replaces production data with dev data, silently.
+- **M5 → identity only, and only with env.** Plain `pii health` on the host answers *no daemon answered*;
+  `pii.toml:53,63` carry `/root/...` paths, so **every run since deploy logged `trajectory.write.failed`
+  (EACCES)** — including the `digest-now` run I cited as proof of delivery. Survival so far is ~1 h.
+- **M6 → unwired and noisy.** `incidents scan --source runtime` on today's production log finds **10**: 1 real
+  (`refusal-repeated:channel.poll.failed count=731`), 1 ambiguous, **8 false** `daemon-start-not-ready`
+  (including the current, healthy start). Nothing runs it.
+- **M7 → evidenced**, and one row is already done: `ollama.service` on lnx is `disabled`/`inactive`.
+- **My own `mqtt` tool ignores its capability context** — `pii-tools/src/mqtt.rs:209` is
+  `fn call(&self, _ctx: &Ctx, …)`: any topic, `retain` allowed, no scope, no approval.
+
+**The riskiest premise it names:** *the gates measure what runs in production.* They run in the container against
+the container's config; production is a different machine, user, config and installer. That is precisely why the
+M4/M5/M6 defects are invisible to all 15 gate rows and all 42 selftest rows.
+
+**Next action it ranks first:** a read-only **host conformance probe** over ssh, as a gate row with a control —
+red on all five checks today, a corrected config turning (a) green, and `refuse` (exit 2) when ssh is unreachable.
