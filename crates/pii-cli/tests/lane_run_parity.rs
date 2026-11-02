@@ -258,7 +258,7 @@ impl Lane {
             .args(extra)
             .args(["--root"])
             .arg(&self.root)
-            .args(["--agent-root", "/projects/pi-improved"]);
+            .args(["--agent-root", agent_root().as_str()]);
         if spec {
             cmd.env("PII_LANE_GRAPH", "spec");
         }
@@ -293,6 +293,20 @@ fn position(calls: &[String], needle: &str) -> usize {
 
 /// One recorded call with the run-specific parts normalised: the repo path, the graph name's and judge input's
 /// timestamps, and the preflight repo's timestamp and random suffix (`<TS>`, `<RAND>`, spec 319 divergences).
+/// The repo this test belongs to. Resolved from the test binary's own location, never hardcoded: a fresh-gate
+/// export is a copy, and a lane pointed at the live tree while a cycle writes into it records a different
+/// sequence — measured 2026-11-02 as `the_recorded_ssh_sequence_equals_the_shells` failing only in the full
+/// suite and passing when run alone.
+fn agent_root() -> String {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("crates/pii-cli sits two levels under the repo root")
+        .display()
+        .to_string()
+}
+
 fn normalise(call: &str, root: &str) -> String {
     let line = call
         .replace(root, "<REPO>")
@@ -370,7 +384,7 @@ fn differential(spec: bool, status: &str, exited: &str) {
             "--root",
             &live_text,
             "--agent-root",
-            "/projects/pi-improved",
+            agent_root().as_str(),
         ]);
     if spec {
         bin.env("PII_LANE_GRAPH", "spec");
