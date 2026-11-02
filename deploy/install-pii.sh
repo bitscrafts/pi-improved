@@ -152,9 +152,8 @@ fi
 # Cards are keyed by the 7-char short revision; the binary reports 12. Either keying passes.
 REV7="$(git -C "$REPO" rev-parse --short=7 HEAD)" || abort "cannot read HEAD of $REPO — is it a git checkout?"
 REV12="$(git -C "$REPO" rev-parse --short=12 HEAD)"
-if [ ! -s "$DEPLOY_CARD_DIR/card-$REV7.json" ] && [ ! -s "$DEPLOY_CARD_DIR/card-$REV12.json" ]; then
-  abort "no deploy card for revision $REV7: expected $DEPLOY_CARD_DIR/card-$REV7.json or $DEPLOY_CARD_DIR/card-$REV12.json"
-fi
+deploy_card_check "$DEPLOY_CARD_DIR" "$REV7" "$REV12" \
+  || abort "no deploy card for revision $REV7: expected $DEPLOY_CARD_DIR/card-$REV7.json or $DEPLOY_CARD_DIR/card-$REV12.json"
 command -v curl >/dev/null || abort "curl not found"
 curl -sf --max-time 5 "${LLAMA_HOST%/}/models" >/dev/null \
   || abort "llama.cpp host ${LLAMA_HOST} does not answer GET ${LLAMA_HOST%/}/models"

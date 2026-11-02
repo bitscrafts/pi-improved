@@ -65,5 +65,7 @@ action it would take, including the card's revision and the target paths.
 ## Files
 
 - `specs/338-the-installer-refuses-without-a-card.md`
+- `deploy/config-python.sh`
 - `deploy/install-pii-user.sh`
+- `deploy/install-pii.sh`
 - `deploy/tests/install-pii-user.test.sh`
