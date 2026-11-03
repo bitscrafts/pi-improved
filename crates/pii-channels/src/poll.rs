@@ -181,8 +181,12 @@ pub fn pause_ms(err_text: Option<&str>, consecutive: u32, interval_ms: u64) -> u
     };
     let asked = crate::retry_after_ms(&pii_abi::PiiError::Unavailable(text.to_owned()));
     // Grow with consecutive failures EITHER WAY: a named pause is a floor, not the whole answer (spec 194).
-    let factor = 1u64 << consecutive.saturating_sub(1).min(4);
-    let base = asked.unwrap_or(interval_ms);
+    // The series doubles from BASE_INTERVAL, not from the channel's own interval, so a fast poll interval cannot
+    // turn a long outage into a storm; the result never undercuts that interval and never passes the ceiling.
+    // Measured 2026-11-02: a `.min(4)` here stopped the growth at 16x, so the pause never reached the five-minute
+    // ceiling and the backoff could not end the retry pattern spec 347 was written for.
+    let factor = 1u64 << consecutive.saturating_sub(1).min(20);
+    let base = asked.unwrap_or(u64::try_from(BASE_INTERVAL.as_millis()).unwrap_or(1_000));
     interval_ms.max(base.saturating_mul(factor)).min(ceiling)
 }
 
