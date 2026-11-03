@@ -6,7 +6,7 @@ name = "queue"
 entry = "select"
 # Spec 343 R6: declared so the graph can be inlined by `call`, which routes the host on the exit node's ports.
 exit = "record"
-caps = ["spawn", "proc"]
+caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [limits]
 # The 600000 ms default is checked before each next node, and a coder pass past ten minutes was failed with its work complete
@@ -20,7 +20,9 @@ kind = "select"
 [[node]]
 id = "dispatch"
 kind = "coder"
-caps = ["spawn", "proc"]
+# spec 362: a coder without fs_write cannot implement anything — measured 2026-11-03, the agent spawned with these caps
+# stopped and reported "no write or execute tool is available" instead of writing code.
+caps = ["spawn", "proc", "fs_read", "fs_write"]
 agent = "pi"
 model = "deepseek-v4.1-flash:cloud"
 provider = "ollama-cloud"
