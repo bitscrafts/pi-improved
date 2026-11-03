@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use pii_abi::{RunEvent, RunStatus, Terminal};
-use pii_core::{Clock, SystemClock};
+use pii_core::FixedClock;
 use pii_observe::Recorder;
 use pii_server::daemon::Daemon;
 use pii_server::daemon::config::Config;
@@ -27,8 +27,8 @@ fn hello() -> PathBuf {
         .join("fixtures/phase2/hello.json")
 }
 
-/// A scratch daemon whose only cron entry runs the two-minute graph.
-fn scratch_daemon() -> (tempfile::TempDir, Arc<Daemon>, Arc<Recorder>) {
+/// A scratch daemon whose only cron entry runs the two-minute graph, driven by `clock`.
+fn scratch_daemon(clock: &Arc<FixedClock>) -> (tempfile::TempDir, Arc<Daemon>, Arc<Recorder>) {
     let tmp = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "cancel-198").unwrap();
     let dir = tmp.path();
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
@@ -55,13 +55,21 @@ fn scratch_daemon() -> (tempfile::TempDir, Arc<Daemon>, Arc<Recorder>) {
     std::fs::write(&cfg_path, "[[cron]]\nname = \"d\"\ngraph = \"digest\"\n").unwrap();
     let mut cfg = Config::load(&cfg_path).expect("config");
     cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
-    let d = Daemon::build(engine, &cfg, dir, cfg_path, Arc::new(SystemClock)).expect("daemon");
+    let d = Daemon::build(
+        engine,
+        &cfg,
+        dir,
+        cfg_path,
+        Arc::clone(clock) as Arc<dyn pii_core::Clock>,
+    )
+    .expect("daemon");
     (tmp, d, log)
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_cancelled_run_stays_cancelled_past_its_due_instant() {
-    let (_tmp, d, log) = scratch_daemon();
+    let clock = Arc::new(FixedClock::new());
+    let (_tmp, d, log) = scratch_daemon(&clock);
     let handles = d.spawn_background();
     d.start_cron_entries();
 
@@ -78,11 +86,10 @@ async fn a_cancelled_run_stays_cancelled_past_its_due_instant() {
     pii_server::engine::runs::cancel_run(&d.engine, &run, "operator cancelled").unwrap();
     let seq_at_cancel = d.engine.store.get_run(&run).unwrap().unwrap().seq;
 
-    // Watch until the instant the run was due has passed, with margin for the scheduler.
-    let watch_until = due_ms + 5_000;
-    while SystemClock.now_ms() < watch_until {
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
+    // Drive the clock past the instant the run was due, with margin, and let the scheduler look.
+    clock.advance(due_ms + 5_000);
+    d.scheduler.wake();
+    tokio::time::sleep(Duration::from_secs(1)).await;
     for h in handles {
         h.abort();
     }

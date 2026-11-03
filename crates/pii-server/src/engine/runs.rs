@@ -72,7 +72,8 @@ pub fn spawn_run(
             span: 0,
         },
         cancel.clone(),
-    );
+    )
+    .with_clock(engine.run_clock());
     // Spec 115 R4: the lifecycle clock starts when the run is accepted.
     let accepted = std::time::Instant::now();
     let input = run_input(prompt, &session_id, extra_input);
@@ -490,7 +491,8 @@ pub fn spawn_resume_node(
             span: 0,
         },
         cancel.clone(),
-    );
+    )
+    .with_clock(engine.run_clock());
     let pool = Arc::clone(&engine.run_pool);
     pool.submit(move || {
         if skip_queued(&engine, &run_id, &cancel, &claim) {

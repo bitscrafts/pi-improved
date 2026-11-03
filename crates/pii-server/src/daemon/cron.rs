@@ -16,7 +16,7 @@ const CRON_MIN_REARM: std::time::Duration = std::time::Duration::from_secs(1);
 pub(super) fn start_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, e: &CronEntry) {
     ctx.cron_last_start
         .lock()
-        .insert(e.name.clone(), std::time::Instant::now());
+        .insert(e.name.clone(), ctx.clock.now_ms());
     match engine.start_run(&e.graph, &e.input) {
         Ok(run_id) => {
             ctx.cron_runs
@@ -96,18 +96,17 @@ fn rearm_cron(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>, entry: CronEntry) 
         .lock()
         .get(&entry.name)
         .map_or(std::time::Duration::ZERO, |t| {
-            CRON_MIN_REARM.saturating_sub(t.elapsed())
+            let elapsed = std::time::Duration::from_millis(ctx.clock.now_ms().saturating_sub(*t));
+            CRON_MIN_REARM.saturating_sub(elapsed)
         });
     if wait.is_zero() {
         start_cron(engine, ctx, &entry);
         return;
     }
     let (engine, ctx) = (Arc::clone(engine), Arc::clone(ctx));
-    // Spec 178: the re-arm thread has no runtime of its own; enter the reactive loop's.
-    let rt = tokio::runtime::Handle::current();
-    std::thread::spawn(move || {
-        let _guard = rt.enter();
-        std::thread::sleep(wait);
+    // Spec 178: the re-arm task runs on the reactive loop's runtime, so the run it starts has one.
+    tokio::runtime::Handle::current().spawn(async move {
+        tokio::time::sleep(wait).await;
         start_cron(&engine, &ctx, &entry);
     });
 }

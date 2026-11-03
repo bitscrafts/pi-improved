@@ -57,8 +57,10 @@ pub struct DaemonContext {
     /// Run id -> cron name, for runs started by the cron driver (F5.8): a
     /// `RunFinished` for one of these starts the next firing.
     pub cron_runs: Mutex<BTreeMap<String, String>>,
-    /// Cron name -> when its last firing started; paces re-arms (spec 183).
-    pub cron_last_start: Mutex<BTreeMap<String, std::time::Instant>>,
+    /// Cron name -> when its last firing started (injected clock, ms); paces re-arms (spec 183).
+    pub cron_last_start: Mutex<BTreeMap<String, u64>>,
+    /// The injected clock: re-arm pacing reads it, so a test can drive it.
+    pub clock: Arc<dyn pii_core::Clock>,
     /// Run id -> (channel, chat), for runs started by the channel router
     /// (F6.5): a `RunFinished` for one of these sends the reply.
     pub channel_runs: Mutex<BTreeMap<String, (String, String)>>,

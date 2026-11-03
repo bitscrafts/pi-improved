@@ -82,6 +82,7 @@ fn setup(dir: &std::path::Path, channel: Arc<dyn Channel>) -> (Arc<Engine>, Arc<
         cron: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
         cron_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
         cron_last_start: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+        clock: Arc::new(pii_core::SystemClock),
         channel_runs: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
         crashes_dir: dir.join("crashes"),
         config_path: dir.join("config.toml"),

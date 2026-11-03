@@ -93,6 +93,11 @@ impl Scheduler {
         self.wakeups.load(Ordering::Relaxed)
     }
 
+    /// Wakes the loop so it reads the clock again and fires whatever is now due.
+    pub fn wake(&self) {
+        self.notify.notify_one();
+    }
+
     /// Registers a timer and rearms the sleep so a now-earlier entry is
     /// picked up immediately rather than waiting out the old target.
     pub fn arm(&self, fire_at_ms: u64, run: &str, key: &str) {

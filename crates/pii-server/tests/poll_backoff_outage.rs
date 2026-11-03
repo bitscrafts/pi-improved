@@ -89,6 +89,7 @@ fn setup(
     let ctx = Arc::new(DaemonContext {
         net,
         workers: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
+        clock: Arc::new(pii_core::SystemClock),
         channels: parking_lot::Mutex::new(channels),
         channel_store: Arc::new(
             pii_store::channel::ChannelStore::open(&dir.join("channel.redb")).unwrap(),

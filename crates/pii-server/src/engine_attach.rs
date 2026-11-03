@@ -130,6 +130,16 @@ impl Engine {
         self.daemon_ctx.lock().clone()
     }
 
+    /// The clock a run's context reads: the daemon's injected clock once attached (so a timer's due
+    /// time follows it), else the system clock.
+    #[must_use]
+    pub fn run_clock(&self) -> Arc<dyn pii_core::Clock> {
+        self.daemon_ctx().map_or_else(
+            || Arc::new(pii_core::SystemClock) as Arc<dyn pii_core::Clock>,
+            |ctx| Arc::clone(&ctx.clock),
+        )
+    }
+
     /// Trips every active run's cancel token (F5.3 graceful shutdown).
     pub fn cancel_all(&self) {
         let ids: Vec<String> = self.runs.lock().keys().cloned().collect();

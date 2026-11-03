@@ -26,6 +26,20 @@ fn hello() -> PathBuf {
         .join("fixtures/phase2/hello.json")
 }
 
+/// Runs the store holds in any status: every run that has started so far.
+fn runs_started(d: &Daemon) -> usize {
+    [
+        pii_abi::RunStatus::Failed,
+        pii_abi::RunStatus::Running,
+        pii_abi::RunStatus::Suspended,
+        pii_abi::RunStatus::Succeeded,
+    ]
+    .into_iter()
+    .map(|s| d.engine.store.runs_by_status(s).unwrap().len())
+    .sum::<usize>()
+}
+
+#[allow(clippy::too_many_lines)] // reason: the scenario is one sequence (park, drive the clock, count)
 #[tokio::test(flavor = "multi_thread")]
 async fn a_finished_cron_run_is_started_again_inside_the_runtime() {
     let tmp = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "cron-rt").unwrap();
@@ -54,24 +68,34 @@ async fn a_finished_cron_run_is_started_again_inside_the_runtime() {
     std::fs::write(&cfg_path, "[[cron]]\nname = \"t\"\ngraph = \"ticker\"\n").unwrap();
     let mut cfg = Config::load(&cfg_path).expect("config");
     cfg.core.durable_dir = Some(dir.join("durable").display().to_string());
-    let d = Daemon::build(engine, &cfg, dir, cfg_path, Arc::new(pii_core::SystemClock))
-        .expect("daemon");
+    let clock = Arc::new(pii_core::FixedClock::new());
+    let d = Daemon::build(
+        engine,
+        &cfg,
+        dir,
+        cfg_path,
+        Arc::clone(&clock) as Arc<dyn pii_core::Clock>,
+    )
+    .expect("daemon");
     let handles = d.spawn_background();
     d.start_cron_entries();
 
     // The first firing ends at once and parks on its timer (spec 179: it stays tracked).
-    // The SECOND run starts when the next occurrence fires: up to 60 s for `* * * * *`.
-    let count = || {
-        [
-            pii_abi::RunStatus::Failed,
-            pii_abi::RunStatus::Running,
-            pii_abi::RunStatus::Suspended,
-            pii_abi::RunStatus::Succeeded,
-        ]
-        .into_iter()
-        .map(|s| d.engine.store.runs_by_status(s).unwrap().len())
-        .sum::<usize>()
+    // The SECOND run starts when that timer's occurrence is due: the test drives the clock to it.
+    let end_park = Instant::now() + Duration::from_secs(10);
+    let due = loop {
+        if let Some(due) = d.ctx.timer_store.next_timer().unwrap() {
+            break due;
+        }
+        assert!(
+            Instant::now() < end_park,
+            "the run never parked on its timer"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
     };
+    clock.advance(due);
+    d.scheduler.wake();
+    let count = || runs_started(&d);
     let end = Instant::now() + Duration::from_secs(75);
     let mut started = 0;
     while Instant::now() < end {
@@ -82,7 +106,7 @@ async fn a_finished_cron_run_is_started_again_inside_the_runtime() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     // Spec 179 at the runtime level: one occurrence starts one run, not one per re-arm.
-    let settle = Instant::now() + Duration::from_secs(6);
+    let settle = Instant::now() + Duration::from_secs(1);
     let mut after = started;
     while Instant::now() < settle {
         after = count();
