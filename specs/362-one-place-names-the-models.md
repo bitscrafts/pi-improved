@@ -62,7 +62,7 @@ id must fail at config time with its name, not at spawn time in a journal.
 - [ ] `cargo test -q -p pii-server --test models_from_config 2>&1 | grep -qE 'test result: ok. 3 passed'`
 - [ ] `grep -q '@workhorse' graphs/queue.toml`
 - [ ] `! grep -rq 'deepseek-v4-flash' graphs/`
-- [ ] `grep -q 'models' crates/pii-server/src/daemon/config.rs`
+- [ ] `grep -q 'workhorse' crates/pii-server/src/daemon/config.rs`
 - [ ] `cargo xtask fresh-gate`
 
 ## Guardrails
