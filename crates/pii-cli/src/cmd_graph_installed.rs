@@ -203,11 +203,12 @@ fn installed_dirs(o: &Opts) -> Result<Vec<PathBuf>, ExitCode> {
             .map_err(|e| error(format!("no installed graphs at {}: {e}", dir.display())))?;
         return Ok(vec![dir]);
     }
+    let store = o
+        .store
+        .clone()
+        .unwrap_or_else(|| pii_core::state_dir().join("store.redb"));
     let dirs: Vec<PathBuf> = pii_uds::runtime_dir("default")
-        .map(|r| {
-            let store = o.store.clone().unwrap_or_else(|| r.join("store.redb"));
-            pii_server::graph_search_dirs(&r.join("graphs"), &store)
-        })
+        .map(|r| pii_server::graph_search_dirs(&r.join("graphs"), &store))
         .unwrap_or_default()
         .iter()
         .filter_map(|d| std::fs::canonicalize(d).ok())

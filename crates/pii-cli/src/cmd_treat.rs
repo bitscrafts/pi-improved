@@ -50,10 +50,7 @@ fn usage() -> ExitCode {
 
 /// The local heal store: `PII_STATE_DIR` first, then the daemon's default state dir.
 fn open_store() -> Result<HealStore, ExitCode> {
-    let state_dir = pii_core::env_var("PII_STATE_DIR").map_or_else(
-        || pii_server::daemon::config::state_dir(&pii_core::env_var),
-        std::path::PathBuf::from,
-    );
+    let state_dir = pii_core::state_dir();
     HealStore::open(&state_dir.join("heal.redb")).map_err(|e| {
         warn!("cannot open the heal store: {e}");
         ExitCode::from(1)

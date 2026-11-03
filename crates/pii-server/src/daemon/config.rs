@@ -667,13 +667,6 @@ impl Config {
     }
 }
 
-/// The installer's state dir (spec 337 R1): `$HOME/.local/state/pii`.
-#[must_use]
-pub fn state_dir(env: &dyn Fn(&str) -> Option<String>) -> std::path::PathBuf {
-    let home = env("HOME").unwrap_or_else(|| String::from("/root"));
-    std::path::PathBuf::from(home).join(".local/state/pii")
-}
-
 /// A [`pii_net::grant::GrantStore`] giving every principal the same grant.
 ///
 /// Scoped by the config's `grants` host patterns (F5.2): this phase needs

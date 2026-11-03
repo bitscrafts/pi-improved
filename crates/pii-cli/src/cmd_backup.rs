@@ -29,7 +29,7 @@ fn parse(args: &mut std::env::ArgsOs, allow_force: bool) -> Option<Flags> {
             _ => return None,
         }
     }
-    let dir = dir.or_else(|| pii_uds::runtime_dir("default"))?;
+    let dir = dir.unwrap_or_else(pii_core::state_dir);
     Some(Flags {
         path: path?,
         dir,

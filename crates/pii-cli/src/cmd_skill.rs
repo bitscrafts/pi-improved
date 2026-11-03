@@ -116,9 +116,7 @@ fn note_source(via: &str) {
 /// The memory store file a command names: `--dir`, else the runtime dir, which is where the daemon keeps its store.
 /// It must already exist, so a mistyped `--dir` cannot quietly create an empty memory file.
 fn store_file(o: &Opts) -> Result<PathBuf, ExitCode> {
-    let Some(dir) = o.dir.clone().or_else(|| pii_uds::runtime_dir("default")) else {
-        return Err(fail("no store directory (use --dir)"));
-    };
+    let dir = o.dir.clone().unwrap_or_else(pii_core::state_dir);
     let path = dir.join("memory.redb");
     if !path.exists() {
         return Err(fail(&format!("no memory store at {}", path.display())));
@@ -133,7 +131,7 @@ fn open_file(path: &Path) -> Result<MemStore, ExitCode> {
 /// Whether the daemon serves the store this command names (spec 233 R2). A command with no `--dir`, or the runtime
 /// dir itself, is the daemon's store. Any other `--dir` is a different store, and the daemon would answer for its own.
 fn daemon_serves(o: &Opts) -> bool {
-    o.dir.is_none() || o.dir == pii_uds::runtime_dir("default")
+    o.dir.is_none() || o.dir == Some(pii_core::state_dir())
 }
 
 /// Asks the running daemon through `method`. `None` when no daemon is reachable, so the caller reads the store.

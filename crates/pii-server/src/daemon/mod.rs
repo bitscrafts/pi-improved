@@ -204,7 +204,7 @@ impl Daemon {
         // `PII_STATE_DIR` first: state, and the durable stores under it, must be movable without touching
         // HOME, or a daemon started beside a running one (a test, a second instance) opens the operator's
         // channel.redb, finds it held, and hangs before binding its socket (measured 2026-11-02).
-        let state_dir = env("PII_STATE_DIR").map_or_else(|| config::state_dir(env), PathBuf::from);
+        let state_dir = pii_core::state_dir_from(env);
         let durable_dir = resolve_durable_dir(cfg, &state_dir)?;
         let channel_store = Arc::new(pii_store::channel::ChannelStore::open(
             &durable_dir.join("channel.redb"),

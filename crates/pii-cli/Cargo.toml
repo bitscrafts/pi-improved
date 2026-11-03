@@ -32,6 +32,7 @@ dunce = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 
 [dev-dependencies]
+blake3 = { workspace = true }
 tempfile = { workspace = true }
 
 [features]

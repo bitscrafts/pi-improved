@@ -143,10 +143,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // precedence order this restores parity with `pii -p`/`pii tui`).
     // Spec 344: a durable store another daemon holds is refused here, once, by name, before anything is bound.
     // The same state resolution the daemon itself applies (`PII_STATE_DIR` first, then HOME).
-    let state_dir = pii_core::env_var("PII_STATE_DIR").map_or_else(
-        || pii_server::daemon::config::state_dir(&pii_core::env_var),
-        PathBuf::from,
-    );
+    let state_dir = pii_core::state_dir();
     let durable_dir = cfg.resolve_durable_dir(&state_dir);
     if let Err(locked) = pii_store::durable::claim(&durable_dir) {
         let store = locked.path.display().to_string();

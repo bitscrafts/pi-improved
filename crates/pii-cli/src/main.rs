@@ -76,7 +76,7 @@ fn cmd_graph_lint(path: &str) -> ExitCode {
         }
     } else {
         let file = std::path::Path::new(path);
-        let dirs = graph_dirs::dirs_for(file, graph_dirs::default_store().as_deref());
+        let dirs = graph_dirs::dirs_for(file, Some(graph_dirs::default_store().as_path()));
         match pii_graph::fragment::load_host_with_graphs(
             &src,
             &graph_dirs::fragments_for(file),
@@ -137,7 +137,7 @@ fn cmd_graph_show(path: &str) -> ExitCode {
     // including `agent`/`tool`/`route`/`gate` starter graphs.
     let reg = pii_server::lint_registry(std::path::Path::new("."), std::path::Path::new("."));
     let file = std::path::Path::new(path);
-    let dirs = graph_dirs::dirs_for(file, graph_dirs::default_store().as_deref());
+    let dirs = graph_dirs::dirs_for(file, Some(graph_dirs::default_store().as_path()));
     let spec = match pii_graph::fragment::load_host_with_graphs(
         &src,
         &graph_dirs::fragments_for(file),

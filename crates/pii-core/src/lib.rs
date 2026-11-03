@@ -20,6 +20,7 @@ mod fscap;
 mod net;
 mod observe;
 mod principal;
+mod state;
 
 pub use budget::{Budget, BudgetKind, BudgetShare};
 pub use cancel::CancelToken;
@@ -40,6 +41,7 @@ pub use pii_abi::{CapKind, PiiError};
 /// `Observer`/`ObsEvent`/`Metric` types above stay as the compatibility surface.
 pub use pii_observe as contract;
 pub use principal::{Principal, TraceCtx};
+pub use state::{state_dir, state_dir_from};
 
 #[cfg(test)]
 mod tests {

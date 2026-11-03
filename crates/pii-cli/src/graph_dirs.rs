@@ -30,8 +30,8 @@ pub(crate) fn fragments_for(file: &Path) -> PathBuf {
 }
 
 /// The store the installed graphs are searched beside when no `--db` is given: the default runtime's.
-pub(crate) fn default_store() -> Option<PathBuf> {
-    pii_uds::runtime_dir("default").map(|r| r.join("store.redb"))
+pub(crate) fn default_store() -> PathBuf {
+    pii_core::state_dir().join("store.redb")
 }
 
 fn parent_of(file: &Path) -> PathBuf {

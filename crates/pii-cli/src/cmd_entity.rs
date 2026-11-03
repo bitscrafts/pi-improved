@@ -40,7 +40,7 @@ struct Opts {
 
 fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
     let mut o = Opts {
-        dir: pii_uds::runtime_dir("default"),
+        dir: Some(pii_core::state_dir()),
         cfg: GraphConfig::default(),
         kind: None,
         name: None,

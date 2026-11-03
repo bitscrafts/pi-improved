@@ -55,7 +55,7 @@ struct Opts {
 fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
     let mut o = Opts {
         traj: pii_core::env_var(pii_core::TRAJECTORY_DIR_ENV).map(PathBuf::from),
-        dir: pii_uds::runtime_dir("default"),
+        dir: Some(pii_core::state_dir()),
         cfg: LearnConfig::default(),
         positional: None,
         all: false,

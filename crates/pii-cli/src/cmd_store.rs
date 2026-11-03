@@ -21,7 +21,7 @@ pub(crate) fn cmd_store(args: &mut std::env::ArgsOs) -> ExitCode {
             _ => sub = None,
         }
     }
-    let dir = dir.or_else(|| pii_uds::runtime_dir("default"));
+    let dir = Some(dir.unwrap_or_else(pii_core::state_dir));
     let (Some("compact"), Some(dir)) = (sub.as_deref(), dir) else {
         let _ = writeln!(
             std::io::stderr(),
