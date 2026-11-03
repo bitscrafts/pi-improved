@@ -26,7 +26,7 @@ model = "deepseek-v4-flash"
 workdir = "$.input.workdir"
 brief = "Implement the spec named above. Follow it as the contract. Do not commit."
 timeout_ms = 1800000
-env_pass = ["PATH", "HOME"]
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_TMPDIR"]
 
 [[node]]
 id = "judge"
