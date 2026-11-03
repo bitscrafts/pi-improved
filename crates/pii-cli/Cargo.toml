@@ -33,6 +33,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-
 
 [dev-dependencies]
 blake3 = { workspace = true }
+parking_lot = { workspace = true }
 tempfile = { workspace = true }
 
 [features]

@@ -185,11 +185,20 @@ fn export_head(root: &Path, dir: &Path) -> Result<(), String> {
 }
 
 fn overlay_worktree(root: &Path, dir: &Path) -> Result<(), String> {
-    // modified + untracked-not-ignored; deleted files are skipped (gone).
+    // modified + untracked-not-ignored
     for rel in git_files(root, &["ls-files", "-z", "-m", "-o", "--exclude-standard"])? {
         let src = root.join(&rel);
         if src.is_file() {
             copy_into(&src, &dir.join(&rel))?;
+        }
+    }
+    // DELETIONS TOO. Measured 2026-11-03: a change that removes a test file could not be gated at all — the export
+    // still held the deleted file while the overlaid Cargo.toml no longer declared its dependency, so the gate
+    // failed on a tree that does not exist. A gate that cannot express a deletion is not testing the change.
+    for rel in git_files(root, &["ls-files", "-z", "-d", "--exclude-standard"])? {
+        let dst = dir.join(&rel);
+        if dst.is_file() {
+            std::fs::remove_file(&dst).map_err(|e| format!("remove {}: {e}", dst.display()))?;
         }
     }
     Ok(())
@@ -272,6 +281,12 @@ fn run_gate(dir: &Path) -> Result<(bool, String), String> {
         .args(["-c", "bash quality-gate.sh 2>&1"])
         .current_dir(dir)
         .envs(gate_env(dir, &target, covev))
+        // A gate must not inherit a state dir from the shell that started it. Measured 2026-11-03: a lane daemon
+        // holding the real store made a daemon test fail with "channel.redb is locked: another daemon holds it",
+        // because the test inherited PII_STATE_DIR. The test's own store parent is not enough — the durable stores
+        // follow this variable. A gate that depends on the caller's environment is not a gate.
+        .env_remove("PII_STATE_DIR")
+        .env_remove("PII_RUNTIME_DIR")
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| format!("gate: {e}"))?;

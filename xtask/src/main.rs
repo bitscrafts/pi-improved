@@ -35,6 +35,7 @@ mod proto_gen;
 mod reachability;
 mod rss_gate;
 mod silent_noop;
+mod test_inventory;
 
 use std::process::ExitCode;
 
@@ -251,6 +252,10 @@ fn main() -> ExitCode {
             }
         },
         Some("ci") => run_ci(&rest),
+        Some("test-inventory") => {
+            let check = rest.iter().any(|a| a == "--check");
+            report(test_inventory::run(&workspace_root(), check))
+        }
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)

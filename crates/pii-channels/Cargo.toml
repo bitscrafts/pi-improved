@@ -22,10 +22,7 @@ tokio = { workspace = true, features = ["rt", "time"] }
 [dev-dependencies]
 tempfile = { workspace = true }
 pii-net = { path = "../pii-net", features = ["testing"] }
-pii-server = { path = "../pii-server" }
-pii-learn = { path = "../pii-learn" }
 pii-store = { path = "../pii-store" }
-pii-tools = { path = "../pii-tools" }
 pii-proto = { path = "../pii-proto" }
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 

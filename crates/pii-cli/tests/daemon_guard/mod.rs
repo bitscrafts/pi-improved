@@ -16,28 +16,71 @@
 )]
 #![allow(dead_code, clippy::redundant_pub_crate)]
 
+use std::cell::Cell;
+use std::io::Write;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// How many slots THIS process holds. A test that starts two daemons in sequence takes the slot twice: only the
-/// first acquisition waits on the file, and only the last release removes it. Without the counter, such a test
-/// waits on itself for the whole budget and then panics.
+/// How many slots THIS process holds, across every thread. The file is removed when this reaches zero, whichever
+/// holder took it first: the first acquirer is not the last to drop, so an owner that drops early must not leave
+/// the file behind for the next binary to wait out.
 static HELD: AtomicUsize = AtomicUsize::new(0);
 
-pub(crate) struct Slot {
-    path: Option<std::path::PathBuf>,
-    _file: Option<std::fs::File>,
+thread_local! {
+    /// How many slots THIS thread holds. A test that starts two daemons in sequence takes the slot twice, and the
+    /// second take must not wait on the file its own thread holds. Another thread waits on the file, as it must.
+    static MINE: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Holds one count of [`HELD`]. The file itself is owned by the process, not by any one `Slot`.
+pub(crate) struct Slot;
+
+/// A private slot file, set by a test that asserts on the file itself. The default file is shared with every other
+/// test run on this machine, so such an assertion would race them.
+static PATH_OVERRIDE: parking_lot::Mutex<Option<std::path::PathBuf>> =
+    parking_lot::Mutex::new(None);
+
+/// Points this process's slot at `path` for the rest of the test binary.
+pub(crate) fn use_private_slot(path: std::path::PathBuf) {
+    *PATH_OVERRIDE.lock() = Some(path);
+}
+
+/// The one file every daemon test in this package contends for, unless a test made its own.
+pub(crate) fn slot_path() -> std::path::PathBuf {
+    PATH_OVERRIDE.lock().clone().unwrap_or_else(|| {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp/daemon-slot.lock")
+    })
+}
+
+/// True when the file's owner cannot be alive. The owner writes its pid into the file; a pid that has no `/proc`
+/// entry is gone, so the file is a leak and is stolen at once. An empty file has no pid yet, or was left by a run
+/// that died before writing one, so it gets a short grace period. 180 s is the backstop for a pid that was reused.
+fn is_stale(path: &std::path::Path) -> bool {
+    let Some(age) = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|m| std::time::SystemTime::now().duration_since(m).ok())
+    else {
+        return false;
+    };
+    let owner = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+    let owner_gone = owner.map_or_else(
+        || age > std::time::Duration::from_secs(5),
+        |pid| !std::path::Path::new("/proc").join(pid.to_string()).exists(),
+    );
+    owner_gone || age > std::time::Duration::from_secs(180)
 }
 
 impl Slot {
     pub(crate) fn acquire() -> Self {
-        if HELD.fetch_add(1, Ordering::SeqCst) > 0 {
-            return Self {
-                path: None,
-                _file: None,
-            };
+        if MINE.with(Cell::get) > 0 {
+            MINE.with(|m| m.set(m.get() + 1));
+            HELD.fetch_add(1, Ordering::SeqCst);
+            return Self;
         }
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("_tmp/daemon-slot.lock");
+        let path = slot_path();
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -48,28 +91,22 @@ impl Slot {
                 .write(true)
                 .open(&path)
             {
-                Ok(f) => {
-                    return Self {
-                        path: Some(path),
-                        _file: Some(f),
-                    };
+                Ok(mut f) => {
+                    let _ = write!(f, "{}", std::process::id());
+                    MINE.with(|m| m.set(1));
+                    HELD.fetch_add(1, Ordering::SeqCst);
+                    return Self;
                 }
                 Err(_) if std::time::Instant::now() < give_up => {
-                    // A killed test (or a killed agent run) leaves the file behind. Steal it once it is old
-                    // enough that no living test can own it, or one interrupted run wedges the suite for good.
-                    let stale = std::fs::metadata(&path)
-                        .and_then(|m| m.modified())
-                        .ok()
-                        .and_then(|m| std::time::SystemTime::now().duration_since(m).ok())
-                        .is_some_and(|age| age > std::time::Duration::from_secs(180));
-                    if stale {
+                    // A killed test (or a killed agent run) leaves the file behind. Steal it once its owner is
+                    // gone, or one interrupted run wedges the suite for good.
+                    if is_stale(&path) {
                         let _ = std::fs::remove_file(&path);
                         continue;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 Err(e) => {
-                    HELD.fetch_sub(1, Ordering::SeqCst);
                     panic!("could not take the daemon slot {}: {e}", path.display());
                 }
             }
@@ -79,11 +116,9 @@ impl Slot {
 
 impl Drop for Slot {
     fn drop(&mut self) {
-        let left = HELD.fetch_sub(1, Ordering::SeqCst);
-        if left == 1
-            && let Some(p) = self.path.take()
-        {
-            let _ = std::fs::remove_file(p);
+        MINE.with(|m| m.set(m.get().saturating_sub(1)));
+        if HELD.fetch_sub(1, Ordering::SeqCst) == 1 {
+            let _ = std::fs::remove_file(slot_path());
         }
     }
 }
