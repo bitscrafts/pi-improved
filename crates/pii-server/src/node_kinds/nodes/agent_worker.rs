@@ -375,7 +375,15 @@ pub fn plan(
                 // models.json (apiKey "$ENV:<NAME>"), with PI_CODING_AGENT_DIR pointing there. Measured 2026-10-22:
                 // rc=0 via ollama-cloud, no --api-key. An argv key would show in /proc/<pid>/cmdline.
             }
-            v.extend([s("-p"), brief.to_owned()]);
+            // spec 362: the brief says "the spec named above", so the spec must be named. Measured 2026-11-03: a
+            // coder spawned with a spec in its session name and nothing in its prompt implemented a DIFFERENT
+            // spec's files (row 358, wrote 353), because the path never reached the agent.
+            let prompt = if spec.spec.is_empty() {
+                brief.to_owned()
+            } else {
+                format!("Spec: {}\n\n{brief}", spec.spec)
+            };
+            v.extend([s("-p"), prompt]);
             v
         }
         Agent::Claude => super::agent_claude::argv(

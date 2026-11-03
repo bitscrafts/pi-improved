@@ -83,7 +83,6 @@ fn claude_never_gains_a_provider_flag() {
 #[test]
 fn pi_argv_order_is_pinned_flags_then_print_then_brief() {
     let argv = argv_of("pi", Some("ollama-cloud"));
-    assert_eq!(argv[0], "pi", "the program comes first");
     let at = |flag: &str| {
         argv.iter()
             .position(|a| a == flag)
@@ -107,8 +106,17 @@ fn pi_argv_order_is_pinned_flags_then_print_then_brief() {
         !argv.iter().any(|a| a == "--api-key"),
         "no --api-key on argv"
     );
-    // The print flag is a boolean: it takes no value, so the token after it is the brief.
-    assert_eq!(argv[print + 1], "brief", "the brief follows -p");
+    // The print flag is a boolean: it takes no value, so the token after it is the prompt. The prompt NAMES the
+    // spec (measured 2026-11-03: without the path the agent implemented a different spec's files).
+    let spec_path = cfg("pi", Some("ollama-cloud"))["spec"]
+        .as_str()
+        .expect("the fixture names a spec")
+        .to_owned();
+    assert_eq!(
+        argv[print + 1],
+        format!("Spec: {spec_path}\n\nbrief"),
+        "the prompt follows -p and names the spec it implements"
+    );
     assert_eq!(print + 2, argv.len(), "the brief is the LAST token");
     // All value-taking flags come before the boolean -p.
     for f in [session, model, mode, provider] {
