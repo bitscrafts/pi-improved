@@ -67,3 +67,39 @@ faster when it hits it. The test below acquires, drops in the wrong order, and a
 - `crates/pii-channels/tests/poll_backoff.rs`
 - `crates/pii-server/tests/poll_backoff.rs`
 - `xtask/src/main.rs`, `xtask/src/test_inventory.rs` (new)
+
+## Closure
+
+Verified 2026-11-03 by the orchestrator on the tree the worker left (session `514a1eff`, worker rc=0).
+
+**Criteria, run by hand on that tree:**
+
+- `cargo test -q -p pii-cli --test daemon_guard_holds` → `test result: ok. 2 passed; 0 failed`
+- `test ! -e crates/pii-cli/_tmp/daemon-slot.lock` → the file was absent. It **existed** when the row was
+  dispatched (a 0-byte leak), and the reworked `Drop` removed it.
+- `grep -c 'pii-server' crates/pii-channels/Cargo.toml` → `0`
+- `cargo run -q -p xtask -- test-inventory --check` → `PASS: test-inventory (285 binaries >= 284, 2073 functions >= 2071)`
+
+**Nothing was deleted to make it pass.** The channel backoff test moved:
+`diff <(git show HEAD:crates/pii-channels/tests/poll_backoff.rs) crates/pii-server/tests/poll_backoff_outage.rs`
+printed nothing — byte-identical, so no assertion left with the move. Spec 331's two guard tests moved from
+`daemon_guard_holds.rs` to `daemon_guard_reaps.rs` the same way (`diff` empty). The test count rose by 2 functions
+and 1 binary.
+
+**Gate:** `fresh-gate --worktree` on this tree, 12:35–12:47Z, `quality-gate: ALL PASS` / `fresh-gate: PASS`
+(20 steps; log `/tmp/gate-355e.log`, export `fresh-gate-197287`). Committed as `1c6b886`.
+
+**Three reds seen while getting there were not this item's — all three became work and one leaked:**
+
+1. `the_queue_graph_loads_itself_as_a_called_graph` failed at HEAD: spec 362's `dispatch` node declares
+   `fs_read,fs_write`, and `graph.call.widen` refuses a call that grants less, while the test's host still granted
+   `spawn,proc`. `graphs/night.toml` already granted them. Repaired in `crates/pii-server/tests/queue_in_a_call.rs`
+   (fixture only, assertion untouched) as `eb48bdb`; the test then passed 3/3.
+2. `a_worker_state_change_reaches_the_daemon_log_file` failed at 12:08Z with
+   `store /root/.local/state/pii/durable/channel.redb is locked: another daemon holds it`. The test spawns a real
+   daemon with `PII_RUNTIME_DIR` but not `PII_STATE_DIR`, so it claimed the operator's live durable store — the
+   gate was red for as long as any daemon ran. Filed as spec 365.
+3. At 12:22Z **my own gate was killed by another gate's retention pass**: `stale_exports` removes every other
+   `fresh-gate-*` directory with no liveness test, so a second gate deletes a running one's export. Sixteen steps
+   then failed on `target/gate-steps/*.log: No such file or directory` with `failing tests: []` — a red that
+   blames the tree for a directory another process removed. Filed as spec 365 (R1/R2).
