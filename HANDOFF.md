@@ -1,5 +1,42 @@
 # Pii — Session Handoff
 
+## 2026-11-03T20:30Z — the loop sat 6.5 h on a marker its own writer chose
+
+Headline: the queue was **not** empty and **not** parked — every five-minute firing since 13:54Z bought nothing
+because row **359** was invisible to `pick` while its own eight uncommitted paths blocked the tree. Measured at
+`20:22:07Z`:
+
+```
+pick: skip parked 353(needs-review), 354(needs-review), 357(parked), 358(needs-review), 359(needs-review) -> dispatching 360
+[20:22:07Z] DIRTY TREE that no queue row owns (FOREIGN 8): ... nothing cleaned, nothing dispatched
+OUTCOME=dirty-tree ITEM=360
+```
+
+- **The cause is one vocabulary held in two places.** `cycle.sh:163` recovers a session from the worker log and writes
+  `last=resumed-from-worker-log`; `state.py`'s `resumable()` accepts only `window-closed`, `worker-rc=`,
+  `precommit-broken`, `precommit-timeout`, `gate-failed`, `verify-failed`, `worker-ok; gate-failed` and
+  `park-cause-repaired`. So the row the cycle just resumed becomes undispatchable the moment that cycle ends, and the
+  work it left in the tree is then read as FOREIGN. Spec **366** / row **366** queue the fix (the acceptance test reads
+  the marker out of the live `cycle.sh`, so a writer and a reader that disagree cannot ship green again).
+- **13:53:58Z was a full disk.** `cycle.sh:66 echo: write error: No space left on device` and `state.py`'s `save()`
+  raised mid-run — `_tmp/autonomy/state.json` has not been written since **13:36Z** although every five-minute firing
+  since kept claiming work. `/` is at 95 % (16 G free) now; nothing was deleted, `cargo clean` was not needed.
+- **359 is resuming, not restarting.** Its eight paths (`crates/pii-cli/src/{cli_util,cmd_daemon,cmd_entity,
+  cmd_index,cmd_learn,cmd_skill,cmd_lane/mod}.rs`, `crates/pii-server/src/engine/registry.rs`, mtime 13:46–13:47Z) are
+  its own paid work; the orchestrator reset its marker to `worker-rc=143` with session
+  `e938cbb7-c8d2-45f8-b013-3090df2fba70` and dispatch resumed at 20:25:16Z with a corrective brief. The `143` is
+  honest: the orchestrator's own foreground `timeout 120` killed that dispatch at 20:21Z — one paid worker lost to a
+  harness mistake, not to the loop.
+- **Two cron executions are stuck open** from the same crash: `db856e55` `running` since 13:45:26Z and `f4ec7955`
+  `claimed` (20:18:26Z). The ledger records the *gateway's* pid against them, which stays alive, so the stale-claim
+  reaper never fires. The dispatcher keeps claiming new runs, so this is bookkeeping — but it is why `hermes cron
+  runs bccaf71bf569` reads as if the loop were mid-cycle.
+- **Selftest: 42 passed, 0 failed / `VERDICT: ALL MECHANISMS PASS`** (20:24Z) — the suite does not cover this class,
+  which is why spec 366 adds a row to it.
+- **Next tick:** 359 finishes at verify → gate → commit; then 360 (tests off the wall clock) and 366 (this fix) are
+  queued behind it. 353, 354 and 358 stay `needs-review` with no session; they need a fresh-dispatch decision, not a
+  resume.
+
 ## 2026-11-03T12:50Z — 355 landed; three reds were the host, not the code
 
 Headline: row **355** (the gate stops paying for its own leak) is `1c6b886`, with `fresh-gate --worktree` **PASS**
