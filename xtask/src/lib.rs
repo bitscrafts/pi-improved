@@ -29,10 +29,36 @@
 /// works from any checkout or `git archive` export path.
 #[must_use]
 pub fn workspace_root() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    // THE REPOSITORY YOU ARE STANDING IN IS THE ONE YOU MEAN. `CARGO_MANIFEST_DIR` is baked at COMPILE time, and a
+    // shared `CARGO_TARGET_DIR` happily reuses a binary built in a different checkout: measured 2026-11-02, a
+    // `fresh-gate --worktree` run from /projects/pi-improved reused an `xtask` built in /tmp/clone-head, archived
+    // the CLONE's HEAD, and reported three findings that the working tree had already fixed — a gate that measured
+    // a tree nobody was editing, and said so with a straight face.
+    let baked = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
-        .to_path_buf()
+        .to_path_buf();
+    let Ok(cwd) = std::env::current_dir() else {
+        return baked;
+    };
+    let mut cur = cwd.as_path();
+    loop {
+        if cur.join("Cargo.toml").is_file() && cur.join("xtask").join("Cargo.toml").is_file() {
+            if cur != baked {
+                eprintln!(
+                    "xtask: using the repository at {} (this binary was built at {}); set the same CARGO_TARGET_DIR \
+                     for the repo you are in if that is a surprise",
+                    cur.display(),
+                    baked.display()
+                );
+            }
+            return cur.to_path_buf();
+        }
+        match cur.parent() {
+            Some(parent) => cur = parent,
+            None => return baked,
+        }
+    }
 }
 
 /// `cargo xtask <flags>`: CLI parsing shared by the bin and the lib's own

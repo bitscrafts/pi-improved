@@ -22,6 +22,9 @@ const PREFIX: &str = "fresh-gate-";
 #[derive(Debug, PartialEq, Eq)]
 pub struct Opts {
     pub worktree: bool,
+    /// Run the REDUCED step list on purpose. Without this, a reduced `GATE_STEPS` is refused: the item boundary is
+    /// not the boundary that decides whether a commit ships.
+    pub quick: bool,
     pub overlays: Vec<(PathBuf, PathBuf)>,
 }
 
@@ -30,12 +33,14 @@ pub struct Opts {
 pub fn parse(args: &[String]) -> Result<Opts, String> {
     let mut opts = Opts {
         worktree: false,
+        quick: false,
         overlays: Vec::new(),
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--worktree" => opts.worktree = true,
+            "--quick" => opts.quick = true,
             "--overlay" => {
                 let v = it.next().ok_or("--overlay needs src=dest")?;
                 let (src, dest) = v.split_once('=').ok_or("--overlay needs src=dest")?;
@@ -204,6 +209,38 @@ fn gate_env(export: &Path, warm: &Path, skip_coverage: &str) -> Vec<(&'static st
     ]
 }
 
+/// The step list in force, and the refusal that stops a reduced one being mistaken for the gate.
+///
+/// Measured 2026-11-02 the hard way: `scripts/autonomy/env.sh` exports `GATE_STEPS=gate-steps-quick.txt` (5 of 20
+/// steps) for the ITEM boundary, and a hand run that sourced it reported "gated" five times while the commit gate —
+/// which runs `gate-steps.txt` — had three real failures waiting. The quick list is a legitimate tool; it must not
+/// be the accidental default, so here it is allowed only when `--quick` says so, and the list is always printed.
+fn check_step_list(dir: &Path, quick_asked: bool) -> Result<&'static str, String> {
+    let list = std::env::var("GATE_STEPS").unwrap_or_else(|_| String::from("gate-steps.txt"));
+    let quick = list.contains("quick");
+    let steps = std::fs::read_to_string(dir.join(&list)).map_or(0, |t| {
+        t.lines()
+            .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+            .count()
+    });
+    if quick && !quick_asked {
+        return Err(format!(
+            "REFUSED: GATE_STEPS={list} is the ITEM list ({steps} steps), not the gate that decides shipping. \
+             Unset GATE_STEPS (or set it to gate-steps.txt) for the full list, or pass --quick if that reduced \
+             run IS what you intend — it will say so in its own output."
+        ));
+    }
+    println!(
+        "fresh-gate: step list {list} ({steps} step(s)){}",
+        if quick {
+            " — REDUCED, --quick was asked for"
+        } else {
+            ""
+        }
+    );
+    Ok(if quick { "quick" } else { "full" })
+}
+
 /// Runs the gate in `dir`, streaming output while capturing it.
 fn run_gate(dir: &Path) -> Result<(bool, String), String> {
     // The export's job is the hermetic-tree model, not a second measurement of the coverage floor the
@@ -295,6 +332,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
     if opts.worktree {
         overlay_worktree(&root, &dir)?;
     }
+    // the step list is checked against the EXPORT, so the count is the one that will actually run
+    check_step_list(&dir, opts.quick)?;
     for (src, dest) in &opts.overlays {
         copy_into(src, &dir.join(dest))?;
     }

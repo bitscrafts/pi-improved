@@ -21,6 +21,11 @@ fn daemon(extra: &[&str], force_unsupported: bool) -> Output {
         .arg("--workspace")
         .arg(dir.path())
         .env("PII_RUNTIME_DIR", dir.path())
+        // The state dir too, and for the same reason every other daemon-spawning test needs it (spec 344): without
+        // it the daemon resolves the durable stores from $HOME and opens the OPERATOR's `channel.redb`, which a
+        // long-running daemon already holds — the start then dies on the store lock instead of on the assertion
+        // under test.
+        .env("PII_STATE_DIR", dir.path())
         .env("PII_CONFIG", dir.path().join("absent.toml"))
         .env_remove("PII_MODEL");
     if force_unsupported {

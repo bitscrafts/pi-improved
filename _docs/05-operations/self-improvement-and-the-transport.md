@@ -41,6 +41,20 @@ A fix that cannot travel means:
 
 Each step is *transport*, not a new mechanism — which is why the bundle format is designed first and the forge second.
 
+## From an incident to a case (spec 350)
+
+The host reports an incident; the workshop opens a **case** for it without a person. The case ladder, in
+`_tmp/autonomy/incident-cases.tsv` (append-only; the last line for a case id is its state):
+
+1. **`new`** — a fingerprint the ledger has not seen opens a case with its evidence. Silent otherwise, capped at five per
+   run (oldest first). A case is **not a row**: `cycle.sh` dispatches only `plan.tsv`.
+2. **`briefed`** — `incident-cases.sh --brief <case_id>` writes `specs/auto-<case_id>.md` with the evidence and a
+   `## TODO criteria` section. The criteria are written by a person or the skill lane; a machine cannot invent a
+   criterion that can fail.
+3. **`queued`** — a row exists in `plan.tsv` for the briefed spec.
+4. **`closed`** — a treatment landed. If the fingerprint recurs after this, it opens `<fp>#2`: a cure that did not hold
+   is its own finding.
+
 ## The rule that keeps this honest
 
 A treatment's proof is **the reproducer flipping on the machine that receives it**, not the evidence attached to the

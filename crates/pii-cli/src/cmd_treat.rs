@@ -2,6 +2,26 @@
 //! reproducer, and the evidence) from one installation to another. The bundle is a directory: `manifest.json`,
 //! `fix.patch`, `repro.sh`. Nothing here contacts a remote; the importing machine proves the fix again itself.
 
+/// Output through the std handles, not the raw print macros the observability lint bans (spec 98). The macro form
+/// keeps every call site's format string EXACTLY as it was — a mechanical rewrite that turned `println!` into a
+/// function call silently stopped interpolating the braces, and a test caught it (2026-11-02).
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, $($arg)*);
+    }};
+}
+
+/// One line on stderr, same seam. Every refusal in this module goes through here.
+macro_rules! warn {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let mut err = std::io::stderr().lock();
+        let _ = writeln!(err, $($arg)*);
+    }};
+}
+
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -41,10 +61,10 @@ pub(crate) fn cmd_treat(args: &mut std::env::ArgsOs) -> ExitCode {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage: pii treat export <signature> --out <dir>");
-    eprintln!("       pii treat import <dir>");
-    eprintln!("       pii treat apply <signature> [--yes]");
-    eprintln!("       pii treat list");
+    warn!("usage: pii treat export <signature> --out <dir>");
+    warn!("       pii treat import <dir>");
+    warn!("       pii treat apply <signature> [--yes]");
+    warn!("       pii treat list");
     ExitCode::from(2)
 }
 
@@ -55,7 +75,7 @@ fn open_store() -> Result<HealStore, ExitCode> {
         std::path::PathBuf::from,
     );
     HealStore::open(&state_dir.join("heal.redb")).map_err(|e| {
-        eprintln!("cannot open the heal store: {e}");
+        warn!("cannot open the heal store: {e}");
         ExitCode::from(1)
     })
 }
@@ -165,16 +185,16 @@ fn export(sig: &str, out: &Path) -> ExitCode {
     let attempt = match store.get_attempt(sig) {
         Ok(Some(a)) => a,
         Ok(None) => {
-            eprintln!("refusing to export {sig}: no heal attempt is recorded for it");
+            warn!("refusing to export {sig}: no heal attempt is recorded for it");
             return ExitCode::from(2);
         }
         Err(e) => {
-            eprintln!("cannot read the heal store: {e}");
+            warn!("cannot read the heal store: {e}");
             return ExitCode::from(1);
         }
     };
     let refuse = |field: &str| {
-        eprintln!("refusing to export {sig}: no {field} (an unproven fix is not a treatment)");
+        warn!("refusing to export {sig}: no {field} (an unproven fix is not a treatment)");
         ExitCode::from(2)
     };
     let Some(patch_hash) = attempt.patch_hash.clone() else {
@@ -190,13 +210,13 @@ fn export(sig: &str, out: &Path) -> ExitCode {
         return refuse("reproducer");
     };
     if pii_store::hash(patch.as_bytes()) != patch_hash {
-        eprintln!("refusing to export {sig}: the stored patch does not match patch_hash");
+        warn!("refusing to export {sig}: the stored patch does not match patch_hash");
         return ExitCode::from(2);
     }
     let base = match head() {
         Ok(rev) => rev,
         Err(e) => {
-            eprintln!("cannot read HEAD: {e}");
+            warn!("cannot read HEAD: {e}");
             return ExitCode::from(1);
         }
     };
@@ -221,10 +241,10 @@ fn export(sig: &str, out: &Path) -> ExitCode {
             std::fs::write(out.join("manifest.json"), format!("{text}\n"))
         });
     if let Err(e) = written {
-        eprintln!("cannot write the bundle to {}: {e}", out.display());
+        warn!("cannot write the bundle to {}: {e}", out.display());
         return ExitCode::from(1);
     }
-    println!("exported {sig} to {}", out.display());
+    say!("exported {sig} to {}", out.display());
     ExitCode::SUCCESS
 }
 
@@ -233,7 +253,7 @@ fn export(sig: &str, out: &Path) -> ExitCode {
 #[allow(clippy::too_many_lines)]
 fn import(dir: &Path) -> ExitCode {
     let refuse = |why: String| {
-        eprintln!("refusing to import {}: {why}", dir.display());
+        warn!("refusing to import {}: {why}", dir.display());
         ExitCode::from(2)
     };
     let manifest: serde_json::Value = match std::fs::read(dir.join("manifest.json"))
@@ -319,7 +339,7 @@ fn import(dir: &Path) -> ExitCode {
             extra: serde_json::Map::new(),
         },
         Err(e) => {
-            eprintln!("cannot read the heal store: {e}");
+            warn!("cannot read the heal store: {e}");
             return ExitCode::from(1);
         }
     };
@@ -339,10 +359,10 @@ fn import(dir: &Path) -> ExitCode {
         .insert(SOURCE_KEY.to_owned(), dir.display().to_string().into());
     attempt.extra.insert(IMPORTED_KEY.to_owned(), now.into());
     if let Err(e) = store.put_attempt(&attempt) {
-        eprintln!("cannot record the import: {e}");
+        warn!("cannot record the import: {e}");
         return ExitCode::from(1);
     }
-    println!(
+    say!(
         "imported {sig_str} from {} (base {base}); state imported, not applied",
         dir.display()
     );
@@ -360,11 +380,11 @@ fn apply(sig: &str, yes: bool) -> ExitCode {
     let mut attempt = match store.get_attempt(sig) {
         Ok(Some(a)) => a,
         Ok(None) => {
-            eprintln!("refusing to apply {sig}: no treatment is recorded for it");
+            warn!("refusing to apply {sig}: no treatment is recorded for it");
             return ExitCode::from(2);
         }
         Err(e) => {
-            eprintln!("cannot read the heal store: {e}");
+            warn!("cannot read the heal store: {e}");
             return ExitCode::from(1);
         }
     };
@@ -372,20 +392,20 @@ fn apply(sig: &str, yes: bool) -> ExitCode {
         extra_text(&attempt, PATCH_KEY),
         extra_text(&attempt, REPRO_KEY),
     ) else {
-        eprintln!("refusing to apply {sig}: it carries no patch or no reproducer");
+        warn!("refusing to apply {sig}: it carries no patch or no reproducer");
         return ExitCode::from(2);
     };
     // An allowing decision, or `--yes` for an incident this machine opened itself (it has its own run history).
     let allowed =
         attempt.decision.as_ref().is_some_and(|d| d.allow) || (yes && !attempt.attempts.is_empty());
     if !allowed {
-        eprintln!(
+        warn!(
             "refusing to apply {sig}: no allowing decision is recorded (--yes is only for an incident this machine opened)"
         );
         return ExitCode::from(2);
     }
     if let Err(stderr) = applies_here(patch.as_bytes()) {
-        eprintln!(
+        warn!(
             "refusing to apply {sig}: the patch does not apply cleanly; the tree is untouched\n{stderr}"
         );
         return ExitCode::from(1);
@@ -393,28 +413,28 @@ fn apply(sig: &str, yes: bool) -> ExitCode {
     let before = match reproduce(&repro) {
         Ok(run) => run,
         Err(e) => {
-            eprintln!("{e}");
+            warn!("{e}");
             return ExitCode::from(1);
         }
     };
     match git(&["apply"], Some(patch.as_bytes())) {
         Ok(out) if out.status.success() => {}
         Ok(out) => {
-            eprintln!(
+            warn!(
                 "git apply failed: {}",
                 String::from_utf8_lossy(&out.stderr).trim()
             );
             return ExitCode::from(1);
         }
         Err(e) => {
-            eprintln!("{e}");
+            warn!("{e}");
             return ExitCode::from(1);
         }
     }
     let after = match reproduce(&repro) {
         Ok(run) => run,
         Err(e) => {
-            eprintln!("{e}");
+            warn!("{e}");
             return ExitCode::from(1);
         }
     };
@@ -429,26 +449,26 @@ fn apply(sig: &str, yes: bool) -> ExitCode {
     if !before.0 && after.0 {
         attempt.state = HealState::Verified;
         if let Err(e) = store.put_attempt(&attempt) {
-            eprintln!("cannot record the verdict: {e}");
+            warn!("cannot record the verdict: {e}");
             return ExitCode::from(1);
         }
-        println!("verified {sig}: the reproducer failed before and passes after");
+        say!("verified {sig}: the reproducer failed before and passes after");
         return ExitCode::SUCCESS;
     }
     // The patch did not flip the reproducer here: take it back out, byte for byte.
     match git(&["apply", "-R"], Some(patch.as_bytes())) {
         Ok(out) if out.status.success() => {}
         _ => {
-            eprintln!("could not revert the patch for {sig}; restore the tree by hand");
+            warn!("could not revert the patch for {sig}; restore the tree by hand");
             return ExitCode::from(1);
         }
     }
     attempt.state = HealState::NotATreatment;
     if let Err(e) = store.put_attempt(&attempt) {
-        eprintln!("cannot record the verdict: {e}");
+        warn!("cannot record the verdict: {e}");
         return ExitCode::from(1);
     }
-    eprintln!(
+    warn!(
         "{sig} is not a treatment here: the reproducer was {} before and {} after; the patch is reverted\n--- before\n{}--- after\n{}",
         verdict(before.0),
         verdict(after.0),
@@ -467,7 +487,7 @@ fn list() -> ExitCode {
     let attempts = match store.list_attempts() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("cannot read the heal store: {e}");
+            warn!("cannot read the heal store: {e}");
             return ExitCode::from(1);
         }
     };
@@ -476,7 +496,7 @@ fn list() -> ExitCode {
             Some(Ok(())) => "yes",
             _ => "no",
         };
-        println!(
+        say!(
             "{} base={} state={} applies_here={here} gate_before={} gate_after={} patch={}",
             a.signature_hash,
             extra_text(a, BASE_KEY).unwrap_or_else(|| String::from("-")),

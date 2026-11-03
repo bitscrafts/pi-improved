@@ -689,7 +689,8 @@ mod tests {
         let t = std::time::Instant::now();
         let timed_out = super::shutdown_runtime(rt, bound, |m| m.clone_into(&mut logged));
         let took = t.elapsed();
-        eprintln!("shutdown took {took:?} (bound {bound:?}); log: {logged}");
+        // The shutdown message is captured in `logged` and asserted below; printing it here as well was a
+        // diagnostic that only pushed this file past its observability budget.
         assert!(timed_out, "stuck task must hit the bound");
         assert!(took < bound + tolerance, "shutdown took {took:?}");
         assert!(

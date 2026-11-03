@@ -179,10 +179,18 @@ fn control_a_refused_start_disturbs_nothing() {
     let mut b = start(&b_dirs);
     wait_refusal(&mut b, &b_dirs.log).expect("second daemon hung on the store lock");
 
-    assert!(
-        std::os::unix::net::UnixStream::connect(a_dirs.runtime.join("control.sock")).is_ok(),
-        "daemon A's socket must still answer"
-    );
+    // Through `pii_uds::client_connect`, the one sanctioned client (net-check), not a raw `UnixStream`: a test that
+    // proves the daemon answers must reach it the way the product does.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime for the client");
+    let answered = rt.block_on(async {
+        pii_uds::client_connect(&a_dirs.runtime.join("control.sock"))
+            .await
+            .is_ok()
+    });
+    assert!(answered, "daemon A's socket must still answer");
     assert_eq!(
         store_mtimes(&a_dirs.state),
         before,
