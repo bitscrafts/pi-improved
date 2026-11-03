@@ -2043,20 +2043,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pii-http-fetch"
-version = "0.2.0"
-dependencies = [
- "parking_lot",
- "pii-abi",
- "pii-core",
- "pii-model",
- "pii-net",
- "pii-observe",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "pii-learn"
 version = "0.2.0"
 dependencies = [

@@ -20,7 +20,6 @@ members = [
     "crates/pii-web",
     "crates/pii-mcp",
     "crates/pii-evolve",
-    "crates/pii-http-fetch",
     "crates/pii-hal",
     "crates/pii-wasm",
     "crates/pii-learn",
