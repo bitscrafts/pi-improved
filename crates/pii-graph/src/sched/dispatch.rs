@@ -420,12 +420,8 @@ fn journal_next_or_suspend(
                     error: e.to_string(),
                 };
             }
-            if let Err(e) = env.jr.store().put_resume_key(&key, env.run) {
-                return DispatchOutcome::Failed {
-                    error: e.to_string(),
-                };
-            }
-            // Snapshot unconditionally at the Suspended seq.
+            // Make the Suspended event durable before parking. No resume-key
+            // index is written: nothing reads RESUME_INDEX (spec 358 R3).
             if let Err(e) = env.jr.snapshot_now() {
                 env.jr.report_flush_failure(&e);
             }

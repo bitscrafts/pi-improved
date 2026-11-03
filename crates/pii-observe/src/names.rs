@@ -211,6 +211,10 @@ pub const RUN_CANCEL_KILL_TIMEOUT: &str = "run.cancel_kill_timeout";
 pub const RUN_RESUME_REFUSED: &str = "run.resume.refused";
 /// Event: the scheduler's resume of a due timer was refused (`run`, `key`, `error`).
 pub const TIMER_RESUME_REFUSED: &str = "timer.resume.refused";
+/// Event: the timer wheel could not be read; reported once per outage, then the scheduler backs off (`error`).
+pub const TIMER_WHEEL_ERROR: &str = "timer.wheel.error";
+/// Event: a resume of a suspended run was refused; its timer is offered again while the run waits (`run`, `key`, `error`).
+pub const RUN_RESUME_FAILED: &str = "run.resume.failed";
 /// Event: boot reconciliation closed a run a crash left `Running` (`run`, `reason`).
 pub const RUN_RECONCILED: &str = "run.reconciled";
 /// Event: a node panicked; the run is failed, the daemon survives (`run`, `node`, `message`).
@@ -502,6 +506,8 @@ pub const ALL: &[&str] = &[
     RUN_CANCEL_KILL_TIMEOUT,
     RUN_RESUME_REFUSED,
     TIMER_RESUME_REFUSED,
+    TIMER_WHEEL_ERROR,
+    RUN_RESUME_FAILED,
     NODE_PANICKED,
     RUN_RECONCILED,
     DAEMON_STARTING,

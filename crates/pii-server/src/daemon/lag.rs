@@ -81,6 +81,23 @@ pub(super) fn recover_finished(engine: &Arc<Engine>, ctx: &Arc<DaemonContext>) {
     }
 }
 
+/// Spec 353 R4: a queue row whose claiming run is terminal or gone is offered again at boot; a row whose
+/// run is `Running` or `Suspended` keeps its claim. Lives here rather than in `mod.rs` because this module
+/// already owns recovery, and `mod.rs` is at its line budget.
+pub(super) fn requeue_dead_claims(engine: &Engine) {
+    let runs = Arc::clone(&engine.store);
+    let requeued = engine.queue.requeue_dead_claims(|run| {
+        !runs
+            .get_run(&RunId::from(run))
+            .ok()
+            .flatten()
+            .is_some_and(|h| matches!(h.status, RunStatus::Running | RunStatus::Suspended))
+    });
+    if let Err(e) = requeued {
+        log_warn(&format!("boot: queue requeue failed: {e}"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -280,7 +297,7 @@ mod tests {
         let wheel = Arc::new(TimerWheel::open(&dir.join("timer.redb")).unwrap());
         let scheduler = Scheduler::new(
             Arc::clone(&engine),
-            Arc::clone(&wheel),
+            wheel.clone(),
             Arc::new(FixedClock::new()),
         );
 

@@ -243,6 +243,9 @@ impl Daemon {
         engine.attach_spawn_engine(Arc::clone(&engine));
 
         let scheduler = scheduler::Scheduler::new(Arc::clone(&engine), wheel, clock);
+        // Spec 353 R3: a run a crash left `Suspended` is re-armed now, not only after a bus `Lagged`.
+        lag::recover_suspended(&engine, &scheduler);
+        lag::requeue_dead_claims(&engine);
         Ok(Arc::new(Self {
             engine,
             ctx,
@@ -853,7 +856,7 @@ mod tests {
         let wheel = Arc::new(TimerWheel::open(&dir.join("timer.redb")).unwrap());
         let scheduler = Scheduler::new(
             Arc::clone(&engine),
-            Arc::clone(&wheel),
+            wheel.clone(),
             Arc::new(FixedClock::new()),
         );
 

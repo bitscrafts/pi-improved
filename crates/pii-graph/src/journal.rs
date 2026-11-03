@@ -75,7 +75,8 @@ pub struct Journaler<'a> {
     store: &'a Store,
     obs: Arc<dyn pii_core::Observer>,
     state: Mutex<JournalState>,
-    bb: Arc<RwLock<Blackboard>>,
+    /// Kept for the constructor signature; no snapshot is written (spec 358 R3).
+    _bb: Arc<RwLock<Blackboard>>,
     /// Flush the pending buffer once it reaches this many events.
     batch: usize,
 }
@@ -140,7 +141,7 @@ impl<'a> Journaler<'a> {
                 header_dirty: false,
                 last_flush: Instant::now(),
             }),
-            bb,
+            _bb: bb,
             batch: batch.max(1),
         }
     }
@@ -210,10 +211,9 @@ impl<'a> Journaler<'a> {
             event: event.clone(),
         });
         if seq > 0 && seq.is_multiple_of(SNAPSHOT_EVERY) {
-            // Snapshot boundary: flush (making the prefix durable through
-            // this seq), then snapshot the blackboard anchored at this seq.
+            // Snapshot boundary: flush, making the prefix durable through
+            // this seq. No blackboard snapshot is written (spec 358 R3).
             self.flush()?;
-            self.snapshot_at(seq)?;
         } else if self.pending_len() >= self.batch {
             self.flush()?;
         }
@@ -310,34 +310,13 @@ impl<'a> Journaler<'a> {
         self.flush().map(|_| ())
     }
 
-    /// Snapshots the blackboard at the most recently flushed seq (used
-    /// unconditionally on suspend). Flushes any pending buffer FIRST so the
-    /// snapshot anchors a durable journal prefix (spec 11 J2).
+    /// Makes the buffered journal durable (used on suspend). Flushes any
+    /// pending buffer and returns the durable seq. No blackboard snapshot is
+    /// written (spec 358 R3: the snapshot table has no reader outside a test).
     ///
     /// # Errors
     /// Returns [`PiiError::Internal`] on a redb or serialisation failure.
     pub fn snapshot_now(&self) -> Result<u64, PiiError> {
-        let seq = self.flush()?;
-        let run = self.state.lock().header.run.clone();
-        Self::snapshot_locked(&self.bb, self.store, &run, seq)?;
-        Ok(seq)
-    }
-
-    /// Snapshots the blackboard at an explicit seq (used when an append
-    /// crossed a [`SNAPSHOT_EVERY`] boundary — the flush already made the
-    /// prefix durable through `seq`, so the snapshot anchors there).
-    fn snapshot_at(&self, seq: u64) -> Result<(), PiiError> {
-        let run = self.state.lock().header.run.clone();
-        Self::snapshot_locked(&self.bb, self.store, &run, seq)
-    }
-
-    fn snapshot_locked(
-        bb: &RwLock<Blackboard>,
-        store: &Store,
-        run: &RunId,
-        seq: u64,
-    ) -> Result<(), PiiError> {
-        let bytes = bb.read().snapshot_bytes()?;
-        store.put_snapshot(run, seq, &bytes)
+        self.flush()
     }
 }

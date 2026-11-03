@@ -45,8 +45,9 @@ struct SelectNode {
 }
 
 impl GraphNode for SelectNode {
-    fn run(&self, _ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
-        Ok(match self.store.claim_next("select")? {
+    fn run(&self, ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
+        // Spec 353 R4: the claim is leased to this run, so a restart can tell whether the run is still alive.
+        Ok(match self.store.claim_next(ctx.trace().run.as_str())? {
             Claim::Claimed(item) => port(
                 "ok",
                 serde_json::json!({

@@ -70,6 +70,12 @@ pub struct WorkItem {
     pub reason: Option<String>,
     /// Queue position; `0` until the store assigns it.
     pub order: u64,
+    /// The run that claimed the item (spec 353 R4), so a restart can tell a live claim from a dead one.
+    #[serde(default)]
+    pub claimed_by: Option<String>,
+    /// When the claim was made, in unix milliseconds.
+    #[serde(default)]
+    pub claimed_at_ms: Option<u64>,
 }
 
 impl WorkItem {
@@ -88,6 +94,8 @@ impl WorkItem {
             session: None,
             reason: None,
             order: 0,
+            claimed_by: None,
+            claimed_at_ms: None,
         }
     }
 }
@@ -107,7 +115,7 @@ pub struct Blocker {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Claim {
     /// The first pending item whose needs are all done, now `Running`.
-    Claimed(WorkItem),
+    Claimed(Box<WorkItem>),
     /// Pending items exist but every one waits on an unmet edge.
     Blocked(Vec<Blocker>),
     /// Nothing is pending.
@@ -268,6 +276,8 @@ impl QueueStore {
                 let mut claimed = item.clone();
                 claimed.status = ItemStatus::Running;
                 claimed.attempts += 1;
+                claimed.claimed_by = Some(by.to_owned());
+                claimed.claimed_at_ms = Some(now_ms());
                 let bytes = to_bytes(&claimed)?;
                 table
                     .insert(claimed.id.as_str(), bytes.as_slice())
@@ -324,6 +334,58 @@ impl QueueStore {
             append_event(&write, id, &kind, status, reason, by)?;
         }
         write.commit().map_err(|e| internal("commit status", e))
+    }
+
+    /// Offers again every `Running` row whose claiming run is dead (spec 353 R4). `is_dead` is asked with the
+    /// recorded claimant, or `""` for a row with no recorded claim. Each such row goes back to `Pending`, and the
+    /// change is journalled as `requeued_after_restart`. Returns how many rows went back.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb or codec failure.
+    pub fn requeue_dead_claims(&self, is_dead: impl Fn(&str) -> bool) -> Result<u64, PiiError> {
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| internal("begin_write", e))?;
+        let mut requeued = 0;
+        {
+            let mut table = write
+                .open_table(ITEM)
+                .map_err(|e| internal("open item", e))?;
+            let mut dead = Vec::new();
+            for row in table.iter().map_err(|e| internal("iter", e))? {
+                let (_, v) = row.map_err(|e| internal("iter row", e))?;
+                let item = from_bytes::<WorkItem>(v.value())?;
+                if item.status == ItemStatus::Running
+                    && is_dead(item.claimed_by.as_deref().unwrap_or(""))
+                {
+                    dead.push(item);
+                }
+            }
+            for mut item in dead {
+                item.status = ItemStatus::Pending;
+                item.reason = Some(String::from(
+                    "requeued after restart: the claiming run is gone",
+                ));
+                item.claimed_by = None;
+                item.claimed_at_ms = None;
+                let bytes = to_bytes(&item)?;
+                table
+                    .insert(item.id.as_str(), bytes.as_slice())
+                    .map_err(|e| internal("insert requeue", e))?;
+                append_event(
+                    &write,
+                    &item.id,
+                    REQUEUED_AFTER_RESTART,
+                    ItemStatus::Pending,
+                    item.reason.as_deref(),
+                    "boot",
+                )?;
+                requeued += 1;
+            }
+        }
+        write.commit().map_err(|e| internal("commit requeue", e))?;
+        Ok(requeued)
     }
 
     /// The status journal of `id`, oldest first.
@@ -387,10 +449,22 @@ fn decide(items: &[WorkItem]) -> Claim {
             }
         }
         if !unmet {
-            return Claim::Claimed((*item).clone());
+            return Claim::Claimed(Box::new((*item).clone()));
         }
     }
     Claim::Blocked(blockers)
+}
+
+/// The journal kind of a row put back to `pending` because its claiming run died.
+const REQUEUED_AFTER_RESTART: &str = "requeued_after_restart";
+
+/// Unix time in milliseconds, for a claim's `claimed_at_ms`.
+// reason: the claim time is an operator-facing stamp on the row; nothing replays from it.
+#[allow(clippy::disallowed_methods)]
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// The next queue position: one past the largest assigned so far.

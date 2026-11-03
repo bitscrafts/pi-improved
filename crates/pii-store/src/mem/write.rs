@@ -77,7 +77,10 @@ impl MemStore {
         {
             self.bump_meta("dims", i64::try_from(q.len()).unwrap_or(0))?;
         }
-        // df: one per distinct term.
+        // df: one per distinct term, counted once per genuinely new doc.
+        if existed {
+            return Ok(());
+        }
         self.bump_df(&rows.id)
     }
 

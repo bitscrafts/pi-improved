@@ -3,15 +3,55 @@
 //! a thread-per-timer, never a fixed tick.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use pii_abi::{ResumeKey, RunId};
+use pii_abi::{PiiError, ResumeKey, RunId, RunStatus};
 use pii_core::Clock;
-use pii_store::timer::TimerWheel;
+use pii_store::timer::{DueTimer, TimerWheel};
 use tokio::sync::Notify;
 
 use crate::Engine;
+
+/// Pause after a failed wheel read before the next read (spec 353 R1).
+const WHEEL_BACKOFF: Duration = Duration::from_secs(1);
+
+/// How long a refused resume waits before its timer is offered again (spec 353 R2).
+const RESUME_RETRY: Duration = Duration::from_secs(1);
+
+/// The timer-wheel operations the scheduler drives. [`TimerWheel`] is the real one; a test can supply a wheel that
+/// fails.
+pub trait TimerSource: Send + Sync {
+    /// The earliest pending `fire_at_ms`, if any.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] when the wheel cannot be read.
+    fn next_timer(&self) -> Result<Option<u64>, PiiError>;
+    /// Removes and returns every timer due at `now_ms`.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] when the wheel cannot be read or written.
+    fn take_due(&self, now_ms: u64) -> Result<Vec<DueTimer>, PiiError>;
+    /// Registers a timer (idempotent: re-put replaces).
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] when the wheel cannot be written.
+    fn put_timer(&self, fire_at_ms: u64, run: &str, key: &str) -> Result<(), PiiError>;
+}
+
+impl TimerSource for TimerWheel {
+    fn next_timer(&self) -> Result<Option<u64>, PiiError> {
+        Self::next_timer(self)
+    }
+
+    fn take_due(&self, now_ms: u64) -> Result<Vec<DueTimer>, PiiError> {
+        Self::take_due(self, now_ms)
+    }
+
+    fn put_timer(&self, fire_at_ms: u64, run: &str, key: &str) -> Result<(), PiiError> {
+        Self::put_timer(self, fire_at_ms, run, key)
+    }
+}
 
 /// Drives the timer wheel (F5.5).
 ///
@@ -20,22 +60,29 @@ use crate::Engine;
 /// `TimerWheel::take_due`'s single write txn.
 pub struct Scheduler {
     engine: Arc<Engine>,
-    wheel: Arc<TimerWheel>,
+    wheel: Arc<dyn TimerSource>,
     clock: Arc<dyn Clock>,
     wakeups: AtomicU64,
     notify: Notify,
+    /// Set while the wheel cannot be read, so one outage is reported once.
+    wheel_failing: AtomicBool,
 }
 
 impl Scheduler {
     /// Builds a scheduler over `wheel`, resuming through `engine`.
     #[must_use]
-    pub fn new(engine: Arc<Engine>, wheel: Arc<TimerWheel>, clock: Arc<dyn Clock>) -> Arc<Self> {
+    pub fn new(
+        engine: Arc<Engine>,
+        wheel: Arc<dyn TimerSource>,
+        clock: Arc<dyn Clock>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             engine,
             wheel,
             clock,
             wakeups: AtomicU64::new(0),
             notify: Notify::new(),
+            wheel_failing: AtomicBool::new(false),
         })
     }
 
@@ -58,7 +105,27 @@ impl Scheduler {
     /// process exits (F5.5).
     pub async fn run(self: Arc<Self>) {
         loop {
-            let next = self.wheel.next_timer().ok().flatten();
+            let next = match self.wheel.next_timer() {
+                Ok(next) => {
+                    self.wheel_failing.store(false, Ordering::Relaxed);
+                    next
+                }
+                Err(e) => {
+                    // Spec 353 R1: report the outage once, then back off instead of re-reading at once.
+                    if !self.wheel_failing.swap(true, Ordering::Relaxed) {
+                        self.engine.log().event(
+                            &pii_observe::Event::new(
+                                "scheduler",
+                                pii_observe::Level::Error,
+                                pii_observe::names::TIMER_WHEEL_ERROR,
+                            )
+                            .field("error", e.to_string().as_str()),
+                        );
+                    }
+                    tokio::time::sleep(WHEEL_BACKOFF).await;
+                    continue;
+                }
+            };
             let Some(fire_at) = next else {
                 self.notify.notified().await;
                 continue;
@@ -66,6 +133,8 @@ impl Scheduler {
             let now = self.clock.now_ms();
             if fire_at <= now {
                 self.fire_due_sync(now);
+                // Spec 353 R1: a due timer is fired without a sleep; yield so the runtime is never starved.
+                tokio::task::yield_now().await;
                 continue;
             }
             let dur = Duration::from_millis(fire_at - now);
@@ -102,7 +171,44 @@ impl Scheduler {
                     .field("key", d.key.as_str())
                     .field("error", e.to_string().as_str()),
                 );
+                self.restore_if_suspended(&d, &e.to_string(), now_ms);
             }
+        }
+    }
+
+    /// Spec 353 R2: a refused resume must not lose a run that still waits. The refusal is journalled, and when the
+    /// run is still `Suspended` its timer goes back, to be offered again after [`RESUME_RETRY`].
+    fn restore_if_suspended(&self, due: &DueTimer, error: &str, now_ms: u64) {
+        self.engine.log().event(
+            &pii_observe::Event::new(
+                "scheduler",
+                pii_observe::Level::Warn,
+                pii_observe::names::RUN_RESUME_FAILED,
+            )
+            .field("run", due.run.as_str())
+            .field("key", due.key.as_str())
+            .field("error", error),
+        );
+        let suspended = self
+            .engine
+            .store
+            .get_run(&RunId::from(due.run.as_str()))
+            .ok()
+            .flatten()
+            .is_some_and(|h| h.status == RunStatus::Suspended);
+        if !suspended {
+            return;
+        }
+        let retry_ms = now_ms.saturating_add(u64::try_from(RESUME_RETRY.as_millis()).unwrap_or(0));
+        if let Err(e) = self.wheel.put_timer(retry_ms, &due.run, &due.key) {
+            self.engine.log().event(
+                &pii_observe::Event::new(
+                    "scheduler",
+                    pii_observe::Level::Error,
+                    pii_observe::names::TIMER_WHEEL_ERROR,
+                )
+                .field("error", e.to_string().as_str()),
+            );
         }
     }
 }

@@ -22,13 +22,23 @@ pub(crate) fn cmd_store(args: &mut std::env::ArgsOs) -> ExitCode {
         }
     }
     let dir = Some(dir.unwrap_or_else(pii_core::state_dir));
-    let (Some("compact"), Some(dir)) = (sub.as_deref(), dir) else {
+    let (Some(sub), Some(dir)) = (sub.as_deref(), dir) else {
         let _ = writeln!(
             std::io::stderr(),
-            "usage: pii store compact [--dir <store dir>]   (daemon must be stopped)"
+            "usage: pii store compact|stats [--dir <store dir>]   (compact: daemon must be stopped)"
         );
         return ExitCode::from(2);
     };
+    if sub == "stats" {
+        return print_stats(&dir);
+    }
+    if sub != "compact" {
+        let _ = writeln!(
+            std::io::stderr(),
+            "usage: pii store compact|stats [--dir <store dir>]   (compact: daemon must be stopped)"
+        );
+        return ExitCode::from(2);
+    }
     match pii_store::compact::compact_dir(&dir) {
         Ok(reports) => {
             let mut out = std::io::stdout();
@@ -46,4 +56,23 @@ pub(crate) fn cmd_store(args: &mut std::env::ArgsOs) -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// `pii store stats [--dir D]` (spec 358 R1): one line per table with its row
+/// count, then the store file's byte size.
+fn print_stats(dir: &std::path::Path) -> ExitCode {
+    let path = dir.join("store.redb");
+    let info = match pii_store::Store::open(&path).and_then(|s| s.info()) {
+        Ok(info) => info,
+        Err(e) => {
+            let _ = writeln!(std::io::stderr(), "error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let mut out = std::io::stdout();
+    for (table, rows) in &info.tables {
+        let _ = writeln!(out, "store.redb {table} rows={rows}");
+    }
+    let _ = writeln!(out, "store.redb bytes={}", info.bytes);
+    ExitCode::SUCCESS
 }
