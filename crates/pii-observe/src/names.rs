@@ -30,6 +30,8 @@ pub const NET_ACCEPT_FAILED: &str = "net.accept.failed";
 pub const TOOLS_CALL: &str = "tools.call";
 /// Event: the sandbox profile in force at daemon start (profile, grant, enforced).
 pub const DAEMON_SANDBOX_IN_FORCE: &str = "daemon.sandbox.in_force";
+/// Event: a work item was added to the queue from outside (spec 352 R6).
+pub const QUEUE_ITEM_ADDED: &str = "queue.item.added";
 /// Event: a bash command matched the deny list.
 pub const TOOLS_DENY_LIST_HIT: &str = "tools.deny_list.hit";
 /// Event: the provider and model a request resolved to.
@@ -416,6 +418,7 @@ pub const ALL: &[&str] = &[
     TOOLS_CALL,
     TOOLS_DENY_LIST_HIT,
     DAEMON_SANDBOX_IN_FORCE,
+    QUEUE_ITEM_ADDED,
     MODEL_PROVIDER_IN_FORCE,
     MODEL_TIER_RESOLVED,
     MODEL_TIER_UNAVAILABLE,

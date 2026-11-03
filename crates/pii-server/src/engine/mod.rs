@@ -35,6 +35,7 @@ pub mod loopback;
 pub mod methods;
 pub mod orphans;
 pub mod preflight;
+pub mod queue_methods;
 #[cfg(test)]
 mod reconcile_tests;
 pub mod refusal;

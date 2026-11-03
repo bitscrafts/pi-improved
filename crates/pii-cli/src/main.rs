@@ -26,6 +26,7 @@ mod cmd_metrics;
 mod cmd_mqtt;
 mod cmd_oneshot;
 mod cmd_project;
+mod cmd_queue;
 mod cmd_run;
 mod cmd_sandbox_exec;
 mod cmd_skill;
@@ -268,6 +269,9 @@ fn main() -> ExitCode {
     }
     if cmd == "lane" {
         return cmd_lane::cmd_lane(&mut args);
+    }
+    if cmd == "queue" {
+        return cmd_queue::cmd_queue(&mut args);
     }
     if cmd == "run" {
         return cmd_sys::cmd_run_ctl(&mut args);

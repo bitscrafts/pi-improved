@@ -22,6 +22,39 @@ use crate::method::Method;
 /// hence the bump to `pii.v2`).
 pub const PROTOCOL_VERSION: &str = "pii.v2";
 
+/// `queue.add` params (spec 352 R1): one work item, as the queue stores it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueAddParams {
+    /// Stable identifier; must not already be in the queue.
+    #[serde(default)]
+    pub id: String,
+    /// Spec path the coder is pointed at; must exist on the daemon's machine.
+    #[serde(default)]
+    pub spec: String,
+    /// One-line title.
+    #[serde(default)]
+    pub title: String,
+    /// Criteria commands; at least one.
+    #[serde(default)]
+    pub criteria: Vec<String>,
+    /// Paths the item is expected to touch.
+    #[serde(default)]
+    pub touches: Vec<String>,
+}
+
+/// One row of `queue.list` (spec 352 R3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueRow {
+    /// The item's id.
+    pub id: String,
+    /// `pending`, `running`, `done` or `parked`.
+    pub state: String,
+    /// The item's title.
+    pub title: String,
+    /// The item's spec path.
+    pub spec: String,
+}
+
 /// A JSON-RPC id: number or string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]

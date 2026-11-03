@@ -132,6 +132,15 @@ pub enum Method {
     /// Change a live skill document's text in the daemon's store, keeping its id (spec 234 R1).
     #[serde(rename = "skill.edit")]
     SkillEdit,
+    /// Add one work item to the daemon's queue (spec 352 R1).
+    #[serde(rename = "queue.add")]
+    QueueAdd,
+    /// List the queue's rows, oldest first (spec 352 R3).
+    #[serde(rename = "queue.list")]
+    QueueList,
+    /// Claim the next pending item, as the graph's `select` node does (spec 352 R4).
+    #[serde(rename = "queue.claim")]
+    QueueClaim,
 }
 
 impl std::fmt::Display for Method {
@@ -179,6 +188,9 @@ impl std::fmt::Display for Method {
             Self::SkillPut => "skill.put",
             Self::SkillList => "skill.list",
             Self::SkillEdit => "skill.edit",
+            Self::QueueAdd => "queue.add",
+            Self::QueueList => "queue.list",
+            Self::QueueClaim => "queue.claim",
         })
     }
 }
@@ -230,6 +242,9 @@ impl std::str::FromStr for Method {
             "skill.put" => Self::SkillPut,
             "skill.list" => Self::SkillList,
             "skill.edit" => Self::SkillEdit,
+            "queue.add" => Self::QueueAdd,
+            "queue.list" => Self::QueueList,
+            "queue.claim" => Self::QueueClaim,
             other => return Err(other.to_owned()),
         })
     }

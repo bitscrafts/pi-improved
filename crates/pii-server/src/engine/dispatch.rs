@@ -148,6 +148,15 @@ pub fn dispatch(
         Method::SkillPut => crate::engine::skill_methods::skill_put(engine, req),
         Method::SkillList => crate::engine::skill_methods::skill_list(engine, req),
         Method::SkillEdit => crate::engine::skill_methods::skill_edit(engine, req),
+        Method::QueueAdd => match crate::engine::queue_methods::admit(engine, req) {
+            Ok(item) => match engine.queue.put_item(&item) {
+                Ok(()) => crate::engine::queue_methods::added(engine, req, &item),
+                Err(e) => err_code(err, &e),
+            },
+            Err((code, m)) => err(code, &m),
+        },
+        Method::QueueList => crate::engine::queue_methods::queue_list(engine, req),
+        Method::QueueClaim => crate::engine::queue_methods::queue_claim(engine, req),
         Method::RunResume => crate::engine::methods::run_resume(engine, req),
         Method::RunRetry => crate::engine::methods::run_retry(engine, req),
         Method::RunAbandon => crate::engine::methods::run_abandon(engine, req),
