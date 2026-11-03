@@ -22,15 +22,17 @@ const HOST: &str = r#"
 name = "night"
 entry = "sdd"
 exit = "sdd"
-# a call may not grant more than the graph it sits in holds (graph.call.widen)
-caps = ["spawn", "proc"]
+# a call may not grant more than the graph it sits in holds (graph.call.widen). The called graph's coder
+# node declares fs_read and fs_write (spec 362: a coder without write cannot implement), so the host that
+# holds the call must grant them too — this is what graphs/night.toml does.
+caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [[node]]
 id = "sdd"
 kind = "call"
 graph = "queue"
 sha256 = "PIN"
-caps = ["spawn", "proc"]
+caps = ["spawn", "proc", "fs_read", "fs_write"]
 in = { workdir = "$.input.workdir" }
 "#;
 
