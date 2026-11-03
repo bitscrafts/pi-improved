@@ -20,12 +20,12 @@ up_container() {
   ( cd "$HP/modules/devbox" && DEVBOX_PROJECT=$HP DEVBOX_ENV_FILE=$HOME/.config/pii/devbox.env podman-compose -f compose.yaml up -d 2>&1 | tail -2 )
 }
 start_daemon() {
-  X sh -c "mkdir -p $C/bin $C/run $C/tmp $C/graphs $CFG && rm -f $C/run/control.sock && ln -sfn /run/claude-login/.credentials.json $CFG/.credentials.json"
+  X sh -c "mkdir -p $C/bin $C/run $C/tmp $C/graphs $C/state $CFG && rm -f $C/run/control.sock && ln -sfn /run/claude-login/.credentials.json $CFG/.credentials.json"
   X sh -c "test -x $PII || bash /projects/pi-improved/modules/devbox/install-binary.sh \${CARGO_TARGET_DIR:-target} $PII" || return 1
   # PII_MODEL: the daemon refuses to start without one; a coder run never calls it. CLAUDE_CODE_TMPDIR: claude's scratch dir must be
   # somewhere the daemon's write sandbox allows (measured: EACCES on mkdir /tmp/claude-0). CLAUDE_CONFIG_DIR (spec 307): claude's conversation
   # file goes under the workspace, which the sandbox allows; /root/.claude is refused, so `--resume` could never find a session the daemon started.
-  podman exec -d -w /projects/pi-improved pii-devbox sh -c "env PII_RUNTIME_DIR=$C/run PI_CODING_AGENT_DIR=/projects/pi-improved/_tmp/pii-agent IS_SANDBOX=1 PII_MODEL=llamacpp-server:granite-4.2-3b FRESH_GATE_TARGET=/projects/pi-improved/_tmp/gate-target CARGO_BUILD_JOBS=8 CLAUDE_CODE_TMPDIR=$C/tmp TMPDIR=$C/tmp CLAUDE_CONFIG_DIR=$CFG $PII daemon --foreground --store $C/store.redb --workspace /projects/pi-improved --log-file $C/pii.log > $C/daemon.out 2>&1"
+  podman exec -d -w /projects/pi-improved pii-devbox sh -c "env PII_RUNTIME_DIR=$C/run PII_STATE_DIR=$C/state PI_CODING_AGENT_DIR=/projects/pi-improved/_tmp/pii-agent IS_SANDBOX=1 PII_MODEL=llamacpp-server:granite-4.2-3b FRESH_GATE_TARGET=/projects/pi-improved/_tmp/gate-target CARGO_BUILD_JOBS=8 CLAUDE_CODE_TMPDIR=$C/tmp TMPDIR=$C/tmp CLAUDE_CONFIG_DIR=$CFG $PII daemon --foreground --store $C/store.redb --workspace /projects/pi-improved --log-file $C/pii.log > $C/daemon.out 2>&1"
   for i in $(seq 1 30); do [ -n "$(health)" ] && return 0; sleep 1; done
   echo "daemon did not answer in 30 s; daemon.out:"; X sh -c "head -c 400 $C/daemon.out"; return 1
 }
