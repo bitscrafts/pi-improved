@@ -120,7 +120,7 @@ fn a_recovery_after_the_last_refusal_resolves_the_incident() {
         .expect("tempdir");
     let log = dir.path().join("daemon.log");
     let mut lines = vec![
-        r#"{"fields":{"model":"x","pid":1,"socket":"/run/x"},"kind":"daemon.started","level":"info","span":null,"subsystem":"daemon","ts_ms":1_793_660_000_000}"#.to_owned(),
+        r#"{"fields":{"model":"x","pid":1,"socket":"/run/x"},"kind":"daemon.started","level":"info","span":null,"subsystem":"daemon","ts_ms":1793660000000}"#.to_owned(),
     ];
     for i in 0..3 {
         lines.push(format!(
@@ -129,7 +129,7 @@ fn a_recovery_after_the_last_refusal_resolves_the_incident() {
         ));
     }
     lines.push(
-        r#"{"fields":{"channel":"discord","count":"3"},"kind":"channel.recovered","level":"info","span":null,"subsystem":"channel","ts_ms":1_793_660_060_000}"#.to_owned(),
+        r#"{"fields":{"channel":"discord","count":"3"},"kind":"channel.recovered","level":"info","span":null,"subsystem":"channel","ts_ms":1793660060000}"#.to_owned(),
     );
     std::fs::write(&log, lines.join("\n") + "\n").expect("write log");
     let cfg = IncidentConfig::default();
