@@ -16,8 +16,13 @@ workstream **W8** — closes finding 11.
 
 **R1.** The scheduler's re-arm path takes its delay from the injected clock, not from `std::thread::sleep`.
 
-**R2.** `cron_runtime` and `cancelled_run_disarms` construct the daemon with a fixed clock and advance it explicitly; the
-`assert!` lines are unchanged (the diff of those lines must be empty).
+**R2.** `cron_runtime` and `cancelled_run_disarms` construct the daemon with a fixed clock and advance it explicitly.
+Their **assertions** are unchanged: no `assert` line may be deleted or altered, which is what protects the behaviour
+being tested. The setup lines around them are expected to change — rewriting the clock is the entire point.
+
+> Corrected 2026-11-03 after the workhorse refused the first version of this criterion: it demanded zero deleted lines
+> while R2 requires rewriting the setup, so no implementation could satisfy both. The criterion now forbids deleting an
+> assertion instead of deleting a line — the property that actually matters.
 
 **R3.** Both binaries finish in under 5 s.
 
@@ -38,7 +43,7 @@ The criterion requires the assertions to be byte-identical and the binaries to s
 
 - [ ] `cargo test -q -p pii-server --test cron_runtime 2>&1 | grep -qE 'test result: ok.*finished in [0-4]\.'`
 - [ ] `cargo test -q -p pii-server --test cancelled_run_disarms 2>&1 | grep -qE 'test result: ok.*finished in [0-4]\.'`
-- [ ] `[ "$(git diff --numstat crates/pii-server/tests/cron_runtime.rs crates/pii-server/tests/cancelled_run_disarms.rs | awk '$2>0' | wc -l)" = "0" ]`
+- [ ] `[ "$(git diff -U0 -- crates/pii-server/tests/cron_runtime.rs crates/pii-server/tests/cancelled_run_disarms.rs | grep -c '^-.*assert')" = "0" ]`
 
 ## Guardrails
 
