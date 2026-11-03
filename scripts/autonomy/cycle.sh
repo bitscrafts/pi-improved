@@ -217,6 +217,21 @@ N=$(printf '%s' "$SPEC" | sed -E 's/^([0-9]+).*/\1/')
 [ -n "$N" ] || { say "cannot read a spec number out of '$SPEC'"; echo "OUTCOME=bad-plan ITEM=$ITEM"; exit 6; }
 # spec 304: WLOG is resolved for BOTH paths, before the dispatch branch: a resume at verify (SKIP_DISPATCH) buys nothing and reaches the
 # commit with this handle. The dispatch path resolves it again below, once its own run has written its log.
+# spec 354: a PARK MUST NOT WEDGE THE QUEUE. Parking used to leave the row's working-tree changes in place, and the
+# dispatcher refuses to dispatch on a dirty tree, so one parked row stopped every later row for a whole night
+# (measured 2026-11-03: spec 352 parked with nine files and 353 never ran). The changes are copied aside and the
+# tree is returned to HEAD — never deleted, and never with `git checkout --`, which is banned in this workspace.
+park_and_quarantine() {
+  local note="$1" aside
+  aside=$(bash scripts/autonomy/quarantine-wip.sh "$ITEM" parked 2>/dev/null | tail -1)
+  case "$aside" in
+    CLEAN)  say "park: tree already clean" ;;
+    /*)     say "park: WIP preserved at $aside; the tree is clean, so the queue can move" ; note="$note (WIP: $aside)" ;;
+    *)      say "park: WARNING the tree could not be quarantined ($aside) — the dispatcher will refuse until it is clean" ;;
+  esac
+  python3 scripts/autonomy/state.py set "$ITEM" "last=$note"
+}
+
 WLOG=$(ls -t _tmp/claude-batchC/"$N"-*.log 2>/dev/null | head -1)
 if [ -n "$SKIP_DISPATCH" ]; then
   NEWSID="$RSID"
@@ -224,6 +239,7 @@ else
   if [ "${ATTEMPTS:-0}" -ge 3 ]; then
     say "attempts=$ATTEMPTS reached the cap of 3 — PARKING for a person, not dispatching again"
     python3 scripts/autonomy/state.py set "$ITEM" status=parked attempts="$ATTEMPTS" "last=parked after $ATTEMPTS attempts: the same mechanical failure repeated, so a fourth dispatch would spend without new information"
+    park_and_quarantine "parked after $ATTEMPTS attempts"
     report loop.park "item=$ITEM attempts=$ATTEMPTS"
     echo "OUTCOME=parked-attempt-cap ITEM=$ITEM"; exit 11
   fi
@@ -343,7 +359,7 @@ if [ -n "$VERIFY" ] && [ "$VERIFY" != "-" ]; then
 fi
 if [ -n "$VFAIL" ]; then
   python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) "last=verify-failed"
-  [ $((ATTEMPTS+1)) -ge 3 ] && { python3 scripts/autonomy/state.py set "$ITEM" status=parked "last=3-strikes"; report loop.park "item=$ITEM 3-strikes"; }
+  [ $((ATTEMPTS+1)) -ge 3 ] && { python3 scripts/autonomy/state.py set "$ITEM" status=parked "last=3-strikes"; report loop.park "item=$ITEM 3-strikes"; park_and_quarantine "3-strikes at verify"; }
   report loop.verify "item=$ITEM FAILED: $VFAIL"
   say "VERIFY FAILED: $VFAIL"; echo "OUTCOME=verify-failed ITEM=$ITEM CMD=$VFAIL"; exit 9
 fi
