@@ -66,7 +66,30 @@ refusal, never as a question. Approval applies exactly the artefact the card des
 
 ## Closure
 
-_(open — the implementing cycle fills it with what it measured, per the house shape.)_
+Filled 2026-11-03. The card has now been used **four times**, and each use is a card filled from a measured PASS, not
+from a judgement:
+
+- `_tmp/deploy/card-e4bb787ed0fd.json`, `card-e2e6c765cf93.json`, `card-177e4efbcf07.json` — 2026-11-02, the three
+  deploys that took the host probe from 0/5 to 5/5.
+- `_tmp/deploy/card-085369902766.json` — 2026-11-03, the 0.2.0 deploy. Its fields: revision `085369902766`, the
+  full twenty-step gate with 20 passed / 0 failed and `fresh-gate: PASS` (`/tmp/gate-rel5.log`), the four proving
+  tests with their counts, the previous binary's version, revision and sha256 prefix, and the way back.
+
+**What the four uses measured, in the order the card requires.** The gate ran on the COMMITTED revision in a clone
+and failed five times before it passed; each failure was a real defect (`lint-observability`, `net-check`, a 462-line
+module, a JSON fixture that was not JSON, a backoff that could never exceed 16 s). Filling the card from any one of
+those red runs would have installed a revision that misbehaved in production, which is precisely the field this spec
+exists to make impossible to skip.
+
+**The way back, rehearsed and then needed.** The rollback is a copy of `~/.local/bin/pii.rollback-177e4efbcf07`
+(11262488 bytes, sha256 `89ed1ff3…`) plus a restart. Note the card's guardrail was right and the installer is not:
+`install-pii-user.sh` replaces `~/.local/bin/pii` in place and keeps the seven stores, but it does **not** keep the
+previous binary, so the dated aside copy has to be taken before `--apply`. That gap is named here rather than
+silently absorbed into the next upgrade; it is one `cp` in the installer and a test, and it belongs to its own row.
+
+**Verification after the act**: `HOST-CONFORMANCE: 5 passed, 0 failed`, and `pii health` on the host printed
+`pii 0.2.0 (085369902766, x86_64-unknown-linux-gnu)` with `client: 085369902766` — the identity field, so nobody has
+to take anyone's word for what is live.
 
 One correction was made **before** the first dispatch, and it is recorded here so it is not mistaken for a criterion
 softened to let an item pass (spec 141's criterion 4 was, and was reverted). As first written, exit criterion 2 asked
