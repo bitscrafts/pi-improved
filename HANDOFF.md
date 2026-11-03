@@ -1,5 +1,33 @@
 # Pii — Session Handoff
 
+## 2026-11-03T12:50Z — 355 landed; three reds were the host, not the code
+
+Headline: row **355** (the gate stops paying for its own leak) is `1c6b886`, with `fresh-gate --worktree` **PASS**
+on the tree it committed (12:35–12:47Z, 20 steps). Its work had been sitting unreviewed in the tree since 11:59Z
+and was refusing every cycle with `dirty-tree` / `unlisted-changes`.
+
+- **HEAD was red before 355 could be judged.** `the_queue_graph_loads_as_a_called_graph` failed because spec 362's
+  coder node declares `fs_read,fs_write` and `graph.call.widen` refuses a call that grants less, while the test's
+  host still granted `spawn,proc` (`graphs/night.toml` already granted them). Fixture repaired in `eb48bdb`; the
+  assertion is untouched and the test passes 3/3.
+- **Two gate runs were destroyed by another gate.** `fresh_gate.rs`'s `stale_exports` removes every other
+  `fresh-gate-*` directory with no liveness test, so a second gate deletes a running one's export: sixteen steps
+  then fail on `target/gate-steps/*.log: No such file or directory` and the verdict reads
+  `failing tests: []` — a red that blames the tree. Spec **365** R1/R2. A sibling Hermes lane
+  (`--resume 20261006_131058`) is running repeated `fresh-gate --worktree` on this tree (`/tmp/gate-355b..e.log`);
+  until 365 lands, expect a second gate to kill yours.
+- **A test daemon claims the operator's live store.** `daemon_log_wiring.rs` and `daemon_guard_reaps.rs` spawn a
+  real daemon with `PII_RUNTIME_DIR` but not `PII_STATE_DIR`, so the durable claim lands on
+  `~/.local/state/pii/durable/channel.redb`; the first one fails while any daemon runs, the second passes
+  vacuously because its daemon exited at the claim. Spec **365** R3/R4.
+- **Rows 353–364 all carried `-` in the gate column**, which `cycle.sh` reads as "skip the gate" — every one would
+  have committed without a fresh-gate under a message claiming one. Fixed in `0d8b357`.
+- **`scripts/autonomy/pii-lane.sh` quarantined** to `/projects/_trash/2026-11-03-pii-lane-20261103T124812Z/` (with a
+  `WHY.txt`). It pushed 353–360 straight into pii's queue with no state row and no gate, left eight parked items,
+  a dirty tree, and an idle daemon holding the durable store; it also stages with `git add -A --`. Nothing deleted.
+- **Next tick:** the queue is clean and 355 is done, so the cycle dispatches **356** (silent paths speak). 353 and
+  354 remain `needs-review` with no work left in the tree — they need a reset or a fresh dispatch decision.
+
 ## 2026-11-03T08:0xZ — the loop was dead on a parked row's WIP, not on a wall: row 351 is closed
 
 Headline: nothing had been dispatched since **05:00Z**. Every cycle probed, picked 352, and refused with
