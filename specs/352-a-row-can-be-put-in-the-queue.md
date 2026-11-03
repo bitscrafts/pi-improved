@@ -58,10 +58,10 @@ say so in the Closure and paste the output).
 
 ## Exit Criteria
 
-- [ ] `cargo test -q -p pii-cli --test queue_add 2>&1 | grep -q 'test result: ok\. 5 passed'`
-- [ ] `pii queue add --help 2>&1 | grep -q -- '--criteria'`
+- [ ] `cargo test -q -p pii-cli --test queue_add 2>&1 | grep -qE 'test result: ok. 5 passed'`
+- [ ] `cargo run -q -p pii-cli --bin pii -- queue add --help 2>&1 | grep -q -- --criteria`
 - [ ] `grep -q 'queue.item.added' crates/pii-observe/src/names.rs`
-- [ ] `grep -q '"queue.add"\|queue\\.add' crates/pii-server/src/daemon/methods.rs`
+- [ ] `grep -q 'Method::QueueAdd' crates/pii-server/src/engine/dispatch.rs`
 - [ ] `grep -q 'fn cmd_queue' crates/pii-cli/src/cmd_queue.rs`
 - [ ] `[ "$(grep -c 'put_item' crates/pii-server/src/engine/dispatch.rs 2>/dev/null)" -ge 1 ]`
 ## Guardrails
