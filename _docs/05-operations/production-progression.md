@@ -52,3 +52,16 @@ progression asks you for anything.
 `pii incidents scan --source runtime --log <copy of production pii.log>`: starts seen 1 of 1 (grep of
 `daemon.started` agrees), false incidents 0 (the audit log copy: 0, was 5), time-to-notice = 22 ms (start
 marker to `daemon.started`). Rotated siblings `pii.log.N` are read with the current file.
+
+## 0.2.0 is live (2026-11-03)
+
+`pii 0.2.0 (085369902766, x86_64-unknown-linux-gnu)` on `lnx`, `systemd --user`, active from 02:17:51Z, client and
+daemon agree, seven stores intact, `HOST-CONFORMANCE: 5 passed, 0 failed`. Card: `_tmp/deploy/card-085369902766.json`.
+
+The release gate ran the FULL list — 20 steps — and the six runs it took to get there are the record of why the
+quick list is not the gate: it found five real defects, one of them a channel backoff that saturated at 16 seconds
+and could never reach its five-minute ceiling. Two of the five were made by this agent in the same night.
+
+Order that mattered: gate the COMMITTED revision in a clone → release build stamped with that revision → card →
+aside copy of the previous binary (the installer overwrites it in place; it keeps stores, not binaries) → install →
+the five host checks. The rollback is a copy of `~/.local/bin/pii.rollback-177e4efbcf07` plus a restart.
