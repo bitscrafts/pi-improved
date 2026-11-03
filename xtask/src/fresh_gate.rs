@@ -112,14 +112,32 @@ fn free_mb(base: &Path) -> Result<u64, String> {
         .ok_or_else(|| format!("could not read free space of {}", base.display()))
 }
 
-/// Existing `fresh-gate-*` dirs under `base` other than `keep`.
+/// The pid an export belongs to, read from its directory name (`fresh-gate-<pid>`).
+fn export_owner(path: &Path) -> Option<u32> {
+    path.file_name()?
+        .to_str()?
+        .strip_prefix(PREFIX)?
+        .parse()
+        .ok()
+}
+
+/// True while the process that created this export is still running.
+///
+/// Measured 2026-11-03: retention removed a *running* gate's export, and that gate then failed sixteen steps on
+/// `target/gate-steps/<step>.log: No such file or directory` with `failing tests: []` — a red blaming the tree for
+/// a directory another process deleted. Retention must ask whether the owner is alive, not how old the dir is.
+fn owner_is_alive(path: &Path) -> bool {
+    export_owner(path).is_some_and(|pid| Path::new("/proc").join(pid.to_string()).exists())
+}
+
+/// Existing `fresh-gate-*` dirs under `base` other than `keep`, whose owning process is gone.
 pub fn stale_exports(base: &Path, keep: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(base) else {
         return Vec::new();
     };
     rd.filter_map(Result::ok)
         .map(|e| e.path())
-        .filter(|p| p != keep && p.is_dir() && safe_to_remove(base, p))
+        .filter(|p| p != keep && p.is_dir() && safe_to_remove(base, p) && !owner_is_alive(p))
         .collect()
 }
 
@@ -299,6 +317,16 @@ fn run_gate(dir: &Path) -> Result<(bool, String), String> {
         }
     }
     let status = child.wait().map_err(|e| format!("gate wait: {e}"))?;
+    // The export can be deleted under a running gate: another gate's retention removed EVERY other fresh-gate-*
+    // directory with no liveness test (measured 2026-11-03, sixteen steps failing on missing step logs and a verdict
+    // of `failing tests: []`). Report that as its own condition, so it can never read as a verdict on the tree.
+    if !dir.is_dir() {
+        return Err(format!(
+            "export lost: {} — another gate's retention removed it while this gate ran; \
+             the step failures above are not a verdict on the tree",
+            dir.display()
+        ));
+    }
     Ok((status.success(), captured))
 }
 
@@ -474,21 +502,58 @@ mod tests {
 
     #[test]
     fn stale_exports_excludes_current_and_foreign() {
-        let t = tempfile_dir();
-        for n in ["fresh-gate-1", "fresh-gate-2", "fresh-gate-9", "other"] {
+        let t = tempfile_dir("excludes");
+        for n in ["fresh-gate-999999", "fresh-gate-999998", "other"] {
             std::fs::create_dir(t.join(n)).unwrap();
         }
-        let keep = t.join("fresh-gate-9");
+        let keep = t.join("fresh-gate-999998");
         let mut got = stale_exports(&t, &keep);
         got.sort();
-        assert_eq!(got, vec![t.join("fresh-gate-1"), t.join("fresh-gate-2")]);
+        assert_eq!(got, vec![t.join("fresh-gate-999999")]);
         std::fs::remove_dir_all(&t).unwrap();
     }
 
-    fn tempfile_dir() -> PathBuf {
+    #[test]
+    fn a_running_gates_export_is_not_reaped() {
+        // The owner is a live child of this test, so /proc/<pid> exists for a process nothing else will reap first.
+        let mut child = Command::new("sleep").arg("30").spawn().expect("sleep");
+        let t = tempfile_dir("live-owner");
+        let live = t.join(format!("fresh-gate-{}", child.id()));
+        let dead = t.join("fresh-gate-999999");
+        std::fs::create_dir(&live).unwrap();
+        std::fs::create_dir(&dead).unwrap();
+        let got = stale_exports(&t, &t.join("fresh-gate-999998"));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(
+            got,
+            vec![dead],
+            "retention removed a running gate's export: {got:?}"
+        );
+        std::fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    #[allow(non_snake_case)] // reason: the spec names this test with the CONTROL_ prefix
+    fn CONTROL_a_dead_owners_export_is_reaped() {
+        // The control for the rule above: a directory whose pid has no /proc entry must still be reclaimed.
+        let t = tempfile_dir("dead-owner");
+        let dead = t.join("fresh-gate-999999");
+        std::fs::create_dir(&dead).unwrap();
+        let got = stale_exports(&t, &t.join("fresh-gate-999998"));
+        assert_eq!(
+            got,
+            vec![dead],
+            "a dead owner's export is disk nobody will reclaim"
+        );
+        std::fs::remove_dir_all(&t).unwrap();
+    }
+
+    fn tempfile_dir(tag: &str) -> PathBuf {
         let p = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("_tmp")
-            .join(format!("fg-stale-{}", std::process::id()));
+            .join(format!("fg-stale-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
         p
     }
