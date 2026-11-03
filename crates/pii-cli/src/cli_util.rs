@@ -107,10 +107,11 @@ pub(crate) fn fail_to(observer: &dyn Observer, stage: &'static str, message: &st
     );
 }
 
-/// [`fail_to`] with the process's [`CliObserver`].
+/// [`fail_to`] with the process's [`CliObserver`]; returns the failure exit code (2).
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
-pub(crate) fn fail(stage: &'static str, message: impl std::fmt::Display) {
+pub(crate) fn fail(stage: &'static str, message: impl std::fmt::Display) -> ExitCode {
     fail_to(&CliObserver, stage, &message.to_string());
+    ExitCode::from(2)
 }
 
 /// Prints a usage error to stderr and returns the F5.3 usage exit code (2).

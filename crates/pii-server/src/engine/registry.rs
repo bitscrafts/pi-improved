@@ -269,6 +269,11 @@ pub fn lint_registry_with_log(
         Err(e) => store_unavailable(&log, "heal_detect", &e),
     }
     reg.register(Arc::new(nodes::sop::SopFactory { log }));
+    reg.register(Arc::new(nodes::crash::DebugCrashFactory));
+    // Lint never executes a node, so the spawn handle stays empty here, as the daemon's does until attach.
+    reg.register(Arc::new(nodes::spawn::SpawnFactory {
+        engine: Arc::new(parking_lot::Mutex::new(None)),
+    }));
     reg
 }
 

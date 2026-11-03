@@ -116,8 +116,9 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     }
 
     // Spec 116: measurement switches (default ON; a typo is an error, never "on").
-    let Ok(switches) = resolve_switches(observer, audit, &cfg).inspect_err(|e| fail("daemon", e))
-    else {
+    let Ok(switches) = resolve_switches(observer, audit, &cfg).inspect_err(|e| {
+        fail("daemon", e);
+    }) else {
         return ExitCode::from(2);
     };
     let log = open_log(&log, &cfg, &store_parent, switches.audit);

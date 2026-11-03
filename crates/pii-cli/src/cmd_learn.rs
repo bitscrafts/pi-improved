@@ -7,6 +7,7 @@
 //! (spec 138) — with no daemon `promote` and `--sweep` fail closed, while
 //! `revert` takes the documented direct path and says so (spec 149).
 
+use crate::cli_util::fail;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -104,11 +105,6 @@ fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
     Some(o)
 }
 
-fn fail(msg: &str) -> ExitCode {
-    let _ = writeln!(std::io::stderr(), "error: {msg}");
-    ExitCode::from(2)
-}
-
 /// `pii learn ...`.
 // reason: one dispatch arm per subcommand; splitting it would only hide the list.
 #[allow(clippy::too_many_lines)]
@@ -120,13 +116,16 @@ pub(crate) fn cmd_learn(args: &mut std::env::ArgsOs) -> ExitCode {
         return ExitCode::from(2);
     };
     let Some(dir) = o.dir.clone() else {
-        return fail("no store directory (use --dir)");
+        return fail("learn", "no store directory (use --dir)");
     };
     let mut out = std::io::stdout();
     match sub.as_deref() {
         Some("scan") => {
             let Some(traj) = o.traj else {
-                return fail("no trajectory root (use --traj or set PII_TRAJECTORY_DIR)");
+                return fail(
+                    "learn",
+                    "no trajectory root (use --traj or set PII_TRAJECTORY_DIR)",
+                );
             };
             match Learner::new(o.cfg, Arc::new(StderrObserver)).run_scan(&traj, &dir) {
                 Ok(s) => {
@@ -143,7 +142,7 @@ pub(crate) fn cmd_learn(args: &mut std::env::ArgsOs) -> ExitCode {
                     );
                     ExitCode::SUCCESS
                 }
-                Err(e) => fail(&e),
+                Err(e) => fail("learn", &e),
             }
         }
         Some("list") => {
@@ -197,7 +196,7 @@ pub(crate) fn cmd_learn(args: &mut std::env::ArgsOs) -> ExitCode {
                     }
                     ExitCode::SUCCESS
                 }
-                Err(e) => fail(&e.to_string()),
+                Err(e) => fail("learn", e.to_string()),
             }
         }
         Some("verify") => verify(&o, &dir, &mut out),
@@ -234,12 +233,15 @@ pub(crate) fn cmd_learn(args: &mut std::env::ArgsOs) -> ExitCode {
 /// `pii learn verify <id>|--all`: one line per candidate, verdict then shadow run.
 fn verify(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> ExitCode {
     let Some(traj) = o.traj.clone() else {
-        return fail("no trajectory root (use --traj or set PII_TRAJECTORY_DIR)");
+        return fail(
+            "learn",
+            "no trajectory root (use --traj or set PII_TRAJECTORY_DIR)",
+        );
     };
     let cs = match (&o.positional, o.all) {
         (Some(id), false) => match store::show(dir, id) {
             Ok(c) => vec![c],
-            Err(e) => return fail(&e.to_string()),
+            Err(e) => return fail("learn", e.to_string()),
         },
         (None, true) => store::list(dir).0,
         _ => {
@@ -260,7 +262,7 @@ fn verify(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Exi
     let verifier = Verifier::new(cfg, Arc::new(StderrObserver));
     let rs = match verifier.verify_all(dir, &cs) {
         Ok(rs) => rs,
-        Err(e) => return fail(&e),
+        Err(e) => return fail("learn", &e),
     };
     for r in &rs {
         let why = r
@@ -329,7 +331,7 @@ fn promote(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Ex
     });
     let v = match ask_daemon(Method::LearnPromote, dir, params) {
         Ok(v) => v,
-        Err(e) => return fail(&e),
+        Err(e) => return fail("learn", &e),
     };
     if let Some(why) = v.get("refused").and_then(serde_json::Value::as_str) {
         let ledger = v.get("ledger").and_then(serde_json::Value::as_str);
@@ -344,7 +346,10 @@ fn promote(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Ex
         .get("promotion")
         .and_then(|p| serde_json::from_value::<Promotion>(p.clone()).ok())
     else {
-        return fail("the daemon answered learn.promote without a promotion");
+        return fail(
+            "learn",
+            "the daemon answered learn.promote without a promotion",
+        );
     };
     let ledger = v.get("ledger").and_then(serde_json::Value::as_str);
     let _ = writeln!(
@@ -368,7 +373,7 @@ fn promotions(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) ->
         // The daemon sweeps against its own trajectory root; `--traj` is not used here.
         let v = match ask_daemon(Method::LearnSweep, dir, serde_json::json!({})) {
             Ok(v) => v,
-            Err(e) => return fail(&e),
+            Err(e) => return fail("learn", &e),
         };
         for c in v
             .get("changed")
@@ -426,7 +431,7 @@ fn revert(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Exi
                 .unwrap_or("-")
                 .to_owned()),
         ),
-        Err(CallError::Failed(e)) => return fail(&e),
+        Err(CallError::Failed(e)) => return fail("learn", &e),
         Err(CallError::Down(_)) => (
             "direct",
             pii_learn::Promoter::new(
@@ -442,7 +447,7 @@ fn revert(o: &Opts, dir: &std::path::Path, out: &mut impl std::io::Write) -> Exi
             let _ = writeln!(out, "reverted {id} ledger={l} path={path}");
             ExitCode::SUCCESS
         }
-        Err(e) => fail(&e),
+        Err(e) => fail("learn", &e),
     }
 }
 

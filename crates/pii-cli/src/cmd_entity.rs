@@ -3,6 +3,7 @@
 //! files the daemon's `remember`/`recall` nodes use, serialised by the store's lock), so it
 //! works with the daemon stopped or running. Only `compact` insists the daemon be stopped.
 
+use crate::cli_util::fail;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -85,11 +86,6 @@ fn parse(args: &mut std::env::ArgsOs) -> Option<Opts> {
     Some(o)
 }
 
-fn fail(msg: &str) -> ExitCode {
-    let _ = writeln!(std::io::stderr(), "error: {msg}");
-    ExitCode::from(2)
-}
-
 fn usage() -> ExitCode {
     let _ = writeln!(std::io::stderr(), "{USAGE}");
     ExitCode::from(2)
@@ -101,12 +97,12 @@ fn print(v: &serde_json::Value) -> ExitCode {
             let _ = writeln!(std::io::stdout(), "{s}");
             ExitCode::SUCCESS
         }
-        Err(e) => fail(&e.to_string()),
+        Err(e) => fail("entity", e.to_string()),
     }
 }
 
 fn refused(e: &GraphError) -> ExitCode {
-    fail(&e.to_string())
+    fail("entity", e.to_string())
 }
 
 /// `pii memory <sub> ...` for the entity surface; `sub` is `entity`, `link`, `neighbours` or `compact`.
@@ -121,14 +117,14 @@ pub(crate) fn cmd_entity(sub: &str, args: &mut std::env::ArgsOs) -> ExitCode {
         return usage();
     };
     let Some(dir) = o.dir.clone() else {
-        return fail("no store directory (use --dir)");
+        return fail("entity", "no store directory (use --dir)");
     };
     if sub == "compact" {
         return compact(&dir, &o);
     }
     let store = match EntityStore::open(&dir, o.cfg) {
         Ok(s) => s,
-        Err(e) => return fail(&e.to_string()),
+        Err(e) => return fail("entity", e.to_string()),
     };
     let store = with_clock(store, o.now_secs);
     let pos = |i: usize| o.positional.get(i).map(String::as_str);
@@ -281,7 +277,7 @@ fn show(store: &EntityStore, id: Option<&str>) -> ExitCode {
             }
             print(&v)
         }
-        (Ok(None), _) => fail(&format!("no entity {id}")),
+        (Ok(None), _) => fail("entity", format!("no entity {id}")),
         (Err(e), _) | (_, Err(e)) => refused(&e),
     }
 }
@@ -331,7 +327,7 @@ fn archive(store: &EntityStore, o: &Opts) -> ExitCode {
 /// Compaction refuses while a daemon holds the store (the spec 115 behaviour).
 fn compact(dir: &std::path::Path, o: &Opts) -> ExitCode {
     if let Err(e) = pii_store::compact::ensure_stopped(dir) {
-        return fail(&e.to_string());
+        return fail("entity", e.to_string());
     }
     match EntityStore::open(dir, o.cfg).and_then(|s| s.compact()) {
         Ok(r) => {
@@ -343,6 +339,6 @@ fn compact(dir: &std::path::Path, o: &Opts) -> ExitCode {
             );
             ExitCode::SUCCESS
         }
-        Err(e) => fail(&e.to_string()),
+        Err(e) => fail("entity", e.to_string()),
     }
 }

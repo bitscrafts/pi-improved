@@ -6,6 +6,7 @@
 //! declaration, a symbol's lexical containment, or a Cargo.toml dependency. Re-running is
 //! idempotent: records are keyed on kind+name and provenance is refreshed, never multiplied.
 
+use crate::cli_util::fail;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -33,11 +34,6 @@ struct Module {
     lines: usize,
     declared: Vec<String>,
     symbols: Vec<Symbol>,
-}
-
-fn fail(msg: &str) -> ExitCode {
-    let _ = writeln!(std::io::stderr(), "error: {msg}");
-    ExitCode::from(2)
 }
 
 /// Cuts `s` to at most `max` bytes on a char boundary.
@@ -90,12 +86,14 @@ pub(crate) fn cmd_index(args: &mut std::env::ArgsOs) -> ExitCode {
         }
     }
     let Some(dir) = dir else {
-        return fail("no store directory (use --dir)");
+        return fail("index", "no store directory (use --dir)");
     };
     let crates = match scan_crates(&root) {
         Ok(c) if !c.is_empty() => c,
-        Ok(_) => return fail(&format!("no crates/*/src under {}", root.display())),
-        Err(e) => return fail(&e),
+        Ok(_) => {
+            return fail("index", format!("no crates/*/src under {}", root.display()));
+        }
+        Err(e) => return fail("index", &e),
     };
     let cfg = GraphConfig {
         max_entities: GraphConfig::default()
@@ -105,7 +103,7 @@ pub(crate) fn cmd_index(args: &mut std::env::ArgsOs) -> ExitCode {
     };
     let store = match EntityStore::open(&dir, cfg) {
         Ok(s) => s,
-        Err(e) => return fail(&e.to_string()),
+        Err(e) => return fail("index", e.to_string()),
     };
     let mut run = Run {
         store,

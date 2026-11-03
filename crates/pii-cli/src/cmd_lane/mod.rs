@@ -84,7 +84,7 @@ impl LanePlan {
         self.stdout.push(b'\n');
     }
 
-    fn fail(mut self, line: &str, exit: i32) -> Self {
+    fn refuse(mut self, line: &str, exit: i32) -> Self {
         self.say(line);
         self.exit = exit;
         self
@@ -122,10 +122,10 @@ pub(crate) fn plan(
 ) -> LanePlan {
     let mut p = LanePlan::default();
     let Some(n) = args.spec.as_deref() else {
-        return p.fail(USAGE, 2);
+        return p.refuse(USAGE, 2);
     };
     let Some(file) = find_spec(&snap.specs, n) else {
-        return p.fail(&format!("no spec {n}"), 2);
+        return p.refuse(&format!("no spec {n}"), 2);
     };
     let tag = file.strip_suffix(".md").unwrap_or(file).to_owned();
     let spec_rel = format!("specs/{file}");
@@ -141,7 +141,7 @@ pub(crate) fn plan(
         return p;
     }
     let Some(agent) = Agent::from_env(env) else {
-        return p.fail("PII_AGENT must be claude or pi", 2);
+        return p.refuse("PII_AGENT must be claude or pi", 2);
     };
 
     let lane_spec = env.spec_lane;
@@ -174,7 +174,7 @@ pub(crate) fn plan(
     };
     let raw = raw.unwrap_or(default);
     let Some(num) = decimal(raw) else {
-        return p.fail(
+        return p.refuse(
             &format!("ABORT: {name} is not a decimal integer: nothing started"),
             2,
         );
@@ -197,7 +197,7 @@ pub(crate) fn plan(
     }
     p.files.push((brief_path.clone(), brief.clone()));
     if brief.windows(3).any(|w| w == b"'''") {
-        return p.fail(
+        return p.refuse(
             "ABORT: the brief contains ''' and cannot be written as a TOML literal",
             2,
         );
@@ -214,7 +214,7 @@ pub(crate) fn plan(
             wall_text = w;
             Some(v)
         }) else {
-            return p.fail(
+            return p.refuse(
                 "ABORT: graphs/spec.toml has no numeric max_wall_ms: nothing started",
                 2,
             );
@@ -256,7 +256,7 @@ pub(crate) fn plan(
             ];
             for (name, g) in graph_states {
                 if g.differs || g.untracked {
-                    return p.fail(
+                    return p.refuse(
                         &format!("ABORT: graphs/{name}.toml differs from HEAD (the pin protects the reviewed graph): nothing started"),
                         2,
                     );
@@ -271,13 +271,13 @@ pub(crate) fn plan(
             .map(checks::sha256_hex)
             .unwrap_or_default();
         if digest.is_empty() || pin != digest {
-            return p.fail(
+            return p.refuse(
                 &format!("ABORT: graphs/docs.toml digest '{digest}' is not the pin in graphs/spec.toml ('{pin}'): nothing started"),
                 2,
             );
         }
         if snap.preflight.bytes.is_none() {
-            return p.fail(
+            return p.refuse(
                 "ABORT: graphs/preflight.toml is missing (the preflight judge graph): nothing started",
                 2,
             );
@@ -286,7 +286,7 @@ pub(crate) fn plan(
         // a missing max_micro_usd fails before the truncation and leaves the file alone.
         let input = logd.join(format!("input-{tag}.json"));
         let Some(limit) = checks::limit_micro_usd(spec_bytes) else {
-            return p.fail("ABORT: could not build the input", 2);
+            return p.refuse("ABORT: could not build the input", 2);
         };
         let cap = env.max_budget.as_deref().unwrap_or("1.00");
         let docs = brief::docs(n);
@@ -316,7 +316,7 @@ pub(crate) fn plan(
             Some(text) => p.files.push((input, text.into_bytes())),
             None => {
                 p.files.push((input, Vec::new()));
-                return p.fail("ABORT: could not build the input", 2);
+                return p.refuse("ABORT: could not build the input", 2);
             }
         }
         input_path = Some(logd.join(format!("input-{tag}.json")));
@@ -368,7 +368,7 @@ pub(crate) fn plan(
         } else {
             out.as_str()
         };
-        return p.fail(&format!("ABORT: container preflight failed: {out}"), 2);
+        return p.refuse(&format!("ABORT: container preflight failed: {out}"), 2);
     }
     let mut log_text = format!(
         "== {tag} via pii: agent={} model={} provider={}\n== graph {graph_name}\n",

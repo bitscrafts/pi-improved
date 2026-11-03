@@ -3,6 +3,7 @@
 //! and read or write `<dir>/memory.redb` directly when none does. A skill's pinned script is hashed where it lies
 //! (relative to the current directory) and never executed.
 
+use crate::cli_util::fail;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -103,11 +104,6 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
-fn fail(msg: &str) -> ExitCode {
-    eprintln!("error: {msg}");
-    ExitCode::from(2)
-}
-
 /// Names the source that answered a read or a write (spec 233 R2): `via daemon`, or `via store <path>`.
 fn note_source(via: &str) {
     eprintln!("via {via}");
@@ -119,13 +115,16 @@ fn store_file(o: &Opts) -> Result<PathBuf, ExitCode> {
     let dir = o.dir.clone().unwrap_or_else(pii_core::state_dir);
     let path = dir.join("memory.redb");
     if !path.exists() {
-        return Err(fail(&format!("no memory store at {}", path.display())));
+        return Err(fail(
+            "skill",
+            format!("no memory store at {}", path.display()),
+        ));
     }
     Ok(path)
 }
 
 fn open_file(path: &Path) -> Result<MemStore, ExitCode> {
-    MemStore::open(path).map_err(|e| fail(&e.to_string()))
+    MemStore::open(path).map_err(|e| fail("skill", e.to_string()))
 }
 
 /// Whether the daemon serves the store this command names (spec 233 R2). A command with no `--dir`, or the runtime
@@ -148,7 +147,7 @@ fn ask_daemon(
     match run_call_typed(method, params) {
         Ok(reply) => Some(Ok(reply)),
         Err(CallError::Down(_)) => None,
-        Err(CallError::Failed(msg)) => Some(Err(fail(&msg))),
+        Err(CallError::Failed(msg)) => Some(Err(fail("skill", &msg))),
     }
 }
 
@@ -166,13 +165,17 @@ fn fetch_skills(o: &Opts, with_archived: bool) -> Result<(Vec<Listed>, String), 
     let params = serde_json::json!({ "all": with_archived });
     if let Some(outcome) = ask_daemon(o, Method::SkillList, params) {
         let reply = outcome?;
-        let found = serde_json::from_value(reply)
-            .map_err(|e| fail(&format!("the daemon's skill list does not decode: {e}")))?;
+        let found = serde_json::from_value(reply).map_err(|e| {
+            fail(
+                "skill",
+                format!("the daemon's skill list does not decode: {e}"),
+            )
+        })?;
         return Ok((found, String::from("daemon")));
     }
     let path = store_file(o)?;
     let store = open_file(&path)?;
-    let found = listing(&store, with_archived).map_err(|e| fail(&e.to_string()))?;
+    let found = listing(&store, with_archived).map_err(|e| fail("skill", e.to_string()))?;
     Ok((found, format!("store {}", path.display())))
 }
 
@@ -222,7 +225,7 @@ fn add(args: &mut std::env::ArgsOs) -> ExitCode {
     };
     let text = match std::fs::read_to_string(&file) {
         Ok(t) => t,
-        Err(e) => return fail(&format!("read {}: {e}", file.display())),
+        Err(e) => return fail("skill", format!("read {}: {e}", file.display())),
     };
     let layer = o.layer.unwrap_or_else(|| layer_byte(Layer::L3));
     let params = serde_json::json!({ "text": text, "layer": layer });
@@ -231,8 +234,12 @@ fn add(args: &mut std::env::ArgsOs) -> ExitCode {
         |outcome| {
             outcome.and_then(|reply| {
                 note_source("daemon");
-                serde_json::from_value::<Added>(reply)
-                    .map_err(|e| fail(&format!("the daemon's add reply does not decode: {e}")))
+                serde_json::from_value::<Added>(reply).map_err(|e| {
+                    fail(
+                        "skill",
+                        format!("the daemon's add reply does not decode: {e}"),
+                    )
+                })
             })
         },
     );
@@ -252,11 +259,15 @@ fn add_to_store(o: &Opts, text: &str, layer: u8) -> Result<Added, ExitCode> {
     note_source(&format!("store {}", path.display()));
     let now_ms = pii_core::SystemClock.now_ms();
     pii_memory::skill::add(&store, text, layer_of_byte(layer), now_ms).map_err(|e| match e {
-        AddError::NoMarker => fail("the file has no PII-SKILL marker line, so it is not a skill"),
-        AddError::Taken { slug, id } => fail(&format!(
-            "skill {slug} is already live as {id}; change it with pii skill edit"
-        )),
-        AddError::Store(e) => fail(&e.to_string()),
+        AddError::NoMarker => fail(
+            "skill",
+            "the file has no PII-SKILL marker line, so it is not a skill",
+        ),
+        AddError::Taken { slug, id } => fail(
+            "skill",
+            format!("skill {slug} is already live as {id}; change it with pii skill edit"),
+        ),
+        AddError::Store(e) => fail("skill", e.to_string()),
     })
 }
 
@@ -300,18 +311,21 @@ fn list(args: &mut std::env::ArgsOs) -> ExitCode {
 fn resolve(found: &[Listed], key: &str) -> Result<Listed, ExitCode> {
     let picked = pick(found, key, |s| (s.id.as_str(), s.text.as_str()));
     match picked.as_slice() {
-        [] => Err(fail(&format!("no skill matches {key}"))),
+        [] => Err(fail("skill", format!("no skill matches {key}"))),
         [one] => Ok((*one).clone()),
         many => {
             let list: Vec<String> = many
                 .iter()
                 .map(|s| format!("  {} {}", short_id(&s.id), slug_of(&s.text)))
                 .collect();
-            Err(fail(&format!(
-                "{key} matches {} skills, name one:\n{}",
-                many.len(),
-                list.join("\n")
-            )))
+            Err(fail(
+                "skill",
+                format!(
+                    "{key} matches {} skills, name one:\n{}",
+                    many.len(),
+                    list.join("\n")
+                ),
+            ))
         }
     }
 }
@@ -412,7 +426,7 @@ fn edit(args: &mut std::env::ArgsOs) -> ExitCode {
     };
     let new_text = match std::fs::read_to_string(&file) {
         Ok(t) => t,
-        Err(e) => return fail(&format!("read {}: {e}", file.display())),
+        Err(e) => return fail("skill", format!("read {}: {e}", file.display())),
     };
     // The body as it stands, for the pin status the command reports before the edit.
     let (found, _) = match fetch_skills(&o, false) {
@@ -431,8 +445,12 @@ fn edit(args: &mut std::env::ArgsOs) -> ExitCode {
         |outcome| {
             outcome.and_then(|reply| {
                 note_source("daemon");
-                serde_json::from_value::<Edited>(reply)
-                    .map_err(|e| fail(&format!("the daemon's edit reply does not decode: {e}")))
+                serde_json::from_value::<Edited>(reply).map_err(|e| {
+                    fail(
+                        "skill",
+                        format!("the daemon's edit reply does not decode: {e}"),
+                    )
+                })
             })
         },
     );
@@ -465,5 +483,6 @@ fn edit_in_store(o: &Opts, id: &str, text: &str, source: &str) -> Result<Edited,
     let store = open_file(&path)?;
     note_source(&format!("store {}", path.display()));
     let now_ms = pii_core::SystemClock.now_ms();
-    pii_memory::skill::edit(&store, id, text, now_ms, source).map_err(|e| fail(&e.to_string()))
+    pii_memory::skill::edit(&store, id, text, now_ms, source)
+        .map_err(|e| fail("skill", e.to_string()))
 }
