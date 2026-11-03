@@ -73,3 +73,53 @@ All three must be RED before the change. Measure and paste the failing output in
 - `crates/pii-cli/src/cmd_backup.rs`, `cmd_store.rs`, `cmd_skill.rs`, `cmd_entity.rs`, `cmd_learn.rs`,
   `graph_dirs.rs`, `cmd_graph_installed.rs` (R3, store defaults only)
 - `crates/pii-cli/tests/store_dir_default.rs` (new)
+
+## Closure
+
+Closed 2026-11-03 by the orchestrator on the worker's tree. The worker's three attempts did not fail on the code:
+they failed on criterion 5, which the implementer cannot run (below). The code criteria were re-run here, the
+first full gate of the tree was RED on two consequences of the change, both were repaired, and the gate then passed.
+
+**The four code criteria, run by the orchestrator (`PATH` with `cargo`):**
+
+| criterion | result |
+|---|---|
+| `cargo test -q -p pii-cli --test store_dir_default` | `test result: ok. 3 passed` |
+| `[ "$(grep -rc 'runtime_dir' crates/pii-cli/src/cmd_backup.rs) " != "1" ]` | rc 0 (count 0) |
+| `[ "$(grep -rn 'fn state_dir' crates/pii-core/src \| wc -l)" = "1" ]` | rc 0 (count 1) |
+| `PII_STATE_DIR` env reads in `daemon/mod.rs` + `cmd_treat.rs` + `cmd_daemon.rs` | rc 0 (count 0) |
+
+**Why the worker parked (not a code defect).** Criterion 5 is `cargo xtask fresh-gate`. The implementer runs
+inside the daemon's sandbox, whose read-write set is the workspace plus the store parent and runtime dir; the gate
+exports its tree to `/projects/_tmp`, outside all of them. The worker recorded it verbatim — "This process cannot
+write there" — and all three runs refused on that criterion alone (4 of 5 green each time). The gate is the
+cycle's step (specs 262/266/315 gate every queue commit with the full step list and a measured coverage floor);
+it is no longer an exit criterion in 352/353, and the reason is written in their Guardrails.
+
+**The first full gate of this tree was RED on two steps — both real, both consequences of the change:**
+
+1. `test (lib/bins/tests)`: three `channel_wiring` tests failed together with
+   `channel: open /root/.local/state/pii/durable/channel.redb: Database already open`.
+   `daemon/mod.rs` resolved the state dir from the process-global `pii_core::state_dir()`, while `build_with_env`
+   carries an INJECTED env: the tests' own scratch `PII_STATE_DIR` was ignored, so they opened the operator's live
+   store and collided with the running daemon. Fixed by `pii_core::state_dir_from(env)`, with `state_dir()`
+   delegating to it; `cargo test -p pii-server --test channel_wiring` → 4 passed.
+2. `deps-check`: invariant 5 — `pii-cli` depends on `redb` outside `pii-store` (the new test opened its fixture
+   with `redb::Database::create`). The test now opens it through `pii_store::Store` and the dev-dependency is gone;
+   `cargo run -p xtask -- deps-check` → rc 0.
+
+**The gate after the repair:** `cargo xtask fresh-gate --worktree` → `fresh-gate: PASS`, every step green
+(fmt · clippy · clippy hal-gpiod · build · test lib/bins/tests · test doc · lint-files · lint-scratch ·
+lint-observability · reachability-check · deps-check · net-check · doc-drift-check · autonomy shell tests ·
+plan-verify · item-ids · devbox-check · install-config · daemon-guard). Then, on the committed HEAD `8c32624`,
+the plain `cargo xtask fresh-gate` — criterion 5 exactly as written — → `fresh-gate: PASS`, 51 steps, rc 0.
+
+**Coverage-floor was NOT measured in this pass**, stated rather than implied: `fresh-gate` skips it by default,
+and the `FRESH_GATE_COVERAGE=1` run was killed at `/projects` 100% (2.9 GB free on a 594 GB volume) with 56 GB of
+instrumented build behind it. The volume was reclaimed (`cargo clean`, and this run's own export removed) and the
+reading is not recorded as a pass. The next queue commit measures it under the cycle's gate.
+
+**Found while closing, queued as spec 354 / row 354:** `crates/pii-cli/src/cmd_daemon.rs:54` still defaults the
+daemon's own store to `runtime_dir.join("store.redb")` (help text included), so after this change a bare
+`pii daemon` writes the boot-scoped path while `pii backup` reads the state dir. That is the same class this spec
+closed for the CLI, and it is not covered by R1–R4 here.

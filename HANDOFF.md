@@ -1,5 +1,39 @@
 # Pii — Session Handoff
 
+## 2026-11-03T08:0xZ — the loop was dead on a parked row's WIP, not on a wall: row 351 is closed
+
+Headline: nothing had been dispatched since **05:00Z**. Every cycle probed, picked 352, and refused with
+`OUTCOME=dirty-tree ITEM=352` — parked row **351**'s 17 paths of work sat in the tree, and a parked row owns
+nothing, so the queue was stuck behind a wheel that had already stopped. The work was not lost and not wrong; it
+was unlanded. It is now `8c32624`, verified and gated here.
+
+- **Why 351 parked (three attempts, 4 of 5 criteria green each time).** Its fifth criterion was
+  `cargo xtask fresh-gate`, and the implementer runs inside the daemon's sandbox, whose read-write set is the
+  workspace + store parent + runtime dir. `fresh-gate` exports to `/projects/_tmp`, outside all of them: the
+  worker said "This process cannot write there" and the judge refused the run on that criterion alone. The gate
+  is the **cycle's** step (262/266/315, full list + measured coverage), so 352/353 no longer name it — the reason
+  is in their Guardrails, and both rows' verify columns were regenerated from their specs (they carried 2 of 6/5
+  criteria; `sync-verify --check` now reads 0 stale).
+- **The first full gate of the tree was RED, and both failures were real consequences of the change.** (a) Three
+  `channel_wiring` tests failed together with `channel.redb: Database already open` — `daemon/mod.rs` resolved the
+  state dir through the process-global `pii_core::state_dir()` while `build_with_env` carries an injected env, so
+  the tests' own scratch `PII_STATE_DIR` was ignored and they opened the operator's live store. Fixed with
+  `pii_core::state_dir_from(env)`; `channel_wiring` 4/4. (b) `deps-check` invariant 5 — `pii-cli` had gained a
+  `redb` dev-dependency for its new test; the test now opens its fixture through `pii_store::Store`.
+- **The gate after the repair:** `cargo xtask fresh-gate --worktree` → **PASS**, every step green. Then the plain
+  `cargo xtask fresh-gate` on the committed HEAD `8c32624` — the criterion as written — is recorded below.
+- **Coverage was NOT measured** on this commit, and it is written down instead of implied: `fresh-gate` skips the
+  floor by default and the `FRESH_GATE_COVERAGE=1` run was killed when `/projects` hit **100%** (2.9 GB free of
+  594 GB) with 56 GB of instrumented build behind it. Reclaimed with `cargo clean` plus this run's own export;
+  the next queue commit measures it under the cycle's gate.
+- **Two rows added, one spec authored.** **354** (`the daemon's default store is the state dir`) — found while
+  closing: `cmd_daemon.rs:54` still defaults to `runtime_dir.join("store.redb")`, so a bare `pii daemon` writes the
+  boot-scoped path while `pii backup` reads the state dir. Same class as 351, not covered by 351's R1–R4.
+  Next in the queue: **352** (a row can be put in the queue from outside).
+- **Disk discipline.** The 76 GB warm gate cache stays; the dev `target` is cleaned; the export of the killed
+  coverage run was removed through a guarded script (literal path, today's mtime, a `Cargo.toml` marker, no live
+  holder — every check refuses rather than deletes).
+
 ## 2026-11-02T21:2xZ — PRODUCTION: the host runs 177e4efbcf07 and the conformance probe is 5/5
 
 Headline: the path to production is closed. The host probe was **0 passed / 5 failed** all day; it now reads

@@ -64,9 +64,13 @@ say so in the Closure and paste the output).
 - [ ] `grep -q '"queue.add"\|queue\\.add' crates/pii-server/src/daemon/methods.rs`
 - [ ] `grep -q 'fn cmd_queue' crates/pii-cli/src/cmd_queue.rs`
 - [ ] `[ "$(grep -c 'put_item' crates/pii-server/src/engine/dispatch.rs 2>/dev/null)" -ge 1 ]`
-- [ ] `cargo xtask fresh-gate`
-
 ## Guardrails
+
+- The gate is the cycle's step, not the implementer's. `cycle.sh` gates this commit with the full step list and a
+  measured coverage floor (specs 262/266/315); a sandboxed implementer cannot write `/projects/_tmp`, where
+  `fresh-gate` exports its tree, so naming the gate as an exit criterion makes the run refuse before its work is
+  judged (measured 2026-11-03, row 351: three attempts, 4 of 5 criteria green, parked on the gate alone). Do not
+  add it back as a criterion.
 
 - Do NOT let the CLI open a store: single writer, the daemon owns it.
 - Do NOT make `add` overwrite an existing id (a re-seed must be refused, not silently replace).

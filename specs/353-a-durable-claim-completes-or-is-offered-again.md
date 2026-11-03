@@ -67,9 +67,13 @@ All six must be RED before the change; paste the failing output in the Closure.
 - [ ] `cargo test -q -p pii-server --test boot_recovers_suspended 2>&1 | grep -q 'test result: ok\. 1 passed'`
 - [ ] `grep -q 'requeued_after_restart' crates/pii-store/src/queue.rs`
 - [ ] `grep -q 'timer.wheel.error' crates/pii-observe/src/names.rs`
-- [ ] `cargo xtask fresh-gate`
-
 ## Guardrails
+
+- The gate is the cycle's step, not the implementer's. `cycle.sh` gates this commit with the full step list and a
+  measured coverage floor (specs 262/266/315); a sandboxed implementer cannot write `/projects/_tmp`, where
+  `fresh-gate` exports its tree, so naming the gate as an exit criterion makes the run refuse before its work is
+  judged (measured 2026-11-03, row 351: three attempts, 4 of 5 criteria green, parked on the gate alone). Do not
+  add it back as a criterion.
 
 - Do NOT change `decide`'s meaning for a live run: a `Suspended` run still blocks its row (that is correct — the
   timer will resume it).
