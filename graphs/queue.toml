@@ -27,7 +27,7 @@ provider = "ollama-cloud"
 workdir = "$.input.workdir"
 # spec 362: the claimed row carries the spec; without this the coder has no document to implement and
 # improvises (measured 2026-11-03: it wrote the WRONG spec's test files while its row said otherwise).
-spec = "$.input.item.spec"
+spec = "$.nodes.select.item.spec"
 brief = "Implement the spec named above. Follow it as the contract. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
 timeout_ms = 1800000
 env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_TMPDIR"]
@@ -37,9 +37,7 @@ id = "judge"
 kind = "judge"
 caps = ["proc"]
 workdir = "$.input.workdir"
-# spec 362: the claimed row carries the spec; without this the coder has no document to implement and
 # improvises (measured 2026-11-03: it wrote the WRONG spec's test files while its row said otherwise).
-spec = "$.input.item.spec"
 
 [[node]]
 id = "record"
