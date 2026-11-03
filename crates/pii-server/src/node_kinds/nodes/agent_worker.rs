@@ -361,6 +361,13 @@ pub fn plan(
                 // JSON events name the provider and model per message, so the run's real route can be read.
                 s("--mode"),
                 s("json"),
+                // spec 362: a headless run has no approval surface, so pi's default `always-ask` denies every
+                // mutating tool and the coder stops having written nothing (measured 2026-11-03: rc=3 after
+                // 122 s, "approval required for `bash` but this session has no approval surface"). `write`
+                // approves file edits and still refuses to run commands: the coder writes, the JUDGE runs the
+                // criteria, and the daemon's capability set stays the outer bound.
+                s("--approval-mode"),
+                s("write"),
             ];
             if let Some(provider) = &spec.provider {
                 v.extend([s("--provider"), provider.clone()]);
