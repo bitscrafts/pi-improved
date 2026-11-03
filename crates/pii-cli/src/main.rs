@@ -6,6 +6,7 @@
 // control subcommands print method results on stdout by design.
 #![allow(clippy::print_stdout, clippy::print_stderr, clippy::disallowed_macros)]
 
+#[macro_use]
 mod cli_util;
 mod cmd_backup;
 mod cmd_ctl;

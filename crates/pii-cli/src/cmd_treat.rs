@@ -2,26 +2,6 @@
 //! reproducer, and the evidence) from one installation to another. The bundle is a directory: `manifest.json`,
 //! `fix.patch`, `repro.sh`. Nothing here contacts a remote; the importing machine proves the fix again itself.
 
-/// Output through the std handles, not the raw print macros the observability lint bans (spec 98). The macro form
-/// keeps every call site's format string EXACTLY as it was — a mechanical rewrite that turned `println!` into a
-/// function call silently stopped interpolating the braces, and a test caught it (2026-11-02).
-macro_rules! say {
-    ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        let mut out = std::io::stdout().lock();
-        let _ = writeln!(out, $($arg)*);
-    }};
-}
-
-/// One line on stderr, same seam. Every refusal in this module goes through here.
-macro_rules! warn {
-    ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        let mut err = std::io::stderr().lock();
-        let _ = writeln!(err, $($arg)*);
-    }};
-}
-
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;

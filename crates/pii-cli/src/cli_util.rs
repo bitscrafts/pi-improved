@@ -156,6 +156,29 @@ pub(crate) fn open_store(db: &Path) -> Option<Store> {
     }
 }
 
+/// Output through the std handles, not the raw print macros the observability lint bans (spec 98).
+///
+/// The macro form keeps every call site's format string EXACTLY as it was: a mechanical rewrite that turned
+/// `println!` into a function call silently stopped interpolating braces, and a test caught it (2026-11-02).
+#[macro_export]
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, $($arg)*);
+    }};
+}
+
+/// One line on stderr, same seam. Every refusal in this module goes through here.
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let mut err = std::io::stderr().lock();
+        let _ = writeln!(err, $($arg)*);
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
