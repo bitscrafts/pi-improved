@@ -26,7 +26,7 @@ in_ms = "$.input.in_ms"
 id = "sdd"
 kind = "call"
 graph = "queue"
-sha256 = "bab0f10548c9a3c5e068674dd006e7522d6217a167911be398412ddc81b6b391"
+sha256 = "5d9c1fa30a880e0dc725d3f989ff9d02b7daba40144a0f5601697822cc550bd1"
 caps = ["spawn", "proc"]
 max_entries = 12
 
