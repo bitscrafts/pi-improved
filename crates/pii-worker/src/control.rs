@@ -365,11 +365,17 @@ fn respawn(sup: Supervisor, backoff_ms: u64) {
     std::thread::sleep(Duration::from_millis(backoff_ms));
     let ctx = sup.inner.ctx.lock().clone();
     let Some(ctx) = ctx else {
+        sup.respawn_failed("no start context");
         sup.inner.state.lock().state = WorkerState::Failed;
         sup.note_state(WorkerState::Failed);
         return;
     };
-    if sup.spawn_and_hello(&ctx).is_ok() {
+    let spawned = sup.spawn_and_hello(&ctx);
+    if let Err(e) = &spawned {
+        // Spec 356: a respawn that failed leaves the worker Failed; the journal must say so.
+        sup.respawn_failed(&e.to_string());
+    }
+    if spawned.is_ok() {
         {
             let mut sh = sup.inner.state.lock();
             sh.restarts += 1;
@@ -396,6 +402,15 @@ fn respawn(sup: Supervisor, backoff_ms: u64) {
 }
 
 impl Supervisor {
+    /// Records a failed respawn (spec 356): the worker's name and the reason, never its arguments or environment.
+    fn respawn_failed(&self, reason: &str) {
+        self.emit(
+            &Event::new("worker", Level::Error, names::WORKER_RESPAWN_FAILED)
+                .field("worker", self.inner.spec.name.as_str())
+                .field("error", reason),
+        );
+    }
+
     /// Queue flush used by the respawn path.
     pub(crate) fn drain_queue_pub(&self) -> u32 {
         let queued: Vec<Queued> = std::mem::take(&mut *self.inner.queue.lock());

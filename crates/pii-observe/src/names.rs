@@ -32,6 +32,8 @@ pub const TOOLS_CALL: &str = "tools.call";
 pub const DAEMON_SANDBOX_IN_FORCE: &str = "daemon.sandbox.in_force";
 /// Event: a work item was added to the queue from outside (spec 352 R6).
 pub const QUEUE_ITEM_ADDED: &str = "queue.item.added";
+/// Event: a work item was claimed from the queue (`id`, `by`; spec 356).
+pub const QUEUE_ITEM_CLAIMED: &str = "queue.item.claimed";
 /// Event: a bash command matched the deny list.
 pub const TOOLS_DENY_LIST_HIT: &str = "tools.deny_list.hit";
 /// Event: the provider and model a request resolved to.
@@ -66,6 +68,8 @@ pub const WORKER_REQUEST_REFUSED: &str = "worker.request.refused";
 pub const WORKER_RELOAD_COMPLETED: &str = "worker.reload.completed";
 /// Event: a coding-agent worker refused to start (`agent`, `model`, `reason`); nothing was spawned (spec 185).
 pub const WORKER_START_REFUSED: &str = "worker.start.refused";
+/// Event: a worker's respawn after death failed; the worker is left failed (`worker`, `error`; spec 356).
+pub const WORKER_RESPAWN_FAILED: &str = "worker.respawn.failed";
 /// Event: a coder node spawned its agent (`agent`, `model`, `pid`, `argv_digest`, `session`); no raw argv (spec 217).
 pub const CODER_SPAWNED: &str = "coder.spawned";
 /// Event: a coder node's image is absent or has no digest (`image`, `reason`); nothing was started (spec 209).
@@ -124,6 +128,10 @@ pub const CRON_FIRED: &str = "cron.fired";
 pub const CHANNEL_RUN_REFUSED: &str = "channel.run.refused";
 /// Event: a channel poll failed.
 pub const CHANNEL_POLL_FAILED: &str = "channel.poll.failed";
+/// Event: a channel poll panicked; the poll counts as failed and the channel degrades (`channel`; spec 356).
+pub const CHANNEL_POLL_PANICKED: &str = "channel.poll.panicked";
+/// Event: a channel's cursor could not advance past a delivered message (`channel`, `run`, `error`; spec 356).
+pub const CURSOR_ADVANCE_FAILED: &str = "cursor.advance.failed";
 /// Event: a channel began failing (spec 347): one line per outage, not per attempt.
 pub const CHANNEL_DEGRADED: &str = "channel.degraded";
 /// Event: a failing channel answered again (spec 347).
@@ -211,8 +219,10 @@ pub const RUN_CANCEL_KILL_TIMEOUT: &str = "run.cancel_kill_timeout";
 pub const RUN_RESUME_REFUSED: &str = "run.resume.refused";
 /// Event: the scheduler's resume of a due timer was refused (`run`, `key`, `error`).
 pub const TIMER_RESUME_REFUSED: &str = "timer.resume.refused";
-/// Event: the timer wheel could not be read; reported once per outage, then the scheduler backs off (`error`).
-pub const TIMER_WHEEL_ERROR: &str = "timer.wheel.error";
+/// Event: the timer wheel could not be read or written; reported once per outage, then the scheduler backs off (`error`).
+pub const TIMER_WHEEL_ERROR: &str = "timer.error";
+/// Event: the scheduler took a due timer off the wheel and resumed its run (`run`, `key`; spec 356).
+pub const TIMER_FIRED: &str = "timer.fired";
 /// Event: a resume of a suspended run was refused; its timer is offered again while the run waits (`run`, `key`, `error`).
 pub const RUN_RESUME_FAILED: &str = "run.resume.failed";
 /// Event: boot reconciliation closed a run a crash left `Running` (`run`, `reason`).
@@ -423,6 +433,7 @@ pub const ALL: &[&str] = &[
     TOOLS_DENY_LIST_HIT,
     DAEMON_SANDBOX_IN_FORCE,
     QUEUE_ITEM_ADDED,
+    QUEUE_ITEM_CLAIMED,
     MODEL_PROVIDER_IN_FORCE,
     MODEL_TIER_RESOLVED,
     MODEL_TIER_UNAVAILABLE,
@@ -438,6 +449,7 @@ pub const ALL: &[&str] = &[
     WORKER_REQUEST_REFUSED,
     WORKER_RELOAD_COMPLETED,
     WORKER_START_REFUSED,
+    WORKER_RESPAWN_FAILED,
     CODER_IMAGE_MISSING,
     CODER_RUNTIME_UNAVAILABLE,
     CODER_HOST_SPAWN_DEPRECATED,
@@ -466,6 +478,8 @@ pub const ALL: &[&str] = &[
     CRON_FIRED,
     CHANNEL_RUN_REFUSED,
     CHANNEL_POLL_FAILED,
+    CHANNEL_POLL_PANICKED,
+    CURSOR_ADVANCE_FAILED,
     CHANNEL_DEGRADED,
     CHANNEL_RECOVERED,
     CHANNEL_SEND_FAILED,
@@ -507,6 +521,7 @@ pub const ALL: &[&str] = &[
     RUN_RESUME_REFUSED,
     TIMER_RESUME_REFUSED,
     TIMER_WHEEL_ERROR,
+    TIMER_FIRED,
     RUN_RESUME_FAILED,
     NODE_PANICKED,
     RUN_RECONCILED,

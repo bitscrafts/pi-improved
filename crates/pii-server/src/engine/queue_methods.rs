@@ -92,7 +92,15 @@ pub(crate) fn queue_claim(engine: &Arc<Engine>, req: &Request) -> Response {
         return err(ErrorCode::InvalidParams, "queue.claim needs 'by'");
     };
     match engine.queue.claim_next(by) {
-        Ok(Claim::Claimed(item)) => value_response(req, serde_json::to_value(item).ok(), err),
+        Ok(Claim::Claimed(item)) => {
+            // Spec 356: a claim is a state change somebody may need to trace; the id and the holder, no payload.
+            engine.log().event(
+                &Event::new("queue", Level::Info, names::QUEUE_ITEM_CLAIMED)
+                    .field("item", item.id.as_str())
+                    .field("by", by),
+            );
+            value_response(req, serde_json::to_value(item).ok(), err)
+        }
         Ok(_) => Response::ok(req.id.clone(), serde_json::Value::Null),
         Err(e) => err_code(err, &e),
     }

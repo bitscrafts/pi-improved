@@ -160,6 +160,16 @@ impl Scheduler {
     fn fire_due_sync(&self, now_ms: u64) {
         let due = self.wheel.take_due(now_ms).unwrap_or_default();
         for d in due {
+            // Spec 356: a due timer taken off the wheel is a fired timer, whatever its resume then does.
+            self.engine.log().event(
+                &pii_observe::Event::new(
+                    "scheduler",
+                    pii_observe::Level::Info,
+                    pii_observe::names::TIMER_FIRED,
+                )
+                .field("run", d.run.as_str())
+                .field("key", d.key.as_str()),
+            );
             let run_id = RunId::from(d.run.as_str());
             let key = ResumeKey(d.key.clone());
             if let Err(e) =

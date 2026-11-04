@@ -50,11 +50,7 @@ pub fn spawn_all(
                     || {
                         let (eng, ctx2, name2) =
                             (Arc::clone(&engine), Arc::clone(&ctx), name.clone());
-                        async move {
-                            tokio::task::spawn_blocking(move || poll_once(&eng, &ctx2, &name2))
-                                .await
-                                .unwrap_or(Ok(()))
-                        }
+                        poll_on_blocking_thread(eng, ctx2, name2)
                     },
                     |ms| tokio::time::sleep(Duration::from_millis(ms)),
                     |change, state| report_change(&engine, &name, change, state),
@@ -63,6 +59,35 @@ pub fn spawn_all(
             })
         })
         .collect()
+}
+
+/// Runs one poll on the blocking pool. A panic inside the poll is recorded (spec 356) and counts as a failed poll,
+/// so the channel backs off and degrades instead of polling on as if healthy.
+async fn poll_on_blocking_thread(
+    engine: Arc<Engine>,
+    ctx: Arc<DaemonContext>,
+    name: String,
+) -> Result<(), pii_abi::PiiError> {
+    let eng = Arc::clone(&engine);
+    let polled_name = name.clone();
+    match tokio::task::spawn_blocking(move || poll_once(&eng, &ctx, &polled_name)).await {
+        Ok(result) => result,
+        Err(e) if e.is_panic() => {
+            engine.log().event(
+                &pii_observe::Event::new(
+                    "channel",
+                    pii_observe::Level::Error,
+                    pii_observe::names::CHANNEL_POLL_PANICKED,
+                )
+                .field("channel", name.as_str()),
+            );
+            Err(pii_abi::PiiError::Unavailable(format!(
+                "channel '{name}' poll panicked"
+            )))
+        }
+        // Cancelled by runtime shutdown: nothing failed.
+        Err(_) => Ok(()),
+    }
 }
 
 /// The daemon's record of a channel's state change (spec 347): one line when it starts failing and one when it
@@ -202,7 +227,19 @@ fn poll_once(
                 continue;
             }
         };
-        let _ = ctx.channel_store.advance(name, msg.cursor, run_id.as_str());
+        // Spec 356: a cursor that did not advance re-delivers the message; say so, with the run that holds it.
+        if let Err(e) = ctx.channel_store.advance(name, msg.cursor, run_id.as_str()) {
+            engine.log().event(
+                &pii_observe::Event::new(
+                    "channel",
+                    pii_observe::Level::Error,
+                    pii_observe::names::CURSOR_ADVANCE_FAILED,
+                )
+                .field("channel", name)
+                .field("run", run_id.as_str())
+                .field("error", e.to_string()),
+            );
+        }
         engine.bus.broadcast(Event::ChannelMessage {
             channel: name.to_owned(),
             chat: msg.chat,
