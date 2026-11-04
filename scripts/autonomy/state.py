@@ -17,10 +17,27 @@ A `plan.tsv` row is: id <tab> spec <tab> brief <tab> title <tab> verify(cmd;cmd)
 import importlib, json, os, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-STATE = os.environ.get("PII_STATE") or os.path.join(ROOT, "_tmp", "autonomy", "state.json")
+def _path(var, default):
+    """The path a PII_* variable names, or the default if it is unset.
+
+    A variable that is SET but blank is a mistake with a silent consequence: an empty
+    PII_STATE used to fall through to the operator's live queue, so a test that forgot to
+    set it wrote a fixture into real rows (row X1, 2026-11-04). Refuse instead of
+    guessing -- but keep unset meaning the default, which every caller relies on.
+    """
+    if var not in os.environ:
+        return default
+    value = os.environ[var].strip()
+    if not value:
+        sys.stderr.write(f"{var} is set but empty; refusing to fall back to {default}\n")
+        raise SystemExit(2)
+    return value
 
 
-SPECS = os.environ.get("PII_SPECS") or os.path.join(ROOT, "specs")
+STATE = _path("PII_STATE", os.path.join(ROOT, "_tmp", "autonomy", "state.json"))
+
+
+SPECS = _path("PII_SPECS", os.path.join(ROOT, "specs"))
 OPEN = ("pending", "in-progress", "needs-review")
 
 
@@ -43,7 +60,7 @@ def derived_verify(spec_name):
 
 
 def rows():
-    plan = os.environ.get("PII_PLAN") or os.path.join(ROOT, "scripts", "autonomy", "plan.tsv")
+    plan = _path("PII_PLAN", os.path.join(ROOT, "scripts", "autonomy", "plan.tsv"))
     out = []
     for line in open(plan):
         line = line.rstrip("\n")

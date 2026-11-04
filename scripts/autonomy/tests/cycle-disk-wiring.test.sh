@@ -62,8 +62,14 @@ check "env.sh lists at least five write dirs" "$([ "$LIVE" -ge 5 ] 2>/dev/null &
 GL=$(first_line "$CYCLE" 'GATE_ON=1')
 check "the floor call is below the GATE_ON=1 decision" "$([ -n "$GL" ] && [ -n "$NO" ] && [ "$NO" -gt "$GL" ] && echo yes || echo no)" "yes"
 
-# (e) CONTROL: the same assertions redden a planted unwiring (' $GATE_WRITE_DIRS' removed from a scratch copy of the text)
-UNWIRED=${ARGS// \$GATE_WRITE_DIRS/}
+# (e) CONTROL: the same assertions redden a planted unwiring (the expansion removed from the call text)
+# The mutation matches every spelling of the variable -- $GATE_WRITE_DIRS, ${GATE_WRITE_DIRS} and
+# ${GATE_WRITE_DIRS:-default}. A literal match once stopped mutating when the call gained a default,
+# and the two controls below then measured an unmodified call and passed for the wrong reason.
+STRIP='s/[[:space:]]+\$\{?GATE_WRITE_DIRS(:-[^}]*)?\}?//'
+QUOTE='s/\$\{?GATE_WRITE_DIRS(:-[^}]*)?\}?/"${GATE_WRITE_DIRS:-}"/'
+UNWIRED=$(printf '%s' "$ARGS" | sed -E "$STRIP")
+check "the planted unwiring really changed the call" "$([ "$UNWIRED" != "$ARGS" ] && echo changed || echo unchanged)" "changed"
 check "the checker reddens a planted unwiring" "$(wired "$UNWIRED")" "unwired"
 
 # (f) CONTROL: a correct call with one extra existing directory still passes
@@ -71,7 +77,8 @@ NEAR="$ARGS \"\$EXTRA\""
 check "the near-miss stays green" "$(wired "$NEAR")" "wired"
 
 # (g) CONTROL: a quoted expansion collapses the five paths into one argument, and is refused
-QUOTED=${ARGS// \$GATE_WRITE_DIRS/ \"\$GATE_WRITE_DIRS\"}
+QUOTED=$(printf '%s' "$ARGS" | sed -E "$QUOTE")
+check "the quoted expansion really changed the call" "$([ "$QUOTED" != "$ARGS" ] && echo changed || echo unchanged)" "changed"
 check "CONTROL a quoted expansion is refused" "$(wired "$QUOTED")" "unwired"
 
 echo "$OK ok, $FAILS FAIL"

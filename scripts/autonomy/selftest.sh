@@ -188,6 +188,21 @@ RP=$T/row-paths.out
 bash scripts/autonomy/tests/row-paths-test.sh >"$RP" 2>&1   # the verdict is read from the file, never from a pipe's status
 grep -q '^RESULT: PASS' "$RP"; row "a row's file list is checked against its spec" 0 $?
 
+echo; echo "== 14. a blank PII_* path is refused, and the live queue is untouched (spec 378)"
+# The hash of the operator's real state is taken before and after a blank-value run: if the
+# blank value had fallen back to the default, the file would have been rewritten.
+LIVE=_tmp/autonomy/state.json
+BEFORE=$(sha256sum "$LIVE" 2>/dev/null | cut -d' ' -f1)
+PII_STATE= uv run --no-project python scripts/autonomy/state.py set X9 status=pending >/dev/null 2>&1
+RC=$?
+row "a blank PII_STATE is refused" 2 $RC
+AFTER=$(sha256sum "$LIVE" 2>/dev/null | cut -d' ' -f1)
+[ "$BEFORE" = "$AFTER" ]; row "the live queue is byte-identical after the refusal" 0 $?
+row "a blank PII_SPECS is refused" 2 "$(PII_SPECS= uv run --no-project python scripts/autonomy/state.py list >/dev/null 2>&1; echo $?)"
+row "a blank PII_PLAN is refused" 2 "$(PII_PLAN= uv run --no-project python scripts/autonomy/state.py pick >/dev/null 2>&1; echo $?)"
+uv run --no-project python scripts/autonomy/state.py list >/dev/null 2>&1
+row "an unset PII_STATE still uses the default (control)" 0 $?
+
 echo "RESULT: $PASS passed, $FAIL failed  (scratch: $T)"
 [ "$FAIL" -eq 0 ] && echo "VERDICT: ALL MECHANISMS PASS" || echo "VERDICT: FAILURES ABOVE"
 [ "$FAIL" -eq 0 ]
