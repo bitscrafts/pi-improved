@@ -117,7 +117,14 @@ flowchart LR
 Three verdicts, not two: **done** (code and docs both verified), **unverified** (code written, criteria failed),
 **refused** (the run could not proceed). `unverified` is the honest middle: work exists, it is not proven.
 
-### 4. The self-improving flow — not built yet
+### 4. Documentation of the code — specified, not built
+
+`graphs/docs.toml` is a **called** graph: a coder writes documentation for whatever brief the host gives it. It has no
+inventory and no way to tell whether the document is true. **Spec 374** adds `graphs/doc-code.toml`, which composes it:
+`inventory` → `select` (or `nothing-to-do`) → `call docs` → `verify` (every path and symbol the document names must
+exist) → `done`.
+
+### 5. The self-improving flow — not built yet
 
 ```mermaid
 flowchart LR
