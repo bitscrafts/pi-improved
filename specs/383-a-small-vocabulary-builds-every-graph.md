@@ -55,7 +55,7 @@ the next one verifiable:
 **1 · the addition — `transform` computes** (`crates/pii-graph/src/expr.rs`)
    `let` binds, `out` produces; integers and strings only, `==`, `!=`, `<`, `>`, `+`, length; a bad
    expression fails at LOAD naming node and expression; overflow refused; floats refused. The proof is
-   `graphs/boss-watch.toml`'s shell workaround rewritten as a `transform`, same ports, same verdicts.
+   `graphs/starter/boss-watch.toml`'s shell workaround rewritten as a `transform`, same ports, same verdicts.
 
 **2 · the ledger — one kind, and a capability** (`nodes/queue.rs`, `nodes/heal.rs`, `cap.rs`)
    `select` · `record` · `enqueue` · `heal_record` become `ledger` with ops `queue.claim`,
@@ -111,7 +111,7 @@ row that cannot go green is a wish.
 
 - [ ] `cargo test -q -p pii-graph --test expr_compute 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `grep -q 'overflow' crates/pii-graph/src/expr.rs`
-- [ ] `! grep -q 'bash' graphs/boss-watch.toml`
+- [ ] `! grep -q 'bash' graphs/starter/boss-watch.toml && grep -q 'kind = "transform"' graphs/starter/boss-watch.toml`
 
 ## Guardrails
 
@@ -128,4 +128,19 @@ row that cannot go green is a wish.
 
 - `crates/pii-graph/src/expr.rs`
 - `crates/pii-graph/tests/expr_compute.rs`
-- `graphs/boss-watch.toml`
+- `graphs/starter/boss-watch.toml`
+
+## Closure
+
+- **2026-11-04T18:19Z — the third criterion named a file that does not exist, and could not fail.**
+  The row and this spec both wrote `graphs/boss-watch.toml`; the graph lives at
+  `graphs/starter/boss-watch.toml`, so `! grep -q 'bash' graphs/boss-watch.toml` ran against a missing
+  path, printed `No such file or directory`, and exited **0** (measured: the negated `grep` turns rc 2
+  into rc 0). It certified nothing on every run, and the same wrong path in column 6 of the row made
+  `git add` fail with rc 11 *after* a green verify and a full gate — a stall, not a code failure.
+  Corrected to the real path, and the criterion now also asserts the graph carries a `transform` node,
+  so a file that exists but proves nothing can no longer satisfy it. The premise in step 1 that
+  `boss-watch` keeps a *shell workaround* is stale: the graph has no `bash` node today (the graphs that
+  do are `doc-code`, `books`, `starter/heal-fix`, `starter/verify-fix`, `starter/react`), so the
+  transform node `cyc` is the witness, not a rewrite pending.
+
