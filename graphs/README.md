@@ -28,6 +28,9 @@ Three rules the daemon enforces rather than documents:
 3. **A graph without an `exit` node cannot be called.** `queue` gained `exit = "record"` for exactly this (spec 343
    R6); `spec` still has none, which is why nothing can inline it yet (spec 364).
 
+**How the pieces actually join** — `call`, pins, the capability ladder, what composition cannot do yet:
+[COMPOSABILITY.md](COMPOSABILITY.md).
+
 ## The composition map
 
 Only two `call` nodes exist in the whole library, and both are load-bearing:
