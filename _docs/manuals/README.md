@@ -7,6 +7,12 @@ Two books, both built from the same Kaobook template and stamped with the revisi
 | **User and Administration Manual** | whoever installs, runs and operates a pii host | `pii-user-admin.pdf` |
 | **Architecture and Development Manual** | whoever changes pii's code | `pii-arch-dev.pdf` |
 
+**These two supersede the preceding pair** — `user-manual.pdf` (19 pp) and `technical-manual.pdf`
+(21 pp), with their `.tex` sources beside them. That pair is kept because `HANDOFF.md` and the
+research notes cite it as evidence of an earlier state; it is history, not the manual to read. The
+replacement is 85 and 104 pages respectively, with the memory subsystem documented as its own
+chapter in both — the one subsystem that had no home in either earlier document.
+
 Every book carries, on its title page, the **version**, the **build date and time**, and the
 **commit** it was built from. A manual that cannot say which revision it describes is a manual
 that will be wrong within a week and will not know it.
