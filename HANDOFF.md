@@ -1,5 +1,38 @@
 # Pii — Session Handoff
 
+## 2026-11-04T06:20Z — the cycle lock outlived its cycle inside a daemon
+
+Headline: at **06:12:18Z** the cycle that had dispatched row **358** (haiku, `rc=0`, `tree_changed=no`) was killed
+~113 s into its dispatch — the same harness `timeout` mistake recorded below — and **the lock stayed held** by
+`/usr/bin/sccache`, which the cycle's own cargo had started and which re-parented itself to init. No `cycle.sh`
+existed, and `flock -n _tmp/autonomy/lock -c true` still returned **1**, so every drain read *"a cycle is in flight"*
+and bought nothing.
+
+Diagnosis, in this order (the lock is not proof of a cycle):
+
+```
+flock -n _tmp/autonomy/lock -c true; echo $?      # 1
+ps -eo pid,cmd | grep '[c]ycle\.sh'               # nothing
+fuser -v _tmp/autonomy/lock                       # root 3556136 f.... sccache
+ls -l /proc/3556136/fd | grep autonomy            # 3 -> /projects/pi-improved/_tmp/autonomy/lock
+```
+
+- **The cause is fd inheritance, not a stale file.** `flock … bash "$0"` hands the lock fd to the child, every
+  descendant inherits it, and a daemonized one keeps it forever after the cycle is gone. `flock -o` (`--close`)
+  closes the fd in the child while the launcher keeps the lock for the whole cycle.
+- **Fixed in `4152cb2`**, proven both ways on a fixture that daemonizes a grandchild
+  (`_tmp/autonomy/lock-leak-probe.sh`): without `-o` the second flock reads **1** and `fuser` names the grandchild;
+  with `-o` it reads **0**. The patched launcher was then exercised live (`DRY=1 cycle.sh` → `OUTCOME=dry`) and the
+  lock read **0** afterwards. `selftest.sh` after the change: **42 passed, 0 failed / ALL MECHANISMS PASS**.
+- **The killer is still there.** A dispatch that runs longer than the caller's `timeout` loses the paid worker *and*
+  (before this fix) the lock. `cycle.sh` already writes its brief and its session handle before the spend; a caller
+  that waits must wait at least the graph's `max_wall_ms`, never a bare `timeout 120`.
+- **Queue at 06:20Z:** 358 `pending` (the interactive lane is driving it: spec commits `a51be91`, `66a5c14`),
+  365/366 `needs-review` from an infrastructure abort (`the daemon's judge cannot write _tmp`, r000000001173 — not the
+  specs), 369 `needs-review` with its WIP quarantined at `/projects/_trash/369-needs-test-update-20261104T024056Z`,
+  the rest parked. `state.json` was **not** written by this tick: a second lane is live on it and two
+  read-modify-write writers lose one of the two rows.
+
 ## 2026-11-03T20:30Z — the loop sat 6.5 h on a marker its own writer chose
 
 Headline: the queue was **not** empty and **not** parked — every five-minute firing since 13:54Z bought nothing
