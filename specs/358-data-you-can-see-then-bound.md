@@ -42,12 +42,24 @@ policy. The test asserts a per-table row count that changes when a row is writte
 | `crates/pii-store/tests/stats_are_per_table.rs` | `a_written_row_changes_its_tables_count` | write one run → the run table's count rises by 1 and another table's does not |
 | `crates/pii-graph/tests/resume.rs` (existing) | all tests | unchanged count, still green — this is the proof for R3 |
 
+## What is already true (measured 2026-11-04, do not re-derive)
+
+- **f7 is done.** `pii-store/src/mem/write.rs` bumps `df` only when the document is genuinely new
+  (`if existed { return Ok(()) }` before `bump_df`), the same guard covers `n_docs`/`sum_dl`, and
+  `df_counts_documents` passes. It landed swept into row 353's commit.
+- `RUN_SNAPSHOT` is gone (`grep -c` is 0).
+- **f12 is open**: `RESUME_INDEX` is declared, opened three times, written by
+  `pii-graph/src/sched/dispatch.rs` — where the code's own comment says *"nothing reads
+  RESUME_INDEX"* — and counted into identity stats. Write-only state that is also reported as if it
+  mattered. Remove it, table definition and count included.
+- **f19 is open**: there is no retention code in `pii-store` at all (`grep -c retention|prune` is 0).
+
 ## Exit Criteria
 
 - [ ] `cargo test -q -p pii-store --test df_counts_documents 2>&1 | grep -qE 'test result: ok. 1 passed'`
 - [ ] `cargo test -q -p pii-store --test stats_are_per_table 2>&1 | grep -qE 'test result: ok. 1 passed'`
-- [ ] `grep -c 'RUN_SNAPSHOT' crates/pii-graph/src/journal.rs | grep -q '^0$'`
-- [ ] `cargo test -q -p pii-graph --test resume 2>&1 | grep -qE 'test result: ok'`
+- [ ] `! grep -rq 'RESUME_INDEX' crates/ --include='*.rs'`
+- [ ] `cargo test -q -p pii-store --test retention_drops_what_the_policy_expires 2>&1 | grep -qE 'test result: ok'`
 
 ## Guardrails
 
