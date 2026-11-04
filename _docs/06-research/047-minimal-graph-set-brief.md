@@ -65,6 +65,25 @@ environment rather than to samples, written so the next person can apply it with
    script — the stale-chapter inventory, the queue fill, the digest — is either in the set, derivable
    by composing it, or named as blocked with the primitive it needs.
 
+
+**7. Split the set into SYSTEM and USER, and give the rules that keep them apart.**
+
+- **System graphs**: shipped by pii, installed by `install-pii.sh`, versioned with the binary, and
+  expected to work on a fresh host with no operator content. Name them.
+- **User graphs**: written by the operator (or by a coder on their behalf), living outside the
+  installation, never overwritten by an upgrade, free to `call` system graphs.
+- **Direction of dependency**: state whether a system graph may `call` a user graph. Argue it from
+  the consequence — a product whose shipped flows depend on operator files cannot be supported.
+- **Pins across an upgrade**: a user graph pins a system graph by `sha256` today. When the installer
+  upgrades a system graph, what happens to every user graph pinned to the old one? Choose and justify:
+  refuse the upgrade, re-resolve the pin with a report, pin by name+version instead of digest, or
+  something else. Name what the operator sees on each upgrade.
+- **The samples**: today's `coder-demo`, `coder-podman`, `coder-selffix`, `claude-probe`,
+  `digest-now`, `discord-*` — are they system, examples to copy into a user directory, or obsolete?
+
+Add a PASS/FAIL line for it: **6. The two populations are separate** — no system graph depends on a
+user graph, and the upgrade path for a user pin is stated.
+
 ## Constraints
 
 - Do not size the set by taste. "Minimal" means: remove any member and a flow from task 1 loses its
@@ -78,6 +97,7 @@ environment rather than to samples, written so the next person can apply it with
 
 ```
 A. FLOWS               numbered, one sentence each
+A2. SYSTEM vs USER     the split, the dependency direction, the pin-across-upgrade rule
 B. FLOW → GRAPH        table: flow | owner graph | composition if any | duplicate found
 C. THE SET             table: graph | purpose | entry | exit | calls | caps | flow it serves
 D. CLOSURE             the call edges, with pins
