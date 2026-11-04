@@ -194,7 +194,14 @@ if [ -n "$RSID" ]; then
   case "$PRV" in
     *gate-failed*|*verify-failed*|*worker-rc*)
       FB="$STATEDIR/briefs/corrective-$ITEM-$CID.md"; mkdir -p "$STATEDIR/briefs"
-      LASTCYCLE=$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | head -1)
+      # The log of the cycle that FAILED — not this one, and not the accumulator. Measured 2026-11-04: this
+      # line was `ls -t "$LOGD"/cycle-*.log | head -1`, and the accumulator cycle-last-detached.log is being
+      # appended to while the brief is built, so it was usually the newest — while its OUTCOME lines span
+      # months and it carries no `crit=` verify line at all. The brief for row 370 therefore quoted rows
+      # A1..A7 and window-closed from a previous month. The failure detail lives in the per-cycle log of the
+      # cycle that just ended, which is the newest one that is neither this cycle's nor the accumulator.
+      LASTCYCLE=$(ls -t "$LOGD"/cycle-*.log 2>/dev/null | grep -v '/cycle-last-detached\.log$' \
+                  | grep -v "/cycle-$CID\.log$" | head -1)
       { echo "# Corrective brief — $ITEM ($SPEC). The previous attempt ended: $PRV"; echo
         echo "Your earlier pass on this spec did not survive the orchestrator's check. Evidence:"
         echo '```'

@@ -66,5 +66,22 @@ OUT5=$(bash "$HELPER" "$SCRATCH/green.log")
 printf '%s\n' "$OUT5" | grep -q 'crit=9/9' && bad "a green verify line was quoted as evidence" \
   || ok "a green verify line (fail=-) is not quoted as a failure"
 
+# 6. the accumulated log: cycle.sh passes cycle-last-detached.log, which grows forever (measured
+# 2026-11-04: 3464 matching lines). Taking the FIRST matches quotes months-old rows and never the
+# failure that just happened, so the worker resumes blind. The recent failure must win.
+{
+  i=0; while [ "$i" -lt 30 ]; do echo "OUTCOME=worker-rc-2 ITEM=A2 SESSION=  (cycle from months ago, line $i)"; i=$((i+1)); done
+  echo 'OUTCOME=window-closed'
+  echo '13 verify - 27411+97 pid=- image=- crit=0/3 fail=cargo test -q -p pii-server --test health_is_constant_time 2>&1 | grep -q "test result: ok" rc=-'
+  echo '23 unverified - 27509+- pid=- image=- crit=- fail=run.refused{hook=judge, reason: the spec criteria failed} rc=-'
+} >"$SCRATCH/accumulated.log"
+OUT6=$(bash "$HELPER" "$SCRATCH/accumulated.log")
+printf '%s\n' "$OUT6" | grep -q 'crit=0/3' && ok "the recent failure in an accumulated log is quoted" \
+  || bad "the recent failure is buried under the log's oldest matches"
+printf '%s\n' "$OUT6" | grep -q 'health_is_constant_time' && ok "the accumulated-log brief names the failing criterion" \
+  || bad "the accumulated-log brief does not name the failing criterion"
+printf '%s\n' "$OUT6" | grep -q 'ITEM=A2' && bad "months-old OUTCOME lines are quoted as this failure's evidence" \
+  || ok "months-old OUTCOME lines are not quoted as this failure's evidence"
+
 echo "RESULT: $OK ok, $FAIL FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
