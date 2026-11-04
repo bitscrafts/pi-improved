@@ -27,7 +27,7 @@ in_ms = "$.input.in_ms"
 id = "sdd"
 kind = "call"
 graph = "sdd"
-sha256 = "2eef3bb0144b1cbafd869a2a5d4e4730ca4a4c87e60dfc4f51e4cbf5d17249a8"
+sha256 = "f2eeb3c22655fa5caea4dcd43d32d383849bdf876106e067114f7a97258719b4"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 max_entries = 12
 
@@ -44,7 +44,8 @@ docs_brief = "$.input.docs_brief"
 id = "review"
 kind = "transform"
 # Spec 342 R5: the call's ok port carries both a claimed item and an empty queue; review passes the record through, and
-# the report says which it was.
+# the report says which it was. Spec 381 R3: one of its three arms (ok, unverified, refused) arrives, so the join is any.
+join = "any"
 expr = "$.payload"
 
 [[node]]
@@ -53,7 +54,8 @@ kind = "post"
 caps = ["post"]
 channel = "discord"
 to = "$.input.to"
-template = "night: ${nodes.sdd__done}"
+# Spec 381 R3: names what review carried, so a refused night says so.
+template = "night: ${nodes.review}"
 key = "night-${run}"
 topic = "status"
 
@@ -66,6 +68,19 @@ kind = "data"
 [[edge]]
 from = "sdd"
 port = "ok"
+to = "review"
+kind = "data"
+
+# Spec 381 R3: both refusals of the call reach the report, so a night that refused says so.
+[[edge]]
+from = "sdd"
+port = "unverified"
+to = "review"
+kind = "data"
+
+[[edge]]
+from = "sdd"
+port = "refused"
 to = "review"
 kind = "data"
 

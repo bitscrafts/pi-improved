@@ -25,7 +25,7 @@ expect = "fail"
 id = "tdd"
 kind = "call"
 graph = "tdd"
-sha256 = "2730058d9969cfcd8419034468bf547969afff7137b26b06f83fece65910842a"
+sha256 = "7a826d3bcecca35c627f8382914bf5dbd640a84363f60763c79581940a03bd6d"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]

@@ -85,3 +85,10 @@ from = "select"
 port = "blocked"
 to = "record"
 kind = "data"
+
+# Spec 381 R2: a row another run holds is a verdict. `record` reports it as `running` and writes nothing to the store.
+[[edge]]
+from = "select"
+port = "running"
+to = "record"
+kind = "data"

@@ -72,21 +72,21 @@ reason = "the agent failed"
 [[node]]
 id = "not-red"
 kind = "refuse"
-join = "any"
+join = "all"
 hook = "judge"
 reason = "the test passed before the code existed, so it proves nothing"
 
 [[node]]
 id = "unrunnable"
 kind = "refuse"
-join = "any"
+join = "all"
 hook = "judge"
 reason = "a criterion could not run, so RED is unproven"
 
 [[node]]
 id = "still-red"
 kind = "refuse"
-join = "any"
+join = "all"
 hook = "judge"
 reason = "the implementation did not make the test pass"
 

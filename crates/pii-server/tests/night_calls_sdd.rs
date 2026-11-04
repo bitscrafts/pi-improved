@@ -91,3 +91,49 @@ fn sdd_calls_tdd_and_docs_at_their_pins() {
         );
     }
 }
+
+#[test]
+fn both_refusals_of_sdd_reach_the_report() {
+    // Spec 381 R3: a night that refused says so. Each refusal port of the `sdd` call leads into `review`, which passes
+    // the verdict through to `report`, and the report names what `review` carried.
+    let doc: toml::Table = toml::from_str(&graph("night")).expect("valid toml");
+    let edges = doc["edge"].as_array().expect("night has edges");
+    let has = |from: &str, port: &str, to: &str| {
+        edges.iter().any(|e| {
+            e.get("from").and_then(toml::Value::as_str) == Some(from)
+                && e.get("port").and_then(toml::Value::as_str) == Some(port)
+                && e.get("to").and_then(toml::Value::as_str) == Some(to)
+        })
+    };
+    for port in ["ok", "unverified", "refused"] {
+        assert!(has("sdd", port, "review"), "sdd.{port} must reach review");
+    }
+    assert!(has("review", "ok", "report"), "review must reach report");
+    let review = doc["node"]
+        .as_array()
+        .and_then(|ns| {
+            ns.iter()
+                .find(|n| n.get("id").and_then(toml::Value::as_str) == Some("review"))
+        })
+        .expect("night has a review node");
+    assert_eq!(
+        review.get("join").and_then(toml::Value::as_str),
+        Some("any"),
+        "review takes one of three exclusive arms, so its join is any"
+    );
+    let report = doc["node"]
+        .as_array()
+        .and_then(|ns| {
+            ns.iter()
+                .find(|n| n.get("id").and_then(toml::Value::as_str) == Some("report"))
+        })
+        .expect("night has a report node");
+    let template = report
+        .get("template")
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        template.contains("nodes.review"),
+        "the report names what review carried, refusal or done: {template}"
+    );
+}

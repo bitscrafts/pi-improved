@@ -129,6 +129,11 @@ impl Ran {
 
 /// One tick over one row, whose spec's criterion is `criterion`, with the fake agent doing `work`.
 fn tick(criterion: &str, work: &str) -> Ran {
+    tick_row(criterion, work, false)
+}
+
+/// One tick over one row. When `held`, another run already holds the row: `select` reports it as running.
+fn tick_row(criterion: &str, work: &str, held: bool) -> Ran {
     let (repo_dir, base) = repo(criterion);
     let bin = fake_bin(work);
     let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "qcs-store-").unwrap();
@@ -137,6 +142,11 @@ fn tick(criterion: &str, work: &str) -> Ran {
     SPEC.clone_into(&mut row.spec);
     row.criteria = vec![ROW_CRITERION.to_owned()];
     queue.put_item(&row).unwrap();
+    if held {
+        queue
+            .set_status("A1", ItemStatus::Running, None, "other-run")
+            .unwrap();
+    }
 
     let mut reg = NodeRegistry::builtin();
     let env = BTreeMap::from([(String::from("OLLAMA_API_KEY"), String::from("placeholder"))]);
@@ -271,4 +281,18 @@ fn a_refusing_callee_fails_the_row() {
     assert_eq!(r.item.status, ItemStatus::Parked, "{:?}", r.item);
     let reason = r.item.reason.unwrap_or_default();
     assert!(reason.contains("refused"), "names the port: {reason}");
+}
+
+#[test]
+fn a_row_held_by_another_run_is_recorded_as_running() {
+    // Spec 381 R2: `select.running` is a verdict. The run ends on `record`, which says so and touches nothing: the held
+    // row belongs to the other run, and nothing is implemented here.
+    let r = tick_row("test -f built.txt", WORKS, true);
+    assert!(r.started("record"), "record ran: {:?}", r.nodes());
+    assert!(!r.started("implement"), "{:?}", r.nodes());
+    let Terminal::Success { output } = &r.terminal else {
+        panic!("a held row is a verdict, not a failure: {:?}", r.terminal);
+    };
+    assert_eq!(output["status"], "running", "{output}");
+    assert_eq!(r.item.status, ItemStatus::Running, "{:?}", r.item);
 }

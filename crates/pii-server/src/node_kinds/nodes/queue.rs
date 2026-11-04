@@ -245,16 +245,17 @@ impl GraphNode for RecordNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         let Some(item) = selected(input, &self.select) else {
             // Spec 342 R5: exhaustion leaves through the exit, so a night that found nothing reaches review. Nothing is
-            // written to the queue store: there is no item to record a verdict on.
+            // written to the queue store: there is no item to record a verdict on. Spec 381 R2: a row another run holds
+            // is `running`, and that row is left as the other run has it.
             let outcome = input
                 .nodes
                 .get(self.select.as_str())
                 .map(|v| field(v, "outcome"))
                 .unwrap_or_default();
-            let status = if outcome == "queue-empty" {
-                "empty"
-            } else {
-                "blocked"
+            let status = match outcome.as_str() {
+                "queue-empty" => "empty",
+                "already-running" => "running",
+                _ => "blocked",
             };
             return Ok(port(
                 "ok",
