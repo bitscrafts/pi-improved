@@ -15,7 +15,10 @@ fi
 if [ -z "${PII_CYCLE_LOCKED:-}" ]; then
   export PII_CYCLE_LOCKED=1
   # not `exec flock ... || ...`: exec replaces this shell, so the || never ran and a held lock exited 1, silently
-  flock -n -E 75 "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" bash "$0" "$@"; rc=$?
+  # -o (--close) so a daemonized grandchild cannot keep the lock (measured 2026-11-04): sccache,
+  # started by the cycle's own cargo and re-parented to init, inherited this fd and held the lock
+  # after the cycle was gone, so every later drain read "a cycle is in flight" and dispatched nothing.
+  flock -n -o -E 75 "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" bash "$0" "$@"; rc=$?
   [ "$rc" = 75 ] && { echo "OUTCOME=locked ITEM=-"; exit 5; }
   exit "$rc"
 fi
