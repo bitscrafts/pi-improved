@@ -40,6 +40,10 @@ pub fn registry(
     if let Some(ceiling) = cfg.grant_ceiling {
         reg = reg.with_grant_ceiling(ceiling);
     }
+    // Spec 363 R1: the planner role calls the same provider the agent does; its node names the model.
+    reg.register(Arc::new(nodes::plan::PlanFactory {
+        provider: Arc::clone(&provider),
+    }));
     reg.register(Arc::new(agent::AgentFactory {
         provider,
         workspace: cfg.workspace.clone(),
@@ -100,6 +104,10 @@ pub fn register_queue_nodes(
         store: Arc::clone(&store),
     }));
     reg.register(Arc::new(nodes::queue::JudgeFactory));
+    // Spec 363 R3: `enqueue` admits a written spec to the same store `select` claims from.
+    reg.register(Arc::new(nodes::enqueue::EnqueueFactory {
+        store: Arc::clone(&store),
+    }));
     reg.register(Arc::new(nodes::queue::RecordFactory { store, memory }));
 }
 
@@ -218,6 +226,9 @@ pub fn lint_registry_with_log(
             String,
             pii_worker::Supervisor,
         >::new())),
+    }));
+    reg.register(Arc::new(nodes::plan::PlanFactory {
+        provider: Arc::new(pii_model::ScriptedProvider::empty()),
     }));
     reg.register(Arc::new(agent::AgentFactory {
         provider: Arc::new(pii_model::ScriptedProvider::empty()),

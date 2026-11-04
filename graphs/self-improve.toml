@@ -1,0 +1,99 @@
+# Spec 363: a finding becomes one spec, the spec becomes one queue row, and the queue runs that row.
+#   case → plan → enqueue → queue (call, pinned) → report
+# `plan` writes exactly one new `specs/<NN>-<slug>.md` through the planner's model call; `enqueue` admits it only when it
+# passes the lane's two validators, naming the reason otherwise. `queue` is called by pin (spec 255), so the run is one
+# run with one journal, and the queue's own `select` claims the next pending row, which is the one `enqueue` added when
+# nothing older waits.
+#   pii run start self-improve --input '{"finding":"<text>","workdir":"<repo>"}'
+# No absolute path and no credential lives in this file: the repository arrives through `input`.
+name = "self-improve"
+entry = "case"
+exit = "report"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[limits]
+# The queue's own bound is 3 600 000 ms; the planner call and the enqueue add a small allowance on top.
+max_wall_ms = 3900000
+
+# The case is the finding text as the run gave it: the input is passed on, so `plan` reads `$.input.finding`.
+[[node]]
+id = "case"
+kind = "transform"
+expr = "$.input"
+
+# Spec 363 R1: the planner writes one new spec; `model` is the planner role, not the workhorse.
+[[node]]
+id = "plan"
+kind = "plan"
+caps = ["fs_write"]
+finding = "$.input.finding"
+workdir = "$.input.workdir"
+model = "glm-5.3"
+
+# Spec 363 R3: admits the written spec as one queue row, refusing a spec that fails the house shape.
+[[node]]
+id = "enqueue"
+kind = "enqueue"
+caps = ["fs_read"]
+spec = "$.nodes.plan.spec"
+title = "$.nodes.plan.title"
+workdir = "$.input.workdir"
+
+# Spec 255: the queue graph is inlined, pinned by the digest of graphs/queue.toml as it is on disk.
+[[node]]
+id = "queue"
+kind = "call"
+graph = "queue"
+sha256 = "1fafe548188f13000cc1ab635fc47b4f23342be6e3040e9668b5ccf626bfb549"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[node.in]
+workdir = "$.input.workdir"
+
+# The report names the row the enqueue admitted, and the spec it was written to.
+[[node]]
+id = "report"
+kind = "transform"
+expr = "$.nodes.enqueue"
+
+# A refusal ends the run here with the reason the node named.
+[[node]]
+id = "refused"
+kind = "transform"
+expr = "$.payload"
+
+[[edge]]
+from = "case"
+port = "ok"
+to = "plan"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "ok"
+to = "enqueue"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "err"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "enqueue"
+port = "ok"
+to = "queue"
+kind = "data"
+
+[[edge]]
+from = "enqueue"
+port = "err"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "queue"
+port = "ok"
+to = "report"
+kind = "data"
