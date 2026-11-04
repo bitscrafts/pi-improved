@@ -1,16 +1,9 @@
-# 046 — Derivation brief: the minimal set of node kinds that builds every shipped graph
+# 046 — Derivation brief: one minimal set of node kinds that expresses every graph
 
-You are not reviewing a claim this time. You are **deriving** a base set, and you will be held to the
-proof. Read only; do not edit the tree. Answer in English, in the structure requested at the end.
+The operator's framing, verbatim: *"a minimal set to rule them all."*
 
-## The operator's goal, verbatim
-
-> the idea is to find a minimal set of tools to build them all! so we must reach this set of tools!
-> then review and adapt the existing graphs!
-
-So the deliverable is a **base set**, a **derivation per existing graph**, and an **adaptation order**.
-Nothing about the engine's composition machinery is to change: the splice, the exit rule, the pin
-model and the capability ladder work and are tested. The question is only *what the node kinds are*.
+**One set. Minimal. Sufficient: every graph that ships today, and every graph the library is meant to
+grow into, is expressible with it.** Not a set per family, not a set plus an escape hatch.
 
 ## What exists (measured from `[[node]]` tables, 2026-11-04)
 
@@ -110,6 +103,25 @@ step so a half-migrated library cannot ship.
 **5. Name what this refactor cannot fix.** Specifically: the defects in the current library that are
 not vocabulary problems — two files that do not load, verdicts no host wires, copies
 (`digest-now` ≈ `discord-digest`), op-multiplexing, logic in `brief` strings, untyped port values.
+
+
+## The acceptance test for your answer
+
+Your set passes only if **all four** hold. Answer each explicitly, as a line that says PASS or FAIL
+with the count:
+
+1. **Every shipped graph is expressible.** For all 32 files under `graphs/`, the derivation table has
+   a row and no row says "cannot be expressed".
+2. **Nothing in the set is derivable.** For each kind in your set, one sentence says why the other
+   kinds cannot produce it. A kind whose sentence is weak is not in the set.
+3. **Nothing outside the set is needed.** For each of the 23 kinds that exist today, your derivation
+   says which base kinds replace it, or which graph cannot be expressed without it.
+4. **`tool` cannot carry the proof.** Show the derivation with `tool` restricted to a declared,
+   reviewable command surface. If a graph then cannot be expressed, that graph — not `tool` — is the
+   evidence that a primitive is missing, and it belongs in the set.
+
+If any of the four fails, say so plainly and name the smallest set that does pass. A set of eleven
+that fails test 4 is worse than a set of fourteen that passes it.
 
 ## Structure your answer as
 
