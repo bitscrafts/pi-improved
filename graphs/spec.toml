@@ -3,7 +3,10 @@
 # No absolute path and no credential lives in this file: only the NAMES in env_pass are copied from the daemon's environment.
 name = "spec"
 entry = "code"
-caps = ["spawn", "proc"]
+# Spec 364: named so the queue can inline this graph by `call`. A host routes on `done`'s ports, and may wire a refusal
+# by name (`<call>.unverified`, `<call>.refused`) to take it back as a verdict; run directly, a refusal fails the run.
+exit = "done"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 # Spec 282: the run's spend bound, which the coder charges (spec 276). Measured basis: one full spec pass through the
 # queue's daemon cost claude_cost_usd = 0.070610 (run r000000000130); 1.00 USD is about fourteen such passes. A `call`
@@ -18,7 +21,7 @@ max_wall_ms = 6000000
 [[node]]
 id = "code"
 kind = "coder"
-caps = ["spawn", "proc"]
+caps = ["spawn", "proc", "fs_read", "fs_write"]
 agent = "$.input.agent"
 model = "$.input.model"
 provider = "$.input.provider"
@@ -48,7 +51,13 @@ graph = "docs"
 sha256 = "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980"
 caps = ["spawn", "proc"]
 
+# Spec 364: mapped, because a holder that is itself called must supply what docs `needs` (spec 261 R8).
 [node.in]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
 brief = "$.input.docs_brief"
 
 [[node]]

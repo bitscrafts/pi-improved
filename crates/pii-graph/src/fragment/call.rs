@@ -349,6 +349,7 @@ fn splice(
         doc.insert("entry".into(), Value::String(head.clone()));
     }
     let mut host_edges = tables(doc, "edge");
+    super::call_output::return_refusals(&mut host_edges, &mut added, id);
     for e in &mut host_edges {
         if e.get("to").and_then(Value::as_str) == Some(id) {
             e.insert("to".into(), Value::String(head.clone()));

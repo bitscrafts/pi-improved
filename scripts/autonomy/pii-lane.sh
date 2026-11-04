@@ -80,7 +80,7 @@ for ROW in "$@"; do
 
   ITEM="$ROW-$TAG"
   say "row $ROW → pii queue item $ITEM (spec $SPEC)"
-  set -- "$PII" queue add --id "$ITEM" --spec "$ROOT/specs/$SPEC" --title "$TITLE"
+  set -- "$PII" queue add --id "$ITEM" --spec "specs/$SPEC" --title "$TITLE"
   IFS=';' read -r -a CRITS <<< "$CRIT"
   for c in "${CRITS[@]}"; do [ -n "$c" ] && set -- "$@" --criteria "$c"; done
   IFS=';' read -r -a TOUCHES <<< "$TOUCH"
@@ -88,7 +88,7 @@ for ROW in "$@"; do
   if ! "$@" >/dev/null 2>&1; then say "queue.add refused $ITEM (duplicate or malformed)"; OVERALL=1; continue; fi
 
   say "dispatching through the queue graph"
-  "$PII" run start queue --input "{\"workdir\":\"$ROOT\"}" >/dev/null 2>&1 || { say "run start failed"; OVERALL=1; continue; }
+  "$PII" run start queue --input "{\"workdir\":\"$ROOT\",\"base\":\"$(git -C "$ROOT" rev-parse HEAD)\"}" >/dev/null 2>&1 || { say "run start failed"; OVERALL=1; continue; }
 
   waited=0
   while [ "$waited" -lt "$WAIT_MAX" ]; do

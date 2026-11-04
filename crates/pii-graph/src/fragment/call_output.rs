@@ -15,11 +15,38 @@
 //! A prefix must end at a `.` or the end of the string: `$.nodes.sdd` rewrites, `$.nodes.sddx` does not, and a
 //! host that never mentions the call id comes out byte-identical — which is the control this module is tested by.
 
-use toml::Value;
+use toml::{Table, Value};
+
+/// Spec 364: a host edge whose port names a `refuse` node of the callee takes that verdict back from the call.
+///
+/// A call returns on its exit's ports, and a `refuse` fails the run, so a host could only ever see the exit. An edge on
+/// `<call>.unverified` now leaves `<call>__unverified` on `ok`, and that one node is told to return (`returns`) instead
+/// of failing the run. The host opts in by wiring the port: a refusal no host wires still fails the run, as does the
+/// same graph run directly, and a port naming no refusal is left for the exit, where validation names it.
+pub(super) fn return_refusals(host_edges: &mut [Table], added: &mut [Table], call: &str) {
+    for edge in host_edges {
+        if edge.get("from").and_then(Value::as_str) != Some(call) {
+            continue;
+        }
+        let Some(port) = edge.get("port").and_then(Value::as_str).map(str::to_owned) else {
+            continue;
+        };
+        let inner = format!("{call}__{port}");
+        let refusal = added.iter_mut().find(|n| {
+            n.get("id").and_then(Value::as_str) == Some(inner.as_str())
+                && n.get("kind").and_then(Value::as_str) == Some("refuse")
+        });
+        if let Some(node) = refusal {
+            node.insert("returns".into(), Value::String(port));
+            edge.insert("from".into(), Value::String(inner));
+            edge.insert("port".into(), Value::String("ok".into()));
+        }
+    }
+}
 
 /// Rewrites `$.nodes.<call>` and `$.nodes.<call>.<rest>` to `$.nodes.<call>__<exit>[.<rest>]` in every host node's
 /// values. Returns how many expressions were rewritten.
-pub(super) fn alias_outputs(doc: &mut toml::Table, call: &str, exit: &str) -> usize {
+pub(super) fn alias_outputs(doc: &mut Table, call: &str, exit: &str) -> usize {
     let prefix = format!("$.nodes.{call}");
     let replacement = format!("$.nodes.{call}__{exit}");
     let mut rewritten = 0;
@@ -82,6 +109,38 @@ fn rewrite_str(s: &str, prefix: &str, replacement: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn table(src: &str) -> Table {
+        toml::from_str(src).expect("toml")
+    }
+
+    #[test]
+    fn a_wired_refusal_returns_and_its_edge_leaves_the_inner_node() {
+        let mut edges = [table(
+            "from = \"c\"\nport = \"unverified\"\nto = \"r\"\nkind = \"data\"",
+        )];
+        let mut added = [
+            table("id = \"c__unverified\"\nkind = \"refuse\""),
+            table("id = \"c__refused\"\nkind = \"refuse\""),
+        ];
+        return_refusals(&mut edges, &mut added, "c");
+        assert_eq!(edges[0]["from"].as_str(), Some("c__unverified"));
+        assert_eq!(edges[0]["port"].as_str(), Some("ok"));
+        assert_eq!(added[0]["returns"].as_str(), Some("unverified"));
+        // the near-miss: a refusal no edge wires must still fail the run
+        assert!(!added[1].contains_key("returns"));
+    }
+
+    #[test]
+    fn a_port_that_names_no_refusal_is_left_for_the_exit() {
+        let src = "from = \"c\"\nport = \"ok\"\nto = \"r\"\nkind = \"data\"";
+        let mut edges = [table(src)];
+        // `c__ok` exists but is no refusal: the edge stays on the call, and the caller points it at the exit.
+        let mut added = [table("id = \"c__ok\"\nkind = \"transform\"")];
+        return_refusals(&mut edges, &mut added, "c");
+        assert_eq!(edges[0], table(src));
+        assert!(!added[0].contains_key("returns"));
+    }
+
     #[test]
     fn a_bare_call_id_is_rewritten_to_the_exit() {
         assert_eq!(
@@ -121,7 +180,7 @@ mod tests {
 
     #[test]
     fn a_node_id_and_kind_are_never_rewritten() {
-        let mut doc: toml::Table = toml::from_str(
+        let mut doc: Table = toml::from_str(
             r#"
             [[node]]
             id = "sdd"

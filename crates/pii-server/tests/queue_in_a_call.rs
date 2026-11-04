@@ -33,7 +33,7 @@ kind = "call"
 graph = "queue"
 sha256 = "PIN"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
-in = { workdir = "$.input.workdir" }
+in = { workdir = "$.input.workdir", base = "$.input.base" }
 "#;
 
 fn repo() -> PathBuf {
@@ -85,12 +85,16 @@ fn the_queue_graph_carries_no_absolute_project_path() {
 fn CONTROL_the_queue_graph_still_loads_alone() {
     // the same file, not called: names unnamespaced, which is what makes the peer lookup worth deriving
     let src = queue_src();
-    let spec = pii_graph::load_toml_with_registry(&src, &NodeRegistry::builtin())
-        .expect("graphs/queue.toml loads standalone");
-    let ids: Vec<&str> = spec.nodes.iter().map(|n| n.id.as_str()).collect();
-    assert_eq!(
-        ids,
-        vec!["select", "dispatch", "judge", "record"],
-        "got {ids:?}"
-    );
+    let graphs = repo().join("graphs");
+    let woven = fragment::load_host_with_graphs(
+        &src,
+        &repo().join("graphs/fragments"),
+        std::slice::from_ref(&graphs),
+        &NodeRegistry::builtin(),
+    )
+    .expect("graphs/queue.toml loads standalone");
+    let ids: Vec<&str> = woven.spec.nodes.iter().map(|n| n.id.as_str()).collect();
+    for id in ["select", "implement__code", "record"] {
+        assert!(ids.contains(&id), "{id} is missing: {ids:?}");
+    }
 }

@@ -1,7 +1,8 @@
 # Spec 208: the development queue as a graph. `select` gates the next work item (blocked and empty are reported
-# apart, and a blocked select ends the run on its own port with the edge it waits on); `dispatch` is a coder
-# node that works the selected item's spec; `judge` runs the item's criteria; `record` writes the verdict to the
-# item's status in the queue store. A worker never commits: that stays an operator act.
+# apart, and a blocked select ends the run on its own port with the edge it waits on); `implement` calls the spec graph
+# on the selected item's spec; `record` writes the callee's verdict to the item's status in the queue store. A worker
+# never commits: that stays an operator act.
+#   pii run start queue --input '{"workdir":"<repo>","base":"<40-hex commit holding the row's spec>"}'
 name = "queue"
 entry = "select"
 # Spec 343 R6: declared so the graph can be inlined by `call`, which routes the host on the exit node's ports.
@@ -9,71 +10,65 @@ exit = "record"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [limits]
-# The 600000 ms default is checked before each next node, and a coder pass past ten minutes was failed with its work complete
-# (measured on the daemon: 601 s and 717 s); the coder's 1800000 plus the judge's 1800000 allowance is 3600000.
-max_wall_ms = 3600000
+# Spec 364: the called spec graph's own bound, because a call shares its host's wall (see graphs/spec.toml).
+max_wall_ms = 6000000
 
 [[node]]
 id = "select"
 kind = "select"
 
+# Spec 364: one implementation of "implement a spec". The callee's `verify` and `reverify` own the verdict, so the row's
+# own criteria are not run here. The pin is the digest of graphs/spec.toml.
 [[node]]
-id = "dispatch"
-kind = "coder"
+id = "implement"
+kind = "call"
+graph = "spec"
+sha256 = "771d098b39db7369dd71ed1fb23ffa63b90b25fed7788c830e4bfb214c424443"
 # spec 362: a coder without fs_write cannot implement anything — measured 2026-11-03, the agent spawned with these caps
 # stopped and reported "no write or execute tool is available" instead of writing code.
 caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[node.in]
 agent = "pi"
 model = "deepseek-v4.1-flash:cloud"
 provider = "ollama-cloud"
 workdir = "$.input.workdir"
+base = "$.input.base"
 # spec 362: the claimed row carries the spec; without this the coder has no document to implement and
 # improvises (measured 2026-11-03: it wrote the WRONG spec's test files while its row said otherwise).
 spec = "$.nodes.select.item.spec"
 brief = "Implement the spec named above. Follow it as the contract. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
-timeout_ms = 1800000
-env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_TMPDIR"]
-
-[[node]]
-id = "judge"
-kind = "judge"
-caps = ["proc"]
-workdir = "$.input.workdir"
-# improvises (measured 2026-11-03: it wrote the WRONG spec's test files while its row said otherwise).
+docs_brief = "Document the work the spec named above just added. Change documentation only."
 
 [[node]]
 id = "record"
 kind = "record"
-# Any one verdict arrives: a judge pass, a judge failure, or a refused dispatch. These ports are exclusive.
+# Any one verdict arrives: the callee's done, one of its refusals, or an exhausted select. These ports are exclusive.
 join = "any"
 
 [[edge]]
 from = "select"
 port = "ok"
-to = "dispatch"
+to = "implement"
 kind = "data"
 
 [[edge]]
-from = "dispatch"
-port = "ok"
-to = "judge"
-kind = "data"
-
-[[edge]]
-from = "dispatch"
-port = "err"
-to = "record"
-kind = "data"
-
-[[edge]]
-from = "judge"
+from = "implement"
 port = "ok"
 to = "record"
 kind = "data"
 
+# Spec 364: the callee's refusals, wired by name, so a refused implementation parks the row instead of ending the run
+# with the row still claimed.
 [[edge]]
-from = "judge"
-port = "fail"
+from = "implement"
+port = "unverified"
+to = "record"
+kind = "data"
+
+[[edge]]
+from = "implement"
+port = "refused"
 to = "record"
 kind = "data"
 

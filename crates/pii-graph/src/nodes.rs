@@ -235,11 +235,16 @@ impl super::GraphNode for WaitNode {
     }
 }
 
-/// `refuse` (spec 212): fails the run by name. `hook` is stamped by the weave
-/// from the attach id; `reason` is declared by the fragment.
+/// `refuse` (spec 212): fails the run by name.
+///
+/// `hook` is stamped by the weave from the attach id; `reason` is declared by the
+/// fragment. `returns` is set by the load when a host wires this refusal (spec 364):
+/// the verdict goes back to the host on `ok`, under that port's name, instead of
+/// failing the run.
 pub struct RefuseNode {
     hook: String,
     reason: String,
+    returns: Option<String>,
 }
 
 impl RefuseNode {
@@ -257,14 +262,41 @@ impl RefuseNode {
         Ok(Self {
             hook: field("hook", "unnamed"),
             reason: field("reason", "refused"),
+            returns: cfg
+                .get("returns")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
         })
     }
 }
 
 impl super::GraphNode for RefuseNode {
-    fn run(&self, _ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
-        Ok(Outcome::Fail {
-            error: format!("run.refused{{hook={}, reason={}}}", self.hook, self.reason),
+    fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
+        let Some(port) = &self.returns else {
+            return Ok(Outcome::Fail {
+                error: format!("run.refused{{hook={}, reason={}}}", self.hook, self.reason),
+            });
+        };
+        // A join's payload is keyed by source, and the arm that arrived says why.
+        let arm = input
+            .payload
+            .as_object()
+            .and_then(|arms| arms.values().find(|v| v.get("reason").is_some()))
+            .unwrap_or(&input.payload);
+        let why = arm.get("reason").and_then(|v| v.as_str());
+        let reason = why.map_or_else(
+            || format!("{port}: {}", self.reason),
+            |why| format!("{port}: {}: {why}", self.reason),
+        );
+        let criterion = arm.pointer("/failing/0").cloned();
+        Ok(Outcome::Next {
+            port: PortName::from("ok"),
+            value: serde_json::json!({
+                "verdict": "refused",
+                "port": port,
+                "reason": reason,
+                "criterion": criterion,
+            }),
         })
     }
 }

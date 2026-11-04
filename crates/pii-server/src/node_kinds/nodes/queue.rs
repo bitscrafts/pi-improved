@@ -1,9 +1,9 @@
 //! The queue's graph nodes (spec 208).
 //!
-//! `select` gates the next work item, `judge` runs its criteria, and `record` writes the verdict back to the store.
-//! The dispatch in between is the `coder` node (spec 207), which reads its spec path from the selected item.
-//! Every node reads the blackboard (`input.nodes`), keyed by node id, so `judge` and `record` can reach the item
-//! that `select` claimed without the graph copying it along each edge.
+//! `select` gates the next work item, and `record` writes the verdict that reaches it back to the store. In between,
+//! `graphs/queue.toml` calls `graphs/spec.toml` (spec 364), whose judges own the verdict. Nodes read the blackboard
+//! (`input.nodes`), keyed by node id, so `record` can reach the item that `select` claimed without the graph copying
+//! it along each edge.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -216,7 +216,7 @@ impl NodeFactory for JudgeFactory {
 
 /// Factory for `record`: writes the item's verdict to the queue store.
 ///
-/// A pass marks the item `done`; a failure or a refused dispatch parks it with the reason, journalled by the store.
+/// A pass marks the item `done`; a failure or a refusal parks it with the reason, journalled by the store.
 /// When `memory` is set, the outcome is also learned as one memory document naming the item and the failing
 /// criterion (spec 208 R6).
 pub struct RecordFactory {
@@ -228,8 +228,6 @@ pub struct RecordFactory {
 
 struct RecordNode {
     select: String,
-    judge: String,
-    dispatch: String,
     store: Arc<QueueStore>,
     memory: Option<Arc<MemStore>>,
 }
@@ -264,36 +262,31 @@ impl GraphNode for RecordNode {
             ));
         };
         let id = field(item, "id");
-        // The verdict is the judge's, or the dispatch's refusal when the judge never ran.
-        let (status, verdict) = match (
-            input.nodes.get(self.judge.as_str()),
-            input.nodes.get(self.dispatch.as_str()),
-        ) {
-            (Some(judge), _) if judge["verdict"] == "passed" => (
+        // Spec 364: the verdict is the one arm that reached this join, so `record` holds no opinion of its own. A called
+        // spec graph arrives as its `done` value or as a returned refusal; a hand-built graph's judge says `passed`.
+        let arrived = input
+            .payload
+            .as_object()
+            .and_then(|arms| arms.values().next());
+        let (status, verdict) = match arrived {
+            Some(v) if v.as_str() == Some("done") || v["verdict"] == "passed" => (
                 ItemStatus::Done,
                 Verdict::Passed {
                     report: String::new(),
                     criteria: Vec::new(),
                 },
             ),
-            (Some(judge), _) => {
-                let failing = judge.get("criterion").and_then(serde_json::Value::as_str);
+            Some(v) => {
+                let failing = v.get("criterion").and_then(serde_json::Value::as_str);
                 (
                     ItemStatus::Parked,
                     Verdict::Failed {
-                        reason: field(judge, "reason"),
+                        reason: field(v, "reason"),
                         failing: failing.map(str::to_owned),
                     },
                 )
             }
-            (None, Some(refused)) => (
-                ItemStatus::Parked,
-                Verdict::Failed {
-                    reason: field(refused, "reason"),
-                    failing: None,
-                },
-            ),
-            (None, None) => (
+            None => (
                 ItemStatus::Parked,
                 Verdict::Failed {
                     reason: "no verdict was reached".to_owned(),
@@ -342,8 +335,6 @@ impl NodeFactory for RecordFactory {
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
         Ok(Box::new(RecordNode {
             select: peer_of(cfg, "select"),
-            judge: peer_of(cfg, "judge"),
-            dispatch: peer_of(cfg, "dispatch"),
             store: Arc::clone(&self.store),
             memory: self.memory.clone(),
         }))
@@ -395,8 +386,6 @@ mod record_empty {
     fn node(store: Arc<QueueStore>) -> RecordNode {
         RecordNode {
             select: "select".to_owned(),
-            judge: "judge".to_owned(),
-            dispatch: "dispatch".to_owned(),
             store,
             memory: None,
         }
@@ -439,10 +428,9 @@ mod record_empty {
             .expect("put the item");
         let input = NodeInput {
             input: serde_json::json!({}),
-            payload: serde_json::json!({}),
+            payload: serde_json::json!({ "implement__done": "done" }),
             nodes: serde_json::json!({
-                "select": { "outcome": "claimed", "item": { "id": "A1" } },
-                "judge": { "verdict": "passed" }
+                "select": { "outcome": "claimed", "item": { "id": "A1" } }
             }),
         };
         let outcome = node(Arc::clone(&store))

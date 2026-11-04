@@ -47,13 +47,12 @@ flowchart LR
   end
   night -->|"call, pinned by sha256"| queue
   spec -->|"call"| docs
-  queue -.->|"spec 364: should call instead of reimplementing"| spec
+  queue -->|"call, pinned by sha256"| spec
   classDef dotted stroke-dasharray:4
 ```
 
-`queue` duplicates what `spec` already does (a coder followed by a judge). **Spec 364 makes `queue` call `spec`**
-instead — one implementation of "implement a spec", reached three ways: by hand, by the queue, and by a future
-self-improving flow.
+`queue` calls `spec` (spec 364) — one implementation of "implement a spec", reached three ways: by hand, by the queue,
+and by the self-improving flow.
 
 ## The four flows
 
@@ -75,29 +74,29 @@ reviewed.
 
 ```mermaid
 flowchart LR
-  select["select<br/><i>select</i>"] -->|ok| dispatch["dispatch<br/><i>coder: pi</i>"]
-  dispatch -->|ok| judge["judge<br/><i>judge</i>"]
-  dispatch -->|err| record["record<br/><i>record</i>"]
-  judge -->|ok| record
-  judge -->|fail| record
+  select["select<br/><i>select</i>"] -->|ok| implement["implement<br/><i>call: spec</i>"]
+  implement -->|ok| record["record<br/><i>record</i>"]
+  implement -->|unverified| record
+  implement -->|refused| record
   select -->|empty| record
   select -->|blocked| record
   record --> out(["verdict written<br/>to the queue store"])
 ```
 
-`select` claims one work item and emits it at `$.nodes.select.item`; `dispatch` spawns the agent **with that item's
-spec**; `judge` runs the item's own criteria; `record` writes the verdict. A worker never commits — that stays an
-operator act.
+`select` claims one work item and emits it at `$.nodes.select.item`; `implement` calls the spec graph **with that item's
+spec**, and the callee's judges own the verdict: the row's own criteria are not run here. `record` writes the verdict,
+and a refusal the host wires by name parks the row instead of failing the run. The run input needs `workdir` and `base`,
+the commit that holds the row's spec. A worker never commits — that stays an operator act.
 
-Every configuration in `dispatch` was measured, and each was a defect before it was a line:
+Every configuration around the coder was measured, and each was a defect before it was a line:
 
 | field | why it is there |
 |---|---|
 | `spec = "$.nodes.select.item.spec"` | without it the coder had no document and improvised another spec's files |
 | `model` + `provider` | the old id `deepseek-v4-flash` had not existed for months; the graph died at spawn |
 | `caps` with `fs_read`/`fs_write` | a coder without them cannot implement anything |
-| `env_pass` | a spawned agent inherits almost nothing: the key and the config dirs must be named |
-| `timeout_ms = 1800000` | a coder pass past ten minutes is normal; the default killed real work |
+| `env_pass` (in `spec.toml`) | a spawned agent inherits almost nothing: the key and the config dirs must be named |
+| `timeout_ms` (in `spec.toml`) | a coder pass past ten minutes is normal; the default killed real work |
 
 The agent side has two more, in the daemon rather than the graph: `--approval-mode yolo` (a headless run has no
 approval surface, so every write was denied) and the spec path prefixed into the prompt (the agent was told

@@ -4,7 +4,7 @@
 # passes the lane's two validators, naming the reason otherwise. `queue` is called by pin (spec 255), so the run is one
 # run with one journal, and the queue's own `select` claims the next pending row, which is the one `enqueue` added when
 # nothing older waits.
-#   pii run start self-improve --input '{"finding":"<text>","workdir":"<repo>"}'
+#   pii run start self-improve --input '{"finding":"<text>","workdir":"<repo>","base":"<40-hex commit>"}'
 # No absolute path and no credential lives in this file: the repository arrives through `input`.
 name = "self-improve"
 entry = "case"
@@ -12,8 +12,8 @@ exit = "report"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [limits]
-# The queue's own bound is 3 600 000 ms; the planner call and the enqueue add a small allowance on top.
-max_wall_ms = 3900000
+# The queue's own bound is 6 000 000 ms; the planner call and the enqueue add a small allowance on top.
+max_wall_ms = 6300000
 
 # The case is the finding text as the run gave it: the input is passed on, so `plan` reads `$.input.finding`.
 [[node]]
@@ -44,11 +44,12 @@ workdir = "$.input.workdir"
 id = "queue"
 kind = "call"
 graph = "queue"
-sha256 = "1fafe548188f13000cc1ab635fc47b4f23342be6e3040e9668b5ccf626bfb549"
+sha256 = "63c2678c89f79a6570a80cf193ca6dc30fcd2343cc22537dc958f6baf8a1dbff"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
 workdir = "$.input.workdir"
+base = "$.input.base"
 
 # The report names the row the enqueue admitted, and the spec it was written to.
 [[node]]
@@ -60,6 +61,8 @@ expr = "$.nodes.enqueue"
 [[node]]
 id = "refused"
 kind = "transform"
+# `plan` and `enqueue` refuse on exclusive paths, so whichever arm arrives ends the run.
+join = "any"
 expr = "$.payload"
 
 [[edge]]

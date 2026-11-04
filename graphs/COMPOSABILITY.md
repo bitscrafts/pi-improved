@@ -66,7 +66,7 @@ These are enforced by the daemon, not by convention:
 2. **A `call` grants only what its host grants.** A callee needing `fs_write` inside a host that does not hold it is
    refused with `graph.call.widen`, naming the node and the missing capability.
 3. **Only a graph with `exit` is a component.** A graph without one is a *run*, not a part. `queue` gained
-   `exit = "record"` for exactly this (spec 343 R6); `spec` still lacks one, which is why it cannot be composed today.
+   `exit = "record"` for exactly this (spec 343 R6), and `spec` gained `exit = "done"` (spec 364).
 
 ## 4. What the library composes into now
 
@@ -77,13 +77,15 @@ flowchart TB
   tdd["tdd<br/>write_test → red(expect fail) → implement → green → done"]
   docs["docs<br/>one coder, called by whoever needs documentation"]
   doccode["doc-code<br/>inventory → select → call docs → verify"]
-  queue["queue<br/>select → dispatch(coder) → judge → record"]
+  queue["queue<br/>select → call spec → record"]
+  spec["spec<br/>code → verify → call docs → reverify → done"]
 
   night -->|"call, pinned"| sdd
   sdd -->|"call, pinned"| tdd
   sdd -->|"call, pinned"| docs
   doccode -->|"call, pinned"| docs
-  queue -.->|"spec 364: should call it instead of reimplementing"| sdd
+  queue -->|"call, pinned"| spec
+  spec -->|"call, pinned"| docs
   classDef dotted stroke-dasharray:4
 ```
 

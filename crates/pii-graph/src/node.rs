@@ -267,8 +267,10 @@ impl NodeFactory for TimerFactory {
     }
 }
 
-/// Built-in factory for the `refuse` node kind (spec 212): a blocking hook's
-/// refusal. It has no ports, so nothing follows it; the run fails by name.
+/// Built-in factory for the `refuse` node kind (spec 212): a blocking hook's refusal.
+///
+/// It has no ports, so nothing follows it; the run fails by name. A host that wires a
+/// called graph's refusal (spec 364) gives it one `ok` port.
 #[allow(non_camel_case_types)]
 #[doc = "Built-in factory for the `refuse` node kind."]
 pub struct RefuseFactory;
@@ -286,8 +288,12 @@ impl NodeFactory for RefuseFactory {
         CapKind::empty()
     }
 
-    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-        Ok(Vec::new())
+    fn ports(&self, cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        Ok(if cfg.get("returns").is_some() {
+            vec![PortName::from("ok")]
+        } else {
+            Vec::new()
+        })
     }
 
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
