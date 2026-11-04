@@ -14,6 +14,12 @@ reaches for first.
 
 The fix is not a cache: it is that the answer is a **status**, and a status should be maintained, not recomputed.
 
+**Corrected 2026-11-04 (orchestrator; row 370 had failed three attempts on it).** This spec's `## Files` and its third
+exit criterion both named `crates/pii-server/src/daemon/conn.rs`, which does not exist: `is_heavy`, the heavy set R3
+talks about, lives in `crates/pii-server/src/engine/conn.rs`. Criterion 3 could therefore never pass, and every
+attempt was scored `crit=0/3` on work that had nothing to do with the failure. The criterion now names the item R3
+requires, `Method::SysStatus`, rather than a lowercase string a comment would satisfy.
+
 ## Requirements
 
 - **R1** The totals health reports are maintained in a `SysStatus` record updated when a run changes state, so a
@@ -27,14 +33,14 @@ The fix is not a cache: it is that the answer is a **status**, and a status shou
 
 - `crates/pii-server/src/daemon/identity.rs`
 - `crates/pii-server/src/daemon/since_deploy.rs`
-- `crates/pii-server/src/daemon/conn.rs`
+- `crates/pii-server/src/engine/conn.rs`
 - `crates/pii-server/tests/health_is_constant_time.rs`
 
 ## Exit Criteria
 
 - [ ] `cargo test -q -p pii-server --test health_is_constant_time 2>&1 | grep -q 'test result: ok'`
 - [ ] `grep -q 'SysStatus' crates/pii-server/src/daemon/identity.rs`
-- [ ] `grep -q 'sys.status' crates/pii-server/src/daemon/conn.rs`
+- [ ] `grep -q 'Method::SysStatus' crates/pii-server/src/engine/conn.rs`
 
 ## Guardrails
 
