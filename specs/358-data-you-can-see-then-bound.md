@@ -54,6 +54,12 @@ policy. The test asserts a per-table row count that changes when a row is writte
   mattered. Remove it, table definition and count included.
 - **f19 is open**: there is no retention code in `pii-store` at all (`grep -c retention|prune` is 0).
 
+## Files
+
+- `crates/pii-store/src/tables.rs`
+- `crates/pii-store/src/identity.rs`
+- `crates/pii-graph/src/sched/dispatch.rs`
+
 ## Exit Criteria
 
 - [ ] `cargo test -q -p pii-store --test df_counts_documents 2>&1 | grep -qE 'test result: ok. 1 passed'`
