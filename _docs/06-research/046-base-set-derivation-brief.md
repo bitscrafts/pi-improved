@@ -35,6 +35,56 @@ Two facts that constrain any answer:
   an earlier analysis of mine fooled itself. Any base set must say what happens to `tool`: keep it
   unrestricted with the consequence stated, or constrain it to a declared command surface.
 
+
+## The prior analysis (review 045) — pass it in, do not repeat it
+
+An earlier analysis of mine was reviewed and partly demolished. Its *conclusions* are given below as
+**hypotheses to confirm or refute against your derivation**. Do not re-derive them from scratch; use
+them as the starting point and say, for each, confirmed / refuted / refined, with the evidence.
+
+What the review established as **measured fact** (keep these):
+
+- `data` is not a node kind. An earlier grep of `kind =` matched *edge* kinds; 120 of those hits were
+  edges. Any count must come from parsing `[[node]]` tables.
+- `coder` and `agent` are the two kinds that call a model, and `plan` calls the provider directly as
+  well, so the model call currently exists in three places.
+- `spawn` starts a child graph run and returns its id without waiting; it is not an agent call.
+- `route` and `tool` each have few users, so "used by one or two graphs" cannot by itself be the test
+  for a specialised kind.
+- Loops already exist: budgeted cycles work (`verify-fix.toml`, `state.rs`). "Iteration is missing"
+  is not true as stated; a bounded per-item construct may still be needed, but not because graphs
+  cannot loop.
+
+Hypothesised **missing primitives**, most blocking first (confirm or refute each, and re-rank):
+
+1. Value computation — `transform` does member access only; no functions, no arrays, no arithmetic
+   across two nodes' values. Anything needing arithmetic or string building reaches for `tool`.
+2. Durable await — `gate` suspends on a resume key and survives restart.
+3. A typed effect over a daemon-owned resource — `recall`/`memory` are the working examples, guarded
+   by `proc` rather than by a capability of their own.
+4. An agent/model call as one primitive — see `coder`/`agent`/`plan` above.
+5. Error or handler scope — a refusal a host does not wire fails the run.
+
+Hypothesised **per-kind verdicts** (confirm, refute, or refine, and fold into your derivation):
+
+```
+select        admit — one transaction, four ports, a lease by run id
+record        admit the write, derive the interpretation
+enqueue       split: the store write joins select/record; the validation is a graph
+plan          derive — a model call plus string building
+recall        admit — a capability-checked read
+memory        derive — one op (consolidate) whose only loadable user is a starter graph
+classify      widen `route` rather than add a kind
+worker        derive — both graph uses mean `coder`
+gate          admit as a primitive (durable human decision)
+queue         not a kind at all; the leftover is a `judge` item mode
+```
+
+And one normative finding to carry forward, because it changes what a "per-graph verb" costs:
+
+> A per-graph verb with tests is the **lesser** failure compared with a shell string in the run input.
+> Judge logic by whether it is visible, testable and pinned — not by how many callers it has.
+
 ## Your task
 
 **1. Derive the base set.** A kind belongs in the base if and only if it is an *effect* (it touches
