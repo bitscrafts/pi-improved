@@ -1,9 +1,12 @@
 # 046 — Derivation brief: one minimal set of node kinds that expresses every graph
 
-The operator's framing, verbatim: *"a minimal set to rule them all."*
+The operator's framing, verbatim: *"a minimal set to rule them all"* — **and everything is a graph.**
+The doctrine he stated: *"in pii our call is everything is a graph!"*
 
-**One set. Minimal. Sufficient: every graph that ships today, and every graph the library is meant to
-grow into, is expressible with it.** Not a set per family, not a set plus an escape hatch.
+**One set. Minimal. Sufficient for every graph that ships today and for every capability the system
+needs to have.** Not a set per family, not a set plus an escape hatch — and no capability that exists
+only as a CLI verb or a Rust module, because in pii a capability is a graph and `call` is how one
+thing uses another.
 
 ## What exists (measured from `[[node]]` tables, 2026-11-04)
 
@@ -120,8 +123,16 @@ with the count:
    reviewable command surface. If a graph then cannot be expressed, that graph — not `tool` — is the
    evidence that a primitive is missing, and it belongs in the set.
 
-If any of the four fails, say so plainly and name the smallest set that does pass. A set of eleven
-that fails test 4 is worse than a set of fourteen that passes it.
+5. **Everything is a graph.** The set must be sufficient to express a *capability* as a graph, not
+   only to express the graphs that exist. Demonstrate it twice: (a) derive `pii docs stale` — today a
+   Rust module (`crates/pii-cli/src/cmd_docs.rs`) written for one graph — as a graph over your base
+   set; (b) state the rule that follows, in one sentence, for when a capability may be a verb and
+   when it must be a graph. If (a) is impossible, that impossibility is a missing primitive and it
+   belongs in the set, named with the capability it blocks.
+
+If any of the tests fail, say so plainly and name the smallest set that does pass. A set of eleven
+that fails test 4 is worse than a set of fourteen that passes it; a set that expresses every graph
+today but cannot express one new capability tomorrow has failed test 5.
 
 ## Structure your answer as
 
