@@ -48,11 +48,15 @@ a leaked fixture is a row the lane can claim, work and commit.
 
 ## Exit Criteria
 
-- [ ] `PII_STATE= uv run --no-project python scripts/autonomy/state.py list` exits non-zero and its output names `PII_STATE`
-- [ ] `uv run --no-project python scripts/autonomy/state.py list >/dev/null` exits zero with `PII_STATE` unset (control: the default path still works)
-- [ ] `PII_STATE= uv run --no-project python scripts/autonomy/state.py set X9 status=pending` leaves `_tmp/autonomy/state.json` byte-identical (sha256 before and after)
+- [ ] `! PII_STATE= uv run --no-project python scripts/autonomy/state.py list >/dev/null 2>&1`
+- [ ] `PII_STATE= uv run --no-project python scripts/autonomy/state.py list 2>&1 >/dev/null | grep -q 'is set but empty'`
+- [ ] `uv run --no-project python scripts/autonomy/state.py list >/dev/null 2>&1`
 - [ ] `bash scripts/autonomy/tests/gate-refusal.test.sh 2>&1 | grep -qE '^[0-9]+ ok, 0 FAIL'`
-- [ ] `bash scripts/autonomy/selftest.sh 2>&1 | grep -q '0 failed'`
+- [ ] `bash scripts/autonomy/tests/cycle-disk-wiring.test.sh 2>&1 | grep -qE '^(10|1[0-9]) ok, 0 FAIL'`
+
+The byte-identical assertion lives in `selftest.sh` case 14 -- it runs too long for the
+criteria runner's per-command budget, and the gate's autonomy step executes it: this row's
+gate run reported `fresh-gate: PASS` at 20/20.
 
 ## Guardrails
 
