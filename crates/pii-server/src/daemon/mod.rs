@@ -23,6 +23,7 @@ pub mod scheduler;
 pub mod since_deploy;
 pub mod status;
 mod suspend;
+pub mod sys_status;
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -467,6 +468,9 @@ fn spawn_ctx() -> pii_core::Ctx {
 /// Re-reads the config file and applies it to channels and workers (F5.12);
 /// never restarts the process. Returns the number of workers reloaded.
 ///
+/// A channel's `poll_interval_ms` is read once, when its poll loop spawns (spec 371 R4), so a
+/// changed interval needs a restart; the reload does not touch it.
+///
 /// # Errors
 /// [`PiiError::Invalid`] if the config file cannot be parsed.
 pub fn reload_config(ctx: &DaemonContext) -> Result<u32, PiiError> {
@@ -488,7 +492,6 @@ pub fn reload_config(ctx: &DaemonContext) -> Result<u32, PiiError> {
     let mut channels = ctx.channels.lock();
     for c in &cfg.channel {
         if let Some(rt) = channels.get_mut(&c.name) {
-            rt.poll_interval_ms = c.poll_interval_ms;
             rt.graph.clone_from(&c.graph);
         }
     }

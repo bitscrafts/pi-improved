@@ -78,6 +78,22 @@ impl MemStore {
             .set_cache_size(4 * 1024 * 1024)
             .create(path)
             .map_err(|e| PiiError::Internal(format!("memstore: open {}: {e}", path.display())))?;
+        Self::init(db, path)
+    }
+
+    /// Opens a memory store that lives only in memory (spec 371 R1): lint needs the kind, not a file.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn open_in_memory() -> Result<Self, PiiError> {
+        let db = Database::builder()
+            .create_with_backend(redb::backends::InMemoryBackend::new())
+            .map_err(|e| PiiError::Internal(format!("memstore: in-memory open: {e}")))?;
+        Self::init(db, Path::new(":memory:"))
+    }
+
+    /// Defines the tables and stamps the format on an open database.
+    fn init(db: Database, path: &Path) -> Result<Self, PiiError> {
         {
             let write = db
                 .begin_write()

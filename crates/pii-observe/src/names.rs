@@ -322,6 +322,8 @@ pub const LEARN_PROMOTION_REVERTED: &str = "learn.promotion_reverted";
 pub const LEARN_PROMOTION_EXPIRED: &str = "learn.promotion_expired";
 /// Event: a promotion was refused, nothing changed (`candidate`, `kind`, `graph`, `reason`, `actor`).
 pub const LEARN_PROMOTION_REFUSED: &str = "learn.promotion_refused";
+/// Event: a promotion sweep was skipped because its directory is unchanged and nothing is due (`reason`; spec 371 R2).
+pub const LEARN_SWEEP_SKIPPED: &str = "learn.sweep_skipped";
 
 /// Metric (gauge): runs in the main store (`pii metrics`, spec 105).
 pub const METRIC_RUNS: &str = "pii_runs";
@@ -567,6 +569,7 @@ pub const ALL: &[&str] = &[
     LEARN_PROMOTION_REVERTED,
     LEARN_PROMOTION_EXPIRED,
     LEARN_PROMOTION_REFUSED,
+    LEARN_SWEEP_SKIPPED,
     METRIC_RUNS,
     METRIC_SESSIONS,
     METRIC_APPROVALS_PENDING,

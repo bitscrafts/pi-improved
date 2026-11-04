@@ -74,7 +74,18 @@ impl Supervisor {
                         PiiError::Unavailable(format!("worker '{op}' queued too long"))
                     })?;
             }
-            WorkerState::Starting | WorkerState::Ready => {}
+            WorkerState::Starting | WorkerState::Ready => {
+                // Spec 371 R3: `max_in_flight` caps the requests in flight; one beyond it is refused, typed, and counted.
+                let in_flight = u32::try_from(self.inner.slots.lock().len()).unwrap_or(u32::MAX);
+                if in_flight >= self.inner.spec.max_in_flight {
+                    drop(sh);
+                    self.note_refused(op, "in_flight_limit");
+                    return Err(PiiError::Unavailable(format!(
+                        "worker '{}' is at max_in_flight ({})",
+                        self.inner.spec.name, self.inner.spec.max_in_flight
+                    )));
+                }
+            }
         }
         let (id, rx) = self.register_locked(&mut sh);
         drop(sh);
@@ -222,15 +233,12 @@ impl Supervisor {
                 ))));
             }
         }
-        self.inner
-            .events
-            .lock()
-            .push(crate::supervisor::WorkerEvent::Died {
-                worker: self.inner.spec.name.clone(),
-                pid,
-                code,
-                in_flight: u32::try_from(in_flight).unwrap_or(u32::MAX),
-            });
+        self.inner.record(crate::supervisor::WorkerEvent::Died {
+            worker: self.inner.spec.name.clone(),
+            pid,
+            code,
+            in_flight: u32::try_from(in_flight).unwrap_or(u32::MAX),
+        });
         // Capped: the worker is Failed, no respawn — matches the original
         // (pre-restructuring) early return here.
         if capped {
@@ -381,15 +389,12 @@ fn respawn(sup: Supervisor, backoff_ms: u64) {
             sh.restarts += 1;
             let restarts = sh.restarts;
             let pid = sh.pid;
-            sup.inner
-                .events
-                .lock()
-                .push(crate::supervisor::WorkerEvent::Restarted {
-                    worker: sup.inner.spec.name.clone(),
-                    pid,
-                    restarts,
-                    took_ms: u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX),
-                });
+            sup.inner.record(crate::supervisor::WorkerEvent::Restarted {
+                worker: sup.inner.spec.name.clone(),
+                pid,
+                restarts,
+                took_ms: u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX),
+            });
             drop(sh);
             sup.inner.state.lock().state = WorkerState::Ready;
             sup.note_state(WorkerState::Ready);

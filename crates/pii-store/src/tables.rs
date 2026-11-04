@@ -86,6 +86,13 @@ pub(crate) const HEAL_ATTEMPT: TableDefinition<'_, &str, &[u8]> =
 pub(crate) const CHANNEL_CURSOR: TableDefinition<'_, &str, &[u8]> =
     TableDefinition::new("channel_cursor");
 
+/// Spec 370: the agent-call totals record: `"totals"` -> encoded `SysStatus`, maintained by every run write.
+pub(crate) const SYS_STATUS: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("sys_status");
+
+/// Spec 370: one contribution row per run: run id -> encoded per-run row the record is summed from.
+pub(crate) const SYS_STATUS_RUN: TableDefinition<'_, &str, &[u8]> =
+    TableDefinition::new("sys_status_run");
+
 /// Session META blobs: session id -> encoded `{cwd,tools,graph,status,
 /// run_id}` (part 1 substrate; part 2/D3-D6 narrowed this to meta-only —
 /// the transcript lives in [`SESSION_MSG`] so a status/`run_id` change never

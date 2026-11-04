@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 
 use super::status::{ChannelRuntime, DaemonContext};
 use crate::Engine;
+use crate::daemon::sys_status::sys_status_for_health;
 
 /// The subsystem groups `sys.status` aggregates, in report order. A group
 /// with no live members (no daemon, no workers configured) is still
@@ -284,16 +285,23 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
             .map_or(0, |a| a.len() as u64),
         ..Counts::default()
     };
-    // Spec 217: agent-call totals come from the journal, so they survive a restart.
-    if let Ok(totals) =
-        pii_graph::agent_calls::store_totals(&engine.store, engine.store.process_start_ms())
-    {
+    // Spec 217: agent-call totals come from the journal, so they survive a restart. Spec 370: they are read from
+    // the maintained record, which a store without one rebuilds once.
+    let process_start = engine.store.process_start_ms();
+    if let Ok((record, rebuilt)) = sys_status_for_health(&engine.store, process_start, REVISION) {
+        let (totals, _) = record.counts(process_start, REVISION);
         counts.dispatches_total = totals.dispatches_total;
         counts.refusals_total = totals.refusals_total;
         counts.criteria_failures_total = totals.criteria_failures_total;
         counts.orphans_total = totals.orphans_total;
         counts.orphans_since_start = totals.orphans_since_start;
         counts.agents_in_flight = totals.agents_in_flight;
+        if rebuilt {
+            engine.log().event(
+                &pii_observe::Event::new("status", pii_observe::Level::Info, "sys.status.rebuilt")
+                    .field("reason", "the store has no totals record"),
+            );
+        }
     }
     if let Some(i) = info {
         counts.runs = i.tables.get("run").copied().unwrap_or(0);
@@ -398,7 +406,9 @@ pub fn attach(engine: &Engine, ctx: Option<&DaemonContext>, out: &mut StatusResu
     out.rss_bytes_per_run = rss_gauge(engine, counts.runs, out.rss_kb);
     out.counts = counts;
     out.since_deploy =
-        super::since_deploy::since_deploy(&engine.store, REVISION).unwrap_or_default();
+        sys_status_for_health(&engine.store, engine.store.process_start_ms(), REVISION)
+            .map(|(record, _)| record.counts(engine.store.process_start_ms(), REVISION).1)
+            .unwrap_or_default();
     out.subsystems = reports.into_iter().map(wire).collect();
 }
 

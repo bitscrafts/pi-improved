@@ -18,11 +18,13 @@ const PROMOTION_SWEEP_SECS: u64 = 5;
 pub(super) fn spawn_promotion(engine: Arc<Engine>, dir: PathBuf) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(PROMOTION_SWEEP_SECS));
+        // Spec 371 R2: what the last sweep saw, so an unchanged directory is not re-parsed every tick.
+        let gate = Arc::new(parking_lot::Mutex::new(pii_learn::SweepGate::default()));
         loop {
             tick.tick().await;
-            let (e, d) = (Arc::clone(&engine), dir.clone());
+            let (e, d, g) = (Arc::clone(&engine), dir.clone(), Arc::clone(&gate));
             let _ = tokio::task::spawn_blocking(move || {
-                crate::engine::learn_methods::promotion_sweep(&e, &d)
+                crate::engine::learn_methods::promotion_sweep_gated(&e, &d, &mut g.lock())
             })
             .await;
         }

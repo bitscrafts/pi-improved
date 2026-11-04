@@ -166,6 +166,22 @@ impl QueueStore {
             .set_cache_size(4 * 1024 * 1024)
             .create(path)
             .map_err(|e| internal("open", format!("{}: {e}", path.display())))?;
+        Self::init(db, path)
+    }
+
+    /// Opens a queue store that lives only in memory (spec 371 R1): lint needs the kinds, not a file.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn open_in_memory() -> Result<Self, PiiError> {
+        let db = Database::builder()
+            .create_with_backend(redb::backends::InMemoryBackend::new())
+            .map_err(|e| internal("open", format!("in-memory: {e}")))?;
+        Self::init(db, std::path::Path::new(":memory:"))
+    }
+
+    /// Defines the tables and stamps the format on an open database.
+    fn init(db: Database, path: &std::path::Path) -> Result<Self, PiiError> {
         {
             let write = db.begin_write().map_err(|e| internal("begin_write", e))?;
             write

@@ -152,10 +152,11 @@ fn register_lint_channel_kinds(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe
 /// checkout root, so on any other machine (or a different runtime dir) both
 /// opens failed and `gate`/`memory` were silently dropped from the registry —
 /// `pii graph lint` then reported a false `V0: unknown kind 'memory'` for
-/// graphs that are actually fine. They are now placed under `runtime_dir`
-/// (the same directory the caller's real store/config already lives in),
-/// which is always a real, writable path in this process, not a literal
-/// string that only exists in this checkout.
+/// graphs that are actually fine.
+///
+/// Spec 371 R1: the scratch stores are in memory (`redb::backends::InMemoryBackend`,
+/// opened by `pii_store`), so a lint leaves no `lint-*.redb` file in any directory.
+/// `runtime_dir` is kept for callers and is no longer written to.
 #[must_use]
 pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path) -> NodeRegistry {
     lint_registry_with_log(
@@ -165,13 +166,9 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
     )
 }
 
-/// The lint registry's queue kinds, over a lint-only store under `runtime_dir` (spec 208).
-fn register_lint_queue_nodes(
-    reg: &mut NodeRegistry,
-    runtime_dir: &std::path::Path,
-    log: &Arc<dyn pii_observe::Observer>,
-) {
-    match pii_store::queue::QueueStore::open(&runtime_dir.join("lint-queue.redb")) {
+/// The lint registry's queue kinds, over an in-memory lint-only store (spec 208, spec 371 R1).
+fn register_lint_queue_nodes(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe::Observer>) {
+    match pii_store::queue::QueueStore::open_in_memory() {
         Ok(queue) => register_queue_nodes(reg, Arc::new(queue), None),
         Err(e) => store_unavailable(log, "queue", &e),
     }
@@ -199,7 +196,7 @@ fn store_unavailable(
 #[must_use]
 pub fn lint_registry_with_log(
     workspace: &std::path::Path,
-    runtime_dir: &std::path::Path,
+    _runtime_dir: &std::path::Path,
     log: Arc<dyn pii_observe::Observer>,
 ) -> NodeRegistry {
     let mut reg = NodeRegistry::builtin();
@@ -233,29 +230,29 @@ pub fn lint_registry_with_log(
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),
     }));
-    // B2 (opus review): these opens are best-effort (lint must still work
-    // when the runtime dir isn't writable), but a failure here means
+    // B2 (opus review): these opens are best-effort, but a failure here means
     // `gate`/`memory` graphs will fail lint with `unknown kind` rather than
     // silently validating against an empty capset — surfaced as a
-    // `lint.store.unavailable` event instead of vanishing.
-    match pii_store::approval::ApprovalStore::open(&runtime_dir.join("lint-approval.redb")) {
+    // `lint.store.unavailable` event instead of vanishing. Spec 371 R1: they
+    // are in-memory stores (`InMemoryBackend`), so lint writes no file.
+    match pii_store::approval::ApprovalStore::open_in_memory() {
         Ok(approvals) => reg.register(Arc::new(nodes::gate::GateFactory {
             approvals: Arc::new(approvals),
         })),
         Err(e) => store_unavailable(&log, "gate", &e),
     }
-    match pii_store::MemStore::open(&runtime_dir.join("lint-memory.redb")) {
+    match pii_store::MemStore::open_in_memory() {
         Ok(memory) => reg.register(Arc::new(nodes::memory::MemoryFactory {
             store: Arc::new(memory),
             log: Arc::new(pii_observe::NullObserver),
         })),
         Err(e) => store_unavailable(&log, "memory", &e),
     }
-    register_lint_queue_nodes(&mut reg, runtime_dir, &log);
+    register_lint_queue_nodes(&mut reg, &log);
     // S0.2: `heal_detect` is a server-owned kind like `gate`/`memory`; the
     // lint registry registers it with a cargo-xtask runner so
     // `graphs/starter/heal-watch.toml` lints (lint never executes nodes).
-    match pii_store::heal::HealStore::open(&runtime_dir.join("lint-heal.redb")) {
+    match pii_store::heal::HealStore::open_in_memory() {
         Ok(heals) => {
             let heals = Arc::new(heals);
             reg.register(Arc::new(nodes::heal::HealFactory {

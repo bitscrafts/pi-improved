@@ -164,6 +164,16 @@ pub(crate) fn promotion_sweep_at(
     promoter(engine, dir).sweep(now)
 }
 
+/// [`promotion_sweep`] behind the mtime gate (spec 371 R2): `None` when the promotions directory is unchanged since
+/// `gate` last swept and no promotion is due.
+pub(crate) fn promotion_sweep_gated(
+    engine: &Engine,
+    dir: &Path,
+    gate: &mut pii_learn::SweepGate,
+) -> Option<Vec<(String, pii_learn::PromotionState)>> {
+    promoter(engine, dir).sweep_gated(gate, learn_now_secs())
+}
+
 /// One unattended extraction + verification pass (spec 139 R1): what the daemon's
 /// learn timer runs. It proposes and verifies; it has no path to a promotion.
 ///

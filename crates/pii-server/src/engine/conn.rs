@@ -216,6 +216,7 @@ fn is_heavy(req: &Request) -> bool {
     kill || matches!(
         req.method,
         Method::MemorySearch
+            | Method::SysStatus
             | Method::MemoryPut
             | Method::MemoryConsolidate
             | Method::WorkerReload

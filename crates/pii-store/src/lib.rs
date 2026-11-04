@@ -21,6 +21,7 @@ pub mod queue;
 pub mod session;
 #[cfg(test)]
 mod stamp_tests;
+mod sys_status;
 pub mod testing;
 pub mod timer;
 pub use mem::MemStore;
@@ -33,10 +34,14 @@ use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunOrigin, RunSta
 use redb::{Database, ReadableDatabase, ReadableTable};
 use tables::{
     GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_BY_STATUS, RUN_JOURNAL, RUN_SNAPSHOT, SESSION,
-    SESSION_MSG, SESSION_SNAPSHOT, SESSION_TOKENS,
+    SESSION_MSG, SESSION_SNAPSHOT, SESSION_TOKENS, SYS_STATUS, SYS_STATUS_RUN,
 };
 
 pub use codec::{from_bytes, hash, to_bytes};
+pub use redb::WriteTransaction;
+pub use sys_status::{
+    AppendObserver, SysTable, for_each_run_journal, runs_up_to, sys_clear, sys_get, sys_put,
+};
 
 /// Persistence handle over one redb database file.
 pub struct Store {
@@ -46,7 +51,7 @@ pub struct Store {
     /// by the append path since the store was opened. **Not a public API
     /// promise** — exposed so the batched-append tests can assert 1-vs-N
     /// write transactions without strace. Monotonic.
-    write_txn_count: AtomicU64,
+    pub(crate) write_txn_count: AtomicU64,
     /// Run ids issued from memory: `(last issued, reserved ceiling)`. The
     /// ceiling is what is durable in `META`; see [`Store::next_run_id`].
     run_ids: parking_lot::Mutex<(u64, u64)>,
@@ -81,6 +86,8 @@ pub struct Store {
     fail_get_graph_for_test: std::sync::atomic::AtomicBool,
     /// Set once by [`Store::set_observer`].
     observer: std::sync::OnceLock<std::sync::Arc<dyn pii_observe::Observer>>,
+    /// Spec 370: the hook every append runs inside its transaction.
+    append_observer: parking_lot::Mutex<Option<AppendObserver>>,
     /// What the process owning this handle is (spec 188): stamped onto every
     /// header [`Store::stamp_origin`] is asked to name.
     origin: parking_lot::RwLock<RunOrigin>,
@@ -149,6 +156,12 @@ impl Store {
                 .open_table(RUN_BY_STATUS)
                 .map_err(|e| PiiError::store_op("open", "run_by_status", e))?;
             write
+                .open_table(SYS_STATUS)
+                .map_err(|e| PiiError::store_op("open", "sys_status", e))?;
+            write
+                .open_table(SYS_STATUS_RUN)
+                .map_err(|e| PiiError::store_op("open", "sys_status_run", e))?;
+            write
                 .open_table(RESUME_INDEX)
                 .map_err(|e| PiiError::store_op("open", "resume_index", e))?;
             write
@@ -179,6 +192,7 @@ impl Store {
             fail_get_run_for_test: std::sync::atomic::AtomicBool::new(false),
             fail_get_graph_for_test: std::sync::atomic::AtomicBool::new(false),
             observer: std::sync::OnceLock::new(),
+            append_observer: parking_lot::Mutex::new(None),
             origin: parking_lot::RwLock::new(RunOrigin::default()),
         })
     }
@@ -226,16 +240,6 @@ impl Store {
         Ok(())
     }
 
-    /// Number of redb write transactions opened by the append path (monotonic).
-    ///
-    /// **Test instrumentation only** — not a public API promise. Lets the
-    /// batched-append tests assert that N events land in one write transaction
-    /// (`1`, not `N`) without strace.
-    #[must_use]
-    pub fn write_txn_count(&self) -> u64 {
-        self.write_txn_count.load(Ordering::Relaxed)
-    }
-
     /// Cumulative bytes written by the session durability path (D3/D6, 026
     /// report 5.0.4). **Test instrumentation only** — not a public API
     /// promise.
@@ -247,13 +251,6 @@ impl Store {
     /// Opens a (counted) write transaction. A transaction is opened and
     /// committed inside one method body — never returned to a caller or held
     /// across a node dispatch (single-writer rule).
-    fn begin_write_counted(&self) -> Result<redb::WriteTransaction, PiiError> {
-        self.write_txn_count.fetch_add(1, Ordering::Relaxed);
-        self.db
-            .begin_write()
-            .map_err(|e| PiiError::store_op("begin_write", "db", e))
-    }
-
     /// Allocates the next run id as `r{n:012}` (strictly monotonic, unique
     /// across restarts).
     ///
@@ -464,6 +461,13 @@ impl Store {
             status_tbl
                 .insert((status_name(header.status), header.run.as_str()), ())
                 .map_err(|e| PiiError::store_op("insert", "status", e))?;
+        }
+        // Spec 370: the health record moves with the run, in this same transaction. The observer runs after the
+        // tables above are closed, so it may open the run table itself.
+        if let Some(observe) = self.append_observer() {
+            let mut next_header = header.clone();
+            next_header.seq = start + events.len() as u64;
+            observe(self, &write, &next_header, events)?;
         }
         write
             .commit()

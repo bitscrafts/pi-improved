@@ -62,6 +62,48 @@ fn writer(dir: &std::path::Path) -> WriterGuard {
     }
 }
 
+/// What the last promotion sweep saw (spec 371 R2): the promotions directory's mtime and the next deadline.
+///
+/// A sweep is owed when either has moved, so an unchanged directory is not re-parsed on every tick.
+#[derive(Debug, Default)]
+pub struct SweepGate {
+    seen: Option<(Option<std::time::SystemTime>, u64)>,
+}
+
+impl SweepGate {
+    fn owed(&self, mtime: Option<std::time::SystemTime>, now: u64) -> bool {
+        match self.seen {
+            Some((seen, due)) => seen != mtime || now >= due,
+            None => true,
+        }
+    }
+}
+
+/// The promotions directory's mtime; `None` when it does not exist (a new entry there moves it).
+fn promotions_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(storage::promotions_dir(dir))
+        .and_then(|m| m.modified())
+        .ok()
+}
+
+/// The earliest second an active promotion needs a sweep: its TTL lapse, or its window close while unevaluated.
+/// `u64::MAX` when none is active.
+fn next_deadline(dir: &std::path::Path) -> u64 {
+    list_promotions(dir)
+        .iter()
+        .filter(|p| p.state == PromotionState::Active)
+        .map(|p| {
+            if p.outcome.is_none() {
+                p.expires_secs
+                    .min(p.applied_secs.saturating_add(p.window_secs))
+            } else {
+                p.expires_secs
+            }
+        })
+        .min()
+        .unwrap_or(u64::MAX)
+}
+
 /// Resolves a graph name to the hash of its current definition (spec 139).
 pub type DefinitionHash = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
@@ -355,6 +397,26 @@ impl Promoter {
         }
         self.obs.event(&ev);
         Ok(ledger_id(seq))
+    }
+
+    /// [`Self::sweep`] unless the promotions directory is unchanged since `gate` last swept and no active promotion
+    /// has come due (spec 371 R2). A skip is an event, and `None` says it was skipped.
+    pub fn sweep_gated(
+        &self,
+        gate: &mut SweepGate,
+        now: u64,
+    ) -> Option<Vec<(String, PromotionState)>> {
+        let mtime = promotions_mtime(&self.dir);
+        if !gate.owed(mtime, now) {
+            self.obs.event(
+                &Event::new(SUBSYSTEM, Level::Debug, names::LEARN_SWEEP_SKIPPED)
+                    .field("reason", "unchanged"),
+            );
+            return None;
+        }
+        let changed = self.sweep(now);
+        gate.seen = Some((mtime, next_deadline(&self.dir)));
+        Some(changed)
     }
 
     /// Takes a promotion back by hand (R4): restores the stored previous state.

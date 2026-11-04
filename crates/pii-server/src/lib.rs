@@ -224,6 +224,8 @@ impl Engine {
         store.set_origin(daemon::since_deploy::process_origin());
         let log = Arc::new(pii_observe::SwitchObserver::new());
         store.set_observer(log.clone());
+        // Spec 370: every run write moves the health record in its own transaction.
+        store.set_append_observer(daemon::sys_status::observe_append);
         let sibling = |name: &str| -> PathBuf {
             cfg.store_path
                 .parent()

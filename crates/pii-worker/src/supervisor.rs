@@ -42,6 +42,22 @@ pub(crate) struct Queued {
     pub tx: Sender<Result<serde_json::Value, PiiError>>,
 }
 
+/// Most events the supervisor keeps; the oldest are dropped and counted past this (spec 371 R3).
+pub(crate) const MAX_EVENTS: usize = 1_024;
+
+impl Inner {
+    /// Records one event, dropping the oldest past [`MAX_EVENTS`] and counting the drop (spec 371 R3).
+    pub(crate) fn record(&self, ev: WorkerEvent) {
+        let mut events = self.events.lock();
+        if events.len() >= MAX_EVENTS {
+            events.remove(0);
+            self.events_dropped
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        events.push(ev);
+    }
+}
+
 /// Bus-equivalent events, recordable in tests (F3.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkerEvent {
@@ -98,6 +114,8 @@ pub(crate) struct Inner {
     pub queue: Mutex<Vec<Queued>>,
     pub state: Mutex<WorkerShared>,
     pub events: Mutex<Vec<WorkerEvent>>,
+    /// Events dropped from `events` past [`MAX_EVENTS`] (spec 371 R3).
+    pub events_dropped: std::sync::atomic::AtomicU64,
     /// The `take()`n child awaiting its blocking `kill()` teardown, parked
     /// by `control::death` so the state lock is never held across the kill.
     /// Taken by `death` right after releasing the state lock.
@@ -151,6 +169,7 @@ impl Supervisor {
                 queue: Mutex::new(Vec::new()),
                 state: Mutex::new(WorkerShared::new()),
                 events: Mutex::new(Vec::new()),
+                events_dropped: std::sync::atomic::AtomicU64::new(0),
                 stale_child: Mutex::new(None),
                 observer: std::sync::OnceLock::new(),
                 refused: std::sync::atomic::AtomicU64::new(0),
@@ -178,6 +197,14 @@ impl Supervisor {
     #[must_use]
     pub fn events(&self) -> Vec<WorkerEvent> {
         self.inner.events.lock().clone()
+    }
+
+    /// Events dropped because the log was full at [`MAX_EVENTS`] (spec 371 R3).
+    #[must_use]
+    pub fn events_dropped(&self) -> u64 {
+        self.inner
+            .events_dropped
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Starts the child and waits for `hello` (F3.4).
@@ -365,5 +392,39 @@ impl Supervisor {
             .ok_or_else(|| PiiError::Unavailable(String::from("worker writer closed")))?
             .send(frame)
             .map_err(|_| PiiError::Unavailable(String::from("worker writer closed")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Spec 371 R3: the event log keeps the newest [`MAX_EVENTS`], and every event it drops is counted.
+    #[test]
+    fn the_event_log_is_capped_and_counts_what_it_drops() {
+        let sup = Supervisor::new(WorkerSpec {
+            name: String::from("w"),
+            program: std::path::PathBuf::new(),
+            args: Vec::new(),
+            env: Vec::new(),
+            max_in_flight: 0,
+            ready_timeout_ms: 0,
+            restart_backoff_ms: 0,
+            restart_window_ms: 0,
+            max_restarts_in_window: 0,
+        });
+        let extra: u32 = 5;
+        for pid in 0..(u32::try_from(MAX_EVENTS).unwrap_or(u32::MAX) + extra) {
+            sup.inner.record(WorkerEvent::Restarted {
+                worker: String::from("w"),
+                pid,
+                restarts: 0,
+                took_ms: 0,
+            });
+        }
+        let kept = sup.events();
+        assert_eq!(kept.len(), MAX_EVENTS);
+        assert_eq!(sup.events_dropped(), u64::from(extra));
+        assert!(matches!(kept.first(), Some(WorkerEvent::Restarted { pid, .. }) if *pid == extra));
     }
 }

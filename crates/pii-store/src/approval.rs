@@ -59,6 +59,22 @@ impl ApprovalStore {
             .set_cache_size(4 * 1024 * 1024)
             .create(path)
             .map_err(|e| PiiError::Internal(format!("approval: open {}: {e}", path.display())))?;
+        Self::init(db, path)
+    }
+
+    /// Opens an approval store that lives only in memory (spec 371 R1): lint needs the kind, not a file.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb failure.
+    pub fn open_in_memory() -> Result<Self, PiiError> {
+        let db = Database::builder()
+            .create_with_backend(redb::backends::InMemoryBackend::new())
+            .map_err(|e| PiiError::Internal(format!("approval: in-memory open: {e}")))?;
+        Self::init(db, std::path::Path::new(":memory:"))
+    }
+
+    /// Defines the table and stamps the format on an open database.
+    fn init(db: Database, path: &std::path::Path) -> Result<Self, PiiError> {
         {
             let write = db
                 .begin_write()
