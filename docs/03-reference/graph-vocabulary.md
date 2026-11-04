@@ -99,6 +99,21 @@ and `transform`, and add one primitive. That is smaller than the current module 
 capable. What it must **not** become is a rewrite of the engine: the splice, the exit rule, pins and
 the capability ladder all work and are covered by tests (`crates/pii-graph/tests`).
 
+
+## Decision record — graph populations (2026-11-04)
+
+Operator, verbatim: *"we could also build our own graphs based on others (even from system graphs).
+i think is the right way to go"*.
+
+**Decided:** pii ships **system graphs**; the operator writes **user graphs**; a user graph may `call`
+**any** system graph (and any other user graph). The dependency is **one-way**: a system graph must
+never `call` a user graph, because a shipped flow that depends on operator files cannot be supported.
+
+**Not yet decided:** what a user graph's `sha256` pin to a system graph means across an upgrade — refuse
+the upgrade, re-resolve with a report, pin by name+version, or something else. This is the one open
+rule, and it belongs to spec 384 (the installation) because that is where the two populations are
+separated on disk.
+
 ## What the operator must rule on
 
 1. The base set itself — the twelve kinds in the rows above marked admit / merge / widen.

@@ -72,8 +72,12 @@ environment rather than to samples, written so the next person can apply it with
   expected to work on a fresh host with no operator content. Name them.
 - **User graphs**: written by the operator (or by a coder on their behalf), living outside the
   installation, never overwritten by an upgrade, free to `call` system graphs.
-- **Direction of dependency**: state whether a system graph may `call` a user graph. Argue it from
-  the consequence — a product whose shipped flows depend on operator files cannot be supported.
+- **Direction of dependency — DECIDED by the operator (2026-11-04), do not re-open it**: *"we could
+  also build our own graphs based on others (even from system graphs)"*. So **a user graph MAY call a
+  system graph, and a system graph must NOT call a user graph.** The consequence to design for is the
+  second half: a shipped flow that depended on operator files could not be supported. Your job is to
+  say what enforces the direction — a lint at load, an install-time check, a separate search path, or
+  all three — and what the operator sees when they violate it.
 - **Pins across an upgrade**: a user graph pins a system graph by `sha256` today. When the installer
   upgrades a system graph, what happens to every user graph pinned to the old one? Choose and justify:
   refuse the upgrade, re-resolve the pin with a report, pin by name+version instead of digest, or
@@ -97,7 +101,7 @@ user graph, and the upgrade path for a user pin is stated.
 
 ```
 A. FLOWS               numbered, one sentence each
-A2. SYSTEM vs USER     the split, the dependency direction, the pin-across-upgrade rule
+A2. SYSTEM vs USER     the split · what ENFORCES the one-way direction · the pin-across-upgrade rule
 B. FLOW → GRAPH        table: flow | owner graph | composition if any | duplicate found
 C. THE SET             table: graph | purpose | entry | exit | calls | caps | flow it serves
 D. CLOSURE             the call edges, with pins
