@@ -68,12 +68,24 @@ Two separate defects:
   of calling it. The last check is why `queue` calls `spec` (row 364) and why this row exists at
   all: duplication is the accumulation that hides behind "it works".
 
+
+- **R7 — everything is a graph, and `call` is how one thing uses another.** The operator's doctrine,
+  verbatim: *"in pii our call is everything is a graph!"* So a capability is not a verb and not a
+  module: **it is a graph**, and any other graph reaches it by `call` with a pin. The inventory
+  question that produced `cmd_docs.rs` therefore becomes `graphs/docs-stale.toml` — callable by
+  `books`, by `doc-code`, by `night`, or by a person — and `books.toml` calls it instead of owning
+  the logic. A CLI verb may exist only as a thin invocation of that graph (`run start docs-stale`),
+  never as a second implementation of it. This is the strongest form of R5/R6 and it is the one the
+  operator asked for: one mechanism, one place to change it, one place to lint it.
+
 ## Exit Criteria
 
 - [ ] `grep -q 'composition' docs/03-reference/graph-vocabulary.md`
 - [ ] `test -f docs/03-reference/graph-vocabulary.md`
 - [ ] `cargo run -q -p xtask -- lint-graph-kinds 2>&1 | grep -qE '(specialised|clean)'`
 - [ ] `cargo test -q -p pii-server --test iteration_primitive 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `test -f graphs/docs-stale.toml`
+- [ ] `grep -q 'graph = "docs-stale"' graphs/books.toml`
 - [ ] `test ! -f crates/pii-cli/src/cmd_docs.rs`
 - [ ] `cargo run -q -p xtask -- graph lint graphs/books.toml`
 
