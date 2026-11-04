@@ -36,17 +36,31 @@ so the cycle can recognise it. The generic `set` path has no such guard.
   verbs (`repair` for a park whose cause is fixed, `annotate` for a fact, `--note` for prose).
 - **R4** A prose note has somewhere to live that the phase logic never reads, and `state.py get` shows it separately.
 
+
+## Amendment 2026-11-04 (after a failed delivery)
+
+A first implementation was written and rejected: it moved the phase markers into `state.py` (R2) but did not
+update `scripts/autonomy/tests/gate-refusal.test.sh`, which reads the *literal `case` glob* out of `cycle.sh`
+(`GLOB=$(grep -E '^ *\*verified\*.*\) SKIP_DISPATCH=1;' ...)`) and builds `eval "case $1 in $GLOB) ..."`. With the
+glob moved, `$GLOB` is empty and the test dies with a shell syntax error: **32 ok, 4 FAIL**. The work is preserved at
+`/projects/_trash/369-needs-test-update-20261104T024056Z/`.
+
+So R5, and the criteria below, must include the harness: a change that moves the source of truth is not done until
+every reader of the old source is moved with it.
+
 ## Files
 
 - `scripts/autonomy/state.py`
 - `scripts/autonomy/cycle.sh`
 - `scripts/checks/tests/state-phase-marker.test.sh`
+- `scripts/autonomy/tests/gate-refusal.test.sh`
 
 ## Exit Criteria
 
 - [ ] `bash scripts/checks/tests/state-phase-marker.test.sh 2>&1 | grep -q 'RESULT: 0 failed'`
 - [ ] `grep -q 'PHASE_MARKERS' scripts/autonomy/state.py`
 - [ ] `grep -q 'unknown marker' scripts/autonomy/cycle.sh`
+- [ ] `bash scripts/autonomy/tests/gate-refusal.test.sh 2>&1 | grep -q '0 FAIL'`
 
 ## Guardrails
 
