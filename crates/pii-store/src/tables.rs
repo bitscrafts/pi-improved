@@ -33,10 +33,6 @@ pub(crate) const RUN_SNAPSHOT: TableDefinition<'_, (&str, u64), &[u8]> =
 pub(crate) const RUN_BY_STATUS: TableDefinition<'_, (&str, &str), ()> =
     TableDefinition::new("run_by_status");
 
-/// Resume key -> run id, the durable lookup for [`super::Store::put_resume_key`].
-pub(crate) const RESUME_INDEX: TableDefinition<'_, &str, &str> =
-    TableDefinition::new("resume_index");
-
 /// Memory documents: doc id -> encoded `Doc` (F4.2).
 pub(crate) const MEM_DOC: TableDefinition<'_, &str, &[u8]> = TableDefinition::new("mem_doc");
 

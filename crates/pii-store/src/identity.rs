@@ -19,9 +19,7 @@ use pii_abi::PiiError;
 use pii_observe::{Event, Health, Level, Observable, Observed, Observer, SubsystemHealth, names};
 use redb::{ReadableDatabase, ReadableTable, ReadableTableMetadata};
 
-use crate::tables::{
-    GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_JOURNAL, RUN_SNAPSHOT, SESSION, SESSION_MSG,
-};
+use crate::tables::{GRAPH_BODY, META, RUN, RUN_JOURNAL, RUN_SNAPSHOT, SESSION, SESSION_MSG};
 use crate::{MemStore, Store};
 
 /// The on-disk layout version this binary reads and writes.
@@ -98,7 +96,6 @@ impl Store {
             };
         }
         count!("graph_body", GRAPH_BODY);
-        count!("resume_index", RESUME_INDEX);
         count!("run", RUN);
         count!("run_journal", RUN_JOURNAL);
         count!("run_snapshot", RUN_SNAPSHOT);

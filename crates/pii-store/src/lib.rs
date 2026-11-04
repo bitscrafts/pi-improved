@@ -30,11 +30,11 @@ mod tables;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use pii_abi::{PiiError, ResumeKey, RunEvent, RunHeader, RunId, RunOrigin, RunStatus};
+use pii_abi::{PiiError, RunEvent, RunHeader, RunId, RunOrigin, RunStatus};
 use redb::{Database, ReadableDatabase, ReadableTable};
 use tables::{
-    GRAPH_BODY, META, RESUME_INDEX, RUN, RUN_BY_STATUS, RUN_JOURNAL, RUN_SNAPSHOT, SESSION,
-    SESSION_MSG, SESSION_SNAPSHOT, SESSION_TOKENS, SYS_STATUS, SYS_STATUS_RUN,
+    GRAPH_BODY, META, RUN, RUN_BY_STATUS, RUN_JOURNAL, RUN_SNAPSHOT, SESSION, SESSION_MSG,
+    SESSION_SNAPSHOT, SESSION_TOKENS, SYS_STATUS, SYS_STATUS_RUN,
 };
 
 pub use codec::{from_bytes, hash, to_bytes};
@@ -161,9 +161,6 @@ impl Store {
             write
                 .open_table(SYS_STATUS_RUN)
                 .map_err(|e| PiiError::store_op("open", "sys_status_run", e))?;
-            write
-                .open_table(RESUME_INDEX)
-                .map_err(|e| PiiError::store_op("open", "resume_index", e))?;
             write
                 .open_table(SESSION)
                 .map_err(|e| PiiError::store_op("open", "session", e))?;
@@ -574,29 +571,6 @@ impl Store {
         Ok(latest)
     }
 
-    /// Maps a durable resume key to a run id.
-    ///
-    /// # Errors
-    /// Returns [`PiiError::Internal`] on a redb failure.
-    pub fn put_resume_key(&self, key: &ResumeKey, run: &RunId) -> Result<(), PiiError> {
-        let write = self
-            .db
-            .begin_write()
-            .map_err(|e| PiiError::store_op("begin_write", "db", e))?;
-        {
-            let mut table = write
-                .open_table(RESUME_INDEX)
-                .map_err(|e| PiiError::store_op("open", "resume", e))?;
-            table
-                .insert(key.0.as_str(), run.as_str())
-                .map_err(|e| PiiError::store_op("put", "resume key", e))?;
-        }
-        write
-            .commit()
-            .map_err(|e| PiiError::store_op("commit", "resume", e))?;
-        Ok(())
-    }
-
     /// Lists runs by lifecycle status.
     ///
     /// # Errors
@@ -645,7 +619,6 @@ mod tests {
     )]
 
     use pii_abi::{RunEvent, RunId, RunStatus, Terminal};
-    use redb::ReadableDatabase;
 
     use crate::Store;
 
@@ -794,22 +767,6 @@ mod tests {
         let (seq, bytes) = store.latest_snapshot(&run).unwrap().unwrap();
         assert_eq!(seq, 8);
         assert_eq!(bytes, b"s8");
-    }
-
-    #[test]
-    fn resume_key_index() {
-        let store = tmp_store("resume");
-        let run = RunId::from("r000000000003");
-        let key = pii_abi::ResumeKey("k1".to_string());
-        store.put_resume_key(&key, &run).unwrap();
-        let read = store
-            .db
-            .begin_read()
-            .unwrap()
-            .open_table(crate::tables::RESUME_INDEX)
-            .unwrap();
-        let got = read.get("k1").unwrap().unwrap();
-        assert_eq!(got.value(), run.as_str());
     }
 
     #[test]

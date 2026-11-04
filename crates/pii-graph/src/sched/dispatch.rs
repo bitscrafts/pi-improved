@@ -420,8 +420,7 @@ fn journal_next_or_suspend(
                     error: e.to_string(),
                 };
             }
-            // Make the Suspended event durable before parking. No resume-key
-            // index is written: nothing reads RESUME_INDEX (spec 358 R3).
+            // Make the Suspended event durable before parking.
             if let Err(e) = env.jr.snapshot_now() {
                 env.jr.report_flush_failure(&e);
             }

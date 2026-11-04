@@ -146,7 +146,7 @@ impl<'a> Journaler<'a> {
         }
     }
 
-    /// The store handle (for `put_resume_key` and content-addressed bodies).
+    /// The store handle (for content-addressed bodies).
     #[must_use]
     pub fn store(&self) -> &'a Store {
         self.store
