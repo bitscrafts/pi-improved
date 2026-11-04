@@ -62,6 +62,12 @@ and a graph the engine would mis-join is a graph defect. Record the answer befor
 
 ## Guardrails
 
+- Do NOT relax a lint rule to make a file pass. If V9 is wrong, fix the rule **and** prove the
+  engine's real behaviour with a test that would fail if the rule were right — a rule changed on the
+  strength of a belief is how a check becomes a false green.
+- Do NOT rewrite `tdd`, `sdd` or `night` to satisfy a lint whose verdict the engine does not share.
+  Establish first whether a `join = "any"` node with one inbound data edge runs correctly; the answer
+  decides which side changes.
 - Do NOT relax the loader to accept `[graph]`-nested `name` or `depends_on` edges.
 - Do NOT delete either file to make the directory lint clean.
 
