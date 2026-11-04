@@ -74,6 +74,37 @@ one file would weaken a repo-wide rule to fit a single change.
 - [ ] `grep -q 'ModelRole' crates/pii-server/src/daemon/model_roles.rs`
 - [ ] `cargo run -q -p xtask -- lint-files 2>&1 | grep -qv 'exceeds 450'`
 
+## Known blocker (measured 2026-11-04, WIP preserved)
+
+The implementation reached 6/6 criteria but the gate failed two composition tests in
+`crates/pii-server/tests/queue_calls_spec.rs`:
+
+```
+a_row_is_implemented_by_the_spec_graph   implement__docs__docs never started
+CONTROL_the_queue_runs_no_judge_of_its_own   left: ["select"]  right: ["select", "record"]
+```
+
+Mechanism, read from the code rather than guessed:
+
+1. `resolve_role` runs at **graph load** and refuses an unknown `@role` (it lists the known ones).
+2. That covers a role written **statically** in a node's `model` field.
+3. `graphs/spec.toml`'s docs node does not use a static model: it reads `model = "$.input.model"`.
+4. `graphs/queue.toml` now passes `model = "@workhorse"` into that call.
+5. A value arriving through a **data reference is not present at load**, so no resolution happens and
+   the docs coder is spawned with the literal string `@workhorse` as its model. It never starts.
+
+So the change is half-wired: it resolves the static path and leaves the data path unresolved. The
+fix is one of:
+
+- **A (preferred)** resolve `@role` at **spawn** as well, refusing with the same named error when the
+  role is unknown — covers both paths and keeps one rule;
+- **B** make `spec.toml`'s docs node name `@workhorse` statically, so the load-time resolver sees it.
+
+Either way the tests must supply a models table: with `empty_model_roles()` a static `@workhorse`
+refuses at load, which is correct behaviour and is exactly what the test fixture has to state.
+
+WIP: `/projects/_trash/362-needs-spawn-role-resolution-20261104T122618Z` (90 paths).
+
 ## Guardrails
 
 - Do NOT remove the ability to name a model explicitly; several graphs pass one from the run input.
