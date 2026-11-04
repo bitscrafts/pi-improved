@@ -1,6 +1,6 @@
 # Spec 207 demo (no fragment attach: the daemon cannot weave yet — row A87): one `coder` node spawns the pi agent on a spec, and its verdict is the run of its criteria.
 # Only the NAMES in env_pass are copied from the daemon's environment; no credential value lives in this file.
-name = "coder-demo"
+name = "coder-selffix"
 entry = "code"
 caps = ["spawn", "proc"]
 
