@@ -122,3 +122,24 @@ criteria at all.
 5. One responsibility per graph. `tdd` is a loop; `sdd` is a process; `night` is a schedule.
 6. If a step needs no model and no process, it is a `transform`, not a coder.
 7. Every failure path gets a port with a name that says what happened — `not-red` is worth more than a boolean.
+
+## The exit rule that surprises people (measured 2026-11-04)
+
+A `call` returns through its callee's **exits**, and an exit is not the node the callee names in `exit`.
+It is *every node that declares an `ok` port and has no outgoing `ok` edge*
+(`crates/pii-graph/src/fragment/splice.rs`). The declared `exit` is the graph's own terminal for a direct run;
+the splice uses the wider rule so a fragment with several natural endings still hands control back.
+
+The consequence is sharp and it cost row 364 a night: `graphs/spec.toml` ends in three nodes — `done` (a transform,
+declares `ok`, returned correctly) and `unverified` / `refused` (both `refuse` nodes, which declare no `ok`). So a
+refused implementation **dead-ends inside the splice**: no edge fires, the run stops, and the queue row that called
+it stays `Running` for ever instead of being recorded as parked.
+
+Two ways out, and the choice is a design decision rather than a bug fix:
+
+1. **The callee hands every verdict back** — make `unverified` and `refused` declare an `ok` port (or be transforms
+   carrying a verdict value) so all three are exits; the host then has to distinguish them from the value that
+   arrived, because all three return on the same port.
+2. **The callee has one verdict node** — a single terminal node with ports `ok`, `unverified`, `refused`; the host
+   wires each to the record it wants. Cleaner, and it makes the callee's outcome vocabulary explicit, but it changes
+   `spec.toml`'s tail and every host that calls it.
