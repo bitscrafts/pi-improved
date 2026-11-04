@@ -1,0 +1,66 @@
+\documentclass[fontsize=10pt,twoside=false]{kaobook}
+\usepackage[english]{babel}
+\usepackage{booktabs}\usepackage{longtable}\usepackage{array}\usepackage{listings}\usepackage{xcolor}
+% TikZ: every concept in these manuals is drawn, not only described.
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric, shapes.misc,
+                fit, backgrounds, patterns, decorations.pathreplacing}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% One visual vocabulary for both manuals, so a box means the same thing in every figure.
+\tikzset{
+  box/.style={draw, rounded corners=2pt, fill=blue!4, align=center,
+              inner sep=4pt, font=\footnotesize, minimum height=1.0cm},
+  store/.style={draw, cylinder, shape border rotate=90, aspect=0.25, fill=orange!8,
+                align=center, inner sep=3pt, font=\footnotesize, minimum height=1.1cm},
+  model/.style={draw, rounded corners=8pt, fill=purple!8, align=center,
+                inner sep=4pt, font=\footnotesize, minimum height=1.0cm},
+  verdict/.style={draw, diamond, aspect=1.6, fill=green!8, align=center,
+                  inner sep=1pt, font=\scriptsize},
+  port/.style={font=\scriptsize\itshape, inner sep=1pt, fill=white},
+  flow/.style={-{Latex[length=2mm]}, thick},
+  soft/.style={-{Latex[length=2mm]}, thick, dashed, gray!70},
+  back/.style={-{Latex[length=2mm]}, thick, red!60!black, dashed},
+  group/.style={draw, dashed, rounded corners=4pt, inner sep=8pt, gray!60},
+}
+
+
+\definecolor{codebg}{RGB}{247,247,249}
+\lstset{
+	basicstyle=\ttfamily\footnotesize,
+	backgroundcolor=\color{codebg},
+	frame=single,
+	framesep=3pt,
+	breaklines=true,
+	columns=fullflexible,
+	keepspaces=true,
+	showstringspaces=false,
+	postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+}
+
+
+\begin{document}
+\mainmatter
+\chapter{figure probe}
+\begin{figure}[h]
+	\centering
+	\begin{tikzpicture}[node distance=6mm and 10mm]
+		\node[box] (user) {operator\\or the queue};
+		\node[box, right=of user] (graph) {a graph\\\scriptsize nodes + ports};
+		\node[box, right=of graph] (engine) {the engine\\\scriptsize journal + scheduler};
+		\node[store, below=of engine] (stores) {stores\\\scriptsize runs · memory · lessons};
+		\node[model, right=of engine] (agents) {agents\\\scriptsize models · tools};
+		\node[box, below=of graph] (verdict) {a verdict\\\scriptsize done · unverified · refused};
+
+		\draw[flow] (user) -- (graph);
+		\draw[flow] (graph) -- (engine);
+		\draw[flow] (engine) -- (stores);
+		\draw[flow] (engine) -- (agents);
+		\draw[flow] (engine) |- (verdict);
+		\draw[soft] (stores.north) to[bend left=18] node[port]{replay} (engine.south);
+	\end{tikzpicture}
+	\caption{A run's shape. The arrow that matters is the dashed one: the stores can reconstruct
+	what the engine did, which is what makes a verdict checkable rather than asserted.}
+\end{figure}
+\end{document}

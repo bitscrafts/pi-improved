@@ -1,0 +1,489 @@
+\chapter{Operating}
+
+\label{ch:operate}
+
+This is the chapter nobody reads until something has gone wrong, and it is written for that
+moment: short procedures, the exact command for each, the reading that tells you whether
+it worked, and the failure modes that have actually happened on this product rather than
+the ones a design review imagined. The order is the order of the questions an operator
+asks --- can I get the data back, what is the store doing to the disk, what changed when I
+upgraded, where is the evidence, and why is the daemon not answering.
+
+\section{Backup and restore}
+
+A backup is offline by construction. \texttt{pii backup} opens each store with redb's
+exclusive lock and copies the file while holding that lock, so a running daemon makes the
+backup \emph{refuse} --- with the path and the words \enquote{stop the daemon first} ---
+instead of copying a file with a writer mid-commit. Each copy is then re-opened as a redb
+database and hashed, so a torn or truncated copy is an error rather than a silent bad
+backup.
+
+\begin{lstlisting}[language=bash]
+systemctl --user stop pii
+pii backup /backups/pii-$(date +%F) --dir ~/.local/state/pii
+systemctl --user start pii
+\end{lstlisting}
+
+The command prints one line per file, with these field names and no others:
+\texttt{backed up store.redb (\textless{}bytes-> bytes,
+format\_version=\textless{}n->, blake3=\textless{}hash\textgreater{})}.
+The same facts go into \texttt{MANIFEST.json} inside the destination, and the manifest is
+what a restore checks against. The destination must be new or empty.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=9mm and 13mm]
+  \node[s] (live) {live stores\\\scriptsize six redb files};
+  \node[b, right=of live] (lock) {\texttt{pii backup}\\\scriptsize takes each lock};
+  \node[b, right=of lock] (copy) {copy\\\scriptsize through a temp name};
+  \node[b, below=of copy] (hash) {re-open + blake3\\\scriptsize a torn copy is an error};
+  \node[b, left=of hash] (manifest) {\texttt{MANIFEST.json}\\\scriptsize size, version, hash};
+  \draw[f] (live) -- (lock);
+  \draw[f] (lock) -- (copy);
+  \draw[f] (copy) -- (hash);
+  \draw[f] (hash) -- (manifest);
+  \draw[bk] (lock) to[bend right=32] node[p,above=2pt,midway]{holds it} (live);
+\end{tikzpicture}}
+\captionof{figure}{A backup that cannot tear. The red edge is the normal case on a live host:
+the open fails, the command refuses, and no file is written.}
+\end{center}
+
+Two details decide whether the backup is worth having.
+
+First, the backup set is six files: \texttt{store.redb}, \texttt{memory.redb},
+\texttt{approval.redb}, \texttt{heal.redb}, \texttt{channel.redb} and
+\texttt{timer.redb}. \texttt{pii health} reports seven stores, and the seventh ---
+\texttt{queue.redb}, where the work rows live --- is not in the backup set at this
+revision. If you rely on the queue, copy that file with the daemon stopped as well, or
+record the rows somewhere you can rebuild them from.
+
+Second, \texttt{--dir} names the directory that holds the stores, and the durable pair
+(channel, timer) defaults to \texttt{\textless{}state dir\textgreater{}/durable}, not to the
+directory beside the
+main store. A backup run with \texttt{--dir \textless{}state dir\textgreater{}} therefore
+captures the main store,
+memory, approvals and heal, and reports nothing for channel and timer because those files
+are one level down. Run a second backup with \texttt{--dir \textless{}state
+dir\textgreater{}/durable} if cursors
+and timers matter to you --- and they matter the first time a channel replays from the
+start after a restore.
+
+Restore verifies every file's hash against the manifest before touching the target, never
+deletes, and refuses a store that is in use.
+
+\begin{lstlisting}[language=bash]
+systemctl --user stop pii
+pii restore /backups/pii-2026-11-04 --dir ~/.local/state/pii           # refuses if a target exists
+pii restore /backups/pii-2026-11-04 --dir ~/.local/state/pii --force   # moves the old store aside
+systemctl --user start pii
+\end{lstlisting}
+
+\texttt{--force} does not delete: it moves the existing store to
+\texttt{\textless{}name\textgreater{}.redb.old-\textless{}ms\textgreater{}} and leaves the
+decision about the old file to you. That is
+deliberate --- the one file you are most likely to want after a bad restore is the store
+the restore replaced.
+
+\section{Retention}
+
+Retention is the only code in the product that deletes run data, so its rules are worth
+knowing before you need them. The policy has three numbers and three guards.
+
+\begin{center}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.62\textwidth}@{}}
+	\toprule
+	\textbf{Setting} & \textbf{Default and meaning} \\
+	\midrule
+	run age & 30 days: a finished run's header, journal and snapshots go past this age \\
+	node-event age & 7 days: a finished run's node-call events go past this age \\
+	rows per sweep & 1\,000: the sweep's whole budget, so a first run on a large store
+	cannot hold a write transaction for minutes \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The guards are the part that matters:
+
+\begin{enumerate}
+	\item A run whose status is \texttt{Running} or \texttt{Suspended} is never removed,
+	however old it is, because the daemon may still resume it.
+	\item A row that cannot be dated is kept. A run created before the clock was recorded
+	carries \texttt{created\_ms} of zero, and deleting on a missing timestamp would destroy
+	exactly the runs an operator is looking for.
+	\item The sweep is bounded per call, so it is a trim rather than a migration.
+\end{enumerate}
+
+One sweep runs when the daemon starts, and \texttt{pii store prune} runs one on demand. The
+command prints \texttt{pruned N rows} and exits 0; the store also records a
+\texttt{store.retention.swept} event carrying the count, but only when something was
+removed. A sweep that removes nothing is silent, which is why the count on stdout is the
+number to read.
+
+\section{What retention actually removes}
+
+The three rules have an order of precedence, and the order is not the one people assume.
+Age selects candidates; a live run is excluded; an undatable row is excluded; then the
+per-sweep budget truncates whatever remains.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \draw[->, thick, gray] (0,0) -- (13,0) node[right, font=\scriptsize] {age};
+  \fill[orange!25] (0,0.35) rectangle (2.2,0.75);
+  \node[font=\scriptsize, above=2pt] at (1.1,0.78) {node events: 7 days};
+  \fill[blue!20] (0,0.9) rectangle (6.4,1.3);
+  \node[font=\scriptsize, above=2pt] at (3.2,1.33) {runs: 30 days};
+  \draw[dashed, red!60!black, thick] (6.4,0) -- (6.4,1.5);
+  \node[font=\scriptsize, red!60!black, below=2pt] at (6.4,-0.05) {sweep boundary};
+  \node[b, fill=green!8, anchor=west] (live) at (7.2,1.35)
+    {Running / Suspended\\\scriptsize kept however old};
+  \node[b, fill=gray!8, below=of live] (undated) {no clock\\\scriptsize kept and reported};
+  \node[b, below=of undated] (budget) {budget\\\scriptsize 1\,000 rows per sweep};
+  \draw[bk] (6.4,0.7) -- (live.west);
+\end{tikzpicture}}
+\captionof{figure}{Three rules, in order of precedence: age bounds the sweep, a live run is
+never swept, and a row that cannot be dated is kept. The budget is last, so a large store trims
+over several sweeps rather than one long transaction.}
+\end{center}
+
+A run that will never finish is therefore never collected. If you see one, park or cancel
+it deliberately --- \texttt{pii run abandon} with a reason, or \texttt{pii run cancel} ---
+and retention will collect it thirty days after it ended. Retention will not make that
+decision for you, and should not: the difference between trimming and losing work in flight
+is this guard.
+
+\section{Compaction is not retention}
+
+These two get confused, and the confusion costs a maintenance window that reclaims nothing.
+Compaction reclaims free pages \emph{inside} a file; retention removes rows. redb never
+returns space to the filesystem except at the end of the file, and only compaction moves
+that boundary.
+
+The measured pairs from this product's own runbook are the honest expectation:
+
+\begin{center}
+\begin{tabular}{@{}p{0.50\textwidth}p{0.38\textwidth}@{}}
+	\toprule
+	\textbf{Store state} & \textbf{Before $\rightarrow$ after} \\
+	\midrule
+	fragmented: 20 sessions of 400\,KB, every other one deleted &
+	13\,111\,296 $\rightarrow$ 6\,623\,232 bytes \\
+	a store after 400 runs through a daemon & 1\,048\,576 $\rightarrow$ 786\,432 bytes \\
+	idle auxiliary stores (memory, approval, heal, channel, timer) &
+	1\,056\,768 $\rightarrow$ 36\,864 bytes each \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+So on a store that has only grown with runs, expect the tail slack back and nothing more.
+The 400-run row is the one to remember: it is a two-hundred-kilobyte improvement on a
+megabyte file, which is not a reason to schedule an outage. The auxiliary row is the reason
+to run compaction at all --- five stores that were preallocated and never wrote shrank by
+about 97\,\%.
+
+\section{The restore drill}
+
+A backup nobody has restored is a hope. The drill is short, it uses a scratch state
+directory, and it is the only way to know that the manifest, the hashes and the binary's
+format version all agree.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[s] (store) {live store};
+  \node[b, right=of store] (stop) {stop the daemon};
+  \node[b, right=of stop] (copy) {\texttt{pii backup}};
+  \node[b, below=of copy] (scratch) {scratch state dir\\\scriptsize \texttt{PII\_STATE\_DIR}};
+  \node[b, left=of scratch] (probe) {scratch daemon\\\scriptsize health, run ls, trace};
+  \node[v, below=of probe] (verdict) {restorable?};
+  \draw[f] (store) -- (stop);
+  \draw[f] (stop) -- (copy);
+  \draw[f] (copy) -- (scratch);
+  \draw[f] (scratch) -- (probe);
+  \draw[f] (probe) -- (verdict);
+  \draw[bk] (verdict.west) to[bend left=22] node[p,left=2pt,midway]{no} (copy.south west);
+\end{tikzpicture}}
+\captionof{figure}{A backup is a backup once it has been restored into a scratch state directory
+and read there. Restoring over the live store destroys the evidence you would need if the
+restore is wrong.}
+\end{center}
+
+\begin{lstlisting}[language=bash]
+mkdir -p /projects/_tmp/restore-drill
+pii restore /backups/pii-2026-11-04 --dir /projects/_tmp/restore-drill
+PII_STATE_DIR=/projects/_tmp/restore-drill pii store stats
+PII_STATE_DIR=/projects/_tmp/restore-drill pii graph trace <run_id> \
+  --db /projects/_tmp/restore-drill/store.redb --terminal
+\end{lstlisting}
+
+Three readings close the drill. \texttt{store stats} prints a row count per table, so an
+empty journal is visible immediately. A trace on a known run id prints that run's terminal
+value, which proves the journal survived the round trip. And a daemon started on the
+scratch directory with a different runtime dir proves the binary can open the restored
+format version --- the one thing a restore cannot repair is a store written by a newer
+build.
+
+\section{Upgrading}
+
+An upgrade is four steps and one expected non-zero exit code. The exit code is the part
+that alarms people: immediately after installing a new binary and before restarting the
+service, \texttt{pii health} exits 3 and prints a \texttt{DRIFT} line, because the client
+is the new build and the daemon is still the old process. That is the instrument working.
+It returns 0 only after the restart.
+
+\begin{lstlisting}[language=bash]
+systemctl --user stop pii
+pii backup /backups/pii-pre-upgrade --dir ~/.local/state/pii
+bash deploy/install-pii.sh                                      # card-gated, moves the old aside
+pii health                                                      # expect 3 + DRIFT
+systemctl --user restart pii
+pii health && pii --version                                     # expect 0, same revision
+\end{lstlisting}
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (stop) {stop the daemon};
+  \node[b, right=of stop] (backup) {backup};
+  \node[b, right=of backup] (install) {install};
+  \node[v, right=of install] (drift) {health?};
+  \node[b, below left=of drift] (three) {3: expected\\\scriptsize new client, old daemon};
+  \node[b, below right=of drift] (zero) {0: already the same build};
+  \node[b, below=of three] (restart) {restart the service};
+  \node[b, below=of restart] (verify) {\texttt{pii health} = 0\\\scriptsize both revisions equal};
+  \draw[f] (stop) -- (backup);
+  \draw[f] (backup) -- (install);
+  \draw[f] (install) -- (drift);
+  \draw[f] (drift) -- node[p,left=2pt,midway]{usual} (three);
+  \draw[f] (drift) -- node[p,right=2pt,midway]{rare} (zero);
+  \draw[f] (three) -- (restart);
+  \draw[f] (restart) -- (verify);
+\end{tikzpicture}}
+\captionof{figure}{The upgrade sequence, with the reading that is correct and looks wrong. A
+\texttt{3} here is not a failed upgrade; it is the proof that the install replaced the binary
+and the service has not yet been restarted.}
+\end{center}
+
+The state directory is forward-compatible only in one direction. Every store carries a
+format version stamped on create or first open, and a binary that meets a newer version
+refuses to open it:
+
+\begin{lstlisting}[language=bash]
+error: invalid: store '/var/lib/pii/memory.redb' has format version 99, which is newer
+than the version 1 this binary understands; upgrade pii or use a different store path
+\end{lstlisting}
+
+The daemon exits 2 and writes nothing to the file. The remedy is a binary that understands
+that version, or a restore of a backup taken by the older build --- never an edit of the
+stamp.
+
+Rollback is the install script's inverse and it moves rather than copies:
+\texttt{bash deploy/rollback-pii.sh} stops the unit, restores the newest
+\texttt{\$PREFIX.old-\textless{}epoch\textgreater{}} contents, keeps what it replaced under
+\texttt{\$PREFIX.rolledback-\textless{}epoch\textgreater{}}, and prints each file. Then
+\texttt{daemon-reload} and \texttt{restart}, then \texttt{pii health} for a 0.
+
+\subsection*{The gate the card quotes}
+
+No install runs without a deploy card for the revision being installed. The card is a JSON
+file with five required fields --- \texttt{incident} (id, fingerprint, count),
+\texttt{change} (branch, revision, diff stat), \texttt{proof} (red on base, green on
+branch), \texttt{gate} (verdict) and \texttt{rollback} (rehearsal) --- and a card missing
+any of them is refused with the field named and no approval path printed. Approval is bound
+to the revision the card names, and every decision appends one line to the operator record
+(\texttt{PII\_ACTS}, default \texttt{\_tmp/autonomy/operator-acts.log}).
+
+The gate verdict has a condition attached that is easy to miss: a deploy run must quote a
+\emph{fresh-tree} gate, and a \texttt{mode=routine} verdict is not release evidence. A
+routine gate runs in the working tree against a warm target; a fresh gate exports
+\texttt{HEAD} and builds in a throwaway directory. When the two disagree, believe the fresh
+one --- a gate can be green in a tree and red in a clean clone.
+
+\section{Logs, audit, and the death that leaves no line}
+
+The daemon writes events as JSON lines, one per event, each stamped with \texttt{ts\_ms}.
+The log is off unless a path is set. Three keys control it, and each has a flag that
+overrides it.
+
+\begin{longtable}{@{}p{0.24\textwidth}p{0.30\textwidth}p{0.38\textwidth}@{}}
+	\toprule
+	\textbf{Key} & \textbf{Default} & \textbf{Flag} \\
+	\midrule
+	\endhead
+	\texttt{[core].log\_file} & absent: no log file & \texttt{--log-file} \\
+	\texttt{[core].log\_rotate\_bytes} & 10\,485\,760 (10 MiB); 0 never rotates &
+	\texttt{--log-rotate-bytes} \\
+	\texttt{[core].log\_keep\_files} & 5 rotated files besides the live one &
+	\texttt{--log-keep-files} \\
+	\bottomrule
+\end{longtable}
+
+Rotation renames rather than truncates: \texttt{pii.log} becomes \texttt{pii.log.1},
+\texttt{pii.log.1} becomes \texttt{pii.log.2}, and the oldest is discarded, so disk use is
+bounded by about \texttt{(keep + 1) * rotate\_bytes}. The file is rotated \emph{before} a
+line would push it past the limit, so a single pathological line can exceed the bound once.
+
+Denials are separate and always on: they go to \texttt{audit.log} in the store directory,
+rotated the same way, whatever the log file is set to. If you are investigating a
+permission problem and the daemon log is clean, read \texttt{audit.log}.
+
+The one reading that matters is the last line. A log that ends on \texttt{daemon.started}
+with no \texttt{daemon.stopped} means the process died hard --- a \texttt{kill -9}, an OOM
+kill, a machine reset. \texttt{pii health} agrees: \texttt{since\_deploy.starts} and
+\texttt{since\_deploy.hard\_deaths} are counters kept across restarts, so a host that has
+restarted eleven times and died hard twice says so in two lines.
+
+\section{Disk is owned, bounded and visible}
+
+Disk needed its own command because the obvious answers are about the wrong filesystem. The
+measured incident: the container's \texttt{/} is a 288\,GB overlay that reached 16\,GB
+free (95\,\%), while \texttt{/projects} --- a separate 594\,GB volume --- had 147\,GB free.
+The gate refuses to run below a 12\,GB floor on \texttt{/}, so work stopped, and
+\texttt{cargo clean} on the repository freed 152\,GB on the volume that was never short.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=10mm and 16mm]
+  \node[s] (overlay) {\texttt{/}\\\scriptsize 288 GB overlay};
+  \node[b, right=of overlay] (floor) {12 GB floor\\\scriptsize measured here};
+  \node[b, right=of floor] (refuse) {gate refuses};
+  \node[s, below=of overlay] (vol) {\texttt{/projects}\\\scriptsize 594 GB volume};
+  \node[b, right=of vol] (artefacts) {artefacts\\\scriptsize cache, targets, trash};
+  \node[b, right=of artefacts] (lie) {the floor was elsewhere};
+  \draw[f] (overlay) -- (floor);
+  \draw[f] (vol) -- (artefacts);
+  \draw[f] (floor) -- (refuse);
+  \draw[bk] (artefacts) -- node[p,above=2pt,midway]{filled this} (lie);
+\end{tikzpicture}}
+\captionof{figure}{The mismatch that hid the growth: the floor was measured on \texttt{/}, the
+artefacts landed on \texttt{/projects}. Freeing the volume looked like progress and was worth
+nothing.}
+\end{center}
+
+\texttt{pii disk} prints the artefact table and \emph{both} free-space lines, which is the
+whole fix for that class of confusion. Four mechanism families fill the disk, and each has
+an owner now:
+
+\begin{center}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.62\textwidth}@{}}
+	\toprule
+	\textbf{Mechanism} & \textbf{Owner and bound} \\
+	\midrule
+	the warm gate cache & ceiling of 40\,GiB
+	(\texttt{FRESH\_GATE\_CACHE\_MAX\_GB}); trimmed before a build, never while a build is
+	live. It once reached 105.8\,GiB because nothing bounded it. \\
+        one-off experiment targets & \texttt{\_tmp/targets/\textless{}purpose\textgreater{}}
+with a TTL of 7 days
+	(\texttt{DISK\_TTL\_DAYS}), removed by \texttt{cargo xtask disk --gc} \\
+	trash & dated directories with a retention window, not a build artefact \\
+	failed gate exports & removed after \texttt{DISK\_EXPORT\_TTL\_HOURS} unless a gate
+	still owns one \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{cargo xtask disk --gc} refuses to remove anything while a cargo or rustc is live
+and prints why, which is the guard that keeps the cleanup from becoming the incident. The
+12\,GB floor is not lowered to make a gate pass; if the floor is what stops you, the answer
+is space.
+
+\section{When the daemon is wedged}
+
+The sequence is short and it is ordered so that no step destroys evidence the next one
+needs.
+
+\begin{enumerate}
+	\item \texttt{pii health --json} with a short timeout. No answer within a few seconds
+	means the daemon is wedged or dead, and exit 2 means nothing is listening at all.
+	\item Read the last lines of the log file before stopping anything. A
+	\texttt{daemon.started} with no \texttt{daemon.stopped} is a hard death; the last
+	non-start event names what it was doing.
+	\item \texttt{systemctl --user stop pii}. Shutdown waits at most five seconds for
+	in-flight blocking work, then abandons it and exits anyway. If something was stuck,
+	stderr carries exactly one line:
+	\enquote{pii: shutdown drain exceeded 5s; abandoning in-flight blocking work}. That
+	line is stderr only --- it is in the journal, not in the log file.
+	\item If systemd had to SIGKILL it, nothing is lost structurally: the store is a
+	transactional redb file, and the daemon reconciles interrupted runs on boot. Start it
+	and read \texttt{pii health}.
+	\item A run that was mid-flight comes back as \texttt{Running} or \texttt{Failed}, with
+	a \texttt{NodeInterrupted} event in its journal for the node that was left in flight.
+	Read the trace before resuming it.
+\end{enumerate}
+
+\section{Failure modes that have actually happened}
+
+\begin{longtable}{@{}p{0.28\textwidth}p{0.64\textwidth}@{}}
+	\toprule
+	\textbf{Symptom} & \textbf{Cause and what to check} \\
+	\midrule
+	\endhead
+	Every graph run fails in a second, with no output &
+	A model id the provider does not serve. The old id had not existed for months and the
+	graph died at spawn; run \texttt{pii graph lint} and read the model in the graph. \\
+	The daemon answers, but the store is empty & Two different \texttt{PII\_STATE\_DIR}
+	values --- one for the daemon, another for your shell --- or a daemon whose
+	\texttt{--store} points at the runtime directory. Read the path in \texttt{pii health}. \\
+	A row stays \texttt{Running} for ever & A callee refused and no edge carried the
+	refusal. At this revision the queue wires \texttt{refused} and \texttt{unverified} by
+	name; an older graph dead-ends inside the splice. Trace the run; the refusal is in the
+	journal. \\
+	The coder stops and says no write tool is available & The graph's \texttt{caps} omit
+	\texttt{fs\_write}, so the node may not hold it. That is the capability ladder working,
+	not a bug. \\
+	The gate refuses with a disk message on a full disk & The floor now names the filesystem
+	it measured. A message that names only \texttt{/} while the artefacts land elsewhere is
+	an older binary. \\
+	\texttt{backup} refuses with \enquote{cannot be opened exclusively} & The daemon is
+	running and holds the lock. Stop it; the refusal is the no-tear guarantee, not a fault. \\
+	\texttt{health} prints \texttt{UNVERIFIED: daemon build revision is unknown} & The
+	running binary was built without its revision --- an export build that did not receive
+	\texttt{PII\_BUILD\_REVISION}. Rebuild with the installer. \\
+	A channel replays its backlog after a restore & The channel cursor lives in
+	\texttt{durable/channel.redb}, and a backup of the store directory does not include it.
+	Back that directory up too. \\
+	\bottomrule
+\end{longtable}
+
+\section{The first five minutes of an incident}
+
+Order matters more than completeness. Five checks establish whether you are looking at a
+process problem, a data problem or an environment problem, and each takes seconds.
+
+\begin{longtable}{@{}p{0.06\textwidth}p{0.30\textwidth}p{0.56\textwidth}@{}}
+	\toprule
+	\textbf{Step} & \textbf{Command} & \textbf{What it settles} \\
+	\midrule
+	\endhead
+	1 & \texttt{pii health} & Is anything answering, and is it this build? Exit 2 is a
+	process problem; exit 3 is a deployment problem. \\
+	2 & \texttt{pii run ls --status running} & Is work in flight? A run that should have
+	finished is a graph problem, not a daemon problem. \\
+	3 & \texttt{pii disk} & Is the host out of space on the filesystem the artefacts use?
+	A gate or a write failing at 95\,\% looks like a code defect. \\
+	4 & the log's last ten lines & Did it die hard, and what was the last thing it did? \\
+	5 & \texttt{pii store stats} & Is the store growing at a rate that explains the
+	symptom, and does the row count match what you expect? \\
+	\bottomrule
+\end{longtable}
+
+The order is not arbitrary. Checking the store before the disk gives you a row count you
+cannot interpret; checking runs before health gives you a list from a daemon that may not
+be the binary you think. Health first, because every later reading depends on knowing which
+process produced it.
+
+\section{Two rules that keep a host boring}
+
+The rest of this manual is detail; these two rules prevent most of the incidents in it.
+
+\textbf{Never point a second process at a live state directory.} The stores are exclusive,
+the daemon claims the durable pair before it binds, and a second daemon will be refused ---
+but a CLI command with a different \texttt{PII\_STATE\_DIR} will not be refused, it will
+quietly read a different store and report an empty world. If a reading surprises you, the
+first question is which store it came from.
+
+\textbf{Never delete what you can move.} The installer moves old binaries aside, the
+restore moves the replaced store aside, retention keeps undatable rows, and compaction
+refuses while a writer holds the file. Every one of those behaviours exists because the
+alternative destroyed something nobody could reconstruct. When a procedure in this chapter
+seems to be missing a cleanup step, that is the step it is missing on purpose.

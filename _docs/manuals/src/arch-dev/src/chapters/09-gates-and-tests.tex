@@ -1,0 +1,488 @@
+\chapter{Gates, controls and tests}
+
+\label{ch:gates}
+
+This chapter answers what the gate actually runs, what a green result does and does not prove,
+and why so much of the surrounding machinery is about the \emph{shape} of a check rather than
+its subject. The gate is one list of twenty steps, executed in two different trees, with the
+environment sanitised so that a result cannot depend on who started it. Around it sit the
+rules that decide whether a check is worth having: a criterion that passes before the work
+measures nothing, a rule that suppresses needs a control that must still take the normal path,
+and a check must consume what the live path produces rather than a copy of it.
+
+\section{One list, read twice}
+
+\texttt{gate-steps.txt} is the gate. Its header says so, and the format is one line per step:
+
+\begin{lstlisting}[language=bash]
+# Format: <label>|<shell command>   (one line per step; # lines and blank lines are ignored)
+# A step passes only if its command exits 0; every step runs even after an earlier failure.
+fmt|cargo fmt --all --check
+clippy|CARGO_TARGET_DIR=".../clippy-gate" cargo clippy --workspace --all-targets -- -D warnings
+build|CARGO_TARGET_DIR=".../build-gate" cargo build --workspace && cp ... target/debug/pii
+lint-files|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-files
+\end{lstlisting}
+
+\texttt{quality-gate.sh} reads that file for both modes; nothing else lists the steps. The
+local run iterates the file, calls \texttt{run\_step} for each line, and keeps a status that
+any failure sets.
+
+\begin{lstlisting}[language=bash]
+while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '' | '#'*) continue ;; esac
+    run_step "${line%%|*}" "${line#*|}" || status=1
+    steps=$((steps + 1))
+done <"$GATE_STEPS"
+# An empty or unreadable list must never read as green.
+if [ "$steps" -eq 0 ]; then
+    echo "FAIL: gate-steps.txt lists no steps"
+    status=1
+fi
+\end{lstlisting}
+
+Two properties are in that excerpt. Every step runs even after an earlier failure, so one run
+produces the whole list of problems rather than the first one. And an empty list is a failure,
+not a pass: a gate that runs nothing and exits zero is the most dangerous possible
+configuration, because it looks exactly like a gate that ran everything.
+
+\section{The twenty steps}
+
+The list has grown by addition, and each addition has a reason recorded next to it in the
+file. The table below is the inventory: what each step runs, and the class of defect it exists
+to catch.
+
+\begin{longtable}{@{}p{0.24\textwidth}p{0.34\textwidth}p{0.34\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Runs} & \textbf{Why it exists} \\
+\midrule
+\endhead
+\texttt{fmt} & \texttt{cargo fmt --all --check} & zero-tolerance formatting \\
+\texttt{clippy} & \texttt{clippy --workspace --all-targets -D warnings}, own target dir & one
+\texttt{--all-targets} rlib hash can poison the doctest linker (E0463) \\
+\texttt{clippy (hal-gpiod)} & \texttt{clippy -p pii-hal --features hal-gpiod}, own target dir & the
+real GPIO backend is feature-gated off everywhere else; compile and lint only, never run \\
+\texttt{build} & \texttt{cargo build --workspace}, then publish \texttt{target/debug/pii} & the
+worker's supervisor tests spawn the real binary at a fixed path \\
+\texttt{test (lib/bins/tests)} & \texttt{cargo test --workspace --lib --bins --tests} & the suite \\
+\texttt{test (doc)} & \texttt{cargo test --workspace --doc}, own target dir & doctests build libs
+without \texttt{cfg(test)}; sharing a target dir picks a stale rlib \\
+\texttt{coverage-floor} & \texttt{cargo llvm-cov} then \texttt{xtask coverage-floor} & line coverage
+must stay at or above \texttt{coverage-floor.txt} \\
+\texttt{lint-files} & \texttt{xtask lint-files} & 450 effective lines per file, plus spec/doc
+hygiene \\
+\texttt{lint-scratch} & \texttt{xtask lint-scratch} & a test that uses a crate-local
+\texttt{\_tmp} it
+never creates \\
+\texttt{lint-observability} & \texttt{xtask lint-observability} & every crate uses the
+\texttt{pii-observe} seam, no new raw prints, registry names in \texttt{ALL} \\
+\texttt{reachability-check} & \texttt{xtask reachability-check} & a declared capability seam has
+a real
+non-test caller \\
+\texttt{deps-check} & \texttt{xtask deps-check} & five dependency invariants, from \texttt{cargo
+metadata} \\
+\texttt{net-check} & \texttt{xtask net-check} & sockets and name resolution only in allowlisted
+files \\
+\texttt{doc-drift-check} & \texttt{xtask doc-drift-check} & every backticked repo path in
+\texttt{HANDOFF.md} exists \\
+\texttt{autonomy (shell tests)} & \texttt{bash scripts/autonomy/run-tests.sh} & tests \texttt{cargo
+test} cannot reach; without this the gate cannot go red on them \\
+\texttt{plan-verify} & \texttt{sync-verify.sh --check} & an open row's verify column must still
+be its
+spec's criteria \\
+\texttt{item-ids} & \texttt{item-ids.sh --check} & a flow item's id is its work's spec number \\
+\texttt{devbox-check} & \texttt{modules/devbox/check.sh} & the devbox module's offline claims
+hold \\
+\texttt{install-config} & \texttt{deploy/install-config-keeps.test.sh} & a re-install keeps the
+operator's config \\
+\texttt{daemon-guard} & \texttt{scripts/checks/daemon-tests-are-guarded.sh} & a test that spawns a
+live daemon owns it through \texttt{DaemonGuard} \\
+\bottomrule
+\end{longtable}
+
+The autonomy step's history is the clearest argument for the list being a file rather than a
+habit. \texttt{tick-message-worker-rc.test.sh} was red for two days after a change to
+\texttt{tick.sh}'s phone line, and every gate in that window was green, because \texttt{cargo
+test} never reached a shell test. A check that is not in the list does not exist.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (s1) {fmt\\\scriptsize step 1};
+	\node[b, right=of s1] (s2) {clippy\\\scriptsize steps 2--3};
+	\node[b, right=of s2] (s3) {build\\\scriptsize step 4};
+	\node[b, right=of s3] (s4) {tests\\\scriptsize steps 5--6};
+	\node[b, below=of s4] (s5) {measure and lint\\\scriptsize steps 7--14};
+	\node[b, left=of s5] (s6) {queue and host guards\\\scriptsize steps 15--20};
+
+	\draw[f] (s1) -- (s2);
+	\draw[f] (s2) -- (s3);
+	\draw[f] (s3) -- (s4);
+	\draw[f] (s4) -- (s5);
+	\draw[f] (s5) -- (s6);
+\end{tikzpicture}}
+\captionof{figure}{The twenty steps as five stages and a tail of guards, where the numbered
+groups are the ones a reader will otherwise have to count in the file.}
+\end{center}
+
+\section{Two trees}
+
+The same list runs in two places, and the difference is what the result proves.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (repo) {working tree};
+	\node[b, below=of repo] (archive) {\texttt{git archive HEAD}};
+	\node[b, right=of archive] (export) {export dir\\\scriptsize \texttt{fresh-gate-<pid>}};
+	\node[b, above=of export] (overlay) {overlay\\\scriptsize modified $\cdot$ untracked $\cdot$ deletions};
+	\node[b, right=of export] (gate) {\texttt{quality-gate.sh}\\\scriptsize 20 steps};
+	\node[v, below=of gate] (pass) {pass?};
+	\node[b, left=of pass] (kept) {kept on failure\\\scriptsize \texttt{gate-output.log}};
+	\node[b, right=of pass] (gone) {removed on pass};
+
+	\draw[f] (repo) -- (archive);
+	\draw[f] (archive) -- (export);
+	\draw[f] (overlay) -- (export);
+	\draw[f] (export) -- (gate);
+	\draw[f] (gate) -- (pass);
+	\draw[f] (pass) -- node[p, above=2pt, midway]{no} (kept);
+	\draw[f] (pass) -- node[p, above=2pt, midway]{yes} (gone);
+\end{tikzpicture}}
+\captionof{figure}{When the two trees disagree the export is the one to believe, because tests
+that pass only because an earlier run left a directory behind are the class the second tree
+catches.}
+\end{center}
+
+\texttt{quality-gate.sh} has three entry points: \texttt{--routine} (default, this tree, warm
+cache, minutes), \texttt{--fresh} (the export, the release boundary), and \texttt{--summary}
+(prints what the gate cannot exercise and runs nothing). The fresh mode is a wrapper around
+\texttt{cargo xtask fresh-gate --worktree}, with a separate target dir, because an export's
+artifacts must not land in the warm cache: a test binary bakes its manifest directory at
+compile time, and a routine run that reused an artifact from a deleted export failed three
+tests on a tree where the package's own suite passed 5/5.
+
+\paragraph{Overlay, including deletion.} \texttt{overlay\_worktree} copies every modified and
+untracked path from the working tree into the export, and then \emph{removes} from the export
+every path git reports as deleted. The second half was added after a change that removes a
+test file could not be gated at all: the export still held the deleted file while the overlaid
+manifest no longer declared its dependency, so the gate failed on a tree that does not exist.
+A gate that cannot express a deletion is not testing the change.
+
+\paragraph{Single-file substitution.} \texttt{--overlay src=dest} copies one file over the
+export. \texttt{dest} must be relative and must not contain \texttt{..}; both are refused at
+argument parsing, before anything is created. This is the way to test a deliberately mutated
+file without touching the tree.
+
+\paragraph{Which list ran.} \texttt{check\_step\_list} reads \texttt{GATE\_STEPS}, counts the
+non-comment lines in the \emph{export}, and refuses a reduced list unless \texttt{--quick} was
+asked for:
+
+\begin{lstlisting}[language=bash]
+GATE_STEPS=gate-steps-quick.txt cargo xtask fresh-gate --worktree
+# REFUSED: GATE_STEPS=gate-steps-quick.txt is the ITEM list (5 steps), not the gate that decides
+# shipping. Unset GATE_STEPS (or set it to gate-steps.txt) for the full list, or pass --quick if that
+# reduced run IS what you intend - it will say so in its own output.
+\end{lstlisting}
+
+That refusal exists because of a measured evening: an autonomy script exports the quick list
+for the item boundary, a hand run that sourced it reported ``gated'' five times, and the
+commit gate --- which runs the full list --- had three real failures waiting. The quick list
+is a legitimate tool. It must not be the accidental default, so it is allowed only when asked
+for, and the run always prints which list it used and how many steps it holds.
+
+\section{The environment must not be inherited}
+
+A gate that depends on the caller's environment is not a gate. Two variables are removed from
+the child and one is redirected:
+
+\begin{itemize}
+	\item \texttt{PII\_STATE\_DIR} and \texttt{PII\_RUNTIME\_DIR} are removed. Measured: a lane
+	daemon holding the real store made a daemon test fail with \texttt{channel.redb is locked:
+	another daemon holds it}, because the test inherited the state dir. The test's own store
+	parent was not enough --- the durable stores follow the variable.
+	\item \texttt{CARGO\_TARGET\_DIR} points at the warm cache, so the export's tree is fresh
+	and its compiler output is not. Pinning it inside the export made every attempt pay a full
+	cold workspace build: a spec that took minutes took 40--60 minutes after the export entered
+	the loop.
+	\item \texttt{TEST\_GATE\_TARGET} points \emph{inside} the export for the test step only,
+	because a test binary bakes \texttt{CARGO\_MANIFEST\_DIR} and a binary left in the shared
+	cache would be reused by the next run.
+\end{itemize}
+
+The third is the subtle one, and it has its own test with a control: the test target must
+start with the export's path, must not equal the shared cache's test directory, and every
+other step must still get the warm cache. Without the control, a change that redirected
+\emph{every} step would pass.
+
+\section{Disk, retention and the two ceilings}
+
+A fresh export is about 8 GB before it builds anything, and a coverage-measuring export needs
+at least 11.4 GiB free. Both numbers are measurements, not estimates: a run with 11 GB free
+drove the volume to zero for about three minutes and left an 11.4 GB failed export behind. The
+floor is \texttt{FRESH\_GATE\_MIN\_FREE\_MB}, default 12\,288, checked before the export
+directory is created, and the refusal names the free megabytes and the override.
+
+The warm cache has the opposite problem: a bigger cache builds faster, so nothing bounded it
+and it reached 105.8 GiB. It is now capped by \texttt{FRESH\_GATE\_CACHE\_MAX\_GB} (default
+40) and trimmed before the build --- but never while a cargo or rustc is live, because a
+running build would lose its target underneath it. When a build is live the tool says so and
+skips the trim rather than guessing.
+
+\paragraph{Retention by liveness.} Failed exports are removed before a new one is created, but
+the predicate is not age. Each export directory is named for the pid that created it
+(\texttt{fresh-gate-<pid>}), and retention asks whether that pid still exists. The measurement
+behind this is worth repeating: retention once removed a \emph{running} gate's export, and
+that gate then failed sixteen steps on \texttt{target/gate-steps/<step>.log: No such file or
+directory} with \texttt{failing tests: []} --- a red verdict blaming the tree for a directory
+another process deleted.
+
+Two tests pin the pair: a running owner's export is not reaped, and --- as the control --- a
+dead owner's export is. The control matters because ``never remove anything'' would also pass
+the first test.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (dir) {\texttt{fresh-gate-<pid>}};
+	\node[v, right=of dir] (safe) {name ok?};
+	\node[v, below=of safe] (alive) {alive?};
+	\node[b, right=of alive, yshift=6mm] (keep) {keep};
+	\node[b, right=of alive, yshift=-6mm] (reap) {remove};
+	\node[b, left=of alive, xshift=-4mm] (skip) {leave alone\\\scriptsize not ours};
+
+	\draw[f] (dir) -- (safe);
+	\draw[f] (safe) -- node[p, right=2pt, midway]{yes} (alive);
+	\draw[f] (alive) -- node[p, above=2pt, midway]{yes} (keep);
+	\draw[f] (alive) -- node[p, below=2pt, midway]{no} (reap);
+	\draw[bk] (safe.west) -- node[p, above=2pt, midway]{no} (skip);
+\end{tikzpicture}}
+\captionof{figure}{The name guard runs first and fails safe: an empty base, a foreign
+directory or a bare prefix is refused, so a guard around a deletion cannot pass on an unset
+variable.}
+\end{center}
+
+\paragraph{The export can still disappear.} After the gate returns, the runner checks that the
+export directory is still there. If it is not, the result is reported as its own condition ---
+``export lost: another gate's retention removed it while this gate ran; the step failures
+above are not a verdict on the tree'' --- rather than as a failure of the code. A gate that
+reports the wrong cause is worse than a gate that reports nothing.
+
+\section{What a step is allowed to say}
+
+\texttt{scripts/gate-lib.sh} runs each step in its own session, streams its output, and prints
+a heartbeat at least every 30 seconds with the step's last output line. Three verdicts exist:
+
+\begin{itemize}
+	\item \texttt{PASS: <label>} --- the command exited 0 and printed no \texttt{SKIPPED:}
+	line.
+	\item \texttt{SKIPPED: <reason>} --- the command exited 0 and said it skipped. There is no
+	PASS line; the skip is the record. \texttt{QG\_SKIP\_COVERAGE=1} uses this.
+	\item \texttt{FAIL: <label>} --- non-zero, or killed by a signal, or hung. A step whose
+	output has not changed for \texttt{QG\_STALL\_SECS} (default 1\,800) is killed and reported
+	as \texttt{HUNG} with the seconds since its last heartbeat and its last line.
+\end{itemize}
+
+The heartbeat is a progress note only. The exit code is the sole verdict, which is why the
+stall detector exists: a step that prints nothing for thirty minutes is indistinguishable from
+a step that is working, and the difference has to be decided by a bound.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (start) {run\_step};
+	\node[b, right=of start] (child) {step process\\\scriptsize own session};
+	\node[b, below=of child] (hb) {heartbeat\\\scriptsize 30 s};
+	\node[v, right=of child] (stall) {output changed?};
+	\node[b, below=of stall] (kill) {kill\\\scriptsize HUNG};
+	\node[b, above=of stall] (rc) {exit code};
+	\node[b, left=of rc, xshift=-2mm] (verdict) {PASS / SKIPPED / FAIL};
+
+	\draw[f] (start) -- (child);
+	\draw[f] (child) -- (hb);
+	\draw[f] (child) -- (stall);
+	\draw[f] (stall) -- node[p, right=2pt, midway]{no, 1800 s} (kill);
+	\draw[f] (child) -- (rc);
+	\draw[f] (rc) -- (verdict);
+\end{tikzpicture}}
+\captionof{figure}{Liveness and verdict are separate signals, so a step can be alive and wrong
+or dead and therefore not a verdict at all.}
+\end{center}
+
+\section{Controls}
+
+The single most useful rule in this repository is that every rule which suppresses, skips or
+special-cases something needs a control that must still take the normal path. A suppression
+without a control cannot be distinguished from a broken check.
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.28\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{The rule} & \textbf{The near-miss that must still happen} & \textbf{Where it is pinned} \\
+\midrule
+\endhead
+a running gate's export is not reaped & a dead owner's export \emph{is} reaped &
+\texttt{fresh\_gate.rs} tests \\
+the test step's target lies inside the export & every other step keeps the warm cache &
+\texttt{gate\_env} test \\
+the sandbox refuses an out-of-grant write & an in-grant write must \emph{succeed} &
+\texttt{sandbox.rs} probes \\
+a failure report echoes the panic block & a build error with no test failure yields nothing &
+\texttt{failure\_report} test \\
+a graph refuses an unreachable callee & the reachable callee is still called & splice tests \\
+a dirty tree stops dispatch & a row that owns its own dirty tree may resume & lane tests \\
+\bottomrule
+\end{longtable}
+
+The sandbox pair is the clearest illustration of why the rule exists. A ruleset whose every
+rule was skipped passes an out-of-grant probe while granting nothing; every later refusal is
+then a coincidence that looks like policy. The in-grant probe is what turns ``something is
+denied'' into ``this is granted and that is not''.
+
+\section{A criterion that is already green measures nothing}
+
+An exit criterion is a shell command that fails today. If it passes at \texttt{HEAD}, before
+any work, it is not a criterion; it is a wish, and the work it describes may already have
+landed or may be described by something else entirely. The rule that follows is mechanical:
+every new check is run against \texttt{HEAD} first, and if it passes it is rewritten or
+withdrawn.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (red) {run at HEAD\\\scriptsize must FAIL};
+	\node[b, right=of red] (impl) {implement};
+	\node[b, right=of impl] (green) {run again\\\scriptsize must PASS};
+	\node[b, below=of green] (mutate) {mutate the fix back};
+	\node[b, left=of mutate] (red2) {run again\\\scriptsize must FAIL};
+	\node[b, left=of red2] (restore) {restore};
+
+	\draw[f] (red) -- (impl);
+	\draw[f] (impl) -- (green);
+	\draw[f] (green) -- (mutate);
+	\draw[f] (mutate) -- (red2);
+	\draw[f] (red2) -- (restore);
+	\draw[bk] (red.south) -- ++(0,-5mm) node[p, below=2pt, midway]{passes: no criterion};
+\end{tikzpicture}}
+\captionof{figure}{Four runs, not two: the middle pair proves the work did something and the
+last pair proves the test is about the work rather than about the tree being green that day.}
+\end{center}
+
+The fourth step is the one that gets skipped, and it is the one that catches the most. A test
+can pass for a reason unrelated to the fix --- another change in the same commit, a fixture
+that happened to be left behind, a guard that fires on its own control. Mutating the fix back
+and watching the test go red is the only evidence that the test is about the fix. It is also
+how a partly-guarded fix is discovered: mutate one of three guards and see whether anything
+notices.
+
+\paragraph{Where this shows up in the store.} The retention work is the clearest example in
+this manual. The criterion was a test that seeds an expired run and asserts it is gone, plus
+its opposite: a seeded \texttt{Running} run that must survive. At \texttt{HEAD} the first
+failed because there was no retention code at all --- the search for \texttt{retention|prune}
+in \texttt{pii-store/src} returned nothing. After the implementation both passed. The mutation
+that matters is deleting the live-run filter: the first test still passes, the second goes
+red. A test suite with only the first would have certified a sweep that can delete work in
+flight.
+
+\section{The three lints that encode a convention}
+
+Three gate steps exist because a convention that lives only in a document is a convention that
+will be broken. Each encodes a rule the compiler cannot express, and each is a step only
+because it can fail.
+
+\begin{itemize}
+	\item \textbf{\texttt{lint-files}} enforces 450 \emph{effective} lines per file, where
+	effective means non-blank and non-comment. The distinction is not pedantry: a clean
+extraction that moves code into a new file without deleting anything leaves both files over
+	budget, which is exactly the decision that parked the model-role work. The step also runs
+	spec and doc hygiene checks.
+	\item \textbf{\texttt{lint-scratch}} fails on a test that uses a crate-local \texttt{\_tmp}
+	directory it never creates. The sanctioned helper is
+	\texttt{pii\_store::testing::tmp\_scratch}, which creates the crate-local directory
+	\emph{and} the temp dir inside it, so a test cannot depend on a directory a previous run
+	happened to leave. This class cost four separate fixes, because leftover state made the
+	repository gate look green while a clean export failed.
+	\item \textbf{\texttt{reachability-check}} proves that a declared capability seam still has
+	a real, non-test, non-comment caller. It was added after a resolver existed, was tested,
+	and was called by nothing: the test exercised the function directly, so it passed, and the
+	feature did not work.
+\end{itemize}
+
+The three share a shape: the rule is stated in prose somewhere, the prose is not loaded by the
+compiler, and so the rule is restated as a step that exits non-zero. A rule that lives only in
+a reference document is a rule that will be broken again --- a sentence this repository has
+had to learn twice, once about dispatch scripts and once about commit identity.
+
+\section{The coverage floor}
+
+\texttt{coverage-floor.txt} holds one number, \texttt{74.0}, with the measurement that
+justified it recorded in its comments: 77.02\% (21\,741 of 28\,229 lines) on 2026-10-10, with
+cargo-llvm-cov 0.9.1 over lib, bins and tests, no doctests. The floor is enforced, not
+reported:
+
+\begin{itemize}
+	\item A missing \texttt{cargo-llvm-cov} or the llvm-tools component is a FAIL, not a skip.
+	A tool that is absent cannot measure, and an unmeasured floor is not a floor.
+	\item \texttt{QG\_SKIP\_COVERAGE=1} skips only that step and prints a \texttt{SKIPPED:}
+	line naming the variable. It is never implied.
+	\item A queue commit refuses a gate that passed without measuring: the cycle reads the log
+	for the skip line and parks the row as \texttt{gate-coverage-not-measured}. The distinction
+	between ``the floor held'' and ``the floor was not measured'' is the whole point.
+	\item The floor is raised when coverage rises and never lowered to make a run green.
+\end{itemize}
+
+\section{What the gate cannot see}
+
+A gate's limits belong next to its verdict, or the verdict will be over-read. Four are known
+and written down:
+
+\begin{enumerate}
+	\item \textbf{The \texttt{hal-gpiod} steps are unexercised.} They compile and lint 117
+	lines that have never run on hardware, because this host has no \texttt{/dev/gpiochip*}.
+	The gate prints that sentence at the end of every run, so a PASS there cannot read as
+	hardware coverage.
+	\item \textbf{\texttt{net-check} is a text scan.} It misses a symbol built by a macro or
+	\texttt{concat!}, an alias, and any non-\texttt{.rs} source; and its allowlist is per-file,
+	so anything inside an allowlisted file is unchecked.
+	\item \textbf{\texttt{deps-check} reads metadata.} It cannot see a dependency that arrives
+	through a \texttt{\#[path]} include or a \texttt{use} of a crate already in the graph.
+	\item \textbf{\texttt{doc-drift-check} reads one file.} It checks that backticked paths in
+	\texttt{HANDOFF.md} exist, and nothing about whether the prose is true.
+\end{enumerate}
+
+The largest limit is not in that list: a green gate is not a correct change. It says the
+checks passed, not that the change did what the spec asked. For a landed fix the check is to
+mutate it back and watch the test go red, which is the only evidence that the test is about
+the fix.
+
+\section{Gates that fired on the case they allowed}
+
+The recurring defect in this codebase is not a missing guard. It is a guard that fires on the
+case it exists to permit, while reporting a reason that is not the real one. Six are recorded
+in the manuals' own margin, and each one cost hours:
+
+\begin{itemize}
+	\item a \textbf{park} that left its working tree dirty, so the dispatcher refused every
+	later row for a night;
+	\item a \textbf{dirty-tree guard} that stopped the row whose own work it was (row 368 was
+	parked by the guard it was written to permit);
+	\item \textbf{prose in a phase field} read as a marker, so a dispatch was skipped;
+	\item a \textbf{resolver nothing called}, certified as working by a test that hand-wrote
+	the input;
+	\item a \textbf{sweep} that deleted rows it could not date;
+	\item a \textbf{gate} that inherited the caller's environment and failed on a lock the
+	caller held.
+\end{itemize}
+
+The defence is the same every time: make the check consume what the live path produces, and
+keep a control that must still take the normal path.
+
+\section{One document that had drifted}
+
+\texttt{\_docs/02-guides/quality-gate-and-fresh-tree.md} describes the gate as fourteen steps
+and the free-space floor as 2\,048 MB. At this revision the list has twenty steps and the
+floor is 12\,288 MB. The document is still the best explanation of \emph{why} each early step
+exists, and it is wrong about two numbers a reader would act on.
+
+That is not an argument against documentation; it is an argument for the rule that the script
+is the source of truth for the step list and the document explains it. When they disagree, the
+script wins --- which is exactly why the gate prints its list and its step count at the start
+of every fresh run.

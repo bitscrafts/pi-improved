@@ -1,0 +1,452 @@
+\chapter{Configuration}
+
+\label{ch:config}
+
+This chapter answers what the daemon reads at start, which of two files wins when both set
+the same key, what it refuses to read at all, and how to change a setting without a restart.
+It also states where every file an installation writes actually lives, because the most
+common configuration fault is not a wrong value --- it is a second daemon reading different
+files from the one the operator is looking at.
+
+\section{Two files, one effective config}
+
+There is a global file and, optionally, a project file. The global file is the one an
+operator edits for a host; the project file is the one a repository carries, and it may set
+only the settings a repository has any business setting.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (flag) {\texttt{-{}-config P}\\\scriptsize the flag};
+  \node[b, below=of flag] (env) {\texttt{\$PII\_CONFIG}};
+  \node[b, below=of env] (def) {\texttt{\$HOME/.pii/pii.toml}\\\scriptsize the default path};
+  \node[b, right=of env, xshift=6mm] (proj) {\texttt{<workspace>/.pii/pii.toml}\\\scriptsize the project layer};
+  \node[b, right=of proj, xshift=6mm] (eff) {effective config};
+  \node[b, below=of eff] (defaults) {built-in defaults\\\scriptsize every key has one};
+  \draw[f] (flag) -- (env);
+  \draw[f] (env) -- (def);
+  \draw[f] (env) -- (proj);
+  \draw[sf] (defaults) -- (eff);
+  \draw[f] (proj) -- (eff);
+\end{tikzpicture}}
+\captionof{figure}{Resolution order. The first of flag, \texttt{\$PII\_CONFIG} and the default path decides which global file is read; the project file is then layered over it, and every unset key falls through to a built-in default.}
+\end{minipage}
+\end{center}
+
+The default path is \texttt{\$HOME/.pii/pii.toml}, and it is resolved \emph{before} the runtime
+directory. That ordering is deliberate: \texttt{[core].runtime\_dir} lives in the file that
+sets it, so a config path derived from the runtime directory would be circular.
+
+A file that does not exist is not an error at the default path: the daemon starts with
+built-in defaults and then refuses on the missing model. The same is true of a
+\texttt{-{}-config} path that does not exist, which is worth knowing: a typo in the flag does
+not say \enquote{no such file}, it says \enquote{no model configured} a moment later.
+
+\section{The project layer, and what it may not say}
+
+A workspace may carry \texttt{<workspace>/.pii/pii.toml}. It is read at start and on
+\texttt{pii sys reload}, through one function, so the two can never disagree about which file
+is read. A project file that exists but does not parse is fatal; it never silently falls back
+to the global file.
+
+The merge is not a general merge. A project value wins for three things only:
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Project may set} & \textbf{Why it is safe} \\
+  \midrule
+  \texttt{[core].model} & the model a repository's work should use \\
+  \texttt{[llama].host} & where that model is served, per repository \\
+  \texttt{[[model\_tier]]} & the routing table, replaced whole rather than merged \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Everything else that decides where the daemon writes or what it may reach is refused, and the
+refusal names the setting:
+
+\begin{lstlisting}[language=bash]
+error: project config sets global-only settings: [net], grant_ceiling,
+[core].runtime_dir (only the global ~/.pii/pii.toml may set them)
+\end{lstlisting}
+
+The list is short and closed: \texttt{[net]}, \texttt{grant\_ceiling},
+\texttt{[core].runtime\_dir}, \texttt{[core].log\_file}, \texttt{[core].audit} and
+\texttt{[core].observer}. The reason is asymmetric risk. A repository that could widen
+\texttt{[net] grants} would let a checkout grant itself egress; a repository that could move
+\texttt{runtime\_dir} would point a daemon at a store nobody is watching. A model id, by
+contrast, is exactly the kind of thing that should differ per project.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 16mm]
+  \node[b] (global) {global \texttt{pii.toml}\\\scriptsize everything};
+  \node[b, right=of global] (project) {project \texttt{pii.toml}\\\scriptsize model, llama host, tiers};
+  \node[b, right=of project] (eff) {effective config};
+  \node[b, below=of project, fill=red!6] (refused) {refused keys\\\scriptsize net, ceiling, dirs, log, audit, observer};
+  \draw[f] (global) -- (eff);
+  \draw[f] (project) -- (eff);
+  \draw[bk] (refused) -- node[p, right=2pt, midway]{named} (project);
+\end{tikzpicture}}
+\captionof{figure}{The layer is a whitelist, not a patch. A project file is a set of opinions about models; anything that decides where bytes land belongs to the host.}
+\end{minipage}
+\end{center}
+
+\section{The file is strict}
+
+Every section is deserialised with unknown fields denied. A misspelled key is a load error
+that names the key, not a setting that silently does nothing. This is a security property
+rather than a style: \texttt{sandbx = "workspace"} must not start an unconfined daemon.
+
+Two refusals are worth their own paragraph because they have been hit in practice:
+
+\begin{itemize}
+  \item \texttt{[core].ollama\_host} is refused by name. The ollama provider was retired; the
+    key is not merely unknown, it produces a message that says to set \texttt{[llama] host}
+    instead.
+  \item Two \texttt{[[model\_tier]]} entries with the same name, or an entry with an empty
+    name or model, fail validation before the daemon binds a socket.
+\end{itemize}
+
+\section{The sections}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.64\textwidth}@{}}
+  \toprule
+  \textbf{Key} & \textbf{What it decides} \\
+  \midrule
+  \endhead
+  \texttt{grant\_ceiling} & capability names no graph or node may request beyond; empty means
+    no ceiling. An unknown capability name is an error. This is the one setting a graph
+    author cannot argue with. \\
+  \texttt{[core]} & the host's own settings: model, directories, log, switches \\
+  \texttt{[llama]} & where \texttt{llamacpp-server:} models dial; default
+    \texttt{http://127.0.0.1:8080/v1} \\
+  \texttt{[net]} & egress policy: \texttt{grants} (host:port patterns) and
+    \texttt{allow\_private}. Default: no grants at all. \\
+  \texttt{[[worker]]} & a supervised child: \texttt{name}, \texttt{program},
+    \texttt{args}, \texttt{env}, \texttt{max\_in\_flight} \\
+  \texttt{[[channel]]} & an inbound message source and the graph it starts per message \\
+  \texttt{[[mqtt]]} & one broker connection and the graph each message starts \\
+  \texttt{[hal]} & hardware backend (\texttt{sim} or \texttt{gpiod}) and the pins, I2C and
+    SPI a graph may claim. Absent = the HAL is off and a \texttt{hal} node fails. \\
+  \texttt{[wasm]} & plugin host: the one directory modules load from, plus per-call
+    \texttt{timeout\_ms}, \texttt{max\_memory\_mib} and \texttt{fuel}. Absent = off. \\
+  \texttt{[memory]} & \texttt{path}; empty means the store beside the main store \\
+  \texttt{[memory\_graph]} & the bounds on the entity graph and the tier policy \\
+  \texttt{[[cron]]} & a named timer entry: \texttt{name}, \texttt{graph},
+    \texttt{schedule}, \texttt{input} \\
+  \texttt{[[model\_tier]]} & a named model: \texttt{name}, \texttt{model},
+    \texttt{tools}, \texttt{max\_tokens} \\
+  \texttt{[evolve.routing]} & step to model, for the steps \texttt{localize},
+    \texttt{patch}, \texttt{review}, \texttt{research}, \texttt{orchestrator}. A typo'd step
+    is an error, not a silent no-route. \\
+  \bottomrule
+\end{longtable}
+
+\subsection*{\texttt{[core]}}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.27\textwidth}>{\raggedright\arraybackslash}p{0.45\textwidth}>{\raggedright\arraybackslash}p{0.18\textwidth}@{}}
+  \toprule
+  \textbf{Key} & \textbf{Meaning} & \textbf{Default} \\
+  \midrule
+  \endhead
+  \texttt{model} & the model spec runs use when a graph names none & none \\
+  \texttt{runtime\_dir} & sockets, installed graphs, crashes & per-uid \\
+  \texttt{durable\_dir} & channel, timer and other durable stores & state\texttt{/durable} \\
+  \texttt{session\_runs\_cap} & runs remembered per session in memory & built-in cap \\
+  \texttt{trajectory\_dir} & when set, each run appends a JSONL trajectory & off \\
+  \texttt{trajectory\_max\_bytes} & aggregate bound on the trajectory directory & 512 MiB \\
+  \texttt{trajectory\_max\_files} & aggregate file bound & 50{,}000 \\
+  \texttt{learn\_interval\_secs} & the unattended learn pass interval & 86{,}400 \\
+  \texttt{log\_file} & daemon events as JSON lines & off \\
+  \texttt{log\_rotate\_bytes} & rotate before a line passes this size & 10{,}485{,}760 \\
+  \texttt{log\_keep\_files} & rotated files kept beside the live one & 5 \\
+  \texttt{observer} & \texttt{on}/\texttt{off}; measurement only & \texttt{on} \\
+  \texttt{audit} & \texttt{on}/\texttt{off}; measurement only & \texttt{on} \\
+  \bottomrule
+\end{longtable}
+
+Three keys read a zero in a way that is easy to guess wrong, so they are stated here rather
+than left to the sample. \texttt{learn\_interval\_secs = 0} switches the unattended learn
+pass off; the field is optional and its absence means every 86{,}400 seconds.
+\texttt{trajectory\_max\_bytes} and \texttt{trajectory\_max\_files} treat a zero as
+\enquote{unset} and fall back to the defaults, never as \enquote{unbounded}, because the
+trajectory directory is always bounded. \texttt{log\_rotate\_bytes = 0} is different again:
+it is passed through, and the sample documents it as \enquote{never rotate} --- which is a
+legitimate choice for a log a supervisor already rotates, and a bad one for a host nobody
+watches.
+
+The two measurement switches deserve a warning that the file cannot give: switching
+\texttt{audit} off stops denials reaching \texttt{audit.log}, and switching \texttt{observer}
+off detaches tool-call, store and provider logging. Both announce themselves as warning
+events at start, and both are documented as measurement-only. An installation that runs with
+either off is not observably the same installation as one that runs with them on.
+
+\subsection*{\texttt{[memory\_graph]}}
+
+These bounds are also command-line flags on \texttt{pii memory}, so a one-off query can be
+narrowed without touching the file.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.26\textwidth}>{\raggedright\arraybackslash}p{0.16\textwidth}>{\raggedright\arraybackslash}p{0.46\textwidth}@{}}
+  \toprule
+  \textbf{Key} & \textbf{Default} & \textbf{Refusal when exceeded} \\
+  \midrule
+  \texttt{max\_entities} & 10{,}000 & \texttt{entity\_cap} \\
+  \texttt{max\_relationships} & 50{,}000 & \texttt{relationship\_cap} \\
+  \texttt{max\_provenance} & 32 & \texttt{provenance\_cap} \\
+  \texttt{max\_attributes} & 32 & none; the extra attribute is refused \\
+  \texttt{max\_depth} & 3 & depth clamp at the call \\
+  \texttt{default\_depth} & 1 & --- \\
+  \texttt{max\_results} & 200 & \texttt{result\_cap} \\
+  \texttt{hot\_secs} & 86{,}400 & tier policy \\
+  \texttt{warm\_secs} & 604{,}800 & tier policy \\
+  \texttt{hot\_count} & 10 & tier policy \\
+  \texttt{max\_bytes} & 16 MiB & \texttt{bytes\_cap} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\section{Where the files are}
+
+Three directories, and they are not interchangeable. The state directory holds what must
+survive; the runtime directory holds what a restart may rebuild; the workspace is what the
+sandbox confines writes to.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (state) {\texttt{\$HOME/.local/state/pii}\\\scriptsize state};
+  \node[b, right=of state] (run) {\texttt{/run/user/<uid>/pii}\\\scriptsize runtime};
+  \node[b, right=of run] (ws) {the workspace\\\scriptsize confinement root};
+  \node[b, below=of state] (store) {\texttt{store.redb}};
+  \node[b, below=of run] (sock) {\texttt{control.sock}\\\scriptsize \texttt{graphs/}};
+  \node[b, below=of ws] (audit) {\texttt{audit.log}\\\scriptsize denials};
+  \node[b, below=of store] (dur) {\texttt{durable/}\\\scriptsize channel, timer};
+  \node[b, below=of sock] (sib) {\texttt{queue.redb}\\\scriptsize \texttt{memory.redb}};
+  \draw[sf] (state) -- (store);
+  \draw[sf] (run) -- (sock);
+  \draw[sf] (ws) -- (audit);
+  \draw[sf] (store) -- (dur);
+  \draw[sf] (sock) -- (sib);
+\end{tikzpicture}}
+\captionof{figure}{The layout an operator has to hold in mind. The audit trail lives beside the store, not in the log directory, so it survives losing a log volume.}
+\end{minipage}
+\end{center}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Path} & \textbf{Contents and note} \\
+  \midrule
+  \texttt{\$PII\_STATE\_DIR} & the state directory; default
+    \texttt{\$HOME/.local/state/pii} \\
+  \texttt{\$PII\_RUNTIME\_DIR} & sockets and ephemeral files; default
+    \texttt{/run/user/<uid>/pii} \\
+  \texttt{store.redb} & the main store, in the runtime or state dir; \texttt{-{}-store}
+    overrides \\
+  \texttt{audit.log} & beside the store: denials and the sandbox profile in force, rotated
+    like the log \\
+  \texttt{queue.redb} & beside the store: the queue's items and events \\
+  \texttt{memory.redb} & beside the store: documents and the entity graph \\
+  \texttt{durable/channel.redb} & under the state dir: channel cursors and last started runs \\
+  \texttt{durable/timer.redb} & under the state dir: the timer wheel \\
+  \texttt{graphs/} & under the runtime dir: installed definitions, \texttt{<name>.toml} \\
+  \texttt{./graphs} & the repository copy that \texttt{graph list} compares against \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{pii graph list} prints \texttt{DRIFT} when the installed copy differs from the
+repository copy, which is the fastest way to answer \enquote{is the daemon running what I
+reviewed}.
+
+\section{Secrets are not configuration}
+
+No credential is a config value. The file names the \emph{variable} or the \emph{file} that
+holds a secret, never the secret:
+
+\begin{itemize}
+  \item \texttt{[[channel]]} uses \texttt{token\_env} or \texttt{token\_file}, and
+    \texttt{secret\_env} or \texttt{secret\_file} for webhook signatures.
+  \item \texttt{[[mqtt]]} uses \texttt{username\_env} or \texttt{username\_file}, and
+    \texttt{password\_env} or \texttt{password\_file}. Credentials in clear text to a
+    non-loopback broker are refused unless \texttt{allow\_plaintext\_credentials} is true.
+  \item Provider keys come from \texttt{OPENAI\_API\_KEY}, \texttt{ANTHROPIC\_API\_KEY} or
+    \texttt{GEMINI\_API\_KEY} in the daemon's environment, and are scrubbed from provider
+    errors and events.
+\end{itemize}
+
+The reason is not tidiness. A config file is copied into backups, printed in bug reports and
+mounted into containers; an environment variable is not. The scrubber that removes
+secret-named variables from log lines is built from the daemon's own environment, so a key
+passed as a \texttt{-{}-config} value would be invisible to it.
+
+\section{Environment variables}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth}>{\raggedright\arraybackslash}p{0.60\textwidth}@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Effect} \\
+  \midrule
+  \endhead
+  \texttt{PII\_CONFIG} & the config file, overriding the default path \\
+  \texttt{PII\_STATE\_DIR} & the state directory \\
+  \texttt{PII\_RUNTIME\_DIR} & the runtime directory; wins over
+    \texttt{[core].runtime\_dir} \\
+  \texttt{PII\_MODEL} & the model when \texttt{[core].model} is unset; the flag or the file
+    wins \\
+  \texttt{PII\_TRAJECTORY\_DIR} & trajectory output; overrides
+    \texttt{[core].trajectory\_dir} \\
+  \texttt{PII\_MQTT\_URL} & broker for \texttt{pii mqtt}, after \texttt{-{}-url} \\
+  \texttt{PII\_ACTS} & the operator acts file the deploy-card and distance commands append to \\
+  \texttt{PII\_LOOP\_EVENTS} & the loop event NDJSON file \\
+  \texttt{PII\_AGENT} & the lane's agent: \texttt{claude} or \texttt{pi} \\
+  \texttt{PII\_GRAPH\_EDIT\_OK} & permits graph edits from the spec lane \\
+  \texttt{ALLOW\_DIRTY} & permits the lane to start on a dirty tree, for a resume \\
+  \texttt{OPENAI\_BASE\_URL} & an OpenAI-compatible endpoint; any vendor with that shape \\
+  \texttt{OPENAI\_API\_KEY} & its key; optional for a local server \\
+  \texttt{ANTHROPIC\_BASE\_URL} & default \texttt{https://api.anthropic.com} \\
+  \texttt{ANTHROPIC\_API\_KEY} & required for Anthropic models \\
+  \texttt{GEMINI\_BASE\_URL} & the Google endpoint; the default is the public host \\
+  \texttt{GEMINI\_API\_KEY} & sent as \texttt{x-goog-api-key}, never in the URL \\
+  \bottomrule
+\end{longtable}
+
+\section{Changing a setting}
+
+There are three cost levels, and choosing the wrong one is how a host ends up running a
+config nobody edited.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (edit) {edit the file};
+  \node[b, right=of edit] (reload) {\texttt{pii sys reload}};
+  \node[b, right=of reload] (status) {\texttt{pii health}};
+  \node[b, below=of reload] (restart) {restart the daemon};
+  \node[v, below=of status] (ok) {same config sha?};
+  \draw[f] (edit) -- (reload);
+  \draw[f] (reload) -- (status);
+  \draw[f] (edit) |- (restart);
+  \draw[f] (restart) -- (ok);
+  \draw[f] (status) -- (ok);
+\end{tikzpicture}}
+\captionof{figure}{A change is not in force until a surface says so. \texttt{pii health} prints the config path and a sha256 of the file it read, which is the only proof that the daemon is running the file you edited.}
+\end{minipage}
+\end{center}
+
+\texttt{pii health} prints, on its first three lines, the binary's version, target and
+revision, this client's revision, and the config path with its digest:
+
+\begin{lstlisting}[language=bash]
+pii 0.2.0 (c05f3d1e4dd3, x86_64-unknown-linux-gnu)
+client: c05f3d1e4dd3
+config: /root/.pii/pii.toml sha256=9f2c...
+\end{lstlisting}
+
+If the digest is not the file you just saved, the daemon read a different file: check
+\texttt{\$PII\_CONFIG} in the service unit before editing anything else.
+
+\texttt{pii sys reload} is narrower than its name suggests, and knowing its exact scope saves
+an afternoon. It re-reads the global file and the project layer, then applies exactly two
+things: every configured worker is reloaded, and each running channel's graph name is
+replaced. It returns the number of workers reloaded. Nothing else changes --- not the model,
+not the memory bounds, not \texttt{[net] grants}, and not a channel's
+\texttt{poll\_interval\_ms}, which is read once when the poll loop starts. For anything
+outside those two, the daemon has to be restarted.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.34\textwidth}>{\raggedright\arraybackslash}p{0.26\textwidth}>{\raggedright\arraybackslash}p{0.28\textwidth}@{}}
+  \toprule
+  \textbf{Setting} & \texttt{sys reload} & \textbf{Restart} \\
+  \midrule
+  \texttt{[[worker]]} entries & applied & applied \\
+  \texttt{[[channel]].graph} & applied & applied \\
+  \texttt{[[channel]].poll\_interval\_ms} & no & applied \\
+  \texttt{[core].model}, \texttt{[llama].host} & no & applied \\
+  \texttt{[net].grants}, \texttt{grant\_ceiling} & no & applied \\
+  \texttt{[memory\_graph]} bounds & no & applied \\
+  \texttt{[core].runtime\_dir}, \texttt{log\_file} & no & applied at next start \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+The boundary has one practical consequence worth stating: a policy change --- egress grants,
+the capability ceiling, the model --- is never in force until a restart, so a host that has
+been edited but not restarted is running a config nobody can see from the file.
+
+\section{A production file, in full}
+
+The repository ships \texttt{examples/pii.production.toml}, which lists every key with its
+default. The parts an administrator changes first:
+
+\begin{lstlisting}[language=bash]
+[core]
+model = "llamacpp-server:granite-4.2-3b"
+runtime_dir = "/run/pii"
+log_file = "/var/log/pii/pii.log"
+log_rotate_bytes = 10485760
+log_keep_files = 5
+
+[llama]
+host = "http://10.10.10.217:8082/v1"
+
+[net]
+grants = ["127.0.0.1:11434"]
+allow_private = true
+
+[memory]
+path = ""
+
+[[cron]]
+name = "nightly"
+graph = "night"
+schedule = "0 3 * * *"
+\end{lstlisting}
+
+Two of those deserve comment. \texttt{[net] grants} is empty by default, so the file above
+opens exactly one host:port pair and nothing else; a model served elsewhere needs its own
+grant or every call is denied with \texttt{net.egress.denied}. And \texttt{schedule} is
+display-only: the timer that actually fires is the graph's entry node, so a cron entry whose
+graph does not start with a \texttt{timer} does not run on a clock at all.
+
+\section{Refusals, and what they look like}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Symptom} & \textbf{Cause and check} \\
+  \midrule
+  \texttt{config: unknown field \ldots} & a misspelled key. The message names it; the file is
+    strict on purpose. \\
+  \texttt{[core].ollama\_host is retired} & the ollama provider is gone; use
+    \texttt{[llama] host} with \texttt{llamacpp-server:<model>} \\
+  \texttt{project config sets global-only settings} & the repository tried to set
+    \texttt{[net]}, \texttt{grant\_ceiling}, a directory, the log or a switch \\
+  \texttt{duplicate [[model\_tier]] name} & two tiers with one name; the routing table must be
+    unambiguous \\
+  \texttt{no model configured} (exit 5) & neither \texttt{[core].model} nor
+    \texttt{\$PII\_MODEL}; also what a typo'd \texttt{-{}-config} path looks like \\
+  exit 4 at start & the requested sandbox profile could not be enforced; the daemon refuses
+    rather than run unconfined \\
+  a setting that has no effect & the daemon read another file. Compare the
+    \texttt{config: \ldots sha256=} line in \texttt{pii health} with the file on disk. \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}[language=bash]
+pii daemon --config /etc/pii/pii.toml --workspace /projects/pi-improved \
+           --sandbox workspace --log-file /var/log/pii/pii.log
+pii health --json | jq '.config, .mounts'    # what it read, what it may touch
+pii sys reload                               # re-read the file, no restart
+\end{lstlisting}

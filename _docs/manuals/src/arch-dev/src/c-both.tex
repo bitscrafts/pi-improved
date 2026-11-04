@@ -1,0 +1,34 @@
+\documentclass[fontsize=10pt,twoside=false]{kaobook}
+\usepackage[english]{babel}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric, shapes.misc, fit, backgrounds}
+\tikzset{
+  box/.style={draw, rounded corners=2pt, fill=blue!4, align=center, inner sep=4pt, font=\footnotesize},
+  store/.style={draw, cylinder, shape border rotate=90, aspect=0.25, fill=orange!8, align=center, inner sep=3pt, font=\footnotesize},
+  model/.style={draw, rounded corners=8pt, fill=purple!8, align=center, inner sep=4pt, font=\footnotesize},
+  port/.style={font=\scriptsize\itshape, inner sep=1pt, fill=white},
+  flow/.style={-{Latex[length=2mm]}, thick},
+  soft/.style={-{Latex[length=2mm]}, thick, dashed, gray!70},
+}
+\begin{document}\mainmatter\chapter{p}
+\begin{figure}[h]
+	\centering
+	\begin{tikzpicture}[node distance=6mm and 10mm]
+		\node[box] (user) {operator\\or the queue};
+		\node[box, right=of user] (graph) {a graph\\\scriptsize nodes + ports};
+		\node[box, right=of graph] (engine) {the engine\\\scriptsize journal + scheduler};
+		\node[box, below=of engine] (stores) {stores\\\scriptsize runs · memory · lessons};
+		\node[model, right=of engine] (agents) {agents\\\scriptsize models · tools};
+		\node[box, below=of graph] (verdict) {a verdict\\\scriptsize done · unverified · refused};
+
+		\draw[flow] (user) -- (graph);
+		\draw[flow] (graph) -- (engine);
+		\draw[flow] (engine) -- (stores);
+		\draw[flow] (engine) -- (agents);
+		\draw[flow] (engine) |- (verdict);
+		\draw[soft] (stores.north) -- node[port]{replay} (engine.south);
+	\end{tikzpicture}
+	\caption{A run's shape. The arrow that matters is the dashed one: the stores can reconstruct
+	what the engine did, which is what makes a verdict checkable rather than asserted.}
+\end{figure}
+\end{document}

@@ -1,0 +1,699 @@
+\chapter{The graph library}
+
+\label{ch:graphs}
+
+A graph is the unit of work in pii. An administrator needs three things from this chapter:
+which graph to run for a job, what each graph will do to the machine, and how to read a run
+that did not do what was expected. Every graph below was read from its file in
+\texttt{graphs/}; where the generated page in \texttt{graphs/DOCS/} disagrees with the file,
+the file wins and the disagreement is stated.
+
+After the shape and the inventory, each graph gets one table with the same seven fields:
+purpose, nodes, ports, entry and exit, capabilities, when to run, and how it fails.
+
+\section{What a graph is, as an operator}
+
+A graph has an \emph{entry} (where a run starts), named \emph{ports} on every node (how a step
+reports its outcome), and --- if another graph may use it --- an \emph{exit}. It declares a
+set of \emph{capabilities}, and a node may hold only what its graph holds. A port is not a
+boolean: a judge has \texttt{ok}, \texttt{fail} and, in fail-expectation mode,
+\texttt{unrunnable}; a queue \texttt{select} has four outcomes.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=10mm and 14mm]
+  \node[b] (entry) {entry\\\scriptsize the node a run starts at};
+  \node[b, right=of entry] (work) {a node\\\scriptsize kind + configuration};
+  \node[b, right=of work] (two) {another node};
+  \node[s, below=of work] (store) {stores and journals};
+  \node[b, below=of entry] (caps) {caps\\\scriptsize the ceiling for every node inside};
+  \node[v, below=of two] (exit) {exit?};
+  \draw[f] (entry) -- node[p, above=2pt, midway]{ok} (work);
+  \draw[f] (work) -- node[p, above=2pt, midway]{ok} (two);
+  \draw[sf] (work) -- (store);
+  \draw[sf] (two) -- (store);
+  \draw[bk] (caps) -- (work);
+  \draw[f] (two) -- node[p, above=2pt, midway]{ok} (exit);
+\end{tikzpicture}}
+\captionof{figure}{The five things to look at in any graph file: where it starts, what each node does, which ports it can leave by, what the graph may touch, and whether it declares an exit.}
+\end{minipage}
+\end{center}
+
+A graph without an exit is a \emph{run}, not a component: \texttt{docs} can be called
+because it declares \texttt{exit = "docs"}, and \texttt{night} is callable because it declares
+\texttt{exit = "report"}.
+
+\section{The inventory}
+
+Thirty-one files live under \texttt{graphs/}. Twenty-seven have a generated page in
+\texttt{graphs/DOCS/}; the four that do not (\texttt{sdd}, \texttt{tdd}, \texttt{self-improve},
+\texttt{doc-code}) are the most recently composed and the ones an operator is most likely to
+run.
+
+{\footnotesize
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.25\textwidth}>{\raggedright\arraybackslash}p{0.07\textwidth}>{\raggedright\arraybackslash}p{0.16\textwidth}>{\raggedright\arraybackslash}p{0.28\textwidth}@{}}
+  \toprule
+  \textbf{Graph} & \textbf{Nodes} & \textbf{Entry $\to$ exit} & \textbf{Capabilities} \\
+  \midrule
+  \endhead
+  \texttt{night} & 4 & \texttt{tick} $\to$ \texttt{report} & spawn, proc, post, fs\_read, fs\_write \\
+  \texttt{sdd} & 8 & \texttt{contract} $\to$ \texttt{done} & spawn, proc, fs\_read, fs\_write \\
+  \texttt{tdd} & 9 & \texttt{write\_test} $\to$ \texttt{green} & spawn, proc, fs\_read, fs\_write \\
+  \texttt{queue} & 3 & \texttt{select} $\to$ \texttt{record} & spawn, proc, fs\_read, fs\_write \\
+  \texttt{spec} & 7 & \texttt{code} $\to$ \texttt{done} & spawn, proc, fs\_read, fs\_write \\
+  \texttt{docs} & 1 & \texttt{docs} $\to$ \texttt{docs} & spawn, proc \\
+  \texttt{doc-code} & 8 & \texttt{inventory} $\to$ \texttt{done} & spawn, proc, fs\_read, fs\_write \\
+  \texttt{self-improve} & 6 & \texttt{case} $\to$ \texttt{report} & spawn, proc, fs\_read, fs\_write \\
+  \texttt{preflight} & 3 & \texttt{verify} $\to$ --- & proc \\
+  \texttt{claude-probe} & 3 & \texttt{code} $\to$ --- & spawn, proc \\
+  \texttt{coder-demo} & 3 & \texttt{code} $\to$ --- & spawn, proc \\
+  \texttt{coder-podman} & 3 & \texttt{code} $\to$ --- & spawn, proc \\
+  \texttt{coder-selffix} & 3 & \texttt{code} $\to$ --- & spawn, proc \\
+  \texttt{code-index} & 4 & --- $\to$ --- & --- (does not load) \\
+  \texttt{intervention-report} & 6 & --- $\to$ --- & --- (does not load) \\
+  \texttt{digest-now} & 5 & \texttt{devices} $\to$ --- & memory\_read, post \\
+  \texttt{discord-digest} & 6 & \texttt{tick} $\to$ --- & memory\_read, post \\
+  \texttt{discord-triage} & 3 & \texttt{classify} $\to$ --- & post \\
+  \texttt{podman-guard} & 2 & --- $\to$ --- & --- (fragment) \\
+  \texttt{starter/assistant} & 4 & \texttt{agent} $\to$ --- & fs\_read, fs\_write, proc, net \\
+  \texttt{starter/boss-watch} & 5 & \texttt{tick} $\to$ --- & proc \\
+  \texttt{starter/consolidate} & 3 & \texttt{tick} $\to$ --- & --- \\
+  \texttt{starter/crash} & 1 & \texttt{boom} $\to$ --- & --- \\
+  \texttt{starter/failover} & 10 & \texttt{primary} $\to$ --- & fs\_read, fs\_write, proc \\
+  \texttt{starter/heal-fix} & 11 & \texttt{probe} $\to$ --- & fs\_read, fs\_write, proc \\
+  \texttt{starter/heal-watch} & 4 & \texttt{tick} $\to$ --- & proc \\
+  \texttt{starter/react} & 3 & \texttt{agent} $\to$ --- & fs\_read, fs\_write, proc \\
+  \texttt{starter/slow} & 2 & \texttt{wait} $\to$ --- & --- \\
+  \texttt{starter/soak} & 1 & \texttt{step} $\to$ --- & --- \\
+  \texttt{starter/soak\_cron} & 2 & \texttt{tick} $\to$ --- & --- \\
+  \texttt{starter/verify-fix} & 5 & \texttt{fix} $\to$ --- & fs\_read, fs\_write, proc \\
+  \bottomrule
+\end{longtable}
+}
+
+Two files in that list do not load in this build, and that belongs at the top rather than in
+a footnote. \texttt{code-index.toml} and
+\texttt{intervention-report.toml} put their name in a \texttt{[graph]} table and express
+their edges as \texttt{depends\_on} on each node; the loader reads a top-level \texttt{name},
+an \texttt{entry}, and \texttt{[[edge]]} triples, so it refuses both with
+\texttt{missing 'name'}. They are design records, not runnable graphs, and
+\texttt{pii graph lint} says so in one line.
+
+Three more files fail validation rather than loading: \texttt{tdd} and everything spliced from
+it. Section~\ref{sec:lint-status} has the measured status of all thirty-one files.
+
+The generated pages are not stale by accident: they describe the \emph{installed} copies.
+\texttt{pii graph list} compares each installed file with the repository copy and prints the
+verdict, and on the machine this chapter was written on four graphs were \texttt{DRIFT}
+(\texttt{queue}, \texttt{spec}, \texttt{coder-selffix}, \texttt{discord-digest}). The installed
+\texttt{queue.toml} was still the four-node \texttt{dispatch}/\texttt{judge} version dated
+2026-11-03, while the repository held the three-node version that calls \texttt{spec}, dated
+2026-11-04 --- which is why \texttt{DOCS/queue.md} lists four nodes.
+\texttt{DOCS/claude-probe.md} records a budget of zero where the file says
+\texttt{max\_budget\_usd = 0.30}. When a page and a file disagree, ask which file the daemon
+loads: the installed one, and \texttt{graph list} is how you see it.
+
+\section{The lint status of the library}
+
+\label{sec:lint-status}
+
+\texttt{pii graph lint} is the check that decides whether a file can run at all, so it was run
+against every file. The result is not what the file list suggests.
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}p{0.16\textwidth}p{0.10\textwidth}p{0.62\textwidth}@{}}
+  \toprule
+  \textbf{Exit} & \textbf{Files} & \textbf{What it means} \\
+  \midrule
+  0 & 26 & loads and validates; warnings only (V5: a declared port with no edge ---
+    normal for a terminal node, and the thing to read for a node in the middle) \\
+  3 & 3 & \texttt{tdd}, \texttt{sdd}, \texttt{night}: \texttt{V9: node '<n>' uses a
+    multi-arm join with 1 inbound data edges}, once per single-armed \texttt{refuse} node \\
+  2 & 2 & \texttt{code-index}, \texttt{intervention-report}: \texttt{invalid: missing 'name'} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+The three V9 failures are one defect seen three times. Each of \texttt{tdd}'s refusal
+terminals (\texttt{not-red}, \texttt{unrunnable}, \texttt{still-red}) declares
+\texttt{join = "any"} and receives exactly one edge; the validator treats a multi-arm join
+with one arm as a typo, so it refuses the graph. \texttt{sdd} inherits the failure because it
+splices \texttt{tdd}, and \texttt{night} inherits it because it splices \texttt{sdd} --- which
+is why the failure is reported with namespaced ids such as \texttt{sdd\_\_tdd\_\_not-red}.
+
+The practical consequence is stark and belongs at the top of this chapter rather than in a
+footnote: \emph{the TDD and SDD flows do not lint in this build, so they cannot start}. What
+does run today is \texttt{queue}, \texttt{spec} and \texttt{docs} (the row lane),
+\texttt{doc-code}, \texttt{self-improve}, \texttt{preflight} and the samples. An operator who
+schedules \texttt{night} will see it refuse at load, with the V9 lines printed to stderr and
+exit 3.
+
+\begin{lstlisting}[language=bash]
+pii graph lint graphs/tdd.toml     # 3 x V9, exit 3
+pii graph lint graphs/sdd.toml     # the same nodes, namespaced tdd__not-red
+pii graph lint graphs/night.toml   # the same nodes, namespaced sdd__tdd__not-red
+pii graph lint graphs/queue.toml   # exit 0, warnings about record's unused ports
+\end{lstlisting}
+
+\section{How the pieces compose}
+
+Only a few \texttt{call} nodes exist, and each one is a decision that a callee is the right
+owner of a step.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=12mm and 14mm]
+  \node[b] (night) at (-3.6,1.2) {\texttt{night}\\\scriptsize clock};
+  \node[b] (sdd) at (-1.0,1.2) {\texttt{sdd}\\\scriptsize process};
+  \node[b] (tdd) at (1.8,1.2) {\texttt{tdd}\\\scriptsize loop};
+  \node[b] (self) at (-3.6,-1.4) {\texttt{self-improve}};
+  \node[b] (queue) at (-1.0,-1.4) {\texttt{queue}\\\scriptsize one row};
+  \node[b] (spec) at (1.8,-1.4) {\texttt{spec}\\\scriptsize one spec};
+  \node[b] (docs) at (4.4,-3.4) {\texttt{docs}\\\scriptsize one coder};
+  \node[b] (code) at (1.8,-3.4) {\texttt{doc-code}};
+  \draw[f] (night) -- node[p, above=2pt, midway]{call} (sdd);
+  \draw[f] (sdd) -- node[p, above=2pt, midway]{call} (tdd);
+  \draw[f] (self) -- node[p, above=2pt, midway]{call} (queue);
+  \draw[f] (queue) -- node[p, above=2pt, midway]{call} (spec);
+  \draw[f] (spec) -- node[p, above=2pt, midway, sloped]{call} (docs);
+  \draw[f] (code) -- node[p, above=2pt, midway]{call} (docs);
+  \draw[f] (sdd.south) -- ++(0,-0.5) -| node[p, above=2pt, pos=0.55]{call} (docs.north);
+\end{tikzpicture}}
+\captionof{figure}{Every \texttt{call} in the library. Each arrow is pinned by sha256, so a change to the callee refuses to load until someone re-pins it deliberately.}
+\end{minipage}
+\end{center}
+
+The pinned digest is what makes composition safe rather than convenient: \texttt{sdd} pins
+\texttt{tdd} and \texttt{docs}, \texttt{queue} pins \texttt{spec}, and \texttt{night} pins
+\texttt{sdd}. Edit \texttt{docs.toml} and every host that calls it refuses to load; that
+refusal is the review gate.
+
+\section{The operator flows}
+
+\subsection*{\texttt{night} --- the clock}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{0.92\linewidth}{!}{%
+\begin{tikzpicture}[node distance=10mm and 16mm]
+  \node[b] (tick) {\texttt{tick}\\\scriptsize timer};
+  \node[b, right=of tick] (sdd) {\texttt{sdd}\\\scriptsize call, pinned};
+  \node[b, right=of sdd] (review) {\texttt{review}\\\scriptsize transform};
+  \node[b, right=of review] (report) {\texttt{report}\\\scriptsize post, the exit};
+  \draw[f] (tick) -- node[p, above=2pt, midway]{fired} (sdd);
+  \draw[f] (sdd) -- node[p, above=2pt, midway]{ok} (review);
+  \draw[f] (review) -- node[p, above=2pt, midway]{ok} (report);
+\end{tikzpicture}}
+\captionof{figure}{\texttt{night} adds only two things to the work: time, and telling a human. Everything between is a call.}
+\end{minipage}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & run the day's work on a clock and report it; it implements nothing itself \\
+  nodes & \texttt{tick} timer; \texttt{sdd} call(\texttt{sdd}); \texttt{review} transform;
+    \texttt{report} post \\
+  ports & \texttt{tick.fired}, \texttt{sdd.ok}, \texttt{review.ok}; \texttt{report} is terminal \\
+  entry/exit, caps & \texttt{tick} $\to$ \texttt{report}; \texttt{max\_wall\_ms = 7200000}; spawn, proc, post, fs\_read, fs\_write \\
+  when & a host that should work unattended overnight; the run input needs
+    \texttt{workdir} and \texttt{to} \\
+  lint & exit 3: the spliced \texttt{tdd} refuse nodes fail V9, so the graph does not load
+    in this build \\
+  fails & a changed \texttt{sdd} refuses to load (pin); a refusal inside \texttt{sdd} has no
+    edge here, so the night stops silently; a missing \texttt{to} fails at \texttt{report} \\
+\end{tabular}
+\end{center}
+
+The silent stop is the one to watch for, and it is a property of the splice rather than of
+\texttt{night}: \texttt{sdd}'s \texttt{unverified} and \texttt{refused} nodes are
+\texttt{refuse} nodes, which declare no \texttt{ok} port, so a refused implementation never
+returns a port the host can route. \texttt{queue} avoids this by wiring
+\texttt{implement.unverified} and \texttt{implement.refused} by name; \texttt{night} does not
+wire them, because until recently the callee had no such ports to name.
+
+\subsection*{\texttt{queue} and \texttt{spec} --- one row, one implementation}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=12mm and 16mm]
+  \node[b] (select) at (0,0) {\texttt{select}\\\scriptsize claims a row};
+  \node[b] (impl) at (3.4,0) {\texttt{implement}\\\scriptsize call \texttt{spec}};
+  \node[b] (record) at (6.8,0) {\texttt{record}\\\scriptsize the exit};
+  \node[b] (running) at (0,2) {\texttt{running}\\\scriptsize declared, not wired};
+  \node[b] (park) at (3.4,-2.1) {\texttt{record}\\\scriptsize parked};
+  \node[b] (none) at (0,-2.1) {\texttt{record}\\\scriptsize empty / blocked};
+  \draw[f] (select) -- node[p, above=2pt, midway]{ok} (impl);
+  \draw[f] (impl) -- node[p, above=2pt, midway]{ok} (record);
+  \draw[bk] (impl) -- node[p, right=2pt, midway]{refused} (park);
+  \draw[bk] (impl.south) to[out=250,in=110] node[p, left=2pt, midway]{unverified} (park.north);
+  \draw[f] (select) -- node[p, left=2pt, midway]{empty} (none);
+  \draw[sf] (select) -- node[p, left=2pt, midway]{running} (running);
+\end{tikzpicture}}
+\captionof{figure}{\texttt{queue} has three nodes: a claim, a call, a record. The grey port is declared by the node and has no edge, which is why a contested claim stops the run.}
+\end{minipage}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & implement one queue row: claim it, call the spec graph with the row's spec, record
+    the verdict \\
+  nodes & \texttt{select} select; \texttt{implement} call(\texttt{spec}, pinned); \texttt{record} record \\
+  ports & \texttt{select.ok}, \texttt{select.empty}, \texttt{select.blocked};
+    \texttt{implement.ok}, \texttt{.unverified}, \texttt{.refused}; \texttt{record.ok} \\
+  entry/exit, caps & \texttt{select} $\to$ \texttt{record}; \texttt{max\_wall\_ms = 6000000}; spawn, proc, fs\_read, fs\_write \\
+  when & an operator or \texttt{night} has rows to work; run input carries \texttt{workdir}
+    and \texttt{base} \\
+  fails & a \texttt{running} claim (another run holds the row) has no edge, so the run ends
+    without recording; \texttt{empty} and \texttt{blocked} reach \texttt{record} and write
+    nothing; a refusal is recorded as \texttt{parked}, not as a failure \\
+\end{tabular}
+\end{center}
+
+\texttt{record} writes to the queue store and to memory: the item's status becomes
+\texttt{done} when the arriving value is the literal \texttt{done} or a verdict of
+\texttt{passed}, and \texttt{parked} with the failing criterion otherwise. It also writes one
+memory document per row, which is how a later digest knows what was implemented.
+
+\subsection*{\texttt{tdd} --- a loop with three ways to prove nothing}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=12mm and 15mm]
+  \node[b] (write) {\texttt{write\_test}\\\scriptsize coder};
+  \node[v, right=of write] (red) {red?\\\scriptsize expect=fail};
+  \node[b, right=of red] (impl) {\texttt{implement}\\\scriptsize coder};
+  \node[v, right=of impl] (green) {green?};
+  \node[b, below=of green] (still) {\texttt{still-red}};
+  \node[b, below=of red] (notred) {\texttt{not-red}};
+  \node[b, below=of write] (unrun) {\texttt{unrunnable}};
+  \draw[f] (write) -- node[p, above=2pt, midway]{ok} (red);
+  \draw[f] (red) -- node[p, above=2pt, midway]{ok} (impl);
+  \draw[f] (impl) -- node[p, above=2pt, midway]{ok} (green);
+  \draw[bk] (red) -- node[p, above=2pt, midway]{fail} (notred);
+  \draw[bk] (red) -- node[p, left=2pt, midway]{unrunnable} (unrun);
+  \draw[bk] (green) -- node[p, right=2pt, midway]{fail} (still);
+\end{tikzpicture}}
+\captionof{figure}{The RED proof is the whole point: a test that passes before the code exists leaves by \texttt{not-red}, and a criterion that cannot run leaves by \texttt{unrunnable} rather than counting as a red.}
+\end{minipage}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & one test-driven iteration: write the tests, prove them red, implement, prove them
+    green \\
+  nodes & \texttt{write\_test} coder; \texttt{red} judge(expect fail); \texttt{implement}
+    coder; \texttt{green} judge; \texttt{done}; and four \texttt{refuse} terminals \\
+  ports & \texttt{ok}/\texttt{err} on the coders; \texttt{ok}/\texttt{fail}/\texttt{unrunnable}
+    on \texttt{red}; \texttt{ok}/\texttt{fail} on \texttt{green} \\
+  entry/exit & \texttt{write\_test} $\to$ \texttt{green}; \texttt{max\_wall\_ms = 4200000};
+    coders at \texttt{timeout\_ms = 1800000} \\
+  caps & spawn, proc, fs\_read, fs\_write \\
+  when & a spec whose exit criteria name behaviours; it is the loop \texttt{sdd} calls \\
+  lint & exit 3: \texttt{not-red}, \texttt{unrunnable} and \texttt{still-red} each declare
+    \texttt{join = "any"} with one inbound edge (V9), so the graph does not load \\
+  fails & \texttt{not-red} (tests pass already), \texttt{unrunnable} (a criterion cannot
+    run), \texttt{still-red} (the code did not make it pass), \texttt{refused} (the agent
+    failed) \\
+\end{tabular}
+\end{center}
+
+Only one of the four terminals (\texttt{still-red}) means the code was wrong.
+\texttt{not-red} means the test was worthless --- a defect in the spec or in the test, not in
+the implementation.
+
+\subsection*{\texttt{sdd} --- the process around the loop}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & implement one spec under a contract: prove the criteria fail first, run
+    \texttt{tdd}, verify, document, re-verify \\
+  nodes & \texttt{contract} judge(expect fail); \texttt{tdd} call; \texttt{verify} judge;
+    \texttt{docs} call; \texttt{reverify} judge; \texttt{done}; \texttt{unverified},
+    \texttt{refused} \\
+  ports & \texttt{contract.ok/fail/unrunnable}; \texttt{tdd.ok/fail}; \texttt{verify.ok/fail};
+    \texttt{docs.ok/err}; \texttt{reverify.ok/fail} \\
+  entry/exit & \texttt{contract} $\to$ \texttt{done}; needs \texttt{agent}, \texttt{model},
+    \texttt{provider}, \texttt{spec}, \texttt{workdir}, \texttt{base}, \texttt{docs\_brief} \\
+  caps & spawn, proc, fs\_read, fs\_write \\
+  when & you have a spec and want the whole cycle, including documentation, in one run \\
+  lint & exit 3: the spliced \texttt{tdd} nodes fail V9 under the \texttt{tdd\_\_} prefix \\
+  fails & contract \texttt{fail} means the criteria already pass, which is a spec that proves
+    nothing; docs that break the criteria end at \texttt{unverified}; a refusal is not
+    returned to a host \\
+\end{tabular}
+\end{center}
+
+\subsection*{\texttt{spec} --- one spec, by hand}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & implement one spec and document it, with three honest verdicts \\
+  nodes & \texttt{code} coder; \texttt{verify} judge; \texttt{docs} call; \texttt{reverify}
+    judge; \texttt{done}; \texttt{unverified}; \texttt{refused} \\
+  ports & \texttt{code.ok/err}; \texttt{verify.ok/fail}; \texttt{docs.ok/err};
+    \texttt{reverify.ok/fail} \\
+  entry/exit & \texttt{code} $\to$ \texttt{done}; \texttt{max\_micro\_usd = 1000000},
+    \texttt{max\_wall\_ms = 6000000} \\
+  caps & spawn, proc, fs\_read, fs\_write \\
+  when & you have a spec and want code plus docs without the TDD contract step \\
+  fails & \texttt{unverified} is the honest middle: code exists and the criteria fail;
+    \texttt{refused} means the coder or the docs call failed \\
+\end{tabular}
+\end{center}
+
+\subsection*{\texttt{docs} and \texttt{doc-code} --- documentation, called and checked}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & write documentation for whatever brief the host passes; no inventory, no criteria,
+    no opinion about truth \\
+  nodes & \texttt{docs} coder (the entry and the exit) \\
+  ports & \texttt{ok} on success; the coder's \texttt{err} otherwise \\
+  entry/exit & \texttt{docs} $\to$ \texttt{docs}; needs \texttt{agent}, \texttt{model},
+    \texttt{provider}, \texttt{spec}, \texttt{workdir}, \texttt{brief};
+    \texttt{timeout\_ms = 1200000} \\
+  caps & spawn, proc \\
+  when & never directly: it is called by \texttt{spec}, \texttt{sdd} and \texttt{doc-code} \\
+  fails & called without a \texttt{brief} it has nothing to write; it cannot tell whether the
+    document is true, which is why \texttt{doc-code} exists \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & document the code itself: list the modules with no \texttt{//!} header, write for
+    them, then prove every path and symbol the document names exists \\
+  nodes & \texttt{inventory} tool; \texttt{select} route; \texttt{nothing-to-do} transform;
+    \texttt{write} call(\texttt{docs}); \texttt{verify} tool; \texttt{gate} route;
+    \texttt{done}; \texttt{unverified} \\
+  ports & \texttt{select.nothing-to-do/write}; \texttt{gate.pass/fail}; \texttt{ok}/\texttt{err}
+    on the tools and the call \\
+  entry/exit, caps & \texttt{inventory} $\to$ \texttt{done}; \texttt{max\_wall\_ms = 1800000}; spawn, proc, fs\_read, fs\_write \\
+  when & a tree with undocumented modules; a documented tree ends at
+    \texttt{nothing-to-do} and writes nothing \\
+  fails & an inventory that cannot run, a docs call that fails, or a document naming a path
+    that does not exist all end at \texttt{unverified} \\
+\end{tabular}
+\end{center}
+
+\subsection*{\texttt{self-improve} --- a finding becomes work}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=12mm and 15mm]
+  \node[b] (case) {\texttt{case}\\\scriptsize transform};
+  \node[m, right=of case] (plan) {\texttt{plan}\\\scriptsize the planner writes a spec};
+  \node[b, right=of plan] (enq) {\texttt{enqueue}};
+  \node[b, right=of enq] (queue) {\texttt{queue}\\\scriptsize call, pinned};
+  \node[b, below=of queue] (report) {\texttt{report}\\\scriptsize the exit};
+  \node[b, below=of enq] (refused) {\texttt{refused}};
+  \draw[f] (case) -- node[p, above=2pt, midway]{ok} (plan);
+  \draw[f] (plan) -- node[p, above=2pt, midway]{ok} (enq);
+  \draw[f] (enq) -- node[p, above=2pt, midway]{ok} (queue);
+  \draw[f] (queue) -- node[p, right=2pt, midway]{ok} (report);
+  \draw[bk] (plan) -- node[p, right=2pt, midway]{err} (refused);
+  \draw[bk] (enq) -- node[p, above=2pt, midway]{err} (refused);
+\end{tikzpicture}}
+\captionof{figure}{A finding becomes one spec, the spec becomes one row, and the queue implements it. The planner and the implementer are different models on purpose.}
+\end{minipage}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & turn a finding into a spec, admit it to the queue, and run the row \\
+  nodes & \texttt{case} transform; \texttt{plan} plan(model \texttt{glm-5.3});
+    \texttt{enqueue}; \texttt{queue} call(pinned); \texttt{report} transform;
+    \texttt{refused} transform \\
+  ports & \texttt{ok}/\texttt{err} on \texttt{plan} and \texttt{enqueue};
+    \texttt{queue.ok} only is wired \\
+  entry/exit, caps & \texttt{case} $\to$ \texttt{report}; \texttt{max\_wall\_ms = 6300000}; spawn, proc, fs\_read, fs\_write \\
+  when & you have a finding and no spec; the input carries \texttt{finding},
+    \texttt{workdir}, \texttt{base} \\
+  fails & a spec that fails the house shape is refused at \texttt{enqueue}; the queue's
+    \texttt{unverified}/\texttt{refused} ports are not wired, so a failed implementation
+    stops the run at the call; the queue claims the next pending row, which is the new one
+    only when nothing older waits \\
+\end{tabular}
+\end{center}
+
+\section{The coder samples}
+
+These four exist to prove one thing each, and none of them is a production lane.
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & probe a Claude login through pii in one hard-capped turn; the verdict is the exit
+    code \\
+  nodes & \texttt{code} coder(agent \texttt{claude}, model \texttt{haiku});
+    \texttt{done}; \texttt{refused} \\
+  ports & \texttt{ok} $\to$ \texttt{done}; \texttt{err} $\to$ \texttt{refused} \\
+  entry/exit & \texttt{code} $\to$ ---; \texttt{max\_budget\_usd = 0.30},
+    \texttt{timeout\_ms = 150000} \\
+  caps & spawn, proc \\
+  when & before trusting a lane that uses Claude; it costs one turn \\
+  fails & a missing login file (the credential arrives through \texttt{HOME}, never the
+    graph); the scratch workdir must exist; 150 seconds is the whole budget \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & the smallest working coder: one coder node, one verdict \\
+  nodes & \texttt{code} coder(agent \texttt{pi}, model \texttt{deepseek-v4-flash});
+    \texttt{done}; \texttt{refused} \\
+  ports & \texttt{code.ok/err} \\
+  entry/exit & \texttt{code} $\to$ ---; \texttt{max\_wall\_ms = 2100000},
+    \texttt{timeout\_ms = 1800000} \\
+  caps & spawn, proc \\
+  when & as a template for a new coder graph \\
+  fails & the model id is dead: no provider serves \texttt{deepseek-v4-flash}, so the run
+    dies at spawn; the workdir is a literal path, so it does not travel \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & the same coder inside a container, with \texttt{/tmp} as its workdir \\
+  nodes & \texttt{code} coder(agent \texttt{pi}, model \texttt{deepseek-v4-flash});
+    \texttt{done}; \texttt{refused} \\
+  ports & \texttt{code.ok/err} \\
+  entry/exit, caps & \texttt{code} $\to$ ---; \texttt{max\_wall\_ms = 2100000};\newline caps: spawn, proc \\
+  when & as a template for the podman lane; the fragment it was meant to attach cannot be
+    woven into it \\
+  fails & the same dead model id; a \texttt{/tmp} workdir outside the run's write scope is
+    refused by the sandbox rather than silently ignored \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & a coder that fixes its own spec, on the current model \\
+  nodes & \texttt{code} coder(agent \texttt{pi}, model
+    \texttt{deepseek-v4.1-flash:cloud}); \texttt{done}; \texttt{refused} \\
+  ports & \texttt{code.ok/err} \\
+  entry/exit, caps & \texttt{code} $\to$ ---; \texttt{max\_wall\_ms = 2100000};\newline caps: spawn, proc \\
+  when & a self-fix lane that must run without a human writing the spec \\
+  fails & it once declared \texttt{name = "coder-demo"} and collided with that graph in the
+    installed directory; the name is now its own, and a collision is the failure to check
+    after copying a graph \\
+\end{tabular}
+\end{center}
+
+\section{The awareness graphs}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & build the digest on demand: two recalls and a post, with the timer removed \\
+  nodes & \texttt{devices} recall; \texttt{lessons} recall; \texttt{digest} post;
+    \texttt{refused\_devices}, \texttt{refused\_lessons} transforms \\
+  ports & \texttt{ok}/\texttt{err} on both recalls \\
+  entry/exit & \texttt{devices} $\to$ ---; caps memory\_read, post \\
+  when & a person asks for the digest now; the scheduled version cannot answer, because its
+    entry is a timer and a run of it reports \enquote{suspended, in\_ms $\approx$ N} \\
+  fails & a recall that errors ends at its own refusal terminal; a missing
+    \texttt{to} in the input fails at the post \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & the scheduled digest: recall devices, recall lessons, post into a thread \\
+  nodes & \texttt{tick} timer; \texttt{devices}; \texttt{lessons}; \texttt{digest} post; two
+    refusal terminals \\
+  ports & \texttt{tick.fired}; \texttt{ok}/\texttt{err} on the recalls \\
+  entry/exit & \texttt{tick} $\to$ ---; caps memory\_read, post; \texttt{limit = 50} \\
+  when & a channel wants a recurring digest; the input carries the thread id \\
+  fails & asking it to run \enquote{now} suspends it by construction; a channel that is not
+    configured fails at the post \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & triage one inbound Discord message with rules and no model \\
+  nodes & \texttt{classify}; \texttt{reply} post; \texttt{done} \\
+  ports & \texttt{classify.ok} $\to$ \texttt{reply}; \texttt{reply.ok} $\to$ \texttt{done} \\
+  entry/exit & \texttt{classify} $\to$ ---; caps post only \\
+  when & a channel ingress starts it per message; input carries text, chat, user, channel \\
+  fails & an unrecognised text is classified \texttt{chat}; a reply goes to
+    \texttt{\$.input.chat}, so a message without a chat id cannot be answered \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & \texttt{code-index}: index the repository into memory on a schedule.
+    \texttt{intervention-report}: turn an intervention's events into a dated report, gate it,
+    post it, remember it \\
+  nodes & \texttt{code-index}: \texttt{start} timer, \texttt{index} worker, \texttt{gate},
+    \texttt{record} memory. \texttt{intervention-report}: \texttt{start} timer,
+    \texttt{evidence} memory, \texttt{write} worker, \texttt{check} gate, \texttt{post},
+    \texttt{record} memory \\
+  ports & none readable: both express edges as \texttt{depends\_on} node fields, which this
+    loader does not read \\
+  entry/exit, caps & none; both put \texttt{name} in a \texttt{[graph]} table, so neither loads;\newline caps: none declared \\
+  when & never in this build: \texttt{pii graph lint} refuses both with
+    \texttt{invalid: missing 'name'} (exit 2) \\
+  fails & at load, before anything runs. \texttt{code-index}'s own header records why it is
+    not ready: the index verb it needs was a script dependency the production rule forbids \\
+\end{tabular}
+\end{center}
+
+\section{Preflight and the fragment}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & prove the exit criteria are runnable before any agent is spawned \\
+  nodes & \texttt{verify} judge; \texttt{done}; \texttt{refuse} \\
+  ports & \texttt{verify.ok} $\to$ \texttt{done}; \texttt{verify.fail} $\to$ \texttt{refuse} \\
+  entry/exit & \texttt{verify} $\to$ ---; caps proc only; \texttt{max\_wall\_ms = 600000} \\
+  when & the lane runs it through the daemon before the real run; the judge's sandbox is the
+    real judge's, so a criterion that cannot write the scratch refuses here \\
+  fails & a criterion that cannot run ends at \texttt{refuse}, having spent no agent and no
+    model budget \\
+\end{tabular}
+\end{center}
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.75\textwidth}@{}}
+  purpose & a blocking guard: refuse a run whose input asks for podman, pass every other run \\
+  nodes & \texttt{check} route; \texttt{refuse} refuse \\
+  ports & \texttt{check.refuse} $\to$ \texttt{refuse}; every other input falls through \\
+  entry/exit, caps & none: it is a fragment, attached by name with a sha256 pin;\newline caps: none of its own; it inherits the host's \\
+  when & attach it to a host at a pre surface (\texttt{run.start} or \texttt{node.before}),
+    which is allowed because it may block \\
+  fails & attaching it by name without a pin installs whatever the file says today; the
+    weave refuses an unwoven attach rather than running the host without its guard \\
+\end{tabular}
+\end{center}
+
+\section{The starter graphs}
+
+Twelve samples under \texttt{graphs/starter/}: templates and test seams, not production
+lanes. Two exist only to break something on purpose.
+
+{\footnotesize
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.25\textwidth}>{\raggedright\arraybackslash}p{0.20\textwidth}>{\raggedright\arraybackslash}p{0.30\textwidth}@{}}
+  \toprule
+  \textbf{Graph} & \textbf{Nodes and ports} & \textbf{Entry, caps} & \textbf{When, and how it fails} \\
+  \midrule
+  \endhead
+  \texttt{assistant} & \texttt{agent}; \texttt{reply}; \texttt{fail\_err};
+    \texttt{fail\_budget}. Ports \texttt{ok}, \texttt{err}, \texttt{budget} & \texttt{agent};
+    fs\_read, fs\_write, proc, net & an assistant loop with a turn cap (4) and a wall of
+    600000 ms. A budget exit is a separate terminal from an error. \\
+  \texttt{boss-watch} & \texttt{tick}; \texttt{check} heal\_detect; \texttt{cyc};
+    \texttt{escalate} gate; \texttt{done}. Ports \texttt{ok}, \texttt{flake},
+    \texttt{inconclusive}, \texttt{detected} & \texttt{tick}; proc & watches a boss process
+    every 30 minutes. A detected failure suspends at the gate until a human decides; there is
+    no \texttt{fs\_write} anywhere in it. \\
+  \texttt{consolidate} & \texttt{tick}; \texttt{run} memory; \texttt{done}. Port
+    \texttt{fired}, \texttt{ok} & \texttt{tick}; none & a scheduled consolidation. It has no
+    error edge, so a failing memory node ends the run rather than routing it. \\
+  \texttt{crash} & \texttt{boom} debug\_crash. No ports & \texttt{boom}; none & deliberately
+    crashes the daemon to exercise the panic hook. Never install it on a host you care about. \\
+  \texttt{failover} & \texttt{primary}, \texttt{secondary} agents; two routes; retry and
+    compress transforms; \texttt{exhausted}; \texttt{done} & \texttt{primary}; fs\_read,
+    fs\_write, proc & a model-failover ladder. \texttt{compress} and \texttt{exhausted} are
+    deliberate dead ends: retrying cannot fix a payload that is too large. \\
+  \texttt{heal-fix} & \texttt{probe}; \texttt{route\_probe}; \texttt{unexpected\_ok};
+    \texttt{fix} agent; \texttt{retest}; \texttt{route\_retest}; \texttt{retry};
+    \texttt{summarize}; \texttt{record\_fixed}; \texttt{escalate}; \texttt{done} &
+    \texttt{probe}; fs\_read, fs\_write, proc & localise, patch, validate, escalate, in a
+    disposable worktree. The fix agent has file tools only, no shell; \texttt{bash} runs only
+    in \texttt{tool} nodes. \\
+  \texttt{heal-watch} & \texttt{tick}; \texttt{check} heal\_detect; \texttt{escalate} gate;
+    \texttt{done}. Ports \texttt{ok}, \texttt{flake}, \texttt{detected} & \texttt{tick};
+    proc & runs the quality gate every 30 minutes, writes one ledger row for a reproducible
+    failure, and suspends for acknowledgement. Read-only detection. \\
+  \texttt{react} & \texttt{agent}; \texttt{done}; \texttt{fail} & \texttt{agent}; fs\_read,
+    fs\_write, proc & react to one signal with 24 turns and compaction at 24k tokens. Both
+    \texttt{err} and \texttt{budget} end at \texttt{fail}. \\
+  \texttt{slow} & \texttt{wait} timer; \texttt{done} & \texttt{wait}; none & a 30-second wait,
+    used to have a run in flight at SIGTERM. Not a workload. \\
+  \texttt{soak} & \texttt{step} transform & \texttt{step}; none & one soak step, bounded to
+    100 steps and 30 seconds. The harness runs many of them. \\
+  \texttt{soak\_cron} & \texttt{tick}; \texttt{done} & \texttt{tick}; none & the same soak on
+    a timer, bounded to 600000 ms. \\
+  \texttt{verify-fix} & \texttt{fix} agent; \texttt{test} tool; \texttt{gate} route;
+    \texttt{retry}; \texttt{done}. Ports \texttt{pass}, \texttt{fail} & \texttt{fix};
+    fs\_read, fs\_write, proc & fix then verify, looping at most 3 times. A \texttt{fail}
+    that keeps failing is a run that ends at the budget, not at a verdict. \\
+  \bottomrule
+\end{longtable}
+}
+
+\section{What the graphs can do to the machine}
+
+The ladder is checked at load time: this is the set of refusals an author will meet.
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.62\textwidth}@{}}
+  \toprule
+  \textbf{Capability} & \textbf{What it allows, and the refusal when it is missing} \\
+  \midrule
+  \endhead
+  \texttt{fs\_read} & read the working tree \\
+  \texttt{fs\_write} & modify the working tree. A coder without it stops and reports that no
+    write tool is available; measured 2026-11-03, it did not degrade silently. \\
+  \texttt{proc} & run a command. This is what lets a judge execute exit criteria, and what a
+    \texttt{judge} node requires. \\
+  \texttt{spawn} & start an agent process; every model call needs it \\
+  \texttt{post} & send a message to a human; \texttt{night} and the report graphs hold it \\
+  \texttt{memory\_read} & read the memory store; the digest graphs hold it \\
+  \texttt{net} & reach the network under \texttt{[net] grants}; only the assistant sample
+    holds it \\
+  \bottomrule
+\end{longtable}
+
+Two refusals are worth being able to read at sight. \texttt{graph.call.widen} means a call
+needs a capability its host does not hold --- the fix is in the host's \texttt{caps}, not in
+the callee. And the lint code \texttt{V2} means a node needs a capability the graph does not
+declare; the message names both the node and the capability, and it is the most common error
+in a new graph.
+
+\section{Reading a graph's failure}
+
+A run that ends \emph{without} reaching a terminal node has not failed loudly: it took a port
+with no edge, or it was spliced into a host that does not wire its refusals. The trace answers
+that in one query --- \texttt{-{}-terminal} names where it stopped, \texttt{-{}-reason} why.
+
+\begin{lstlisting}[language=bash]
+pii graph lint graphs/night.toml        # V-codes, pins, caps before anything runs
+pii graph list                          # installed vs repo: DRIFT is the interesting column
+pii graph explain queue                 # nodes and ports in execution order
+pii run start queue --input '{"workdir":"/projects/pi-improved","base":"<40-hex>"}'
+pii run trace "$RUN" --terminal         # where it stopped
+pii run trace "$RUN" --reason implement # why that node ended there
+\end{lstlisting}
+

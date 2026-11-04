@@ -1,0 +1,452 @@
+\chapter{Design goals}
+
+\label{ch:design-goals}
+
+This chapter answers a single question: what is pii \emph{for}, and which constraints follow from
+that purpose whether or not anyone likes them. Every later chapter describes a mechanism; this one
+describes the pressure that shaped it. The purpose is narrow. pii exists so that a claim about work
+a model did --- \enquote{the spec is implemented}, \enquote{the tests pass}, \enquote{the document
+is current} --- can be checked by someone who was not present, from records the system kept while
+it worked. Everything else in the workspace is downstream of that.
+
+The book is deliberately organised around failure. Each of the five chapters that follow names the
+mechanism \emph{and} the defect that made the mechanism necessary, because in this repository the
+two are not separable: the exit rule in composition exists because a refusal silently vanished, the
+health record exists because a status was being recomputed from 41{,}150 events on every call, and
+the queue's lease exists because one dead claim wedged an entire lane. A design goal that has never
+cost anybody anything is a slogan. The ones below have all been paid for.
+
+\section{The four goals}
+
+\begin{enumerate}
+	\item \textbf{Evidence over narration.} A run leaves a journal of transitions; the stores keep
+	counters and headers. A statement that cannot be reconstructed from those records is treated as
+	unknown rather than believed.
+	\item \textbf{Composition over configuration.} A graph is assembled from nodes and graphs that
+	already exist. There is one implementation of \enquote{implement a spec} and several ways to
+	reach it, never two implementations that can drift apart.
+	\item \textbf{Refusal over guessing.} An unknown configuration key, an unserved model id, a
+	port a node does not declare, a capability the graph does not hold, a pin that no longer matches
+	the file: each refuses by name, at the earliest moment it can be detected.
+	\item \textbf{Bounded growth.} Every store, journal, artefact directory and source file has an
+	owner and a ceiling. An unattended host must not fill its disk, its memory or its review
+	capacity while nobody is looking.
+\end{enumerate}
+
+The four are not independent. Evidence is what makes a refusal meaningful --- a refusal that leaves
+no record is indistinguishable from a crash. Composition is what makes evidence cheap, because a
+called graph journals under the caller's run id instead of inventing a second history. Bounded
+growth is what keeps the first three affordable over months rather than days.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (claim) {a claim\\\scriptsize \enquote{the spec is implemented}};
+	\node[b, right=of claim] (run) {a run\\\scriptsize graph + input};
+	\node[s, right=of run] (journal) {a journal\\\scriptsize one event per transition};
+	\node[b, right=of journal] (replay) {a replay\\\scriptsize the same state, rebuilt};
+	\node[v, below=of replay] (verdict) {agrees?};
+	\node[b, left=of verdict] (done) {\texttt{done}\\\scriptsize checkable};
+	\node[b, below=of verdict] (unknown) {\texttt{unverified}\\\scriptsize the record is silent};
+
+	\draw[f] (claim) -- (run);
+	\draw[f] (run) -- (journal);
+	\draw[f] (journal) -- (replay);
+	\draw[f] (replay) -- (verdict);
+	\draw[f] (verdict) -- node[p,above=2pt,midway]{yes} (done);
+	\draw[f] (verdict) -- node[p,right=2pt,midway]{no} (unknown);
+	\draw[sf] (journal.south) to[bend right=22] node[p,below=2pt,midway]{rebuild} (replay.south);
+\end{tikzpicture}}
+\captionof{figure}{The chain a verdict has to survive: the dashed edge is what makes it a test rather than an
+essertion, because the state is rebuilt from the journal and compared with the record the write path
+maintained.}
+
+\end{center}
+
+\section{Evidence over narration}
+
+A shell script leaves a transcript, and a transcript is not evidence. It says what was printed, not
+which decision was taken at which port, and it cannot distinguish \enquote{the command succeeded}
+from \enquote{the command was never run}. The engine therefore journals a \emph{state transition}
+per node: the node, the port it left on, the value it produced, the hash of that value, and a
+monotonic sequence number. From that record three things become possible that a transcript cannot
+support: a run can be resumed from the position the journal says is next, a refusal can be
+attributed to the hook that raised it, and health can be rebuilt rather than trusted.
+
+The third of those is the one that was got wrong first, and the measurement is worth stating. Health
+used to replay every journal of every run on every call. On this host, with 1{,}895 runs and
+41{,}150 events in the store, that took 82, 85 and 92 milliseconds across three consecutive calls:
+linear in history, on one of four async workers, with no cap. At ten times the history it is roughly
+nine tenths of a second of a blocked worker per health call, and health is the surface every
+watchdog reaches for first. The fix was not a cache with a time-to-live. It was the observation that
+the answer is a \emph{status}, and a status should be maintained at the moment it changes, not
+recomputed from first principles. The record is now written by the write path; the replay survives
+as the test that the record still agrees with the events.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 14mm]
+	\node[b] (append) {event appended\\\scriptsize seq $n$ assigned};
+	\node[b, right=of append] (status) {header status\\\scriptsize written in the same transaction};
+	\node[b, right=of status] (read) {a reader\\\scriptsize one record};
+	\node[s, below=of append] (journal) {journal\\\scriptsize append-only};
+	\node[b, below=of status] (recount) {recount\\\scriptsize every event, once};
+	\node[b, right=of recount] (compare) {compare\\\scriptsize equal, or a finding};
+
+	\draw[f] (append) -- (status);
+	\draw[f] (status) -- (read);
+	\draw[f] (append) -- (journal);
+	\draw[f] (journal) -- (recount);
+	\draw[f] (recount) -- (compare);
+	\draw[sf] (status) -- node[p,right=2pt,midway]{the test} (compare);
+\end{tikzpicture}}
+\captionof{figure}{Two readers of one truth --- the fast path reads a maintained record, the slow path recomputes from
+the journal --- kept together because a counter with no recomputation behind it is an assertion with
+extra steps.}
+
+\end{center}
+
+The record can be interrogated directly, which is the practical test of whether it is evidence at
+all rather than a log:
+
+\begin{lstlisting}[language=bash]
+pii run trace <run_id>              # every transition, in sequence order
+pii run explain <run_id>            # why the run ended as it did
+pii graph lint graphs/queue.toml    # the same rules a run start applies, over one file
+\end{lstlisting}
+
+There is a second, quieter consequence. Because the journal is the primary artefact, a terminal
+verdict must not be a summary of intentions. The engine determines a run's output by the last
+finished node that has no outbound data edge on the port it took --- the node whose value nobody
+consumed. If a final node left on a non-\texttt{ok} port carrying an error, the run is a failure
+even though a graph author might have expected \enquote{it reached the end}. The record decides, not
+the shape of the picture.
+
+\section{Composition over configuration}
+
+The second goal is stated as a rule about implementations, not about files: one behaviour, one
+place. A graph that needs to implement a spec calls the graph that implements specs. It does not
+carry a copy of it with different node ids, because a copy is a second implementation and the two
+will diverge the first time only one of them is fixed.
+
+This is not hypothetical in this repository. The development queue used to carry its own
+\texttt{dispatch} coder and its own \texttt{judge}, doing inline what \texttt{graphs/spec.toml}
+already did, and the two drifted in exactly the way the rule predicts: the queue's copy ran the
+row's criteria while the spec graph ran the spec's, so a row could fail while the work it described
+was green. Row 364 removed the copy and replaced it with one pinned \texttt{call}. The graph that
+resulted is shorter than the one it replaced.
+
+Composition also has a naming obligation that configuration does not. In \texttt{graphs/night.toml}
+there was a node whose id was \texttt{sdd} whose kind was \texttt{call} with \texttt{graph =
+"queue"}. An operator reading the night would conclude that SDD ran. It did not; the queue ran, and
+the queue is row-by-row work rather than the SDD process. Row 373's requirement is not \enquote{add
+an sdd graph} but \enquote{make the name true}: the node called \texttt{sdd} now calls
+\texttt{sdd}. A composition whose names do not describe what is composed is worse than no
+composition, because it is read by people who will not check.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (night) {\texttt{night}\\\scriptsize tick, report};
+	\node[b, right=of night] (sdd) {\texttt{sdd}\\\scriptsize contract, verify, docs};
+	\node[b, right=of sdd] (tdd) {\texttt{tdd}\\\scriptsize write, red, implement, green};
+	\node[b, below=of sdd] (docs) {\texttt{docs}\\\scriptsize one coder};
+	\node[b, below=of night] (queue) {\texttt{queue}\\\scriptsize select, call, record};
+	\node[b, right=of queue] (spec) {\texttt{spec}\\\scriptsize code, verify, reverify};
+
+	\draw[f] (night) -- node[p,above=2pt,midway]{call} (sdd);
+	\draw[f] (sdd) -- node[p,above=2pt,midway]{call} (tdd);
+	\draw[f] (sdd) -- node[p,right=2pt,midway]{call} (docs);
+	\draw[f] (queue) -- node[p,above=2pt,midway]{call} (spec);
+	\draw[sf] (spec.north) to[bend right=18] node[p,right=2pt,midway]{call} (docs.south);
+	\draw[bk] (night.south) -- node[p,left=2pt,midway]{no} (queue.east);
+\end{tikzpicture}}
+\captionof{figure}{What composes into what, and the edge that had to be removed --- the red dashed edge is the old
+\texttt{sdd} node pointing at the queue, a composition that ran and meant something else.}
+
+\end{center}
+
+The cost of this goal is stated plainly because it is real: to know what \texttt{graphs/queue.toml}
+does, a reader must also read \texttt{graphs/spec.toml}, and trust that the pin names the revision
+they read. There is no single file that answers \enquote{what happens when the queue runs}. That is
+the price of having one implementation instead of two, and Chapter~\ref{ch:composition} pays it in
+detail.
+
+\section{Refusal over guessing}
+
+The third goal is the one that produces the most text in the repository, because every refusal
+carries a machine-readable rule code. A refusal is not a log line that says \enquote{invalid graph};
+it is a named rule, a named node, and --- where a capability is missing --- the name of the missing
+capability. The reason is operational: at three in the morning the difference between
+\texttt{graph.call.widen} and \texttt{V1} is the difference between reading one line of code and
+reading the loader.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (load) {graph text};
+	\node[v, right=of load] (toml) {parses?};
+	\node[v, right=of toml] (kinds) {keys known?\\\scriptsize kinds registered?};
+	\node[v, right=of kinds] (ports) {ports declared?};
+	\node[v, below=of ports] (caps) {caps within\\\scriptsize the ceiling?};
+	\node[v, left=of caps] (pins) {pins match?};
+	\node[b, left=of pins] (run) {the run starts};
+	\node[b, below=of toml] (refused) {refused\\\scriptsize at load};
+
+	\draw[f] (load) -- (toml);
+	\draw[f] (toml) -- node[p,above=2pt,midway]{yes} (kinds);
+	\draw[f] (kinds) -- node[p,above=2pt,midway]{yes} (ports);
+	\draw[f] (ports) -- node[p,right=2pt,midway]{yes} (caps);
+	\draw[f] (caps) -- node[p,above=2pt,midway]{yes} (pins);
+	\draw[f] (pins) -- node[p,above=2pt,midway]{yes} (run);
+	\draw[bk] (toml) -- node[p,left=2pt,midway]{no} (refused);
+	\draw[bk] (kinds.south) to[bend left=10] node[p,below=2pt,midway]{no} (refused.east);
+	\draw[bk] (ports.south) to[bend left=16] (refused.east);
+	\draw[bk] (caps.south) to[bend right=8] node[p,below=2pt,midway]{no} (refused.east);
+	\draw[bk] (pins.south) to[bend right=14] (refused.east);
+\end{tikzpicture}}
+\captionof{figure}{Refusal happens before execution and in a fixed order, so the message is the first thing actually
+wrong rather than the last thing that failed, and nothing on the top row has run yet.}
+
+\end{center}
+
+\begin{longtable}{@{}p{0.30\textwidth}p{0.24\textwidth}p{0.36\textwidth}@{}}
+	\toprule
+	\textbf{Rule code} & \textbf{Raised by} & \textbf{What it names} \\
+	\midrule
+	\endhead
+	\texttt{graph.call.widen} & \texttt{fragment/call.rs} & the call, the capability, the graph that
+	does not hold it \\
+	\texttt{graph.call.cycle} & \texttt{fragment/call.rs} & the chain of graphs, in order \\
+	\texttt{graph.call.depth} & \texttt{fragment/call.rs} & the call and the depth cap of 4 \\
+	\texttt{graph.call.exit} & \texttt{fragment/call.rs} & the callee with no \texttt{exit}, or an
+	\texttt{exit} naming no node \\
+	\texttt{graph.call.id} & \texttt{fragment/call.rs} & the node id the call would duplicate \\
+	\texttt{graph.call.key} & \texttt{fragment/call.rs} & the one unknown key on the call \\
+	\texttt{fragment.pin.mismatch} & \texttt{fragment/call.rs} & expected and actual sha256 \\
+	\texttt{fragment.pin.drift} & \texttt{fragment/splice.rs} & the fragment path and both hashes \\
+	\texttt{fragment.block.invalid} & \texttt{fragment/splice.rs} & a blocking fragment at a
+	pre-surface \\
+	\texttt{fragment.autonomy.forbidden} & \texttt{fragment/check.rs} & the node that would own a
+	timer, store or budget \\
+	\texttt{fragment.nesting.forbidden} & \texttt{fragment/check.rs} & the fragment that attaches or
+	calls \\
+	\texttt{graph.grant.ceiling} & \texttt{toml\_load.rs} & the graph or node, and the ceiling \\
+	\texttt{V0}--\texttt{V11} & \texttt{validate.rs} & the rule, then the node \\
+	\bottomrule
+\end{longtable}
+
+The codes share a property that matters more than their spelling: they are stable, greppable, and
+each one maps to exactly one place in the source. That is what allows a test to assert a refusal by
+name instead of asserting that \enquote{an error occurred}, which is the assertion that lets a
+wrong refusal pass.
+
+\section{Bounded growth}
+
+The fourth goal is the least glamorous and the one that decides whether the other three survive a
+year of unattended operation. Three ceilings are visible from the outside:
+
+\begin{itemize}
+	\item \textbf{Source files.} A file may have at most 450 effective lines --- non-blank,
+	non-comment. The limit is enforced by a gate step, not by review, and the fix when it is hit is
+	an extraction into a module that owns the concept. \texttt{daemon/sys\_status.rs},
+	\texttt{store/sys\_status.rs} and \texttt{daemon/model\_roles.rs} all exist because a file
+	crossed the line and the concept inside it deserved a name.
+	\item \textbf{Artefacts.} A trajectory directory has an aggregate byte bound and a file-count
+	bound, and the oldest finished runs are pruned past them. The defaults are 512 MiB and 50{,}000
+	files; both are configuration keys rather than constants, because the right number depends on
+	the host.
+	\item \textbf{History.} Journals are append-only by design, so growth is managed by retention
+	and compaction (\texttt{pii store compact}, \texttt{pii store prune}) rather than by rewriting
+	events. An event that is deleted is a claim that can no longer be checked, which is why the
+	operation is explicit and why the daemon must be stopped for it.
+\end{itemize}
+
+The ceilings are visible from the operator's side too, which is how a bound becomes a habit rather
+than a rule:
+
+\begin{lstlisting}[language=bash]
+pii store stats                    # tables, sizes, and what is growing
+pii store prune                    # retention, with the daemon stopped
+bash quality-gate.sh --summary     # one line per gate step, including the file budget
+\end{lstlisting}
+
+Bounded growth is also why the engine has a step limit, a wall-clock limit and a token budget
+rather than trusting nodes to be reasonable. A graph that loops is not an error in this system; a
+graph that loops forever is, and the difference is a number in the graph's \texttt{[limits]} table.
+
+\section{The cost, stated as a ledger}
+
+Every goal above is bought with something. The table is the honest version of the trade, and each
+row is developed in the chapter named in the last column.
+
+\begin{longtable}{@{}p{0.22\textwidth}p{0.30\textwidth}p{0.24\textwidth}p{0.16\textwidth}@{}}
+	\toprule
+	\textbf{Choice} & \textbf{What it buys} & \textbf{What it costs} & \textbf{Chapter} \\
+	\midrule
+	\endhead
+	Journal every transition & replay, attribution, rebuilt counters & write volume; a write-behind
+	buffer that must be flushed at the right moments & \ref{ch:engine} \\
+	Inline calls at load time & one implementation, no serialisation, one journal & a reader must
+	follow a pin to know what runs; the callee becomes part of the caller's name space &
+	\ref{ch:composition} \\
+	Capabilities as a ceiling & an escalation must be written where it is reviewed & a graph that
+	needs one more capability must be edited at two levels & \ref{ch:node-kinds} \\
+	Named refusals & a failing test can assert the reason & more strings to keep stable than a
+	single \enquote{invalid} & \ref{ch:node-kinds} \\
+	450-line files & a concept has one home & more modules, more \texttt{mod} lines, more files to
+	open & \ref{ch:workspace} \\
+	Maintained counters & constant-time health & a write path that must never forget to update
+	them; a rebuild test that must exist & \ref{ch:engine} \\
+	\bottomrule
+\end{longtable}
+
+The last row is the one that recurs. Almost every defect described in this manual is a variant of
+the same shape: a fast path added for a good reason, with no slow path left to check it. The
+maintained counter, the inlined graph, the pinned fragment and the bounded file all trade a
+computation for a record. The discipline that keeps the trade honest is that the computation is
+kept somewhere as a test.
+
+\section{The vocabulary, fixed early}
+
+Five words carry most of the meaning in this book, and each one is used in a narrower sense than
+its everyday meaning. They are stated once here so that later chapters can use them without
+redefinition.
+
+\begin{description}
+	\item[node] A \texttt{kind} plus configuration. It does one thing, declares the ports it can
+	leave from, and is the only unit the scheduler dispatches.
+	\item[port] A named outcome, not a boolean. \texttt{select} has four; a coder has two; a judge
+	has two or three. An edge names the port it leaves from.
+	\item[graph] A table of nodes, a table of edges, an \texttt{entry}, a \texttt{caps} list,
+	optional \texttt{exit} and optional \texttt{[limits]}. It is data, not code.
+	\item[run] One execution of a graph with one input. It has an id, a journal, a header and
+	exactly one terminal disposition.
+	\item[call] A node kind that is replaced, at load time, by the nodes of another graph. It is not
+	a subprocess and not a remote run.
+	\item[fragment] A graph file under \texttt{graphs/fragments/} with a \texttt{[fragment]}
+	header, attached to a host at a named surface and woven in at load time.
+	\item[pin] The sha256 of a file's bytes, written into the file that includes it. A pin that
+	does not match is a refusal, not a warning.
+	\item[store] A redb database with named tables. Every store has a single writer and an owner
+	crate.
+\end{description}
+
+Two of these definitions do quiet work. \emph{Port} being a name rather than a boolean is what makes
+a graph read as a sentence: \texttt{red.ok} to \texttt{not-red} says something a \texttt{true}
+branch cannot. And \emph{pin} being a hash of bytes rather than a version number is what makes a
+review meaningful: a version can be reused, a byte string cannot change without the hash changing.
+
+\section{Five defects that shaped the design}
+
+The goals above are abstractions. The table below is the concrete version: five rows, each of which
+changed a mechanism, with the symptom as an operator would have seen it.
+
+\begin{longtable}{@{}p{0.06\textwidth}p{0.36\textwidth}p{0.50\textwidth}@{}}
+	\toprule
+	\textbf{Row} & \textbf{Symptom} & \textbf{What changed} \\
+	\midrule
+	\endhead
+	353 & A claimed queue row never completed, and every other row stopped being claimed. A restart
+	did not help, because a row that is \texttt{Running} blocks the queue by design. & The claim
+	became a lease: a row is requeued when the run that claimed it is terminal or gone, and never
+	while it is alive or suspended. A boot pass re-offers suspended runs without waiting for an
+	event. \\
+	364 & A row stayed \texttt{Running} although the called graph had refused. Nothing in the journal
+	said why, because nothing after the refusal had run. & A host edge may name a callee's refusal
+	port; the load marks that refusal node to return its verdict on \texttt{ok} instead of failing
+	the run. \\
+	370 & \texttt{pii health} took 82--92 ms and grew with history; at ten times the store it would
+	block a worker for most of a second. & The totals became a record maintained by the write path;
+	the replay stayed as the test that the record agrees with the events. \\
+	372 & The engine could not express \enquote{this test must fail}, so a RED could not be proven
+	and a test written after the code was indistinguishable from one written before it. & The judge
+	accepts \texttt{expect = "fail"} and gains a third port, \texttt{unrunnable}, for a criterion
+	that could not run at all. \\
+	373 & A node named \texttt{sdd} called \texttt{queue}. The night claimed to run SDD and ran
+	row-by-row work. & The name was made true: the node calls the \texttt{sdd} graph, and the pin
+	moved in the same commit. \\
+	\bottomrule
+\end{longtable}
+
+Read as a set, the five share a shape. In each case the system was doing something reasonable and
+the \emph{record} was wrong: the row said \texttt{Running} when it was parked, health said nothing
+about how it was obtained, the night's node said \texttt{sdd} when it was the queue. The fix is
+never to make the code more clever; it is to make the record say what happened, and then to leave a
+test that fails if the record and the events disagree.
+
+\section{What pii is not}
+
+Three negative statements prevent most misreadings of the rest of the book.
+
+\begin{itemize}
+	\item \textbf{It is not a workflow engine with an iteration primitive.} Composition is static:
+	pieces are spliced at load time, so a graph cannot say \enquote{do this call once per criterion}.
+	Everything that needs repetition today is one node looping internally --- a judge running four
+	commands --- which is precisely why the judge has to know how to run criteria at all.
+	\item \textbf{It is not a distributed system.} A call is inlined into the caller; there is no
+	remote invocation, no queue between graphs and no serialisation boundary. The only subprocess in
+	the picture is an agent, and the engine treats it as a node that may block, not as a peer.
+	\item \textbf{It is not a scripting language.} A graph has no expressions beyond a small
+	reference dialect (\texttt{\$.input.x}, \texttt{\$.nodes.n.field}) evaluated by the node that
+	declares it. There are no local variables, no function calls and no conditionals outside a
+	\texttt{route} or \texttt{gate} node. The restriction is the point: a graph that cannot compute
+	can be checked by reading it.
+\end{itemize}
+
+\section{How the claims in this book were checked}
+
+Every mechanism described here was read in the source and, wherever it could be, exercised. The
+distinction matters because this repository has paid three times for a check that passed while the
+live path was broken: a check that hand-wrote the lines it was meant to observe, a check fed a
+source constant instead of the message the live path delivers, and a verification harness that was
+itself wrong three times over. Each one certified a real defect as fixed.
+
+The rule that follows from those three is stated in the workspace's agent guide and applies to
+prose as much as to tests: a check's input must come from the live path, and every rule that skips
+or suppresses something needs a near-miss case that must still take the normal path. The table
+below is the version of that rule applied to the claims in this book.
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.30\textwidth}p{0.30\textwidth}p{0.30\textwidth}@{}}
+\toprule
+	\textbf{Claim} & \textbf{How it was checked} & \textbf{The near miss} \\
+	\midrule
+	A call returns through every node with an unwired \texttt{ok} port & read in
+	\texttt{fragment/splice.rs}, then traced on \texttt{graphs/spec.toml}'s tail & a callee whose
+	tail is one declared exit still returns on that node \\
+	A wired refusal returns instead of failing the run & the unit tests in
+	\texttt{fragment/call\_output.rs} assert the inner node gains \texttt{returns} & a refusal no host
+	wires still fails the run \\
+	A value naming a longer id is untouched & \texttt{rewrite\_str} refuses to match
+	\texttt{\$.nodes.sddx} against \texttt{\$.nodes.sdd} & a bare \texttt{\$.nodes.sdd} is rewritten \\
+	Health no longer scans journals & the requirement's test compares a rebuilt record with a replay
+	& an absent record rebuilds rather than reporting zeros \\
+	A judge can be expected to fail & ports change only when \texttt{spec} and \texttt{expect} are
+	both present & a judge without \texttt{expect} keeps two ports \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+Where a claim could not be exercised --- the daemon's behaviour under a supervisor that kills it
+mid-agent, for instance --- this book says so in the text rather than rounding it to a certainty.
+The editor's rule for the volume is the same as the gate's: a number with no measurement behind it
+is not allowed to look like one.
+
+\section{What the reader should expect}
+
+The chapters that follow are ordered by dependency rather than by importance. The workspace
+(Chapter~\ref{ch:workspace}) explains which crate owns which behaviour and how to find a behaviour
+from a symptom. The engine (Chapter~\ref{ch:engine}) explains what a run is: its states, its tick
+loop, its journal, its recovery. Node kinds (Chapter~\ref{ch:node-kinds}) explain the vocabulary a
+graph is written in --- what a node may declare and what it may do. Composition
+(Chapter~\ref{ch:composition}) explains how graphs become each other's parts, and contains the one
+rule in this system that surprises experienced readers: a call returns through every node that
+declares an \texttt{ok} port and has no outgoing \texttt{ok} edge, which is not the same set as the
+node the callee names in \texttt{exit}.
+
+That rule is worth flagging here because it is the clearest example of the manual's method. It was
+not designed; it was discovered, by a queue row that stayed \texttt{Running} for a night while the
+graph it called had already refused. The next four chapters describe the system that produced that
+behaviour, and the reasoning that fixed it without inventing a second inclusion mechanism.

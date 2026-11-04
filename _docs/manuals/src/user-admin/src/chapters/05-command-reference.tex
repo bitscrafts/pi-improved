@@ -1,0 +1,601 @@
+\chapter{Command reference}
+
+\label{ch:commands}
+
+This chapter is the complete surface of the \texttt{pii} binary: every group the dispatcher
+accepts, the verbs inside each group, the flags each verb reads, and --- the part that is
+usually missing from a command reference --- what the verb does to the stores on disk. A
+flag is easy to look up; the difference between a command that asks the daemon to write and
+one that opens the same file behind the daemon's back is what corrupts an installation.
+
+Every group below was read from \texttt{crates/pii-cli/src/} and matched against the captured
+help output. Where a group has no help text of its own (several have none), the flags were
+read from the parser, which is the authority.
+
+\section{The shape of the surface}
+
+The first argument selects a group; everything after it belongs to the group. An unknown
+first argument prints the usage string and exits 2. There is no plugin mechanism and no
+argument-file syntax: what the binary accepts is what this chapter lists.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=12mm and 14mm]
+  \node[b] (cli) {\texttt{pii}\\\scriptsize argv[1]};
+  \node[b, right=14mm of cli, yshift=20mm] (work) {work\\\scriptsize \texttt{-p}, \texttt{daemon}, \texttt{tui}};
+  \node[b, right=14mm of cli] (run) {runs and graphs\\\scriptsize \texttt{run}, \texttt{graph}, \texttt{sop}, \texttt{queue}};
+  \node[b, right=14mm of cli, yshift=-20mm] (state) {state\\\scriptsize \texttt{store}, \texttt{memory}, \texttt{backup}};
+  \node[b, right=13mm of run] (know) {knowledge\\\scriptsize \texttt{learn}, \texttt{skill}, \texttt{index}};
+  \node[b, right=13mm of state] (ops) {operations\\\scriptsize \texttt{health}, \texttt{metrics}, \texttt{disk}, \texttt{incidents}};
+  \draw[f] (cli) -- (work);
+  \draw[f] (cli) -- (run);
+  \draw[f] (cli) -- (state);
+  \draw[sf] (run) -- (know);
+  \draw[sf] (state) -- (ops);
+\end{tikzpicture}}
+\captionof{figure}{Thirty-three groups plus \texttt{-{}-version}. The grouping is by what the operator is doing, not by which crate implements the verb.}
+\end{minipage}
+\end{center}
+
+Three paths to state exist, and a command takes exactly one of them.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=12mm and 18mm]
+  \node[b] (cmd) {a verb};
+  \node[b, above right=12mm and 20mm of cmd] (rpc) {control RPC\\\scriptsize \texttt{control.sock}};
+  \node[b, right=20mm of cmd] (open) {opens \texttt{store.redb}\\\scriptsize in this process};
+  \node[b, below right=12mm and 20mm of cmd] (file) {reads files only\\\scriptsize \texttt{graph lint}, \texttt{show}, \texttt{disk}};
+  \node[s, right=20mm of rpc] (daemon) {daemon\\\scriptsize one writer};
+  \node[s, right=24mm of open] (store) {redb file\\\scriptsize exclusive lock};
+  \draw[f] (cmd) -- (rpc);
+  \draw[f] (cmd) -- (open);
+  \draw[f] (cmd) -- (file);
+  \draw[f] (rpc) -- (daemon);
+  \draw[f] (daemon) -- (store);
+  \draw[bk] (open) -- node[p, below=3pt, midway]{must not run} (store);
+\end{tikzpicture}}
+\captionof{figure}{The rule behind every \enquote{daemon must be stopped} message: redb takes an exclusive lock, so a verb that opens the store directly and a daemon that already holds it cannot both proceed.}
+\end{minipage}
+\end{center}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}>{\raggedright\arraybackslash}p{0.44\textwidth}>{\raggedright\arraybackslash}p{0.26\textwidth}@{}}
+  \toprule
+  \textbf{Group} & \textbf{Verbs} & \textbf{Path to state} \\
+  \midrule
+  \endhead
+  \texttt{-{}-version} & none & none \\
+  \texttt{-p} & one prompt, options & daemon if up, else in-process \\
+  \texttt{daemon} & foreground server & owns the stores \\
+  \texttt{graph} & \texttt{lint}, \texttt{check}, \texttt{show}, \texttt{run}, \texttt{resume}, \texttt{trace}, \texttt{list}, \texttt{explain}, \texttt{edit} & files, or \texttt{--db} directly \\
+  \texttt{sop} & \texttt{compile}, \texttt{lint}, \texttt{show}, \texttt{run}, \texttt{resume} & \texttt{--db} directly \\
+  \texttt{run} & \texttt{ls}, \texttt{start}, \texttt{get}, \texttt{trace}, \texttt{explain}, \texttt{resume}, \texttt{retry}, \texttt{abandon}, \texttt{cancel} & RPC \\
+  \texttt{queue} & \texttt{add}, \texttt{ls}, \texttt{claim} & RPC \\
+  \texttt{store} & \texttt{compact}, \texttt{stats}, \texttt{prune} & \texttt{store.redb} directly \\
+  \texttt{backup}, \texttt{restore} & one positional each & copies the store files \\
+  \texttt{memory} & \texttt{search}, \texttt{put}, \texttt{learn}, \texttt{consolidate}, \texttt{entity}, \texttt{link}, \texttt{neighbours}, \texttt{compact}, \texttt{show}, \texttt{tiers}, \texttt{archive}, \texttt{restore} & RPC, or \texttt{memory.redb} \\
+  \texttt{approve} & \texttt{ls}, \texttt{allow}, \texttt{deny} & RPC \\
+  \texttt{heal} & \texttt{ls}, \texttt{show} & RPC \\
+  \texttt{cron}, \texttt{net}, \texttt{worker}, \texttt{sys} & \texttt{ls}; \texttt{status}, \texttt{reload} & RPC \\
+  \texttt{health} & none, \texttt{-{}-json} & RPC \\
+  \texttt{metrics} & none & RPC \\
+  \texttt{disk} & none, \texttt{-{}-root} & filesystem only \\
+  \texttt{incidents} & \texttt{scan}, \texttt{show}, \texttt{distance} & files, or a store dir \\
+  \texttt{loop} & \texttt{emit}, \texttt{events} & one NDJSON file \\
+  \texttt{deploy-card} & \texttt{render}, \texttt{approve}, \texttt{refuse} & card file and an acts log \\
+  \texttt{learn} & \texttt{scan}, \texttt{list}, \texttt{show}, \texttt{verify}, \texttt{promote}, \texttt{promotions}, \texttt{revert}, \texttt{ledger} & \texttt{store.redb} \\
+  \texttt{skill} & \texttt{add}, \texttt{list}, \texttt{show}, \texttt{explain}, \texttt{edit} & RPC, or \texttt{memory.redb} \\
+  \texttt{index} & \texttt{code}, \texttt{docs} & RPC \\
+  \texttt{mqtt} & \texttt{ls}, \texttt{sub}, \texttt{pub}, \texttt{send} & broker, not the store \\
+  \texttt{treat} & \texttt{export}, \texttt{import}, \texttt{apply}, \texttt{list} & healer store and files \\
+  \texttt{lane} & \texttt{plan}, \texttt{run}, \texttt{rev} & writes a plan, starts nothing in \texttt{plan} \\
+  \texttt{soak} & none, flags only & RPC against a socket \\
+  \texttt{tui} & none & loopback or socket \\
+  \texttt{sandbox-exec}, \texttt{worker-exec} & \texttt{argv}, frames & process only \\
+  \texttt{project} & \texttt{init} & writes a scaffold \\
+  \bottomrule
+\end{longtable}
+
+\section{Starting work}
+
+\subsection*{\texttt{pii -{}-version}}
+
+One line, the version compiled into the binary. It is the only group that touches nothing.
+
+\subsection*{\texttt{pii -p "<prompt>"}}
+
+The headless entry point. It prefers a live daemon socket; without one it builds the engine
+in this process and serves the same connection over a loopback duplex. It never starts a
+daemon. When stdout is not a terminal, JSON is the default output format.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.22\textwidth}>{\raggedright\arraybackslash}p{0.68\textwidth}@{}}
+  \toprule
+  \textbf{Flag} & \textbf{Effect} \\
+  \midrule
+  \texttt{-{}-json} & machine-readable result; the default when stdout is not a TTY \\
+  \texttt{-{}-model M} & the model spec for this call, overriding \texttt{[core].model} \\
+  \texttt{-{}-graph G} & run graph \texttt{G} instead of the agent loop \\
+  \texttt{-{}-input J} & JSON merged into the run input (graph parameters) \\
+  \texttt{-{}-workspace D} & the directory tools and the sandbox are scoped to; default cwd \\
+  \texttt{-{}-sandbox off|workspace} & confinement profile; \texttt{workspace} is the default \\
+  \texttt{-{}-connect <mode>} & transport: \texttt{auto}, \texttt{loopback}, or a socket path; default \texttt{auto} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{\texttt{pii daemon}}
+
+The server, in the foreground. It holds the store locks, binds \texttt{control.sock}, loads
+the graphs, and starts the cron and channel machinery. It never forks, which is why
+\texttt{-{}-foreground} is accepted and does nothing: supervisors pass it out of habit.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.29\textwidth}>{\raggedright\arraybackslash}p{0.61\textwidth}@{}}
+  \toprule
+  \textbf{Flag} & \textbf{Effect and default} \\
+  \midrule
+  \texttt{-{}-store <path>} & redb store file; default \texttt{<runtime dir>/store.redb} \\
+  \texttt{-{}-config <path>} & TOML file; default \texttt{\$PII\_CONFIG}, else \texttt{\$HOME/.pii/pii.toml} \\
+  \texttt{-{}-workspace <dir>} & root the sandbox and tools are scoped to; default cwd \\
+  \texttt{-{}-sandbox <p>} & \texttt{off} or \texttt{workspace}; default \texttt{workspace}, exit 4 if it cannot be enforced \\
+  \texttt{-{}-log-file <path>} & append events as JSON lines; default off \\
+  \texttt{-{}-log-rotate-bytes <n>} & rotate past \texttt{n} bytes; default 10485760 \\
+  \texttt{-{}-log-keep-files <n>} & rotated files kept beside the live one; default 5 \\
+  \texttt{-{}-observer on|off} & detach the observer fan-out; measurement only, default on \\
+  \texttt{-{}-audit on|off} & stop the denial feed; measurement only, default on \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{-{}-sandbox workspace} confines writes to the workspace, the store directory, the
+runtime directory and the configured log and trajectory directories; reads are not confined.
+\texttt{-{}-sandbox off} is the explicit opt-out and the daemon says so at start with a warning
+event. A profile that cannot be enforced is a startup failure with exit 4, not a degraded
+start: an unconfined daemon that believes it is confined is worse than one that refuses.
+
+\subsection*{\texttt{pii run} --- through the daemon}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Effect} \\
+  \midrule
+  \texttt{ls [-{}-status S] [-{}-graph G]} & list run headers; \texttt{S} is one of
+    \texttt{running}, \texttt{suspended}, \texttt{succeeded}, \texttt{failed}. The graph
+    filter is applied by the client, the status filter by the daemon. \\
+  \texttt{start <graph> [-{}-input J]} & begin a run; invalid JSON is a usage error, never a
+    silent empty input \\
+  \texttt{get <id> [-{}-db P]} & the header, plus one line per agent call. With no daemon it
+    falls back to the store at \texttt{-{}-db} or \texttt{\$PII\_RUNTIME\_DIR} \\
+  \texttt{trace <id> [-{}-db P]} & the journal, node by node \\
+  \texttt{explain <id> [-{}-db P]} & the journal read as a narrative \\
+  \texttt{resume <id>} & continue a suspended run from its journal \\
+  \texttt{retry <id> -{}-node N} & re-run one node, keeping the journal \\
+  \texttt{abandon <id> -{}-reason T} & close the run without continuing it \\
+  \texttt{cancel <id> [-{}-kill] [-{}-reason T]} & stop a run; \texttt{-{}-kill} stops an
+    executing node and needs no reason of its own \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{run get} distinguishes two answers that used to read alike: a run the daemon holds but
+has not journalled yet is \enquote{accepted and in flight}, and an id the daemon has never
+heard of is \enquote{unknown to this daemon}. The distinction matters during a restart: the
+first is a run to poll, the second is a typo or a wrong store.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (start) {\texttt{run start}};
+  \node[b, right=of start] (daemon) {daemon\\\scriptsize resolves the graph};
+  \node[s, above=of daemon] (body) {graph\_body\\\scriptsize keyed by blake3};
+  \node[s, right=of daemon] (run) {run header};
+  \node[s, below=of run] (journal) {run\_journal\\\scriptsize (run, seq)};
+  \node[s, above=of run] (status) {run\_by\_status};
+  \draw[f] (start) -- (daemon);
+  \draw[f] (daemon) -- (run);
+  \draw[sf] (body) -- (daemon);
+  \draw[f] (run) -- (journal);
+  \draw[sf] (run) -- (status);
+\end{tikzpicture}}
+\captionof{figure}{What \texttt{run start} writes. The graph body is stored once per revision and the header points at its hash, so a run remains readable after the graph file changes.}
+\end{minipage}
+\end{center}
+
+\subsection*{\texttt{pii graph} --- without the daemon}
+
+\texttt{graph run} and \texttt{graph resume} execute in this process against a store named by
+a mandatory \texttt{-{}-db}. They are the offline path: no socket, no daemon, one writer. The
+graph is loaded and validated \emph{before} the store is opened, so a refused graph leaves no
+store file behind.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Flags and effect} \\
+  \midrule
+  \texttt{lint <file.toml>} & static checks; prints \texttt{OK} plus each inlined node's
+    surface, order and origin. Exit 3 on validation errors, 2 on a read or parse failure. \\
+  \texttt{check <file.toml>} & the spec-207 name for \texttt{lint}; same code path \\
+  \texttt{show <file.toml>} & validate, then print the ASCII topology. A graph that does not
+    validate is never rendered. \\
+  \texttt{run <file> -{}-db P} & execute and journal. Also \texttt{-{}-run-id},
+    \texttt{-{}-input}, \texttt{-{}-allow-write <dir>} (repeatable), \texttt{-{}-no-validate} \\
+  \texttt{resume <id> -{}-db P} & replay and continue; \texttt{-{}-allow-write} is repeatable \\
+  \texttt{trace <id> -{}-db P [QUERY]} & eight queries over the stored journal (see below) \\
+  \texttt{list [-{}-all] [-{}-json] [-{}-dir D] [-{}-repo R]} & installed graphs, their
+    revision, their armed-run count and their drift against the repo copy \\
+  \texttt{show <name> [-{}-dir D]} & the installed definition, when the name is an installed graph \\
+  \texttt{explain <name> [-{}-dir D] [-{}-repo R]} & nodes and ports in execution order \\
+  \texttt{edit <name> -{}-file F [-{}-force]} & lint, move the previous file aside, write
+    atomically. No verb deletes a graph. \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+The trace queries are worth memorising, because each answers a question that reading the dump
+by eye answers slowly:
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth}>{\raggedright\arraybackslash}p{0.60\textwidth}@{}}
+  \toprule
+  \textbf{Query} & \textbf{Answers} \\
+  \midrule
+  (none) & the whole journal, one line per event \\
+  \texttt{-{}-count-finished N} & how many times node \texttt{N} finished \\
+  \texttt{-{}-node-status N} & the last status recorded for \texttt{N} \\
+  \texttt{-{}-max-batch-width} & the widest batch the scheduler executed \\
+  \texttt{-{}-terminal} & the run's terminal word \\
+  \texttt{-{}-output} & the run's final output value \\
+  \texttt{-{}-overlapped A,B} & whether two nodes were ever in flight together \\
+  \texttt{-{}-reason N} & why node \texttt{N} ended where it did \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{\texttt{pii sop}}
+
+A declarative SOP is compiled into the same graph engine; \texttt{run} and \texttt{resume} use
+the same journal as \texttt{graph run}. There is no second runner.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Effect} \\
+  \midrule
+  \texttt{compile <f.sop.toml>} & print the graph the SOP compiles to \\
+  \texttt{lint <f.sop.toml>} & validate the compiled graph \\
+  \texttt{show <f.sop.toml>} & render the compiled topology \\
+  \texttt{run <f> -{}-db P} & execute; \texttt{-{}-run-id}, \texttt{-{}-input},
+    \texttt{-{}-allow-write} \\
+  \texttt{resume <id> -{}-db P} & continue a suspended SOP run \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}[language=bash]
+pii graph lint graphs/queue.toml                 # static, offline, no store written
+pii graph show graphs/night.toml                 # the loaded topology, after weaving
+pii run start night --input '{"workdir":"/projects/pi-improved","to":"status"}'
+pii run get r000000000261                        # header + coder lines
+pii run trace r000000000261 --reason implement   # why the node ended there
+pii run resume r000000000261                     # continue after a gate
+\end{lstlisting}
+
+\section{The queue}
+
+The queue is a store of work items, one file beside the main store
+(\texttt{queue.redb}, tables \texttt{queue\_item} and \texttt{queue\_event}). Each verb is one
+RPC; none opens the file.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Flags and effect} \\
+  \midrule
+  \texttt{add} & \texttt{-{}-id}, \texttt{-{}-spec}, \texttt{-{}-title}, \texttt{-{}-criteria}
+    (repeatable), \texttt{-{}-touches} (repeatable). Writes one pending item. \\
+  \texttt{ls} & every row with its status and reason \\
+  \texttt{claim -{}-by <name>} & claim the next pending item for an external worker \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+An item is \texttt{pending}, \texttt{running}, \texttt{done} or \texttt{parked}. The graph's
+\texttt{select} node claims one and writes \texttt{running}; the \texttt{record} node writes
+\texttt{done} when the verdict is a pass or the literal \texttt{done}, and \texttt{parked}
+with the failing criterion otherwise. A row that stays \texttt{running} is therefore an
+operator question, not a bug in the queue: either the run is still alive, or it died holding
+the claim.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 16mm]
+  \node[b] (pending) {pending};
+  \node[b, right=of pending] (running) {running};
+  \node[b, above right=8mm and 14mm of running] (done) {done};
+  \node[b, below right=8mm and 14mm of running] (parked) {parked};
+  \draw[f] (pending) -- node[p, above=2pt, midway]{select} (running);
+  \draw[f] (running) -- node[p, above=2pt, midway]{record: pass} (done);
+  \draw[f] (running) -- node[p, below=2pt, midway]{record: fail} (parked);
+  \draw[bk] (parked.north west) to[bend left=25] node[p, left=2pt, midway]{operator} (pending.south west);
+\end{tikzpicture}}
+\captionof{figure}{Four states, two writers. Only \texttt{select} and \texttt{record} move a row; the way back from \texttt{parked} is a person, not a retry loop.}
+\end{minipage}
+\end{center}
+
+\section{Stores, backups and memory}
+
+\subsection*{\texttt{pii store}}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.26\textwidth}>{\raggedright\arraybackslash}p{0.62\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Effect} \\
+  \midrule
+  \texttt{compact [-{}-dir D]} & offline compaction; prints each file's measured size before
+    and after. A store with nothing to reclaim prints a near-equal pair, which is the truth. \\
+  \texttt{stats [-{}-dir D]} & one line per table with its row count, then the file's bytes \\
+  \texttt{prune [-{}-dir D]} & one retention sweep under the default policy, then the count.
+    Finished runs older than 30 days go, node events older than 7 days go first, at most
+    1{,}000 rows per sweep. A \texttt{Running} or \texttt{Suspended} run is never touched. \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{compact} and \texttt{prune} open the store directly and therefore need the daemon
+stopped. \texttt{stats} does too, for the same reason; run it against a copy if the daemon
+must stay up.
+
+\subsection*{\texttt{pii backup} and \texttt{pii restore}}
+
+Both are offline for the same reason, and both print a manifest line per file with its byte
+count, format version and blake3 digest.
+
+\begin{lstlisting}[language=bash]
+pii backup /var/backups/pii-$(date +%F) --dir /var/lib/pii
+pii restore /var/backups/pii-2026-11-04 --dir /var/lib/pii --force
+\end{lstlisting}
+
+\texttt{restore} refuses to overwrite a non-empty target unless \texttt{-{}-force} is given.
+
+\subsection*{\texttt{pii memory}}
+
+The memory family is the widest in the binary, and its subcommands split into three kinds:
+text search, the entity graph, and lifecycle.
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Flags and effect} \\
+  \midrule
+  \endhead
+  \texttt{search <q>} & \texttt{-{}-k N} (default 6). BM25 over the document table; no model. \\
+  \texttt{put <text>} & \texttt{-{}-layer L} (default \texttt{l1}), \texttt{-{}-kind K}
+    (default \texttt{atom}). One document, written once. \\
+  \texttt{learn} & \texttt{-{}-run}, \texttt{-{}-status}, \texttt{-{}-reason} (required);
+    \texttt{-{}-graph}, \texttt{-{}-attempts}, \texttt{-{}-session}, \texttt{-{}-commit}.
+    Writes an outcome as an \texttt{atom}; the key is run+status+reason, so a retried report
+    is \texttt{unchanged}. \\
+  \texttt{consolidate} & fold recent atoms into longer documents \\
+  \texttt{entity add} & \texttt{-{}-kind}, \texttt{-{}-name}, \texttt{-{}-source} (repeatable,
+    \texttt{run:}/\texttt{file:}/\texttt{actor:}), \texttt{-{}-attr k=v} \\
+  \texttt{entity show <id>} & one record, its tier, and why it holds that tier \\
+  \texttt{entity list} & \texttt{-{}-kind K} or \texttt{-{}-name N}; \texttt{-{}-limit},
+    \texttt{-{}-rank} \\
+  \texttt{link <from> <to>} & \texttt{-{}-kind} or \texttt{-{}-rel}, \texttt{-{}-source},
+    \texttt{-{}-attr} \\
+  \texttt{neighbours <id>} & \texttt{-{}-depth} (default 1, capped by config),
+    \texttt{-{}-limit} \\
+  \texttt{compact} & compact \texttt{memory.redb}; daemon stopped \\
+  \texttt{show <id>} & one document with its tier and reason \\
+  \texttt{tiers} & counts per tier, and the policy in force \\
+  \texttt{archive} & \texttt{-{}-before <epoch|Ns|Nm|Nh|Nd ago>}; writes
+    \texttt{<dir>/memory/archive-<ts>.jsonl} \\
+  \texttt{restore} & bring archived documents back into the live tables \\
+  \bottomrule
+\end{longtable}
+
+Every graph bound is also a flag, so a one-off query can be narrowed without editing the
+config: \texttt{-{}-max-entities}, \texttt{-{}-max-relationships}, \texttt{-{}-max-provenance},
+\texttt{-{}-max-depth}, \texttt{-{}-max-results}, \texttt{-{}-max-bytes}. The tier policy has
+\texttt{-{}-hot-secs}, \texttt{-{}-warm-secs} and \texttt{-{}-hot-count}. A bound that is
+exceeded is refused by name (\texttt{entity\_cap}, \texttt{result\_cap}, \texttt{bytes\_cap}),
+never truncated silently.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[s] (store) {\texttt{store.redb}\\\scriptsize runs, journal, graph bodies};
+  \node[s, right=of store] (mem) {\texttt{memory.redb}\\\scriptsize docs, terms, vectors, entities};
+  \node[s, right=of mem] (queue) {\texttt{queue.redb}\\\scriptsize items, events};
+  \node[s, below=of mem] (durable) {\texttt{durable/}\\\scriptsize channel, timer};
+  \node[b, below=of store] (audit) {\texttt{audit.log}\\\scriptsize denials only};
+  \node[b, left=of audit] (graphs) {\texttt{graphs/}\\\scriptsize installed definitions};
+  \draw[sf] (store) -- (audit);
+  \draw[sf] (mem) -- (queue);
+  \draw[sf] (durable) -- (mem);
+  \draw[sf] (graphs) -- (store);
+\end{tikzpicture}}
+\captionof{figure}{What an installation actually holds. The main store, the memory store, the queue and the durable area are separate redb files; the audit trail is a text file because it must remain readable when a store is not.}
+\end{minipage}
+\end{center}
+
+\section{Knowledge, skills and indices}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.64\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Flags and effect} \\
+  \midrule
+  \texttt{learn scan} & \texttt{-{}-traj}, \texttt{-{}-min-runs}, \texttt{-{}-outlier-factor},
+    \texttt{-{}-max-files}, \texttt{-{}-max-file-bytes}. Reads trajectories, proposes
+    candidate lessons. \\
+  \texttt{learn list}, \texttt{learn show <id>} & the candidate table, one candidate \\
+  \texttt{learn verify} & \texttt{<id>} or \texttt{-{}-all}; \texttt{-{}-max-runs} (5),
+    \texttt{-{}-run-ms} (30000), \texttt{-{}-scratch}, \texttt{-{}-protect} (repeatable),
+    \texttt{-{}-input}. Re-runs the evidence in a scratch tree. \\
+  \texttt{learn promote} & requires \texttt{-{}-metric graph\_definition\_changed} and
+    \texttt{-{}-window-secs}; \texttt{-{}-kind quarantine\_graph}, \texttt{-{}-ttl-secs},
+    \texttt{-{}-actor} \\
+  \texttt{learn promotions} & \texttt{-{}-sweep} to expire lapsed promotions \\
+  \texttt{learn revert <id>} & take a promotion back, with an actor and a ledger row \\
+  \texttt{learn ledger} & \texttt{-{}-tail N}; the append-only record of every promotion \\
+  \texttt{skill add} & \texttt{-{}-file}, \texttt{-{}-layer L1|L2|L3}. The pinned script is
+    hashed where it lies and never executed. \\
+  \texttt{skill list} & \texttt{-{}-all}, \texttt{-{}-layer} \\
+  \texttt{skill show}, \texttt{skill explain} & one skill; \texttt{explain} renders the
+    \texttt{WHEN TO USE}, \texttt{CONTRACT} and \texttt{VERBS} sections verbatim \\
+  \texttt{skill edit <id>} & \texttt{-{}-file}, \texttt{-{}-note}; records the commit or file
+    and time as evidence \\
+  \texttt{index code} & \texttt{-{}-root}, \texttt{-{}-max}, \texttt{-{}-dir},
+    \texttt{-{}-no-docs}; skips \texttt{target}, \texttt{\_tmp} and \texttt{vendor} \\
+  \texttt{index docs} & \texttt{-{}-root}, \texttt{-{}-kind spec|handoff|ops|all}; one
+    document per spec, per \texttt{HANDOFF} section, per operations doc \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{index docs} is idempotent by construction: a document's id is the hash of its text, so
+a second pass over unchanged files reports \texttt{unchanged} and writes nothing.
+
+\section{Observation and decisions}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.64\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Flags and effect} \\
+  \midrule
+  \texttt{health} & \texttt{-{}-json}. Exit 0 when the daemon answers from this client's
+    revision, 2 when nothing answers, 3 on drift or an unprovable comparison. \\
+  \texttt{metrics} & the gauge and counter text format, one line per series \\
+  \texttt{sys status}, \texttt{sys reload} & the status payload; re-read the config and the
+    project layer without a restart \\
+  \texttt{disk} & \texttt{-{}-root <repo>}; artefact roots with bytes, age, filesystem, then
+    free space for \texttt{/} and for the repository's volume. Read-only. \\
+  \texttt{incidents scan} & \texttt{-{}-root}, \texttt{-{}-new}; or
+    \texttt{-{}-source runtime -{}-log F} for the daemon's own log, with
+    \texttt{-{}-ingest -{}-dir D} to store what it found \\
+  \texttt{incidents show} & \texttt{-{}-dir}, \texttt{-{}-id} \\
+  \texttt{incidents distance} & \texttt{-{}-since YYYY-MM-DD} \\
+  \texttt{loop emit} & \texttt{-{}-cycle}, \texttt{-{}-kind}, \texttt{-{}-detail},
+    \texttt{-{}-file}. Always records locally; exit 3 if the daemon did not answer, so the
+    caller can record the gap. \\
+  \texttt{loop events} & \texttt{-{}-last N} (20), \texttt{-{}-file}, \texttt{-{}-log} \\
+  \texttt{cron ls} & configured cron entries \\
+  \texttt{approve ls} & pending approvals \\
+  \texttt{approve allow|deny <id>} & \texttt{-{}-note}; resolves one gate \\
+  \texttt{heal ls}, \texttt{heal show <sig>} & the heal-attempt ledger, one signature \\
+  \texttt{net ls} & the listeners the daemon reports \\
+  \texttt{worker ls}, \texttt{worker reload <name>} & supervised children; drain and reload \\
+  \texttt{treat export} & \texttt{-{}-out <dir>}; writes \texttt{manifest.json},
+    \texttt{fix.patch}, \texttt{repro.sh} \\
+  \texttt{treat import}, \texttt{apply}, \texttt{list} & \texttt{-{}-check},
+    \texttt{-{}-is-ancestor}, \texttt{-{}-yes} \\
+  \texttt{deploy-card render} & \texttt{-{}-card F; refuses a card missing any of the five
+    fields, naming the field} \\
+  \texttt{deploy-card approve} & \texttt{-{}-card F -{}-rev R}; bound to the revision the card
+    names \\
+  \texttt{deploy-card refuse} & \texttt{-{}-card F [-{}-reason T]} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Every deploy-card decision appends one line to the operator acts file, whose default is
+\texttt{\_tmp/autonomy/operator-acts.log} and whose path is overridable with
+\texttt{\$PII\_ACTS}. That file is the evidence the distance metric counts; a decision that is
+not in it did not happen.
+
+\section{Devices, sandboxes and scaffolding}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.64\textwidth}@{}}
+  \toprule
+  \textbf{Verb} & \textbf{Flags and effect} \\
+  \midrule
+  \texttt{mqtt ls} & devices, from their own discovery messages \\
+  \texttt{mqtt sub <filter> [secs]} & what a filter carries, for a bounded window \\
+  \texttt{mqtt pub <topic> <text>} & \texttt{-{}-qos 0|1|2}, \texttt{-{}-retain} \\
+  \texttt{mqtt send <device> <cmd>} & address a device by name, not by topic \\
+  \texttt{sandbox-exec} & \texttt{-{}-profile <p> -{}-workspace <d> -{}- <argv>}; applies
+    Landlock, verifies enforcement, then execs \\
+  \texttt{worker-exec} & the reference worker on stdio; ops \texttt{echo}, \texttt{sleep},
+    \texttt{crash}, \texttt{info} \\
+  \texttt{tui} & \texttt{-{}-connect auto|loopback|<socket>}, \texttt{-{}-sandbox},
+    \texttt{-{}-workspace}. Never auto-starts a daemon. \\
+  \texttt{project init <dir>} & writes \texttt{.pii/settings.toml}, \texttt{.pii/policy.toml},
+    \texttt{.pi/}, \texttt{.claude/} and five \texttt{.gitignore} lines; refuses a target that
+    already holds a credential \\
+  \texttt{lane plan <N>} & \texttt{-{}-resume <sid>}, \texttt{-{}-dry-run}; prints the agent,
+    model, provider, spec, brief, log and wait, and writes nothing when dry \\
+  \texttt{lane run <N>} & the same plan, then the run \\
+  \texttt{lane rev} & the revision the lane binary was built from \\
+  \texttt{soak} & \texttt{-{}-connect <socket> -{}-runs N -{}-graph G
+    [-{}-concurrency C]; N runs against a live daemon} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{mqtt} reads the broker from \texttt{-{}-url}, else from \texttt{\$PII\_MQTT\_URL}, and
+otherwise uses the loopback broker on port 1883. Its output is one JSON object per call --- the same shape the
+model's tool returns --- so a script and an agent see the same thing.
+
+\section{Exit codes}
+
+The binary uses a small, stable set. Scripts depend on these, and a change to one is a
+breaking change.
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.10\textwidth}>{\raggedright\arraybackslash}p{0.78\textwidth}@{}}
+  \toprule
+  \textbf{Code} & \textbf{Meaning} \\
+  \midrule
+  \endhead
+  0 & success \\
+  2 & usage error, a refused control call, or an unreadable store. The message names the
+      argument or the call. \\
+  3 & the work ran and did not pass: graph validation errors, \texttt{health} drift or an
+      unprovable revision comparison, \texttt{loop emit} with the daemon down \\
+  4 & the sandbox profile could not be enforced; the daemon refuses to start unconfined \\
+  8 & the lane's dirty-tree stop; the tree has changes the run did not make \\
+  \bottomrule
+\end{longtable}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[v] (ask) {did it run?};
+  \node[b, above right=8mm and 14mm of ask] (no) {no};
+  \node[b, below right=8mm and 14mm of ask] (yes) {yes};
+  \node[b, right=of no] (usage) {2: the argument is wrong};
+  \node[b, right=of yes] (verdict) {did it pass?};
+  \node[b, above right=6mm and 12mm of verdict] (pass) {0};
+  \node[b, right=6mm of verdict, yshift=-9mm] (fail) {3: ran, did not pass};
+  \draw[f] (ask) -- node[p, above=2pt, midway]{no} (no);
+  \draw[f] (ask) -- node[p, below=2pt, midway]{yes} (yes);
+  \draw[f] (no) -- (usage);
+  \draw[f] (yes) -- (verdict);
+  \draw[f] (verdict) -- node[p, above=2pt, midway]{yes} (pass);
+  \draw[f] (verdict) -- node[p, below=2pt, midway]{no} (fail);
+\end{tikzpicture}}
+\captionof{figure}{The decision an exit code encodes. \enquote{Ran and did not pass} is deliberately distinct from \enquote{did not run}: a script that retries on 3 and reports on 2 is doing different things, and should say so.}
+\end{minipage}
+\end{center}
+
+\begin{lstlisting}[language=bash]
+pii health >/dev/null; echo $?      # 0 same build, 3 drift, 2 no daemon
+pii graph lint graphs/night.toml    # 0 ok, 3 invalid, 2 unreadable
+pii store stats --dir /var/lib/pii  # needs the daemon stopped
+pii metrics | grep pii_store_bytes  # one series per store file
+\end{lstlisting}

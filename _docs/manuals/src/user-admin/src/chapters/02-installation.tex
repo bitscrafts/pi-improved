@@ -1,0 +1,492 @@
+\chapter{Installation}
+
+\label{ch:install}
+
+pii installs as a \emph{user} service by default. There is no package and, in that scope,
+no root-owned state: the binary, its configuration, its graphs and its stores all live under
+your own home, which is also what makes an upgrade a matter of replacing files that the
+installer has already moved aside. A system scope exists --- \texttt{SCOPE=system}, with
+\texttt{/etc/pii} and \texttt{/var/lib/pii} --- and everything below is written to be read
+with either in mind. This chapter is the whole install path --- the two
+directories, the script that fills them, the unit that supervises the process, the
+credential file, and the commands that prove the result. It also lists the
+preconditions the installer checks before it changes anything, because every one of them
+was added after an install that half-succeeded.
+
+\section{What you need}
+
+\begin{itemize}
+	\item a Linux host with a writable \texttt{\$HOME} and a user session. systemd
+	\texttt{--user} is how the daemon is normally supervised, but it is not required: the
+	daemon is a foreground process that can be started by hand, and on a host without a
+	user bus that is the only way it runs;
+	\item a kernel that can enforce the sandbox profile. Landlock is the mechanism; if the
+	profile cannot be enforced the daemon \emph{refuses to start} with exit code 4 rather
+	than falling back to unconfined;
+	\item the \texttt{pii} binary, built for the host's architecture, plus the three
+	sibling binaries if you want them;
+	\item \texttt{curl}, which the installer uses for one precondition probe;
+	\item Python 3.11 or newer with \texttt{tomllib}, which the installer uses to merge and
+	verify the configuration file. The script locates it, or falls back to a \texttt{uv}
+	provisioned interpreter under \texttt{\_tmp/};
+	\item a provider credential for any workflow that calls a model. It is kept in the
+	environment of the service, never in a file that is committed;
+	\item a \emph{deploy card} for the revision you are about to install. It is a JSON file
+        under \texttt{\_tmp/deploy/} named \texttt{card-\textless{}rev\textgreater{}.json},
+keyed by the seven- or
+	twelve-character short revision of \texttt{HEAD}. The installer refuses without one.
+\end{itemize}
+
+The deploy card is the one precondition that surprises people. It is not bureaucracy
+around the install script: it is the record that a specific revision was proved red on
+its base, green on its branch, gated, and rehearsed for rollback. A card is rendered,
+approved or refused with \texttt{pii deploy-card}, and a card missing any of its five
+fields is refused with the field named and no approval path printed.
+
+\section{The binary and the state directory}
+
+The binary is self-contained. Its \emph{state} lives in a directory chosen once, by one
+function, in this order:
+
+\begin{enumerate}
+	\item \texttt{PII\_STATE\_DIR}, when set and non-empty;
+	\item otherwise \texttt{\$HOME/.local/state/pii}.
+\end{enumerate}
+
+That single resolver is deliberate. Before it, several commands each had their own notion
+of where the store lived, and a command could read a store the daemon was not writing.
+The measured symptom was not a crash: it was a CLI reporting an empty run list while the
+daemon served hundreds of runs from another file. If you set \texttt{PII\_STATE\_DIR} for
+a test, set it for the daemon too, or you are looking at two different systems.
+
+The \emph{runtime} directory is a second, separate rule, and mixing the two up is the most
+common installation defect:
+
+\begin{enumerate}
+	\item \texttt{PII\_RUNTIME\_DIR}, when set;
+	\item \texttt{[core].runtime\_dir} from the config file;
+	\item \texttt{/run/user/\textless{}uid\textgreater{}/pii}.
+\end{enumerate}
+
+The runtime directory holds the control socket and, on a normal host, is a tmpfs. That is
+why the durable stores --- the channel cursor and the timer wheel --- default to
+\texttt{\textless{}state dir\textgreater{}/durable} and never to the runtime directory: a timer
+that disappears at
+reboot is worse than no timer at all. It is also why the installer symlinks the graphs
+directory into the runtime directory on every start rather than copying it there.
+
+\subsection*{The shape of an installation}
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=10mm and 14mm]
+  \node[b] (unit) {unit file\\\scriptsize \texttt{\$UNIT\_DIR/pii.service}};
+  \node[b, right=of unit] (bin) {binary\\\scriptsize \texttt{\$PREFIX/pii}};
+  \node[b, right=of bin] (conf) {config\\\scriptsize \texttt{\$CONFIG\_DIR/pii.toml}};
+  \node[b, right=of conf] (env) {secrets\\\scriptsize \texttt{pii.env}, 0600};
+  \node[s, below=of bin] (state) {state dir\\\scriptsize stores, logs, graphs};
+  \node[s, right=of state] (run) {runtime dir\\\scriptsize socket, graphs link};
+  \node[s, below=of state] (dur) {durable/\\\scriptsize channel, timer};
+  \draw[f] (unit) -- node[p,above=2pt,midway]{starts} (bin);
+  \draw[f] (bin) -- node[p,above=2pt,midway]{reads} (conf);
+  \draw[sf] (conf) -- node[p,above=2pt,midway]{same dir} (env);
+  \draw[f] (bin.south) -- (state.north);
+  \draw[f] (bin.south east) -- (run.north);
+  \draw[sf] (state) -- (dur);
+\end{tikzpicture}}
+\captionof{figure}{What an installation owns, in the user scope. Notice the two dashed edges:
+the key file sits beside the config but is read by the service, and the unit is only a file
+until an operator enables it.}
+\end{center}
+
+\section{The installer, stage by stage}
+
+One command does the whole install, and it is idempotent. It never deletes: anything it
+replaces is moved into a dated directory first, so a failed install leaves you able to
+compare and to roll back.
+
+\begin{lstlisting}[language=bash]
+bash deploy/install-pii.sh                    # SCOPE=user (the default)
+SCOPE=system bash deploy/install-pii.sh       # /etc/systemd/system, /etc/pii, /var/lib/pii
+CONFIG_ONLY=1 bash deploy/install-pii.sh      # rewrite the config and credentials only
+\end{lstlisting}
+
+The stages run in a fixed order, and the preconditions are all checked before the first
+file moves. That ordering is not cosmetic: it means an aborted install changes nothing,
+which is the only property that makes a script safe to run on a host you care about. The
+one exception is \texttt{CONFIG\_ONLY=1}, which skips the build, the card, the binaries and
+the unit, and touches only the config file and the credential file.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (pre) {preconditions\\\scriptsize card, model host, prefix};
+  \node[b, right=of pre] (build) {build\\\scriptsize clean export};
+  \node[b, right=of build] (move) {move aside\\\scriptsize dated directory};
+  \node[b, right=of move] (install) {install\\\scriptsize binaries, config, unit};
+  \node[v, right=of install] (ok) {refused?};
+  \node[b, above=of ok] (abort) {abort\\\scriptsize nothing changed};
+  \node[b, below=of ok] (print) {operator steps\\\scriptsize nothing enabled};
+  \draw[f] (pre) -- node[p,above=2pt,midway]{all met} (build);
+  \draw[f] (build) -- (move);
+  \draw[f] (move) -- (install);
+  \draw[f] (install) -- (ok);
+  \draw[bk] (ok) -- node[p,left=2pt,midway]{yes} (abort);
+  \draw[f] (ok) -- node[p,left=2pt,midway]{no} (print);
+\end{tikzpicture}}
+\captionof{figure}{The installer's shape. Every refusal happens either before the build or in
+the config-merge step, which restores the replaced file byte for byte. The script ends by
+printing what an operator still has to do; it never enables or starts the unit.}
+\end{center}
+
+\subsection*{What the preconditions cost when they fail}
+
+Each precondition exists because the failure it prevents was measured.
+
+\begin{itemize}
+	\item \textbf{The model host must answer.} The script does
+        \texttt{GET \textless{}llama host\textgreater{}/models} with a five-second limit and
+aborts if it does not.
+	Without this probe an install succeeds and every graph that needs a model fails at
+	spawn, minutes later, with the daemon looking healthy.
+	\item \textbf{The named graphs must exist.} The generated configuration names
+	\texttt{discord-triage} and \texttt{discord-digest}; the script refuses if either file
+	is missing from \texttt{graphs/}, because a config that names a graph the daemon cannot
+	load is a daemon that starts with a channel and no work.
+	\item \textbf{The prefix must be writable.} It is created if absent and refused if it
+	cannot be written --- before the build, so a permissions problem costs seconds rather
+	than a release compile.
+	\item \textbf{The working tree must be a git checkout.} The card is keyed by the short
+	revision of \texttt{HEAD}, and there is no install without a card.
+\end{itemize}
+
+The build itself is worth one paragraph, because two deployment defects are recorded in
+its comments. The script exports \texttt{git archive HEAD} into a temporary directory and
+builds there. Measured on three consecutive deploys, building in the working tree shipped
+binaries that reported \texttt{\textless{}rev\textgreater{}-dirty} whenever any path was
+uncommitted --- including
+a worker's leftover --- so the revision the deploy card quotes carried a suffix meaning
+\emph{this is not the commit you verified}. The export has no \texttt{.git}, so
+\texttt{build.rs} cannot read the revision from it; the script therefore passes
+\texttt{PII\_BUILD\_REVISION} explicitly. That was measured too: the first export-built
+binary reported \texttt{unknown} for a build correctly made from a known commit, and
+\texttt{pii health} classified it as unverified for ever after.
+
+\section{Environment and scope}
+
+Every path the installer writes is an environment variable with a default, so a second
+installation on the same host --- a test prefix, a different user --- needs no editing of
+the script.
+
+\begin{longtable}{@{}p{0.20\textwidth}p{0.36\textwidth}p{0.40\textwidth}@{}}
+	\toprule
+	\textbf{Variable} & \textbf{User scope default} & \textbf{System scope default} \\
+	\midrule
+	\endhead
+	\texttt{SCOPE} & \texttt{user} & \texttt{system} \\
+	\texttt{PREFIX} & \texttt{\$HOME/.local/bin} & \texttt{\$HOME/.local/bin} (the static
+	unit in \texttt{deploy/} instead names \texttt{/usr/local/bin/pii}) \\
+	\texttt{CONFIG\_DIR} & \texttt{\$HOME/.config/pii} & \texttt{/etc/pii} \\
+	\texttt{STATE\_DIR} & \texttt{\$HOME/.local/state/pii} & \texttt{/var/lib/pii} \\
+	\texttt{RUNTIME\_DIR} & \texttt{/run/user/\textless{}uid\textgreater{}/pii} & \texttt{/run/pii} \\
+	\texttt{UNIT\_DIR} & \texttt{\$HOME/.config/systemd/user} & \texttt{/etc/systemd/system} \\
+	\texttt{BIN\_SRC} & \texttt{\textless{}repo\textgreater{}/target/release} & same \\
+	\texttt{LLAMA\_HOST} & \texttt{http://10.10.10.217:8082/v1} & same \\
+	\bottomrule
+\end{longtable}
+
+Three more variables change what the script does rather than where it writes.
+\texttt{SKIP\_BUILD=1} installs the binaries already in \texttt{BIN\_SRC} and is how a
+host without a Rust toolchain takes a release;
+\texttt{CONFIG\_ONLY=1} rewrites only the configuration and the channel credentials, with
+no build, no card, no binaries and no unit, which is the supported way to change a model
+host or a token on a running installation; and \texttt{PII\_PYTHON} pins the interpreter
+used for the config merge.
+
+\section{The configuration file}
+
+Behaviour lives in one TOML file, and the file is strict: an unknown key is a load
+error, so a typo in a sandbox or a runtime path cannot silently become a default. The
+installer writes it by \emph{merging} rather than regenerating, and then verifies that
+every table and key path of the replaced file is present in the candidate, naming each
+miss instead of proceeding. Before that change, a re-install rewrote the file from the
+template and carried only \texttt{model} forward --- which is how an operator's sections
+disappeared.
+
+The sections the daemon reads are these, and nothing else:
+
+\begin{center}
+\begin{tabular}{@{}p{0.22\textwidth}p{0.66\textwidth}@{}}
+	\toprule
+	\textbf{Section} & \textbf{What it decides} \\
+	\midrule
+	\texttt{grant\_ceiling} (top level) & the capability names no graph or node may request
+	beyond; empty means no ceiling \\
+	\texttt{[core]} & model, runtime dir, durable dir, log file and rotation, trajectory
+	root and its bounds, the measurement switches \\
+	\texttt{[llama]} & the base URL a \texttt{llamacpp-server:} model dials \\
+	\texttt{[net]} & egress host patterns and whether private destinations are allowed \\
+	\texttt{[memory]}, \texttt{[memory\_graph]} & the memory store's path and graph
+	settings \\
+	\texttt{[[worker]]} & supervised child processes, with their own in-flight limits \\
+	\texttt{[[channel]]} & inbound message sources and the graph each message runs \\
+	\texttt{[[mqtt]]} & broker connections, topics and the graph per message \\
+	\texttt{[[cron]]} & named schedules, and the graph each one names \\
+	\texttt{[hal]}, \texttt{[wasm]}, \texttt{[evolve]} & optional subsystems; absent means
+	off \\
+	\texttt{[[model\_tier]]} & named model tiers \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The \texttt{[core]} keys an administrator actually touches are
+\texttt{model}, \texttt{runtime\_dir}, \texttt{durable\_dir}, \texttt{log\_file},
+\texttt{log\_rotate\_bytes} (default 10485760), \texttt{log\_keep\_files} (default 5),
+\texttt{trajectory\_dir} (absent means trajectories are off),
+\texttt{trajectory\_max\_bytes} (default 512 MiB), \texttt{trajectory\_max\_files}
+(default 50\,000), and the two measurement switches \texttt{observer} and \texttt{audit},
+which default to \texttt{on} and must stay on in production.
+
+\subsection*{The path the CLI reads is not always the path the service reads}
+
+\texttt{pii daemon} takes \texttt{--config}, defaulting to \texttt{\$PII\_CONFIG} and then
+\texttt{\$HOME/.pii/pii.toml}. The installer writes \texttt{\$CONFIG\_DIR/pii.toml} ---
+\texttt{\$HOME/.config/pii/pii.toml} in the user scope --- and puts
+\texttt{PII\_CONFIG} in the unit. The consequence is exact and worth memorising: a shell
+that runs \texttt{pii} without \texttt{PII\_CONFIG} set is reading a different file from
+the one the daemon loaded, and \texttt{pii health} will show you the daemon's file by
+path and hash if you ask. Export \texttt{PII\_CONFIG} in your shell, or accept that the
+two are separate.
+
+The same shape applies to the store. \texttt{pii daemon --help} documents the default as
+\texttt{\textless{}runtime dir\textgreater{}/store.redb}, while the store commands and the
+backup default to the
+state directory; the change that would make the daemon agree had not landed at this
+revision. Do what the shipped unit does: pass \texttt{--store} explicitly, pointing at
+\texttt{\$STATE\_DIR/store.redb}.
+
+\section{Credentials}
+
+Model providers and channels are reached with values taken from the environment of the
+process that needs them. Nothing in the configuration file is a secret, and no pii command
+prints one: provider errors and events are scrubbed of the key before they are written.
+
+The convention in this deployment is a single environment file next to the config,
+owned by the user, mode \texttt{0600}, read by the service unit and never by the
+repository:
+
+\begin{lstlisting}[language=bash]
+install -m 600 /dev/null ~/.config/pii/pii.env
+# then edit it to hold the provider key(s) and the channel ids, and nothing else
+chmod 600 ~/.config/pii/pii.env
+\end{lstlisting}
+
+The unit reference is written with a leading dash ---
+\texttt{EnvironmentFile=-\$CONFIG\_DIR/pii.env} --- which makes the file optional. The
+difference matters: without the dash, a missing file is a unit that fails to start, and the
+error is about systemd rather than about the credential. With it, the daemon starts and
+reports what it does not have --- \texttt{channels: []} --- which is a state to report, not
+a failure to diagnose.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=9mm and 13mm]
+  \node[b] (ops) {operator\\\scriptsize exports the token};
+  \node[b, right=of ops] (envf) {\texttt{pii.env}\\\scriptsize 0600, outside the repo};
+  \node[b, right=of envf] (unit) {unit\\\scriptsize \texttt{EnvironmentFile=-}};
+  \node[m, right=of unit] (proc) {daemon process\\\scriptsize environment};
+  \node[b, below=of proc] (provider) {provider\\\scriptsize one egress host};
+  \node[b, below=of envf] (conf) {\texttt{pii.toml}\\\scriptsize never a secret};
+  \draw[f] (ops) -- (envf);
+  \draw[f] (envf) -- (unit);
+  \draw[f] (unit) -- (proc);
+  \draw[f] (proc) -- (provider);
+  \draw[bk] (conf) -- node[p,left=2pt,midway]{must not} (envf);
+\end{tikzpicture}}
+\captionof{figure}{The secret path. The value reaches the daemon's environment and nothing else;
+the config file names the shape of the connection, never the credential. A key pasted into a
+chat or a commit is compromised, and rotation is the only remedy.}
+\end{center}
+
+Named variables, so a grep for one of them in the tree is a finding: \texttt{OPENAI\_API\_KEY}
+and \texttt{OPENAI\_BASE\_URL}; \texttt{ANTHROPIC\_API\_KEY} and
+\texttt{ANTHROPIC\_BASE\_URL}; \texttt{GEMINI\_API\_KEY} and \texttt{GEMINI\_BASE\_URL};
+\texttt{PII\_MODEL} for a default model; \texttt{PII\_DISCORD\_TOKEN} and
+\texttt{PII\_DISCORD\_CHANNEL\_ID} for the one forum channel the installer configures.
+Egress is granted per host: the daemon grants \texttt{http:\textless{}host\textgreater{}} for
+the host of the
+configured base URL only, and any other host is denied and reported.
+
+\section{Supervising the daemon}
+
+The daemon is a foreground process: \texttt{--foreground} is accepted for supervisors and
+changes nothing, because the daemon never forks. The installer writes this unit and does
+not enable it:
+
+\begin{lstlisting}
+[Unit]
+Description=Pii daemon
+After=network-online.target
+
+[Service]
+Type=simple
+$USERLINE
+Environment=PII_RUNTIME_DIR=$RUNTIME_DIR
+Environment=PII_CONFIG=$CONF
+EnvironmentFile=-$CONFIG_DIR/pii.env
+WorkingDirectory=$STATE_DIR
+ExecStartPre=/usr/bin/env mkdir -p $RUNTIME_DIR
+ExecStartPre=/usr/bin/env ln -sfn $STATE_DIR/graphs $RUNTIME_DIR/graphs
+ExecStart=$PREFIX/pii daemon --foreground --config $CONF --store $STATE_DIR/store.redb \
+  --workspace $STATE_DIR --log-file $STATE_DIR/pii.log \
+  --log-rotate-bytes 10485760 --log-keep-files 5
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=$WANTED
+\end{lstlisting}
+
+The variables are the installer's own: \texttt{\$USERLINE} is a \texttt{User=} line and is
+emitted only in the system scope, and \texttt{\$WANTED} is \texttt{default.target} for a
+user unit and \texttt{multi-user.target} for a system one.
+
+Two lines in that unit are load-bearing beyond the obvious. The symlink of the graphs
+directory runs on every start because the runtime directory is a tmpfs: the graphs live in
+the state directory and are placed where the daemon looks for them at each boot.
+\texttt{TimeoutStopSec=10} matches the daemon's own shutdown: it waits at most five seconds
+for in-flight blocking work, then exits anyway, so a stop that needs more than ten seconds
+is a stuck process and systemd will kill it.
+
+Then enable it, and make it survive logout if the host is meant to run unattended:
+\texttt{systemctl --user daemon-reload}, then \texttt{systemctl --user enable --now pii},
+then \texttt{loginctl enable-linger} for the account. Nothing in the installer runs those
+three commands, which is deliberate --- an install that starts a service is an install you
+cannot inspect before it acts.
+
+The repository also ships a static unit for the system scope,
+\texttt{deploy/pii.service}, which uses \texttt{DynamicUser=yes} with
+\texttt{StateDirectory}, \texttt{RuntimeDirectory} and \texttt{LogsDirectory} so that
+\texttt{/var/lib/pii}, \texttt{/run/pii} and \texttt{/var/log/pii} are created, owned and
+kept across restarts. Use one or the other, not both: two units for the same daemon is the
+same defect as two daemons for the same store.
+
+\section{The graphs an installation serves}
+
+Graphs are installed as files under \texttt{\$STATE\_DIR/graphs}, and the daemon resolves
+a name through three directories in order: \texttt{\textless{}runtime dir\textgreater{}/graphs},
+then the
+\texttt{graphs} directory beside the store, then
+\texttt{\$HOME/.local/state/pii/graphs}. A directory listed twice is searched once. That
+order is why an installed copy can shadow a repository copy, and why
+\texttt{pii graph list} prints a drift column: \texttt{same}, \texttt{DRIFT},
+\texttt{installed-only} or \texttt{repo-only} compares each installed file against its
+repository twin by the hash of its bytes.
+
+\begin{lstlisting}[language=bash]
+pii graph list                  # name, hash, node count, trigger, armed runs, drift
+pii graph list --all            # include graphs that are only in the repository
+pii graph edit queue --file graphs/queue.toml    # lint, move the old one aside, write atomically
+\end{lstlisting}
+
+\texttt{pii graph edit} never deletes a graph: it lints the candidate first, moves the
+previous file aside, and writes atomically. A graph that fails lint is not installed at
+all, so a bad edit cannot take out a working graph.
+
+\section{Verifying the installation}
+
+Four commands, in increasing depth. Each has an expected reading, and the exit codes are
+part of the answer.
+
+\begin{lstlisting}[language=bash]
+pii --version                 # the binary you are actually running
+pii health                    # 0 = this build, 2 = no daemon, 3 = drift or unverified
+pii health --json             # the full sys.status payload, for a script
+pii graph list                # does the daemon see the graphs on disk?
+\end{lstlisting}
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=12mm and 12mm]
+  \node[b] (v) {\texttt{pii --version}};
+  \node[b, right=of v] (h) {\texttt{pii health}};
+  \node[v, right=of h] (code) {exit code?};
+  \node[b, right=of code, yshift=16mm] (zero) {0\\\scriptsize same build, same tree};
+  \node[b, right=of code] (two) {2\\\scriptsize nothing answered};
+  \node[b, right=of code, yshift=-16mm] (three) {3\\\scriptsize drift or unverified};
+  \node[b, right=of three] (unit) {\texttt{systemctl --user status pii}};
+  \draw[f] (v) -- (h);
+  \draw[f] (h) -- (code);
+  \draw[f] (code) -- node[p,above=2pt,midway]{0} (zero);
+  \draw[f] (code) -- node[p,above=2pt,midway]{2} (two);
+  \draw[bk] (code) -- node[p,below=2pt,midway]{3} (three);
+  \draw[sf] (two) -- (unit);
+\end{tikzpicture}}
+\captionof{figure}{The verification ladder, and the three readings of \texttt{pii health}. Exit
+3 immediately after an install is correct: the client is the new binary and the daemon is still
+the old process. It becomes 0 only after the restart.}
+\end{center}
+
+A health answer whose \texttt{stores} list is empty is not a healthy daemon, whatever its
+exit code: it is a daemon pointed at an empty directory. Check
+\texttt{PII\_STATE\_DIR} and the unit's \texttt{--store} argument before believing anything
+else. The same reading applies to \texttt{format\_version}: a store at a version the binary
+does not know is refused at open, with the path and both versions in the message, and
+nothing is written to the file.
+
+\section{Rolling an installation back}
+
+\texttt{deploy/rollback-pii.sh} undoes the last install without deleting anything. It
+stops the unit if it is running, finds the newest
+\texttt{\$PREFIX.old-\textless{}epoch\textgreater{}} directory,
+and moves its contents back --- binaries to the prefix, \texttt{pii.toml} to the config
+directory, the unit to the unit directory, and any \texttt{graph.*} file to the state
+directory's \texttt{graphs}. Whatever it replaces is moved to
+\texttt{\$PREFIX.rolledback-\textless{}epoch\textgreater{}}, and it prints each file restored.
+
+\begin{lstlisting}[language=bash]
+bash deploy/rollback-pii.sh
+systemctl --user daemon-reload && systemctl --user restart pii
+pii health                                    # back to the older revision, exit 0
+\end{lstlisting}
+
+The script is exercised in a scratch prefix by the deployment checks, and the drill is
+worth repeating once on a real host before you need it: an install followed by a rollback
+followed by \texttt{pii health} returning 0 proves both directions, and costs a minute.
+
+\section{Failure modes of the install itself}
+
+\begin{center}
+\begin{tabular}{@{}p{0.34\textwidth}p{0.58\textwidth}@{}}
+	\toprule
+	\textbf{Symptom} & \textbf{Cause, and what to check} \\
+	\midrule
+	\texttt{ABORT: no deploy card for revision \ldots} & No
+        \texttt{\_tmp/deploy/card-\textless{}rev\textgreater{}.json} for \texttt{HEAD}. Render
+and approve a card, or
+	install a revision that has one. \\
+	\texttt{ABORT: llama.cpp host \ldots\ does not answer} & The model host is down or the
+	URL is wrong. Nothing was changed; the probe runs before the build. \\
+	\texttt{cargo: command not found} inside the export & A non-interactive shell did not
+	carry your \texttt{PATH}. The script now exports it itself; an older copy of the script
+	is what fails here. \\
+        The installed binary reports \texttt{\textless{}rev\textgreater{}-dirty} & It was built
+in the working tree.
+	Only a clean-export build is deployable evidence. \\
+	The installed binary reports \texttt{unknown} & The export build did not receive
+	\texttt{PII\_BUILD\_REVISION}. Rebuild with the script, not by hand. \\
+	\texttt{pii health} exits 2 after install & The unit was written but not enabled, or it
+	failed to start. \texttt{systemctl --user status pii}, then the log file. \\
+	The daemon starts but every graph fails at spawn & The model id is one the provider does
+	not serve, or the key is not in the unit's environment. \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The last row is the one that looks like a pii bug and usually is not. A model id that the
+provider has retired fails at spawn, in a second, with no partial output; the spec graph
+takes its \texttt{err} edge to a \texttt{refuse} node, and the queue records the row as
+refused rather than failed. Read the id in the graph, then the model the daemon resolved,
+then the provider's own list.

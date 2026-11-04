@@ -1,0 +1,435 @@
+\chapter{Daily use}
+
+\label{ch:daily}
+
+A normal day with pii is short. You ask the daemon what it is, you give it work --- a
+prompt, a graph, a queue row --- and then you read what it did. This chapter is that loop
+in the order you actually run it, with the exact flags the binary accepts at the revision
+this manual describes, the exit code each command returns, and the places where the answer
+looks like a success and is not. Nothing here needs the repository; everything here assumes
+a daemon that is already running, as installed in Chapter~\ref{ch:install}.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=9mm and 12mm]
+  \node[b] (health) {\texttt{pii health}\\\scriptsize is it the build I think it is?};
+  \node[b, right=of health] (work) {give it work\\\scriptsize prompt, graph, queue row};
+  \node[b, right=of work] (read) {read the run\\\scriptsize get, trace, explain};
+  \node[b, above=of read] (keep) {keep the stores\\\scriptsize stats, compact, prune};
+  \node[b, left=of keep] (fine) {as expected?};
+  \node[b, left=of fine] (report) {report it\\\scriptsize the journal is the evidence};
+  \draw[f] (health) -- (work);
+  \draw[f] (work) -- (read);
+  \draw[f] (read) -- (keep);
+  \draw[f] (keep) -- (fine);
+  \draw[bk] (fine) -- node[p,above=2pt,midway]{no} (report);
+  \draw[f] (fine) -- node[p,right=2pt,midway]{yes} (health);
+\end{tikzpicture}}
+\captionof{figure}{The daily loop. The first and last steps are the ones that get skipped: a
+health call before you trust a result, and a store reading before the disk tells you.}
+\end{center}
+
+\section{Asking the daemon a question}
+
+\texttt{pii health} is the first command of any session, including a session that starts
+with \enquote{it worked yesterday}. It prints the daemon's own account of itself and
+returns an exit code that a script can branch on.
+
+\begin{lstlisting}[language=bash]
+pii health                 # human text; 0 = same build, 2 = no daemon, 3 = drift
+pii health --json          # the sys.status payload, verbatim
+pii metrics                # one name-value line per metric
+pii disk                   # artefact roots with size, age and filesystem
+\end{lstlisting}
+
+The text form is documented line by line in Chapter~\ref{ch:what} and is not repeated
+here. The useful habit is narrower: read \texttt{client:} against the first line, because
+that pair is the only thing in pii that tells you whether the binary in your shell and the
+process answering you are the same program. A \texttt{DRIFT} line on stderr with exit 3 is
+not an error to fix; it is a fact to act on --- restart the service, or use the binary the
+daemon is running.
+
+\texttt{pii disk} answers a different question, and it exists because the answer used to
+take four commands and a guess. It walks a fixed list of artefact roots
+(\texttt{\_tmp/gate-target}, \texttt{\_tmp/gate-target-fresh}, \texttt{\_tmp/targets},
+\texttt{\_tmp/\_trash}, \texttt{/projects/\_tmp}, \texttt{/projects/\_trash},
+\texttt{/tmp/\_trash-podman}, \texttt{/tmp/gate-cache} and every unclaimed
+\texttt{\_tmp/*target*} directory), prints each one's size, age, filesystem and
+whether an owner claims it, then prints free space for \texttt{/} and for the volume that
+holds the repository. It is read-only; removal is \texttt{cargo xtask disk --gc}, which
+owns the TTL.
+
+The reason it prints \emph{two} free-space lines is a measured defect: the gate's floor
+was evaluated on \texttt{/} while the artefacts landed on \texttt{/projects}, so a host
+with 16\,GB free on a 288\,GB overlay and 147\,GB free on the repository volume refused to
+run --- and the obvious first move, \texttt{cargo clean} on the repository, freed space on
+the volume that was never short.
+
+\section{One-shot prompts}
+
+\texttt{pii -p} is the shortest path to a model. It carries a prompt, and its flags decide
+which model, which graph, which workspace and how much confinement.
+
+\begin{lstlisting}[language=bash]
+pii -p "summarise the open items in specs/350-an-incident-becomes-a-case.md"
+pii -p "why did run r000000000130 end unverified" --model llamacpp-server:granite-4.2-3b
+pii -p "check the tree" --graph preflight --workspace /projects/pi-improved
+\end{lstlisting}
+
+\begin{longtable}{@{}p{0.20\textwidth}p{0.72\textwidth}@{}}
+	\toprule
+	\textbf{Flag} & \textbf{Effect} \\
+	\midrule
+	\endhead
+	\texttt{--model M} & the model spec for this call; wins over \texttt{\$PII\_MODEL} and
+	over \texttt{[core].model} \\
+	\texttt{--graph G} & run an installed graph instead of the default one-shot path \\
+	\texttt{--workspace D} & the directory the sandbox and the tools are scoped to;
+	defaults to the current directory \\
+	\texttt{--sandbox off|workspace} & \texttt{workspace} is the default; \texttt{off}
+	runs unconfined and says so \\
+        \texttt{--connect auto|loopback|\textless{}socket\textgreater{}} & which transport to
+use; \texttt{auto} takes
+	a live daemon socket if one answers \\
+	\texttt{--json} & machine-readable output; already the default when stdout is not a
+	terminal \\
+	\texttt{--input J} & extra graph input, merged into the run input as JSON \\
+	\bottomrule
+\end{longtable}
+
+Two behaviours are easy to observe and worth knowing before the first surprise. The
+transport is chosen for you: a live daemon socket wins, and only if nothing answers does
+the command build the engine in its own process. The daemon is never started for you ---
+there is no auto-start anywhere in the path --- so a \texttt{-p} on a host whose service is
+down silently becomes an in-process engine with its own view of the state directory. And
+if no model resolves at all, the command exits 5 with one line:
+\enquote{no model configured (set PII\_MODEL or --model)}. That is a different failure from
+a model the provider does not serve, which fails later, at spawn.
+
+\section{Running a graph}
+
+There are two ways to run a graph, and they are not interchangeable. By \emph{name}, you
+ask the daemon, which serves the installed set and owns the stores. By \emph{file}, you run
+it yourself against a store you name, which is what the test suites and a one-off
+diagnostic do.
+
+\begin{lstlisting}[language=bash]
+# by name: the daemon resolves it, runs it, and journals it
+pii run start queue --input '{"workdir":"/projects/pi-improved","base":"<40-hex>"}'
+
+# by file: you own the store path and the write grants
+pii graph run graphs/preflight.toml --db ~/.local/state/pii/store.redb \
+  --input '{}' --allow-write /projects/pi-improved/_tmp
+\end{lstlisting}
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=9mm and 12mm]
+  \node[b] (name) {\texttt{pii run start \textless{}graph\textgreater{}}};
+  \node[b, right=of name] (daemon) {daemon\\\scriptsize installed graphs, its stores};
+  \node[b, right=of daemon] (journal) {journal\\\scriptsize run id, every port};
+  \node[b, below=of name] (file) {\texttt{pii graph run \textless{}file-> --db}};
+  \node[b, right=of file] (local) {this process\\\scriptsize the engine, in-process};
+  \node[b, right=of local] (journal2) {journal in \texttt{--db}\\\scriptsize same format};
+  \draw[f] (name) -- (daemon);
+  \draw[f] (file) -- (local);
+  \draw[f] (daemon) -- (journal);
+  \draw[f] (local) -- (journal2);
+  \draw[sf] (name) -- node[p,left=2pt,midway]{no daemon?} (file);
+\end{tikzpicture}}
+\captionof{figure}{Two paths, one journal format. The name path is what an installation uses;
+the file path is what a diagnostic uses, and it is the only one where you choose the store.}
+\end{center}
+
+The offline path builds its own capability root, and the defaults are worth memorising
+because they explain most \enquote{permission denied} results from a hand-run graph:
+reads are allowed for the current directory, writes are allowed for
+\texttt{\textless{}cwd\textgreater{}/\_tmp} plus every \texttt{--allow-write} directory, and the
+only process
+argv[0] permitted is \texttt{/bin/sh}. Everything else is denied by the capability check
+before the node runs. \texttt{--allow-write} is canonicalised, so a relative or symlinked
+grant would otherwise grant nothing.
+
+Both paths share one exit-code vocabulary, and the two codes that are not 0 or 1 are the
+interesting ones:
+
+\begin{center}
+\begin{tabular}{@{}p{0.10\textwidth}p{0.78\textwidth}@{}}
+	\toprule
+	\textbf{Code} & \textbf{Meaning} \\
+	\midrule
+	0 & the run reached its terminal node and reported success \\
+	1 & the run failed, or could not be started; the message names the reason \\
+	2 & usage error: an unknown flag, a missing value, \texttt{--input} that is not JSON \\
+	3 & the validator refused the graph --- and, on this path, no store file was created \\
+	4 & the run suspended and holds a resume key \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The distinction between 3 and 1 is the reason a refused graph creates no store file: the
+graph is loaded and validated \emph{before} the store is opened, so a wrong pin or a
+missing callee costs nothing and leaves nothing behind.
+
+\section{The queue}
+
+The queue is how pii is given work rather than a question. A row carries an id, a title, a
+spec path, the criteria that decide whether the work is done, and the paths the row expects
+to touch. Every subcommand is one protocol call; none opens the store.
+
+\begin{lstlisting}[language=bash]
+pii queue add --id 376 --title "retention drops what the policy expires" \
+  --spec /projects/pi-improved/specs/376-retention-drops-what-the-policy-expires.md \
+  --criteria "cargo test -q -p pii-store --test retention_drops_what_the_policy_expires" \
+  --touches crates/pii-store/src/retention.rs
+pii queue ls
+pii queue claim --by operator
+\end{lstlisting}
+
+The spec path is resolved by the daemon, not by your shell. A relative path is the single
+most common first mistake with \texttt{queue add}: the daemon's working directory is the
+unit's \texttt{WorkingDirectory}, which is the state directory, so a relative
+\texttt{specs/376-*.md} resolves to a file that does not exist. Use an absolute path and
+the row will be claimable.
+
+Running the queue is one graph run, and the graph needs two inputs: the work directory and
+the commit that holds the row's spec. Both are passed as one JSON object to
+\texttt{pii run start queue --input}, with \texttt{workdir} an absolute directory and
+\texttt{base} a forty-hex commit. The spec graph's own limits are shared by the call, so
+\texttt{max\_wall\_ms} on the queue's \texttt{[limits]} table is the whole run's wall, not
+each step's.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (select) {\texttt{select}\\\scriptsize claims one row};
+  \node[b, right=of select] (impl) {\texttt{implement}\\\scriptsize calls the spec graph};
+  \node[b, right=of impl] (record) {\texttt{record}\\\scriptsize writes the verdict};
+  \node[b, below=of select] (none) {\texttt{record}\\\scriptsize empty or blocked};
+  \node[s, below=of impl] (store) {queue store\\\scriptsize the row's status};
+  \draw[f] (select) -- node[p,above=2pt,midway]{ok} (impl);
+  \draw[f] (impl) -- node[p,above=2pt,midway]{ok} (record);
+  \draw[f] (select) -- node[p,left=2pt,midway]{empty} (none);
+  \draw[bk] (impl.north) to[bend left=22] node[p,above=2pt,midway]{refused} (record.north);
+  \draw[sf] (record.south) -- (store.north);
+\end{tikzpicture}}
+\captionof{figure}{\texttt{queue} claims one row, hands it to the implementer, and records a
+verdict. The red edge is the one that took a row from \enquote{stuck Running} to
+\enquote{recorded as refused}.}
+\end{center}
+
+The three ports of \texttt{select} are the whole reason the queue is readable.
+\texttt{ok} means a row was claimed, \texttt{empty} means there was nothing to do, and
+\texttt{blocked} means a row exists but something it waits on does not --- and \texttt{blocked}
+ends the run on its own edge rather than pretending to have worked. A row that stays
+\texttt{Running} after the run ends is the failure this shape exists to prevent: at the
+revision this manual describes, a refused callee used to dead-end inside the splice
+because the callee's refusal nodes declare no \texttt{ok} port, so no edge fired and the
+row was never recorded. The fix wires the refusal by name ---
+\texttt{implement.refused}, \texttt{implement.unverified} --- and the queue's own graph now
+carries both edges.
+
+The rule for an operator is one sentence: if a row does not leave \texttt{Running}, read
+the trace and look at the last node, not at the last message. The verdict is in the
+journal even when the record was never written.
+
+\section{Reading a run}
+
+Three commands read a run, and they answer different questions.
+
+\begin{lstlisting}[language=bash]
+pii run ls --status suspended         # running|suspended|succeeded|failed
+pii run ls --graph queue              # filter by graph name, client-side
+pii run get <run_id>                  # the header: graph, status, timing
+pii run trace <run_id>                # node by node, with the port that fired
+pii run explain <run_id>              # the same journal, summarised
+\end{lstlisting}
+
+\texttt{--status} accepts exactly four names and refuses anything else with the list in
+the message. \texttt{refused} is a run status the store knows but not one the filter
+accepts, which is a small asymmetry worth knowing before you script it.
+
+\texttt{pii run get} distinguishes three answers that look alike in a hurry. A run the
+daemon holds but has not journalled yet answers \texttt{accepted} --- the id exists and the
+journal has not materialised, so you poll again. A stored state answers
+\texttt{running}, \texttt{suspended}, \texttt{succeeded} or \texttt{failed}. An id the
+daemon has never heard of answers \enquote{unknown to this daemon}: it was never issued, or
+the daemon restarted and lost an accepted-but-never-journalled start. Polling an
+\texttt{accepted} id until it becomes terminal is correct; treating the first
+\texttt{not found} as a failure is not, and the measured baseline is that a validated start
+never polls \texttt{not found} for ever --- a start the run's own validation refuses still
+returns an id, then goes to \texttt{failed} with the reason in the trace.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=13mm and 16mm]
+  \node[b] (start) {\texttt{run start}};
+  \node[b, right=of start] (acc) {\texttt{accepted}\\\scriptsize no journal yet};
+  \node[v, right=of acc] (state) {stored?};
+  \node[b, right=of state, yshift=14mm] (run) {\texttt{running}};
+  \node[b, right=of state, yshift=-14mm] (done) {\texttt{succeeded} / \texttt{failed}};
+  \node[b, below=of state] (unknown) {unknown\\\scriptsize never issued, or lost};
+  \draw[f] (start) -- (acc);
+  \draw[f] (acc) -- node[p,above=2pt,midway]{poll} (state);
+  \draw[f] (state) -- node[p,above=2pt,midway]{live} (run);
+  \draw[f] (state) -- node[p,below=2pt,midway]{terminal} (done);
+  \draw[bk] (state) -- node[p,right=2pt,midway]{no row} (unknown);
+\end{tikzpicture}}
+\captionof{figure}{Three answers from \texttt{run get}, and only one of them is a polling state.
+The red edge is the reading that is a real problem: an id the daemon never issued, or lost
+across a restart before its journal was written.}
+\end{center}
+
+Read a trace from the end. The last \texttt{NodeFinished} names the node and the port it
+took, and that pair is the decision the run made. A run that stopped without reaching a
+terminal node has not failed loudly --- it has failed quietly, which is the failure mode
+the journal exists to make visible. The events you will read most are
+\texttt{Started}, \texttt{TickStarted}, \texttt{NodeStarted}, \texttt{NodeFinished},
+\texttt{NodeFailed}, \texttt{NodeProgress}, \texttt{NodeCancelled}, \texttt{NodeDead},
+\texttt{NodeInterrupted}, \texttt{Suspended}, \texttt{Resumed} and \texttt{NodeObserved};
+Chapter~\ref{ch:what} lists all seventeen.
+
+\texttt{NodeProgress} deserves its own sentence, because it is the only event that
+separates a slow node from a wedged one: it carries elapsed milliseconds and the child's CPU
+milliseconds, so \emph{elapsed grows, CPU flat} is a node waiting on something that will
+never answer, while \emph{both grow} is a node doing work.
+
+\subsection*{The offline trace, and its queries}
+
+When the daemon is down, the same journal is readable from the store file directly, and
+the offline form answers more questions than the online one.
+
+\begin{lstlisting}[language=bash]
+pii graph trace <run_id> --db ~/.local/state/pii/store.redb
+pii graph trace <run_id> --db ... --terminal
+pii graph trace <run_id> --db ... --node-status verify
+pii graph trace <run_id> --db ... --reason refused
+pii graph trace <run_id> --db ... --overlapped code,docs
+\end{lstlisting}
+
+With no query at all, the command prints the journal as NDJSON: one event per line, each
+with a sequence number.
+\texttt{--terminal} prints the run's terminal value, \texttt{--node-status} prints one
+node's last port, \texttt{--reason} prints why a refusal node refused,
+\texttt{--max-batch-width} reports how wide the scheduler's batches ran, and
+\texttt{--overlapped a,b} answers whether two nodes were ever in flight at the same time ---
+which is the question you ask when a graph is suspected of hiding a serialisation.
+
+\subsection*{When a run needs a hand}
+
+Four commands exist for runs that will not finish on their own, and they differ in what
+they do to the evidence.
+
+\begin{center}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.62\textwidth}@{}}
+	\toprule
+	\textbf{Command} & \textbf{What it does} \\
+	\midrule
+        \texttt{pii run resume \textless{}id\textgreater{}} & continues a \texttt{Suspended} run
+through its resume
+	key \\
+        \texttt{pii run retry \textless{}id-> --node \textless{}id\textgreater{}} &
+re-runs one node of a finished run \\
+        \texttt{pii run abandon \textless{}id-> --reason T} & marks the run
+abandoned, with the reason
+	recorded \\
+        \texttt{pii run cancel \textless{}id-> [--kill]} & cancels a live run;
+\texttt{--kill} also kills
+	the child \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+Abandon and cancel are the two that change what retention will later do. A run left
+\texttt{Running} or \texttt{Suspended} is never swept, however old it is, so a run you
+have given up on stays in the store for ever unless you end it deliberately.
+
+\section{Stores, memory and the indices}
+
+Store maintenance is three commands, and two of them need the daemon stopped.
+\texttt{pii store stats} prints one line per table with its row count, then the file's
+byte size. \texttt{pii store compact} takes redb's exclusive lock, so a running daemon makes
+it refuse rather than copy a file mid-write, and it prints the measured size of each file
+before and after. \texttt{pii store prune} takes the same lock, runs one retention sweep and
+prints \texttt{pruned N rows}.
+
+\texttt{pii store stats} is the command to run weekly. It prints
+\texttt{store.redb \textless{}table-> rows=N} for every table and then
+\texttt{store.redb bytes=N}, which together are the only honest growth signal --- the file
+size alone is not, because redb never shrinks and a store that has been compacted tells you
+nothing about how fast it is filling. \texttt{pii store compact} prints
+\texttt{compacted \textless{}name-> \textless{}before-> ->
+\textless{}after-> bytes} per file, and a store with nothing to
+reclaim prints a near-equal pair, which is the truth rather than a failure.
+
+\texttt{pii store prune} runs one retention sweep under the default policy and prints the
+count. The defaults are thirty days for finished runs, seven for node-call events and at
+most one thousand rows per sweep; the sweep never removes a \texttt{Running} or
+\texttt{Suspended} run, and it keeps any row whose creation time is missing. The daemon
+also runs one sweep at boot, so a host that restarts nightly trims itself.
+
+Memory has its own command group, and the two that are used daily are search and the
+entity graph: \texttt{pii memory search \textless{}q\textgreater{}} with an optional
+\texttt{--k} (six results by
+default), and \texttt{pii memory put \textless{}text\textgreater{}} with \texttt{--layer} and
+\texttt{--kind} for
+a document's tier. \texttt{pii memory tiers} says what sits in each tier,
+\texttt{pii memory entity list} gives the entities and their counts, and
+\texttt{pii memory neighbours} gives one hop around an entity. The rest of the group
+(\texttt{learn}, \texttt{consolidate}, \texttt{link}, \texttt{compact}, \texttt{archive},
+\texttt{restore}) is maintenance, and each one either refuses or reports when its
+precondition is missing rather than doing half the work.
+
+\texttt{pii index code} and \texttt{pii index docs} fill the code and documentation indices
+from a tree, and \texttt{pii skill list} answers what the daemon knows how to do. Both are
+read-mostly and safe to re-run: an index command re-reads and updates, it does not
+duplicate.
+
+\section{A cadence that works}
+
+The commands above are cheap; the discipline is knowing which ones to run on a clock. The
+cadence below is the one Chapter~\ref{ch:operate} assumes, written as a table so it can be
+checked rather than remembered.
+
+\begin{longtable}{@{}p{0.13\textwidth}p{0.30\textwidth}p{0.45\textwidth}@{}}
+	\toprule
+	\textbf{When} & \textbf{Command} & \textbf{What you are looking for} \\
+	\midrule
+	\endhead
+	Every session & \texttt{pii health} & exit 0; \texttt{client:} equals the build line \\
+	Every session & \texttt{pii run ls --status running} & a run that should have finished \\
+	Daily & the log file, last lines & a log that ends on \texttt{daemon.started} means a
+	hard death \\
+	Weekly & \texttt{pii store stats} & rows and bytes per table, recorded, so the slope
+	exists \\
+	Weekly & \texttt{pii disk} & an artefact root growing without an owner \\
+	Monthly & \texttt{pii store compact} & the tail slack back; nothing more \\
+	Monthly & a restore into a scratch directory & a backup nobody restored is a hope \\
+	\bottomrule
+\end{longtable}
+
+Two of those rows are worth the cost even on a quiet host. A weekly \texttt{store stats}
+sample is what turns \enquote{the disk is filling} into a rate, and a monthly restore into a
+scratch state directory is what turns a backup into a backup --- both drills are described
+in Chapter~\ref{ch:operate}.
+
+\section{What a quiet day looks like}
+
+A host with nothing to do is not silent, and knowing the small noises saves a false alarm.
+The daemon writes a \texttt{daemon.started} event, keeps its health record current, and
+runs one retention sweep at boot. If a channel is configured it polls on its interval; if a
+worker is configured it says hello once. Nothing else should appear in the log.
+
+The four readings that answer \enquote{is this host doing anything} are
+\texttt{pii health} (first three lines: build, client, config hash), \texttt{pii run ls}
+(usually an empty list on a host with no work), \texttt{pii cron ls} (the schedules the
+daemon knows) and the last three lines of \texttt{\$STATE\_DIR/pii.log}. On a healthy host
+the log's last line is a \texttt{daemon.started} only after a restart --- a log that ends on
+\texttt{daemon.started} while the process has been up for days means the daemon died hard
+and was restarted by the unit, and \texttt{since\_deploy.hard\_deaths} in \texttt{pii
+health} will say how many times.
+
+If \texttt{pii run ls} is empty and you expected rows, the question is not \enquote{where did
+the runs go} but \enquote{which store is this daemon writing} --- and \texttt{pii health}
+answers it with a path. That single habit, reading the store path before believing an empty
+list, resolves more \enquote{lost work} reports than any other diagnostic in this manual.

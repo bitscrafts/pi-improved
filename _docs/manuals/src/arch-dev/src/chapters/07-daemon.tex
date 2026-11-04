@@ -1,0 +1,465 @@
+\chapter{The daemon}
+
+\label{ch:daemon}
+
+This chapter answers what the daemon is, what it refuses to start without, and where the real
+security boundary sits. The short answer: one process per state directory, one writer per
+store, a socket for everything else, and a filesystem confinement applied before the first
+byte is served. The interesting part is not the wiring diagram; it is the order of the checks,
+because each check exists to make a specific failure impossible rather than unlikely.
+
+\section{The production shape}
+
+Four binaries ship: \texttt{pii}, \texttt{pii-mcp}, \texttt{pii-web} and \texttt{pii-evolve}.
+The daemon is not a fifth. \texttt{pii} embeds it in-process, so \texttt{pii daemon} runs the
+control plane in the foreground and \texttt{pii -p}, \texttt{pii tui} and the command surface
+either talk to a running daemon over the control socket or start an engine of their own. There
+is one engine implementation and no client-side copy of the rules.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (cli) {\texttt{pii-cli}};
+	\node[b, right=of cli, xshift=6mm] (daemon) {daemon\\\scriptsize one writer};
+	\node[s, right=of daemon, yshift=12mm] (store) {store.redb};
+	\node[s, right=of daemon, yshift=-12mm] (dur) {durable/\\\scriptsize channel $\cdot$ timer};
+	\node[b, below=of daemon] (sandbox) {sandbox\\\scriptsize landlock profile};
+	\node[b, right=of sandbox] (worker) {worker\\\scriptsize agent argv};
+	\node[b, left=of sandbox] (caps) {capability set\\\scriptsize ceiling $\cap$ node caps};
+	\node[b, above=of daemon] (log) {daemon log\\\scriptsize JSON lines};
+
+	\draw[f] (cli) -- node[p, above=2pt, midway]{socket} (daemon);
+	\draw[f] (daemon) -- (store);
+	\draw[f] (daemon) -- (dur);
+	\draw[f] (daemon) -- (sandbox);
+	\draw[f] (caps) -- (sandbox);
+	\draw[f] (sandbox) -- (worker);
+	\draw[f] (daemon) -- (log);
+\end{tikzpicture}}
+\captionof{figure}{One binary, one writer, a socket, and two independent bounds between the
+engine and any agent: the process-wide sandbox and the per-node capability set.}
+\end{center}
+
+The two bounds are worth separating at the start because they answer different questions. The
+capability set answers ``may this node do this kind of thing'' --- read files, write files,
+reach the network, spawn a process. The sandbox answers ``may this process, at all'' --- and
+it is enforced by the kernel, after the engine has decided. A node without \texttt{fs\_write}
+cannot write whatever the agent believes about itself, and an agent that talks its way past
+its own instructions still cannot write outside the granted paths.
+
+\section{Boot order}
+
+The order is the chapter's real subject. Each step below can refuse, and each refusal names
+the thing that failed before anything has been bound, spawned or written.
+
+\begin{enumerate}
+	\item \textbf{Flags and config.} \texttt{pii daemon} takes \texttt{--store},
+	\texttt{--config}, \texttt{--workspace}, \texttt{--sandbox}, \texttt{--log-file}. An
+	unknown key in the config file is a load error, not a silent default: a typo'd grant must
+	not become no grant.
+	\item \textbf{The sandbox.} Under \texttt{--sandbox workspace}, confinement is applied and
+	verified before the store is opened. Failure exits \texttt{4}.
+	\item \textbf{The measurement switches.} \texttt{--observer} and \texttt{--audit} accept
+	\texttt{on} or \texttt{off}; a typo is an error, never ``on''.
+	\item \textbf{The log and the starting mark.} \texttt{daemon.starting} is written before
+	anything that can fail, carrying the pid and the store parent, so a start that never serves
+	is visible in the record rather than only in the supervisor's journal.
+	\item \textbf{The durable claim.} \texttt{pii\_store::durable::claim} probes
+	\texttt{channel.redb} and \texttt{timer.redb}; a store another process holds exits
+	\texttt{3} with the store's path in the message.
+	\item \textbf{The model.} No model configured exits \texttt{5}. The daemon will not start
+	into a state where the first agent dispatch is the thing that discovers the omission.
+	\item \textbf{The store and the engine.} One retention sweep runs here; a failure is
+	reported as \texttt{store.retention.failed} and is not a refusal.
+	\item \textbf{Channels, MQTT, cron, workers.} Each entry is validated; a cron entry whose
+	graph does not start at a \texttt{timer} node is refused, because it would re-run as fast
+	as it finishes.
+	\item \textbf{The socket.} Bound last, after everything the daemon needs is known good.
+\end{enumerate}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (flags) {flags\\\scriptsize exit 2};
+	\node[b, right=of flags] (sb) {sandbox\\\scriptsize exit 4};
+	\node[b, right=of sb] (mark) {daemon.starting};
+	\node[b, right=of mark] (claim) {durable claim\\\scriptsize exit 3};
+	\node[b, below=of claim] (model) {model\\\scriptsize exit 5};
+	\node[b, left=of model] (store) {store + engine\\\scriptsize sweep};
+	\node[b, left=of store] (entries) {channels $\cdot$ cron\\\scriptsize validated};
+	\node[b, left=of entries] (sock) {socket\\\scriptsize bound last};
+
+	\draw[f] (flags) -- (sb);
+	\draw[f] (sb) -- (mark);
+	\draw[f] (mark) -- (claim);
+	\draw[f] (claim) -- (model);
+	\draw[f] (model) -- (store);
+	\draw[f] (store) -- (entries);
+	\draw[f] (entries) -- (sock);
+	\draw[bk] (sb.north) -- ++(0,6mm) node[p, above=2pt, midway]{refuse};
+\end{tikzpicture}}
+\captionof{figure}{Every refusal happens before the socket exists, so a start that fails fails
+where a person is watching a terminal rather than on the first request from a client.}
+\end{center}
+
+\begin{longtable}{@{}p{0.10\textwidth}p{0.34\textwidth}p{0.46\textwidth}@{}}
+\toprule
+\textbf{Exit} & \textbf{Condition} & \textbf{Message shape} \\
+\midrule
+\endhead
+2 & bad flag or config & \texttt{config: <toml error>} or the usage line \\
+3 & a durable store is held & \texttt{store <path> is locked: another daemon holds it} \\
+4 & sandbox not enforceable & \texttt{sandbox: enforcement could not be verified} \\
+5 & no model configured & \texttt{no model configured (set PII\_MODEL, or [core].model ...)} \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}[language=bash]
+pii daemon --store /var/lib/pii/store.redb \
+           --workspace /projects/pi-improved \
+           --sandbox workspace \
+           --config ~/.pii/pii.toml \
+           --log-file /var/log/pii/daemon.jsonl
+\end{lstlisting}
+
+The default store path is documented in the flags' own help as \texttt{<runtime
+dir>/store.redb}, and the default workspace is the working directory. The defaults are the
+thing to check when a daemon ``sees the wrong data'': the store path decides which history a
+client is reading, and the workspace decides which files a sandboxed agent may write.
+
+\section{One writer, enforced three times}
+
+The store admits one process. That sentence is true at three levels, and each level catches a
+different mistake.
+
+\paragraph{The database file.} redb takes an exclusive lock on the file. A second process that
+opens it either blocks or fails; either way two processes never interleave writes. The
+single-writer rule in \texttt{pii-store} is about transactions inside one process; the file
+lock is about processes.
+
+\paragraph{The durable pair, claimed first.} The channel cursor and the timer wheel are
+separate small databases under the state directory. Before binding anything, the daemon probes
+both with a non-blocking lock, one attempt per store, no retry, no create. A store that is
+free is left exactly as it was found; a store that is held is named. The probe deliberately
+keeps no lock --- the owner opens the store immediately after --- so the claim is a check, not
+a reservation.
+
+\paragraph{The state directory.} \texttt{PII\_STATE\_DIR} is resolved before \texttt{HOME}, so
+a second instance --- a test, a soak, an operator's second daemon --- opens its own store, its
+own durable pair and its own audit log. Without that resolution order, a test started beside a
+running daemon opens the operator's \texttt{channel.redb}, finds it held, and hangs before
+binding its socket. The symptom is a test that never starts and a daemon log with nothing in
+it.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (a) {daemon A\\\scriptsize state dir S};
+	\node[b, right=of a, yshift=10mm] (sa) {S/store.redb};
+	\node[b, right=of a, yshift=-10mm] (da) {S/durable/};
+	\node[b, below=of a] (b) {daemon B\\\scriptsize state dir S};
+	\node[b, right=of b, yshift=-10mm] (ref) {refusal\\\scriptsize exit 3};
+	\node[b, right=of b, yshift=10mm] (sb) {S/store.redb};
+
+	\draw[f] (a) -- (sa);
+	\draw[f] (a) -- (da);
+	\draw[bk] (b) -- node[p, below=2pt, midway]{claim} (ref);
+	\draw[sf, dashed] (sb) -- (sa);
+	\node[p, right=of sa, xshift=2mm, font=\scriptsize\itshape, align=left]
+{held by A};
+\end{tikzpicture}}
+\captionof{figure}{The second daemon is refused by name rather than queued behind a lock,
+because waiting produced a hang with no message that reads as a broken binary.}
+\end{center}
+
+The rule has a cost the operator must know: two daemons cannot share a state directory, so two
+concurrent soaks or two test suites need two directories. The failure when they do not is loud
+now, which is the point; before it was loud, it was a flaky test attributed to the code under
+test.
+
+\section{Two directories that mean different things}
+
+The runtime directory holds things that are allowed to vanish on reboot:
+\texttt{control.sock}, the graphs a daemon loads, \texttt{crashes/}. On this host it is a
+per-user directory under \texttt{/run/user}. The state directory holds things that must
+survive: the run store, the durable pair, the audit log.
+
+Keeping them apart is a decision with a visible consequence. A store under the runtime
+directory would be emptied by a reboot, and a reboot would therefore silently delete every run
+history and every pending timer. The durable directory is resolved as
+\texttt{[core].durable\_dir} when set, else \texttt{<state\_dir>/durable}, and never defaults
+to the runtime directory. The comment in \texttt{daemon/mod.rs} says why in one clause: the
+runtime dir is a tmpfs.
+
+\section{The sandbox is the real bound}
+
+\texttt{crates/pii-tools/src/sandbox.rs} implements two profiles and one rule about them.
+
+\begin{longtable}{@{}p{0.14\textwidth}p{0.78\textwidth}@{}}
+\toprule
+\textbf{Profile} & \textbf{What is in force} \\
+\midrule
+\endhead
+\texttt{workspace} & WRITES confined to the workspace, the store directory, the runtime directory,
+\texttt{\$TMPDIR}, the container runtime state dirs and \texttt{/dev/shm}, plus the device
+files \texttt{/dev/null}, \texttt{/dev/zero}, \texttt{/dev/urandom}, \texttt{/dev/tty}. READS
+are not confined: read-only access to \texttt{/} is granted, so \texttt{/etc}, \texttt{HOME}
+and every other
+readable path stay readable. \\
+\texttt{off} & no filesystem confinement in force; the explicit opt-out. Reported loudly at start,
+in the log, in the audit trail and by \texttt{pii health}. \\
+\bottomrule
+\end{longtable}
+
+The asymmetry --- writes confined, reads not --- is stated in the same words in four places:
+the profile's grant text, the startup event, \texttt{pii health}, and the deploy runbook. One
+text, so a reader cannot get a more generous impression from one surface than another. The
+test suite pins the wording, which is unusual and deliberate: a permission model that is
+described differently in two places is two permission models.
+
+Applying the profile is \texttt{apply\_workspace}, and it is fail-closed in a way worth
+reading line by line.
+
+\begin{enumerate}
+	\item The ruleset handles every filesystem access the ABI knows, and is created before any
+	rule is added. A failure here is an error, not a partial ruleset.
+	\item Every read-only path (\texttt{/} and \texttt{/dev}) is added as read access. A
+	missing path is skipped rather than fatal, because a container may not have it.
+	\item Every writable path is added with full directory rights --- except device nodes,
+	which get file-content rights only. Granting directory rights on a device file makes the
+	kernel downgrade the whole ruleset to partially enforced, which would silently weaken
+	everything else.
+	\item The ruleset is applied to the process. If the resulting status is not fully enforced,
+	or \texttt{no\_new\_privs} is not set, the function returns an error. The caller exits
+	\texttt{4}.
+	\item An \emph{out-of-grant} probe writes a file in a directory that must not be writable.
+	If the write succeeds, confinement is not real and the function fails.
+	\item An \emph{in-grant} probe writes a file in a directory that must be writable. If that
+	write fails, the grant is inert --- every rule was skipped or downgraded --- and the
+	function fails.
+\end{enumerate}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (rules) {ruleset\\\scriptsize ro: / and /dev};
+	\node[b, right=of rules] (rw) {rw: listed dirs\\\scriptsize files get content rights};
+	\node[b, below=of rw] (restrict) {\texttt{restrict\_self}};
+	\node[v, below=of restrict] (status) {enforced?};
+	\node[b, left=of status] (exit) {exit 4};
+	\node[b, below=of status] (out) {out-grant probe\\\scriptsize must fail};
+	\node[b, below=of out] (in) {in-grant probe\\\scriptsize must succeed};
+	\node[b, left=of in] (serve) {serve};
+
+	\draw[f] (rules) -- (rw);
+	\draw[f] (rw) -- (restrict);
+	\draw[f] (restrict) -- (status);
+	\draw[f] (status) -- node[p, above=2pt, midway]{yes} (out);
+	\draw[bk] (status) -- node[p, above=2pt, midway]{no} (exit);
+	\draw[f] (out) -- (in);
+	\draw[f] (in) -- node[p, above=2pt, midway]{ok} (serve);
+	\draw[bk] (in.south) |- node[p, below=2pt, midway]{inert} (exit.south);
+\end{tikzpicture}}
+\captionof{figure}{Six checks, two of them probes in opposite directions, because without the
+in-grant probe a ruleset whose every rule was skipped would pass the out-grant test while
+granting nothing, and every later refusal becomes a coincidence.}
+\end{center}
+
+The two probes are the part that survives review. A single out-grant probe proves that
+something is denied; it cannot distinguish ``confined correctly'' from ``confined to
+nothing''. The in-grant probe is the control that makes the first probe meaningful, and it is
+the reason a report of a green sandbox on a new host can be trusted.
+
+\paragraph{Two grants that are not obvious.} Podman keeps its graph root under
+\texttt{HOME/.local/share/containers} and its runroot and locks under
+\texttt{XDG\_RUNTIME\_DIR/containers} and \texttt{XDG\_RUNTIME\_DIR/libpod}. A sandboxed
+daemon without those could not inspect a present image: the measured symptom was
+\texttt{EACCES} on \texttt{bolt\_state.db} and \texttt{alive.lck}. The fourth entry is
+\texttt{/dev/shm}, because podman's rootless lock file lives there and the profile grants
+\texttt{/dev} read-only. The podman \emph{socket} is deliberately not a grant: a process
+reaches it by \texttt{connect()}, which landlock does not mediate, so adding it would change
+the grant text without changing what is allowed. A test asserts the text does not mention it,
+which keeps the documentation and the mechanism from drifting apart.
+
+\paragraph{The forced-failure switch.} \texttt{PII\_SANDBOX\_FORCE\_UNSUPPORTED=1} makes
+\texttt{apply\_workspace} return the unverifiable error immediately. It exists so the exit-4
+path can be exercised on a host where landlock \emph{does} work --- a refusal path that is
+never run is a refusal path that does not work.
+
+\section{The capability ceiling}
+
+The sandbox is process-wide and coarse. The capability set is per-run and per-node, and it is
+the bound an agent's own instructions cannot argue with.
+
+A capability set is twelve bits plus five scopes. The bits are stable forever, because a
+worker or a plugin references them without depending on the engine:
+
+\begin{longtable}{@{}p{0.16\textwidth}p{0.06\textwidth}p{0.66\textwidth}@{}}
+\toprule
+\textbf{Kind} & \textbf{Bit} & \textbf{What it permits} \\
+\midrule
+\endhead
+\texttt{fs\_read} & 1 & read files within an allow path scope \\
+\texttt{fs\_write} & 2 & write files within an allow path scope \\
+\texttt{net} & 4 & reach the network \\
+\texttt{proc} & 8 & spawn or talk to processes \\
+\texttt{hw} & 16 & touch hardware \\
+\texttt{secrets} & 32 & access secrets \\
+\texttt{memory\_write} & 64 & write into the agent's memory \\
+\texttt{spawn} & 128 & spawn subprocesses \\
+\texttt{memory\_read} & 256 & read from the agent's memory \\
+\texttt{post} & 512 & post into a configured channel \\
+\texttt{mqtt\_read} & 1024 & list and subscribe to a house's devices \\
+\texttt{mqtt\_write} & 2048 & command a device through its allowlist \\
+\bottomrule
+\end{longtable}
+
+The only operation on two sets is intersection. There is deliberately no union: a capability
+set can be narrowed at every hop and widened at none. \texttt{CapSet::intersect} ANDs the bits
+and intersects every scope; \texttt{narrow\_kinds} lowers the bits while keeping the inherited
+path and host scopes, which is what a node that declares fewer capabilities than its run gets.
+
+On top of the per-run set sits a ceiling from configuration: \texttt{[grant\_ceiling]} names
+the capability kinds no graph or node may request beyond. An empty list means no ceiling; a
+name the engine does not know is an invalid-config error rather than a silently ignored entry.
+The check runs where the node is built, so a graph asking for more than the ceiling is refused
+before it runs, and the refusal names the capability.
+
+Path scopes are deny-wins. \texttt{PathScope::permits} checks the deny list first, so a path
+inside an allow prefix but inside a deny prefix is refused. The heal path uses that to keep a
+patch away from \texttt{specs}, \texttt{xtask}, \texttt{quality-gate.sh}, \texttt{graphs},
+\texttt{clippy.toml}, \texttt{rust-toolchain.toml} and \texttt{.github}: a heal worktree is a
+full checkout, and without the deny list a patch could delete the assertions that prove it
+worked.
+
+\begin{lstlisting}[language=bash]
+[core]
+model = "llamacpp-server:granite-4.2-3b"
+
+# the ceiling: no graph or node may request beyond these kinds
+grant_ceiling = ["fs_read", "fs_write", "proc", "spawn", "net"]
+
+[net]
+grants = ["10.10.10.217:8082"]
+allow_private = true
+
+[[model_tier]]
+name = "small"
+model = "llamacpp-server:granite-4.2-3b"
+tools = ["read_file", "grep"]
+max_tokens = 2048
+\end{lstlisting}
+
+\paragraph{Why the two bounds are both needed.} A capability set with no sandbox is advice to
+a process that has already been spawned by an engine with the operator's rights. A sandbox
+with no capability set confines a process but gives every node the same power inside the
+fence. The pairing is what makes ``this node may write, that node may not, and neither may
+write outside the workspace'' expressible.
+
+\section{The socket, and why clients are thin}
+
+Every client reaches the daemon through one unix socket, \texttt{control.sock}, under the
+runtime directory. The socket is the boundary that keeps a second copy of the rules from
+existing: \texttt{pii run ls}, \texttt{pii health}, \texttt{pii queue add} and \texttt{pii
+skill show} all become a request with a method and a payload, and the engine answers. A client
+cannot be more permissive than the daemon, because it has no engine of its own to be
+permissive with.
+
+The socket's location is computed once, from the runtime directory, and \texttt{pii-uds} owns
+that computation --- one default socket, so a CLI started from a plain shell with no
+environment finds the daemon that an operator started from a session with one. Before that,
+\texttt{pii health} answered for a daemon that did not exist or failed to find one that did,
+and the difference was an unset variable nobody could see.
+
+This is also why a long-running command does not hold a store lock. The client sends a request
+and waits; the work happens in the daemon, in the daemon's process, under the daemon's sandbox
+and capability ceiling. The \texttt{--store} flag on a one-shot command exists for the case
+where no daemon is running, and then the process really does open the file, which is why a
+second one-shot beside a running daemon can collide where a socket request would not.
+
+\section{What the daemon runs}
+
+Beyond runs, the daemon owns a small set of long-lived things, each with its own failure mode:
+
+\begin{itemize}
+	\item \textbf{Channels} --- one runtime per configured channel, with a poll interval, a
+	poll backoff and a graph to start per inbound message. The default poll interval is 1\,500
+	ms because Discord answers a message read at roughly five requests per five seconds per
+	route; at 500 ms the daemon collected 173 \texttt{channel.poll.failed 429} events in a few
+	hours and never read a message.
+	\item \textbf{MQTT connections} --- one broker connection each, subscribing to topic
+	filters and starting a graph per message, with a bounded inbound queue that drops and
+	counts beyond its cap. A name used by both a channel and an MQTT connection is a config
+	error, not a last-writer-wins.
+	\item \textbf{Cron entries} --- display-only schedules; the actual firing comes from the
+	graph's entry \texttt{timer} node. The entry kind is checked at start, because a non-timer
+	entry would re-run the instant it finishes.
+	\item \textbf{Workers} --- declared in config as a program, its argv, extra environment and
+	an in-flight cap, so a bounded number of external processes exist at once.
+	\item \textbf{Timers} --- the durable wheel, rearmed from the store at boot.
+	\item \textbf{Claim recovery} --- \texttt{requeue\_dead\_claims} at boot returns rows whose
+	claimant is gone to \texttt{Pending}, so a killed daemon does not leave work claimed
+	forever.
+\end{itemize}
+
+\section{Refusals that name the thing}
+
+A refusal is only useful if it names what failed and where. The daemon's refusals follow one
+shape: the object, the reason, and the identifier.
+
+\begin{lstlisting}[language=bash]
+store /root/.local/state/pii/durable/channel.redb is locked: another daemon holds it
+cron 'nightly': graph 'night' must start at a timer node (entry is gate); it would re-run
+  as fast as it finishes
+config: [core].ollama_host is retired (spec 129) - set `[llama] host` for the
+  llama.cpp server instead
+config: duplicate [[model_tier]] name 'small'
+sandbox: enforcement could not be verified
+\end{lstlisting}
+
+Two of those deserve comment. The retired \texttt{ollama\_host} key is refused \emph{by name}
+rather than as an unknown field, because the generic message would send an operator looking
+for a typo. And the duplicate tier name is refused at parse time, so a node asking for the
+tier gets one provider rather than whichever entry happened to win.
+
+\section{What an operator should check first}
+
+When a daemon is suspected rather than proven wrong, four checks answer most questions without
+reading code:
+
+\begin{enumerate}
+	\item \texttt{pii health --json}: the state of each subsystem, the store's path and
+	per-table counts, and the mounts the process actually has.
+	\item The log's first line: \texttt{daemon.starting} carries the pid and the store parent,
+	so the process and the directory it opened are in the record.
+	\item The sandbox line in \texttt{health}: \texttt{sandbox=workspace (landlock)} with the
+	grants spelled out, or the loud \texttt{off} text.
+	\item The store's parent directory, compared with \texttt{PII\_STATE\_DIR} and
+	\texttt{HOME}: a daemon reading the wrong store looks exactly like a daemon with amnesia.
+\end{enumerate}
+
+\section{Failure modes worth recognising}
+
+\begin{enumerate}
+	\item \textbf{A test daemon that hangs on start.} Symptom: no socket, no log line after
+	\texttt{daemon.starting}, a test that times out. Cause: it inherited the operator's
+	\texttt{PII\_STATE\_DIR} and is waiting on a held \texttt{channel.redb}. Fix: give the test
+	its own state directory.
+	\item \textbf{A gate that fails on a channel lock.} Symptom: \texttt{channel.redb is
+	locked: another daemon holds it} inside a gate run. Cause: the gate inherited a state dir
+	from the shell that started it. The gate now removes \texttt{PII\_STATE\_DIR} and
+	\texttt{PII\_RUNTIME\_DIR} from the child environment.
+	\item \textbf{A sandbox that refuses every start.} Symptom: exit \texttt{4} on a host where
+	landlock should work. Read the two probe outcomes: an out-grant write that succeeded means
+	the ruleset did not apply; an in-grant write that failed means the grant list is wrong,
+	usually a missing directory the process cannot create.
+	\item \textbf{A podman run that cannot see its own image.} Symptom: \texttt{EACCES} on
+	\texttt{bolt\_state.db}. Cause: the container state dirs are not in the grant list.
+	\item \textbf{A node that ``has no write tool''.} Symptom: the agent stops and reports that
+	no write or execute tool is available. Cause: the node declared too few capabilities --- a
+	coder without \texttt{fs\_write} cannot implement anything. The fix is in the graph, not in
+	the sandbox.
+	\item \textbf{A cron entry that spins.} Symptom: a graph that starts again immediately
+	after it finishes. Cause: the entry node is not a \texttt{timer}. The daemon refuses that
+	at start now.
+\end{enumerate}

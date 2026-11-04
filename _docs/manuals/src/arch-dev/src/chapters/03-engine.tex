@@ -1,0 +1,537 @@
+\chapter{The engine}
+
+\label{ch:engine}
+
+This chapter answers what a run is. It covers the five states a run can be in, what happens between
+the moment a graph is accepted and the moment its terminal is durable, how the scheduler decides
+which nodes may run together, what the journal records and when it is flushed, and how a run that
+was interrupted is resumed rather than restarted. The engine is the part of pii that must not be
+interesting: it starts a run, walks the graph, and writes down what it decided. Its complexity is
+almost entirely in the two properties that follow from that --- a run must not hang, and a run must
+not lose work it already did.
+
+Both properties cost something. The no-hang property is why every arm of the tick loop returns and
+why a node that can never become ready fails the run by name instead of waiting. The no-loss
+property is why the journal is write-behind rather than write-through, why the terminal event is
+appended before the status is flipped, and why the resume path replays the whole journal instead of
+trusting a saved position.
+
+\section{The record of a run}
+
+A run is identified by a \texttt{RunId} and described by a \texttt{RunHeader} that is written when
+the run is accepted. The header is small on purpose: it is read by every list command and by every
+watchdog, so it must be one record and not a fold over the journal.
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.18\textwidth}p{0.72\textwidth}@{}}
+	\toprule
+	\textbf{Field} & \textbf{Meaning} \\
+	\midrule
+	\texttt{run} & the run id; the key every other table uses \\
+	\texttt{graph} & the graph name, or the hash of its body when it has no name \\
+	\texttt{status} & one of the five states in the next section \\
+	\texttt{seq} & the next journal sequence number to be written \\
+	\texttt{dur\_ms} & wall-clock duration; zero while running \\
+	\texttt{revision} & the build revision of the binary that accepted the run \\
+	\texttt{process\_start\_ms} & when that process started, so a restart is visible \\
+	\texttt{created\_ms} & when the run was accepted \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The last two fields exist because of an operational question that a single timestamp cannot answer:
+\enquote{was this run started by the process that is running now}. Without \texttt{revision} and
+\texttt{process\_start\_ms}, a run that fails after a deploy is indistinguishable from a run that
+failed before it, and a bug that was fixed looks like it is still there. Rows written before the
+field existed decode with an empty revision, and are counted as unattributed rather than as a
+deploy.
+
+\section{Five states}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=11mm and 16mm]
+	\node[b] (running) {Running};
+	\node[b, right=of running] (suspended) {Suspended\\\scriptsize carries a resume key};
+	\node[b, below=of running] (succeeded) {Succeeded};
+	\node[b, below=of suspended] (failed) {Failed};
+	\node[b, left=of failed] (refused) {Refused\\\scriptsize refused before any spawn};
+
+	\draw[f] (running) -- node[p,above=2pt,midway]{a node suspends} (suspended);
+	\draw[bk] (suspended) -- node[p,below=2pt,midway]{resume key fires} (running);
+	\draw[f] (running) -- (succeeded);
+	\draw[f] (running) -- node[p,right=2pt,midway]{failure, cancel} (failed);
+	\draw[sf] (running) to[bend right=25] node[p,below=2pt,midway]{agent call refused} (refused);
+\end{tikzpicture}}
+\captionof{figure}{The whole life cycle; there is no \emph{Pending} and no \emph{Cancelled} state:
+a run exists only once it has been accepted, and a cancelled run is closed as \emph{Failed} with
+\texttt{cancelled:} in its error text, which is what the record has always meant.}
+\end{center}
+
+\begin{itemize}
+	\item \textbf{Running} --- executing, or waiting to be resumed by a caller that already holds a
+	key. It is also the state a cancelled run is left in if the process dies mid-cancel, which is
+	deliberate: recovery finds it.
+	\item \textbf{Suspended} --- the run parked itself on a resume key. A timer, for instance,
+	never blocks a thread; it journals a \texttt{Suspended} event and returns the key the scheduler
+	will fire.
+	\item \textbf{Succeeded} --- the run reached a terminal disposition with a value.
+	\item \textbf{Failed} --- the run ended in an error: a node failed terminally, a limit was
+	exceeded, a join could never be satisfied, or an operator cancelled it.
+	\item \textbf{Refused} --- an agent call was refused before any process was spawned. It is
+	distinct from \emph{Failed} because nothing was attempted: a refusal is a decision, and the
+	store records it as one.
+\end{itemize}
+
+The absence of a \emph{Cancelled} status is not an oversight. Cancellation has two forms, and
+neither needs a sixth state. A run that is not executing is closed as \emph{Failed} with
+\texttt{cancelled: <reason>} in its error, which is what an operator reading the record needs to
+know. A run whose node \emph{is} executing is refused by default --- the daemon answers
+\texttt{run.cancel\_refused} and names the node --- because cancelling would abandon work
+half-done. The explicit kill form accepts that, waits up to thirty seconds for the node to leave
+flight, and still leaves the run open if it has not: a run is never closed while its agent may
+still be running.
+
+\section{Starting a run}
+
+\texttt{spawn\_run} returns in under fifty milliseconds, and everything that must be true before
+the caller gets an id is done on the calling thread. The order matters, because each step can refuse
+and the refusal has to leave a coherent record.
+
+\begin{enumerate}
+	\item The runtime is checked. A start from a plain thread is refused by name rather than
+	panicking on a run thread, which would crash-loop a supervisor.
+	\item The run is registered as queued, with its own cancel token, so a cancel that arrives
+	before the pool picks it up is not lost.
+	\item An optional \texttt{scope\_root} in the input confines the run's write scope to one
+	directory. An invalid root is rejected here, before anything runs, rather than producing a
+	permissive run.
+	\item The context is built with the graph's \texttt{[limits]} as a real budget --- tokens, tool
+	calls, micro-dollars and wall clock --- and with the capability set the run's scope allows.
+	\item The header and the \texttt{Started} event are written and flushed, so the id the caller
+	receives is already durable.
+	\item A quarantine check may refuse the run; the refusal is recorded as a deny decision before
+	the error is returned.
+	\item The work is submitted to the run pool. The closure checks whether the run was cancelled
+	while queued and returns without executing if so.
+\end{enumerate}
+
+The fifth step is the one with a visible consequence: because the header is durable before the
+caller returns, a run id can be used immediately --- to subscribe, to cancel, to read the trace ---
+without a race against the pool.
+
+\begin{lstlisting}[language=bash]
+pii run start queue --input '{"workdir":"/projects/pi-improved","base":"<40-hex>"}'
+pii run ls --status Suspended          # what is waiting, and on what
+pii run get <run_id>                   # header: graph, status, duration
+pii run trace <run_id>                 # the journal, in sequence order
+\end{lstlisting}
+
+\section{The tick loop}
+
+The loop is one function, and its shape is the answer to \enquote{how does a graph make progress}.
+Each iteration either dispatches a batch, or ends the run. There is no arm that waits.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 14mm]
+	\node[b] (top) {tick};
+	\node[v, below=of top] (cancel) {cancelled?};
+	\node[v, below=of cancel] (limits) {limits ok?};
+	\node[v, below=of limits] (join) {unsatisfiable\\\scriptsize join?};
+	\node[b, below=of join] (batch) {drain every ready node\\\scriptsize one batch};
+	\node[v, below=of batch] (empty) {batch empty?};
+	\node[b, right=of batch] (part) {pure chunk, then\\\scriptsize serial, applying as results arrive};
+	\node[b, left=of empty] (term) {terminal};
+
+	\draw[f] (top) -- (cancel);
+	\draw[f] (cancel) -- node[p,right=2pt,midway]{no} (limits);
+	\draw[f] (limits) -- node[p,right=2pt,midway]{yes, dead to a fixpoint} (join);
+	\draw[f] (join) -- node[p,right=2pt,midway]{none} (batch);
+	\draw[f] (batch) -- (empty);
+	\draw[f] (empty) -- node[p,above=2pt,midway]{no} (part);
+	\draw[sf] (part.south) to[bend left=30] node[p,below=2pt,midway]{next tick} (top.west);
+	\draw[f] (empty) -- node[p,above=2pt,midway]{yes} (term);
+	\draw[bk] (cancel.west) to[bend right=20] node[p,left=2pt,midway]{flush, stop} (term.north);
+	\draw[bk] (join.east) to[bend left=20] node[p,right=2pt,midway]{yes} (term.north east);
+\end{tikzpicture}}
+\captionof{figure}{One iteration; the two red exits are the no-hang guarantee: a cancellation and
+an unsatisfiable join both end the run inside the same tick, with a recorded reason.}
+\end{center}
+
+In order, one iteration does this:
+
+\begin{enumerate}
+	\item \textbf{Cancellation.} If the run's token is set, the journal is flushed and the run stops.
+	The flush is not optional: without it a cancel before the write-behind threshold would lose every
+	completed node, and a resume would re-run work whose side effects already happened.
+	\item \textbf{Limits.} The step count and the wall clock are checked first, then the three
+	consumable budgets. A budget exhausted by any node is visible here on the next tick, because
+	nodes share the run's budget rather than holding their own.
+	\item \textbf{Dead propagation.} A node all of whose inbound data edges are dead is itself dead,
+	and so on to a fixpoint. Each newly dead node journals a \texttt{NodeDead} event, so a branch
+	that was skipped is distinguishable from a branch that never existed.
+	\item \textbf{Unsatisfiable join.} A join that can never be satisfied fails the run immediately
+	and names the node. This is checked every tick rather than at the end, because a quorum that has
+	already lost too many arms cannot recover.
+	\item \textbf{The batch.} Every node that is ready and not already executed, dead, failed or
+	cancelled is drained into one batch. The batch is journaled as a \texttt{TickStarted} event with
+	its width, which is what makes a wide fan-out visible in a trace.
+	\item \textbf{Budget and entry checks at dispatch.} A node whose \texttt{loop\_budget} is
+	already spent, or a call head entered more than \texttt{max\_entries} times, fails the run here
+	--- before the batch runs, not after.
+	\item \textbf{Inputs frozen.} Each node's input is built from the current edge state and the
+	blackboard, once, before any node in the batch runs. A node therefore cannot observe a sibling's
+	output from the same tick.
+	\item \textbf{Partition.} Nodes whose effects are parallel-safe run in bounded chunks; nodes that
+	write the filesystem or mutate an external system run one at a time, after the parallel batch.
+	\item \textbf{Apply as results arrive.} Each result is applied to the scheduling state
+	immediately, and race losers are cancelled after \emph{each} result rather than at the end of the
+	batch, so a losing branch does not keep burning a timer.
+	\item \textbf{Restart or end.} A terminal failure recorded mid-batch ends the run now; a
+	suspension ends it as \emph{Suspended}; otherwise the loop iterates.
+\end{enumerate}
+
+The choice to drain \emph{all} ready nodes rather than one per tick is what makes the loop's cost
+proportional to depth rather than to nodes. It also means a graph's fan-out is a real budget
+question: a hundred pure nodes ready at once will use up to \texttt{max\_parallel} threads, and the
+single-element chunk case is dispatched inline precisely because spawning one OS thread per node
+showed up as retained memory under soak load.
+
+\section{Readiness, and the four joins}
+
+A node is ready when its inbound edges allow it. The rules are ordered, and the order is the part
+that is easy to get wrong.
+
+\begin{enumerate}
+	\item The entry node is ready on its first pass even if it has inbound edges. A loop's back
+	edge is pending at the start, and without this exception a cyclic graph would deadlock on tick
+	one.
+	\item Any pending \emph{order} edge makes a node not ready. Order edges gate readiness before
+	data is considered at all.
+	\item Zero inbound data edges means ready. This must be tested before the join arms, because
+	\enquote{all of nothing} is true and would otherwise report the entry as dead.
+	\item Otherwise the node's join policy decides.
+\end{enumerate}
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.16\textwidth}p{0.36\textwidth}p{0.36\textwidth}@{}}
+	\toprule
+	\textbf{Join} & \textbf{Ready when} & \textbf{Never runs when} \\
+	\midrule
+	\texttt{all} (default) & every inbound data edge fired & every edge dead (dead node), or any edge
+	dead while others fired (unsatisfiable) \\
+	\texttt{any} & at least one edge fired & every edge dead \\
+	\texttt{any:cancel} & as \texttt{any}, and the losers are cancelled once one wins & every edge
+	dead \\
+	\texttt{quorum:K} & at least $K$ edges fired & fewer than $K$ can still fire \\
+	\texttt{allsettled} & every edge settled, fired or dead & every edge dead \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The difference between \texttt{all} and \texttt{allsettled} is the difference between \enquote{all
+my inputs succeeded} and \enquote{all my inputs are decided}. A node that must proceed whether or
+not one branch died uses \texttt{allsettled}; a node that needs every value uses \texttt{all}. The
+static validator refuses an \texttt{any} or \texttt{quorum} join with fewer than two inbound data
+edges --- a one-armed race is a typo --- but deliberately does not over-enforce a single-armed
+\texttt{allsettled}, which is a legitimate idiom.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (a) {branch A};
+	\node[b, below=of a] (b) {branch B};
+	\node[m, right=14mm of a] (join) {join};
+	\node[b, right=of join] (next) {next node};
+	\node[v, below=of next] (dead) {dead branch};
+
+	\draw[f] (a.east) -- node[p,above=2pt,midway]{ok} (join.north west);
+	\draw[f] (b.east) -- node[p,below=2pt,midway]{done} (join.south west);
+	\draw[f] (join) -- (next);
+	\draw[bk] (b.south) -- (dead.north);
+	\draw[sf] (dead.west) to[bend left=14] node[p,below=2pt,midway]{all dead?} (join.south);
+\end{tikzpicture}}
+\captionof{figure}{Why the join policy is part of the graph rather than a scheduler default; two
+branches may both feed one node, and whether that node waits for both, for one, or for both to be
+\emph{decided} is a fact about the graph that no scheduler can infer.}
+\end{center}
+
+\section{The journal}
+
+The journal is the primary evidence, and it is written by one component with one sequence counter.
+Every event is appended with a sequence number computed from the header and the pending buffer, the
+observer is notified immediately, and the event is buffered for a durable write in one transaction
+with the header.
+
+\begin{longtable}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
+	\toprule
+	\textbf{Event} & \textbf{What it records} \\
+	\midrule
+	\endhead
+	\texttt{Started} & the graph name and the hash of the run input \\
+	\texttt{TickStarted} & the batch of nodes drained in one tick, and its width \\
+	\texttt{NodeStarted} & a node began, at a millisecond offset \\
+	\texttt{NodeFinished} & the node, the port it took, the value, the value hash, offset and
+	duration \\
+	\texttt{NodeFailed} & the error, whether it is retryable, and the attempt number \\
+	\texttt{NodeProgress} & a heartbeat: elapsed time and the child's CPU, so a wedged node (time
+	grows, CPU flat) reads differently from a working one \\
+	\texttt{NodeCancelled}, \texttt{NodeDead} & a race loser, and a node killed by dead-branch
+	propagation \\
+	\texttt{NodeInterrupted} & an audit marker written on resume for a node the previous attempt
+	left mid-flight; it carries no state transition \\
+	\texttt{Suspended}, \texttt{Resumed} & the resume key, and the hash of the payload that
+	delivered it \\
+	\texttt{NodeObserved} & an event a node's agent emitted, recorded from the agent's own events
+	rather than from the node's return value \\
+	\texttt{EffectStarted}, \texttt{EffectConfirmed} & an idempotency key, written \emph{before} an
+	effect and confirmed after it \\
+	\texttt{NodeRetried} & an operator re-ran one node; earlier terminal events are history \\
+	\texttt{RunSpawned} & a \texttt{spawn} node launched a child run \\
+	\texttt{Finished} & the terminal and the hash of its output \\
+	\bottomrule
+\end{longtable}
+
+Two of these groups carry more weight than the rest. The \texttt{EffectStarted} /
+\texttt{EffectConfirmed} pair is the only defence against an effect that happened but was not
+recorded: a key that was started and never confirmed is reported as \texttt{effect.unknown}, and a
+resume refuses the run rather than re-performing an effect whose outcome nobody knows. And
+\texttt{NodeObserved} is how the journal learns what an agent did without trusting the node's return
+value: the fields are the agent's event fields, copied, not paraphrased.
+
+\subsection*{Write-behind, and the two moments it is flushed}
+
+Journaling is buffered. The writer keeps a pending list, flushes when the list reaches its batch
+threshold or when the sequence number crosses a snapshot boundary every thirty-two events, and
+flushes unconditionally at three points that matter:
+
+\begin{itemize}
+	\item before a terminal is recorded --- the \texttt{Finished} event is appended \emph{before} the
+	status is flipped, so a reader that polls the header cannot see a finished run while the terminal
+	event is still in the buffer;
+	\item when a run is cancelled, so completed work survives;
+	\item on resume, before anything new is appended, so the replayed prefix is the durable one.
+\end{itemize}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 13mm]
+	\node[b] (a1) {append};
+	\node[b, right=of a1] (a2) {append};
+	\node[b, right=of a2] (a3) {append\\\scriptsize 32nd};
+	\node[b, right=of a3] (flush) {flush\\\scriptsize one transaction};
+	\node[b, below=of a2] (obs) {observer\\\scriptsize every append};
+	\node[b, below=of flush] (finish) {\texttt{Finished}\\\scriptsize appended first};
+	\node[b, right=of finish] (status) {status flipped};
+	\node[b, below=of status] (durable) {durable\\\scriptsize both, one flush};
+
+	\draw[f] (a1) -- (a2);
+	\draw[f] (a2) -- (a3);
+	\draw[f] (a3) -- (flush);
+	\draw[sf] (a2) -- (obs);
+	\draw[f] (finish) -- (status);
+	\draw[f] (status) -- (durable);
+	\draw[sf] (flush.south) to[bend right=10] (finish.north);
+\end{tikzpicture}}
+\captionof{figure}{Two clocks in the writer: the live view advances on every append, the durable view on a flush, and
+the terminal path appends before flipping the status so that both land in one transaction.}
+
+\end{center}
+
+The failure mode this design accepts is bounded and stated: a process that dies between two flushes
+loses the buffered events, and the nodes they described will run again on resume. That is why
+effects are journalled separately and before they happen --- the one category where \enquote{run
+again} is not acceptable gets its own protocol.
+
+\section{How a run ends}
+
+When the batch is empty, the engine decides the terminal. Three rules, in order:
+
+\begin{enumerate}
+	\item If a failure was recorded during dispatch, it is the terminal. Nothing overrides it.
+	\item If any node is neither executed, dead, failed nor cancelled and is not ready, the run fails
+	with \texttt{no progress: node '<id>' never became ready}. This is the message an operator sees
+	when an edge is missing, and it names the node rather than the edge, because the edge is usually
+	the thing that is not there.
+	\item Otherwise the output is the value of the latest finished node that has no outbound data
+	edge on the port it took --- the value nobody consumed. If several qualify, the latest by
+	sequence wins.
+\end{enumerate}
+
+The third rule has a consequence that surprises graph authors: a node that leaves on a
+non-\texttt{ok} port carrying an error makes the run a failure even if the graph \enquote{reached
+the end}. The check
+is deliberate. A success terminal that carries an error is the shape of a bug that reports green
+while the work failed, and it is refused at the point where the terminal is built rather than left
+for a reader to notice.
+
+\section{Suspension and resume}
+
+A node that must wait --- a timer, an approval, a peer message --- does not block. It returns a
+suspension: a reason and a key. The run is finished as \emph{Suspended}, and something outside the
+engine owns the key: the timer wheel fires it, an operator resolves the approval, a peer message
+arrives.
+
+Resuming is not \enquote{continue from where we were}, because there is no \enquote{where we were}
+after a restart. It is a replay:
+
+\begin{enumerate}
+	\item The journal is read in sequence order and the scheduling state is rebuilt: which edges
+	fired, which nodes executed, which are dead.
+	\item A node with a \texttt{NodeFinished} is never re-invoked; its value is in the journal and
+	goes back on the blackboard.
+	\item A node with a \texttt{NodeStarted} and no terminal event \emph{is} re-run. This is the
+	documented boundary: the engine knows the node began and does not know whether its side effect
+	happened, so it runs it again unless the effect protocol says otherwise.
+	\item Before any of that, an \texttt{EffectStarted} with no matching \texttt{EffectConfirmed}
+	refuses the resume with \texttt{effect.unknown}.
+	\item A confirmed effect whose \texttt{NodeFinished} never landed is completed from the journal
+	rather than re-performed.
+	\item The nodes the journal shows as still suspended are dispatched through the resume entry
+	point rather than a fresh run, so a fired timer resumes to \enquote{next} instead of
+	suspending again.
+\end{enumerate}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[s] (journal) {journal};
+	\node[b, right=of journal] (replay) {replay\\\scriptsize rebuild edge states};
+	\node[v, right=of replay] (effect) {effect\\\scriptsize unknown?};
+	\node[b, right=of effect] (refuse) {refuse the resume};
+	\node[b, below=of effect] (resume) {dispatch the\\\scriptsize suspended nodes};
+	\node[b, right=of resume] (continue) {tick loop\\\scriptsize continues};
+	\node[b, below=of replay] (rerun) {re-run started\\\scriptsize without a terminal};
+
+	\draw[f] (journal) -- (replay);
+	\draw[f] (replay) -- (effect);
+	\draw[bk] (effect) -- node[p,above=2pt,midway]{yes} (refuse);
+	\draw[f] (effect) -- node[p,right=2pt,midway]{no} (resume);
+	\draw[f] (resume) -- (continue);
+	\draw[sf] (replay) -- (rerun);
+\end{tikzpicture}}
+\captionof{figure}{Resume is a replay with two exceptions --- finished nodes are not re-run, and suspended ones get
+their own entry point --- so everything else is reconstructed from events.}
+
+\end{center}
+
+\section{Recovery at boot}
+
+A restart is the normal case, not the exceptional one. Three mechanisms cover it, and each has a
+distinct failure it was built for. The operator's side of all three is small:
+
+\begin{lstlisting}[language=bash]
+pii run resume <run_id>                 # replay the journal and continue
+pii run retry <run_id> --node <id>      # re-run one node; its earlier events stay as history
+pii run abandon <run_id> --reason '...' # close a run nothing can finish, with a reason on record
+pii run cancel <run_id> [--kill]        # refused while a node executes, unless killed
+\end{lstlisting}
+
+\paragraph{Agents left running.} A daemon that dies in the middle of an agent leaves the agent with
+no owner. Before the runs it left \emph{Running} are closed, boot recovery kills each agent it
+started: a container by its \texttt{io.pii} and \texttt{pii.run} labels, a host process by the pid
+journalled while \texttt{/proc} still shows that pid running the same program. Every reap is
+journalled on its run as \texttt{coder.orphan\_reaped}, and the run's failure text says an agent was
+killed --- so the operator sees why the run ended, rather than an unexplained failure.
+
+\paragraph{Suspended runs with no timer.} A timer row used to be deleted before the resume was
+spawned, so a process that exited in between left a run \emph{Suspended} with nothing that would
+ever fire. The fixes are small and together they close the hole: the row is deleted only after the
+resume is spawned, a failed spawn puts the row back or fails the run with
+\texttt{run.resume.failed}, and the daemon calls the existing recovery pass once at boot rather than
+only after a lagging bus
+event. A run must never be left suspended with no timer and no event saying so.
+
+\paragraph{Queue claims.} A row claimed by a run that then died used to block the queue for ever,
+because a \texttt{Running} row makes \texttt{claim\_next} refuse to hand out anything. The claim is
+now a lease: the item records who claimed it and when, and it is requeued to \texttt{pending} with a
+\texttt{requeued\_after\_restart} event when the claiming run is terminal or no longer exists. It is
+\emph{not} requeued while its run is alive or suspended, which is the near-miss control the fix
+needed: a suspended run still blocks its row, because its timer will resume it.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (boot) {daemon starts};
+	\node[b, right=of boot] (reap) {reap agents\\\scriptsize labels, or pid};
+	\node[b, right=of reap] (suspend) {re-arm suspended\\\scriptsize runs without a timer};
+	\node[b, right=of suspend] (queue) {requeue claims\\\scriptsize whose run is gone};
+	\node[s, below=of reap] (j1) {journal};
+	\node[s, below=of suspend] (j2) {timer wheel};
+	\node[s, below=of queue] (j3) {queue store};
+
+	\draw[f] (boot) -- (reap);
+	\draw[f] (reap) -- (suspend);
+	\draw[f] (suspend) -- (queue);
+	\draw[f] (reap) -- (j1);
+	\draw[f] (suspend) -- (j2);
+	\draw[f] (queue) -- (j3);
+\end{tikzpicture}}
+\captionof{figure}{Boot, in order: each step writes to the store that owns the fact, and nothing is fixed in memory
+alone.}
+
+\end{center}
+
+\section{Failure signatures}
+
+The table is the practical part of this chapter: what a failure looks like in the record, and what
+it usually means. Every signature is a real string or event in the code.
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.30\textwidth}p{0.28\textwidth}@{}}
+	\toprule
+	\textbf{What you see} & \textbf{Where} & \textbf{Usually means} \\
+	\midrule
+	\endhead
+	\texttt{no progress: node 'X' never became ready} & terminal error, status
+	\emph{Failed} & an inbound edge that can never fire; a branch that dead-ended \\
+	\texttt{join can never be satisfied: node 'X'} & terminal, within one tick & two arms on mutually
+	exclusive ports of one router \\
+	\texttt{max\_steps exceeded} & terminal, status \emph{Failed} & a cycle without a
+	\texttt{loop\_budget} that validation did not catch, or a node that keeps re-entering \\
+	\texttt{max\_wall\_ms exceeded} & terminal & a blocking node with no timeout of its own \\
+	\texttt{loop\_budget exceeded for node 'X'} & terminal, mid-batch & the budget is exactly the
+	number of allowed runs; the failure is the run after it \\
+	\texttt{call 'X' entered more than max\_entries} & terminal, before dispatch & an inner call
+	inside an outer loop, whose count is cumulative for the run \\
+	\texttt{effect.unknown} & refusal on resume & an effect began and was never confirmed \\
+	no \texttt{NodeFinished} after a \texttt{NodeStarted} & journal tail & the process died
+	mid-node; the node will re-run \\
+	a run \emph{Running} with a dead process & header, plus reaps & crash; boot recovery closes it
+	after killing the agent \\
+	\bottomrule
+\end{longtable}
+
+Two of these deserve a note. \texttt{no progress} is the most common message in this repository and
+almost always means an edge is missing rather than that the scheduler is wrong; the node it names is
+the one that could not proceed, not the one that failed to feed it. And \texttt{loop\_budget
+exceeded} fires on the run \emph{after} the allowed number, so a budget of three produces exactly
+three executions and then a failure --- which is the behaviour a bounded loop wants, and the reason
+the check is at dispatch rather than at re-entry.
+
+\section{The limits, as a table}
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.20\textwidth}p{0.22\textwidth}p{0.48\textwidth}@{}}
+	\toprule
+	\textbf{Key} & \textbf{Default} & \textbf{What it bounds} \\
+	\midrule
+	\texttt{max\_steps} & 1000 & scheduler iterations, not node runs; a wide graph uses few \\
+	\texttt{max\_wall\_ms} & 600\,000 & elapsed time from acceptance \\
+	\texttt{max\_tokens} & unbounded & tokens charged by agent nodes, shared by the run \\
+	\texttt{max\_tool\_calls} & unbounded & tool calls across the run; exhaustion routes the agent
+	to its \texttt{budget} port \\
+	\texttt{max\_micro\_usd} & unbounded & spend, in micro-dollars \\
+	\texttt{max\_parallel} & 0 & parallel-safe nodes per tick; zero means the host's available
+	parallelism \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The defaults are chosen so that an unattended run cannot loop for ever or spend without a ceiling,
+while a graph that says nothing still behaves like a normal program. A graph that needs longer says
+so in its own file, where the number is reviewable --- which is the whole reason the limits are part
+of the graph rather than a daemon-wide setting.

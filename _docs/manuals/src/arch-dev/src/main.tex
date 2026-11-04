@@ -1,0 +1,138 @@
+% pii — Architecture and Development Manual
+% Template: kaobook · compiled through lnx's texlive container
+\documentclass[
+	fontsize=10pt,
+	twoside=false,
+	secnumdepth=2,
+	open=any,
+]{kaobook}
+
+\usepackage[english]{babel}
+\usepackage[style=english]{csquotes}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{caption}% captions outside floats: kaobook's figure env recurses around tikz
+
+% TikZ: every concept in these manuals is drawn, not only described.
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric, shapes.misc,
+                fit, backgrounds, patterns, decorations.pathreplacing}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% One visual vocabulary for both manuals, so a box means the same thing in every figure.
+\tikzset{
+  box/.style={draw, rounded corners=2pt, fill=blue!4, align=center,
+              inner sep=4pt, font=\footnotesize, minimum height=1.0cm},
+  store/.style={draw, cylinder, shape border rotate=90, aspect=0.25, fill=orange!8,
+                align=center, inner sep=3pt, font=\footnotesize, minimum height=1.1cm},
+  model/.style={draw, rounded corners=8pt, fill=purple!8, align=center,
+                inner sep=4pt, font=\footnotesize, minimum height=1.0cm},
+  verdict/.style={draw, diamond, aspect=1.6, fill=green!8, align=center,
+                  inner sep=1pt, font=\scriptsize},
+  port/.style={font=\scriptsize\itshape, inner sep=1pt, fill=white},
+  flow/.style={-{Latex[length=2mm]}, thick},
+  soft/.style={-{Latex[length=2mm]}, thick, dashed, gray!70},
+  back/.style={-{Latex[length=2mm]}, thick, red!60!black, dashed},
+  group/.style={draw, dashed, rounded corners=4pt, inner sep=8pt, gray!60},
+}
+
+
+\definecolor{codebg}{RGB}{247,247,249}
+\lstset{
+	basicstyle=\ttfamily\footnotesize,
+	backgroundcolor=\color{codebg},
+	frame=single,
+	framesep=3pt,
+	breaklines=true,
+	columns=fullflexible,
+	keepspaces=true,
+	showstringspaces=false,
+	postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+}
+
+\titlehead{pii \textperiodcentered{} personal information index}
+\title{Architecture and Development Manual}
+\author{Marcelo Correa}
+\date{Version 0.2.0 \textperiodcentered{} build 2026-11-04 10:27 UTC \textperiodcentered{} commit \texttt{c05f3d1e4dd3}}
+\publishers{The internals: engine, composition, stores, gates}
+
+
+% Short names, same meanings: b box · s store · m model · v verdict · p port · f flow ·
+% sf soft edge · bk back edge · g group. Both books accept either spelling.
+\tikzset{
+  b/.style={draw, rounded corners=2pt, fill=blue!4, align=center, inner sep=4pt, font=\footnotesize},
+  s/.style={draw, cylinder, shape border rotate=90, aspect=0.25, fill=orange!8, align=center, inner sep=3pt, font=\footnotesize},
+  m/.style={draw, rounded corners=8pt, fill=purple!8, align=center, inner sep=4pt, font=\footnotesize},
+  v/.style={draw, diamond, aspect=1.6, fill=green!8, align=center, inner sep=1pt, font=\scriptsize},
+  p/.style={font=\scriptsize\itshape, inner sep=1pt, fill=white},
+  f/.style={-{Latex[length=2mm]}, thick},
+  sf/.style={-{Latex[length=2mm]}, thick, dashed, gray!70},
+  bk/.style={-{Latex[length=2mm]}, thick, red!60!black, dashed},
+  g/.style={draw, dashed, rounded corners=4pt, inner sep=8pt, gray!60},
+}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+
+\uppertitleback{\titlehead}
+\lowertitleback{
+	\textbf{About this manual} \\
+	This is the developer's book. It explains how pii is built and why each piece is
+	shaped the way it is, including the parts that were rebuilt after they failed in
+	production. The companion volume, \textit{pii --- User and Administration Manual},
+	covers installation and daily use.
+
+	\medskip
+	\textbf{How it was written} \\
+	Every mechanism here was read from the code and then exercised: the exit rule in
+	composition was found by a graph whose refusal vanished; the retention guard by a
+	fixture that was deleted; the gate's environment leak by a control that passed in
+	one place and failed in another.
+
+	\medskip
+	\textbf{Version} \\
+	Measured against pii 0.2.0 and the nineteen rows that landed with it.
+
+	\medskip
+	\textbf{Colophon} \\
+	Typeset with \LaTeX{} using the \href{https://www.latex-templates.com/template/kaobook}{kaobook}
+	template, compiled through the shared texlive container on \texttt{lnx}.
+}
+
+\tableofcontents
+
+\mainmatter
+\input{chapters/01-design-goals}
+\input{chapters/02-workspace}
+\input{chapters/03-engine}
+\input{chapters/04-node-kinds}
+\input{chapters/05-composition}
+\input{chapters/06-stores}
+\input{chapters/07-daemon}
+\input{chapters/08-agents-and-models}
+\input{chapters/09-gates-and-tests}
+\input{chapters/10-development-workflow}
+\input{chapters/11-memory-engine}
+
+\backmatter
+\chapter{The habit that produced this manual}
+Every mechanism described here was first understood by running it and then disbelieving its
+explanation. The recurring failure in this codebase is not a missing feature; it is a
+\emph{guard that fires on the case it exists to permit}, while reporting a reason that is
+not the real one. Four instances appear in these chapters: a park that wedged the queue, a
+dirty tree that refused its own work, a resolver nothing called, and a disk check that was
+an unset variable.
+
+The defence is the same each time: make the check consume what the live path actually
+produces, and keep a control that must still take the normal path.
+
+\end{document}

@@ -1,0 +1,457 @@
+\chapter{Agents and models}
+
+\label{ch:agents}
+
+This chapter answers two questions that look like one: which model answers, and which program
+is asked. They are decided in different places and by different mechanisms. The model comes
+from a five-level precedence that ends in the daemon's configuration; the \emph{agent} ---
+\texttt{pi} or \texttt{claude} --- comes from the graph, and its command line is assembled
+explicitly, flag by flag, because every flag in it was added after its absence produced a
+silent failure.
+
+The chapter also states a limit plainly. The role table that would let a graph say
+\texttt{model = "@workhorse"} is designed and specified (spec 362) and is \emph{not} in the
+tree at this revision; what exists is a node's explicit model, a node's \texttt{tier}, the
+run's model, \texttt{\$PII\_MODEL}, and \texttt{[core].model}. A reader who needs the role
+table should read the last section of this chapter as a design, not as behaviour.
+
+\section{The five levels that decide a model}
+
+\texttt{crates/pii-server/src/tiers.rs} holds the only written-down statement of the order:
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (node) {node \texttt{model}};
+	\node[b, below=of node] (tier) {node \texttt{tier}};
+	\node[b, below=of tier] (run) {run model\\\scriptsize \texttt{--model}};
+	\node[b, below=of run] (env) {\texttt{\$PII\_MODEL}};
+	\node[b, below=of env] (cfg) {\texttt{[core].model}};
+	\node[v, right=of tier, xshift=16mm] (found) {first set?};
+	\node[b, right=of found, xshift=6mm] (use) {use it};
+	\node[b, below=of use] (none) {no model\\\scriptsize exit 5};
+
+	\draw[f] (node) -- (tier);
+	\draw[f] (tier) -- (run);
+	\draw[f] (run) -- (env);
+	\draw[f] (env) -- (cfg);
+	\draw[f] (tier.east) -- (found.west);
+	\draw[f] (found) -- node[p, above=2pt, midway]{yes} (use);
+	\draw[sf] (found) -- node[p, above=2pt, midway]{no} (none);
+\end{tikzpicture}}
+\captionof{figure}{Node model beats node tier beats run model beats environment beats config,
+and the order lives in one function so a caller cannot invent a sixth level in its own file.}
+\end{center}
+
+Two consequences follow. A graph that names a model explicitly keeps working exactly as it did
+before tiers existed --- which is why the precedence has node model at the top rather than the
+bottom. And a daemon with no model anywhere refuses to start with exit \texttt{5} rather than
+starting and failing at the first dispatch: the failure belongs where the operator is
+watching.
+
+\paragraph{Tiers.} A \texttt{[[model\_tier]]} entry names a model class a node can ask for by
+name. Each entry has a name, a provider spec, an optional tool allowlist, and an optional
+\texttt{max\_tokens} cap. The name must be non-empty and unique, and both are checked at parse
+time, because a duplicate would make a node's \texttt{tier} resolve to whichever entry won and
+the operator would have no way to know which.
+
+The tool allowlist is enforced by the capability layer, not by the prompt. That distinction is
+the whole point of the field: a tier that may call three tools cannot be talked into calling a
+fourth, and no instruction in a brief can widen it, because the check happens where the tool
+is dispatched. The allowlist only ever shrinks: intersecting two sets takes the names present
+in both.
+
+\section{Agent argv, assembled by hand}
+
+The worker node's spec is read from graph data: \texttt{agent}, \texttt{model}, \texttt{spec},
+\texttt{workdir}, and optionally \texttt{provider}, \texttt{sid}, \texttt{session},
+\texttt{run}, \texttt{max\_budget\_usd}. \texttt{WorkerSpec::from\_cfg} validates each
+optional field before anything is spawned: \texttt{max\_budget\_usd} must be a positive finite
+number (a typo can never become ``no cap'' or a flag the CLI rejects after the dispatch
+started), a claude \texttt{sid} must be a lowercase UUID v4, and a \texttt{run} must match
+\texttt{[A-Za-z0-9.\_-]+} because it names a file.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (row) {queue row};
+	\node[b, right=of row] (node) {coder node\\\scriptsize model $\cdot$ spec $\cdot$ workdir};
+	\node[b, right=of node] (plan) {\texttt{plan()}\\\scriptsize credentials checked};
+	\node[b, right=of plan, yshift=14mm] (launch) {launcher script\\\scriptsize sets PATH + env};
+	\node[b, right=of plan, yshift=-2mm] (argv) {argv};
+	\node[b, right=of argv, yshift=6mm] (agent) {agent process};
+	\node[b, below=of plan] (refuse) {refusal\\\scriptsize worker.start.refused};
+
+	\draw[f] (row) -- (node);
+	\draw[f] (node) -- (plan);
+	\draw[f] (plan) -- (argv);
+	\draw[f] (launch) -- (agent);
+	\draw[f] (argv) -- (agent);
+	\draw[bk] (plan) -- (refuse);
+\end{tikzpicture}}
+\captionof{figure}{Planning is pure and never spawns, and the spawn goes through a named
+launcher script that sets the environment inside itself rather than inheriting the caller's.}
+\end{center}
+
+For \texttt{pi}, the argv is built in this order and for these reasons:
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (a) {\texttt{pi}};
+	\node[b, right=of a] (b) {\texttt{--session}\\\scriptsize file};
+	\node[b, right=of b] (c) {\texttt{--model}\\\scriptsize id};
+	\node[b, right=of c] (d) {\texttt{--mode json}\\\scriptsize route is readable};
+	\node[b, right=of d] (e) {\texttt{--approval-mode}\\\scriptsize write};
+	\node[b, below=of e] (f) {\texttt{--provider}\\\scriptsize optional};
+	\node[b, left=of f] (g) {\texttt{-p}\\\scriptsize spec + brief};
+\end{tikzpicture}}
+\captionof{figure}{Every element is a decision that has a failure behind it, not a default
+that was copied from a shell history.}
+\end{center}
+
+\begin{longtable}{@{}p{0.20\textwidth}p{0.30\textwidth}p{0.42\textwidth}@{}}
+\toprule
+\textbf{Flag} & \textbf{Value} & \textbf{Why it is there} \\
+\midrule
+\endhead
+\texttt{--session} & \texttt{<workdir>/.pii-sessions/<stem>-<run>.jsonl}, or the node's
+\texttt{session} & a headless run needs a session file, and its path is what makes a resume
+possible \\
+\texttt{--model} & the resolved model id & the only place the model is stated \\
+\texttt{--mode json} & \texttt{json} & the event stream names the provider and model per message, so
+the run's real route can be read back \\
+\texttt{--approval-mode} & \texttt{write} & headless runs have no approval surface; see below \\
+\texttt{--provider} & the node's provider, when set & pins the route; the key is \emph{not} on
+argv \\
+\texttt{-p} & \texttt{Spec: <path>} and the brief & the brief says ``the spec named above'', so the
+spec must be named \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}[language=bash]
+# what a pi dispatch looks like, assembled by plan()
+pi --session /repo/.pii-sessions/376-retention-r000000000412.jsonl \
+   --model deepseek-v4.1-flash:cloud \
+   --mode json \
+   --approval-mode write \
+   --provider ollama-cloud \
+   -p "Spec: specs/376-retention-drops-what-the-policy-expires.md
+
+Implement the spec named above. Follow it as the contract. Do not commit."
+\end{lstlisting}
+
+For \texttt{claude} the argv is shorter and different in kind:
+
+\begin{lstlisting}[language=bash]
+claude --session-id 4f1c2a9e-8b7d-4c31-9a02-6d5e0f7b1c88 \
+       --model claude-haiku-5-5 \
+       --permission-mode bypassPermissions \
+       --output-format stream-json --verbose \
+       --max-budget-usd 0.25 \
+       -p "<brief>"
+\end{lstlisting}
+
+Four decisions are visible in that line. \texttt{--output-format stream-json} with
+\texttt{--verbose} is what makes the session id, the cost and the model readable after the
+fact; partial messages are \emph{not} requested, because one measured run produced 3\,779
+\texttt{stream\_event} lines and passed the capture bound. A resumed run carries
+\texttt{--resume <sid>}; a fresh run carries \texttt{--session-id <new>} when the caller chose
+one, so the handle exists before the spawn. The two flags are never both emitted. And no
+provider flag and no key appear at all: claude reads its own credential.
+
+\section{Approval modes, and what they are not}
+
+Approval modes separate \emph{writing} from \emph{judging}. They are not the security
+boundary, and the chapter states that first because it is the mistake to make.
+
+\texttt{pi}'s default is \texttt{always-ask}. Headless, there is no surface to ask on, so
+every mutating tool is denied. The measured result was a coder that ran for 122 seconds,
+exited 3, and reported:
+
+\begin{lstlisting}[language=bash]
+approval required for `bash` but this session has no approval surface
+\end{lstlisting}
+
+A coder in that state has written nothing and has reported a plausible reason. The fix was
+\texttt{--approval-mode write}, which approves file edits and still refuses to run commands.
+That is the right split for this architecture: the coder writes, the judge runs the exit
+criteria, and the daemon's capability set stays the outer bound. A coder that could run
+arbitrary commands would be running the very checks that are supposed to judge it.
+
+\texttt{claude} has the same problem with a different flag. Headless \texttt{-p} cannot ask
+for permission, so without a mode it cannot write at all; the dispatch passes
+\texttt{--permission-mode bypassPermissions}. The name is alarming and the reason it is
+acceptable is the same: the process is inside the sandbox, under a capability set that decided
+what it may do before it started, and its work is judged by criteria it cannot edit.
+
+\begin{longtable}{@{}p{0.14\textwidth}p{0.20\textwidth}p{0.16\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Agent} & \textbf{Mode used} & \textbf{Can write} & \textbf{What still stops it} \\
+\midrule
+\endhead
+\texttt{pi} & \texttt{write} & files only & the capability set, the sandbox, and the judge \\
+\texttt{pi} & \texttt{always-ask} (default) & nothing & nothing needs to: the run does nothing and
+exits 3 \\
+\texttt{claude} & \texttt{bypassPermissions} & yes & the capability set, the sandbox, the judge, and
+\texttt{--max-budget-usd} \\
+\bottomrule
+\end{longtable}
+
+\section{Credentials are checked before the spawn}
+
+A dispatch that names a provider must have that provider's key in its environment. The table
+is two entries --- \texttt{ollama-cloud} reads \texttt{OLLAMA\_API\_KEY}, \texttt{deepseek}
+reads \texttt{DEEPSEEK\_API\_KEY} --- and a provider not in the table has no key variable, so
+the check fails and the dispatch is refused. That is deliberate: an unknown provider is
+refused as a missing credential rather than attempted, because attempting it costs a spawn and
+produces a provider error instead of a configuration error.
+
+The refusal is journalled as \texttt{worker.start.refused} with the agent, the model and the
+reason, and the node fails without a process. This is the difference between a run that fails
+in one second with a nameable cause and a run that fails in ninety seconds with a stack trace
+from a subprocess.
+
+The key itself never reaches argv. For \texttt{pi}, the value is resolved at runtime from an
+environment reference in a pii-owned \texttt{models.json} (\texttt{apiKey = "\$ENV:<NAME>"}),
+with \texttt{PI\_CODING\_AGENT\_DIR} pointing at that directory. The measured proof is a run
+that exited 0 through ollama-cloud with no \texttt{--api-key} on the command line. An argv key
+would be visible in \texttt{/proc/<pid>/cmdline} to every process on the host.
+
+For \texttt{claude}, the credential check accepts either an environment token
+(\texttt{ANTHROPIC\_API\_KEY} or \texttt{CLAUDE\_CODE\_OAUTH\_TOKEN}) or the host's login file
+with an OAuth block. Only the block's \emph{presence} is checked; its values are never read
+into the journal.
+
+\section{The brief must name the spec}
+
+The brief is the text handed to the agent, and the code prefixes it with the spec path:
+
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
+let prompt = if spec.spec.is_empty() {
+    brief.to_owned()
+} else {
+    format!("Spec: {}\n\n{brief}", spec.spec)
+};
+\end{lstlisting}
+
+That two-line prefix exists because of a measured failure. A coder was spawned with the spec
+in its session \emph{name} and nothing about the spec in its prompt, and it implemented a
+different spec's files: the row said one thing, the tree changed another, and the criteria
+that failed belonged to work nobody had asked for. The failure is invisible in the argv log
+unless the prompt is logged, which is why the prefix is in the code and pinned by a test
+rather than left to a brief author's memory.
+
+\paragraph{An empty brief is refused.} A whitespace-only brief runs the agent with no prompt;
+it exits 0 at once, and a criterion that already passes makes the node succeed having done
+nothing. The coder refuses such a brief before it spawns. This is the general shape of a guard
+that exists because a passing check can be worse than a failing one: success-with-no-work is
+the hardest failure to notice.
+
+\section{Two verdicts, and only one of them counts}
+
+The agent's report is a self-report. A coder can exit 0 having written nothing, or having
+written the wrong thing, or having weakened a test until it passed. So the node has two inputs
+and one rule.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (worker) {agent\\\scriptsize exit code + report};
+	\node[b, right=of worker] (verdict) {\texttt{decide()}\\\scriptsize rc, criteria};
+	\node[b, above=of verdict] (judge) {judge\\\scriptsize spec blob at a commit};
+	\node[v, below=of verdict] (ok) {pass?};
+	\node[b, right=of ok, yshift=6mm] (pass) {ok port\\\scriptsize verdict = Passed};
+	\node[b, right=of ok, yshift=-6mm] (fail) {err port\\\scriptsize names the criterion};
+
+	\draw[f] (worker) -- (verdict);
+	\draw[f] (judge) -- (verdict);
+	\draw[f] (verdict) -- (ok);
+	\draw[f] (ok) -- node[p, above=2pt, midway]{yes} (pass);
+	\draw[bk] (ok) -- node[p, below=2pt, midway]{no} (fail);
+\end{tikzpicture}}
+\captionof{figure}{The worker decides nothing: its exit code is one input, the criteria runs
+are the other, and any non-zero criterion fails the node even when the worker exited cleanly.}
+\end{center}
+
+\texttt{decide} has three rules and no exceptions:
+
+\begin{enumerate}
+	\item A non-zero worker exit is a failure, named \texttt{worker exited <n>}.
+	\item Zero criteria run is a failure, named \texttt{no criteria were run}. This is the rule
+	that catches a node whose criteria list was silently empty.
+	\item The first criterion with a non-zero exit is a failure, and the message carries the
+	criterion command. Every criterion still runs, so the verdict can name more than one
+	problem in the log even though the message names the first.
+\end{enumerate}
+
+\paragraph{Where the criteria come from.} The spec-mode judge reads them from the spec's blob
+\emph{at a commit}, not from the working tree, the run input, or the agent. A worker that
+edits its own spec gains nothing: the judge asks git for the document that was reviewed,
+parses the \texttt{\#\# Exit Criteria} section, takes the first backticked span of every
+checkbox line, and runs each command in the node's workdir. A base that is not exactly forty
+lowercase hex digits is refused before git is asked, so a malformed handle is a refusal and
+not a mystery.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (commit) {commit\\\scriptsize 40 hex};
+	\node[b, right=of commit] (blob) {spec blob};
+	\node[b, right=of blob] (parse) {parse criteria};
+	\node[b, below=of parse] (each) {run each\\\scriptsize in workdir};
+	\node[b, left=of each] (ports) {ok / fail};
+	\node[b, left=of ports] (row) {row status\\\scriptsize via record node};
+
+	\draw[f] (commit) -- (blob);
+	\draw[f] (blob) -- (parse);
+	\draw[f] (parse) -- (each);
+	\draw[f] (each) -- (ports);
+	\draw[f] (ports) -- (row);
+	\draw[sf] (row.north) -- ++(0,10mm) node[p, above=2pt, midway]{a failure does not stop the rest};
+\end{tikzpicture}}
+\captionof{figure}{The document is read at a commit, so the verdict is about the spec that was
+reviewed rather than the tree the agent left.}
+\end{center}
+
+\section{The ladder, and when to climb it}
+
+A heal ladder is an ordered list of rungs, cheapest first, each a pair of agent and model.
+\texttt{escalate} returns rung zero with no history, and otherwise the next rung only when
+\emph{every} previous attempt failed \emph{with evidence}. An attempt that passed, or that
+failed without naming a failing criterion, ends the ladder.
+
+The rule sounds fussy and is the difference between escalation and retrying. Evidence is a
+failing criterion: a specific command that returned non-zero. Without it there is nothing to
+escalate \emph{about} --- the next model would be handed the same problem statement and no new
+information, and the spend would buy a second opinion on an unknown question. With it, the
+next rung starts from the command that failed.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (try) {attempt n};
+	\node[v, right=of try] (ev) {evidence?};
+	\node[b, right=of ev, yshift=7mm] (next) {next rung};
+	\node[b, right=of ev, yshift=-7mm] (stop) {end ladder};
+	\node[b, below=of stop] (cost) {no further spend};
+
+	\draw[f] (try) -- (ev);
+	\draw[f] (ev) -- node[p, above=2pt, midway]{criterion failed} (next);
+	\draw[f] (ev) -- node[p, above=2pt, midway]{passed or none} (stop);
+	\draw[sf] (stop) -- (cost);
+	\draw[f] (next.south) |- (try.east);
+\end{tikzpicture}}
+\captionof{figure}{Escalation is gated on evidence, so a ladder cannot become a slot machine
+and a ladder whose rungs all lack evidence never climbs at all.}
+\end{center}
+
+\section{The session is the resume handle}
+
+A dispatch records a session before it can need one. For \texttt{pi}, that means writing a
+session header first, because an empty or missing session file is rejected before any model is
+called. The header is the shape the installed \texttt{pi} emits --- \texttt{type},
+\texttt{version}, \texttt{id}, \texttt{timestamp}, \texttt{cwd} --- and the timestamp comes
+from the caller's clock, so a replay sees the same value. An existing file is left untouched:
+a resumed session keeps its identity.
+
+For \texttt{claude}, a fresh run names its session on the command line (\texttt{--session-id
+<uuid>}), so a crash after the spawn still journals the handle. A resumed run carries
+\texttt{--resume <sid>} instead.
+
+The session id is the only handle that survives a turn cap or a killed process, and it is
+unrecoverable once the process exits. That is why the dispatch scripts write it to a file at
+start, and why the queue's recovery path reads the worker's own log when the dispatcher never
+got to write it (chapter~\ref{ch:workflow}).
+
+\paragraph{What the run reports about itself.} \texttt{reported\_routes} reads the agent's
+\texttt{--mode json} output and collects the distinct \texttt{(provider, model)} pairs it
+named. The distinction matters: a node asked for one route and the agent may have used
+another, and an empty result means the output named no route at all --- which is reported as
+unknown, never as a match. The same output yields the cost, the turn count and claude's own
+error flag, all optional, because a killed run has an \texttt{init} line and no
+\texttt{result} line.
+
+\section{The role table that is specified and not landed}
+
+Spec 362 exists because seven graphs hardcoded a model and three of them named an id that no
+longer existed. The measured cost was concrete: the first real run of
+\texttt{graphs/queue.toml} died in 1.6 seconds with
+
+\begin{lstlisting}[language=bash]
+{"code":"internal","exit_code":1,"message":"Model deepseek-v4-flash not found"}
+\end{lstlisting}
+
+and eight rows would have parked for one dead id. Two graphs already took the model from the
+run input, which is why a stale id can hide for months: nothing validates it until an agent is
+spawned.
+
+The design is one config table per role and a role reference in a node:
+
+\begin{lstlisting}[language=bash]
+[models.workhorse]        # implements a spec
+model = "deepseek-v4.1-flash"
+provider = "ollama-cloud"
+
+[models.planner]          # writes a spec
+model = "glm-5.3"
+provider = "ollama-cloud"
+\end{lstlisting}
+
+with R2 allowing \texttt{model = "@workhorse"} in a node, resolved when the node is built; R3
+refusing an unknown role \emph{by name} and listing the configured roles, before any agent is
+spawned; and R4 refusing an entry whose model is not on the provider's list when the provider
+is reachable, while saying so and continuing when it is not --- an offline start must not
+depend on the network.
+
+R4 is the half that makes it real, and the spec says so in its own words: a worker can add the
+table, resolve the role in one node kind, and leave every other call site hardcoded, so the
+config exists, nothing uses it, and the next stale id hides in a graph nobody reads.
+
+\begin{longtable}{@{}p{0.16\textwidth}p{0.26\textwidth}p{0.20\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{Requirement} & \textbf{What it says} & \textbf{State at HEAD} & \textbf{Criterion} \\
+\midrule
+\endhead
+R1 & one table per role, no model id in a graph & not landed & \texttt{grep workhorse} in
+\texttt{config.rs} fails \\
+R2 & node may name \texttt{@workhorse} & not landed & \texttt{grep '@workhorse' graphs/queue.toml}
+fails \\
+R3 & unknown role refused by name & not landed & \texttt{models\_from\_config} test file absent \\
+R4 & dead model refused at config time & not landed & same test file \\
+--- & no graph names a dead id & partially & \texttt{deepseek-v4-flash} still in four graph files \\
+\bottomrule
+\end{longtable}
+
+The parked-backlog review of 2026-11-04 recorded the verdict as \texttt{needs-decision}, with
+one open question for the operator: whether to raise the 450-effective-line budget for
+\texttt{config.rs} or split the file further. The lesson recorded with it is the general one
+--- the file-size guard counts effective lines, so a clean extraction that moves code without
+deleting it stays over budget.
+
+Until that is answered, the working rule is the one the tree enforces: a graph names its model
+explicitly, and the daemon's \texttt{[core].model} is the fallback for graphs that take it
+from input. A reader who wants a role table should treat the section above as the design and
+check \texttt{graphs/queue.toml} for whether it has landed.
+
+\section{Failure modes worth recognising}
+
+\begin{enumerate}
+	\item \textbf{A coder that reports success and wrote nothing.} Cause: no approval mode,
+	every mutating tool denied, exit 3 with a plausible sentence. Check the argv before the
+	report.
+	\item \textbf{A coder that implemented another spec.} Cause: the spec path never reached
+	the prompt. The prompt prefix is the fix; the symptom is a tree that matches the row's
+	title and not its criteria.
+	\item \textbf{A dispatch that dies in about a second with ``model not found''.} Cause: a
+	stale id in a graph. This is the failure the role table is meant to move from spawn time to
+	config time.
+	\item \textbf{A dispatch refused with ``no credential for provider X''.} Cause: the
+	provider is not in the two-entry key table, or its key is unset or empty in the daemon's
+	environment. The message names the provider, so the fix is visible without reading code.
+	\item \textbf{A run whose route is unknown.} Cause: text output, or output not captured.
+	Unknown is reported as unknown; a missing route never reads as a match.
+	\item \textbf{An escalation that never climbs.} Cause: the previous attempt failed without
+	a failing criterion, so there is no evidence to escalate on. The ladder is doing what it
+	says.
+\end{enumerate}

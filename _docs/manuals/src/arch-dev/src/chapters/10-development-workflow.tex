@@ -1,0 +1,541 @@
+\chapter{Development workflow}
+
+\label{ch:workflow}
+
+This chapter answers how a finding becomes a commit here, and why the answer is a queue of
+rows rather than a conversation. The loop is: a finding, a spec that a cheaper model can
+implement, a row that carries the spec and its criteria, a lane that dispatches a worker, a
+verify step, the gate, a commit --- and, when any of those fail, a park that keeps the work
+and moves the queue on. The parts that matter are the ones that keep the loop honest: the row
+cannot drift from its spec, a park cannot wedge the queue, a resume cannot become a retry, and
+a commit cannot name a tool.
+
+\section{The loop}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (finding) {a finding\\\scriptsize measured, with a path};
+	\node[b, right=of finding] (spec) {a spec\\\scriptsize premises $\cdot$ criteria $\cdot$ files};
+	\node[b, right=of spec] (row) {a row\\\scriptsize plan.tsv};
+	\node[b, below=of row] (lane) {the lane\\\scriptsize dispatch};
+	\node[b, left=of lane] (gate) {the gate\\\scriptsize 20 steps};
+	\node[b, left=of gate] (commit) {the commit};
+	\node[b, above=of lane] (review) {review\\\scriptsize verdict per row};
+
+	\draw[f] (finding) -- (spec);
+	\draw[f] (spec) -- (row);
+	\draw[f] (row) -- (lane);
+	\draw[f] (lane) -- (gate);
+	\draw[f] (gate) -- (commit);
+	\draw[sf] (lane) -- (review);
+	\draw[bk] (review) |- node[p, right=2pt, midway]{re-spec} (spec);
+\end{tikzpicture}}
+\captionof{figure}{The red edge is what keeps the queue honest, because a parked row is
+reviewed and returns as a better spec rather than as a retry.}
+\end{center}
+
+Each hop has a file behind it. The finding is a paragraph with a measured path and a command
+that reproduces it. The spec is a numbered document under \texttt{specs/}. The row is a line
+in \texttt{scripts/autonomy/plan.tsv}. The lane is a dispatch script. The gate is
+\texttt{quality-gate.sh}. The commit is one commit with a neutral identity. Nothing in the
+loop depends on a session's memory, which is what lets a cycle be killed and resumed without
+losing the thread.
+
+\section{The spec is written for a model that cannot guess}
+
+A spec here has a fixed shape, and the shape is the point: a cheaper model implements it, so
+every fact the implementer would otherwise have to guess is written down.
+
+\begin{itemize}
+	\item \textbf{Why this exists} --- the failure, measured, with the number that makes it a
+	failure.
+	\item \textbf{Verified premises} --- facts measured on a date, each with the path or
+	command that produced it.
+	\item \textbf{Requirements} --- behavioural, numbered, each checkable.
+	\item \textbf{Files} --- the paths the work may touch.
+	\item \textbf{Exit criteria} --- shell commands that fail today.
+	\item \textbf{Guardrails} --- what must not be done, including the tempting wrong fix.
+\end{itemize}
+
+Spec 376 is a good example of the first two: it states that \texttt{pii-store} has no
+retention code at all, and it proves it with a search whose count is zero. Spec 362 does the
+same for the model ids: seven graphs hardcode a model, three name an id that no longer exists,
+and the first real run died in 1.6 seconds with the provider's own message quoted.
+
+\begin{lstlisting}[language=bash]
+## Exit Criteria
+
+- [ ] `cargo test -q -p pii-store --test retention_drops_what_the_policy_expires`
+- [ ] `grep -q 'retention' crates/pii-store/src/retention.rs`
+- [ ] `grep -q 'prune' crates/pii-cli/src/cmd_store.rs`
+- [ ] `cargo test -q -p pii-store --test retention_keeps_a_live_run`
+\end{lstlisting}
+
+The criteria are commands, not descriptions, because three separate consumers parse them: the
+judge runs them, the queue copies them into the row's verify column, and the gate's
+\texttt{plan-verify} step checks that the copy still matches. A criterion written as prose is
+a criterion no machine can hold a worker to.
+
+\paragraph{The requirement a plausible implementation satisfies in appearance only.} Every
+spec here carries one, and it is the most useful paragraph in the document. Spec 362's is that
+a worker can add the config table, resolve the role in one node kind, and leave every other
+call site hardcoded: the config exists, nothing uses it, and the next stale id hides. Writing
+that paragraph forces the author to name the check that distinguishes the real implementation
+from the plausible one.
+
+\section{The row is the unit of dispatch}
+
+A row is one line, seven tab-separated fields, no header:
+
+\begin{longtable}{@{}p{0.10\textwidth}p{0.16\textwidth}p{0.66\textwidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Name} & \textbf{What it is} \\
+\midrule
+\endhead
+1 & \texttt{id} & the row's key in the state file; the spec number where one exists \\
+2 & \texttt{spec} & the spec's file name under \texttt{specs/} \\
+3 & \texttt{brief} & a path to the brief, or \texttt{-} \\
+4 & \texttt{title} & one line, used in the commit message \\
+5 & \texttt{verify} & the spec's exit criteria, joined with \texttt{;} \\
+6 & \texttt{paths} & the paths this row may change, joined with \texttt{;} \\
+7 & \texttt{gate} & the gate to run, or an explicit skip \\
+\bottomrule
+\end{longtable}
+
+Column 5 is a \emph{cache} of column 2's document, not an independent copy. For an open row,
+\texttt{state.py} re-derives it from the spec's \texttt{\#\# Exit Criteria} section every time
+the plan is read; for a finished row the text is frozen, because regenerating it from a spec
+amended later would claim the work was held to criteria that did not exist when it ran. The
+reason is recorded in the code: 30 of 183 rows had dropped a criterion outright, and the drift
+is invisible until the gate runs the wrong list.
+
+Column 6 makes ``this work belongs to this row'' checkable. \texttt{row-paths.judge} compares
+it with the spec's \texttt{\#\# Files} section, and \texttt{row-verify.judge} compares column
+5 with the spec's criteria, command for command. Both refusals happen at pick time, before a
+worker is bought.
+
+\paragraph{Duplicate ids are refused, loudly.} The id is the key the state is stored under, so
+two rows sharing one is not cosmetic: the second inherits the first's status and is never
+picked. Measured once: two rows both said \texttt{A20}, and every cycle for about five hours
+reported ``queue empty'' with a queued row sitting in the plan. The refusal names the
+duplicates and says why.
+
+\paragraph{A spec number must resolve to one file.} The dispatcher resolves
+\texttt{specs/<N>-*.md} and the session recovery keys the resume handle by the same number.
+Two files sharing a number send the row to the wrong document and resume another item's
+finished session. Measured: a row was dispatched against a spec that was already committed,
+resumed a ten-turn session, spent \$0.37, changed nothing, and then failed verify on its own
+criterion.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (spec) {spec\\\scriptsize premises $\cdot$ criteria $\cdot$ files};
+	\node[b, right=of spec, yshift=12mm] (v) {column 5\\\scriptsize derived, open rows};
+	\node[b, right=of spec, yshift=-12mm] (p) {column 6\\\scriptsize declared paths};
+	\node[b, right=of v] (pick) {\texttt{pick}};
+	\node[v, below=of pick] (match) {matches?};
+	\node[b, right=of match] (row) {row dispatched};
+	\node[b, left=of match, xshift=-2mm] (refuse) {refused\\\scriptsize named reason};
+
+	\draw[f] (spec) -- (v);
+	\draw[f] (spec) -- (p);
+	\draw[f] (v) -- (pick);
+	\draw[f] (pick) -- (match);
+	\draw[f] (match) -- node[p, above=2pt, midway]{yes} (row);
+	\draw[bk] (match) -- node[p, above=2pt, midway]{no} (refuse);
+	\draw[sf] (p) -- (match);
+\end{tikzpicture}}
+\captionof{figure}{Two comparisons stand between the plan and a paid dispatch, and a row that
+disagrees with its spec is refused with the field named while the state is left untouched.}
+\end{center}
+
+\section{The state file}
+
+\texttt{scripts/autonomy/state.py} holds one JSON file, one object per row, keyed by id. Every
+write goes to a temp file and is renamed into place, so a cycle killed mid-write cannot leave
+a truncated state --- which is the whole reason it is not an append-only log.
+
+Fields: \texttt{status}, \texttt{attempts}, \texttt{session}, \texttt{last},
+\texttt{evidence}, and the two annotation fields \texttt{spec} and \texttt{commit}. Statuses
+in use are \texttt{pending}, \texttt{in-progress}, \texttt{needs-review}, \texttt{done},
+\texttt{skipped} and \texttt{parked}.
+
+\paragraph{What \texttt{last} is for.} It is the reason a row is not offered again, written as
+a short marker: \texttt{window-closed}, \texttt{worker-rc=3}, \texttt{gate-failed: <step>},
+\texttt{verify-failed}, \texttt{precommit-broken}, \texttt{park-cause-repaired: <note>}. A row
+that is parked or needs review waits for a person \emph{unless} its marker is one a session
+can act on.
+
+\begin{longtable}{@{}p{0.40\textwidth}p{0.16\textwidth}p{0.38\textwidth}@{}}
+\toprule
+\textbf{\texttt{last} marker} & \textbf{Resumable} & \textbf{Who acts next} \\
+\midrule
+\endhead
+\texttt{window-closed} & yes, with the session & the next cycle inside the window \\
+\texttt{worker-rc=N} & yes & the same session, resumed \\
+\texttt{verify-failed} & yes & the same session, with a corrective brief \\
+\texttt{gate-failed: <step>} & yes & the same session, with the failing step named \\
+\texttt{precommit-broken}, \texttt{precommit-timeout} & yes & the same session; attempts not
+spent \\
+\texttt{park-cause-repaired: <note>} & yes & the repaired row goes back on the queue \\
+anything else (e.g. \texttt{3-strikes}) & no & a person reads it \\
+\bottomrule
+\end{longtable}
+
+\paragraph{Three strikes.} A row is parked when it reaches three attempts: at dispatch if the
+count is already three, or at verify if the failure would make it three. The reason is written
+as prose that states the rule --- the same mechanical failure repeated, so a fourth dispatch
+would spend without new information. Attempts are never incremented by a timeout or a broken
+pre-commit build, because neither is a verdict on the worker.
+
+\paragraph{Repair, not reset.} \texttt{state.py repair <id> <note>} moves a parked row back to
+\texttt{needs-review} (or \texttt{pending} without a session) and writes
+\texttt{park-cause-repaired: <note>}. It deliberately does not touch attempts: the cap is a
+safety property, so a repaired row that fails again parks again on its own merits.
+
+\paragraph{Annotations are proven.} \texttt{state.py annotate <id> --spec <path> --commit
+<sha>} refuses to write a spec that does not exist, a spec that is not the row's own, or a
+commit git does not know. The field that can hold a lie is worse than the missing field: a row
+naming a commit that does not contain its work is evidence an operator would act on.
+
+\begin{lstlisting}[language=bash]
+python3 scripts/autonomy/state.py pick | cut -f1          # the top dispatchable id, or NONE
+python3 scripts/autonomy/state.py get 376                 # the row as JSON
+python3 scripts/autonomy/state.py set 376 status=needs-review attempts=1 last=verify-failed
+python3 scripts/autonomy/state.py annotate 376 --spec specs/376-retention-drops-what-the-policy-expires.md \
+                                                --commit 0efc6fd
+\end{lstlisting}
+
+\section{The lane}
+
+A dispatch goes through a named script, never an inline command. There are two lanes:
+
+\begin{itemize}
+	\item \textbf{coder} --- a one-node graph that runs a coder node on the spec. The default.
+	\item \textbf{spec} --- the tracked graph \texttt{graphs/spec.toml}, which is the same
+	implementation expressed as composition: \texttt{code} (a coder with its own wall and spend
+	bounds), \texttt{verify} (a judge reading the spec at a commit), \texttt{docs} (a second
+	coder whose brief is documentation only), \texttt{reverify} (the same criteria again, so a
+	docs step that broke them is refused), then \texttt{done}, with \texttt{unverified} and
+	\texttt{refused} as the two named refusals.
+\end{itemize}
+
+\texttt{PII\_LANE\_GRAPH=spec} selects the second; anything else keeps the first. The script
+prints \texttt{LANE-GRAPH: <lane>} before anything is spent and again into the worker log, and
+the cycle reads that line to record which lane a tree-changing run used. The commit carries it
+as a \texttt{Lane:} trailer, so a commit says which of the two produced it. A run that changed
+nothing leaves the previous record standing, because a commit must never be attributed to a
+run that produced no tree.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (row) {row};
+	\node[b, right=of row] (disp) {dispatch script\\\scriptsize \texttt{LANE-GRAPH}};
+	\node[b, right=of disp] (code) {\texttt{code}};
+	\node[b, right=of code] (verify) {\texttt{verify}};
+	\node[b, below=of verify] (docs) {\texttt{docs}};
+	\node[b, left=of docs] (reverify) {\texttt{reverify}};
+	\node[b, left=of reverify] (done) {\texttt{done}};
+	\node[b, above=of reverify] (ref) {\texttt{unverified} $\cdot$ \texttt{refused}};
+
+	\draw[f] (row) -- (disp);
+	\draw[f] (disp) -- (code);
+	\draw[f] (code) -- (verify);
+	\draw[f] (verify) -- (docs);
+	\draw[f] (docs) -- (reverify);
+	\draw[f] (reverify) -- (done);
+	\draw[bk] (verify) -- (ref);
+	\draw[bk] (reverify) -- (ref);
+\end{tikzpicture}}
+\captionof{figure}{Two judges, one coder and one documentation pass in the spec lane, with
+refusals wired by name so a failed implementation parks its row instead of ending the run with
+the row still claimed.}
+\end{center}
+
+\section{One cycle, in order}
+
+A cycle is deterministic on purpose: the reasoning belongs to the agent that calls it, and the
+mechanics belong in a script that can be tested. \texttt{scripts/autonomy/cycle.sh} does the
+following, in this order, and the order is load-bearing:
+
+\begin{enumerate}
+	\item \textbf{The tree hold and the lock.} A background cycle yields if an interactive turn
+	holds the tree, and reports \texttt{OUTCOME=tree-held}. The lock spans the whole cycle;
+	\texttt{-o} is passed to \texttt{flock} so a daemonized grandchild cannot inherit the
+	descriptor and hold the lock after the cycle is gone.
+	\item \textbf{The operator's switch.} \texttt{PAUSED} in the control file stops before
+	spending.
+	\item \textbf{The window probe.} A closed account window exits 3 with nothing spent and the
+	row not advanced. An undecided probe exits 4 rather than guessing.
+	\item \textbf{The pick.} \texttt{state.py pick} returns the top dispatchable row, or
+	\texttt{NONE}, or a refusal. A plan that cannot be read is a loud failure, never an empty
+	queue: ``nothing pending'' and ``the queue is broken'' are different outcomes and only one
+	is safe to sleep on.
+	\item \textbf{The re-read.} Between the pick and the dispatch, the state is read again. A
+	row that another cycle closed is not dispatched; a row whose marker says the work is
+	already \texttt{worker-ok}, \texttt{verified} or \texttt{gated} resumes at verify with no
+	worker bought.
+	\item \textbf{The tree.} A dirty tree is handled in three moves: save, attribute, clean. A
+	tree the loop's own last row left is stashed so this gate measures only this change; a tree
+	no row owns is a person's, and the cycle stops with \texttt{OUTCOME=dirty-tree}.
+	\item \textbf{The dispatch.} A session id recovered from the worker's own log is used as a
+	resume handle if one exists; otherwise the worker is dispatched with the lane script, and
+	the session id is recorded.
+	\item \textbf{The verify.} The row's own commands, run in a login shell that sources the
+	loop's environment first. Measured: a login shell resets \texttt{PATH} for root and loses
+	\texttt{/usr/local/cargo/bin}, so two cargo criteria were recorded as failures on a tree
+	where all four passed.
+	\item \textbf{The gate.} Only an explicit \texttt{0}, \texttt{-} or \texttt{none} skips it.
+	A green verify is not a green gate.
+	\item \textbf{The pre-commit build.} The door builds \texttt{HEAD} plus the index before
+	the commit exists, so a tree that does not build is never committed.
+	\item \textbf{The commit, then the head build.} The commit is made with an explicit neutral
+	identity; then \texttt{head-builds.sh} builds the commit that was just made, because the
+	gate measured the working tree and this reads the commit.
+	\item \textbf{The annotation and the chain.} The row records its spec and its commit; the
+	next row starts as soon as the lock is free.
+\end{enumerate}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (pending) {pending};
+	\node[b, right=of pending] (running) {in-progress};
+	\node[b, right=of running, yshift=12mm] (review) {needs-review};
+	\node[b, right=of running, yshift=-12mm] (done) {done};
+	\node[b, right=of review] (parked) {parked};
+	\node[v, below=of review] (cap) {cap?};
+
+	\draw[f] (pending) -- node[p, above=2pt, midway]{pick} (running);
+	\draw[f] (running) -- node[p, above=2pt, midway]{criteria + gate} (done);
+	\draw[f] (running) -- node[p, above=2pt, midway]{failed} (review);
+	\draw[f] (review) -- node[p, right=2pt, midway]{attempts} (cap);
+	\draw[f] (cap.west) -| node[p, below=2pt, midway]{resume} (running.south);
+	\draw[bk] (review) -- node[p, above=2pt, midway]{cap reached} (parked);
+	\draw[sf] (parked.south) |- node[p, below=2pt, midway]{repair} (pending.south);
+\end{tikzpicture}}
+\captionof{figure}{Four statuses and one decision: a row that fails goes to needs review with
+a marker, resumes in the same session while attempts remain, and parks for a person at three.}
+\end{center}
+
+\section{Resume before retry}
+
+The rule is old and it is the cheapest in the system: continue the existing session. A fresh
+start re-derives context the previous run already established and already billed for.
+
+Mechanically, a resume needs a session id, and the session id is unrecoverable once the
+process exits. So it is written at dispatch time, and the recovery path is layered:
+
+\begin{itemize}
+	\item The dispatch script records the id in \texttt{\_tmp/claude-batchC/session-<N>-*.txt}.
+	\item If the process was cut off before that, \texttt{session.sh recover <N>} reads the
+	worker's own log, and the cycle records the id with \texttt{last=resumed-from-worker-log}.
+	\item A worker cut off by a closed account window records its session before exiting, so
+	the next cycle resumes rather than restarting from scratch. Without that, a dirty tree with
+	no session was kept as a leftover and the spec was dispatched again from zero.
+\end{itemize}
+
+\paragraph{A resume carries a diagnosis.} When the previous attempt ended
+\texttt{gate-failed}, \texttt{verify-failed} or \texttt{worker-rc}, the resume is sent with a
+corrective brief that names what failed and includes the failing output. The worker cannot see
+the gate's verdict, and its own criteria may well have passed --- which is exactly how one
+first pass went: criteria 4 of 4, gate red on a tree the export had not included. Naming the
+failure is the difference between a fix and a retry.
+
+The brief's evidence block has its own history. It was built from the newest cycle log, which
+was usually the accumulator file being appended to while the brief was assembled --- so a
+brief for one row quoted rows from a previous month. It now takes the newest log that is
+neither this cycle's nor the accumulator, and falls back to the log's tail so it can never
+print nothing.
+
+\paragraph{What is not a row fault.} Three failure classes are separated from the row on
+purpose:
+
+\begin{itemize}
+	\item \textbf{Quota.} A provider limit puts the row back on the queue with its attempts and
+	session intact, and the reset time the CLI printed is recorded. Never a blind retry, never
+	a scope cut.
+	\item \textbf{Authentication.} A dead login refuses every row, so counting it as an attempt
+	would park three rows that were never tried. The row keeps its attempts and the queue is
+	paused for a person.
+	\item \textbf{A killed gate.} A timeout exits with its own outcome; attempts are not
+	incremented and the marker keeps the next cycle at verify, so a slow host costs a retry and
+	never a re-dispatch.
+\end{itemize}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[v] (why) {why?};
+	\node[b, right=of why, yshift=14mm] (win) {window closed\\\scriptsize resume in window};
+	\node[b, right=of why, yshift=4mm] (quota) {quota\\\scriptsize requeue, same session};
+	\node[b, right=of why, yshift=-6mm] (auth) {auth\\\scriptsize pause the queue};
+	\node[b, right=of why, yshift=-16mm] (fail) {gate or verify failed\\\scriptsize corrective brief};
+	\node[b, below=of why] (fresh) {no session anywhere\\\scriptsize a fresh dispatch};
+
+	\draw[f] (why) -- (win);
+	\draw[f] (why) -- (quota);
+	\draw[f] (why) -- (auth);
+	\draw[f] (why) -- (fail);
+	\draw[sf] (why) -- node[p, right=2pt, midway]{never recorded} (fresh);
+\end{tikzpicture}}
+\captionof{figure}{Four resumable reasons and one that is not, and only the last one justifies
+paying for context twice.}
+\end{center}
+
+\section{Quarantine: a park must not wedge the queue}
+
+Parking used to leave the row's working-tree changes in place, and the dispatcher refuses to
+dispatch on a dirty tree, so one parked row stopped every later row for a whole night.
+Measured: a row parked with nine files and the next row never ran --- and the parked work was
+good, five tests green.
+
+\texttt{scripts/autonomy/quarantine-wip.sh <row> <reason>} now puts the changes aside without
+deleting anything:
+
+\begin{enumerate}
+	\item Every changed path is \emph{copied} to
+	\texttt{/projects/\_trash/<row>-<reason>-<ts>/} with the tree layout preserved, and
+	\texttt{git status --porcelain} is saved as \texttt{status.txt}.
+	\item A modified tracked file is restored to its \texttt{HEAD} content with \texttt{git
+	show HEAD:<path>} --- explicitly \emph{not} \texttt{git checkout --}, which is banned in
+	this workspace because it destroys uncommitted work.
+	\item An untracked file is \emph{moved} out of the tree, never removed.
+	\item The directory is recorded in \texttt{ASIDE.txt}, and the path is printed on stdout so
+	the cycle can put it in the row's \texttt{last} note.
+\end{enumerate}
+
+If anything is still dirty afterwards the script exits 3 with \texttt{STILL-DIRTY} and the
+count, and the cycle says so: the dispatcher will refuse until the tree is clean, and a
+warning is better than a silent night.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (dirty) {dirty tree};
+	\node[b, right=of dirty] (copy) {copy every path\\\scriptsize aside, layout kept};
+	\node[b, right=of copy, yshift=10mm] (mod) {restore from HEAD\\\scriptsize \texttt{git show}};
+	\node[b, right=of copy, yshift=-10mm] (unt) {move untracked\\\scriptsize \texttt{mv}};
+	\node[v, below=of copy] (clean) {clean?};
+	\node[b, left=of clean] (ok) {queue moves\\\scriptsize row parked};
+	\node[b, right=of clean] (still) {STILL-DIRTY\\\scriptsize exit 3};
+
+	\draw[f] (dirty) -- (copy);
+	\draw[f] (copy) -- (mod);
+	\draw[f] (copy) -- (unt);
+	\draw[f] (mod) -- (clean);
+	\draw[f] (unt) -- (clean);
+	\draw[f] (clean) -- node[p, above=2pt, midway]{yes} (ok);
+	\draw[bk] (clean) -- node[p, above=2pt, midway]{no} (still);
+\end{tikzpicture}}
+\captionof{figure}{Copy first and restore second, because a restore that loses the work it was
+preserving is the one unrecoverable path.}
+\end{center}
+
+\begin{lstlisting}[language=bash]
+$ bash scripts/autonomy/quarantine-wip.sh 352 parked
+QUARANTINED 9
+/projects/_trash/352-parked-<UTC timestamp>
+$ git status --porcelain | wc -l
+0
+\end{lstlisting}
+
+\section{Review rows}
+
+A review is work with a brief, a deliverable and a verifier, so it is a row. The user
+directive behind it was that an analysis must also be put in the queue, positioned before the
+items that matter.
+
+A review spec carries two extra lines, \texttt{BRIEF: <path>} and \texttt{DELIVERABLE:
+<path>}. \texttt{review-row.sh} reads both, refuses if the brief is missing or the deliverable
+line is absent, dispatches the read-only reviewer in plan mode, then copies the newest
+\texttt{.md} in the brief's directory to the deliverable and exits 5 if the deliverable is
+missing. The check is on the artefact, not on the reviewer's claim to have produced one.
+
+\section{Commits}
+
+A commit is one message saying what the change does and why the alternative was rejected.
+Three rules apply to every commit made by the loop:
+
+\begin{enumerate}
+	\item \textbf{An explicit neutral identity.} The repository's own git configuration may
+	carry a tool name, and then every plain \texttt{git commit} breaches the rule silently. The
+	cycle passes \texttt{-c user.name} and \texttt{-c user.email} on the command line, so the
+	identity is a property of the commit and not of the machine.
+	\item \textbf{Only the row's paths.} \texttt{git add} is given the row's declared paths,
+	and \texttt{unlisted-changes.sh} refuses the commit if the index would include a file the
+	row does not list. The tree is left as the worker made it, because the next cycle resumes
+	at verify.
+	\item \textbf{The gate's verdict is in the message, and the lane is a trailer.} The message
+	states that the criteria are in the spec and the gate is green, and a \texttt{Lane:
+	spec|coder} trailer names the lane when one was recorded.
+\end{enumerate}
+
+\paragraph{Nothing staged is not nothing to do.} If the add leaves the index empty, the work
+may already have landed in an earlier commit. The cycle closes the row on exactly the evidence
+the normal path uses --- the row's own criterion plus a green gate --- and names the commit
+that carries the work. A leftover commit is still a commit; re-dispatching it spends the same
+spec twice.
+
+\begin{lstlisting}[language=bash]
+git add -- crates/pii-store/src/retention.rs crates/pii-store/tests/...
+UNLISTED=$(bash scripts/autonomy/unlisted-changes.sh "$PATHS") || { git reset -q; exit 17; }
+git -c user.name="Marcelo Correa" -c user.email="mvcorrea@gmail.com" commit -q \
+  -m "376-retention: automated pass - retention drops what the policy expires (gate green)
+
+Lane: spec"
+\end{lstlisting}
+
+The identity is on the command line rather than in the repository's configuration for the
+reason recorded in the workspace rules: a repository whose own \texttt{git config} holds a
+tool name breaches the rule on every plain commit, silently, because nobody re-reads the
+config. That happened for thirty-five commits in one repository here before anyone looked.
+
+\section{The review that gave the backlog verdicts}
+
+The parked backlog was reviewed on 2026-11-04 under spec 377, and the method is worth copying:
+every criterion of every parked row was \emph{executed}, from the plan's column 5, split on
+\texttt{;} the same way the runner splits it. Nothing was read from a helper's summary.
+
+The review produced four kinds of verdict, and the distinctions are the useful part:
+
+\begin{itemize}
+	\item \texttt{proceed} --- the row's work is not on disk, so it is a clean dispatch from
+	\texttt{HEAD}.
+	\item \texttt{close} --- the row was superseded by later work, and its criteria pass or are
+	stale. Closing it is a state write, not code.
+	\item \texttt{needs-decision} --- the row cannot be judged without an answer only the
+	operator can give (a budget question, or which of two commits answers the row).
+	\item missing evidence --- a WIP directory the spec names does not exist, so any verdict
+	depending on it is unverified rather than done.
+\end{itemize}
+
+It also named four failure classes, each of which recurs in this manual: a guard that fires on
+the case it was built to permit; criteria that name files which no longer exist; a sandbox in
+which the criteria cannot run as written (a read-only \texttt{/tmp}, no \texttt{uv} cache, no
+\texttt{python3}); and quarantined work that is not where the spec says it is.
+
+\section{Failure modes worth recognising}
+
+\begin{enumerate}
+	\item \textbf{A queue that reports itself empty while work is queued.} Cause: two rows
+	sharing an id, so the second inherits the first's status. The plan refuses duplicates now.
+	\item \textbf{A night with one row parked and nothing else done.} Cause: a park that left
+	the tree dirty. Quarantine is the fix, and the row's \texttt{last} note carries the aside
+	path.
+	\item \textbf{The same spec bought twice.} Cause: a resume that did not happen, or a number
+	that resolved to the wrong file. Check the session file and the spec number before the next
+	dispatch.
+	\item \textbf{A criterion that passes on the worker's tree and fails in the gate.} Cause:
+	the export did not include the change (a deletion, or a file the overlay did not see). The
+	gate's export-lost and overlay-deletion handling exist for this.
+	\item \textbf{A commit that names a tool.} Cause: the repository's git configuration. Read
+	it, and pass the identity explicitly.
+	\item \textbf{A worker that fixes the symptom.} Cause: a corrective brief that named the
+	failing command but not the rule. The brief says: fix the cause, do not weaken or delete an
+	assertion, do not raise a timeout, do not add a sleep, do not touch anything outside the
+	spec's scope.
+\end{enumerate}

@@ -1,0 +1,511 @@
+\chapter{Observability}
+
+\label{ch:observability}
+
+An operator asks three questions of a running pii, and each has one surface that answers it
+faster than the others: \emph{is it up and is it the build I think it is}, \emph{what did this
+run actually do}, and \emph{why was that refused}. This chapter covers those surfaces in that
+order --- the daemon's account of itself, the event stream, the metric set, the run journal,
+and the audit trail --- and ends with the correlation order that turns five commands into one
+answer.
+
+The figures and tables are generated from the code: the event names from
+\texttt{crates/pii-observe/src/names.rs}, the metric names from the same file, the journal
+shape from \texttt{crates/pii-abi/src/journal.rs}, and the command output from
+\texttt{crates/pii-cli/src/cmd\_health.rs} and \texttt{cmd\_metrics.rs}.
+
+\section{Four surfaces, four questions}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[v] (q) {what do I need?};
+  \node[b, above right=8mm and 14mm of q] (up) {is it up?};
+  \node[b, right=14mm of q, yshift=2mm] (did) {what happened?};
+  \node[b, below right=8mm and 14mm of q] (no) {why refused?};
+  \node[b, right=of up] (health) {\texttt{pii health}\\\scriptsize identity, stores, mounts};
+  \node[b, right=of did] (trace) {\texttt{pii run trace}\\\scriptsize the journal};
+  \node[b, right=of no] (audit) {\texttt{audit.log}\\\scriptsize denials only};
+  \node[b, below=of did] (loop) {\texttt{pii loop events}\\\scriptsize the autonomy loop};
+  \draw[f] (q) -- (up);
+  \draw[f] (q) -- (did);
+  \draw[f] (q) -- (no);
+  \draw[f] (up) -- (health);
+  \draw[f] (did) -- (trace);
+  \draw[f] (no) -- (audit);
+  \draw[sf] (did) -- (loop);
+\end{tikzpicture}}
+\captionof{figure}{The entry point for each question. \texttt{pii health} is the right first command for all three, because it tells you whether the other surfaces can answer at all.}
+\end{minipage}
+\end{center}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}>{\raggedright\arraybackslash}p{0.28\textwidth}>{\raggedright\arraybackslash}p{0.42\textwidth}@{}}
+  \toprule
+  \textbf{Surface} & \textbf{Written by} & \textbf{Good for, and its limit} \\
+  \midrule
+  \texttt{pii health} & the daemon, on request & identity, config digest, stores, mounts,
+    counters since deploy. It is a snapshot, not a history. \\
+  the event log & the daemon, per event & everything the daemon decided. Off unless
+    \texttt{-{}-log-file} or \texttt{[core].log\_file} is set. \\
+  \texttt{audit.log} & the daemon, per denial & the security-relevant subset. Always on unless
+    \texttt{-{}-audit off}. Never contains a kernel-level denial raised inside a child. \\
+  the run journal & the engine, per run & what a run did, node by node, replayable. Grows with
+    runs; retention applies. \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\section{The anatomy of one event}
+
+Every event is one JSON object on one line. The file sink adds a wall-clock stamp; the rest
+of the object is the event itself.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (ts) {\texttt{ts\_ms}\\\scriptsize wall clock, added by the sink};
+  \node[b, right=of ts] (sub) {\texttt{subsystem}\\\scriptsize who reported};
+  \node[b, right=of sub] (lvl) {\texttt{level}\\\scriptsize trace..error};
+  \node[b, right=of lvl] (kind) {\texttt{kind}\\\scriptsize the name};
+  \node[b, below=of kind] (fields) {\texttt{fields}\\\scriptsize structured detail};
+  \node[b, below=of lvl] (span) {\texttt{span}\\\scriptsize the step};
+  \node[b, below=of sub] (run) {\texttt{run}, \texttt{session}\\\scriptsize optional};
+  \draw[sf] (ts) -- (sub);
+  \draw[sf] (sub) -- (run);
+  \draw[sf] (lvl) -- (span);
+  \draw[sf] (kind) -- (fields);
+\end{tikzpicture}}
+\captionof{figure}{Six fields are always present (\texttt{ts\_ms}, \texttt{subsystem}, \texttt{level}, \texttt{kind}, \texttt{fields}, \texttt{span}); \texttt{run} and \texttt{session} appear only when the event belongs to one.}
+\end{minipage}
+\end{center}
+
+The serialised form, with the run and session fields omitted because the event has neither:
+
+\begin{lstlisting}[language=bash]
+{"subsystem":"x","level":"info","kind":"k","fields":{"a":1},"span":null}
+\end{lstlisting}
+
+\texttt{level} is one of \texttt{trace}, \texttt{debug}, \texttt{info}, \texttt{warn},
+\texttt{error}. In practice the daemon emits \texttt{info} for lifecycle, \texttt{warn} for
+a refusal and \texttt{error} for a failure it could not prevent; \texttt{trace} and
+\texttt{debug} exist in the type and are not the ones to grep for during an incident.
+
+The two correlation fields are the reason a line can be trusted. \texttt{run} is the run id
+and \texttt{session} the session id, so one \texttt{grep} answers \enquote{everything that
+happened to this run} without matching a node name that three graphs share.
+
+\section{The name registry}
+
+Names are not string literals at call sites. Every event and every metric is a constant in one
+file, and the file also holds an \texttt{ALL} array that a unit test checks for duplicates and
+empty names. The count is exact and worth knowing, because it is the size of the vocabulary an
+operator has to recognise:
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.16\textwidth}>{\raggedright\arraybackslash}p{0.44\textwidth}@{}}
+  \toprule
+  \textbf{Kind of name} & \textbf{Count} & \textbf{Where it is used} \\
+  \midrule
+  event names & 150 & the \texttt{kind} field of a log line, and the audit filter \\
+  metric names & 40 & the series names \texttt{pii metrics} prints \\
+  the \texttt{ALL} registry & 1 & the duplicate check, not emitted \\
+  \midrule
+  constants in the file & 191 & 150 + 40 + 1 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+The 150 events fall into 38 subsystems. The largest are the ones an installation touches
+every day: channels, learning, models, memory, runs.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.16\textwidth}r@{\hspace{6mm}}>{\raggedright\arraybackslash}p{0.16\textwidth}r@{\hspace{6mm}}>{\raggedright\arraybackslash}p{0.16\textwidth}r@{}}
+  \toprule
+  \textbf{Subsystem} & \textbf{n} & \textbf{Subsystem} & \textbf{n} & \textbf{Subsystem} & \textbf{n} \\
+  \midrule
+  \texttt{channel} & 14 & \texttt{model} & 11 & \texttt{daemon} & 7 \\
+  \texttt{learn} & 13 & \texttt{memory} & 10 & \texttt{mqtt} & 6 \\
+  \texttt{run} & 10 & \texttt{coder} & 9 & \texttt{hal} & 6 \\
+  \texttt{wasm} & 8 & \texttt{worker} & 5 & \texttt{trajectory} & 4 \\
+  \texttt{proto} & 4 & \texttt{sop} & 4 & \texttt{graph} & 3 \\
+  \texttt{net} & 3 & \texttt{cron} & 3 & \texttt{evolve} & 3 \\
+  \texttt{timer} & 3 & \texttt{tools} & 2 & \texttt{queue} & 2 \\
+  \texttt{tui} & 2 & \texttt{web} & 2 & \texttt{fetch} & 2 \\
+  \texttt{effect} & 1 & \texttt{store} & 1 & \texttt{core} & 1 \\
+  \texttt{health} & 1 & \texttt{observe} & 1 & \texttt{criteria} & 1 \\
+  \texttt{skill} & 1 & \texttt{cli} & 1 & \texttt{lint} & 1 \\
+  \texttt{cursor} & 1 & \texttt{mcp} & 1 & \texttt{node} & 1 \\
+  \texttt{log} & 1 & \texttt{uds} & 1 & & \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+A few of the names are load-bearing enough to memorise, because they name the failures that
+are otherwise silent:
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.34\textwidth}>{\raggedright\arraybackslash}p{0.56\textwidth}@{}}
+  \toprule
+  \textbf{Name} & \textbf{What it means when you see it} \\
+  \midrule
+  \texttt{graph.node.dead} & a node was marked dead; the run cannot proceed through it \\
+  \texttt{graph.join.unsatisfiable} & a join can never be satisfied; the graph is wrong, not
+    the run \\
+  \texttt{observe.events.dropped} & the event pipeline dropped events; your log has a gap \\
+  \texttt{core.cap.denied} & a capability the node did not hold was requested \\
+  \texttt{store.persist.error} & a write to a store failed; the run's account is incomplete \\
+  \texttt{model.provider.auth\_failed} & the key, not the model, is the problem \\
+  \texttt{model.provider.rate\_limited} & the provider refused for quota; retrying now is waste \\
+  \texttt{coder.env.refused} & a variable named in \texttt{env\_pass} was not passed \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\section{Metrics}
+
+\texttt{pii metrics} asks the daemon for its status payload and renders gauges and counters in
+the text exposition format, one series per line, with labels in braces:
+
+\begin{lstlisting}[language=bash]
+pii_store_bytes{store="main"} 1048576
+pii_runs 42
+pii_run_latency_ms{outcome="succeeded",quantile="p95"} 132
+\end{lstlisting}
+
+It needs a running daemon: with none, it prints \enquote{no daemon answered} and exits 2. The
+same numbers are in \texttt{pii health -{}-json}, which is the better choice when you want to
+keep the payload for a record rather than read it.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (sys) {\texttt{sys.status}\\\scriptsize one payload};
+  \node[b, above right=6mm and 12mm of sys] (store) {store family\\\scriptsize bytes, rows, growth};
+  \node[b, right=12mm of sys] (runs) {run family\\\scriptsize counts, latency, uptime};
+  \node[b, below right=6mm and 12mm of sys] (sub) {subsystem family\\\scriptsize mqtt, channel, hal, wasm};
+  \node[b, right=12mm of runs] (learn) {learning family\\\scriptsize candidates, verdicts, promotions};
+  \node[b, right=12mm of sub] (mem) {memory family\\\scriptsize docs, entities, tiers, archives};
+  \draw[f] (sys) -- (store);
+  \draw[f] (sys) -- (runs);
+  \draw[f] (sys) -- (sub);
+  \draw[sf] (runs) -- (learn);
+  \draw[sf] (sub) -- (mem);
+\end{tikzpicture}}
+\captionof{figure}{Six families, one payload. Every metric is derived from state the daemon already holds, so asking for metrics never changes what it is doing.}
+\end{minipage}
+\end{center}
+
+The full set, with the label each series carries. \emph{Gauge} means a value that can go down;
+\emph{counter} means one that only grows until the daemon restarts.
+
+{\footnotesize
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.33\textwidth}>{\raggedright\arraybackslash}p{0.08\textwidth}>{\raggedright\arraybackslash}p{0.47\textwidth}@{}}
+  \toprule
+  \textbf{Series} & \textbf{Type} & \textbf{Meaning} \\
+  \midrule
+  \endhead
+  \texttt{pii\_runs} & gauge & runs in the main store \\
+  \texttt{pii\_sessions} & gauge & sessions in the main store \\
+  \texttt{pii\_approvals\_pending} & gauge & approvals awaiting a decision \\
+  \texttt{pii\_journal\_events\_total} & counter & journal events ever appended \\
+  \texttt{pii\_memory\_docs} & gauge & memory documents \\
+  \texttt{pii\_cron\_entries} & gauge & configured cron entries \\
+  \texttt{pii\_store\_bytes} & gauge, \texttt{store} & size of a store file in bytes \\
+  \texttt{pii\_store\_format\_version} & gauge, \texttt{store} & persisted format version \\
+  \texttt{pii\_rss\_bytes\_per\_run} & gauge & RSS growth per run over the recent window \\
+  \texttt{pii\_process\_rss\_kb} & gauge & resident set size in KiB \\
+  \texttt{pii\_store\_bytes\_per\_run} & gauge & main-store bytes divided by runs \\
+  \texttt{pii\_run\_latency\_ms} & gauge, \texttt{outcome}, \texttt{quantile} & run latency,
+    upper bucket bound \\
+  \texttt{pii\_run\_latency\_count} & counter, \texttt{outcome} & runs in the histogram \\
+  \texttt{pii\_uptime\_ms} & gauge & daemon uptime \\
+  \texttt{pii\_mqtt\_received\_total} & counter & messages accepted from brokers \\
+  \texttt{pii\_mqtt\_dropped\_total} & counter & messages dropped: queue full, not UTF-8 \\
+  \texttt{pii\_mqtt\_published\_total} & counter & messages published \\
+  \texttt{pii\_worker\_requests\_refused\_total} & counter & refusals around a drain or reload \\
+  \texttt{pii\_channel\_posts\_total} & counter & messages a \texttt{post} node delivered \\
+  \texttt{pii\_channel\_post\_refusals\_total} & counter & \texttt{post} calls refused or failed \\
+  \texttt{pii\_quarantine\_refusals\_total} & counter & runs refused by a promotion quarantine \\
+  \texttt{pii\_quarantine\_refusals\_recorded\_total} & counter & refusals whose deny reached the
+    ledger; a gap to the line above is a finding \\
+  \texttt{pii\_hal\_ops\_total} & counter, \texttt{kind} & HAL operations that succeeded \\
+  \texttt{pii\_hal\_refusals\_total} & counter & HAL operations refused by claim or scope \\
+  \texttt{pii\_wasm\_calls\_total} & counter, \texttt{outcome} & wasm calls by outcome \\
+  \texttt{pii\_wasm\_refusals\_total} & counter & modules or calls refused before running \\
+  \texttt{pii\_learn\_candidates} & gauge, \texttt{kind} & candidates from the last scan \\
+  \texttt{pii\_learn\_refusals\_total} & counter & candidates refused for missing evidence \\
+  \texttt{pii\_learn\_candidates\_proposed\_total} & counter & distinct candidates the unattended
+    loop proposed \\
+  \texttt{pii\_learn\_unattended\_runs\_total} & counter & unattended extract+verify passes \\
+  \texttt{pii\_learn\_verdicts} & gauge, \texttt{verdict} & verdicts of the last verification \\
+  \texttt{pii\_learn\_promotions} & gauge, \texttt{state} & promotions by state, plus
+    \texttt{refused} \\
+  \texttt{pii\_memory\_entities} & gauge & entities in the memory graph \\
+  \texttt{pii\_memory\_relationships} & gauge & relationships in the memory graph \\
+  \texttt{pii\_memory\_writes\_total} & counter, \texttt{kind} & writes that changed the graph \\
+  \texttt{pii\_memory\_write\_refusals\_total} & counter, \texttt{reason} & memory writes refused \\
+  \texttt{pii\_memory\_query\_refusals\_total} & counter, \texttt{reason} & memory queries refused \\
+  \texttt{pii\_memory\_tier} & gauge, \texttt{tier} & records in each tier \\
+  \texttt{pii\_memory\_tier\_changes\_total} & counter, \texttt{change} & transitions,
+    \texttt{<from>\_to\_<to>} \\
+  \texttt{pii\_memory\_archive\_ops\_total} & counter, \texttt{op} & archived, restored, refused \\
+  \bottomrule
+\end{longtable}
+}
+
+Two of these are instruments rather than descriptions. \texttt{pii\_store\_bytes\_per\_run} is
+the growth rate as one number: a store that is not growing prints a small value, and a value
+that climbs after every run names the subsystem to look at.
+\texttt{pii\_quarantine\_refusals\_recorded\_total} exists to be compared with
+\texttt{pii\_quarantine\_refusals\_total}: a refusal that did not reach the ledger is a defect
+in the refusal path, not in the run.
+
+\section{Health}
+
+\texttt{pii health} prints the identity-bearing parts of the status payload, in a fixed order:
+
+\begin{lstlisting}[language=bash]
+# the shape of the output; values abbreviated
+pii 0.2.0 (c05f3d1e4dd3, x86_64-unknown-linux-gnu)
+client: c05f3d1e4dd3
+config: /root/.pii/pii.toml sha256=9f2c...
+stores:
+  main: /run/user/0/pii/store.redb (1048576 bytes, format_version=1)
+mounts:
+  workspace [rw]: /projects/pi-improved  (workspace)
+since_deploy:
+  revision: c05f3d1e4dd3
+  runs: 42
+  starts: 3
+  hard_deaths: 1
+  runs_by_status.succeeded: 39
+counts:
+  runs: 42
+\end{lstlisting}
+
+Read it in three passes. \emph{Identity:} the binary's revision and this client's must match;
+\texttt{config} names the file that is actually in force, with its digest. \emph{State:} the
+stores and their format versions, then the mounts, which are the sandbox's answer to
+\enquote{what may this daemon write}. \emph{History:} \texttt{since\_deploy} is the run of
+numbers that survives a restart --- \texttt{starts} against \texttt{hard\_deaths} is the
+crash record, and a \texttt{hard\_deaths} that grew since yesterday is the first thing to
+explain.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (h) {\texttt{pii health}};
+  \node[v, right=of h] (rev) {same revision?};
+  \node[b, above right=6mm and 12mm of rev] (ok) {exit 0};
+  \node[b, right=of rev, yshift=9mm] (drift) {exit 3\\\scriptsize DRIFT: not this tree};
+  \node[b, right=of rev, yshift=-9mm] (unk) {exit 3\\\scriptsize UNVERIFIED: unknown revision};
+  \node[b, below=of rev] (down) {exit 2\\\scriptsize no daemon answered};
+  \draw[f] (h) -- (rev);
+  \draw[f] (rev) -- node[p, above=2pt, midway]{yes} (ok);
+  \draw[f] (rev) -- node[p, above=2pt, midway]{no} (drift);
+  \draw[f] (rev) -- node[p, below=2pt, midway]{unknown} (unk);
+  \draw[bk] (h) -- (down);
+\end{tikzpicture}}
+\captionof{figure}{Three outcomes, two of them exit 3 for different reasons. \enquote{Unknown} is never treated as agreement: a build that cannot prove what it is has not proven it is current.}
+\end{minipage}
+\end{center}
+
+The distinction between drift and unknown matters in an upgrade. Drift means the daemon is a
+different, known binary: restart it with the new one. Unknown means one side has no revision
+stamped, which is what a locally built binary without the build script looks like --- the
+comparison cannot be made, and \texttt{pii health} will not pretend otherwise.
+
+\section{The run journal}
+
+The journal is the only account of what a run did, and it is append-only: every event is
+written once, under \texttt{(run, seq)}. Seventeen event variants exist; the ones an operator
+reads are these.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.64\textwidth}@{}}
+  \toprule
+  \textbf{Journal event} & \textbf{What it records} \\
+  \midrule
+  \texttt{Started} & the graph name and a hash of the run input \\
+  \texttt{TickStarted} & the batch of ready nodes drained in one scheduling tick, and its width \\
+  \texttt{NodeStarted} & a node began, with its millisecond offset \\
+  \texttt{NodeFinished} & the port it took, the value it produced, the value's hash, the
+    duration \\
+  \texttt{NodeFailed} & the error, whether it is retryable, and the attempt number \\
+  \texttt{NodeProgress} & a heartbeat: elapsed time and child CPU. A wedged node shows elapsed
+    growing while CPU stays flat. \\
+  \texttt{NodeCancelled} & a node stopped because a person cancelled the run \\
+  \texttt{NodeDead} & a node marked dead; the run cannot pass it \\
+  \texttt{NodeInterrupted} & the node was cut short by a suspension or shutdown \\
+  \texttt{Suspended}, \texttt{Resumed} & the run parked on a resume key, and continued \\
+  \texttt{NodeRetried} & an explicit retry of one node \\
+  \texttt{EffectStarted}, \texttt{EffectConfirmed} & a side effect began, and was confirmed \\
+  \texttt{RunSpawned} & a child run was started, with its id \\
+  \texttt{Finished} & the terminal outcome \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=12mm and 16mm]
+  \node[b] (run) at (0,0) {running};
+  \node[b] (sus) at (3.6,0) {suspended};
+  \node[b] (done) at (7.0,0) {succeeded};
+  \node[b] (ref) at (0,-2.6) {refused};
+  \node[b] (fail) at (3.6,-2.6) {failed};
+  \draw[f] (run) -- node[p, above=2pt, midway]{gate, timer} (sus);
+  \draw[f] (sus) -- node[p, above=2pt, midway]{resume: pass} (done);
+  \draw[bk] (sus.south) to[out=250,in=290] node[p, below=6pt, midway]{resume} (run.south);
+  \draw[f] (sus) -- node[p, right=2pt, midway]{fail} (fail);
+  \draw[sf] (run) -- node[p, left=6pt, midway]{pre-spawn} (ref);
+\end{tikzpicture}}
+\captionof{figure}{Five statuses, and the one that is easy to miss. \texttt{Refused} means the agent call was refused before anything was spawned: it is not a failure of the work, and it is not in the \texttt{run ls -{}-status} vocabulary.}
+\end{minipage}
+\end{center}
+
+That last point is a real limitation of the filter. \texttt{run ls -{}-status} accepts
+\texttt{running}, \texttt{suspended}, \texttt{succeeded} and \texttt{failed}; the store's
+fifth status, \texttt{refused}, cannot be named on the command line. A refused run therefore
+appears in an unfiltered listing and disappears from every filtered one, which is exactly
+when someone is looking for it.
+
+\begin{lstlisting}[language=bash]
+pii run ls                       # refused runs appear only here
+pii run trace r000000000261 --reason implement
+pii run trace r000000000261 --overlapped code,docs
+pii run trace r000000000261 --terminal
+\end{lstlisting}
+
+\texttt{-{}-overlapped} is the query that answers a performance question without a profiler:
+two nodes that were supposed to be sequential and were not show up as overlapped, and two
+that were supposed to run together and never did show up as disjoint.
+
+\section{The audit trail}
+
+\texttt{audit.log} sits beside the store and receives only the security-relevant events. It is
+rotated like the log, it is on by default, and it exists so that an operator can answer
+\enquote{what was denied} without having enabled a full event log.
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.34\textwidth}>{\raggedright\arraybackslash}p{0.54\textwidth}@{}}
+  \toprule
+  \textbf{Kind in the trail} & \textbf{What it records} \\
+  \midrule
+  \texttt{core.cap.denied} & a capability the node did not hold \\
+  \texttt{tools.deny\_list.hit} & a tool call matched the deny list \\
+  \texttt{fetch.allowlist.denied} & a fetch to a host outside the allowlist \\
+  \texttt{net.egress.denied} & egress outside \texttt{[net] grants} \\
+  \texttt{daemon.sandbox.in\_force} & the profile, the exact grant, and whether confinement is
+    applied \\
+  \texttt{daemon.peer.refused} & a control peer refused at the socket \\
+  \texttt{daemon.observer.detached} & the observer fan-out was switched off \\
+  \texttt{daemon.audit.disabled} & the audit feed was switched off \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+A start writes \texttt{daemon.sandbox.in\_force} to the trail. It carries \texttt{profile},
+\texttt{grant} and \texttt{enforced}, and it is the only place that states what the daemon was
+actually confined to rather than what it was asked for.
+
+One limit is structural and stated in the module that implements the filter: a denial raised
+by the kernel inside a child process --- a raw redirect blocked by Landlock --- never passes
+through pii and is therefore not in the trail. Only denials pii itself decides appear.
+
+\begin{lstlisting}[language=bash]
+grep daemon.sandbox.in_force /var/lib/pii/audit.log | tail -1
+grep -c core.cap.denied /var/lib/pii/audit.log
+grep net.egress.denied /var/lib/pii/audit.log | jq -r '.fields.host' | sort | uniq -c
+\end{lstlisting}
+
+With \texttt{-{}-audit off} the file is not empty: it records exactly one kind,
+\texttt{daemon.audit.disabled}, so a trail that stops is distinguishable from a trail that was
+never written.
+
+\section{Incidents and the loop}
+
+Two surfaces cover the unattended side, and neither needs a model.
+
+\texttt{pii incidents scan -{}-source runtime -{}-log F} reads the daemon's own log and reports
+each incident with its count, first and last seen, and \texttt{latency\_secs} against the
+configured window --- the detection latency, which is the number that says whether the alert
+arrived in time. Adding \texttt{-{}-ingest -{}-dir D} stores what it found;
+\texttt{pii incidents show} reads one back. \texttt{pii incidents distance -{}-since} measures
+the operator's own response time from recorded timestamps.
+
+\texttt{pii loop emit} writes one NDJSON line per lifecycle step of an autonomy loop, and
+\texttt{pii loop events} merges that file with the daemon log so the loop and the daemon read
+as one timeline. The exit code carries information the text does not: \texttt{emit} keeps the
+event locally and exits 3 when the daemon did not answer, appending \texttt{daemon=down} to
+the detail. A loop that records 3s is a loop that was running while the daemon was not.
+
+\section{Correlating a failure}
+
+The order matters, because each step narrows the next.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (one) {1. \texttt{pii health}};
+  \node[b, right=of one] (two) {2. \texttt{pii metrics}};
+  \node[b, right=of two] (three) {3. \texttt{run ls}};
+  \node[b, below=of three] (four) {4. \texttt{run trace}};
+  \node[b, left=of four] (five) {5. the log, by \texttt{run}};
+  \node[b, left=of five] (six) {6. \texttt{audit.log}};
+  \draw[f] (one) -- (two);
+  \draw[f] (two) -- (three);
+  \draw[f] (three) -- (four);
+  \draw[f] (four) -- (five);
+  \draw[f] (five) -- (six);
+  \draw[bk] (six.south) to[bend left=14] node[p, below=2pt, midway]{a denial explains it} (one.south);
+\end{tikzpicture}}
+\captionof{figure}{Six steps from \enquote{something is wrong} to a cause. Steps 1 and 2 rule out the daemon; steps 3 to 5 locate the run and the node; step 6 explains a refusal that the run itself could not.}
+\end{minipage}
+\end{center}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.30\textwidth}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+  \toprule
+  \textbf{Symptom} & \textbf{First surface, and what to look for} \\
+  \midrule
+  \endhead
+  every run fails in a second & the log, for \texttt{model.provider.auth\_failed} or
+    \texttt{rate\_limited}; the metric set carries no model series, so this is an event
+    question, not a metric one \\
+  a run is \enquote{running} for hours & \texttt{run trace -{}-node-status}, then
+    \texttt{NodeProgress}: elapsed growing with flat CPU is a wedged child \\
+  the run stopped with no error & \texttt{run trace -{}-terminal}: a node left through a port
+    with no edge, so nothing failed and nothing continued \\
+  a write was refused & \texttt{audit.log}: \texttt{core.cap.denied} or
+    \texttt{tools.deny\_list.hit}, never the run's own output \\
+  the log has a gap & \texttt{observe.events.dropped}: the pipeline dropped events, so absence
+    is not evidence \\
+  the daemon restarted by itself & \texttt{pii health}: \texttt{hard\_deaths} in
+    \texttt{since\_deploy}, and a log that ends on \texttt{daemon.started} with no
+    \texttt{daemon.stopped} \\
+  the metrics do not move & the daemon serving them is not the one running the work: compare
+    \texttt{pii\_uptime\_ms} with the process you restarted \\
+  \bottomrule
+\end{longtable}
+
+\begin{lstlisting}[language=bash]
+pii health --json > /tmp/health.json
+pii metrics | grep -E 'provider|store_bytes|latency'
+pii run ls --status failed | jq -r '.[].run' | head
+pii run trace "$RUN" --reason "$NODE"
+grep "\"run\":\"$RUN\"" /var/log/pii/pii.log | jq -c 'select(.level!="info")'
+grep -E 'cap.denied|egress.denied' /var/lib/pii/audit.log | tail -20
+\end{lstlisting}

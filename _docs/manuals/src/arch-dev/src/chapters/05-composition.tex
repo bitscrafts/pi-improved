@@ -1,0 +1,581 @@
+\chapter{Composition}
+
+\label{ch:composition}
+
+This chapter answers how graphs become each other's parts. There are two inclusion mechanisms and
+they share one property: both decide everything at \emph{load} time. A \texttt{call} node is
+replaced by the callee's nodes; an \texttt{[[attach]]} table weaves a fragment into a host at a
+named surface. Nothing is resolved during a run, nothing crosses a process boundary, and there is
+no second implementation of \enquote{include}. That single decision is what makes the rest of the
+chapter necessary, because it also means the rule that decides where a call returns is a rule about
+graph shape rather than a rule about invocation.
+
+The chapter spends most of its length on one such rule, because it is the sharpest edge in the
+system. A call returns through every node that declares an \texttt{ok} port and has no outgoing
+\texttt{ok} edge --- not through the node the callee names in \texttt{exit}. A \texttt{refuse} node
+declares no ports at all, so it is not an exit under that rule, and a callee that ends in a refusal
+used to dead-end inside the splice: no edge fired, the run stopped, and the caller's queue row
+stayed \texttt{Running} instead of being recorded as parked. Row 364 is the fix, and it is a wiring
+rule rather than a second mechanism.
+
+\section{Two inclusions, one shape}
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.18\textwidth}p{0.36\textwidth}p{0.38\textwidth}@{}}
+	\toprule
+	 & \textbf{\texttt{call} node} & \textbf{\texttt{[[attach]]} fragment} \\
+	\midrule
+	What is included & another graph, by name & a fragment file under \texttt{graphs/fragments/} \\
+	Naming & \texttt{<call>\_\_<node>} & \texttt{<attach>.<node>}, or \texttt{<attach>@<target>.<node>}
+	when the attach spans several targets \\
+	Entry & a synthesised head \texttt{<call>\_\_in} & the fragment's own entry, chained \\
+	Pin & \texttt{sha256} on the call node & \texttt{pin} on the attach \\
+	May contain & calls, nested to depth 4 & no call, no attach, no timer, no store, no budget \\
+	Ordering & declaration order of the calls in the file & \texttt{order}, then attach id \\
+	Where it runs & wherever its nodes land in the host & a named surface: run start, node before,
+	node after, run end \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The two are deliberately not interchangeable. A \texttt{call} is the right tool for \enquote{this
+graph is a step in a larger process}; an \texttt{attach} is the right tool for \enquote{every run of
+this graph should do this first}, or \enquote{every node of this kind should be followed by this
+check}. The restriction that a fragment may not call and may not attach is what keeps the weave a
+single pass: a fragment is work, never a scheduler and never a composition of its own.
+
+\section{The load, in order}
+
+Every caller that runs or checks a graph goes through one function,
+\texttt{load\_host\_with\_graphs}. Its order is fixed, and the order explains which error a bad file
+produces.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 12mm]
+	\node[b] (src) {graph text};
+	\node[b, right=of src] (expand) {expand calls\\\scriptsize depth 4, pin, caps};
+	\node[b, right=of expand] (weave) {weave attaches\\\scriptsize pin, surfaces, order};
+	\node[b, right=of weave] (load) {parse to types\\\scriptsize grant ceiling};
+	\node[b, below=of weave] (validate) {validate\\\scriptsize \texttt{V0}--\texttt{V11}};
+	\node[b, left=of validate] (run) {a run or a check};
+
+	\draw[f] (src) -- (expand);
+	\draw[f] (expand) -- (weave);
+	\draw[f] (weave) -- (load);
+	\draw[f] (load) -- (validate);
+	\draw[f] (validate) -- (run);
+\end{tikzpicture}}
+\captionof{figure}{The load pipeline; calls are expanded on the \emph{table} before anything is
+typed, which is why an expanded node's id is a string operation rather than a data structure one,
+and why \texttt{pii graph show} can print a composed graph at all.}
+\end{center}
+
+\begin{enumerate}
+	\item \textbf{Expand calls.} The host text is parsed as a TOML table, and each \texttt{kind =
+	"call"} node is replaced in place. This happens first so that a call inside a callee is expanded
+	by the same code, recursively, with a chain of graph names to detect cycles.
+	\item \textbf{Weave attaches.} If the expanded table still has an \texttt{[[attach]]} array, the
+	fragments are read, pin-checked, contract-checked and spliced at their surfaces.
+	\item \textbf{Parse to types.} The resulting table is loaded into \texttt{GraphSpec}, and the
+	registry's grant ceiling is applied here --- the graph and each node are refused if they request
+	more than the host allows.
+	\item \textbf{Validate.} The static rules run over the expanded graph: ports exist, capabilities
+	are within the graph's, cycles are bounded, joins are satisfiable.
+\end{enumerate}
+
+The consequence of the order is that a pin error beats a port error. A graph whose callee has
+changed reports \texttt{fragment.pin.mismatch} before anyone learns that the graph also has a typo
+in an edge --- which is correct, because until the pin is honest the shape of the graph is unknown.
+
+\begin{lstlisting}[language=bash]
+pii graph lint graphs/queue.toml     # expand, weave, validate; prints warnings too
+pii graph show graphs/queue.toml     # the graph after expansion, node by node
+pii graph explain graphs/sdd.toml    # the composition, one level at a time
+\end{lstlisting}
+
+\section{A call, before and after}
+
+The clearest way to see the mechanism is to look at the same file twice. Before the load, the queue
+carries a \texttt{call} node and three edges that name it. The node is a placeholder: it has a kind,
+a graph name, a pin and a caps list, and no ports of its own.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 12mm]
+	\node[b] (select) {\texttt{select}};
+	\node[b, right=of select] (call) {\texttt{implement}\\\scriptsize \texttt{kind = "call"}};
+	\node[b, right=of call] (record) {\texttt{record}};
+	\node[p, below=of call] (pin) {pin: sha256 of \texttt{spec.toml}};
+
+	\draw[f] (select) -- node[p,above=2pt,midway]{\texttt{ok}} (call);
+	\draw[f] (call) -- node[p,above=2pt,midway]{\texttt{ok}} (record);
+	\draw[bk] (call.south east) to[bend left=18] node[p,below=2pt,midway]{\texttt{unverified}} (record.south west);
+	\draw[bk] (call.south west) to[bend right=10] node[p,left=2pt,midway]{\texttt{refused}} (record.south);
+	\draw[sf] (pin) -- (call);
+\end{tikzpicture}}
+\captionof{figure}{Before the load: one node standing in for a graph; the two red edges are the ones
+row 364 added --- a host may wire a callee's refusal \emph{by name}, which is the whole of the
+refusal mechanism.}
+\end{center}
+
+After the load the placeholder is gone. Its head is a synthetic node that counts entries, the
+callee's nodes are present under namespaced ids, and the host edges have been re-pointed: edges that
+arrived at the call now arrive at the head, and edges that left the call now leave the callee's
+declared exit.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 13mm]
+	\node[b] (select) {\texttt{select}};
+	\node[b, right=of select] (in) {\texttt{implement\_\_in}\\\scriptsize counts entries};
+	\node[b, right=of in] (mid) {\texttt{code}, \texttt{verify}, \texttt{docs}\\\scriptsize the
+	callee's own chain};
+	\node[b, right=of mid] (rev) {\texttt{implement\_\_reverify}};
+	\node[b, below=of rev] (done) {\texttt{implement\_\_done}};
+	\node[b, below=of done] (record) {\texttt{record}};
+	\node[b, right=of done] (ref) {\texttt{implement\_\_unverified}\\\scriptsize \texttt{returns}};
+	\node[b, right=of ref] (ref2) {\texttt{implement\_\_refused}\\\scriptsize \texttt{returns}};
+
+	\draw[f] (select) -- (in);
+	\draw[f] (in) -- (mid);
+	\draw[f] (mid) -- (rev);
+	\draw[f] (rev) -- node[p,right=2pt,midway]{\texttt{ok}} (done);
+	\draw[f] (done) -- node[p,left=2pt,midway]{\texttt{ok}} (record);
+	\draw[bk] (rev.east) -- node[p,above=2pt,midway]{\texttt{fail}} (ref);
+	\draw[bk] (mid.south) to[bend right=14] node[p,below=2pt,midway]{an \texttt{err} from the chain} (ref2.north);
+	\draw[f] (ref) -- (record);
+	\draw[f] (ref2.south) -- (record.east);
+\end{tikzpicture}}
+\captionof{figure}{After the load: the callee's nodes under the call's name space, the transform
+that returns on \texttt{ok}, and the two refusal nodes marked \texttt{returns} so the host's own
+edges can carry their verdict to \texttt{record}.}
+\end{center}
+
+Five details of the expansion are worth knowing because each of them has produced a misunderstanding
+at least once:
+
+\begin{itemize}
+	\item \textbf{The name space is a string prefix.} A callee node \texttt{code} becomes
+	\texttt{implement\_\_code}. There is no nesting structure and no scope; the id is flat, and that is
+	why the load refuses an expansion whose ids collide with the host's (\texttt{graph.call.id}).
+	\item \textbf{The head is not decoration.} \texttt{<call>\_\_in} exists so that a call can be
+	counted: it carries \texttt{max\_entries}, and the run counts completed entries against it. It also
+	gives the call a single place to receive its input.
+	\item \textbf{Input is one transform per key.} A transform evaluates one top-level expression, so
+	a call's \texttt{[node.in]} table becomes a chain of transforms named
+	\texttt{<call>\_\_in\_\_<key>}, each after the head. One node could not hold a whole object of
+	expressions.
+	\item \textbf{The callee's reads are rewritten.} Inside the callee, \texttt{\$.input.x} refers to
+	the call's input, and \texttt{\$.nodes.m} refers to the callee's own copies of its nodes. A callee
+	cannot read the host's input by accident.
+	\item \textbf{The host can read the result by the call's id.} \texttt{\$.nodes.implement} is
+	rewritten to \texttt{\$.nodes.implement\_\_done}, so a host expression does not need to know which
+	inner node happens to be the exit.
+\end{itemize}
+
+That last rewrite has a boundary rule that is easy to get wrong and is tested both ways: the prefix
+must end at a dot or at the end of the string. \texttt{\$.nodes.sdd} is rewritten;
+\texttt{\$.nodes.sddx} is a different node and is left alone. Node ids and kinds are never rewritten
+--- only values --- and a host that never mentions the call id comes out byte-identical.
+
+\section{The exit rule}
+
+Now the rule the chapter exists for. When a piece of a graph is spliced into another, the splicer
+has to answer one question: which of these nodes hands control back? The answer is computed, not
+declared:
+
+\begin{enumerate}
+	\item For each node in the piece, ask its factory for the ports it declares with this
+	configuration.
+	\item The node qualifies if that set contains \texttt{ok}.
+	\item The node is \emph{wired} if the piece has any outgoing edge from it on port \texttt{ok}.
+	\item The piece's exits are the nodes that qualify and are not wired.
+\end{enumerate}
+
+The rule is applied twice in the loader, at two scales. Per piece, it decides which nodes feed the
+next piece's entry (or the tail the caller supplied). At the host level, \texttt{run.end} uses the
+same predicate to decide which host nodes the end fragment follows: every host node with no outgoing
+\texttt{ok} edge becomes a sink, and the end chain is hung off all of them with order edges. A graph
+with three natural endings therefore reaches the end chain from three places, which is the point ---
+a fragment attached at \texttt{run.end} runs however the graph finishes.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 14mm]
+	\node[b] (reverify) {\texttt{reverify}\\\scriptsize judge};
+	\node[b, right=of reverify] (done) {\texttt{done}\\\scriptsize transform: \texttt{ok}};
+	\node[b, below=of reverify] (unv) {\texttt{unverified}\\\scriptsize \texttt{refuse}: no ports};
+	\node[b, right=of unv] (ref) {\texttt{refused}\\\scriptsize \texttt{refuse}: no ports};
+	\node[b, below=of ref] (errs) {\texttt{code.err}, \texttt{docs.err}\\\scriptsize the other way in};
+	\node[v, right=of done] (exit) {is an exit};
+
+	\draw[f] (reverify) -- node[p,above=2pt,midway]{\texttt{ok}} (done);
+	\draw[f] (reverify) -- node[p,right=2pt,midway]{\texttt{fail}} (unv);
+	\draw[f] (errs) -- (ref);
+	\draw[f] (done) -- (exit);
+	\draw[bk] (unv.east) -- node[p,below=2pt,midway]{dead end} (ref.west);
+\end{tikzpicture}}
+\captionof{figure}{The tail of \texttt{graphs/spec.toml} under the exit rule: \texttt{done}
+returns because it declares \texttt{ok} and has no \texttt{ok} successor, while \texttt{unverified}
+and \texttt{refused} declare nothing, so a refusal leaves no edge out of the splice.}
+\end{center}
+
+Two consequences follow, and both are load-bearing.
+
+\paragraph{A piece with no exits is not an error at load.} It is a piece that never returns. The
+loader accepts it because a fragment attached at \texttt{run.end} legitimately ends there, and
+because a callee's refusal is a legitimate way for the whole run to fail. The failure only becomes
+visible at run time, as a run that stops --- which is exactly the class of failure this system tries
+to make impossible.
+
+\paragraph{The declared \texttt{exit} is a different thing.} A graph's \texttt{exit} names its
+terminal for a direct run, and the call mechanism uses it to re-point host edges: an edge that left
+the call now leaves \texttt{<call>\_\_<exit>}. The wider rule exists so that a fragment with several
+natural endings still hands control back. Both facts are true at once, which is why reading only one
+of them produces a wrong mental model: the declared exit decides where the \emph{host's} edges land,
+and the computed exit set decides where a \emph{piece} hands control to what follows it.
+
+\section{Why a refusal dead-ended}
+
+The refusal shape is worth following to the bottom, because it is the one place where a node's port
+set is empty rather than merely unused.
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.30\textwidth}p{0.62\textwidth}@{}}
+	\toprule
+	\textbf{Fact} & \textbf{Where it is decided} \\
+	\midrule
+	A \texttt{refuse} node declares no ports & \texttt{RefuseFactory::ports} returns an empty vector
+	unless the configuration carries \texttt{returns} \\
+	Its \texttt{run} fails the run by name & \texttt{RefuseNode::run} returns a failure whose text is
+	\texttt{run.refused\{hook=..., reason=...\}} \\
+	An empty port set cannot contain \texttt{ok} & so the exit computation never lists it \\
+	No exit means no edge to the tail & so nothing after the callee runs \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+On 2026-11-04 that combination left a queue row \texttt{Running} for a night. The callee refused,
+the run stopped, and the row's claiming run was never recorded as finished --- so the row blocked
+the queue, and an operator looking at the queue saw work in progress that had in fact already been
+refused. The symptom and the cause were three files apart: the queue's status in
+\texttt{pii-store/src/queue.rs}, the edge in \texttt{graphs/queue.toml}, and the port set in
+\texttt{pii-graph/src/node.rs}.
+
+There were two honest ways out, and the spec said so explicitly rather than letting the implementer
+choose silently:
+
+\begin{enumerate}
+	\item \textbf{Make every verdict return on \texttt{ok}.} Give the refusal nodes an \texttt{ok}
+	port --- or make them transforms carrying a verdict value --- so that all three tail nodes are
+	exits. The host must then distinguish them by the value that arrived, because all three come back
+	on the same port.
+	\item \textbf{Collapse the tail into one verdict node} with ports \texttt{ok},
+	\texttt{unverified} and \texttt{refused}, and let the host wire each to the outcome it wants. This
+	makes the callee's outcome vocabulary explicit but changes the callee's tail and every host that
+	calls it.
+\end{enumerate}
+
+\section{The fix: a wired refusal returns}
+
+The chosen fix is a third shape, and it is the smallest one that keeps both properties: the callee's
+tail does not change, and the host gets a distinct port per refusal. It works by letting the
+\emph{host} opt in, edge by edge.
+
+The load walks the host's edges. For each edge whose \texttt{from} is the call's id, it takes the
+port name and looks for an added node called \texttt{<call>\_\_<port>} whose kind is
+\texttt{refuse}. If it finds one, it does two things: it sets \texttt{returns = "<port>"} on that
+node, and it re-points the edge to leave that node on \texttt{ok} instead of leaving the call. The
+node's factory now reports one port, the exit computation includes it, and its \texttt{run} returns
+a verdict instead of failing the run.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 12mm]
+	\node[b] (host) {host edge\\\scriptsize \texttt{from = "implement"}\\\scriptsize
+	\texttt{port = "unverified"}};
+	\node[v, right=of host] (find) {inner node is\\\scriptsize \texttt{refuse}?};
+	\node[b, below=of find] (mark) {set \texttt{returns}\\\scriptsize \texttt{ports = [ok]}};
+	\node[b, right=of mark] (edge) {re-point the edge\\\scriptsize \texttt{from = <call>\_\_unverified}};
+	\node[b, right=of edge] (value) {a verdict value\\\scriptsize \texttt{verdict, port, reason,
+	criterion}};
+	\node[b, right=of find] (leave) {left for validation};
+
+	\draw[f] (host) -- (find);
+	\draw[f] (find) -- node[p,right=2pt,midway]{yes} (mark);
+	\draw[f] (mark) -- (edge);
+	\draw[f] (edge) -- (value);
+	\draw[sf] (find) -- node[p,above=2pt,midway]{no} (leave);
+\end{tikzpicture}}
+\captionof{figure}{The opt-in, edge by edge; a refusal no host wires is not marked, still declares no
+ports, and still fails the run --- which is the control that proves the mechanism is wired and not
+merely present.}
+\end{center}
+
+The verdict that comes back is a small object, and every field of it is used by a host:
+
+\begin{itemize}
+	\item \texttt{verdict} is the literal \texttt{"refused"};
+	\item \texttt{port} is the name the host wired (\texttt{unverified}, \texttt{refused}), so a host
+	with one \texttt{record} node can tell them apart;
+	\item \texttt{reason} is \texttt{"<port>: <declared reason>"}, extended with the arm's own reason
+	when the arriving value carried one;
+	\item \texttt{criterion} is the first failing criterion from the arriving value, when there is
+	one --- which is what lets a parked row name the criterion that failed.
+\end{itemize}
+
+The controls that came with the fix are as important as the fix, because a mechanism that fires on
+everything is indistinguishable from one that fires correctly. Three near misses are asserted: a
+refusal the host does not wire still fails the run; a port that names no refusal node is left on the
+call and points at the exit, where validation names it; and the same callee run directly still
+fails, because nothing in the direct path sets \texttt{returns}. The callee's own behaviour is
+unchanged --- which is the requirement that makes the fix acceptable at all.
+
+The host side is four lines of TOML, and their brevity is the point: the mechanism is visible where
+a reviewer reads the graph.
+
+\begin{lstlisting}
+[[edge]]
+from = "implement"
+port = "unverified"
+to   = "record"
+
+[[edge]]
+from = "implement"
+port = "refused"
+to   = "record"
+\end{lstlisting}
+
+\section{Pins}
+
+A pin is the sha256 of the included file's bytes, written into the file that includes it. A call
+carries \texttt{sha256}; an attach carries \texttt{pin}. The two produce different messages because
+they are different code paths --- \texttt{fragment.pin.mismatch} from the call expansion,
+\texttt{fragment.pin.drift} from the fragment loader --- but they mean the same thing: the file
+changed since someone reviewed this inclusion.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 12mm]
+	\node[s] (leaf) {\texttt{spec.toml}};
+	\node[s, right=of leaf] (mid) {\texttt{queue.toml}};
+	\node[s, right=of mid] (top) {\texttt{night.toml}};
+	\node[b, below=of mid] (pin1) {pin of \texttt{spec}\\\scriptsize inside queue's bytes};
+	\node[b, below=of top] (pin2) {pin of \texttt{queue}\\\scriptsize inside night's bytes};
+
+	\draw[f] (leaf) -- node[p,above=2pt,midway]{hashed into} (mid);
+	\draw[f] (mid) -- node[p,above=2pt,midway]{hashed into} (top);
+	\draw[sf] (mid) -- (pin1);
+	\draw[sf] (top) -- (pin2);
+	\draw[bk] (leaf.south) to[bend right=30] node[p,below=2pt,midway]{an edit moves every pin above
+	it} (pin2.west);
+\end{tikzpicture}}
+\captionof{figure}{Pins are transitive by construction rather than by policy: a callee's text contains
+its own callee's hash, so editing a leaf changes the middle file's bytes, which changes the top
+file's pin.}
+\end{center}
+
+That transitivity is not a feature anyone wrote; it falls out of hashing text that contains hashes.
+It has one practical consequence worth stating: re-pinning after a leaf change is a mechanical edit
+of every file above it, in the same commit, and the diff shows one hash per level with one sentence
+of justification. The rule the repository follows is that a pin moves only with a reason in the
+commit, because the pin is the only thing that makes \enquote{the night cannot run a graph nobody
+reviewed} true.
+
+Row 373 is the cautionary case, and it is not a pin defect at all. \texttt{graphs/night.toml} had a
+node whose id was \texttt{sdd}, whose kind was \texttt{call}, and whose \texttt{graph} was
+\texttt{queue}. The pin was honest: it pinned the queue. The defect was that the name described
+something the composition did not do. The fix was to create the graph the name promised and re-pin
+the node to it. A pin protects against a file changing under you; it cannot protect against a file
+that was never the right one.
+
+\section{Fragments}
+
+A fragment is a graph file with a \texttt{[fragment]} table instead of a graph's header. It is read
+once, at load, and spliced into the host at one of four surfaces.
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.44\textwidth}@{}}
+	\toprule
+	\textbf{Surface} & \textbf{Where the chain goes} & \textbf{What the splice does} \\
+	\midrule
+	\texttt{run.start} & in front of the host's entry & the chain's exits feed the old entry; the
+	host's entry becomes the chain's head \\
+	\texttt{node.before} & between a node's inbound edges and the node & inbound edges are re-pointed
+	at the chain; the chain's exits feed the node \\
+	\texttt{node.after} & on a node's \texttt{ok} edge & the node's \texttt{ok} edges are lifted and
+	re-hung after the chain; the node now points at the chain's head \\
+	\texttt{run.end} & after every host node with no \texttt{ok} successor & each sink gets an order
+	edge to the chain's head; the chain's exits feed nothing \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The header is checked before any of that happens. It must declare \texttt{name},
+\texttt{inputs}, \texttt{outputs} and a boolean \texttt{may\_block}; a fragment that omits one is
+refused with \texttt{fragment.header.missing}. The body must not contain a top-level key that would
+give it autonomy --- \texttt{timer}, \texttt{store}, \texttt{budget}, \texttt{limits},
+\texttt{schedule}, \texttt{cron} --- nor a node configuration key that would do the same
+(\texttt{budget}, \texttt{store}, \texttt{limits}, \texttt{cron}, \texttt{timer\_ms},
+\texttt{in\_ms}). The message is \texttt{fragment.autonomy.forbidden}, and its text states the
+principle: a fragment is work, never a scheduler.
+
+The block rule is the one that reads as arbitrary until you see the failure it prevents. A fragment
+attached at \texttt{run.start} or \texttt{node.before} runs \emph{before} the thing it guards, so a
+fragment that can block there can hold the host at a point where nothing else has run. Only a
+fragment whose header says \texttt{may\_block = true} may attach at those two surfaces; anything
+else is refused with \texttt{fragment.block.invalid}. A fragment at \texttt{node.after} or
+\texttt{run.end} runs after work has happened and has no such rule.
+
+\begin{lstlisting}
+[fragment]
+name      = "record-run"
+inputs    = ["run"]
+outputs   = ["ok"]
+may_block = false
+\end{lstlisting}
+
+Naming follows the same flat logic as a call, with one addition. A fragment attached to a single
+target is namespaced \texttt{<attach>.<node>}. An attach with \texttt{on = ["a", "b"]} produces one
+copy per target, and each copy is namespaced \texttt{<attach>@<target>.<node>}, because two copies
+with the same ids would collide. The attach's order is \texttt{order}, then id, and that ordering is
+what decides which of two fragments at the same surface runs first. Each inlined node also carries
+two stamps in its configuration: \texttt{woven-from}, of the form
+\texttt{<fragment>\#<node>}, and \texttt{hook}, the attach id. Those stamps are how a trace of a
+woven graph can name the file a node came from, long after the file has changed.
+
+\section{Bounds: depth, cycles, entries}
+
+Three limits keep composition from becoming recursion.
+
+\begin{itemize}
+	\item \textbf{Depth 4.} A chain of nested calls deeper than four is refused with
+	\texttt{graph.call.depth}, naming the call and the chain. The limit is a constant in the
+	expander, not a configuration key, because the right answer for a graph language this small is
+	\enquote{shallow}.
+	\item \textbf{No cycles.} A call that would re-enter a graph already in the chain is refused with
+	\texttt{graph.call.cycle}, and the message prints the chain in order. This is a load-time check,
+	not a run-time one: two graphs that call each other cannot be inlined at all.
+	\item \textbf{Eight entries.} A call's head counts completed entries, default eight, and the run
+	fails once a call is entered more than \texttt{max\_entries} times with \texttt{call 'X' entered
+	more than max\_entries (N) times}. The count is cumulative for the run and is reset by no
+	enclosing loop, so an inner call inside a looped outer call reaches its own limit after that many
+	entries across all the outer passes. An author who needs more raises the inner
+\texttt{max\_entries} explicitly, in the file, where the number is reviewable.
+\end{itemize}
+
+The entry counter exists because inlining is not looping. A call is textually one copy of the
+callee; if the host's shape can reach it repeatedly, the callee runs repeatedly with the same ids,
+and without a counter a graph that loops would accumulate state indefinitely. The counter turns
+that into a named failure at a stated number.
+
+\section{Every refusal composition can produce}
+
+The table is the chapter in one page: each row is a rule code, the condition that raises it, and the
+thing a reader has to look at to fix it. All of them are load-time refusals --- composition has no
+run-time errors of its own.
+
+\begin{longtable}{@{}p{0.30\textwidth}p{0.40\textwidth}p{0.22\textwidth}@{}}
+	\toprule
+	\textbf{Code} & \textbf{Raised when} & \textbf{Look at} \\
+	\midrule
+	\endhead
+	\texttt{graph.call.key} & a call node carries a key outside \texttt{id}, \texttt{kind},
+	\texttt{graph}, \texttt{sha256}, \texttt{caps}, \texttt{in}, \texttt{max\_entries} & the call's
+	table \\
+	\texttt{graph.call.missing} & the call has no \texttt{graph}, \texttt{sha256} or \texttt{caps}
+	& the call node \\
+	\texttt{graph.call.name} & the graph name is empty, starts with a dot, or contains a path
+	separator & the \texttt{graph} value \\
+	\texttt{graph.call.not\_found} & no graph directory holds \texttt{<name>.toml} & the graph
+	directories given to the load \\
+	\texttt{graph.call.read} & the callee exists but cannot be read, or is not UTF-8 & the file \\
+	\texttt{fragment.pin.mismatch} & the callee's sha256 differs from the call's & both hashes in the
+	message \\
+	\texttt{graph.call.exit} & the callee declares no \texttt{exit}, or it names no node & the
+	callee's tail \\
+	\texttt{graph.call.widen} & a call grants caps the host does not hold, or a callee node needs caps
+	the call does not grant & the caps on both sides \\
+	\texttt{graph.call.cycle} & the callee is already in the chain & the chain printed in the message
+	\\
+	\texttt{graph.call.depth} & the chain would nest past four & which call to flatten \\
+	\texttt{graph.call.id} & an expanded id collides with a host node & the id named in the message
+	\\
+	\texttt{graph.call.in} & \texttt{in} is not a table & the call's input block \\
+	\texttt{graph.call.max\_entries} & \texttt{max\_entries} is not an integer of at least one & the
+	value \\
+	\texttt{graph.call.needs} & the callee's \texttt{needs} is malformed & the callee's header \\
+	\texttt{graph.call.undeclared} & the callee reads an input its holder does not declare & the
+	\texttt{needs} list and the \texttt{in} map \\
+	\texttt{graph.call.leak} & a callee reads a host node directly instead of through \texttt{in} &
+	the expression named in the message \\
+	\texttt{graph.call.no\_dir} & a call exists but the load was given no graph directory & the
+	caller's setup \\
+	\texttt{fragment.pin.missing} & an attach carries no \texttt{pin} & the attach table \\
+	\texttt{fragment.pin.drift} & the fragment's bytes differ from the attach's pin & both hashes \\
+	\texttt{fragment.surface.unknown} & the attach names a surface outside the four & the \texttt{at}
+	value \\
+	\texttt{fragment.target.unknown} & \texttt{on} names a host node that does not exist & the
+	\texttt{on} list \\
+	\texttt{fragment.surface.unreachable} & a \texttt{run.end} attach has no sink to follow & the
+	host's last nodes \\
+	\texttt{fragment.header.missing} & the fragment lacks \texttt{name}, \texttt{inputs},
+	\texttt{outputs} or a boolean \texttt{may\_block} & the \texttt{[fragment]} table \\
+	\texttt{fragment.block.invalid} & a non-blocking fragment attaches at a pre-surface & its
+	\texttt{may\_block} \\
+	\texttt{fragment.autonomy.forbidden} & the fragment would own a timer, store, schedule or budget
+	& the key named in the message \\
+	\texttt{fragment.nesting.forbidden} & the fragment contains an \texttt{attach} or a \texttt{call}
+	& the fragment body \\
+	\texttt{fragment.path.invalid} & the fragment name is empty or contains a path component & the
+	\texttt{fragment} value \\
+	\bottomrule
+\end{longtable}
+
+Two of these are worth recognising on sight because they read as something else.
+\texttt{graph.call.undeclared} is not about capabilities: it means the callee reads
+\texttt{\$.input.x} for a key nobody mapped, which is the shape of a callee whose contract grew
+without its callers being told. And \texttt{graph.call.leak} is the one that protects composition
+from becoming implicit coupling --- a callee reading a host node by name would work until the host
+renamed it, and would make the pin meaningless as a description of what can change.
+
+\section{What composition cannot do}
+
+Two limits are not bugs and are worth knowing before designing a graph.
+
+\paragraph{There is no iteration primitive.} Composition is static, so a graph cannot say
+\enquote{do this call once per criterion}. Everything that needs repetition is one node looping
+internally --- a judge running four commands, a coder working through a list --- which is precisely
+why the judge has to know how to run criteria at all. A \texttt{foreach} or \texttt{map} over a
+list would be a new mechanism, and the repository's rule is that a second inclusion mechanism is
+never built. 
+\paragraph{Models are per-node strings.} Composition is fine with that, but each piece can carry a
+different --- possibly dead --- model id, and a graph that composes three pieces inherits three
+chances to name a model that is not served. The model-tier work exists to make that a resolved
+mapping rather than a literal per node, and until a graph uses it, the literal is what runs.
+
+\section{A checklist for a new graph}
+
+The list is short and every item on it corresponds to a refusal in this chapter.
+
+\begin{enumerate}
+	\item Does a graph already do this? If yes, call it; do not copy it. A copy is a second
+	implementation and the two will drift.
+	\item Does your graph need to be composed? If so, declare \texttt{exit}. A graph without one is a
+	run, not a part.
+	\item Grant caps for what your nodes need, and no more. The ladder will catch a mismatch, loudly,
+	with the node and the capability named.
+	\item Pin every call by sha256 and every attach by pin, and say in the commit why a pin moved.
+	\item One responsibility per graph. A loop is a graph; a process is a graph; a schedule is a
+	graph.
+	\item If a step needs no model and no process, it is a \texttt{transform}, not a coder.
+	\item Every failure path gets a port whose name says what happened. If the callee refuses, wire
+	the refusal --- otherwise the refusal is invisible to the host.
+\end{enumerate}
+
+The last item is the one this chapter was written for. A refusal that is not wired is not an error
+the host can see; it is a run that stops.

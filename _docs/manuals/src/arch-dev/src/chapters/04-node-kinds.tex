@@ -1,0 +1,423 @@
+\chapter{Node kinds and ports}
+
+\label{ch:node-kinds}
+
+This chapter answers what a node may declare and what it may do. A node is a \texttt{kind} plus
+configuration, and its \emph{ports} are the outcomes it can hand back to the graph. The ports are
+part of the contract rather than a detail of the implementation: an edge that leaves a port the node
+does not declare is refused when the graph is loaded, and a declared port with no outgoing edge is
+reported as a warning, because that is the shape of a missing failure path. The chapter then covers
+the ladder that bounds what a node may \emph{do} --- three ceilings, checked at three different
+moments --- and ends with the two mechanisms that make a node's outcome meaningful: the
+\texttt{expect} mode of a judge and the effect declaration that decides whether a node may run
+beside another.
+
+The reason to spend a chapter on this is that a graph is written in this vocabulary and nothing
+else. There is no expression language to fall back on, no way to compute a port name at run time and
+no way for a node to invent an outcome. When a graph misbehaves, the question is almost always which
+port fired and whether the edge that should have carried it exists.
+
+\section{A node, and the four things it declares}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (kind) {kind\\\scriptsize \texttt{judge}};
+	\node[b, right=of kind] (cfg) {configuration\\\scriptsize \texttt{spec = "..."}};
+	\node[b, right=of cfg] (caps) {caps\\\scriptsize \texttt{["proc"]}};
+	\node[b, below=of cfg] (node) {the node};
+	\node[b, left=of node] (ports) {declared ports\\\scriptsize \texttt{ok}, \texttt{fail}};
+	\node[b, right=of node] (edges) {edges\\\scriptsize one per port it uses};
+
+	\draw[f] (kind) -- (cfg);
+	\draw[f] (cfg) -- (caps);
+	\draw[f] (kind) -- (node);
+	\draw[f] (cfg) -- (node);
+	\draw[f] (caps) -- (node);
+	\draw[f] (node) -- (ports);
+	\draw[f] (node) -- (edges);
+\end{tikzpicture}}
+\captionof{figure}{A node's four declarations; the factory derives the port set from the kind and
+the configuration, which is why a judge in fail mode has a different port set from the same judge in
+pass mode.}
+\end{center}
+
+\begin{itemize}
+	\item \textbf{kind} --- one of the registered factories. The registry is assembled per process;
+	the built-in seven are always present, and everything that touches a model, a container, a store
+	or a channel is registered by the server.
+	\item \textbf{configuration} --- a JSON object. Unknown keys are refused by the factory that reads
+	them, not silently ignored, which is why a misspelled key is a load error rather than a node that
+	behaves like its default.
+	\item \textbf{caps} --- what the node needs. It is a request, not a grant: the graph must hold
+	it, and the host must hold what the graph holds.
+	\item \textbf{join} --- how many inbound data edges must fire before the node runs. Default
+	\texttt{all}; the alternatives are covered in Chapter~\ref{ch:engine}.
+\end{itemize}
+
+Everything else on a node is optional and bounded: \texttt{loop\_budget} for a node a cycle may
+re-enter, \texttt{retry} for a node that may fail transiently, \texttt{timeout\_ms} for a node that
+spawns a process.
+
+\section{The ports, by kind}
+
+The table is the vocabulary. Every entry was read from the factory's \texttt{ports} method, and the
+last column is the outcome a graph author is usually looking for when a run ends somewhere
+unexpected.
+
+\begin{longtable}{@{}p{0.16\textwidth}p{0.26\textwidth}p{0.48\textwidth}@{}}
+	\toprule
+	\textbf{Kind} & \textbf{Ports} & \textbf{When each fires} \\
+	\midrule
+	\endhead
+	\texttt{transform} & \texttt{ok}, \texttt{err} & \texttt{ok} with the evaluated value; \texttt{err}
+	when the expression cannot be evaluated against the input \\
+	\texttt{route} & from its \texttt{rules} & one port per rule, declared in configuration; at least
+	one is required, and the first matching rule wins \\
+	\texttt{emit} & \texttt{ok}, \texttt{err} & writes or appends a file within the write scope \\
+	\texttt{wait} & \texttt{fired}, \texttt{timeout} & sleeps in five-millisecond slices, checking
+	cancellation; it blocks a thread and is bounded by its own timeout \\
+	\texttt{timer} & \texttt{fired}, \texttt{timeout} & never blocks: it suspends the run on a key the
+	timer wheel owns \\
+	\texttt{require} & \texttt{ok} & passes when its condition holds; otherwise the node fails \\
+	\texttt{refuse} & none, or \texttt{ok} & fails the run by name --- unless the load gave it
+	\texttt{returns}, in which case it returns a verdict on \texttt{ok} \\
+	\texttt{agent} & \texttt{ok}, \texttt{err}, \texttt{budget}, \texttt{fail} & \texttt{budget} when
+	the tool-call budget is exhausted; \texttt{fail} when the turn loop ends without a result \\
+	\texttt{coder} & \texttt{ok}, \texttt{err} & spawns an agent against a work directory; \texttt{err}
+	when the agent could not start or exited non-zero \\
+	\texttt{tool} & \texttt{ok}, \texttt{err} & calls one tool from the sandbox surface with fixed
+	arguments \\
+	\texttt{gate} & \texttt{allow}, \texttt{deny} & consults the approval store; \texttt{deny} is a
+	outcome, not a failure \\
+	\texttt{select} & \texttt{ok}, \texttt{blocked}, \texttt{empty}, \texttt{running} & claims the
+	next queue row; \texttt{blocked}, \texttt{empty} and \texttt{running} are three different
+	reasons there is no row \\
+	\texttt{judge} & \texttt{ok}, \texttt{fail} (and \texttt{unrunnable}) & runs a spec's criteria;
+	\texttt{unrunnable} only in fail mode, for a command that could not run at all \\
+	\texttt{record} & \texttt{ok} & writes the arriving verdict to the queue store \\
+	\texttt{plan}, \texttt{enqueue} & \texttt{ok}, \texttt{err} & asks a planner for a spec, and admits
+	a written spec to the queue \\
+	\texttt{memory}, \texttt{remember}, \texttt{recall} & \texttt{ok}, \texttt{err} & the memory and
+	entity stores \\
+	\texttt{spawn} & \texttt{ok}, \texttt{err}, \texttt{escalate} & starts a child run;
+	\texttt{escalate} is the outcome that asks a human to look \\
+	\texttt{post}, \texttt{mqtt} & \texttt{ok}, and \texttt{mqtt} also \texttt{err} & outbound
+	channels; only the MQTT side declares a port for a failed send \\
+	\texttt{sop} & \texttt{ok}, or none & a compiled procedure step; the \texttt{fail} operation
+	declares no port \\
+	\texttt{classify}, \texttt{hal}, \texttt{wasm}, \texttt{debug\_crash} & \texttt{ok} &
+	single-outcome kinds \\
+	\texttt{heal\_detect} & \texttt{ok}, \texttt{detected}, \texttt{flake}, \texttt{inconclusive} &
+	the self-healing detector's four verdicts \\
+	\bottomrule
+\end{longtable}
+
+Two rows deserve emphasis because they are the ones graph authors get wrong. \texttt{select} has
+four ports, and the three non-\texttt{ok} ones mean different things: \texttt{empty} is \enquote{no
+row is pending}, \texttt{blocked} is \enquote{a row is waiting on another row}, and
+\texttt{running} is \enquote{a row's run is still alive}. Collapsing them into one failure port is
+the mistake that makes a queue look wedged when it is merely idle. And \texttt{refuse} has
+\emph{no} ports in its ordinary form --- not a port that never fires, but an empty set --- which is
+the fact at the centre of Chapter~\ref{ch:composition}.
+
+\section{One kind, two port sets}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 13mm]
+	\node[b] (pass) {judge\\\scriptsize \texttt{expect} absent};
+	\node[b, below=of pass] (fail) {judge\\\scriptsize \texttt{expect = "fail"}};
+	\node[b, right=of pass] (p1) {\texttt{ok}\\\scriptsize every criterion passed};
+	\node[b, right=of fail] (f1) {\texttt{ok}\\\scriptsize every criterion failed};
+	\node[b, right=of f1] (f2) {\texttt{unrunnable}\\\scriptsize a command could not run};
+
+	\draw[f] (pass) -- (p1);
+	\draw[f] (fail) -- (f1);
+	\draw[f] (f1) -- (f2);
+\end{tikzpicture}}
+\captionof{figure}{The same factory, two contracts; the \texttt{unrunnable} port exists only in fail
+mode, because in fail mode a command that never ran would otherwise be counted as a pass --- which
+is the exact defect the mode was added to prevent.}
+\end{center}
+
+The fail mode is worth stating precisely, because its whole value is that it cannot be satisfied by
+accident. A judge with \texttt{expect = "fail"} reports \texttt{ok} only when \emph{every} criterion
+fails, and \texttt{fail} when any criterion passes. A criterion that could not run at all --- a
+missing binary, exit 127 --- is neither, and is reported on \texttt{unrunnable}. The default stays
+\texttt{pass}, so every graph written before the mode existed is unaffected.
+
+The reason this matters is the one the TDD graph is named for. \enquote{The test fails before the
+code exists} is the only evidence that the test tests anything; without a fail-mode judge, a test
+written after the implementation and a test written before it are indistinguishable in the record.
+The graph that uses it is four nodes and a loop:
+
+\begin{lstlisting}
+[[node]]
+id   = "write_test"
+kind = "coder"
+
+[[node]]
+id     = "red"
+kind   = "judge"
+expect = "fail"
+
+[[node]]
+id   = "implement"
+kind = "coder"
+
+[[node]]
+id   = "green"
+kind   = "judge"
+\end{lstlisting}
+
+The edges are where the loop's meaning lives: \texttt{red.ok} leads to \texttt{implement},
+\texttt{red.fail} leads to \texttt{not-red} --- the test passed before the code existed, so the
+test proves nothing --- and \texttt{green.fail} leads to \texttt{still-red}. Both are named
+nodes rather than a generic failure, because an operator reading the trace needs to know which of
+the two happened.
+
+\section{The capability ladder}
+
+Capabilities descend. A node may hold only what its graph holds, and a graph may hold only what the
+host grants. Each of the three levels is checked by different code at a different moment, which is
+why a capabilities problem can produce three different messages.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 12mm]
+	\node[b] (cfg) {\texttt{pii.toml}\\\scriptsize \texttt{grant\_ceiling}};
+	\node[b, below=of cfg] (graph) {the graph\\\scriptsize \texttt{caps = [...]}};
+	\node[b, below=of graph] (node) {the node\\\scriptsize \texttt{caps = [...]}};
+	\node[b, right=of node, fill=red!6] (refused) {refused at load\\\scriptsize node and capability
+	named};
+	\node[p, right=of graph] (narrow) {may narrow};
+
+	\draw[f] (cfg) -- (graph);
+	\draw[f] (graph) -- (node);
+	\draw[bk] (node) -- (refused);
+	\draw[sf] (cfg.east) to[bend left=30] node[p,right=2pt,midway]{never widens} (node.east);
+\end{tikzpicture}}
+\captionof{figure}{Three rungs, one direction; the ceiling is an operator decision, the graph's list
+is a design decision, and the node's list is a claim about one piece of work; each may only be
+narrower than the one above it.}
+\end{center}
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.30\textwidth}p{0.26\textwidth}p{0.36\textwidth}@{}}
+	\toprule
+	\textbf{Check} & \textbf{Where} & \textbf{Message} \\
+	\midrule
+	graph and node against the ceiling & \texttt{toml\_load.rs} & \texttt{graph.grant.ceiling} names
+	the graph or node and the excess \\
+	node against the graph & \texttt{validate.rs}, rule \texttt{V2} & \enquote{node 'X' requires
+	capability 'Y' not granted by the graph} \\
+	callee against the call's grant & \texttt{fragment/call.rs} & \texttt{graph.call.widen} names the
+	node, the capability and the call \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The twelve capability bits are stable by contract: their values must not change, because they are
+compared bitwise across levels. Their names are what appears in a refusal, and a refusal that names
+one capability is worth more than a refusal that says \enquote{denied}.
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.16\textwidth}p{0.34\textwidth}p{0.16\textwidth}p{0.24\textwidth}@{}}
+	\toprule
+	\textbf{Name} & \textbf{Allows} & \textbf{Name} & \textbf{Allows} \\
+	\midrule
+	\texttt{fs\_read} & reading within the allow scope & \texttt{fs\_write} & writing within it \\
+	\texttt{net} & reaching the network & \texttt{proc} & talking to processes \\
+	\texttt{hw} & touching hardware & \texttt{secrets} & reading secret material \\
+	\texttt{memory\_read} & recalling from memory & \texttt{memory\_write} & writing to memory \\
+	\texttt{spawn} & starting subprocesses & \texttt{post} & posting into a channel \\
+	\texttt{mqtt\_read} & listing and subscribing devices & \texttt{mqtt\_write} & commanding a
+	device through its allowlist \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The practical consequence of the ladder is measured rather than theoretical. On 2026-11-03 a coder
+inside a graph with \texttt{caps = ["spawn", "proc"]} had no write tool at all: the agent started,
+found no way to write, stopped, and said so. That is the behaviour the ladder wants --- a refusal
+that names the missing capability beats a silent degradation in which the agent improvises with the
+tools it happens to have. The graph now grants \texttt{fs\_read} and \texttt{fs\_write} explicitly,
+and the comment beside the grant records the measurement.
+
+\section{Effects: what may run beside what}
+
+Every factory declares its effects, and the scheduler reads that declaration to decide whether two
+nodes in the same batch may run concurrently. The categories are coarse on purpose:
+
+\begin{itemize}
+	\item \textbf{pure} and \textbf{reads the filesystem} --- parallel-safe. These may run in a
+	chunk of up to \texttt{max\_parallel} threads.
+	\item \textbf{writes the filesystem} and \textbf{mutates an external system} --- sequential. They
+	run one at a time, after the parallel batch, in declaration order.
+\end{itemize}
+
+One exception is written into the validator rather than into the effect table. A \texttt{coder}
+spawns an agent for as long as it likes while its factory declares only \enquote{mutates an external
+system}; declaring \enquote{spawns a process} instead would make every coder node non-parallel-safe
+and change the scheduling of graphs that never had a problem. The validator therefore judges a coder
+by its \emph{kind}: anything that is a coder, or that declares \enquote{spawns a process}, must
+carry a positive \texttt{timeout\_ms}, and the message is \texttt{V10}. A node that blocks on a
+child process without a bound is the shape of a run that never ends.
+
+The other validator rules that concern a single node are worth having in one place:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.10\textwidth}p{0.82\textwidth}@{}}
+	\toprule
+	\textbf{Rule} & \textbf{What it refuses or warns} \\
+	\midrule
+	\texttt{V0} & duplicate node id, unknown kind, an edge naming a node that does not exist, an
+	entry that is not a node \\
+	\texttt{V1} & an edge leaving a port the node does not declare \\
+	\texttt{V2} & a node requiring a capability the graph does not hold \\
+	\texttt{V3} & a cycle with no \texttt{loop\_budget} among its members \\
+	\texttt{V5} & warning: a node unreachable from entry; warning: a declared port with no outgoing
+	edge \\
+	\texttt{V6} & an \texttt{all} join whose arms sit on mutually exclusive ports of one router \\
+	\texttt{V9} & an \texttt{any} or \texttt{quorum} join with fewer than two inbound data edges \\
+	\texttt{V10} & a process-spawning node without a positive \texttt{timeout\_ms} \\
+	\texttt{V11} & warning: a coder's \texttt{err} edge into a terminal \texttt{transform}, which
+	would finish the run as succeeded although the agent failed \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{V11} is the warning a graph author should read most carefully, because it describes a run
+that reports green while the work failed. The terminal-transform shape is tempting: route the error
+to a node that formats a message, and the graph \enquote{ends cleanly}. The validator cannot refuse
+it --- a transform is a legitimate last node --- so it warns, and the warning is the last cheap
+moment to notice.
+
+\section{Choosing a kind}
+
+The decision is usually made by asking what the step needs, in this order.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 14mm]
+	\node[b] (start) {a step};
+	\node[v, right=of start] (model) {needs a\\\scriptsize model?};
+	\node[v, below=of model] (proc) {needs a\\\scriptsize process?};
+	\node[b, right=of model] (agent) {\texttt{coder} or\\\scriptsize \texttt{agent}};
+	\node[b, right=of proc] (tool) {\texttt{tool}};
+	\node[v, below=of proc] (store) {writes a\\\scriptsize store?};
+	\node[b, right=of store] (mem) {\texttt{record},\\\scriptsize \texttt{memory}};
+	\node[b, below=of store] (pure) {\texttt{transform}\\\scriptsize or \texttt{route}};
+
+	\draw[f] (start) -- (model);
+	\draw[f] (model) -- node[p,above=2pt,midway]{yes} (agent);
+	\draw[f] (model) -- node[p,right=2pt,midway]{no} (proc);
+	\draw[f] (proc) -- node[p,above=2pt,midway]{yes} (tool);
+	\draw[f] (proc) -- node[p,right=2pt,midway]{no} (store);
+	\draw[f] (store) -- node[p,above=2pt,midway]{yes} (mem);
+	\draw[f] (store) -- node[p,right=2pt,midway]{no} (pure);
+\end{tikzpicture}}
+\captionof{figure}{The order the checklist uses; the last answer is the important one: a step that
+needs no model, no process and no store is a \texttt{transform}, and writing it as a coder is how a
+graph acquires a model dependency it never needed.}
+\end{center}
+
+The checklist that goes with the figure is the one in the graph library's own guide, restricted to
+the kind question: does an existing graph already do this (call it, do not copy it); does the step
+need a model (coder or agent); does it need a process (tool); does it write a store (record,
+memory); otherwise it is a transform. The last line is where most over-engineering is caught. A step
+that reshapes a value does not need an agent, and giving it one costs a model call, a timeout, a
+capability and a failure mode.
+
+\section{Three ways a step waits}
+
+A graph is mostly waiting, and the kind of wait decides what a run costs while it waits. The three
+mechanisms are distinct and are chosen by the kind, not by the author.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 13mm]
+	\node[b] (wait) {\texttt{wait}\\\scriptsize a thread sleeps};
+	\node[b, right=of wait] (timer) {\texttt{timer}\\\scriptsize the run suspends};
+	\node[b, right=of timer] (coder) {\texttt{coder}\\\scriptsize an agent runs};
+	\node[b, below=of wait] (w1) {five-millisecond\\\scriptsize slices, cancellation checked};
+	\node[b, below=of timer] (t1) {a resume key\\\scriptsize the wheel owns};
+	\node[b, below=of coder] (c1) {\texttt{timeout\_ms}\\\scriptsize and a kill path};
+
+	\draw[f] (wait) -- (timer);
+	\draw[f] (timer) -- (coder);
+	\draw[f] (wait) -- (w1);
+	\draw[f] (timer) -- (t1);
+	\draw[f] (coder) -- (c1);
+\end{tikzpicture}}
+\captionof{figure}{The cost of waiting, left to right; the first form holds a thread, the second
+holds nothing but a journal entry, and the third holds a process that must be bounded and, at boot,
+reaped.}
+\end{center}
+
+\begin{itemize}
+	\item \textbf{A blocking wait.} \texttt{wait} sleeps in slices of at most five milliseconds and
+	checks cancellation between them, so a cancel is observed promptly rather than after the full
+	duration. It occupies a dispatch thread for its whole duration, which is acceptable for seconds
+	and wrong for hours.
+	\item \textbf{A suspension.} \texttt{timer} never blocks. It returns a suspension with a reason
+	and a key of the form \texttt{timer:<node>:<fire>}, the run is journalled as \emph{Suspended}, and
+	the timer wheel owns the key. The run occupies nothing while it waits, which is what allows a
+	nightly graph to sit for hours without holding a thread.
+	\item \textbf{A child process.} A coder or agent starts something that runs for as long as it
+	likes, so it must be bounded twice: by \texttt{timeout\_ms} on the node (enforced by the
+	validator as \texttt{V10}) and by the run's wall clock. If the daemon dies first, boot recovery
+	reaps the agent by its container labels or by the pid it journalled, and records
+	\texttt{coder.orphan\_reaped} on the run.
+\end{itemize}
+
+The choice is not stylistic. A \texttt{timer} inside a fragment is refused outright: fragments may
+not own a scheduler, so a fragment that would wait is refused with
+\texttt{fragment.autonomy.forbidden} rather than silently suspending a host that did not ask for it.
+
+\section{A worked grant}
+
+The queue graph is the shortest honest example of the ladder in use, because every rung is visible
+in twenty lines. The graph holds four capabilities; the call to the spec graph grants the same four;
+the coder inside the callee asks for the same four. Nothing is wider than the rung above it, so the
+load succeeds --- and the comment says why the two filesystem bits are there at all.
+
+\begin{lstlisting}
+caps = ["spawn", "proc", "fs_read", "fs_write"]   # graph level
+
+[[node]]
+id    = "implement"
+kind  = "call"
+graph = "spec"
+caps  = ["spawn", "proc", "fs_read", "fs_write"]   # the call's grant
+\end{lstlisting}
+
+If the call had granted three of the four, the load would have failed with
+\texttt{graph.call.widen} naming the coder inside \texttt{spec} and the missing bit. That is the
+behaviour to want: the graph that is wrong is refused before it runs, and the message names both the
+node that needed the capability and the list it exceeded.
+
+\section{Reading a node's failure}
+
+A node failure is journalled as \texttt{NodeFailed} with the error text, whether it is retryable and
+the attempt number. Three things follow from that record and are worth knowing when reading a trace:
+
+\begin{itemize}
+	\item A retryable failure with attempts left does not fail the run; the node is attempted again
+	according to its \texttt{retry} policy.
+	\item A node that fails terminally marks its outbound data edges dead, which propagates: downstream
+	nodes that depended only on it become \texttt{NodeDead} rather than failing themselves. The trace
+	therefore shows one root failure and a set of deaths, which is the shape to look for.
+	\item A node that leaves on a non-\texttt{ok} port is not a failure at all unless the port says
+	so. \texttt{gate.deny}, \texttt{select.empty} and \texttt{judge.fail} are outcomes, and a run that
+	ends on one of them ends as a success carrying that value --- which is why the terminal rule
+	(Chapter~\ref{ch:engine}) refuses a success terminal that carries an error.
+\end{itemize}
+
+The distinction between \enquote{a port that means no} and \enquote{a node that broke} is the whole
+of graph authoring. The kinds in this chapter exist to make the first category expressible, so that
+the second one stays rare enough to be worth investigating.

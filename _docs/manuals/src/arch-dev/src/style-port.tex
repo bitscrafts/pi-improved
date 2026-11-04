@@ -1,0 +1,14 @@
+\documentclass[fontsize=10pt,twoside=false]{kaobook}
+\usepackage[english]{babel}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric, shapes.misc, fit, backgrounds, patterns, decorations.pathreplacing}
+\tikzset{port/.style={font=\scriptsize\itshape, inner sep=1pt, fill=white}}
+\begin{document}
+\mainmatter
+\chapter{probe}
+\begin{tikzpicture}
+\node[port] (a) {a};
+\node[port, right=of a] (b) {b};
+\draw[flow] (a) -- node[port,above]{x} (b);
+\end{tikzpicture}
+\end{document}

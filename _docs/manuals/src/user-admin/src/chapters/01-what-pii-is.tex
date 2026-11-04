@@ -1,0 +1,443 @@
+\chapter{What pii is}
+
+\label{ch:what}
+
+pii is a \emph{personal information index}: one Rust binary that keeps stores of runs,
+memory, entities and lessons on disk, executes \emph{graphs} --- small programs written as
+data --- on a daemon, and records every state change in a journal that can be replayed,
+counted and audited. This chapter answers three questions before the rest of the manual
+asks anything of you: what the program does, what it is made of, and which of its answers
+you are allowed to trust. Every number and path in this chapter was read from the
+repository at the revision the manual was built from, not from a design document; where a
+mechanism exists because something failed, the failure is named.
+
+It is not a chat application that happens to have a database. It is an execution engine
+whose every action leaves evidence, and the questions you will ask of it are of the form
+\enquote{what ran, what did it decide, and can I prove it}. The design follows from that:
+if a fact cannot be shown from the journal or from a store, pii treats it as unknown rather
+than as true. The three exit codes of \texttt{pii health} are the smallest example --- a
+daemon that answers from a different build than your client is reported as drift, not as
+health.
+
+\section{The three things it does}
+
+\begin{enumerate}
+	\item \textbf{Runs work.} A graph is a set of nodes --- ask a model, run a command,
+	judge a set of exit criteria, call another graph --- connected by named ports. pii
+	executes it, journals each transition, and returns a verdict rather than a transcript.
+	\item \textbf{Remembers what it learned.} Runs, node-call events, memory documents,
+	entities and lessons live in redb stores with counters, snapshots and, since the
+	retention row, an age-based policy that bounds them.
+	\item \textbf{Tells the truth about itself.} \texttt{pii health} answers from a record
+	kept current by the write path rather than by replaying history at read time, and the
+	answer names the build, the config file's hash, each store's path and format version,
+	and the mounts the sandbox actually granted.
+\end{enumerate}
+
+Those three are one mechanism seen from three sides. The journal is what makes a verdict
+provable; the stores are what make a second run cheaper than the first; the identity
+payload is what makes an upgrade, a rollback or a wrong state directory visible instead of
+merely suspected.
+
+\section{The shape of the system}
+
+The workspace is twenty-two \texttt{pii-*} crates plus \texttt{xtask}, the internal
+tool that runs the quality gate. Four binaries come out of it: \texttt{pii} (the daemon
+and the command line in one file), \texttt{pii-mcp} (a Model Context Protocol server),
+\texttt{pii-web} (a small HTTP surface) and \texttt{pii-evolve}. Only \texttt{pii} is
+required to operate the product; the installer places the other three beside it, and
+\texttt{pii-mcp} is staged as \texttt{pii-mcp.new} rather than swapped in, because its
+callers are other programs whose behaviour has to be measured before the swap.
+
+\begin{longtable}{@{}p{0.20\textwidth}p{0.30\textwidth}p{0.42\textwidth}@{}}
+	\toprule
+	\textbf{Binary} & \textbf{Crate} & \textbf{What it is for} \\
+	\midrule
+	\endhead
+	\texttt{pii} & \texttt{pii-cli} & The command line, and the daemon when invoked as
+	\texttt{pii daemon}. Embeds the engine in-process for a one-shot prompt. \\
+	\texttt{pii-mcp} & \texttt{pii-mcp} & A Model Context Protocol server over the same
+	engine, for tools that speak MCP. Installed as \texttt{.new}; the swap is an operator
+	step. \\
+	\texttt{pii-web} & \texttt{pii-web} & A separate HTTP binary, not linked into
+	\texttt{pii}. \\
+	\texttt{pii-evolve} & \texttt{pii-evolve} & A separate evolution binary, not linked
+	into \texttt{pii}. \\
+	\bottomrule
+\end{longtable}
+
+Inside \texttt{pii} the layering is strict, and it is the reason an operator can reason
+about failure at all. The control commands --- \texttt{run}, \texttt{queue},
+\texttt{health}, \texttt{memory}, \texttt{skill} --- never open a store: they dial
+\texttt{control.sock}. The daemon owns the stores, the run pool, the timer wheel and the
+channels. The engine executes one run at a time per worker and journals every node
+transition. \texttt{pii-store} is the only crate that knows redb exists, and the commands
+that do open a file (\texttt{store}, \texttt{backup}, \texttt{restore}, and the offline
+\texttt{graph run} and \texttt{graph trace} with \texttt{--db}) take redb's exclusive lock
+and refuse while a daemon holds it.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=9mm and 14mm]
+  \node[b] (cli) {\texttt{pii} command line\\\scriptsize one subcommand per invocation};
+  \node[b, right=of cli] (daemon) {daemon\\\scriptsize owns every store};
+  \node[b, right=of daemon] (engine) {engine\\\scriptsize one run per worker};
+  \node[s, below=of engine] (redb) {redb files\\\scriptsize seven stores, two in durable/};
+  \node[b, below=of daemon] (pool) {run pool\\\scriptsize bounded threads};
+  \node[b, below=of cli] (oneshot) {one-shot\\\scriptsize engine in-process};
+  \draw[f] (cli) -- node[p,above=2pt,midway]{control.sock} (daemon);
+  \draw[f] (daemon) -- (engine);
+  \draw[f] (engine) -- (redb);
+  \draw[sf] (daemon) -- (pool);
+  \draw[sf] (cli) to[bend right=14] node[p,left=2pt,midway]{no daemon?} (oneshot);
+  \draw[sf] (oneshot) -- (engine);
+\end{tikzpicture}}
+\captionof{figure}{Two ways in and one owner. The command line either reaches the daemon over
+its socket, or --- for a one-shot prompt only --- builds the engine in its own process. Notice
+that the store has exactly one writer, which is what makes an offline command refuse rather than
+contend.}
+\end{center}
+
+The distinction matters in practice. \texttt{pii store compact} and \texttt{pii backup}
+are two of the commands that do open the files, and both refuse while a daemon holds them
+instead of copying a store mid-write. Everything else --- \texttt{run}, \texttt{queue},
+\texttt{health}, \texttt{memory}, \texttt{skill} --- is a protocol call.
+
+\section{A graph is data}
+
+A graph file is TOML with five top-level facts: a \texttt{name} (the key \texttt{pii run
+start} resolves), an \texttt{entry} node, an optional \texttt{exit} node, a \texttt{caps}
+list, and an optional \texttt{[limits]} table. Nodes and edges follow. This is the
+beginning of the development queue's own graph, at the revision this manual describes:
+
+\begin{lstlisting}[language=bash]
+name = "queue"
+entry = "select"
+exit = "record"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[limits]
+max_wall_ms = 6000000
+
+[[node]]
+id = "select"
+kind = "select"
+
+[[node]]
+id = "implement"
+kind = "call"
+graph = "spec"
+sha256 = "771d098b39db7369dd71ed1fb23ffa63b90b25fed7788c830e4bfb214c424443"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[[edge]]
+from = "select"
+port = "ok"
+to = "implement"
+kind = "data"
+\end{lstlisting}
+
+Three things in those lines carry most of the design. The \texttt{sha256} on a
+\texttt{call} is a pin: the callee is spliced into the host at load time, so a change to
+the callee invalidates the pin until someone re-pins it deliberately. The \texttt{caps} on
+the call node are the host's promise that it holds what the callee needs. And the
+\texttt{port} on an edge is a name, not a boolean --- \texttt{select} leaves by
+\texttt{ok}, \texttt{empty} or \texttt{blocked}, and each can go somewhere different.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[b] (entry) {entry node\\\scriptsize \texttt{select}};
+  \node[v, right=of entry] (port) {port?};
+  \node[b, right=of port, yshift=10mm] (ok) {\texttt{implement}\\\scriptsize a call, pinned};
+  \node[b, right=of port, yshift=-10mm] (empty) {\texttt{record}\\\scriptsize nothing to do};
+  \node[b, below=of entry] (caps) {\texttt{caps}\\\scriptsize the ceiling for every node};
+  \node[b, right=of ok] (exit) {exit node\\\scriptsize \texttt{record}};
+  \draw[f] (entry) -- (port);
+  \draw[f] (port) -- node[p,above=2pt,midway]{ok} (ok);
+  \draw[f] (port) -- node[p,above=2pt,midway]{empty} (empty);
+  \draw[f] (ok) -- (exit);
+  \draw[bk] (caps) -- (entry);
+\end{tikzpicture}}
+\captionof{figure}{A graph from the operator's side: one entry, named ports, and an exit that
+makes the graph usable as a part of another graph. A graph without an exit is a run, not a
+component --- nothing can call it.}
+\end{center}
+
+The node set is small by design. Seven kinds live in \texttt{pii-graph} and need no
+services at all: \texttt{transform}, \texttt{route}, \texttt{emit}, \texttt{wait},
+\texttt{timer}, \texttt{refuse} and \texttt{require}. The daemon registers the rest,
+because they need a store, a socket or a process.
+
+\begin{longtable}{@{}p{0.17\textwidth}p{0.75\textwidth}@{}}
+	\toprule
+	\textbf{Kind} & \textbf{What it does, and what it costs} \\
+	\midrule
+	\endhead
+	\texttt{transform} & Rewrites the value on the port. No process, no model. \\
+	\texttt{route} & Chooses a port from the value it received. The cheapest decision in
+	the system. \\
+	\texttt{wait}, \texttt{timer} & Sleeps, or waits for a wall-clock moment. \texttt{timer}
+	is what makes a graph schedulable. \\
+	\texttt{refuse}, \texttt{require} & Ends the run with a named refusal, or refuses to
+	start unless a condition holds. A refusal is a verdict, not an exception. \\
+	\texttt{coder} & Spawns a coding agent (\texttt{pi} or \texttt{claude}) and takes the
+	agent's verdict from the run of its criteria, never from the agent's own report. \\
+	\texttt{judge} & Runs a spec's exit criteria through a shell and reports
+	\texttt{ok}, \texttt{fail} or \texttt{unrunnable}. \\
+	\texttt{select}, \texttt{record} & Claim one work item from the queue store; write a
+	verdict back to it. \\
+	\texttt{agent}, \texttt{tool}, \texttt{worker} & Call a model, a built-in tool, or a
+	supervised child process. All three need \texttt{spawn} or \texttt{proc}. \\
+	\texttt{gate} & Suspends the run for an approval, and resumes it on the decision. \\
+	\texttt{post}, \texttt{mqtt} & Send a message to a configured channel, or publish to a
+	broker. \\
+	\texttt{memory}, \texttt{remember}, \texttt{recall} & Consolidate the memory store;
+	write a fact from a run; read it back in a later run. \\
+	\texttt{heal\_detect}, \texttt{heal\_record} & Run a gate, record the failures it
+	found, and keep the record. \\
+	\texttt{spawn} & Starts a child run on the same engine. \\
+	\texttt{call} & Splices another graph in at load time. Not a runtime kind: it becomes
+	the callee's nodes before the run starts. \\
+	\bottomrule
+\end{longtable}
+
+A graph that lints can still be wrong. A graph that does not lint will not run:
+\texttt{pii graph lint} is the only check that refuses an edge to a port the node does not
+declare, a capability the graph does not hold, or a pin that no longer matches the
+callee's file.
+
+\section{The journal, and the verdicts}
+
+Every run writes an append-only journal, and the events are a fixed vocabulary of
+seventeen: \texttt{Started}, \texttt{TickStarted}, \texttt{NodeStarted},
+\texttt{NodeFinished} (with its port and the hash of the value), \texttt{NodeFailed},
+\texttt{NodeProgress}, \texttt{NodeCancelled}, \texttt{NodeDead}, \texttt{NodeInterrupted},
+\texttt{Suspended}, \texttt{Resumed}, \texttt{NodeObserved}, \texttt{Finished},
+\texttt{EffectStarted}, \texttt{EffectConfirmed}, \texttt{NodeRetried} and
+\texttt{RunSpawned}. That vocabulary is the reason a trace can be read rather than guessed
+at. Two of the seventeen exist only for effects: an effect node journals its idempotency
+key \emph{before} it acts, so a key with no confirmation means the effect may or may not
+have happened, and a replay says so instead of acting twice. A run's stored state is one
+of five:
+
+\begin{center}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.70\textwidth}@{}}
+	\toprule
+	\textbf{Status} & \textbf{Meaning} \\
+	\midrule
+	\texttt{Running} & Executing, or waiting to be resumed. \\
+	\texttt{Suspended} & Stopped at a resume key --- an approval, a timer --- and resumable. \\
+	\texttt{Succeeded} & Reached its terminal node and reported success. \\
+	\texttt{Failed} & Reached a terminal node and reported failure, or was cancelled. \\
+	\texttt{Refused} & An agent call was refused before any spawn. It would not start,
+	which is not the same as failing. \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=14mm and 18mm]
+  \node[b] (start) {run start\\\scriptsize an id, then a journal};
+  \node[v, right=of start] (live) {live?};
+  \node[b, right=of live, yshift=14mm] (susp) {Suspended\\\scriptsize resumable with a key};
+  \node[b, right=of live, yshift=-14mm] (term) {terminal\\\scriptsize Succeeded or Failed};
+  \node[b, below=of start] (refused) {Refused\\\scriptsize refused before spawn};
+  \draw[f] (start) -- (live);
+  \draw[f] (live) -- node[p,above=2pt,midway]{needs a key} (susp);
+  \draw[f] (live) -- node[p,below=2pt,midway]{ran} (term);
+  \draw[sf] (susp.north) to[bend left=40] node[p,above=2pt,midway]{resumed} (live.north);
+  \draw[bk] (live) -- node[p,left=2pt,midway]{cannot start} (refused);
+\end{tikzpicture}}
+\captionof{figure}{Five statuses, and the loop that matters: a suspended run is not a finished
+one. Retention keeps a Running or Suspended run however old it is, because the daemon may still
+resume it.}
+\end{center}
+
+A direct run reports one of three terminals, and \texttt{pii graph run} maps them to exit
+codes an operator can branch on: success is 0, a failure is 1, a suspended run is 4, and a
+graph the validator refuses is 3 --- before anything is executed and, deliberately, before
+any store file is created.
+
+\section{What it remembers, and where}
+
+Seven store files appear in \texttt{pii health}. Six of them are what a backup copies:
+the main store, memory, approvals, heal, channel and timer. The queue has its own file
+and is reported alongside them, but it is not in the backup set at this revision --- a
+detail that matters the first time you restore and find the work list empty.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=8mm and 12mm]
+  \node[s] (main) {store.redb\\\scriptsize runs, journal, sessions};
+  \node[s, right=of main] (mem) {memory.redb\\\scriptsize documents, entities};
+  \node[s, right=of mem] (aux) {approval, heal\\\scriptsize decisions and gates};
+  \node[s, below=of main] (q) {queue.redb\\\scriptsize work rows};
+  \node[s, right=of q] (dur) {durable/\\\scriptsize channel \textperiodcentered{} timer};
+  \node[b, below=of q, xshift=22mm] (dir) {state dir\\\scriptsize \texttt{PII\_STATE\_DIR} or
+\texttt{\$HOME/.local/state/pii}};
+  \draw[sf] (main) -- (dir);
+  \draw[sf] (mem) -- (dir);
+  \draw[sf] (aux) -- (dir);
+  \draw[sf] (q) -- (dir);
+  \draw[sf] (dur) -- (dir);
+\end{tikzpicture}}
+\captionof{figure}{Every store except the socket lives under one state directory. The durable
+pair sits in \texttt{durable/} because the runtime directory is a tmpfs on a normal host, and a
+channel cursor or a timer that vanishes at reboot is worse than no timer at all.}
+\end{center}
+
+The main store is a redb file, which never shrinks on its own: space is returned only at
+the end of the file, and only by compaction. That is the reason a retention policy exists
+at all, and the reason \texttt{pii store compact} is documented as narrow --- it reclaims
+free pages inside the file, not live history.
+
+\section{Capabilities are a ceiling}
+
+Twelve capability bits exist, and every one of them is checked twice: the graph declares
+what it may hold, and each node may hold only what its graph holds. A node that asks for
+more is refused at load, not degraded at runtime.
+
+\begin{center}
+\resizebox{\linewidth}{!}{
+\begin{tikzpicture}[node distance=10mm and 12mm]
+  \node[b] (ceiling) {operator ceiling\\\scriptsize \texttt{grant\_ceiling}};
+  \node[b, right=of ceiling] (graph) {graph \texttt{caps}\\\scriptsize in the file};
+  \node[b, right=of graph] (node) {node \texttt{caps}\\\scriptsize the intersection};
+  \node[v, right=of node] (allow) {permitted?};
+  \node[b, below left=of allow] (yes) {the node runs};
+  \node[b, below right=of allow] (no) {refused at load\\\scriptsize named capability};
+  \draw[f] (ceiling) -- (graph);
+  \draw[f] (graph) -- (node);
+  \draw[f] (node) -- (allow);
+  \draw[f] (allow) -- node[p,left=2pt,midway]{yes} (yes);
+  \draw[bk] (allow) -- node[p,right=2pt,midway]{no} (no);
+\end{tikzpicture}}
+\captionof{figure}{The ladder narrows downwards and never widens. A \texttt{call} can grant only
+what its host grants, which is why \texttt{night} holds what \texttt{queue} needs before it may
+call it.}
+\end{center}
+
+\begin{longtable}{@{}p{0.20\textwidth}p{0.72\textwidth}@{}}
+	\toprule
+	\textbf{Capability} & \textbf{What holding it allows} \\
+	\midrule
+	\endhead
+	\texttt{fs\_read} & Read files inside an allow path scope. \\
+	\texttt{fs\_write} & Write files inside an allow path scope. \\
+	\texttt{proc} & Run commands --- this is what lets a judge execute exit criteria. \\
+	\texttt{spawn} & Start an agent or a child process. Every model call needs it. \\
+	\texttt{net} & Reach the network, subject to the config's host grants. \\
+	\texttt{hw} & Touch hardware through the HAL. \\
+	\texttt{secrets} & Read secret material. \\
+	\texttt{memory\_read}, \texttt{memory\_write} & Read from, or write into, the agent's
+	memory. \\
+	\texttt{post} & Send a message into a configured channel. \\
+	\texttt{mqtt\_read}, \texttt{mqtt\_write} & List and subscribe to a broker's devices;
+	command one through its allowlist. \\
+	\bottomrule
+\end{longtable}
+
+The measured consequence is worth stating plainly: a coder inside a graph whose
+\texttt{caps} omitted \texttt{fs\_write} did not silently write nothing. It stopped and
+reported \enquote{no write or execute tool is available}. That sentence is the feature
+working; a degraded coder that pretends to work is the failure it replaced.
+
+\section{How a run is named, and what a trace looks like}
+
+Run identifiers are allocated by the store, not by the caller, so two processes cannot
+collide: the daemon's own logs and the graph files quote them in the form
+\texttt{r000000000130}. A caller may pass \texttt{--run-id} on the offline path, which is
+how the test suites keep a fixture's journal findable.
+
+\texttt{pii health} is the widest single view of what a process is. Its text form is
+short enough to quote in a bug report, and every line is a fact a command can be held to:
+
+\begin{lstlisting}[language=bash]
+pii <version> (<revision>, <target>)
+client: <revision>
+config: <path> sha256=<hash>
+stores:
+  main: <path> (<bytes> bytes, format_version=<n>)
+  memory: <path> (<bytes> bytes, format_version=<n>)
+mounts:
+  workspace [rw]: <root>  (<policy>)
+since_deploy:
+  starts: <n>
+counts:
+  runs: <n>
+\end{lstlisting}
+
+The field names, their order and their punctuation are exact; the values are whatever your
+daemon reports. Read it as four claims, in order. The first line is \emph{what the daemon
+is}: version, revision and target. The second is \emph{what your client is}: if the two
+revisions differ, \texttt{pii health} exits 3 and prints a line beginning \texttt{DRIFT},
+and that is the correct reading immediately after installing a new binary and before
+restarting the service. The \texttt{config} line is the hash of the file the daemon actually
+loaded --- not the path you think it loaded. The \texttt{stores} block is the one that
+catches the most common installation mistake: a daemon whose store list is empty is a
+daemon pointed at an empty directory, and it will happily report itself active.
+
+\section{What pii refuses to claim}
+
+Three refusals are part of the design, and an administrator meets all three.
+
+\begin{itemize}
+	\item A store whose format version is newer than the binary supports is not read
+	half-way. The daemon exits 2 and writes nothing to the file, with the version and the
+	path in the message.
+	\item A health answer whose build revision is unknown on either side is reported as
+	unverified, with a non-zero exit code, rather than as agreement. Unknown is never
+	agreement.
+	\item A retention sweep will not remove a row it cannot date. A run created before the
+	clock was recorded, or a fixture with no timestamp, is kept and counted, because
+	deleting on a missing timestamp destroys exactly the runs an operator is looking for.
+\end{itemize}
+
+\section{What it deliberately is not}
+
+Four absences are decisions rather than gaps, and each one shapes how you operate the
+thing.
+
+\begin{itemize}
+	\item \textbf{Not a cluster.} The stores are redb files with an exclusive lock, and the
+	daemon claims the durable pair before it binds its socket. A second daemon pointed at
+	the same state directory is refused, by name, at start. Scaling out means changing the
+	store, not adding a replica.
+	\item \textbf{Not an online compactor.} \texttt{pii store compact} runs redb's in-place
+	compaction, and it needs the daemon stopped, because it takes the same exclusive lock
+	the daemon holds for its lifetime. There is no background compaction to tune or to
+	fear.
+	\item \textbf{Not a cron daemon.} A \texttt{[[cron]]} entry carries a
+	\texttt{schedule} string, but that string is a display mirror: what fires a graph is a
+	\texttt{timer} node at its entry. A graph whose entry is not a timer will not be
+	started by the schedule, and the config will look correct while nothing runs.
+	\item \textbf{Not a TLS client for MQTT.} The broker client speaks plain TCP. A remote
+	broker with credentials needs an explicit acknowledgement in the config, and the
+	honest answer for a non-loopback broker is a tunnel.
+\end{itemize}
+
+Knowing these four saves the two most expensive mistakes in operation: pointing a second
+process at a live state directory, and believing a schedule that only mirrors itself.
+
+\section{How to read this manual}
+
+Chapter~\ref{ch:install} gets a host running: the two directories, the installer, the
+unit, the credentials, and the three commands that prove the result. Chapter~\ref{ch:daily}
+is what a normal day looks like --- health, one-shot prompts, graphs by name and by file,
+the queue, and how to read a trace. Chapter~\ref{ch:operate} is the part nobody reads
+until something breaks: backup and restore, retention, upgrades, logs, disk ownership, the
+deploy card and the failure modes that have actually happened.
+
+Chapters~\ref{ch:commands} and~\ref{ch:config} are reference material and are meant to be
+searched, not read. Chapter~\ref{ch:observability} is the metrics and event surface, and
+Chapter~\ref{ch:graphs} is the graph library: which graphs an operator runs and what each
+will do to the machine.
+
+Two conventions run through the book. A path in \texttt{typewriter} is literal and was
+copied from the repository or from a command's own output. A number in the text is a
+measurement recorded in the repository, with the row or document that recorded it named
+where the number is load-bearing. Where this manual and a design document disagree, the
+manual is describing the code at the built revision, and the disagreement is itself worth
+reporting.

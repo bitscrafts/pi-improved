@@ -1,0 +1,450 @@
+\chapter{The workspace}
+
+\label{ch:workspace}
+
+This chapter answers where a behaviour lives. pii is a Cargo workspace of twenty-three members ---
+twenty-two crates and \texttt{xtask} --- and the split is by \emph{responsibility that changes for
+its own reasons}, not by layer. The practical consequence for a reader is that a symptom names its
+own crate: a refusal raised while a graph is being read comes from \texttt{pii-graph}; a run that
+never finishes comes from \texttt{pii-server}'s engine; a duplicated implementation is found by
+\texttt{xtask}, not by a reviewer. The chapter ends with a table that maps a symptom to the file a
+reader should open first, because that is the question a new contributor actually asks.
+
+Two rules keep the workspace from decaying, and both are enforced mechanically rather than by
+convention: a file has a budget of 450 effective lines, and a copy of an idea is treated as a
+defect even when both copies are correct today. The second rule is the unusual one, and it is why
+several crates contain a file whose only job is to be the single home of a concept.
+
+\section{Membership}
+
+\begin{longtable}{@{}p{0.17\textwidth}p{0.44\textwidth}p{0.31\textwidth}@{}}
+	\toprule
+	\textbf{Crate} & \textbf{What it owns} & \textbf{A file you will open} \\
+	\midrule
+	\endhead
+	\texttt{pii-abi} & The vocabulary: ids, ports, run status, journal events, capability bits, the
+	wire types shared by everything. It depends on no other pii crate. & \texttt{src/journal.rs},
+	\texttt{src/cap.rs} \\
+	\texttt{pii-core} & The few root concepts a node needs to run: the context, the capability set,
+	the filesystem scope, the budget, the clock, the state directory resolver. & \texttt{src/ctx.rs},
+	\texttt{src/cap.rs} \\
+	\texttt{pii-observe} & The closed event vocabulary and the sinks that receive it. Names live in
+	one module so a metric cannot be spelled two ways. & \texttt{src/names.rs} \\
+	\texttt{pii-store} & Every redb table and its write paths: runs, queue, approvals, heals, memory,
+	skills. Deliberately knows nothing about graphs. & \texttt{src/queue.rs} \\
+	\texttt{pii-graph} & The graph spec, the loader, static validation, the splice, the scheduler,
+	the journal writer, the tick engine. & \texttt{src/fragment/splice.rs}, \texttt{src/sched/} \\
+	\texttt{pii-server} & The engine bridge, the daemon, the node kinds, the transports, the JSON-RPC
+	dispatch table. & \texttt{src/engine/runs.rs} \\
+	\texttt{pii-proto} & The client/server protocol and its method names. & \texttt{src/run.rs} \\
+	\texttt{pii-uds} & The unix socket the CLI and the daemon speak over. & --- \\
+	\texttt{pii-cli} & The \texttt{pii} binary: argument parsing and one module per command group.
+	& \texttt{src/cmd\_run.rs} \\
+	\texttt{pii-worker} & The agent worker: argv construction, approval modes, in-flight limits.
+	& --- \\
+	\texttt{pii-model} & Model providers and the model id vocabulary. & --- \\
+	\texttt{pii-net} & The network surface: egress grants, dial and accept. & --- \\
+	\texttt{pii-memory} & Entities, tiers, the hub the memory nodes read. & --- \\
+	\texttt{pii-learn} & Lessons, candidates, promotions, incidents. & --- \\
+	\texttt{pii-tools} & The tool surface an agent may call, and its sandbox. & --- \\
+	\texttt{pii-channels} & Outbound channels: Discord, MQTT. & --- \\
+	\texttt{pii-tui}, \texttt{pii-web}, \texttt{pii-mcp} & Three operator surfaces over the same
+	protocol. & --- \\
+	\texttt{pii-wasm}, \texttt{pii-hal}, \texttt{pii-evolve} & Optional capability surfaces, each
+	behind its own feature. & --- \\
+	\bottomrule
+\end{longtable}
+
+The table is worth reading twice, because the absences are as deliberate as the presences.
+\texttt{pii-store} has no graph types in it: a table stores an event, not a \texttt{RunState}. That
+is what allows the store to be opened by a lint registry, a test fixture or a repair tool without
+dragging the scheduler's semantics along. Conversely \texttt{pii-graph} does not contain a node
+kind: the built-in seven (\texttt{transform}, \texttt{route}, \texttt{emit}, \texttt{wait},
+\texttt{timer}, \texttt{refuse}, \texttt{require}) live beside the registry, and everything that
+touches a model, a container, a store or a channel is registered by \texttt{pii-server}. A crate
+that could run a graph on its own would need none of those, which is what makes the graph crate
+testable with a stub registry.
+
+\section{The dependencies that are allowed}
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (abi) {\texttt{pii-abi}\\\scriptsize vocabulary};
+	\node[b, right=of abi] (core) {\texttt{pii-core}\\\scriptsize ctx, caps, budget};
+	\node[b, right=of core] (graph) {\texttt{pii-graph}\\\scriptsize spec, splice, sched};
+	\node[b, right=of graph] (server) {\texttt{pii-server}\\\scriptsize engine, kinds, daemon};
+	\node[b, right=of server] (cli) {\texttt{pii-cli}\\\scriptsize the binary};
+	\node[s, below=of graph] (store) {\texttt{pii-store}\\\scriptsize redb tables};
+	\node[b, below=of core] (obs) {\texttt{pii-observe}\\\scriptsize events};
+	\node[m, below=of server] (model) {\texttt{pii-model}\\\scriptsize providers};
+
+	\draw[f] (abi) -- (core);
+	\draw[f] (core) -- (graph);
+	\draw[f] (graph) -- (server);
+	\draw[f] (server) -- (cli);
+	\draw[f] (graph) -- (store);
+	\draw[f] (abi) -- (obs);
+	\draw[f] (core) -- (obs);
+	\draw[f] (server) -- (model);
+	\draw[sf] (store) to[bend right=16] node[p,below=2pt,midway]{never} (graph);
+	\draw[sf] (cli) to[bend left=12] node[p,above=2pt,midway]{in process} (server);
+\end{tikzpicture}}
+\captionof{figure}{The dependency direction, left to right; the dashed edge marked \enquote{never}
+is the rule that keeps the store reusable: no table may name a graph type; the CLI's edge is worth
+noticing because it is why an operator running \texttt{pii run start} needs no daemon.}
+\end{center}
+
+Read from each crate's own manifest, the edges are these:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.16\textwidth}p{0.76\textwidth}@{}}
+	\toprule
+	\textbf{Crate} & \textbf{Depends on (pii crates only)} \\
+	\midrule
+	\texttt{pii-abi} & none \\
+	\texttt{pii-observe} & none \\
+	\texttt{pii-core} & abi, observe \\
+	\texttt{pii-store} & abi, observe \\
+	\texttt{pii-proto} & observe \\
+	\texttt{pii-graph} & abi, core, observe, store \\
+	\texttt{pii-model} & abi, core, observe, net \\
+	\texttt{pii-tools} & abi, channels, core, model, observe, proto, uds \\
+	\texttt{pii-server} & abi, core, store, observe, graph, proto, model, memory, hal, wasm,
+	learn, tools, net, worker, channels \\
+	\texttt{pii-cli} & abi, core, store, graph, observe, learn, memory, proto, server, uds,
+	worker, tools, tui \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+Two of these edges are worth a sentence each. \texttt{pii-graph} depends on \texttt{pii-store},
+which looks like an inversion until you see what it uses it for: the journal writer takes a
+\texttt{Store} and appends events in one transaction, so the crate that decides \emph{what} to
+record is also the crate that records it, and the ordering between a run's header and its events is
+decided in one place. The reverse edge is what must never exist, and does not: \texttt{pii-store}'s
+manifest lists two pii crates, neither of them the graph.
+
+The second edge is \texttt{pii-cli} to \texttt{pii-server}. The binary embeds the daemon in-process
+for the commands that need one, which is why \texttt{pii run start} works in a fresh shell with no
+socket in sight, and why an operator debugging a stuck run can attach to the same process that
+accepted it. The cost is that the CLI links the largest crate in the workspace; the benefit is that
+there is one code path for \enquote{start a run}, not a client path and a server path that can
+drift.
+
+\section{One behaviour, followed across the crates}
+
+Abstractions about layering are easier to trust with a concrete trace. Take the refusal this manual
+returns to repeatedly: a host graph calls a callee whose capability list is wider than the call
+grants. The operator sees one line. The line is produced four crates away from where the decision
+was taken.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (file) {\texttt{graphs/queue.toml}\\\scriptsize \texttt{caps = [spawn, proc, ...]}};
+	\node[b, right=of file] (load) {\texttt{pii-graph}\\\scriptsize \texttt{expand\_one}};
+	\node[v, right=of load] (widen) {excess?};
+	\node[b, right=of widen] (err) {\texttt{PiiError::Invalid}\\\scriptsize \texttt{graph.call.widen}};
+	\node[b, below=of err] (cli) {\texttt{pii-cli}\\\scriptsize prints the message};
+	\node[b, below=of load] (server) {\texttt{pii-server}\\\scriptsize \texttt{spawn\_run}};
+	\node[s, below=of file] (journal) {journal\\\scriptsize nothing written};
+
+	\draw[f] (file) -- (load);
+	\draw[f] (load) -- (widen);
+	\draw[f] (widen) -- node[p,above=2pt,midway]{yes} (err);
+	\draw[f] (err) -- (cli);
+	\draw[sf] (load) -- (server);
+	\draw[f] (widen.south) to[bend left=12] node[p,below=2pt,midway]{no} (server);
+	\draw[f] (server) -- (journal);
+\end{tikzpicture}}
+\captionof{figure}{A load-time refusal; the graph is refused before a run exists, so the store stays
+untouched and the message an operator reads is the loader's own text --- not a status derived from
+a run that failed later.}
+\end{center}
+
+The trace in words. \texttt{pii-server}'s \texttt{spawn\_run} is given a \texttt{GraphSpec}, which
+means the text has already been read and expanded by \texttt{pii-graph}. Expansion happens in
+\texttt{fragment/call.rs}: for each \texttt{call} node it reads the callee, checks the pin against
+the bytes, checks the callee's node capabilities against the caps the call grants, and refuses on
+the first excess. The error is a \texttt{PiiError::Invalid} whose message begins
+\texttt{graph.call.widen} and names the node and the capability. \texttt{pii-server} does not
+inspect it; \texttt{pii-cli} prints it. And because the refusal happened during load, no run header
+was written: the operator sees a failed start, not a failed run, and there is no half-run to clean
+up.
+
+The direction of that flow is the point of the crate split. A decision taken in the loader is not
+re-litigated by the engine, and the engine has no code path that could accept a graph the loader
+rejected. Every caller that runs or checks a graph goes through the same entry
+(\texttt{load\_host\_with\_graphs}), so \enquote{check passed} and \enquote{run started} cannot
+disagree.
+
+\section{Inside \texttt{pii-server}}
+
+The largest crate is organised by concern, and three directories carry almost all of the behaviour
+this book describes.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[g, align=center, minimum width=3.7cm, minimum height=1.7cm] (eng)
+		{\texttt{engine/}\\[2pt]\scriptsize runs $\cdot$ dispatch $\cdot$ orphans\\\scriptsize
+		registry $\cdot$ run\_scope};
+	\node[g, align=center, minimum width=3.4cm, minimum height=1.7cm, right=12mm of eng] (kinds)
+		{\texttt{node\_kinds/}\\[2pt]\scriptsize agent $\cdot$ nodes\\\scriptsize
+		compaction};
+	\node[g, align=center, minimum width=3.2cm, minimum height=1.7cm, right=12mm of kinds] (daemon)
+		{\texttt{daemon/}\\[2pt]\scriptsize config $\cdot$ scheduler\\\scriptsize lag};
+	\node[b, below=of eng] (graph) {\texttt{pii-graph}\\\scriptsize the spec it runs};
+	\node[b, below=of kinds] (store) {\texttt{pii-store}\\\scriptsize the journal it writes};
+	\node[b, below=of daemon] (socket) {the socket\\\scriptsize the RPC table};
+
+	\draw[f] (graph) -- (eng);
+	\draw[f] (eng) -- (store);
+	\draw[f] (eng) -- (kinds);
+	\draw[f] (kinds) -- (daemon);
+	\draw[f] (socket) -- (daemon);
+\end{tikzpicture}}
+\captionof{figure}{The three directories inside \texttt{pii-server} this manual spends its time in: \texttt{engine/}
+bridges a graph and the outside world, \texttt{node\_kinds/} is the vocabulary, and \texttt{daemon/}
+owns the process.}
+\end{center}
+
+\texttt{engine/} is the bridge. \texttt{runs.rs} accepts a graph and returns immediately after the
+header and the \texttt{Started} event are durable; \texttt{dispatch.rs} is the JSON-RPC table the
+socket reads; \texttt{orphans.rs} is boot recovery for agents a dead daemon left running;
+\texttt{run\_scope.rs} builds the capability set and the filesystem scope for a run;
+\texttt{registry.rs} assembles the node registry, including a lint-only variant whose stores are in
+memory; and \texttt{refusal.rs} records a quarantine refusal as a decision rather than as a log
+line.
+
+\texttt{node\_kinds/} is deliberately not a flat directory of thirty files. \texttt{agent/} holds
+the turn loop and its tools; \texttt{nodes/} holds the kinds that touch the world, and
+\texttt{nodes/coder/} holds the parts of the coder that were extracted when the file crossed the
+line budget. \texttt{compaction.rs} is not a node kind at all --- it is agent support used by the
+turn loop --- and lives here because that is the only caller.
+
+The daemon owns the process rather than the work: \texttt{config.rs} parses one TOML file with
+\texttt{deny\_unknown\_fields} on every section, \texttt{lag.rs} recovers runs a lagging bus left
+behind, and the scheduler owns the timer wheel. A run outliving a restart is not the daemon's
+problem; it is the journal's, which is why recovery lives in \texttt{engine/orphans.rs} and in
+\texttt{pii-graph}'s replay rather than in the daemon's start-up code.
+
+\section{Inside \texttt{pii-graph}}
+
+The graph crate is where a file becomes a runnable object, and its module names are the chapter
+titles of the next three chapters.
+
+\begin{itemize}
+	\item \texttt{spec.rs} --- the types: \texttt{GraphSpec}, \texttt{NodeSpec}, \texttt{Edge},
+	\texttt{EdgeKind}, \texttt{JoinPolicy}, \texttt{GraphLimits}.
+	\item \texttt{toml\_load.rs} --- text to types, with the grant ceiling applied as the graph is
+	built.
+	\item \texttt{validate.rs} --- the static rules, \texttt{V0} to \texttt{V11}, each with its own
+	message.
+	\item \texttt{fragment/} --- inclusion: \texttt{call.rs} expands \texttt{call} nodes,
+	\texttt{splice.rs} weaves \texttt{[[attach]]} fragments, \texttt{call\_output.rs} rewrites host
+	values and wires refusals back.
+	\item \texttt{sched/} --- readiness, edge states, dead propagation, dispatch of one node.
+	\item \texttt{run/} --- the tick loop, resume by replay, retry of a single node.
+	\item \texttt{journal.rs} --- the write-behind journal writer and its sequence numbers.
+\end{itemize}
+
+The order of that list is the order of a load, and it is worth keeping in mind when a message seems
+to come from the wrong place. A port error is raised by \texttt{validate.rs} after the splice, not
+by the loader, which is why \texttt{V1} names the node and not the file.
+
+\section{The two budgets}
+
+The first budget is arithmetic. \texttt{xtask/src/lint\_files.rs} defines
+\texttt{MAX\_EFFECTIVE\_LINES = 450}, where \enquote{effective} excludes blank and comment lines,
+and the gate runs it over the workspace. Exceeding it fails the gate; the accepted fix is an
+extraction, not a waiver, and there is no per-crate override. Three extractions are visible in the
+tree as files that exist for no other reason:
+
+\begin{itemize}
+	\item \texttt{daemon/sys\_status.rs} and \texttt{store/sys\_status.rs} --- the same record from
+	two sides: the daemon's view of system status and the store's persisted form, split when the
+	health work of row 370 pushed a file over the line.
+	\item \texttt{daemon/model\_roles.rs} --- the role-to-model mapping, extracted from the config
+	parser.
+	\item \texttt{nodes/coder/} --- the coder's runtime selection, output handling, skills and
+	container path, each in its own file.
+\end{itemize}
+
+The second budget is conceptual and harder to enforce: one idea gets one implementation. A copy is
+a defect even when both copies are correct today, because the only question that matters is what
+happens the first time one of them is fixed. Two rows in this repository exist because the rule was
+broken and then noticed:
+
+\begin{itemize}
+	\item Row 359, \enquote{delete the copies}: implementations that had been duplicated across
+	crates were removed rather than kept in sync by hand.
+	\item Row 371, \enquote{the idle daemon leaves no files}: the lint registry used to open scratch
+	databases at literal paths, which failed outside one specific checkout and silently dropped node
+	kinds from the registry --- so lint reported \enquote{unknown kind} for graphs that were fine.
+	The fix moved the scratch stores into memory, which removed both the file and the failure mode.
+\end{itemize}
+
+That second one is a good example of the workspace's recurring shape: the bug was not in the rule,
+it was in the copy of the environment the rule assumed. A lint that needs a writable directory is a
+lint that behaves differently on a host where the directory is not writable, and the difference
+shows up as a false refusal rather than as an error about the directory.
+
+\section{The gate}
+
+There is one step list, \texttt{gate-steps.txt}, and both the local gate and the CI-shaped gate
+read it. Each line is a label and a shell command; a step passes only if the command exits zero,
+and every step runs even after an earlier failure, so one run reports every problem rather than the
+first. The list currently has twenty steps, among them:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.22\textwidth}p{0.66\textwidth}@{}}
+	\toprule
+	\textbf{Step} & \textbf{What it refuses} \\
+	\midrule
+	\texttt{fmt} & any file not formatted by rustfmt \\
+	\texttt{clippy} & any warning, with \texttt{-D warnings} \\
+	\texttt{build} & a binary that does not link; later tests spawn the real \texttt{pii} \\
+	\texttt{test (lib/bins/tests)}, \texttt{test (doc)} & a unit, integration or doctest failure \\
+	\texttt{lint-files} & a file over 450 effective lines \\
+	\texttt{lint-scratch} & scratch state written outside \texttt{\_tmp} \\
+	\texttt{lint-observability} & an event name or metric outside the closed vocabulary \\
+	\texttt{reachability-check} & a public item nothing reaches \\
+	\texttt{deps-check} & a dependency outside the allowlist, or a forbidden edge \\
+	\texttt{net-check} & a network call outside the declared surface \\
+	\texttt{autonomy}, \texttt{plan-verify}, \texttt{item-ids} & prose drift in specs, plans and
+	row ids \\
+	\bottomrule
+\end{tabular}
+\end{center}
+
+The gate has two modes that read the same list. The routine mode runs in the working tree, with a
+warm cache, and is what a developer runs while working. The fresh mode exports \texttt{HEAD} with
+\texttt{git archive} into a throwaway directory and runs the same steps there:
+
+\begin{lstlisting}[language=bash]
+cargo run -q -p xtask -- fresh-gate            # export HEAD, run gate-steps.txt in a clean tree
+cargo run -q -p xtask -- fresh-gate --worktree # same, from the worktree instead of HEAD
+bash quality-gate.sh                           # routine mode, warm cache, current tree
+bash quality-gate.sh --summary                 # one line per step
+\end{lstlisting}
+
+The instruction that goes with it is blunt and was learned the hard way: when the two modes
+disagree, believe the fresh one. A gate can be green in a tree that has an untracked file, a stale
+target directory or a modified manifest, and red in a clean clone of the same commit. The fresh
+mode is the release boundary; the routine mode is a convenience.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (tree) {the working tree\\\scriptsize untracked files, warm target};
+	\node[b, below=of tree] (head) {HEAD\\\scriptsize \texttt{git archive}};
+	\node[b, right=of tree] (routine) {routine gate\\\scriptsize fast, same steps};
+	\node[b, right=of head] (fresh) {fresh gate\\\scriptsize same steps, clean tree};
+	\node[v, right=of routine] (agree) {agree?};
+	\node[b, right=of fresh] (believe) {believe this one};
+
+	\draw[f] (tree) -- (routine);
+	\draw[f] (head) -- (fresh);
+	\draw[f] (routine) -- (agree);
+	\draw[sf] (fresh.north) to[bend left=10] node[p,above=2pt,midway]{compare} (agree.south);
+	\draw[f] (agree) -- node[p,above=2pt,midway]{no} (believe);
+\end{tikzpicture}}
+\captionof{figure}{The two modes of one gate, which read the same step list on purpose, because a step added to one and
+not the other would report a different truth depending on how it was invoked.}
+
+\end{center}
+
+\section{Four binaries}
+
+The workspace produces four executables, and the split is by audience rather than by function.
+
+\begin{itemize}
+	\item \texttt{pii} (\texttt{pii-cli}) --- the operator's entry point, and the only one most
+	users run. It embeds the daemon for commands that need one, and speaks to a running daemon over
+	the unix socket for the rest.
+	\item \texttt{pii-mcp} --- the MCP server, so an editor or another agent can call the same
+	tools the turn loop calls.
+	\item \texttt{pii-web} --- a small HTTP surface over the protocol, for reading runs and graphs
+	from a browser.
+	\item \texttt{pii-evolve} --- the driver for the evolution loop, which proposes changes from
+	recorded trajectories.
+\end{itemize}
+
+Everything else is a library. The optional surfaces --- the TUI, the web viewer, the MCP server,
+the WASM plugin host, the hardware abstraction --- sit behind their own features so that a build for
+a host without GPIO does not compile GPIO code. That is also why the gate lints the real GPIO
+backend without ever running it: code that is compiled but never exercised rots silently, and a
+lint is the cheapest thing that can still be true about it.
+
+\section{The coupling that is documented rather than removed}
+
+One edge inside \texttt{pii-server} is worth naming because it explains a design decision that
+looks unfinished. The JSON-RPC dispatch table in \texttt{engine/dispatch.rs} calls into
+\texttt{engine/methods.rs} for roughly ten methods --- worker list and reload, approval list and
+resolve, heal list and get, cron list, channel list, memory search/put/consolidate, system reload,
+run resume. That is a real dependency from the engine-bridge concern into the daemon-application
+concern, and it is the reason a full split into \texttt{pii-engine}, \texttt{pii-nodes} and
+\texttt{pii-daemon} has not been done.
+
+The alternative was a crate dependency edge that says the bridge depends on the application, which
+is exactly the kind of edge the workspace spends its \texttt{deps-check} step preventing. The
+decision recorded in the module header is to keep the coupling visible in one file, document it
+there, and defer the split to a reviewed change rather than pretend the boundary is clean. That is
+the general pattern in this workspace: where a rule cannot be satisfied yet, the violation is
+written down where the next reader will trip over it, not smoothed over in a comment elsewhere.
+
+\section{Finding a behaviour from a symptom}
+
+The question a new contributor actually asks is not \enquote{which crate owns X} but \enquote{I
+saw Y, where do I look}. The table is the answer, and every path in it is a real file.
+
+\begin{longtable}{@{}p{0.36\textwidth}p{0.56\textwidth}@{}}
+	\toprule
+	\textbf{Symptom} & \textbf{Open first} \\
+	\midrule
+	\endhead
+	A graph will not load, with a rule code & \texttt{crates/pii-graph/src/validate.rs} for
+	\texttt{V*}; \texttt{fragment/call.rs} for \texttt{graph.call.*}; \texttt{fragment/splice.rs} for
+	\texttt{fragment.*} \\
+	A call refuses on capabilities & \texttt{fragment/call.rs}, the \texttt{widen} checks: one for
+	the call's grant, one per callee node \\
+	A queue row stays \texttt{Running} & \texttt{crates/pii-store/src/queue.rs} for the status
+	transitions; \texttt{graphs/queue.toml} for the edges that decide whether a verdict ever reaches
+	\texttt{record} \\
+	A run never finishes and its journal stops mid-graph & \texttt{crates/pii-graph/src/run/engine.rs}
+	(the tick loop) and \texttt{sched/state.rs} (\texttt{readiness}, \texttt{propagate\_dead}) \\
+	A run resumed after a restart re-ran work & \texttt{run/resume.rs}: a node with no terminal
+	event is re-run by design; look for the \texttt{NodeInterrupted} marker \\
+	Health is slow & \texttt{engine/conn.rs} for the heavy-method set;
+	\texttt{daemon/identity.rs} for the record it should be reading \\
+	An agent left running after a crash & \texttt{engine/orphans.rs}, and the
+	\texttt{coder.orphan\_reaped} event it journals \\
+	A configuration key seems ignored & \texttt{daemon/config.rs}: every section is
+	\texttt{deny\_unknown\_fields}, so an ignored key is a load error, not a default \\
+	\bottomrule
+\end{longtable}
+
+Two habits make that table faster to use. The first is to grep for the rule code rather than the
+prose: every refusal string is a literal that appears in exactly one place, so
+\texttt{grep -rn "graph.call.widen" crates/} lands on the check. The second is to read the graph
+file before the code. Most \enquote{engine} bugs in this repository have been edge bugs --- a port
+with no edge, an edge to a node that can never be ready --- and the graph is a page long.
+
+\begin{lstlisting}[language=bash]
+grep -rn 'graph.call.widen' crates/            # which check raised it
+grep -rn 'V1:' crates/pii-graph/src/validate.rs # the port rule and its message
+pii graph lint graphs/queue.toml               # the same rules, over one file
+pii graph show graphs/spec.toml                # nodes, ports and edges after expansion
+pii run trace <run_id>                         # the journal, in sequence order
+\end{lstlisting}
+
+The third and fourth lines are the ones to reach for first when a graph is in question. \texttt{pii
+graph lint} runs the loader and the static validator and prints every warning as well as every
+error, and the warnings are where a missing \texttt{err} edge shows up: a declared port with no
+outgoing edge is a warning, not an error, because a graph may legitimately stop on it. \texttt{pii
+graph show} prints the graph after calls are expanded --- which is the only honest way to see what
+will actually run for a graph that composes.
