@@ -41,3 +41,11 @@ Found by documentation work, 2026-11-04 (`manual-audit-20261104.md`).
 - Do NOT document the behaviour instead of fixing it: the manual quotes the binary, so the binary is
   what has to become true.
 - Do NOT make `--config` create the file.
+
+## Files
+
+- `crates/pii-cli/src/cmd_run.rs`
+- `crates/pii-cli/src/cmd_store.rs`
+- `crates/pii-cli/src/cmd_graph.rs`
+- `crates/pii-cli/src/main.rs`
+- `crates/pii-cli/tests/cli_self_description.rs`

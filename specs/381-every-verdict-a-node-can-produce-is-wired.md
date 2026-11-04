@@ -42,3 +42,11 @@ Found by documentation work, 2026-11-04 (`manual-audit-20261104.md`, F-1, F-2, F
 - Do NOT silence V9 by disabling the lint.
 - Do NOT invent a new node kind for a held row: `select` already declares the port.
 - Do NOT let `night` swallow a refusal into `ok`.
+
+## Files
+
+- `graphs/queue.toml`
+- `graphs/night.toml`
+- `graphs/spec.toml`
+- `crates/pii-graph/src/validate.rs`
+- `crates/pii-server/tests/every_verdict_is_wired.rs`

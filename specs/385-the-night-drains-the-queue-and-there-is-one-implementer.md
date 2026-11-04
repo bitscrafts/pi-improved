@@ -48,6 +48,18 @@ drain it, review, refill.**
 **Project**: /projects/pi-improved
 **Phase**: composability
 
+
+## Amended by derivation 047 (measured, not preferred)
+
+- **`tdd` merges INTO `sdd`**, not into `spec`: `sdd` keeps the contract and the RED/GREEN proof and
+  loses only the `docs` step, which the driver owns. `spec` becomes the driver: choose a method, call
+  it, document, re-judge. `method-judge` is the second method and is new.
+- **`night` fills as well as drains**: `tick → call self-improve (fill when empty) → call queue
+  (drain) → review → report`. A night that only drains is a clock; a night that never fills stops the
+  moment the queue is empty, which is the state this host has been in for hours at a time.
+- **Refusals must be wired** at every call: `sdd` can return `refused` and `unverified`, and `night`
+  must say what it does with each — row 364's defect one layer up, still open in `night.toml`.
+
 ## Requirements
 
 - **R1** `graphs/spec.toml` is a driver: it holds no coder and no judge of its own. It routes on the

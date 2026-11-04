@@ -26,6 +26,38 @@ Everything in that closure is required; everything outside it is a sample.
 **Project**: /projects/pi-improved
 **Phase**: installation
 
+
+## The set, from derivation 047 (do not re-derive it)
+
+```
+system (11)   spec · method-judge · sdd · docs · queue · self-improve · night · books · digest-now ·
+              code-index · preflight
+user          everything the operator writes or copies, in ~/.local/pii/graphs/ — never written by an
+              upgrade
+direction     a user graph MAY call a system graph; a system graph must NOT call a user graph
+```
+
+**Three layers enforce the direction, and the first is structural:**
+
+1. **Search path** — `load_host_with_graphs` already takes the dirs to search
+   (`crates/pii-graph/src/fragment/weave.rs:112`). A host loaded from the system dir searches `[system]`
+   only, so a system graph cannot resolve a user target whatever its text says. A user host searches
+   `[system, user]`.
+2. **No shadowing** — a user file named like a system graph is REFUSED at load, not preferred:
+   shadowing `docs` would make every system graph call user code by name.
+3. **Install-time and CI** — every manifest graph lints, every `call` target is in the manifest, every
+   pin matches, before any file moves.
+
+**Pins across an upgrade:** the installer keeps every replaced system revision under
+`system/.by-sha256/<digest>.toml`; a `call` whose pin differs from the current file resolves there, so a
+user graph keeps running the bytes it reviewed. `pii graph diff` and `pii graph repin` are the verbs that
+move it forward. Rejected: refusing the upgrade (one forgotten file blocks every fix); re-resolving the
+pin with a report (a run nobody reviewed); name+version (a label does not bind content).
+
+**Samples:** `coder-demo`, `coder-podman`, `claude-probe`, `discord-triage` are examples to copy;
+`coder-selffix` and `discord-digest` are obsolete in the repo (`discord-digest` survives on hosts
+through the first-upgrade move); `digest-now` is system (F11).
+
 ## Requirements
 
 - **R1 — the set is declared.** `graphs/minimal.txt` lists, one name per line, the graphs that

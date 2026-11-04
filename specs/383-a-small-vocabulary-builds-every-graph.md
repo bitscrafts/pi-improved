@@ -105,12 +105,13 @@ spec comes from parsing `[[node]]` tables with `tomllib`. Any check in R1 must p
 
 ## Exit Criteria
 
-- [ ] `cargo run -q -p xtask -- lint-graph-kinds`
-- [ ] `cargo test -q -p xtask --test lint_graph_kinds 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
-- [ ] `grep -q 'fn same_value\|let_value\|"let"' crates/pii-graph/src/expr.rs`
-- [ ] `test ! -f graphs/code-index.toml || ./target/debug/pii graph lint graphs/code-index.toml`
-- [ ] `grep -q 'ledger' crates/pii-server/src/engine/registry.rs`
-- [ ] `grep -q 'CapKind::Ledger\|ledger' crates/pii-abi/src/cap.rs`
+These are step 1's, deliberately. Steps 2–4 are separate commits under this row and each appends its own
+criteria when it starts — a spec whose criteria describe work four commits away cannot go green, and a
+row that cannot go green is a wish.
+
+- [ ] `cargo test -q -p pii-graph --test expr_compute 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `grep -q 'overflow' crates/pii-graph/src/expr.rs`
+- [ ] `! grep -q 'bash' graphs/boss-watch.toml`
 
 ## Guardrails
 
@@ -125,10 +126,6 @@ spec comes from parsing `[[node]]` tables with `tomllib`. Any check in R1 must p
 
 ## Files
 
-- `xtask/src/main.rs`
-- `xtask/src/lint_graph_kinds.rs`
-- `xtask/tests/lint_graph_kinds.rs`
 - `crates/pii-graph/src/expr.rs`
-- `crates/pii-server/src/engine/registry.rs`
-- `crates/pii-abi/src/cap.rs`
-- `docs/03-reference/graph-vocabulary.md`
+- `crates/pii-graph/tests/expr_compute.rs`
+- `graphs/boss-watch.toml`
