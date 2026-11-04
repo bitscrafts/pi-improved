@@ -1,0 +1,145 @@
+# Spec 372: the TDD loop as a graph. A test is written first, the judge (expect = "fail") proves it RED, then the code is
+# written and the judge (expect = "pass") proves it GREEN. A test that passes before the code exists is `not-red`: it
+# proves nothing, so the run ends there. A test the code does not make pass is `still-red`. A criterion that cannot run
+# at all is `unrunnable`, never a RED pass. No absolute path and no credential lives in this file.
+# `exit = "green"` lets an SDD graph call this one and route on its judge.
+name = "tdd"
+entry = "write_test"
+exit = "green"
+needs = ["agent", "model", "provider", "spec", "workdir", "base"]
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[limits]
+# Two coders at 1 800 000 ms each, plus the judges' allowance. The default 600 000 ms is too short for one coder pass.
+max_wall_ms = 4200000
+
+[[node]]
+id = "write_test"
+kind = "coder"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "Write only the tests that the spec's Exit Criteria name. Do NOT write the implementation: the tests must fail against the code as it is. Do not commit."
+timeout_ms = 1800000
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
+
+[[node]]
+id = "red"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+expect = "fail"
+
+[[node]]
+id = "implement"
+kind = "coder"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "Implement the spec named above until its tests pass. Follow it as the contract. Do not edit the tests to make them pass. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
+timeout_ms = 1800000
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
+
+[[node]]
+id = "green"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+# The two ways the loop goes wrong, and the coder refusals. Each is its own terminal port, so the run says which one.
+[[node]]
+id = "refused"
+kind = "refuse"
+join = "any"
+hook = "coder"
+reason = "the agent failed"
+
+[[node]]
+id = "not-red"
+kind = "refuse"
+join = "any"
+hook = "judge"
+reason = "the test passed before the code existed, so it proves nothing"
+
+[[node]]
+id = "unrunnable"
+kind = "refuse"
+join = "any"
+hook = "judge"
+reason = "a criterion could not run, so RED is unproven"
+
+[[node]]
+id = "still-red"
+kind = "refuse"
+join = "any"
+hook = "judge"
+reason = "the implementation did not make the test pass"
+
+[[edge]]
+from = "write_test"
+port = "ok"
+to = "red"
+kind = "data"
+
+[[edge]]
+from = "write_test"
+port = "err"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "red"
+port = "ok"
+to = "implement"
+kind = "data"
+
+[[edge]]
+from = "red"
+port = "fail"
+to = "not-red"
+kind = "data"
+
+[[edge]]
+from = "red"
+port = "unrunnable"
+to = "unrunnable"
+kind = "data"
+
+[[edge]]
+from = "implement"
+port = "ok"
+to = "green"
+kind = "data"
+
+[[edge]]
+from = "implement"
+port = "err"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "green"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "green"
+port = "fail"
+to = "still-red"
+kind = "data"

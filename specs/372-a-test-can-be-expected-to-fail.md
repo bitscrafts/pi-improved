@@ -27,6 +27,7 @@ repo has paid for this shape before: a check that passes while the live path is 
 ## Files
 
 - `crates/pii-server/src/node_kinds/nodes/judge_spec.rs`
+- `crates/pii-server/src/node_kinds/nodes/queue.rs`
 - `graphs/tdd.toml`
 - `crates/pii-server/tests/judge_expects_a_failure.rs`
 

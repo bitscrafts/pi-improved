@@ -16,7 +16,7 @@ use pii_store::MemStore;
 use pii_store::queue::{Claim, ItemStatus, QueueStore};
 
 use super::agent_worker::{Verdict, learn_fact};
-use super::judge_spec::SpecJudgeNode;
+use super::judge_spec::{SpecJudgeNode, expects_failure};
 use super::peer::peer_of;
 
 /// How long one criterion command may run before it is killed.
@@ -184,13 +184,22 @@ impl NodeFactory for JudgeFactory {
         CapKind::PROC
     }
 
-    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+    fn ports(&self, cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        // Spec 372: an `expect = "fail"` judge also reports a criterion that could not run, on its own port.
+        if cfg.get("spec").is_some() && expects_failure(cfg)? {
+            return Ok(vec![
+                PortName::from("ok"),
+                PortName::from("fail"),
+                PortName::from("unrunnable"),
+            ]);
+        }
         Ok(vec![PortName::from("ok"), PortName::from("fail")])
     }
 
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
         // Spec mode (spec 259) resolves its keys at run time, so it needs no literal `workdir` here.
         if cfg.get("spec").is_some() {
+            expects_failure(cfg)?;
             return Ok(Box::new(SpecJudgeNode { cfg: cfg.clone() }));
         }
         let workdir = cfg

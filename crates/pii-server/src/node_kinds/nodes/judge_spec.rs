@@ -73,6 +73,68 @@ fn refusal(spec: &serde_json::Value, base: &serde_json::Value, reason: &str) -> 
     )
 }
 
+/// Spec 372: `expect = "fail"` makes the judge the RED step of a TDD loop. The default `pass` keeps today's meaning;
+/// any other value is refused before a criterion runs.
+///
+/// # Errors
+///
+/// Returns `PiiError::Internal` when `expect` is present and is neither `pass` nor `fail`.
+pub fn expects_failure(cfg: &serde_json::Value) -> Result<bool, PiiError> {
+    match cfg.get("expect").map(serde_json::Value::as_str) {
+        None | Some(Some("pass")) => Ok(false),
+        Some(Some("fail")) => Ok(true),
+        Some(_) => Err(PiiError::Internal(
+            "judge: expect must be \"pass\" or \"fail\"".to_owned(),
+        )),
+    }
+}
+
+/// Spec 372: the RED verdict. `ok` when every criterion failed; `unrunnable` when one could not run (exit 127), which
+/// is neither a pass nor a proper failure; `fail` (`not-red`) when a criterion passed before the code existed.
+fn red_outcome(
+    spec: &serde_json::Value,
+    base: &serde_json::Value,
+    criteria: &[String],
+    rcs: &[i32],
+    results: &[serde_json::Value],
+) -> Outcome {
+    let named = |code: i32| -> Vec<String> {
+        criteria
+            .iter()
+            .zip(rcs)
+            .filter(|(_, rc)| **rc == code)
+            .map(|(command, _)| command.clone())
+            .collect()
+    };
+    let unrunnable = named(127);
+    let passing = named(0);
+    let (name, verdict_word, reason) = match (unrunnable.first(), passing.first()) {
+        (Some(command), _) => (
+            "unrunnable",
+            "unrunnable",
+            format!("judge: cannot run {command} (rc 127)"),
+        ),
+        (None, Some(command)) => (
+            "fail",
+            "not-red",
+            format!("expect fail: criterion passed: {command} (rc 0)"),
+        ),
+        (None, None) => ("ok", "red", String::new()),
+    };
+    let mut verdict = serde_json::json!({
+        "verdict": verdict_word,
+        "spec": spec,
+        "base": base,
+        "criteria": criteria.len(),
+        "passing": passing,
+        "results": results,
+    });
+    if let Some(map) = verdict.as_object_mut().filter(|_| !reason.is_empty()) {
+        map.insert("reason".to_owned(), reason.into());
+    }
+    port(name, verdict)
+}
+
 /// The exit code of every command, in order. A failure does not stop the rest.
 fn run_all(ctx: &Ctx, workdir: &Path, commands: &[String]) -> Result<Vec<i32>, PiiError> {
     commands
@@ -136,6 +198,9 @@ impl GraphNode for SpecJudgeNode {
             .zip(&rcs)
             .map(|(command, rc)| serde_json::json!({ "criterion": command, "rc": rc }))
             .collect();
+        if expects_failure(&self.cfg)? {
+            return Ok(red_outcome(&spec, &base, &criteria, &rcs, &results));
+        }
         let failing: Vec<(&String, &i32)> = criteria
             .iter()
             .zip(&rcs)
