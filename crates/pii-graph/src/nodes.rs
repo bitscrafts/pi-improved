@@ -101,7 +101,6 @@ impl RouteNode {
     }
 }
 
-
 /// Equality for a routing rule: strings compare trimmed, everything else compares exactly.
 ///
 /// The trim is deliberate and load-bearing — a route fed by a command's stdout compares against a
@@ -416,12 +415,18 @@ mod trim_tests {
 
     #[test]
     fn a_command_stdout_with_its_newline_still_matches() {
-        assert!(same_value(&json!("nothing-stale"), &json!("nothing-stale\n")));
+        assert!(same_value(
+            &json!("nothing-stale"),
+            &json!("nothing-stale\n")
+        ));
     }
 
     #[test]
     fn near_miss_a_different_word_does_not_match() {
-        assert!(!same_value(&json!("nothing-stale"), &json!("two-chapters\n")));
+        assert!(!same_value(
+            &json!("nothing-stale"),
+            &json!("two-chapters\n")
+        ));
     }
 
     #[test]

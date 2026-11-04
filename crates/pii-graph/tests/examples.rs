@@ -67,10 +67,11 @@ fn lint_negatives_rejected() {
     );
 
     let one_arm = load("lint-one-armed-race.toml");
-    let errs = validate(&one_arm, &reg).unwrap_err();
+    // A one-armed `any` runs as `all` (spec 380): V9 warns, it does not refuse.
+    let warnings = validate(&one_arm, &reg).expect("a one-armed any join is not an error");
     assert!(
-        errs.iter().any(|e| e.starts_with("V9")),
-        "want V9: {errs:?}"
+        warnings.iter().any(|w| w.starts_with("V9")),
+        "want V9: {warnings:?}"
     );
 }
 

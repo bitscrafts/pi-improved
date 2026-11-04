@@ -134,13 +134,15 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
     for n in &spec.nodes {
         let in_data = spec.inbound(&n.id, EdgeKind::Data).len();
         match &n.join {
-            // `Any` and `Quorum` require >= 2 inbound Data edges (pass-3 §4.6
-            // V9: a one-armed race is a typo). `AllSettled` is NOT over-
-            // enforced: a single-arm AllSettled is a legitimate "proceed
-            // whether or not this branch died" idiom.
+            // `Quorum` requires >= 2 inbound Data edges (pass-3 §4.6 V9: a one-armed
+            // quorum is a typo). A one-armed `Any` is legal at runtime: it readies
+            // exactly as an `all` join with that arm (fired → ready, dead → dead), and
+            // exclusive-port refusals use it. So it is a warning, not an error.
+            // `AllSettled` is NOT over-enforced: a single-arm AllSettled is a
+            // legitimate "proceed whether or not this branch died" idiom.
             JoinPolicy::Any { .. } if in_data < 2 => {
-                errors.push(format!(
-                    "V9: node '{}' uses a multi-arm join with {in_data} inbound data edges",
+                warnings.push(format!(
+                    "V9: node '{}' uses a one-armed 'any' join with {in_data} inbound data edges; it runs as 'all'",
                     n.id
                 ));
             }
@@ -496,8 +498,8 @@ mod tests {
     }
 
     #[test]
-    fn lint_one_armed_race_detects_v9() {
-        // single inbound data edge + any join
+    fn lint_one_armed_race_warns_v9() {
+        // single inbound data edge + any join: legal at runtime, so a warning and not an error
         let mut g = spec(
             vec![
                 ("x", "transform", JoinPolicy::All, 0),
@@ -519,6 +521,7 @@ mod tests {
             kind: EdgeKind::Data,
         });
         let reg = NodeRegistry::builtin();
-        assert!(validate(&g, &reg).is_err());
+        let warnings = validate(&g, &reg).expect("a one-armed any join is not an error");
+        assert!(warnings.iter().any(|w| w.starts_with("V9: node 'y'")));
     }
 }

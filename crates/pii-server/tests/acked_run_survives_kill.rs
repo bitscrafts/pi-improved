@@ -101,12 +101,37 @@ fn hello() -> std::path::PathBuf {
         .join("fixtures/phase2/hello.json")
 }
 
+/// A graph that exists and is REFUSED at load for a reason that is not a matter of opinion: its edge
+/// leaves a port the node does not have (V1). The control below needs a refused start that still hands
+/// back an id, which only a graph that loads-then-refuses can give; a missing graph returns `NotFound`
+/// instead. It used to borrow the one-armed-`any` refusal, which spec 380 turned into a warning.
+const REFUSED_START: &str = r#"name = "refused-start"
+entry = "a"
+caps = []
+
+[[node]]
+id = "a"
+kind = "transform"
+value = "x"
+
+[[node]]
+id = "b"
+kind = "transform"
+value = "y"
+
+[[edge]]
+from = "a"
+port = "nope"
+to = "b"
+"#;
+
 fn engine_in(dir: &Path) -> Arc<Engine> {
     std::fs::create_dir_all(dir.join("ws")).unwrap();
     std::fs::create_dir_all(dir.join("graphs")).unwrap();
     std::fs::write(dir.join("graphs/blocking.toml"), BLOCKING).unwrap();
     std::fs::write(dir.join("graphs/fine.toml"), FINE).unwrap();
     std::fs::write(dir.join("graphs/cyclic.toml"), CYCLIC).unwrap();
+    std::fs::write(dir.join("graphs/refused-start.toml"), REFUSED_START).unwrap();
     Engine::new(EngineConfig {
         grant_ceiling: None,
         workspace: dir.join("ws"),
@@ -169,7 +194,7 @@ async fn control_a_refused_start_still_resolves() {
     let d = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "ack-refused-").unwrap();
     let e = engine_in(d.path());
     let run = e
-        .start_run("cyclic", &serde_json::json!({}))
+        .start_run("refused-start", &serde_json::json!({}))
         .expect("a refused start still hands back its id");
     let h = e
         .store

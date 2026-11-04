@@ -10,10 +10,11 @@
 # NOTE: field names below follow the digest graph's style and must be checked against the node schemas before this runs;
 # a graph that fails to load must REFUSE (176/177), not silently do nothing.
 
-[graph]
 name = "intervention-report"
 description = "Turn an intervention's own events into a dated report, gate it, post it, remember it."
-
+entry = "start"
+exit = "post"
+caps = ["spawn", "proc", "fs_read", "post"]
 [[node]]
 id = "start"
 kind = "timer"
@@ -29,7 +30,7 @@ limit = 40
 [[node]]
 id = "write"
 kind = "worker"
-depends_on = ["evidence"]
+
 agent = "pi"                   # free first; Claude only when the ladder escalates (spec 183)
 model = "deepseek-v4-flash"
 workdir = "/projects/pi-improved"
@@ -51,14 +52,14 @@ Do not summarise away a failure. If two sources disagree, say both and name whic
 [[node]]
 id = "check"
 kind = "gate"
-depends_on = ["write"]
+
 # A report that fails its own gate is still posted — labelled as failed. Silence is the defect this project keeps paying for.
 command = "test $(grep -c '^## ' report.md) -ge 6 && ! grep -qiE 'TODO|TBD|XXX' report.md"
 
 [[node]]
 id = "post"
 kind = "post"
-depends_on = ["write", "check"]
+
 channel = "discord"
 to = "$.input.to"
 text = "$.nodes.write.output"
@@ -66,6 +67,12 @@ text = "$.nodes.write.output"
 [[node]]
 id = "record"
 kind = "memory"
-depends_on = ["post"]
+
 op = "put"
 text = "$.nodes.write.output"
+
+# edges: the loader reads [[edge]] triples named by port (spec 380).
+[[edge]]
+from = "write"
+port = "ok"
+to = "post"

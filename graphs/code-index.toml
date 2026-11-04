@@ -15,10 +15,11 @@
 # Shape: timer → index(worker) → gate(entities>0 and relationships>0?) → memory(record)
 # NOTE: field names mirror the digest and intervention-report graphs; a graph that fails to load must REFUSE (176/177).
 
-[graph]
 name = "code-index"
 description = "Index this repository into pii's own memory graph, on a schedule, and record what was indexed."
-
+entry = "start"
+exit = "record"
+caps = ["spawn", "proc", "memory_write"]
 [[node]]
 id = "start"
 kind = "timer"
@@ -27,7 +28,7 @@ cron = "0 3 * * *"                 # 00:00 local (UTC-3): the idle window, when 
 [[node]]
 id = "index"
 kind = "worker"
-depends_on = ["start"]
+
 agent = "claude"
 model = "claude-haiku-5-5"         # mechanical work: run the indexer, report counts. No judgement needed.
 workdir = "/projects/pi-improved"
@@ -46,7 +47,7 @@ Do not invent a number. Do not commit.
 [[node]]
 id = "gate"
 kind = "gate"
-depends_on = ["index"]
+
 require = ["entities_created", "crates_scanned", "relationships"]
 brief = """
 The report must contain all three counts and must state relationships explicitly, even when it is zero.
@@ -56,7 +57,23 @@ A report claiming the codebase is indexed while relationships=0 is FALSE and mus
 [[node]]
 id = "record"
 kind = "memory"
-depends_on = ["gate"]
+
 op = "put"
 text = "$.nodes.index.output"      # the snapshot becomes knowledge the next run can diff against
 kind_tag = "code-index"
+
+# edges: the loader reads [[edge]] triples named by port (spec 380).
+[[edge]]
+from = "start"
+port = "fired"
+to = "index"
+
+[[edge]]
+from = "index"
+port = "ok"
+to = "gate"
+
+[[edge]]
+from = "gate"
+port = "allow"
+to = "record"
