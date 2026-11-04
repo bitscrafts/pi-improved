@@ -180,6 +180,106 @@ must end at a dot or at the end of the string. \texttt{\$.nodes.sdd} is rewritte
 \texttt{\$.nodes.sddx} is a different node and is left alone. Node ids and kinds are never rewritten
 --- only values --- and a host that never mentions the call id comes out byte-identical.
 
+\section{How a call passes data}
+
+The previous sections show the \emph{shape} of an inclusion. This one answers the question a reader
+asks next: when one graph calls another, how does anything travel across the boundary? There are
+exactly three moves, and each has a name in the loaded document.
+
+\subsection{In: the caller writes the callee's entry inputs}
+
+A \texttt{call} node carries an \texttt{in} table. Its keys are the \emph{callee's} entry-node inputs,
+and its values are expressions resolved in the \emph{caller's} context. From \texttt{queue}, calling
+\texttt{spec}:
+
+\begin{verbatim}
+[[node]]
+id    = "implement"
+kind  = "call"
+graph = "spec"
+sha256 = "771d098b..."
+
+[node.in]
+spec   = "$.nodes.select.item.spec"
+base   = "$.input.base"
+brief  = "Implement the spec named above. Do not commit."
+\end{verbatim}
+
+Two of those come from the host's own context and one is a literal. That is the point: the boundary
+crosses \emph{values}, not files and not command lines, and each key is computed separately.
+
+At load, every key becomes its own node --- \texttt{implement\_\_in\_\_spec},
+\texttt{implement\_\_in\_\_base}, \texttt{implement\_\_in\_\_brief} --- chained behind a head node
+\texttt{implement\_\_in}. So an input can be computed, ordered and journalled like any other value;
+nothing is special-cased for composition.
+
+\subsection{Inside: the callee is spliced, and its ids are namespaced}
+
+The callee is not a subprocess and not a fresh run. Its nodes are copied into the host document with
+ids of the form \texttt{<call>\_\_<node>}, its entry becomes \texttt{<call>\_\_<entry>}, and its exit
+becomes \texttt{<call>\_\_<exit>}. Its own edges and ports are carried over unchanged. Nothing about
+the callee's internal names survives into the host's vocabulary, which is why a callee may rename its
+nodes without breaking a single caller.
+
+\subsection{Out: the host reads the call's own id}
+
+The terminal value of the callee is reached \emph{by the call's id}. The loader rewrites every
+occurrence of \texttt{\$.nodes.<call>} in the host --- including sub-paths --- to
+\texttt{\$.nodes.<call>\_\_<exit>}. A host that wrote
+
+\begin{verbatim}
+brief = "$.nodes.implement.stdout"
+\end{verbatim}
+
+is silently read as \texttt{\$.nodes.implement\_\_done.stdout} after the load. The host never names an
+internal node; it names the call, and the alias makes the callee's exit answer it.
+
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[node distance=8mm and 12mm]
+	\node[b] (host) {\texttt{queue}};
+	\node[b, right=of host] (in) {\texttt{implement\_\_in}\\\scriptsize one node per key};
+	\node[s, right=of in] (callee) {\texttt{spec}\\\scriptsize spliced inline};
+	\node[b, right=of callee] (exit) {\texttt{implement\_\_done}};
+	\node[b, right=of exit] (read) {\texttt{\$.nodes.implement}};
+
+	\draw[f] (host) -- node[p,above=2pt,midway]{\texttt{in} keys} (in);
+	\draw[f] (in) -- node[p,above=2pt,midway]{\texttt{entry}} (callee);
+	\draw[f] (callee) -- node[p,above=2pt,midway]{\texttt{exit}} (exit);
+	\draw[sf] (exit) -- node[p,above=2pt,midway]{alias} (read);
+\end{tikzpicture}}
+\captionof{figure}{The three moves of a call. Inputs are computed in the caller and enter the callee
+as \texttt{<call>\_\_in\_\_<key>}; the callee runs inline under namespaced ids; and the host reads the
+result by the call's own name, which the loader rewrites to the callee's exit.}
+\end{center}
+
+\subsection{Two rules that travel with the boundary}
+
+\begin{enumerate}
+	\item A call returns on \emph{its exit's ports}. A callee \texttt{refuse} is pulled back out
+	onto the host edges that declared \texttt{ok}, so a host can branch on \texttt{ok} /
+	\texttt{unverified} / \texttt{refused} instead of watching the run die.
+	\item A call declares \texttt{caps}, and a call may only \textbf{narrow} the host's ceiling. A
+	child cannot give itself more than its caller holds, and the ladder is checked at load.
+\end{enumerate}
+
+\subsection{The trap: an absent value is not an error}
+
+Values crossing the boundary are untyped JSON. A path that does not exist does \emph{not} fail: it
+resolves to nothing, and the caller passes the absence along. Measured on this codebase, a
+documentation graph shipped with
+
+\begin{verbatim}
+brief = "$.nodes.inventory.payload.stdout"
+\end{verbatim}
+
+while a \texttt{tool} node's value is \texttt{\{stdout, ...\}} with no \texttt{payload} level at all.
+The brief was empty on every run; the coder was asked to do work with no instructions; and every test
+and every gate passed, because none of them executed the graph. The general shape of the fix is to
+check paths and placeholders \emph{at load}, when the graph is read, rather than at spawn, when the
+money is spent --- and to write at least one test that runs the graph rather than reading it.
+
+
 \section{The exit rule}
 
 Now the rule the chapter exists for. When a piece of a graph is spliced into another, the splicer

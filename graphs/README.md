@@ -126,6 +126,12 @@ inventory and no way to tell whether the document is true. **Spec 374** adds `gr
 `inventory` → `select` (or `nothing-to-do`) → `call docs` → `verify` (every path and symbol the document names must
 exist) → `done`.
 
+**Spec 379** adds `graphs/books.toml`, the same composition for the two manuals: `inventory` (`pii docs stale`, the chapters
+whose stamp is behind HEAD or whose documented paths moved) → `select` (or `nothing-to-do`) → `call-docs` → `verify`
+(`pii docs verify`: every backticked path must exist, every `pii <verb>` must be a verb the binary answers; only a pass
+rewrites the stamp) → `done`. There is no iteration primitive, so the docs coder receives the whole stale list and loops
+over the chapters inside its own node.
+
 ### 5. The self-improving flow — not built yet
 
 ```mermaid
@@ -150,6 +156,7 @@ Generated from the files; each name links to its page.
 | [queue](DOCS/queue.md) | `graphs/queue.toml` | 4 | `select` → `record` | spawn, proc, fs_read, fs_write | implement one row: select → coder → judge → record |
 | [spec](DOCS/spec.md) | `graphs/spec.toml` | 7 | `code` → — | spawn, proc | implement one spec: code → verify → docs → reverify |
 | [docs](DOCS/docs.md) | `graphs/docs.toml` | 1 | `docs` → `docs` | spawn, proc | the docs node other graphs call |
+| books | `graphs/books.toml` | 6 | `inventory` → `done` | fs_read, fs_write, proc, spawn | update the manuals: stale → call docs → verify → done |
 | [code-index](DOCS/code-index.md) | `graphs/code-index.toml` | 4 | — → — | — | index the codebase |
 | [claude-probe](DOCS/claude-probe.md) | `graphs/claude-probe.toml` | 3 | `code` → — | spawn, proc | probe an agent without spending a spec |
 | [coder-demo](DOCS/coder-demo.md) | `graphs/coder-demo.toml` | 3 | `code` → — | spawn, proc | the smallest working coder graph |
