@@ -382,14 +382,17 @@ report loop.verify "item=$ITEM ok"
 case "${GATE:-1}" in 0|-|none) GATE_ON= ;; *) GATE_ON=1 ;; esac
 if [ -n "$GATE_ON" ]; then
   # spec 273: the floor checks every volume the gate writes to (GATE_WRITE_DIRS), not /projects alone
-  DISK=$(bash scripts/autonomy/disk-floor.sh 20000 /projects $GATE_WRITE_DIRS); DRC=$?
+  # ${GATE_WRITE_DIRS:-}: unset in production, so an unbound expansion under `set -u` failed the
+  # command and the failure was reported as a disk shortage -- measured 2026-11-04, the gate was
+  # skipped on a row with 127 GB free. A check must not turn its own defect into a diagnosis.
+  DISK=$(bash scripts/autonomy/disk-floor.sh 20000 /projects ${GATE_WRITE_DIRS:-}); DRC=$?
   if [ "$DRC" -ne 0 ]; then
     LOWL=$(echo "$DISK" | grep -m1 -E '^(LOW|MISSING): ')
     FREE=$(echo "$LOWL" | sed -n 's/^LOW: .* free=\([0-9]*\)M .*/\1/p')
     # A skipped gate must NOT fall through to the commit: an ungated commit is worse than a parked item.
     python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-skipped-disk
     say "gate SKIPPED: $LOWL (needs 20000M free) — the item is NOT committed without a gate"
-    echo "OUTCOME=gate-skipped-disk ITEM=$ITEM FREE_MB=$FREE"
+    echo "OUTCOME=gate-skipped-disk ITEM=$ITEM FREE_MB=$FREE WHY=$(printf %s "$DISK" | tr '\n' ' ')"
     bash scripts/autonomy/control.sh ask "disk is down to ${FREE}M: the gate cannot run, so $ITEM cannot be committed. Reclaim with cargo clean (an operator action here)?" >/dev/null 2>&1 || true
     exit 13
   else
