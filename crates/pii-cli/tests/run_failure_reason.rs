@@ -42,7 +42,14 @@ fn record(
         dur_ms: 888_774,
         revision: String::new(),
         process_start_ms: 1_000,
-        created_ms: 1_000,
+        // Dated now: a boot sweep (spec 376) drops runs that look ancient.
+        created_ms: u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap(),
     };
     let events = [
         RunEvent::NodeStarted {

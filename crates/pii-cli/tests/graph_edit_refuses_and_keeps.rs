@@ -176,7 +176,14 @@ fn edit_refuses_armed_run() {
         dur_ms: 0,
         revision: String::new(),
         process_start_ms: 0,
-        created_ms: 0,
+        // Dated now: a boot sweep (spec 376) drops runs that look ancient.
+        created_ms: u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap(),
     };
     store
         .append_event(

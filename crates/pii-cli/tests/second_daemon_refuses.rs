@@ -9,6 +9,7 @@ mod daemon_guard;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
 use std::time::{Duration, Instant};
 
 /// One daemon's own dirs: workspace, runtime dir, state dir, log file.
@@ -70,7 +71,7 @@ fn wait_for_socket(d: &Dirs) {
     let until = Instant::now() + Duration::from_secs(10);
     while !d.runtime.join("control.sock").exists() {
         assert!(Instant::now() < until, "daemon never bound control.sock");
-        std::thread::sleep(Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -104,7 +105,7 @@ fn wait_refusal(
             b.kill_now();
             return Err(std::fs::read_to_string(log).unwrap_or_default());
         }
-        std::thread::sleep(Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -162,7 +163,16 @@ fn control_one_daemon_still_starts() {
     let _a = start(&a_dirs);
     wait_for_socket(&a_dirs);
 
-    let log = std::fs::read_to_string(&a_dirs.log).unwrap_or_default();
+    // The socket appears before every startup line is written (the boot retention sweep runs
+    // first, spec 376 R4), so wait for the evidence instead of assuming the order.
+    let mut log = String::new();
+    for _ in 0..40 {
+        log = std::fs::read_to_string(&a_dirs.log).unwrap_or_default();
+        if log.contains("daemon.started") {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
     assert!(log.contains("daemon.started"), "log: {log}");
 }
 

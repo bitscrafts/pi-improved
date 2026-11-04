@@ -7,6 +7,8 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use pii_core::Clock as _;
+
 use crate::cmd_ctl::next_str;
 
 /// `pii store compact [--dir D]`.
@@ -25,17 +27,20 @@ pub(crate) fn cmd_store(args: &mut std::env::ArgsOs) -> ExitCode {
     let (Some(sub), Some(dir)) = (sub.as_deref(), dir) else {
         let _ = writeln!(
             std::io::stderr(),
-            "usage: pii store compact|stats [--dir <store dir>]   (compact: daemon must be stopped)"
+            "usage: pii store compact|stats|prune [--dir <store dir>]   (compact, prune: daemon must be stopped)"
         );
         return ExitCode::from(2);
     };
     if sub == "stats" {
         return print_stats(&dir);
     }
+    if sub == "prune" {
+        return print_prune(&dir);
+    }
     if sub != "compact" {
         let _ = writeln!(
             std::io::stderr(),
-            "usage: pii store compact|stats [--dir <store dir>]   (compact: daemon must be stopped)"
+            "usage: pii store compact|stats|prune [--dir <store dir>]   (compact, prune: daemon must be stopped)"
         );
         return ExitCode::from(2);
     }
@@ -49,6 +54,29 @@ pub(crate) fn cmd_store(args: &mut std::env::ArgsOs) -> ExitCode {
                     r.bytes_before, r.bytes_after
                 );
             }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            let _ = writeln!(std::io::stderr(), "error: {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// `pii store prune [--dir D]` (spec 376 R4): one retention sweep under the default policy, then its count.
+fn print_prune(dir: &std::path::Path) -> ExitCode {
+    let path = dir.join("store.redb");
+    let store = match pii_store::Store::open(&path) {
+        Ok(store) => store,
+        Err(e) => {
+            let _ = writeln!(std::io::stderr(), "error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let policy = pii_store::retention::RetentionPolicy::default();
+    match store.sweep_retention(pii_core::SystemClock.now_ms(), &policy) {
+        Ok(removed) => {
+            let _ = writeln!(std::io::stdout(), "pruned {removed} rows");
             ExitCode::SUCCESS
         }
         Err(e) => {

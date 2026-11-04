@@ -90,7 +90,16 @@ fn seed_one_run(path: &Path) {
         dur_ms: 0,
         revision: String::new(),
         process_start_ms: 1_000,
-        created_ms: 1_000,
+        // Inside the retention policy, so the daemon's boot sweep (spec 376 R4) keeps it and the
+        // count the message reports is the one this test seeded. An epoch value would be swept as
+        // ancient, which is correct behaviour and made this fixture assert the wrong thing.
+        created_ms: u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap(),
     };
     store
         .append_event(

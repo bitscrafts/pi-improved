@@ -18,6 +18,7 @@ pub mod heal;
 mod identity;
 pub mod mem;
 pub mod queue;
+pub mod retention;
 pub mod session;
 #[cfg(test)]
 mod stamp_tests;

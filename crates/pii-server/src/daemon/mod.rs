@@ -125,6 +125,17 @@ impl Daemon {
         clock: Arc<dyn pii_core::Clock>,
         env: &dyn Fn(&str) -> Option<String>,
     ) -> Result<Arc<Self>, PiiError> {
+        // Spec 376 R4: one sweep at boot; failing it is not fatal, the store is just no smaller.
+        pii_store::retention::sweep_at_boot(&engine.store, clock.now_ms(), |e| {
+            engine.log().event(
+                &pii_observe::Event::new(
+                    "store",
+                    pii_observe::Level::Warn,
+                    "store.retention.failed",
+                )
+                .field("error", e.to_string()),
+            );
+        });
         let grants = Arc::new(config::ConfigGrants::from_section(&cfg.net)?);
         let net = Arc::new(pii_net::NetService::new(pii_net::NetConfig {
             resolver: Arc::new(pii_net::SystemResolver),
