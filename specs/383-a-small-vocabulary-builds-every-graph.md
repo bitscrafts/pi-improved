@@ -46,6 +46,36 @@ the target once it is reached.
 the kind is the unit of **capability and effect class**; ops may share a kind only when they share what
 they touch, their capability and their effect class.
 
+
+## The work order (one row, four commits, each verified alone)
+
+This is not four specs. It is one refactor with an order, and the order matters because each step makes
+the next one verifiable:
+
+**1 · the addition — `transform` computes** (`crates/pii-graph/src/expr.rs`)
+   `let` binds, `out` produces; integers and strings only, `==`, `!=`, `<`, `>`, `+`, length; a bad
+   expression fails at LOAD naming node and expression; overflow refused; floats refused. The proof is
+   `graphs/boss-watch.toml`'s shell workaround rewritten as a `transform`, same ports, same verdicts.
+
+**2 · the ledger — one kind, and a capability** (`nodes/queue.rs`, `nodes/heal.rs`, `cap.rs`)
+   `select` · `record` · `enqueue` · `heal_record` become `ledger` with ops `queue.claim`,
+   `queue.set_status`, `queue.put`, `heal.record_run`; `CapKind` gains the bit that all four lack
+   today, so a graph can no longer claim a queue row by existing. Atomicity is the reason it is a kind.
+
+**3 · the derivations** (registry + the graphs that use them)
+   `worker` → `coder` · `classify` → `route` · `plan` → `agent` · `memory` → `remember` ·
+   `debug_crash` → a test fixture. Each graph keeps its entry, exit, ports and verdicts; its existing
+   test passes unchanged.
+
+**4 · the fence — the lint** (`xtask/src/lint_graph_kinds.rs`)
+   Parses `[[node]]` tables (never a grep) and refuses: a kind outside the fourteen; a kind with
+   exactly one user, unless the doc admits it; a graph re-implementing a shipped graph's flow. Then
+   `tool`'s surface closes: `fs_read`, `glob`, `grep`, `fs_write`, `run` with a literal argv0 — and the
+   two graphs that pass `bash -c` today are rewritten.
+
+Step 4 last on purpose: a lint written before the library is adapted refuses its own repository, and a
+refusal that is expected gets silenced, and a silenced check is how the next defect ships.
+
 ## Requirements
 
 - **R1 — the target is enforced, not documented.** `xtask lint-graph-kinds` reads every graph in
