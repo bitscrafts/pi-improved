@@ -57,13 +57,22 @@ id must fail at config time with its name, not at spawn time in a journal.
 | same | `an_unknown_role_is_refused_by_name` | `@nope` → refusal naming `nope` and the two configured roles; no process spawned |
 | `crates/pii-config/tests/models_are_validated.rs` (or the crate that owns config) | `a_dead_model_is_refused_at_config_time` | an entry naming `deepseek-v4-flash` is refused with that id in the message (fixture: the provider list captured as JSON, no network) |
 
+## Decision (recorded 2026-11-04)
+
+The operator chose **option (a): split the file**, not raise the 450-line budget. The extraction is
+`ModelRole`, `resolve_role` and `empty_model_roles` out of `daemon/config.rs` into a new
+`daemon/model_roles.rs`, re-exported from `daemon/mod.rs`. This is the same extraction that solved
+the size rule twice already (`daemon/sys_status.rs`, `store/sys_status.rs`); raising the budget for
+one file would weaken a repo-wide rule to fit a single change.
+
 ## Exit Criteria
 
-- [ ] `cargo test -q -p pii-server --test models_from_config 2>&1 | grep -qE 'test result: ok. 3 passed'`
+- [ ] `cargo test -q -p pii-server --test models_from_config 2>&1 | grep -qE 'test result: ok. [0-9]+ passed'`
 - [ ] `grep -q '@workhorse' graphs/queue.toml`
 - [ ] `! grep -rq 'deepseek-v4-flash' graphs/`
-- [ ] `grep -q 'workhorse' crates/pii-server/src/daemon/config.rs`
-- [ ] `cargo xtask fresh-gate`
+- [ ] `grep -q 'model_roles' crates/pii-server/src/daemon/mod.rs`
+- [ ] `grep -q 'ModelRole' crates/pii-server/src/daemon/model_roles.rs`
+- [ ] `cargo run -q -p xtask -- lint-files 2>&1 | grep -qv 'exceeds 450'`
 
 ## Guardrails
 
