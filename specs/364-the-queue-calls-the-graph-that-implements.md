@@ -18,6 +18,29 @@ implement specs? then use composability to integrate into the flow"*; and the st
 - The cap ladder is enforced: a `call` whose granted caps do not cover the callee is refused with
   `graph.call.widen` naming the missing capability.
 
+## Measured 2026-11-04: why the first attempt left the row Running
+
+`graphs/spec.toml` was given `exit = "done"` and `queue.toml` was wired `implement.ok -> record`. The composition
+loads and the happy path works, but `a_refusing_callee_fails_the_row` fails: the row stays `Running`, never `Parked`.
+
+The mechanism is the splice's exit rule (`crates/pii-graph/src/fragment/splice.rs`): **a call returns through every
+node that declares an `ok` port and has no outgoing `ok` edge** — not only the node the callee names in `exit`.
+`spec.toml` ends in three nodes; `done` is a `transform` that declares `ok` and returns, while `unverified` and
+`refused` are `kind = "refuse"`, declare no `ok`, and therefore **dead-end inside the splice**. A refused
+implementation fires no edge, the run stops, and the claimed row is never recorded.
+
+Two ways out — choose one and say why, because it changes the callee's contract:
+
+1. **Every verdict returns on `ok`.** Make `unverified`/`refused` declare an `ok` port (or be `transform`s carrying a
+   verdict value). All three then splice back, but the host must distinguish them by the value that arrived, because
+   they share a port.
+2. **One verdict node.** Collapse the tail into a single terminal node with ports `ok`, `unverified`, `refused`; the
+   host wires each to the outcome it wants. Explicit vocabulary, and the queue can park on `refused` and mark
+   `unverified` distinctly, but it changes `spec.toml`'s tail and every host that calls it.
+
+Whichever you pick, the criterion is the same: a refused implementation must leave the row `Parked`, and an unfinished
+one must not be recorded as `done`.
+
 ## Requirements
 
 **R1.** `graphs/spec.toml` declares `exit = "done"` and grants `fs_read`/`fs_write` at the graph level, on `code` and on
