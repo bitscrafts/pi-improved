@@ -1,0 +1,155 @@
+# Spec 373: the SDD loop as a graph. A spec is the contract. `contract` proves its criteria are present and runnable
+# (each fails before the code exists). `tdd` (a called graph, spec 372) writes the tests, proves them RED, implements and
+# proves them GREEN. `verify` re-judges the criteria. `docs` (a called graph) documents the work, and `reverify` judges
+# the criteria again: a docs step that broke them is refused. Three verdicts end the run: `done`, `unverified` (the
+# criteria fail) and `refused` (the run could not proceed). No absolute path and no credential lives in this file.
+# `exit = "done"` lets the night call this graph.
+name = "sdd"
+entry = "contract"
+exit = "done"
+needs = ["agent", "model", "provider", "spec", "workdir", "base", "docs_brief"]
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[[node]]
+id = "contract"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+# Every criterion must fail before the code exists: `ok` when all fail, `unrunnable` when one cannot run.
+expect = "fail"
+
+# Spec 372: the TDD loop, pinned. Its exit is `green`, so `ok` is every test GREEN and `fail` is a test still RED.
+[[node]]
+id = "tdd"
+kind = "call"
+graph = "tdd"
+sha256 = "2730058d9969cfcd8419034468bf547969afff7137b26b06f83fece65910842a"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[node.in]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+base = "$.input.base"
+
+[[node]]
+id = "verify"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
+# Spec 272: the docs graph, pinned. It documents the verified work in its own session, with its own brief.
+[[node]]
+id = "docs"
+kind = "call"
+graph = "docs"
+sha256 = "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980"
+caps = ["spawn", "proc"]
+
+[node.in]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "$.input.docs_brief"
+
+[[node]]
+id = "reverify"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+# `unverified` and `refused` take a route from exclusive ports, so their join is `any`: whichever arm arrives ends the run.
+[[node]]
+id = "unverified"
+kind = "refuse"
+join = "any"
+hook = "judge"
+reason = "the spec's criteria failed"
+
+[[node]]
+id = "refused"
+kind = "refuse"
+join = "any"
+hook = "coder"
+reason = "the agent failed or the criteria could not run"
+
+[[edge]]
+from = "contract"
+port = "ok"
+to = "tdd"
+kind = "data"
+
+[[edge]]
+from = "contract"
+port = "fail"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "contract"
+port = "unrunnable"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "tdd"
+port = "ok"
+to = "verify"
+kind = "data"
+
+[[edge]]
+from = "tdd"
+port = "fail"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "ok"
+to = "docs"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "fail"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "docs"
+port = "ok"
+to = "reverify"
+kind = "data"
+
+[[edge]]
+from = "docs"
+port = "err"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "reverify"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "reverify"
+port = "fail"
+to = "unverified"
+kind = "data"

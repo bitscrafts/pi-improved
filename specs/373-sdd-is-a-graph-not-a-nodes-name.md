@@ -34,6 +34,7 @@ proves GREEN, writes the docs, and reports one of three verdicts.
 - `graphs/night.toml`
 - `graphs/tdd.toml`
 - `crates/pii-server/tests/night_calls_sdd.rs`
+- `crates/pii-server/tests/night_graph_composes.rs`
 
 ## Exit Criteria
 

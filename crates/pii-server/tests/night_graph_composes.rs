@@ -41,10 +41,12 @@ fn kinds(src: &str) -> BTreeSet<String> {
 }
 
 #[test]
-fn night_calls_queue_at_its_current_pin() {
+fn night_calls_sdd_at_its_current_pin() {
     let night = graph("night");
-    let queue = graph("queue");
-    let pin = fragment::sha256_hex(queue.as_bytes());
+    // spec 373: the node named `sdd` calls the sdd graph, which composes tdd and docs; it
+    // called `queue` only because no sdd graph existed, and the name was the only thing that lied.
+    let sdd = graph("sdd");
+    let pin = fragment::sha256_hex(sdd.as_bytes());
     let woven = fragment::load_host_with_graphs(
         &night,
         &repo().join("graphs/fragments"),
@@ -57,10 +59,10 @@ fn night_calls_queue_at_its_current_pin() {
         .iter()
         .find(|c| c.call == "sdd")
         .unwrap_or_else(|| panic!("no call record for `sdd`: {:?}", woven.calls));
-    assert_eq!(call.graph, "queue");
+    assert_eq!(call.graph, "sdd");
     assert_eq!(
         call.sha256, pin,
-        "the pin must be the sha256 of graphs/queue.toml as it is on disk"
+        "the pin must be the sha256 of graphs/sdd.toml as it is on disk"
     );
 }
 

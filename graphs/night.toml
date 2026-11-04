@@ -22,16 +22,23 @@ id = "tick"
 kind = "timer"
 in_ms = "$.input.in_ms"
 
+# Spec 373: the node named `sdd` calls the SDD graph, so the name is true. `queue` stays a graph of its own for row work.
 [[node]]
 id = "sdd"
 kind = "call"
-graph = "queue"
-sha256 = "1fafe548188f13000cc1ab635fc47b4f23342be6e3040e9668b5ccf626bfb549"
+graph = "sdd"
+sha256 = "2eef3bb0144b1cbafd869a2a5d4e4730ca4a4c87e60dfc4f51e4cbf5d17249a8"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 max_entries = 12
 
 [node.in]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+base = "$.input.base"
 workdir = "$.input.workdir"
+docs_brief = "$.input.docs_brief"
 
 [[node]]
 id = "review"
@@ -46,7 +53,7 @@ kind = "post"
 caps = ["post"]
 channel = "discord"
 to = "$.input.to"
-template = "night: ${nodes.sdd__record.status} — ${nodes.sdd__record.verdict}"
+template = "night: ${nodes.sdd__done}"
 key = "night-${run}"
 topic = "status"
 
