@@ -60,6 +60,14 @@ and a graph the engine would mis-join is a graph defect. Record the answer befor
 - [ ] `./target/debug/pii graph lint graphs/night.toml`
 - [ ] `./target/debug/pii graph list 2>/dev/null | grep -q code-index`
 
+## Guardrails notes (measured while implementing)
+
+Turning V9 into a warning made `crates/pii-server/tests/acked_run_survives_kill.rs` fail: its control
+borrowed the one-armed-`any` refusal as the way to obtain a *refused start*. The control now plants a
+graph that fails V1 (an edge leaving a port the node does not have), which is a refusal no later rule
+change can turn into a warning. The test's subject is unchanged: a refused start still hands back an
+id and journals `Failed` with its reason.
+
 ## Guardrails
 
 - Do NOT relax a lint rule to make a file pass. If V9 is wrong, fix the rule **and** prove the
@@ -80,3 +88,5 @@ and a graph the engine would mis-join is a graph defect. Record the answer befor
 - `graphs/night.toml`
 - `crates/pii-graph/src/validate.rs`
 - `crates/pii-cli/tests/every_graph_loads.rs`
+- `crates/pii-graph/tests/one_armed_any_join.rs`
+- `crates/pii-server/tests/acked_run_survives_kill.rs`
