@@ -1,10 +1,12 @@
-# Spec: a small vocabulary, and every graph built from it
+# Spec: a small vocabulary, and composition, build every graph
 
 ## Overview
 
 The operator's objection, verbatim:
 
 > we need a set of tools to build every graph! like a turing machine!
+>
+> — and every graph built from it, **plus composition**.
 
 That is the correct standard, and the repository currently fails it in a measurable way. An audit of
 the 19 shipped graphs (2026-11-04) found:
@@ -57,8 +59,18 @@ Two separate defects:
   inventory expressed as composition, and `crates/pii-cli/src/cmd_docs.rs` is deleted: a graph whose
   only reason to exist was to serve one graph has no place in the binary.
 
+
+- **R6 — composition is the other half, and it is enforced.** A graph is built from the nine **and
+  from other graphs**: `call` is the growth operator, and the library's only legitimate way to gain
+  a capability is to call a graph that already has it. So `lint-graph-kinds` refuses three things,
+  not one: a kind outside the vocabulary that the vocabulary doc does not admit; a kind one graph
+  alone uses; and a graph that re-implements a flow another shipped graph already provides instead
+  of calling it. The last check is why `queue` calls `spec` (row 364) and why this row exists at
+  all: duplication is the accumulation that hides behind "it works".
+
 ## Exit Criteria
 
+- [ ] `grep -q 'composition' docs/03-reference/graph-vocabulary.md`
 - [ ] `test -f docs/03-reference/graph-vocabulary.md`
 - [ ] `cargo run -q -p xtask -- lint-graph-kinds 2>&1 | grep -qE '(specialised|clean)'`
 - [ ] `cargo test -q -p pii-server --test iteration_primitive 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
