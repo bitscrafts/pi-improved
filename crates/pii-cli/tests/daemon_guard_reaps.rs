@@ -30,6 +30,19 @@ fn spawn_daemon(prefix: &str) -> (Child, tempfile::TempDir) {
         .arg("--log-file")
         .arg(dir.path().join("daemon.log"))
         .env("PII_RUNTIME_DIR", dir.path())
+        // The durable store follows PII_STATE_DIR, not the runtime dir: own it, or the operator's daemon holds it.
+        .env("PII_STATE_DIR", dir.path())
+        // Without a model the daemon refuses to start ("no model configured") and exits: the reaping asserts would
+        // then hold for a process that never ran. A scripted model keeps it up, as daemon_log_wiring does.
+        .env(
+            "PII_MODEL",
+            format!(
+                "scripted:{}",
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/phase2/hello.json")
+                    .display()
+            ),
+        )
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -62,14 +75,36 @@ fn gone_within(pid: u32, limit: Duration) -> bool {
     is_gone(pid)
 }
 
+/// True once the daemon's log holds its own start line, or false at the deadline. The line is written first thing.
+fn started_within(log: &Path, limit: Duration) -> bool {
+    let end = Instant::now() + limit;
+    while Instant::now() < end {
+        if std::fs::read_to_string(log).is_ok_and(|t| t.contains("daemon.starting")) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
 #[test]
 fn a_panicking_test_leaves_no_daemon() {
     let slot = daemon_guard::slot();
-    let (child, _dir) = spawn_daemon("guard-panic-");
+    let (child, dir) = spawn_daemon("guard-panic-");
     let pid = child.id();
-    let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        let _daemon = DaemonGuard::new(child, slot);
-        assert!(proc_dir(pid).exists(), "the daemon {pid} must be running");
+    let log = dir.path().join("daemon.log");
+    // The guard owns the child before any assertion, so a failed start is reaped too.
+    let daemon = DaemonGuard::new(child, slot);
+    // A refused start is a failed test, not a passed one: the daemon must log its start, and still be up.
+    assert!(
+        started_within(&log, Duration::from_secs(5)),
+        "daemon {pid} never logged daemon.starting: {}",
+        std::fs::read_to_string(&log).unwrap_or_default()
+    );
+    // `exists` is not enough: a refused daemon is a zombie that still has a /proc entry until someone reaps it.
+    assert!(!is_gone(pid), "the daemon {pid} must be running");
+    let outcome = std::panic::catch_unwind(AssertUnwindSafe(move || {
+        let _daemon = daemon;
         panic!("the test fails while the daemon is up");
     }));
     assert!(outcome.is_err(), "the closure must have panicked");
@@ -82,8 +117,13 @@ fn a_panicking_test_leaves_no_daemon() {
 #[test]
 fn a_dropped_child_survives_without_the_guard() {
     let _slot = daemon_guard::slot();
-    let (child, _dir) = spawn_daemon("guard-control-");
+    let (child, dir) = spawn_daemon("guard-control-");
     let pid = child.id();
+    // The leak is only proved for a daemon that started: a refused one is a zombie that still has a /proc entry.
+    assert!(
+        started_within(&dir.path().join("daemon.log"), Duration::from_secs(10)) && !is_gone(pid),
+        "daemon {pid} never started and stayed up"
+    );
     // The defect, measured: dropping a raw `Child` does not stop the process.
     #[allow(clippy::drop_non_drop)]
     // reason: the control drops a raw `Child` on purpose, to prove it leaks.

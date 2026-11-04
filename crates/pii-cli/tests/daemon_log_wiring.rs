@@ -37,6 +37,8 @@ fn a_worker_state_change_reaches_the_daemon_log_file() {
             .arg("--log-file")
             .arg(&log)
             .env("PII_RUNTIME_DIR", dir.path())
+            // The durable store follows PII_STATE_DIR, not the runtime dir: own it, or the operator's daemon holds it.
+            .env("PII_STATE_DIR", dir.path())
             .env("PII_CONFIG", &cfg)
             .env("PII_MODEL", format!("scripted:{}", hello.display()))
             .stderr(std::process::Stdio::null()),
