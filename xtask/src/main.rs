@@ -19,6 +19,7 @@ mod bench;
 pub mod cli_parse;
 mod coverage_floor;
 mod deps;
+mod disk;
 mod doc_drift;
 mod fresh_gate;
 pub mod heal_collect;
@@ -248,6 +249,13 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("disk") => match disk::run(&rest) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("{e}");
                 ExitCode::FAILURE
             }
         },

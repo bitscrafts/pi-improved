@@ -13,6 +13,7 @@ mod cmd_ctl;
 mod cmd_daemon;
 mod cmd_daemon_flags;
 mod cmd_deploy_card;
+mod cmd_disk;
 mod cmd_entity;
 mod cmd_graph_installed;
 mod cmd_health;
@@ -233,6 +234,9 @@ fn main() -> ExitCode {
     }
     if cmd == "health" {
         return cmd_health::cmd_health(&mut args);
+    }
+    if cmd == "disk" {
+        return cmd_disk::cmd_disk(&mut args);
     }
     if cmd == "metrics" {
         return cmd_metrics::cmd_metrics(&mut args);

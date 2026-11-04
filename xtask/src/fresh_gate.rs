@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 
 use crate::workspace_root;
 
-const BASE: &str = "/projects/_tmp";
+pub const BASE: &str = "/projects/_tmp";
 const PREFIX: &str = "fresh-gate-";
 
 /// Parsed command line.
@@ -97,6 +97,44 @@ pub fn min_free_mb(env: Option<&str>) -> u64 {
     env.and_then(|v| v.trim().parse().ok()).unwrap_or(12_288)
 }
 
+/// Ceiling of the warm gate cache in GiB: `FRESH_GATE_CACHE_MAX_GB`, default 40 (spec 367 R2). The cache once
+/// reached 105.8 GiB because nothing bounded it: a bigger cache builds faster, so it only ever grew.
+pub fn gate_cache_max_gb(env: Option<&str>) -> u64 {
+    env.and_then(|v| v.trim().parse().ok()).unwrap_or(40)
+}
+
+/// True when a cache of `bytes` is strictly over `max_gb` GiB.
+pub fn over_ceiling(bytes: u64, max_gb: u64) -> bool {
+    bytes > max_gb.saturating_mul(1_073_741_824)
+}
+
+/// Removes the warm cache when it is over its ceiling, before the build (spec 367 R2). Never while a cargo or
+/// rustc is live: a running build would lose its target under it.
+// reason: dev-tooling reads its own knob from the environment, as the gate does for the others.
+#[allow(clippy::disallowed_methods)]
+fn trim_warm_cache(target: &Path) -> Result<(), String> {
+    let max_gb = gate_cache_max_gb(std::env::var("FRESH_GATE_CACHE_MAX_GB").ok().as_deref());
+    let Some(bytes) = crate::disk::du_bytes(target) else {
+        return Ok(());
+    };
+    if !over_ceiling(bytes, max_gb) {
+        return Ok(());
+    }
+    if crate::disk::build_is_live() {
+        println!(
+            "fresh-gate: {} is over {max_gb} GiB but a build is live; not trimming",
+            target.display()
+        );
+        return Ok(());
+    }
+    std::fs::remove_dir_all(target).map_err(|e| format!("trim {}: {e}", target.display()))?;
+    println!(
+        "fresh-gate: trimmed {} (over {max_gb} GiB); this build starts cold",
+        target.display()
+    );
+    Ok(())
+}
+
 /// Available MB from `df -Pm <path>` output (4th column of the data row).
 pub fn parse_df_free_mb(out: &str) -> Option<u64> {
     out.lines().nth(1)?.split_whitespace().nth(3)?.parse().ok()
@@ -126,7 +164,7 @@ fn export_owner(path: &Path) -> Option<u32> {
 /// Measured 2026-11-03: retention removed a *running* gate's export, and that gate then failed sixteen steps on
 /// `target/gate-steps/<step>.log: No such file or directory` with `failing tests: []` — a red blaming the tree for
 /// a directory another process deleted. Retention must ask whether the owner is alive, not how old the dir is.
-fn owner_is_alive(path: &Path) -> bool {
+pub fn owner_is_alive(path: &Path) -> bool {
     export_owner(path).is_some_and(|pid| Path::new("/proc").join(pid.to_string()).exists())
 }
 
@@ -295,6 +333,7 @@ fn run_gate(dir: &Path) -> Result<(bool, String), String> {
         Ok(v) if !v.trim().is_empty() => PathBuf::from(v),
         _ => dir.join("target"),
     };
+    trim_warm_cache(&target)?;
     let mut child = Command::new("bash")
         .args(["-c", "bash quality-gate.sh 2>&1"])
         .current_dir(dir)
@@ -491,6 +530,23 @@ mod tests {
         assert_eq!(parse_df_free_mb(out), Some(68418));
         assert_eq!(parse_df_free_mb("garbage"), None);
         assert_eq!(parse_df_free_mb(""), None);
+    }
+
+    #[test]
+    fn gate_cache_ceiling_default_and_override() {
+        assert_eq!(gate_cache_max_gb(None), 40);
+        assert_eq!(gate_cache_max_gb(Some("12")), 12);
+        assert_eq!(gate_cache_max_gb(Some("junk")), 40);
+    }
+
+    #[test]
+    fn gate_cache_is_trimmed_only_past_its_ceiling() {
+        let gib = 1_073_741_824_u64;
+        assert!(over_ceiling(41 * gib, 40));
+        assert!(
+            !over_ceiling(40 * gib, 40),
+            "exactly at the ceiling is kept"
+        );
     }
 
     #[test]
