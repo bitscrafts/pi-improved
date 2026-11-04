@@ -1,0 +1,143 @@
+# Spec 379: the books are updated by a graph, a composition of `docs` with a stale inventory and a truth check. `inventory`
+# lists the chapters whose stamp is behind HEAD or whose documented paths moved (`pii docs stale`), `select` ends on
+# `nothing-to-do` when there are none, `call-docs` calls the docs graph (pinned by sha256, so there is no second coder),
+# and `verify` (`pii docs verify`) proves every backticked path and every `pii <verb>` a chapter names is real; only a pass
+# rewrites the chapter's stamp. Limit: there is no iteration primitive, so the docs coder receives the whole stale list and
+# loops over the chapters inside its own node. No absolute path and no credential lives in this file: the book's commands
+# arrive through `input`.
+name = "books"
+entry = "inventory"
+exit = "done"
+caps = ["fs_read", "fs_write", "proc", "spawn"]
+
+[limits]
+max_wall_ms = 1800000
+
+[[node]]
+id = "inventory"
+kind = "tool"
+tool = "bash"
+args = { command = "$.input.inventory", cwd = "$.input.workdir" }
+caps = ["fs_read", "proc"]
+
+[[node]]
+id = "select"
+kind = "route"
+on = "$.payload.stdout"
+rules = [
+  { eq = "nothing-stale", port = "nothing-to-do" },
+  { port = "write" },
+]
+
+[[node]]
+id = "nothing-to-do"
+kind = "transform"
+value = "nothing-to-do"
+
+# The writing step is the docs graph, called and pinned. The inventory's list is the brief.
+[[node]]
+id = "call-docs"
+kind = "call"
+graph = "docs"
+sha256 = "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980"
+caps = ["spawn", "proc"]
+
+[node.in]
+brief = "$.nodes.inventory.payload.stdout"
+
+# verify proves the claims, not the presence of the file; only a pass rewrites the stamp (R4).
+[[node]]
+id = "verify"
+kind = "tool"
+tool = "bash"
+args = { command = "$.input.verify", cwd = "$.input.workdir" }
+caps = ["fs_read", "fs_write", "proc"]
+
+[[node]]
+id = "gate"
+kind = "route"
+on = "$.payload.exit_code"
+rules = [
+  { eq = 0, port = "pass" },
+  { port = "fail" },
+]
+
+# Two exclusive inbound ports reach `done` (nothing-to-do, gate pass), so it joins on either one.
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+join = "any"
+
+[[node]]
+id = "unverified"
+kind = "refuse"
+join = "any"
+hook = "judge"
+reason = "a chapter names a path or a pii verb that does not exist, or the docs could not be written; the stamp is unchanged"
+
+[[edge]]
+from = "inventory"
+port = "ok"
+to = "select"
+kind = "data"
+
+[[edge]]
+from = "inventory"
+port = "err"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "select"
+port = "nothing-to-do"
+to = "nothing-to-do"
+kind = "data"
+
+[[edge]]
+from = "nothing-to-do"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "select"
+port = "write"
+to = "call-docs"
+kind = "data"
+
+[[edge]]
+from = "call-docs"
+port = "ok"
+to = "verify"
+kind = "data"
+
+[[edge]]
+from = "call-docs"
+port = "err"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "ok"
+to = "gate"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "err"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "gate"
+port = "pass"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "gate"
+port = "fail"
+to = "unverified"
+kind = "data"

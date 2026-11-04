@@ -74,6 +74,14 @@ fn run_cmd(prog: &str, args: &[&str]) -> ExitCode {
     }
 }
 
+/// Spec 379 criterion: `graph lint <file>` is the static check `pii graph lint` runs, reached through the binary so
+/// xtask keeps no graph engine of its own.
+fn graph_lint(rest: &[String]) -> ExitCode {
+    let mut args = vec!["run", "-q", "-p", "pii-cli", "--bin", "pii", "--", "graph"];
+    args.extend(rest.iter().map(String::as_str));
+    run_cmd("cargo", &args)
+}
+
 /// Runs the full local gate set (F8): deps/net/lint/proto/bench plus
 /// fmt/clippy/test — "the real gate" per §1.6. Split out of `main` to keep
 /// it under the 80-line function-length lint.
@@ -274,6 +282,7 @@ fn main() -> ExitCode {
             }
         },
         Some("ci") => run_ci(&rest),
+        Some("graph") => graph_lint(&rest),
         Some("test-inventory") => {
             let check = rest.iter().any(|a| a == "--check");
             report(test_inventory::run(&workspace_root(), check))
