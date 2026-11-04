@@ -46,7 +46,7 @@ use cli_parse::{
     parse_mem_eval, parse_promote_collect, parse_report_flag, parse_rss_gate, parse_worktree_flag,
 };
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|lint-scratch|lint-observability|coverage-floor <summary.json> [--floor N]|silent-noop-check|reachability-check|doc-drift-check|memory-eval|rss-gate|heal-seed|heal-collect <sig>|promote-build [--worktree P]|promote-collect <sig> <approval_id> [--approval-db P] [--by NAME]|heal-prune [--all]|fresh-gate [--worktree] [--overlay src=dest]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|lint-scratch|lint-observability|coverage-floor <summary.json> [--floor N]|silent-noop-check|reachability-check|doc-drift-check [--modules]|doc-drift-inventory|memory-eval|rss-gate|heal-seed|heal-collect <sig>|promote-build [--worktree P]|promote-collect <sig> <approval_id> [--approval-db P] [--by NAME]|heal-prune [--all]|fresh-gate [--worktree] [--overlay src=dest]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -129,7 +129,21 @@ fn main() -> ExitCode {
             report(r)
         }
         Some("reachability-check") => report(reachability::run(&workspace_root())),
-        Some("doc-drift-check") => report(doc_drift::run(&workspace_root())),
+        Some("doc-drift-check") => {
+            // Spec 374 R3: `--modules` checks the module headers of the tree instead of HANDOFF.md.
+            if std::env::args().any(|a| a == "--modules") {
+                report(doc_drift::run_modules(&workspace_root()))
+            } else {
+                report(doc_drift::run(&workspace_root()))
+            }
+        }
+        Some("doc-drift-inventory") => {
+            // Spec 374 R1: prints the undocumented modules, one per line; nothing printed means nothing to document.
+            for module in doc_drift::inventory(&workspace_root()) {
+                println!("{module}");
+            }
+            ExitCode::SUCCESS
+        }
         Some("silent-noop-check") => {
             let want_list = std::env::args().any(|a| a == "--list");
             report(silent_noop::run(&workspace_root(), want_list))

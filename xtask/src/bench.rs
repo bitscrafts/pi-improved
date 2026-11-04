@@ -1,6 +1,6 @@
 //! Cold-start benchmark gate (spec F6.2): p95 of `pii --version` under a
-//! budget. Uses `Command::output()` — never `.spawn()` (clippy.toml denies it,
-//! and `output()` + `Instant` gives a clean p95).
+//! budget. Uses `Command::output` — never `.spawn()` (clippy.toml denies it,
+//! and `output` + `Instant` gives a clean p95).
 
 #![forbid(unsafe_code)]
 // reason: benchmark p95 math intentionally casts integer sample counts to f64.

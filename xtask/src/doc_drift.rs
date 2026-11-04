@@ -14,7 +14,7 @@
 // lint config, so the lint is relaxed for the whole file.
 #![allow(clippy::redundant_pub_crate)] // reason: module private by design
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Prefixes that make a token look like a repo-relative path.
 const PATH_PREFIXES: &[&str] = &[
@@ -123,11 +123,139 @@ fn token_exists(root: &Path, token: &str) -> bool {
     false
 }
 
+/// Spec 374 R3: the module headers (`//!`) of every Rust source in the tree must name only paths that exist and
+/// functions that are defined. Path tokens reuse the HANDOFF rules above; a backtick token `name()` must be a
+/// function the tree defines. Other symbols are not checked (a bare word is too often prose or a std item).
+///
+/// # Errors
+/// One `DOC-DRIFT FAIL` line per dangling path or undefined function, naming the module that makes the claim.
+pub(crate) fn run_modules(root: &Path) -> Result<(), Vec<String>> {
+    let sources = rust_sources(root);
+    let texts: Vec<String> = sources
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(p).ok())
+        .collect();
+    let mut violations = Vec::new();
+    for (path, src) in sources.iter().zip(&texts) {
+        let Some(doc) = module_doc(src) else { continue };
+        let module = relative(root, path);
+        for token in backtick_tokens(&doc) {
+            if anchored_path(&token) {
+                if !token_exists(root, &token) {
+                    violations.push(format!(
+                        "DOC-DRIFT FAIL: `{token}` ({module}) does not exist"
+                    ));
+                }
+            } else if let Some(item) = token.strip_suffix("()") {
+                let name = item.rsplit("::").next().unwrap_or(item);
+                if is_ident(name) && !defines_fn(&texts, name) {
+                    violations.push(format!(
+                        "DOC-DRIFT FAIL: `{token}` ({module}) names no function in the tree"
+                    ));
+                }
+            }
+        }
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(violations)
+    }
+}
+
+/// Spec 374 R1: the Rust modules whose source has no `//!` header, one repo-relative path per line. An empty list
+/// means every module is documented, which is the `nothing-to-do` control of `graphs/doc-code.toml`.
+pub(crate) fn inventory(root: &Path) -> Vec<String> {
+    rust_sources(root)
+        .iter()
+        .filter(|path| !std::fs::read_to_string(path).is_ok_and(|src| module_doc(&src).is_some()))
+        .map(|path| relative(root, path))
+        .collect()
+}
+
+/// Every Rust source under `xtask/src` and `crates/*/src`, sorted. The one tree walk behind both checks.
+fn rust_sources(root: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![root.join("xtask/src")];
+    if let Ok(entries) = std::fs::read_dir(root.join("crates")) {
+        dirs.extend(entries.flatten().map(|e| e.path().join("src")));
+    }
+    let mut out = Vec::new();
+    while let Some(dir) = dirs.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The module's `//!` header: the inner doc lines before the first code line, or `None` when there are none.
+fn module_doc(src: &str) -> Option<String> {
+    let lines: Vec<&str> = src
+        .lines()
+        .take_while(|l| {
+            let t = l.trim_start();
+            t.is_empty() || t.starts_with("//")
+        })
+        .filter_map(|l| l.trim_start().strip_prefix("//!"))
+        .collect();
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+fn relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .display()
+        .to_string()
+}
+
+fn is_ident(s: &str) -> bool {
+    s.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// True when some source defines `fn name` (followed by its parameters or generics).
+fn defines_fn(texts: &[String], name: &str) -> bool {
+    let decl = format!("fn {name}");
+    texts.iter().any(|src| {
+        src.match_indices(&decl).any(|(at, _)| {
+            let after = src[at + decl.len()..].chars().next();
+            matches!(after, Some('(' | '<'))
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-    use super::{anchored_path, backtick_tokens, token_exists};
+    use super::{anchored_path, backtick_tokens, defines_fn, module_doc, token_exists};
+
+    /// Spec 374 R3: a module header that names a function nobody defines is refused, one that names a real one passes.
+    #[test]
+    fn symbols_in_a_header_must_be_defined() {
+        let texts = vec!["pub fn real_one(x: u8) {}\n".to_owned()];
+        assert!(defines_fn(&texts, "real_one"));
+        assert!(!defines_fn(&texts, "real_two"), "an undefined name");
+        assert!(!defines_fn(&texts, "real"), "a prefix is not the name");
+    }
+
+    #[test]
+    fn module_header_is_the_leading_inner_doc() {
+        assert_eq!(
+            module_doc("//! one\n//! two\n\nuse x;\n//! later\n").as_deref(),
+            Some(" one\n two")
+        );
+        assert!(module_doc("use x;\n").is_none(), "no header");
+    }
 
     /// Spec 118 R2: scratch, placeholders and patterns are not durable targets.
     #[test]

@@ -6,7 +6,7 @@
 //! passes in a developer tree (the directory is left over from an earlier
 //! run) and panics `NotFound` in a fresh clone.
 //!
-//! Spec 136: a second rule refuses any `temp_dir()` call — scratch rooted
+//! Spec 136: a second rule refuses any `temp_dir` call — scratch rooted
 //! outside the tree leaks past `cargo clean`. Comment lines are excluded
 //! explicitly (see [`is_comment`]); no file is allowlisted.
 
