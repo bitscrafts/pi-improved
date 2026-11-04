@@ -30,14 +30,47 @@ Found by documentation work, 2026-11-04 (`_docs/06-research/manual-audit-2026110
 - **R4** A test loads every file under `graphs/` and fails naming the file that does not load, so the
   whole directory is covered rather than these two.
 
+
+## Measured reality (2026-11-04, review 046)
+
+Five files fail `pii graph lint`, in two different ways — and they are two different defects:
+
+```
+code-index.toml            rc 2   missing 'name'   (name nested in [graph], edges as depends_on)
+intervention-report.toml   rc 2   missing 'name'   (same shape)
+tdd.toml                   rc 3   V9  multi-arm join with 1 inbound data edge  (`join = "any"`)
+sdd.toml                   rc 3   V9  same
+night.toml                 rc 3   V9  same
+```
+
+`validate` is only consulted on the lint paths (`engine/dispatch.rs:405`,
+`cmd_graph_installed.rs:274`), so the three V9 files may still start at runtime (**unverified**). So the
+first task is to decide which side is wrong: a graph whose join is legal at runtime is a lint defect,
+and a graph the engine would mis-join is a graph defect. Record the answer before changing either.
+
+`night`, `sdd` and `tdd` are also among the 11 system graphs, so this row blocks the environment.
+
 ## Exit Criteria
 
 - [ ] `./target/debug/pii graph lint graphs/code-index.toml`
 - [ ] `./target/debug/pii graph lint graphs/intervention-report.toml`
 - [ ] `cargo test -q -p pii-cli --test every_graph_loads 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `./target/debug/pii graph lint graphs/tdd.toml`
+- [ ] `./target/debug/pii graph lint graphs/sdd.toml`
+- [ ] `./target/debug/pii graph lint graphs/night.toml`
 - [ ] `./target/debug/pii graph list 2>/dev/null | grep -q code-index`
 
 ## Guardrails
 
 - Do NOT relax the loader to accept `[graph]`-nested `name` or `depends_on` edges.
 - Do NOT delete either file to make the directory lint clean.
+
+## Files
+
+- `graphs/code-index.toml`
+- `graphs/intervention-report.toml`
+- `graphs/tdd.toml`
+- `graphs/sdd.toml`
+- `graphs/night.toml`
+- `crates/pii-graph/src/validate.rs`
+- `crates/pii-cli/tests/every_graph_loads.rs`
