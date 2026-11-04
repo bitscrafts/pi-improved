@@ -43,7 +43,7 @@ sha256 = "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980"
 caps = ["spawn", "proc"]
 
 [node.in]
-brief = "$.nodes.inventory.payload.stdout"
+brief = "$.nodes.inventory.stdout"
 
 # Spec 374 R3: verify proves the document is true, not merely present. A named path or symbol that does not exist fails it.
 [[node]]

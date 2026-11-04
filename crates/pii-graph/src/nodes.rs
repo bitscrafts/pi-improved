@@ -101,6 +101,18 @@ impl RouteNode {
     }
 }
 
+
+/// Equality for a routing rule: strings compare trimmed, everything else compares exactly.
+///
+/// The trim is deliberate and load-bearing — a route fed by a command's stdout compares against a
+/// value that carries a trailing newline (see `RouteNode::run`).
+fn same_value(expected: &serde_json::Value, actual: &serde_json::Value) -> bool {
+    match (expected.as_str(), actual.as_str()) {
+        (Some(e), Some(a)) => e.trim() == a.trim(),
+        _ => expected == actual,
+    }
+}
+
 impl super::GraphNode for RouteNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         let ec = eval_ctx(input);
@@ -110,7 +122,13 @@ impl super::GraphNode for RouteNode {
         // next to exit_code) to localize and re-route — spec F6.2's gate
         // feeds <test output> back to the fix agent.
         let port = self.rules.iter().find_map(|(eq, port)| match eq {
-            Some(expected) if *expected == on_val => Some(port),
+            // A routing value is compared TRIMMED when both sides are strings. A command's stdout
+            // carries its trailing newline, and `say!` writes with `writeln!`, so an exact
+            // comparison of "nothing-stale" against "nothing-stale\n" never matched: the books
+            // graph's `nothing-to-do` port was unreachable and its coder ran on every invocation
+            // (found by the 045 review, 2026-11-04). Trimming here fixes every graph that routes
+            // on a command's output, rather than teaching each graph about newlines.
+            Some(expected) if same_value(expected, &on_val) => Some(port),
             Some(_) => None,
             // fallback rule (no eq)
             None => Some(port),
@@ -388,5 +406,27 @@ impl super::GraphNode for TimerNode {
             port: PortName::from("fired"),
             value: input.payload.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod trim_tests {
+    use super::same_value;
+    use serde_json::json;
+
+    #[test]
+    fn a_command_stdout_with_its_newline_still_matches() {
+        assert!(same_value(&json!("nothing-stale"), &json!("nothing-stale\n")));
+    }
+
+    #[test]
+    fn near_miss_a_different_word_does_not_match() {
+        assert!(!same_value(&json!("nothing-stale"), &json!("two-chapters\n")));
+    }
+
+    #[test]
+    fn non_strings_still_compare_exactly() {
+        assert!(same_value(&json!(0), &json!(0)));
+        assert!(!same_value(&json!(0), &json!("0")));
     }
 }
