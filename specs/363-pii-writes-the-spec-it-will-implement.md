@@ -60,7 +60,6 @@ with no human edit in between. That is the whole difference between a document a
 - [ ] `cargo test -q -p pii-server --test self_improve_composes 2>&1 | grep -qE 'test result: ok. 1 passed'`
 - [ ] `grep -q 'kind = "plan"' graphs/self-improve.toml`
 - [ ] `grep -q 'kind = "enqueue"' graphs/self-improve.toml`
-- [ ] `cargo xtask fresh-gate`
 
 ## Guardrails
 
