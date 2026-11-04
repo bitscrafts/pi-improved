@@ -24,6 +24,32 @@ logic escapes the review that a pinned graph provides.
 **Project**: /projects/pi-improved
 **Phase**: graph format
 
+
+## The motive: why an instruction belongs to the node
+
+Six reasons, and each one is a defect that exists today because the instruction lives elsewhere:
+
+1. **Reviewability.** A graph is reviewed by reading it. If the instruction is a `brief` path or a CLI
+   argument, the reviewer approves a flow without seeing what the model will actually be told — and the
+   words are most of the behaviour of a coder node.
+2. **Pinning.** A graph's `sha256` covers its text. A prompt *in* the graph is covered by the same
+   digest, so "the flow that ran" includes the words it ran with. A prompt in a separate file, an env
+   var, or a `run` argument is not pinned by anything reviewable.
+3. **Composability.** A subgraph's instruction is part of its contract. With templates, a caller passes
+   values and the callee keeps its own words; without them, every caller restates the brief — which is
+   the same duplication row 364 fixed for *flows*, one level down, for *instructions*.
+4. **One graph, many cases.** "Write chapter {{input.chapter}} of {{input.book}}" is one node and one
+   review, not one graph per chapter. The engine has no per-item iteration primitive, so a template is
+   what makes a list-shaped job expressible at all.
+5. **Audit.** The resolved prompt can be journalled, so "what was it told" is answered from the record.
+   A brief assembled by a shell string in the run input leaves no trace but the string.
+6. **Testability.** A placeholder naming a path the graph cannot supply is checkable at load. A brief
+   that arrives from outside is checkable by nothing — which is how `brief = "$.nodes.inventory.payload.stdout"`
+   shipped empty on every run, with every test and gate green.
+
+The motive in one sentence: **if the instruction is not in the pinned artefact, the reviewed thing and
+the executed thing are different things.**
+
 ## Requirements
 
 - **R1 — a template field.** A node may declare `prompt`, a literal string with placeholders of the
