@@ -25,6 +25,28 @@ if [ $? -eq 3 ]; then
   exit 0
 fi
 . scripts/autonomy/env.sh 2>/dev/null
+# THE TWO CHECKS THAT LET THIS CRON STAY ON AND STILL NEVER COLLIDE (operator, 2026-11-04: "cron must
+# always be on!" and "we need some check before the cronjob start or peek anything from the queue").
+#
+# The hold is a DECLARATION and only works if a person declares it. These two are MEASUREMENTS, so they
+# hold whoever forgot:
+#  (a) anything already running — a lane worker or a cycle — means this firing has nothing to add;
+#  (b) uncommitted work at the start of a firing belongs to someone else. Measured 2026-11-04 14:52Z:
+#      this dispatcher dispatched row 384 into the tree holding row 380's WIP, then 380's gate failed
+#      on 384's test while reporting on 380. A clean tree at the start of a firing is the precondition
+#      for "the diff the gate measures is the diff this row wrote".
+RUNNING_NOW=$(pgrep -af 'run-batchC-(pii|claude)|scripts/autonomy/cycle\.sh' 2>/dev/null | grep -v "^$$ " | head -3)
+if [ -n "$RUNNING_NOW" ]; then
+  echo "drain: a worker or cycle is already running — nothing started"
+  printf '%s\n' "$RUNNING_NOW" | sed 's/^/drain:   /'
+  exit 0
+fi
+DIRTY_NOW=$(git status --porcelain 2>/dev/null | head -5)
+if [ -n "$DIRTY_NOW" ]; then
+  echo "drain: the tree has uncommitted work — not dispatching over it"
+  printf '%s\n' "$DIRTY_NOW" | sed 's/^/drain:   /'
+  exit 0
+fi
 # THE WORKER IS DECLARED HERE, so the scheduled dispatcher is self-sufficient (user, 2026-10-19: "it should be automatic").
 # claude + haiku is the implementation workhorse; a closed window makes cycle.sh return OUTCOME=window-closed and the NEXT
 # firing of this dispatcher resumes automatically once the reset has passed — no hand-made one-shot needed.
