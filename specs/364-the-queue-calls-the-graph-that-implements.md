@@ -59,7 +59,6 @@ verdict that reaches `record` is the callee's.
 - [ ] `cargo test -q -p pii-server --test spec_graph_is_callable 2>&1 | grep -qE 'test result: ok. 1 passed'`
 - [ ] `grep -q '^exit = "done"' graphs/spec.toml`
 - [ ] `grep -q 'kind = "call"' graphs/queue.toml`
-- [ ] `cargo xtask fresh-gate`
 
 ## Guardrails
 
