@@ -53,6 +53,7 @@ pub(crate) fn universal_newlines(bytes: &[u8]) -> Option<String> {
 
 /// The fields of the input, in the order the shell writes them.
 pub(crate) struct Input<'a> {
+    pub(crate) method: &'a str,
     pub(crate) agent: &'a str,
     pub(crate) model: &'a str,
     pub(crate) provider: &'a str,
@@ -69,7 +70,8 @@ pub(crate) struct Input<'a> {
 pub(crate) fn render(i: &Input<'_>) -> String {
     let sid = i.sid.map_or_else(|| "null".to_owned(), json_str);
     format!(
-        "{{\"agent\": {}, \"model\": {}, \"provider\": {}, \"spec\": {}, \"base\": {}, \"workdir\": {}, \"brief\": {}, \"docs_brief\": {}, \"max_budget_usd\": {}, \"sid\": {sid}}}",
+        "{{\"method\": {}, \"agent\": {}, \"model\": {}, \"provider\": {}, \"spec\": {}, \"base\": {}, \"workdir\": {}, \"brief\": {}, \"docs_brief\": {}, \"max_budget_usd\": {}, \"sid\": {sid}}}",
+        json_str(i.method),
         json_str(i.agent),
         json_str(i.model),
         json_str(i.provider),

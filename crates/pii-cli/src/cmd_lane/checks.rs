@@ -19,10 +19,22 @@ fn spaces(s: &[u8]) -> usize {
     s.iter().take_while(|&&b| b == b' ').count()
 }
 
-/// `grep -o 'sha256 = "[0-9a-f]*"' | head -1 | cut -d'"' -f2`: the first match anywhere, comments included.
+/// `grep -A6 'graph = "docs"' | grep -m1 -o 'sha256 = "[0-9a-f]*"' | cut -d'"' -f2`: the first pin within six lines
+/// after a `graph = "docs"` line (the docs call's own pin, not an earlier call's), comments included.
 pub(crate) fn pin(text: &[u8]) -> String {
     const KEY: &[u8] = b"sha256 = \"";
-    for line in text.split(|&b| b == b'\n') {
+    const CALL: &[u8] = b"graph = \"docs\"";
+    let mut last_hit: Option<usize> = None;
+    let scoped = text
+        .split(|&b| b == b'\n')
+        .enumerate()
+        .filter_map(|(i, line)| {
+            if find(line, CALL).is_some() {
+                last_hit = Some(i);
+            }
+            last_hit.is_some_and(|h| i <= h + 6).then_some(line)
+        });
+    for line in scoped {
         let mut from = 0;
         while let Some(rel) = line.get(from..).and_then(|s| find(s, KEY)) {
             let start = from + rel + KEY.len();

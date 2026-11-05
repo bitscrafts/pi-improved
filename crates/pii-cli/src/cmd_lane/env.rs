@@ -18,6 +18,8 @@ pub(crate) struct LaneEnv {
     pub(crate) max_budget: Option<String>,
     pub(crate) node_timeout_ms: Option<String>,
     pub(crate) wait_margin_s: Option<String>,
+    /// `PII_METHOD`: the methodology `spec.toml` routes on (spec 385); default `sdd`.
+    pub(crate) method: Option<String>,
     /// `PII_SSH`: the ssh binary (default `ssh`).
     pub(crate) ssh: Option<String>,
     /// `DEVBOX_HOST`, default [`DEFAULT_HOST`].
@@ -57,6 +59,7 @@ impl LaneEnv {
             max_budget: var("PII_MAX_BUDGET_USD"),
             node_timeout_ms: var("PII_NODE_TIMEOUT_MS"),
             wait_margin_s: var("PII_WAIT_MARGIN_S"),
+            method: var("PII_METHOD"),
             ssh: var("PII_SSH"),
             devbox_host: var("DEVBOX_HOST"),
             container: var("PII_DEVBOX_CONTAINER"),

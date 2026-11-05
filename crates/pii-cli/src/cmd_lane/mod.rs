@@ -199,7 +199,7 @@ pub(crate) fn plan(
     if brief.windows(3).any(|w| w == b"'''") {
         return p.refuse(
             "ABORT: the brief contains ''' and cannot be written as a TOML literal",
-            2,
+            9,
         );
     }
     let brief_path_text = brief_path.display().to_string();
@@ -216,7 +216,7 @@ pub(crate) fn plan(
         }) else {
             return p.refuse(
                 "ABORT: graphs/spec.toml has no numeric max_wall_ms: nothing started",
-                2,
+                9,
             );
         };
         deadline = Some(wall / 1000 + num);
@@ -258,7 +258,7 @@ pub(crate) fn plan(
                 if g.differs || g.untracked {
                     return p.refuse(
                         &format!("ABORT: graphs/{name}.toml differs from HEAD (the pin protects the reviewed graph): nothing started"),
-                        2,
+                        9,
                     );
                 }
             }
@@ -273,20 +273,20 @@ pub(crate) fn plan(
         if digest.is_empty() || pin != digest {
             return p.refuse(
                 &format!("ABORT: graphs/docs.toml digest '{digest}' is not the pin in graphs/spec.toml ('{pin}'): nothing started"),
-                2,
+                9,
             );
         }
         if snap.preflight.bytes.is_none() {
             return p.refuse(
                 "ABORT: graphs/preflight.toml is missing (the preflight judge graph): nothing started",
-                2,
+                9,
             );
         }
         // The input. The shell truncates the file before the brief is read, so a failure after that leaves it empty;
         // a missing max_micro_usd fails before the truncation and leaves the file alone.
         let input = logd.join(format!("input-{tag}.json"));
         let Some(limit) = checks::limit_micro_usd(spec_bytes) else {
-            return p.refuse("ABORT: could not build the input", 2);
+            return p.refuse("ABORT: could not build the input", 9);
         };
         let cap = env.max_budget.as_deref().unwrap_or("1.00");
         let docs = brief::docs(n);
@@ -300,6 +300,7 @@ pub(crate) fn plan(
             .zip(input::universal_newlines(&brief))
             .map(|(budget, text)| {
                 input::render(&input::Input {
+                    method: env.method.as_deref().map_or("sdd", str::trim),
                     agent: &agent.name,
                     model: &agent.model,
                     provider,
@@ -316,7 +317,7 @@ pub(crate) fn plan(
             Some(text) => p.files.push((input, text.into_bytes())),
             None => {
                 p.files.push((input, Vec::new()));
-                return p.refuse("ABORT: could not build the input", 2);
+                return p.refuse("ABORT: could not build the input", 9);
             }
         }
         input_path = Some(logd.join(format!("input-{tag}.json")));
@@ -368,7 +369,7 @@ pub(crate) fn plan(
         } else {
             out.as_str()
         };
-        return p.refuse(&format!("ABORT: container preflight failed: {out}"), 2);
+        return p.refuse(&format!("ABORT: container preflight failed: {out}"), 9);
     }
     let mut log_text = format!(
         "== {tag} via pii: agent={} model={} provider={}\n== graph {graph_name}\n",

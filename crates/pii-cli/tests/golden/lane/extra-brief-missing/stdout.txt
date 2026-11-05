@@ -6,6 +6,6 @@ SPEC     : specs/309-a-rows-verify-column-is-its-specs-exit-criteria.md
 BRIEF    : <REPO>/_tmp/claude-batchC/brief-309-a-rows-verify-column-is-its-specs-exit-criteria.md (1415 bytes)
 INPUT    : <REPO>/_tmp/claude-batchC/input-309-a-rows-verify-column-is-its-specs-exit-criteria.json
 LOG      : <REPO>/_tmp/claude-batchC/309-a-rows-verify-column-is-its-specs-exit-criteria.<TS>.log
-WAIT     : up to 6600s (graph max_wall_ms 6000000 + 600)
+WAIT     : up to 11400s (graph max_wall_ms 10800000 + 600)
 PREFLIGHT: skipped (dry run)
 DRY RUN: nothing started, nothing spent

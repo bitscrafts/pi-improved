@@ -29,7 +29,7 @@ const BIN: &str = env!("CARGO_BIN_EXE_pii");
 /// (the golden brief is 1360 bytes on disk with `<REPO>` for 51 bytes: 1405 printed). The scratch root matches it.
 const REPO_LEN: usize = 51;
 /// The lane's variables, cleared before each run so the test host's environment cannot leak in.
-const LANE_VARS: [&str; 11] = [
+const LANE_VARS: [&str; 12] = [
     "ALLOW_DIRTY",
     "PII_AGENT",
     "PII_LANE_GRAPH",
@@ -37,6 +37,7 @@ const LANE_VARS: [&str; 11] = [
     "PII_MAX_BUDGET_USD",
     "PII_NODE_TIMEOUT_MS",
     "PII_WAIT_MARGIN_S",
+    "PII_METHOD",
     "CLAUDE_MODEL",
     "PI_MODEL",
     "PI_PROVIDER",
@@ -543,7 +544,7 @@ fn wall_check_precedes_head_and_pin() {
             "ABORT: graphs/spec.toml has no numeric max_wall_ms: nothing started"
         ])
     );
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(9)); // spec 397: a refusal before anything is spent
 }
 
 #[test]
@@ -567,7 +568,7 @@ fn staged_edit_is_refused() {
             "ABORT: graphs/spec.toml differs from HEAD (the pin protects the reviewed graph): nothing started"
         ])
     );
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(9)); // spec 397: a refusal before anything is spent
 }
 
 #[test]
@@ -587,7 +588,7 @@ fn mode_only_change_is_refused() {
             "ABORT: graphs/spec.toml differs from HEAD (the pin protects the reviewed graph): nothing started"
         ])
     );
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(9)); // spec 397: a refusal before anything is spent
 }
 
 #[test]
@@ -614,14 +615,18 @@ fn missing_preflight_graph_aborts() {
             "ABORT: graphs/preflight.toml is missing (the preflight judge graph): nothing started"
         ])
     );
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(9)); // spec 397: a refusal before anything is spent
     assert_eq!(s.logs(), 0);
 }
 
-/// The spec's first `sha256 = "…"` is the pin; a later one is not consulted.
+/// The first `sha256 = "…"` within six lines after the `docs` call is the pin; a later one is not consulted.
 fn pin_case(first_pin: &str) -> String {
     let s = Scratch::new(&Opts::default());
-    s.prepend("graphs/spec.toml", &format!("# sha256 = \"{first_pin}\"\n"));
+    s.replace(
+        "graphs/spec.toml",
+        "graph = \"docs\"\n",
+        &format!("graph = \"docs\"\n# sha256 = \"{first_pin}\"\n"),
+    );
     let body = fs::read(s.root.join("graphs/docs.toml")).unwrap();
     let digest = Sha256::digest(&body)
         .iter()
@@ -645,7 +650,7 @@ fn pin_case(first_pin: &str) -> String {
             ),
         ])
     );
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(9)); // spec 397: a refusal before anything is spent
     digest
 }
 
@@ -715,7 +720,7 @@ fn nan_budget_is_refused() {
         String::from_utf8_lossy(&out.stdout),
         exact(&["LANE-GRAPH: spec", "ABORT: could not build the input"])
     );
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(9)); // spec 397: a refusal before anything is spent
     let input = s
         .root
         .join("_tmp/claude-batchC/input-309-a-rows-verify-column-is-its-specs-exit-criteria.json");
@@ -744,7 +749,7 @@ fn triple_quote_leaves_the_brief_file() {
             "ABORT: the brief contains ''' and cannot be written as a TOML literal"
         ])
     );
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(9)); // spec 397: a refusal before anything is spent
     let brief = s
         .root
         .join("_tmp/claude-batchC/brief-309-a-rows-verify-column-is-its-specs-exit-criteria.md");
@@ -818,6 +823,7 @@ fn input_keys_cover_every_graph_key() {
     let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
     keys.sort();
     let mut want: Vec<String> = [
+        "method",
         "agent",
         "model",
         "provider",
@@ -887,8 +893,12 @@ fn matches_the_shell_reference_in_a_scratch_clone() {
         );
         if !STDERR_EXCLUDED.contains(&case.as_str()) {
             let mut sa = norm(&a.stderr, &shell, &ha, &mut seen_a);
-            if let Some(rest) = sa.strip_prefix(b"<SCRIPT>: line 39: 2: ") {
-                sa = rest.to_vec();
+            // bash's `<script>: line N: 2: ` prefix: N moves whenever the script gains a line, so it is not pinned
+            if let Some(rest) = sa.strip_prefix(b"<SCRIPT>: line ") {
+                let digits = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+                if let Some(rest) = rest[digits..].strip_prefix(b": 2: ") {
+                    sa = rest.to_vec();
+                }
             }
             let sb = norm(&b.stderr, &port, &hb, &mut seen_b);
             assert_eq!(
@@ -935,5 +945,81 @@ fn a_no_git_tree_runs_without_the_pin() {
         "stdout: {} | stderr: {}",
         out_text,
         String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn digest_of(s: &Scratch, rel: &str) -> String {
+    Sha256::digest(fs::read(s.root.join(rel)).unwrap())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+const GRAPH_EDIT_ENV: [(&str, &str); 3] = [
+    ("PII_LANE_GRAPH", "spec"),
+    ("ALLOW_DIRTY", "1"),
+    ("PII_GRAPH_EDIT_OK", "1"),
+];
+
+#[test]
+#[allow(non_snake_case)]
+fn the_executed_lane_differs_from_the_tracked_one_only_in_REPO_and_C() {
+    let s = Scratch::new(&Opts::default());
+    s.shell(&GRAPH_EDIT_ENV, &["309", "--dry-run"]);
+    let executed = fs::read_to_string(s.extra.join("run-batchC-pii.sh")).unwrap();
+    let tracked = fs::read_to_string(live().join("scripts/run-batchC-pii.sh")).unwrap();
+    let (e, t): (Vec<&str>, Vec<&str>) = (executed.lines().collect(), tracked.lines().collect());
+    assert_eq!(
+        e.len(),
+        t.len(),
+        "the executed lane has a different line count"
+    );
+    let differing: Vec<(&&str, &&str)> = e.iter().zip(&t).filter(|(a, b)| a != b).collect();
+    assert_eq!(differing.len(), 2, "differing lines: {differing:?}");
+    for (a, b) in differing {
+        assert!(
+            (a.starts_with("REPO=") && b.starts_with("REPO="))
+                || (a.starts_with("C=") && b.starts_with("C=")),
+            "an unexpected line differs: {a:?} vs {b:?}"
+        );
+    }
+}
+
+#[test]
+fn the_pin_is_the_docs_call_pin_not_the_first_sha256() {
+    let s = Scratch::new(&Opts::default());
+    let digest = digest_of(&s, "graphs/docs.toml");
+    assert!(digest.starts_with("b7f8eacd"), "docs.toml digest: {digest}");
+    let out = s.shell(&GRAPH_EDIT_ENV, &["309", "--dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("ABORT: graphs/docs.toml digest"),
+        "the lane read the wrong pin: {stdout}"
+    );
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn CONTROL_an_unrepaired_docs_edit_still_aborts() {
+    let s = Scratch::new(&Opts::default());
+    s.append("graphs/docs.toml", "# edited\n");
+    let digest = digest_of(&s, "graphs/docs.toml");
+    let out = s.shell(&GRAPH_EDIT_ENV, &["309", "--dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("ABORT: graphs/docs.toml digest '{digest}' is not the pin in graphs/spec.toml ('b7f8eacd")),
+        "{stdout}"
+    );
+    // The pin repaired: the same edit starts.
+    s.replace(
+        "graphs/spec.toml",
+        "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980",
+        &digest,
+    );
+    let out = s.shell(&GRAPH_EDIT_ENV, &["309", "--dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("ABORT: graphs/docs.toml digest"),
+        "{stdout}"
     );
 }
