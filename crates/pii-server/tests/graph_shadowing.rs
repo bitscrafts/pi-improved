@@ -9,6 +9,9 @@
 //!
 //! These tests pin the precedence, so a later change cannot silently invert it.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+// reason: a test fixture builds scratch dirs; a failure there is the test failing, not a defect.
+
 use pii_server::find_graph;
 use std::path::PathBuf;
 
