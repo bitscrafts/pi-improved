@@ -43,9 +43,32 @@ if [ -n "$RUNNING_NOW" ]; then
 fi
 DIRTY_NOW=$(git status --porcelain 2>/dev/null | head -5)
 if [ -n "$DIRTY_NOW" ]; then
-  echo "drain: the tree has uncommitted work — not dispatching over it"
-  printf '%s\n' "$DIRTY_NOW" | sed 's/^/drain:   /'
-  exit 0
+  # A DIRTY TREE IS NOT ENOUGH TO STOP: ASK WHOSE IT IS (measured 2026-11-05, the night that produced
+  # nothing: row 391's worker finished at 03:11, the tree kept its 25 paths, this guard refused every
+  # later firing, and 6.5 hours passed with 78 firings and no commit. A worker never commits — the
+  # cycle does — so a tree holding a finished row's work must be RESUMED to its gate, not frozen.)
+  OWN=$(bash scripts/autonomy/leftover.sh owner 2>/dev/null); ORC=$?
+  if [ "$ORC" = 0 ]; then
+    ROW=${OWN#OWNER }
+    echo "drain: the tree holds row $ROW's unfinished work — resuming THAT row to its gate (no new dispatch)"
+    printf '%s\n' "$DIRTY_NOW" | sed 's/^/drain:   /'
+    export PII_FORCE_ITEM="$ROW"
+    export ALLOW_DIRTY=1
+  else
+    echo "drain: the tree has uncommitted work that no queue row owns ($OWN) — not dispatching over it"
+    printf '%s\n' "$DIRTY_NOW" | sed 's/^/drain:   /'
+    # A SILENT REFUSAL IS HOW SIX AND A HALF HOURS PASSED (78 firings, nothing said). An unowned tree is
+    # still nobody's to touch — but the operator must be told, once an hour rather than once per firing.
+    STAMP=_tmp/autonomy/foreign-alarm
+    LAST=$(cat "$STAMP" 2>/dev/null || echo 0)
+    NOWS=$(date +%s)
+    if [ $((NOWS - LAST)) -ge 3600 ]; then
+      bash scripts/autonomy/control.sh ask "a dirty tree no queue row owns ($OWN) is blocking the dispatcher: $(printf '%s' "$DIRTY_NOW" | tr '\n' ' ')" >/dev/null 2>&1 || true
+      printf '%s\n' "$NOWS" > "$STAMP"
+      echo "drain: ALARM raised — this tree blocks every firing until it is committed or moved aside"
+    fi
+    exit 0
+  fi
 fi
 # THE WORKER IS DECLARED HERE, so the scheduled dispatcher is self-sufficient (user, 2026-10-19: "it should be automatic").
 # claude + haiku is the implementation workhorse; a closed window makes cycle.sh return OUTCOME=window-closed and the NEXT

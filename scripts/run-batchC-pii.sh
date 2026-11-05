@@ -278,7 +278,15 @@ for _ in $(seq 1 60); do
   SID=$("${SSH[@]}" "podman exec pii-devbox sh -c 'tail -n +$((${LINES_BEFORE:-0}+1)) $C/pii.log | grep -a coder.spawned | tail -1'" 2>/dev/null | grep -o '"session":"[^"]*"' | head -1 | cut -d'"' -f4)
   [ -n "$SID" ] && break; sleep 2
 done
-[ -n "$SID" ] && { printf '%s\n' "$SID" > "$LOGD/session-$TAG.txt"; echo "== session handle captured at spawn: $SID"; }
+[ -n "$SID" ] && {
+  printf '%s\n' "$SID" > "$LOGD/session-$TAG.txt"
+  echo "== session handle captured at spawn: $SID"
+  # RECORD IT AGAINST THE ROW, AT ONCE (measured 2026-11-05). The session id is the only thing that makes a
+  # tree full of this row's work attributable: `leftover.sh owner` requires an open row WITH a session, so a
+  # lane run that never wrote the session leaves the work FOREIGN, the dispatcher refuses forever, and the
+  # row cannot advance. The spec number is the row id.
+  python3 scripts/autonomy/state.py set "$N" "session=$SID" last=worker-running >/dev/null 2>&1 || true
+}
 
 # ---- wait for the run. The engine serialises a cancel as `failed`; `cancelled` stays a terminal word too (spec 299, no behaviour change).
 ST=""

@@ -74,7 +74,17 @@ case $PRC in
 esac
 
 # 2) the plan
-PICK=$(python3 scripts/autonomy/state.py pick)
+# PII_FORCE_ITEM names the row this cycle must work, without consulting the pick: the drain sets it when
+# the tree already holds that row's unfinished work, and only that row may advance from that tree.
+if [ -n "${PII_FORCE_ITEM:-}" ]; then
+  # the drain named the row that owns the dirty tree: only that row may advance from this tree, and the
+  # pick is not consulted (it would skip a needs-review row and leave the work sitting again).
+  PICK=$(python3 scripts/autonomy/state.py get "$PII_FORCE_ITEM")
+  PICK="${PII_FORCE_ITEM}"$'\t'"$PICK"
+  say "item forced by the dispatcher: $PII_FORCE_ITEM (the tree holds its work)"
+else
+  PICK=$(python3 scripts/autonomy/state.py pick)
+fi
 # 2a-1) a plan that cannot be READ is a loud failure, never an empty queue: state.py refuses a duplicate row id,
 # and "nothing pending" and "the queue is broken" are different outcomes — only one of them is safe to sleep on.
 if [ -z "$PICK" ]; then
@@ -337,6 +347,16 @@ else
     say "AUTH FAILURE: the worker's login is dead — the row keeps its attempts and the queue is PAUSED for a person"
     echo "OUTCOME=lane-auth-failed ITEM=$ITEM"; exit 16
   fi
+  # A DISPATCH THAT NEVER STARTED IS NOT AN ATTEMPT. The lane exits 8 when it refuses a dirty tree,
+  # and 9 when it refuses before spending; in both cases nothing was bought and nothing was tried, so the
+  # row keeps its status and its attempt count. Measured 2026-11-05: recording those as `worker-rc=8`
+  # gave eight untouched rows a worker failure, and the queue looked like it had failed eight times.
+  case "$WRC" in
+    8|9)
+      python3 scripts/autonomy/state.py set "$ITEM" status=pending "session=${NEWSID:-}" last=lane-not-started-rc=$WRC
+      say "the lane did not start (rc=$WRC) — the row keeps its place and its attempts; nothing was spent"
+      echo "OUTCOME=lane-not-started ITEM=$ITEM RC=$WRC"; exit 8 ;;
+  esac
   python3 scripts/autonomy/state.py set "$ITEM" status=needs-review "session=${NEWSID:-}" last=worker-rc=$WRC attempts=$((ATTEMPTS+1))
   [ $WRC -ne 0 ] && { say "worker did not finish cleanly — leaving the WIP for the next cycle to resume"; echo "OUTCOME=worker-rc-$WRC ITEM=$ITEM SESSION=${NEWSID:-}"; exit 8; }
   # QUOTA IS NOT A FAILURE (user rule 2026-10-19: "eventually it will exaust, let it run to the end then put it again on
