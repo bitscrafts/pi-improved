@@ -71,17 +71,12 @@ fn until_with(what: &str, budget: Duration, mut f: impl FnMut() -> bool) {
         "waited {secs}s for {what} — if this is the only failure, the suite starved it; if it repeats alone, {what} is stuck"
     );
 }
-
-/// Six tests in this file each start one or more real `pii` daemons and then wait for the run pool to reach a state.
-/// Run together — which is what `cargo test` does — they starve each other: measured 2026-11-02, 1 passed and 5 failed,
-/// every one of them having waited the full budget. The property they check is about bounded threads, so it cannot be
-/// measured while the measuring machine is oversubscribed by its own tests.
+/// They therefore take turns. A lock FILE rather than a Mutex, because `clippy.toml` bans `std::sync::Mutex` in
+/// this repo and a file lock survives the test binary's own process boundaries.
 ///
-/// They therefore take turns. A lock FILE rather than a Mutex, because `clippy.toml` bans `std::sync::Mutex` in this
-/// repo, and because a file lock is the only kind that survives the test binary's own process boundaries. A lock older
-/// than fifteen minutes is stolen: a killed test must not block the suite forever, and the timestamp is the record of
-/// how it got there.
-struct HeavyGuard(std::path::PathBuf);
+/// It is released when its HOLDER is gone, not when a timestamp says it is old: a killed test must not block
+/// the suite, and the pid it records is the check. Age is only the fallback for a pid `/proc` cannot see.
+pub struct HeavyGuard(std::path::PathBuf);
 
 impl Drop for HeavyGuard {
     fn drop(&mut self) {
@@ -90,12 +85,22 @@ impl Drop for HeavyGuard {
 }
 
 fn only_one_heavy_test_at_a_time() -> HeavyGuard {
-    // The lock lives under the tree's own _tmp, not the system temp dir: the repo's lint-scratch rule exists
-    // because scratch outside the tree is invisible to cleanup and outlives the run that made it.
+    // The lock lives under the tree's own _tmp, not the system temp dir: the repo's lint-scratch rule says
+    // scratch outside the tree is invisible to cleanup and outlives the run that made it.
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("_tmp")
         .join("control-plane-heavy.lock");
-    let give_up = Instant::now() + Duration::from_mins(15);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    // Spec 394: a lock is held by a PROCESS, so it is released when that process is gone — not when a
+    // timestamp says it is old. The file records the holder's pid; reading it is the whole check. Age is
+    // only the fallback for a pid this kernel cannot see (`/proc` absent, a container boundary).
+    //
+    // Measured 2026-11-05: the pid was written and never read, a killed test left the file, and the six
+    // tests after it each waited the full fifteen minutes before panicking — which the gate reported as a
+    // hang on three different names and which killed three work batches before it was found.
+    let give_up = Instant::now() + Duration::from_mins(2);
     loop {
         match std::fs::OpenOptions::new()
             .create_new(true)
@@ -108,6 +113,14 @@ fn only_one_heavy_test_at_a_time() -> HeavyGuard {
                 return HeavyGuard(path);
             }
             Err(e) => {
+                if let Some(holder) = holder_pid(&path)
+                    && !Path::new(&format!("/proc/{holder}")).exists()
+                {
+                    // The holder is gone. Take the lock it left behind and say so: a reaped lock is a
+                    // normal event, not a failure.
+                    let _ = std::fs::remove_file(&path);
+                    continue;
+                }
                 let stale = std::fs::metadata(&path)
                     .and_then(|m| m.modified())
                     .is_ok_and(|t| t.elapsed().is_ok_and(|d| d.as_secs() > 900));
@@ -117,13 +130,19 @@ fn only_one_heavy_test_at_a_time() -> HeavyGuard {
                 }
                 assert!(
                     Instant::now() < give_up,
-                    "another heavy test held {} for 900s ({e})",
-                    path.display()
+                    "another heavy test has held {} for two minutes (holder pid {:?}, {e})",
+                    path.display(),
+                    holder_pid(&path)
                 );
                 std::thread::sleep(Duration::from_millis(200));
             }
         }
     }
+}
+
+/// The pid the lock file names, if it names one.
+fn holder_pid(path: &Path) -> Option<u32> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
 fn scratch(tag: &str) -> tempfile::TempDir {
@@ -136,6 +155,13 @@ fn scratch(tag: &str) -> tempfile::TempDir {
 }
 
 /// A daemon whose scripted model sleeps `sleep_ms` per call and holds `turns` answers.
+/// An empty config at `dir/pii.toml`: the daemon needs the file to exist, and an empty one arms nothing.
+fn empty_config(dir: &Path) -> std::path::PathBuf {
+    let path = dir.join("pii.toml");
+    std::fs::write(&path, "").unwrap();
+    path
+}
+
 fn start_daemon(dir: &Path, sleep_ms: u64, turns: usize, env: &[(&str, &str)]) -> DaemonGuard {
     let answer = r#"{"text": "ok", "tool_calls": [], "tokens_in": 1, "tokens_out": 1}"#;
     let body = vec![answer; turns].join(",");
@@ -155,8 +181,10 @@ fn start_daemon(dir: &Path, sleep_ms: u64, turns: usize, env: &[(&str, &str)]) -
         // State (and its durable stores) must be this test's own: the operator's are
         // held by any daemon already running on the machine.
         .env("PII_STATE_DIR", dir)
-        // The operator's ~/.pii/pii.toml must not arm cron entries in this scratch store.
-        .env("PII_CONFIG", dir.join("pii.toml"))
+        // The operator's ~/.pii/pii.toml must not arm cron entries in this scratch store. The file is
+        // WRITTEN, empty, because the daemon refuses a config path that does not exist (spec 382) — naming
+        // a file it then does not find is a misconfiguration, and treating it as "no config" hid that.
+        .env("PII_CONFIG", empty_config(dir))
         .env("PII_MODEL", format!("scripted:{}", model.display()))
         .stderr(Stdio::null());
     for (k, v) in env {

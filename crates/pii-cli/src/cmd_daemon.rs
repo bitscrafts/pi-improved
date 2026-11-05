@@ -62,7 +62,14 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // PLUS [net]/[[worker]]/[[channel]]/[memory]/[[cron]]), not two
     // similarly-named files at different paths. `--config`/`$PII_CONFIG`
     // still override outright for anyone running multiple instances.
-    let explicit_config = config.is_some() || pii_core::env_var("PII_CONFIG").is_some();
+    // Two different intents, deliberately treated differently (measured 2026-11-05):
+    //   `--config <path>`  a human typed a path and expects THAT file to be read. Missing it is an error,
+    //                      because the alternative is a daemon on settings nobody chose.
+    //   `PII_CONFIG=<path>` a process says where its state and config live, often just to stay off the
+    //                      operator's real file. A missing file there means "no config", which is how every
+    //                      test and every isolated run uses it; refusing it broke fourteen of them.
+    let named_config = config.is_some();
+    let explicit_config = named_config;
     let config_path = config
         .or_else(|| pii_core::env_var("PII_CONFIG").map(PathBuf::from))
         .unwrap_or_else(Config::default_path);
@@ -82,7 +89,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         fail(
             "daemon",
             format!(
-                "config file does not exist: {} (given by --config or PII_CONFIG)",
+                "config file does not exist: {} (given by --config)",
                 config_path.display()
             ),
         );
