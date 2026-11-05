@@ -17,6 +17,12 @@
 #         ALLOW_DIRTY=1 required when the tree has the item's own WIP (cycle.sh sets it)
 # Exit:   0 run succeeded and specs/ untouched | 1 run failed | 2 setup/daemon | 8 dirty tree | 9 the agent edited specs/
 set -uo pipefail
+# Spec 397: exit 9 means REFUSED BEFORE ANYTHING WAS SPENT, exit 2 means the command line was wrong. The
+# difference is load-bearing: cycle.sh leaves a refused row PENDING with its attempts untouched and does not
+# quarantine the tree, while a worker failure parks the row — and parking sweeps the working tree. Every
+# abort between "the spec exists" and "a run id came back" is a refusal, and it used to share exit 2 with
+# failures, so a stale pin or a stale daemon binary looked like a worker that tried and failed (measured
+# 2026-11-05: 78 firings, every row marked worker-rc=2, three trees swept).
 export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 REPO=/projects/pi-improved
 LOGD=$REPO/_tmp/claude-batchC
@@ -83,13 +89,13 @@ $LOGD/HANDOFF-$TAG.md and stop honestly; never compress the work to fake complet
 Final line: SPEC-DONE $N criteria=<passed>/<total>, with every criterion command and its exit code listed.
 EOF
 [ -n "$EXTRA_BRIEF" ] && { printf '\n\n' >> "$BRIEF"; cat "$EXTRA_BRIEF" >> "$BRIEF"; }
-if grep -q "'''" "$BRIEF"; then echo "ABORT: the brief contains ''' and cannot be written as a TOML literal"; exit 2; fi
+if grep -q "'''" "$BRIEF"; then echo "ABORT: the brief contains ''' and cannot be written as a TOML literal"; exit 9; fi
 
 # ---- the spec lane's wait (spec 299): the deadline is the graph's own wall in seconds plus a margin, measured with SECONDS. Read here, so a
 # graph without a numeric wall aborts before anything is started. PII_WAIT_MARGIN_S (default 600) exists so a test can shorten the margin.
 if [ "$LANE" = spec ]; then
   SPEC_WALL_MS=$(sed -n 's/^max_wall_ms *= *\([0-9][0-9]*\).*/\1/p' "$REPO/graphs/spec.toml" | head -1)
-  case "$SPEC_WALL_MS" in ''|*[!0-9]*) echo "ABORT: graphs/spec.toml has no numeric max_wall_ms: nothing started"; exit 2 ;; esac
+  case "$SPEC_WALL_MS" in ''|*[!0-9]*) echo "ABORT: graphs/spec.toml has no numeric max_wall_ms: nothing started"; exit 9 ;; esac
   WAIT_MARGIN_S=${PII_WAIT_MARGIN_S:-600}
   DEADLINE=$(( SPEC_WALL_MS / 1000 + WAIT_MARGIN_S ))
 fi
@@ -171,7 +177,7 @@ if [ "$LANE" = spec ]; then
   else
     for G in spec docs preflight; do
       git diff --quiet HEAD -- "graphs/$G.toml" && [ -z "$(git ls-files --others --exclude-standard -- "graphs/$G.toml")" ] \
-        || { echo "ABORT: graphs/$G.toml differs from HEAD (the pin protects the reviewed graph): nothing started"; exit 2; }
+        || { echo "ABORT: graphs/$G.toml differs from HEAD (the pin protects the reviewed graph): nothing started"; exit 9; }
     done
   fi
   # The pin belonging to the DOCS call, not the first sha256 in the file: spec 385 gave spec.toml a
@@ -179,15 +185,15 @@ if [ "$LANE" = spec ]; then
   # digest against the sdd digest — the lane aborted for every row.
   PIN=$(grep -A6 'graph = "docs"' "$REPO/graphs/spec.toml" | grep -m1 -o 'sha256 = "[0-9a-f]*"' | cut -d'"' -f2)
   DIG=$(sha256sum "$REPO/graphs/docs.toml" 2>/dev/null | cut -c1-64)
-  [ -n "$DIG" ] && [ "$PIN" = "$DIG" ] || { echo "ABORT: graphs/docs.toml digest '$DIG' is not the pin in graphs/spec.toml ('$PIN'): nothing started"; exit 2; }
-  [ -f "$REPO/graphs/preflight.toml" ] || { echo "ABORT: graphs/preflight.toml is missing (the preflight judge graph): nothing started"; exit 2; }
+  [ -n "$DIG" ] && [ "$PIN" = "$DIG" ] || { echo "ABORT: graphs/docs.toml digest '$DIG' is not the pin in graphs/spec.toml ('$PIN'): nothing started"; exit 9; }
+  [ -f "$REPO/graphs/preflight.toml" ] || { echo "ABORT: graphs/preflight.toml is missing (the preflight judge graph): nothing started"; exit 9; }
   IN_PROVIDER=$PROVIDER; [ "$AGENT" = claude ] && IN_PROVIDER=anthropic
   DOCS_BRIEF="Documentation step. Create the file _tmp/docs-notes/NOTES-$N.md (make the directory first) with a short note on what the spec changed. Do not modify any other file, do not modify anything under specs/, and do not commit anything."
   INPUT="$LOGD/input-$TAG.json"
   # spec 303: `sid` is the resumed session, present only when the lookup found it; without one the key is null (the graph's optional `sid` is then absent)
   SPEC_SID=""; [ -n "$SID_LINE" ] && SPEC_SID=$RESUME_SID
   uv run --no-project python - "$INPUT" "$AGENT" "$MODEL" "$IN_PROVIDER" "$SPECREL" "$(git rev-parse HEAD)" "$REPO" "$BRIEF" "$DOCS_BRIEF" \
-    "${PII_MAX_BUDGET_USD:-1.00}" "$REPO/graphs/spec.toml" "$SPEC_SID" <<'PY' || { echo "ABORT: could not build the input"; exit 2; }
+    "${PII_MAX_BUDGET_USD:-1.00}" "$REPO/graphs/spec.toml" "$SPEC_SID" <<'PY' || { echo "ABORT: could not build the input"; exit 9; }
 import json, sys, tomllib
 p, agent, model, provider, spec, base, workdir, brief, docs_brief, cap, graph, sid = sys.argv[1:]
 limit = tomllib.load(open(graph, "rb"))["limits"]["max_micro_usd"] / 1e6
@@ -218,7 +224,7 @@ echo "LANE-GRAPH: $LANE" >> "$LOG"
 if [ "$LANE" = spec ]; then
   if [ "$DRY" = 1 ]; then echo "PREFLIGHT: skipped (dry run)"
   else
-    PRE=$("${SSH[@]}" "podman exec pii-devbox sh -c '$PREFLIGHT_CMD'" 2>&1) || { echo "ABORT: container preflight failed: ${PRE:-no output}"; exit 2; }
+    PRE=$("${SSH[@]}" "podman exec pii-devbox sh -c '$PREFLIGHT_CMD'" 2>&1) || { echo "ABORT: container preflight failed: ${PRE:-no output}"; exit 9; }
     echo "PREFLIGHT: uv ok"
   fi
 fi
@@ -228,7 +234,7 @@ fi
 # PII_DAEMON_SH: a test supplies a stub; the default is the real devbox script (it uses its own ssh, which PII_SSH does not reach)
 DOUT=$(bash "${PII_DAEMON_SH:-$REPO/modules/devbox/daemon.sh}" up 2>&1); DRC=$?
 echo "DAEMON   : $(printf '%s' "$DOUT" | tail -1)"
-[ $DRC -eq 0 ] || { echo "ABORT: the devbox daemon is not up:"; printf '%s\n' "$DOUT" | tail -5; exit 2; }
+[ $DRC -eq 0 ] || { echo "ABORT: the devbox daemon is not up:"; printf '%s\n' "$DOUT" | tail -5; exit 9; }
 # Spec 397: the daemon runs the graphs in ITS directory, so the lane ships the whole set it is about to run —
 # `spec`, `docs`, `preflight` AND the methodologies `spec` routes to (`sdd`, `method-judge`, `tdd`). Shipping
 # three left `sdd.toml` at an older revision than the pin held in `spec.toml`, and every dispatch died with
@@ -248,15 +254,15 @@ poll() { X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run get ${1:-$RID} 2>&1'" | 
 # ---- the judge preflight (spec 301): a one-node judge run through the daemon, the same sandbox as the real judge. Its one criterion makes a
 # directory under the scratch in a throwaway repo; the run must end succeeded before the real run starts. No agent, no spend.
 if [ "$LANE" = spec ]; then
-  PTS=$(date +%s); PDIR=$(mktemp -d "$REPO/_tmp/devbox-test/preflight-$PTS-XXXXXX") || { echo "ABORT: no preflight directory: nothing started"; exit 2; }
+  PTS=$(date +%s); PDIR=$(mktemp -d "$REPO/_tmp/devbox-test/preflight-$PTS-XXXXXX") || { echo "ABORT: no preflight directory: nothing started"; exit 9; }
   PREL=_tmp/preflight-$PTS; PDIR_NAME=$(basename "$PDIR")
   mkdir -p "$PDIR/repo/specs" && printf '# Spec: preflight\n\n## Exit Criteria\n- [ ] `mkdir -p %s && test -d %s`\n' "$PREL" "$PREL" > "$PDIR/repo/specs/preflight.md" \
     && git -C "$PDIR/repo" init -q && git -C "$PDIR/repo" add specs \
-    && git -C "$PDIR/repo" -c user.name=pii-preflight -c user.email=preflight@localhost commit -qm base || { echo "ABORT: could not make the preflight repo: nothing started"; exit 2; }
+    && git -C "$PDIR/repo" -c user.name=pii-preflight -c user.email=preflight@localhost commit -qm base || { echo "ABORT: could not make the preflight repo: nothing started"; exit 9; }
   PIN_IN="$LOGD/judge-input-$PTS.json"
   printf '{"spec":"specs/preflight.md","base":"%s","workdir":"%s"}\n' "$(git -C "$PDIR/repo" rev-parse HEAD)" "$C/$PDIR_NAME/repo" > "$PIN_IN"
   PRID=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run start preflight --input \"\$(cat $PIN_IN)\" 2>&1'" | grep -o 'r[0-9]\{12\}' | head -1)
-  [ -n "$PRID" ] || { echo "ABORT: the preflight judge did not start: nothing started"; exit 2; }
+  [ -n "$PRID" ] || { echo "ABORT: the preflight judge did not start: nothing started"; exit 9; }
   PST=""
   for _ in $(seq 1 60); do
     PST=$(poll "$PRID")
@@ -278,7 +284,7 @@ else
   START=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run start $GRAPH_NAME 2>&1'")
 fi
 RID=$(printf '%s' "$START" | grep -o 'r[0-9]\{12\}' | head -1)
-[ -n "$RID" ] || { echo "ABORT: no run id: $(printf '%s' "$START" | head -c 300)"; exit 2; }
+[ -n "$RID" ] || { echo "ABORT: no run id: $(printf '%s' "$START" | head -c 300)"; exit 9; }
 echo "RUN      : $RID"; echo "== run $RID" >> "$LOG"
 
 # ---- the session handle, the moment pii journals it (coder.spawned), before the agent can finish

@@ -35,12 +35,15 @@ them. A hanging test is worse than a failing one: it spends the wall clock and r
 | `every_pool_test_reaches_a_verdict_alone` | each of the five, alone | pass or fail inside its budget |
 
 ## Exit Criteria
-- [ ] `cargo test -q -p pii-cli --test control_plane_is_not_behind_runs 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
+- [ ] `timeout 240 cargo test -q -p pii-cli --test control_plane_is_not_behind_runs 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
 - [ ] `grep -q '/proc/' crates/pii-cli/tests/control_plane_is_not_behind_runs.rs`
-- [ ] `timeout 300 cargo test -q -p pii-cli --test control_plane_is_not_behind_runs >/dev/null 2>&1`
-- [ ] `cargo test -q -p pii-cli --test pii_run_cancel 2>&1 | grep -qE 'test result: ok'`
+- [ ] `timeout 240 cargo test -q -p pii-cli --test control_plane_is_not_behind_runs >/dev/null 2>&1`
+- [ ] `timeout 240 cargo test -q -p pii-cli --test pii_run_cancel 2>&1 | grep -qE 'test result: ok'`
 
 ## Guardrails
+- Every criterion is wrapped in `timeout 240`. A criterion that hangs must FAIL in four minutes, not sit
+  for the judge's ten-minute ceiling: this row's own contract phase spent twenty minutes hanging on the
+  very tests it exists to unstick (measured 2026-11-05, run `r000000001474` inside `sdd__contract`).
 - Do NOT raise the 90-second budget to make them pass: the budget is not the defect.
 - Do NOT delete a test because it is slow; the property it asserts (the control plane is not queued
   behind runs) is a product promise.
