@@ -89,6 +89,51 @@ pub fn expects_failure(cfg: &serde_json::Value) -> Result<bool, PiiError> {
     }
 }
 
+/// The variables a judge's `env` may forward from the daemon to a criterion. Closed: a criterion runs in a scrubbed
+/// environment, and the few names a build needs are named here, never the daemon's whole environment.
+const FORWARDABLE: &[&str] = &[
+    "CARGO_TARGET_DIR",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "CARGO_BUILD_JOBS",
+];
+
+/// The `(name, value)` pairs the judge's `env` asks for. Only names on [`FORWARDABLE`] pass, a secret-named
+/// variable never does, and a name the daemon does not carry forwards nothing.
+///
+/// # Errors
+/// [`PiiError::Internal`] naming the offending entry: `env` is not a list of strings, a name is off the list, or a
+/// name looks like a secret.
+pub fn forwarded_env(cfg: &serde_json::Value) -> Result<Vec<(String, String)>, PiiError> {
+    let Some(raw) = cfg.get("env") else {
+        return Ok(Vec::new());
+    };
+    let names = raw.as_array().ok_or_else(|| {
+        PiiError::Internal("judge: env must be a list of variable names".to_owned())
+    })?;
+    let mut out = Vec::new();
+    for entry in names {
+        let name = entry
+            .as_str()
+            .ok_or_else(|| PiiError::Internal(format!("judge: env entry {entry} is not a name")))?;
+        if pii_observe::is_secret_name(name) {
+            return Err(PiiError::Internal(format!(
+                "judge: env '{name}' looks like a secret and is never forwarded to a criterion"
+            )));
+        }
+        if !FORWARDABLE.contains(&name) {
+            return Err(PiiError::Internal(format!(
+                "judge: env '{name}' is not forwardable (allowed: {})",
+                FORWARDABLE.join(", ")
+            )));
+        }
+        if let Some(value) = pii_core::env_var(name) {
+            out.push((name.to_owned(), value));
+        }
+    }
+    Ok(out)
+}
+
 /// Spec 372: the RED verdict. `ok` when every criterion failed; `unrunnable` when one could not run (exit 127), which
 /// is neither a pass nor a proper failure; `fail` (`not-red`) when a criterion passed before the code existed.
 fn red_outcome(
@@ -136,14 +181,19 @@ fn red_outcome(
 }
 
 /// The exit code of every command, in order. A failure does not stop the rest.
-fn run_all(ctx: &Ctx, workdir: &Path, commands: &[String]) -> Result<Vec<i32>, PiiError> {
+fn run_all(
+    ctx: &Ctx,
+    workdir: &Path,
+    commands: &[String],
+    env: &[(String, String)],
+) -> Result<Vec<i32>, PiiError> {
     commands
         .iter()
         .map(|command| -> Result<i32, PiiError> {
             let argv = ["/bin/sh".to_owned(), "-c".to_owned(), command.clone()];
             Ok(ctx
                 .proc()?
-                .run(&argv, workdir, CRITERION_TIMEOUT)?
+                .run_with_env(&argv, workdir, CRITERION_TIMEOUT, env)?
                 .exit_code)
         })
         .collect()
@@ -192,7 +242,7 @@ impl GraphNode for SpecJudgeNode {
             let reason = format!("judge: {spec_text} has no Exit Criteria");
             return Ok(refusal(&spec, &base, &reason));
         }
-        let rcs = run_all(ctx, &workdir, &criteria)?;
+        let rcs = run_all(ctx, &workdir, &criteria, &forwarded_env(&self.cfg)?)?;
         let results: Vec<serde_json::Value> = criteria
             .iter()
             .zip(&rcs)

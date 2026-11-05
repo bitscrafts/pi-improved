@@ -16,6 +16,8 @@ max_wall_ms = 5400000   # 1.5 h: two coders at 1.8 M each plus the four judges b
 [[node]]
 id = "contract"
 kind = "judge"
+# a cargo criterion needs a target dir the sandbox lets it write; the daemon names one (CARGO_TARGET_DIR)
+env = ["CARGO_TARGET_DIR"]
 caps = ["proc"]
 spec = "$.input.spec"
 base = "$.input.base"
@@ -27,6 +29,8 @@ expect = "fail"
 [[node]]
 id = "verify"
 kind = "judge"
+# a cargo criterion needs a target dir the sandbox lets it write; the daemon names one (CARGO_TARGET_DIR)
+env = ["CARGO_TARGET_DIR"]
 caps = ["proc"]
 spec = "$.input.spec"
 base = "$.input.base"
@@ -92,6 +96,8 @@ env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR
 [[node]]
 id = "tdd_red"
 kind = "judge"
+# a cargo criterion needs a target dir the sandbox lets it write; the daemon names one (CARGO_TARGET_DIR)
+env = ["CARGO_TARGET_DIR"]
 caps = ["proc"]
 spec = "$.input.spec"
 base = "$.input.base"
@@ -118,6 +124,8 @@ env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR
 [[node]]
 id = "tdd_green"
 kind = "judge"
+# a cargo criterion needs a target dir the sandbox lets it write; the daemon names one (CARGO_TARGET_DIR)
+env = ["CARGO_TARGET_DIR"]
 caps = ["proc"]
 spec = "$.input.spec"
 base = "$.input.base"

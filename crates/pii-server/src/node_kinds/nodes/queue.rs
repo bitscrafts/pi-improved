@@ -16,7 +16,7 @@ use pii_store::MemStore;
 use pii_store::queue::{Claim, ItemStatus, QueueStore};
 
 use super::agent_worker::{Verdict, learn_fact};
-use super::judge_spec::{SpecJudgeNode, expects_failure};
+use super::judge_spec::{SpecJudgeNode, expects_failure, forwarded_env};
 use super::peer::peer_of;
 
 /// How long one criterion command may run before it is killed.
@@ -169,6 +169,7 @@ impl NodeFactory for JudgeFactory {
         // Spec mode (spec 259) resolves its keys at run time, so it needs no literal `workdir` here.
         if cfg.get("spec").is_some() {
             expects_failure(cfg)?;
+            forwarded_env(cfg)?; // a bad `env` is a load error, not a run-time surprise
             return Ok(Box::new(SpecJudgeNode { cfg: cfg.clone() }));
         }
         let workdir = cfg

@@ -26,7 +26,7 @@ pass "the daemon start line is at ${LINE%%:*}"
 
 has(){ printf '%s' "$LINE" | grep -q " $1="; }
 
-for v in FRESH_GATE_TARGET CARGO_BUILD_JOBS; do
+for v in FRESH_GATE_TARGET CARGO_TARGET_DIR CARGO_BUILD_JOBS; do
   if has "$v"; then pass "$v is in the env the daemon starts with"; else fail "$v is MISSING from the daemon's env"; fi
 done
 
@@ -45,6 +45,33 @@ if printf '%s' "$LINE" | grep -qE 'FRESH_GATE_TARGET=/projects/pi-improved/_tmp/
 else
   fail "the value is not /projects/pi-improved/_tmp/gate-target"
 fi
+
+# The judge's child gets CARGO_TARGET_DIR only if the judge node NAMES it (`env = ["CARGO_TARGET_DIR"]`), and the
+# daemon's sandbox lets it write only inside the workspace. Measured 2026-11-05: the container's own
+# CARGO_TARGET_DIR (/work-target) is outside the workspace, so every cargo criterion in the judge could not finish
+# and read as red -- which is what the RED step wants, so nothing noticed. Both halves must hold.
+if printf '%s' "$LINE" | grep -qE ' CARGO_TARGET_DIR=/projects/pi-improved/'; then
+  pass "CARGO_TARGET_DIR is inside the workspace, where the daemon's sandbox lets a child write"
+else
+  fail "CARGO_TARGET_DIR is not inside /projects/pi-improved (the sandbox refuses a write outside the workspace)"
+fi
+STRIP2=$(printf '%s' "$LINE" | sed 's# CARGO_TARGET_DIR=/projects/pi-improved/[^ ]*##')
+if printf '%s' "$STRIP2" | grep -qE ' CARGO_TARGET_DIR=/projects/pi-improved/'; then
+  fail "control: the stripped line still names an in-workspace CARGO_TARGET_DIR (the check cannot fail)"
+else
+  pass "control: a line without it fails this check"
+fi
+python3 - <<'PY' || bad=$((bad+1))
+import tomllib, sys, pathlib
+miss = []
+for g in ("sdd", "tdd", "method-judge", "spec"):
+    for n in tomllib.loads(pathlib.Path(f"graphs/{g}.toml").read_text()).get("node", []):
+        if n.get("kind") == "judge" and "spec" in n and "CARGO_TARGET_DIR" not in n.get("env", []):
+            miss.append(f"{g}:{n['id']}")
+if miss:
+    print("FAIL these spec-mode judges do not forward CARGO_TARGET_DIR:", ", ".join(miss)); sys.exit(1)
+print("ok   every spec-mode judge forwards CARGO_TARGET_DIR")
+PY
 
 echo "JUDGE-GATE-ENV: $ok ok, $bad FAIL"
 [ "$bad" -eq 0 ]

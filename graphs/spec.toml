@@ -39,7 +39,7 @@ rules = [
 id = "sdd"
 kind = "call"
 graph = "sdd"
-sha256 = "3124cca3cf9848786964f11460e10a9a0366472691c5d9e22b2b298cb2c43901"
+sha256 = "49ede5e3a5dc1533bd52d4ec46df164cbd09ac8db377e1b8586331c43d90c111"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
@@ -56,7 +56,7 @@ brief = "$.input.brief"
 id = "method-judge"
 kind = "call"
 graph = "method-judge"
-sha256 = "89a04519c0852dd1ed85da7793d47964f38634ba4fd950ce9367fd3d62a08243"
+sha256 = "af17bb083694c22b8c690ee52f8a10e732d055cd5c3cb909d833bcd91be95a43"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
@@ -96,6 +96,8 @@ brief = "$.input.docs_brief"
 [[node]]
 id = "reverify"
 kind = "judge"
+# a cargo criterion needs a target dir the sandbox lets it write; the daemon names one (CARGO_TARGET_DIR)
+env = ["CARGO_TARGET_DIR"]
 caps = ["proc"]
 spec = "$.input.spec"
 base = "$.input.base"

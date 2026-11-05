@@ -196,7 +196,33 @@ impl ProcCap<'_> {
         if !self.ctx.caps().proc_argv0.permits(argv0.as_str()) {
             return Err(self.ctx.deny("proc"));
         }
-        run_child(argv, cwd, timeout, self.ctx.cancel_token())
+        run_child(argv, cwd, timeout, &[], self.ctx.cancel_token())
+    }
+
+    /// [`ProcCap::run`] with `env` pairs added to the scrubbed environment (last write wins). The scrub still
+    /// applies to everything else: the caller names the few variables the command needs, never the daemon's
+    /// whole environment.
+    ///
+    /// # Errors
+    /// Same as [`ProcCap::run`].
+    pub fn run_with_env(
+        &self,
+        argv: &[String],
+        cwd: &Path,
+        timeout: std::time::Duration,
+        env: &[(String, String)],
+    ) -> Result<ProcOutput, PiiError> {
+        self.ctx.check()?;
+        if !self.ctx.caps().kinds.contains(CapKind::PROC) {
+            return Err(self.ctx.deny("proc"));
+        }
+        let Some(argv0) = argv.first() else {
+            return Err(PiiError::Invalid(String::from("run: empty argv")));
+        };
+        if !self.ctx.caps().proc_argv0.permits(argv0.as_str()) {
+            return Err(self.ctx.deny("proc"));
+        }
+        run_child(argv, cwd, timeout, env, self.ctx.cancel_token())
     }
 
     /// Spawns a long-lived child with piped stdio (F1.5): the second and
@@ -299,6 +325,7 @@ fn run_child(
     argv: &[String],
     cwd: &Path,
     timeout: std::time::Duration,
+    env: &[(String, String)],
     cancel: &crate::cancel::CancelToken,
 ) -> Result<ProcOutput, PiiError> {
     use std::io::Read;
@@ -313,7 +340,7 @@ fn run_child(
         .current_dir(cwd)
         // F2 (spec 13): children never inherit the daemon's environment.
         .env_clear()
-        .envs(scrubbed_env(&live_env(), &[]))
+        .envs(scrubbed_env(&live_env(), env))
         // F3 (spec 13): own process group so killpg can reap grandchildren.
         .process_group(0)
         .stdin(Stdio::null())
@@ -452,6 +479,7 @@ mod tests {
             &argv,
             std::path::Path::new("."),
             Duration::from_millis(200),
+            &[],
             &cancel,
         )
         .expect_err("timeout must fire");
@@ -482,6 +510,7 @@ mod tests {
             &argv,
             std::path::Path::new("."),
             Duration::from_secs(30),
+            &[],
             &cancel,
         )
         .expect_err("cancel must fire");

@@ -24,7 +24,7 @@ op = "queue.claim"
 id = "implement"
 kind = "call"
 graph = "spec"
-sha256 = "9e9def2fcbb5f122fd86baedd4d62b71a928c7ba6fb05f36f7b137fba6347df7"
+sha256 = "8f7607dd95cfb0cbca67fc883c46511887348bf830090f7071428d2603b6c91d"
 # spec 362: a coder without fs_write cannot implement anything — measured 2026-11-03, the agent spawned with these caps
 # stopped and reported "no write or execute tool is available" instead of writing code.
 caps = ["spawn", "proc", "fs_read", "fs_write"]
