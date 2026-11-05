@@ -64,7 +64,11 @@ fn parse_ls_flags(
 }
 
 /// The statuses the wire can express; anything else is refused at the edge.
-const STATUSES: [&str; 4] = ["running", "suspended", "succeeded", "failed"];
+///
+/// `refused` is one of them: a run the engine declined to start is a state an operator looks for by name
+/// (it is how a spec that could not be bought is found). Leaving it out of this list made the CLI tell the
+/// operator the status does not exist while the wire carried it.
+const STATUSES: [&str; 5] = ["running", "suspended", "succeeded", "failed", "refused"];
 
 fn run_ls(args: &mut std::env::ArgsOs) -> ExitCode {
     let (status, graph) = parse_ls_flags(args);

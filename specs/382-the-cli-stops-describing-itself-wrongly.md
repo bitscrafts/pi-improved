@@ -32,8 +32,8 @@ Found by documentation work, 2026-11-04 (`manual-audit-20261104.md`).
 ## Exit Criteria
 
 - [ ] `cargo test -q -p pii-cli --test cli_describes_itself 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
-- [ ] `./target/debug/pii run ls --status nope >/dev/null 2>&1; [ $? -eq 2 ]`
-- [ ] `./target/debug/pii --config /nonexistent.toml health >/dev/null 2>&1; [ $? -ne 0 ]`
+- [ ] `./target/debug/pii run ls --status nope 2>&1 | grep -qE 'accepted: .*refused'`
+- [ ] `./target/debug/pii daemon --config /nonexistent.toml 2>&1 | grep -q 'config file does not exist'`
 - [ ] `./target/debug/pii graph --help 2>&1 | grep -q check`
 
 ## Guardrails

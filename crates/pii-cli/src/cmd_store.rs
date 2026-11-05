@@ -27,7 +27,7 @@ pub(crate) fn cmd_store(args: &mut std::env::ArgsOs) -> ExitCode {
     let (Some(sub), Some(dir)) = (sub.as_deref(), dir) else {
         let _ = writeln!(
             std::io::stderr(),
-            "usage: pii store compact|stats|prune [--dir <store dir>]   (compact, prune: daemon must be stopped)"
+            "usage: pii store compact|stats|prune [--dir <store dir>]   (compact, prune, stats: daemon must be stopped)"
         );
         return ExitCode::from(2);
     };
@@ -40,7 +40,7 @@ pub(crate) fn cmd_store(args: &mut std::env::ArgsOs) -> ExitCode {
     if sub != "compact" {
         let _ = writeln!(
             std::io::stderr(),
-            "usage: pii store compact|stats|prune [--dir <store dir>]   (compact, prune: daemon must be stopped)"
+            "usage: pii store compact|stats|prune [--dir <store dir>]   (compact, prune, stats: daemon must be stopped)"
         );
         return ExitCode::from(2);
     }

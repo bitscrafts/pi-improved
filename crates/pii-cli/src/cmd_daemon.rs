@@ -62,6 +62,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // PLUS [net]/[[worker]]/[[channel]]/[memory]/[[cron]]), not two
     // similarly-named files at different paths. `--config`/`$PII_CONFIG`
     // still override outright for anyone running multiple instances.
+    let explicit_config = config.is_some() || pii_core::env_var("PII_CONFIG").is_some();
     let config_path = config
         .or_else(|| pii_core::env_var("PII_CONFIG").map(PathBuf::from))
         .unwrap_or_else(Config::default_path);
@@ -74,6 +75,18 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
                 return ExitCode::from(2);
             }
         }
+    } else if explicit_config {
+        // A path the operator NAMED must exist. Falling back to the default config here starts a daemon
+        // on settings nobody chose, while the operator believes their file was read — the failure then
+        // looks like "the config had no effect" hours later.
+        fail(
+            "daemon",
+            format!(
+                "config file does not exist: {} (given by --config or PII_CONFIG)",
+                config_path.display()
+            ),
+        );
+        return ExitCode::from(2);
     } else {
         Config::default()
     };
