@@ -80,7 +80,7 @@ pub struct EngineConfig {
 
 pub use graph_paths::{find_graph, graph_not_found, graph_search_dirs, resolve_graph_dir};
 
-mod graph_paths;
+pub mod graph_paths;
 
 /// An executing or completed run.
 pub struct RunHandle {

@@ -1,0 +1,20 @@
+# Spec 384: the graphs a pii installation ships. One name per line; each names graphs/<name>.toml.
+# A name here is a decision: the installer lints it, checks every `call` target and pin, and installs it.
+# Samples (coder-demo, coder-podman, claude-probe, discord-triage, ...) stay in the repository, unlisted.
+#
+# Flows:  queue -> spec -> {sdd -> tdd, method-judge, docs};  self-improve -> queue;  books -> docs;  digest-now;
+#         code-index;  preflight.
+#
+# Not yet listed, and why: night (its call chain nests past the depth cap of 4 — spec 380 territory);
+#         doc-code (a flow of its own, not in the derived set of spec 047).
+spec
+method-judge
+sdd
+tdd
+docs
+queue
+self-improve
+books
+digest-now
+code-index
+preflight

@@ -19,6 +19,7 @@
 #   CONFIG_ONLY=1 rewrite only the runtime config and channel credentials (spec 329): no build, no deploy card,
 #                 no binaries, no unit, no llama probe. The config is promoted exactly as in a full install.
 #   PII_PYTHON    Python 3.11+ for tomllib     (default: python3 on PATH, else uv into _tmp/; see config-python.sh)
+# Graphs: exactly the set named in graphs/minimal.txt (spec 384), plus the two the generated config names; each lints, and the set is closed.
 # Preconditions (checked before anything is moved): graphs/discord-{triage,digest}.toml exist, llama host answers, PREFIX is creatable.
 # PII_DISCORD_TOKEN / PII_DISCORD_CHANNEL_ID are optional: without them no pii.env is written and the daemon
 # starts with `channels: []` (spec 157).
@@ -161,6 +162,19 @@ if [ ! -d "$PREFIX" ]; then
   mkdir -p "$PREFIX" 2>/dev/null || abort "target prefix $PREFIX does not exist and cannot be created"
 fi
 [ -w "$PREFIX" ] || abort "target prefix $PREFIX is not writable"
+
+# Spec 384 / derivation 047: a user graph pins a system graph by sha256. When an upgrade replaces a
+# system graph, the OLD bytes are retained under <graphdir>/.by-sha256/<digest>.toml, so the pin still
+# resolves and the user graph keeps running exactly what it reviewed. Re-resolving the pin with a
+# report would be worse: it silently changes what runs. `pii graph repin` is how a person moves it.
+retain_replaced_graph(){ # retain_replaced_graph <installed-file> <destination-dir>
+  local f="$1" dir="$2"
+  [ -f "$f" ] || return 0
+  local d; d=$(sha256sum "$f" | cut -d' ' -f1)
+  mkdir -p "$dir/.by-sha256" 2>/dev/null || return 0
+  [ -f "$dir/.by-sha256/$d.toml" ] || cp -p "$f" "$dir/.by-sha256/$d.toml" 2>/dev/null || true
+}
+
 GRAPH_NAMES=(discord-triage discord-digest)   # the graphs the generated config names
 for g in "${GRAPH_NAMES[@]}"; do
   [ -f "$REPO/graphs/$g.toml" ] || abort "graph '$g' is named by the generated config but $REPO/graphs/$g.toml is missing"
@@ -187,6 +201,21 @@ for b in "${BINS[@]}" "${STAGED[@]}"; do
   [ -x "$BIN_SRC/$b" ] || abort "built binary $BIN_SRC/$b missing"
 done
 
+# ---- R2-R4 (spec 384): the manifest decides what ships. Every named graph lints, the set is closed and every pin matches,
+# all before anything moves. The graphs the generated config names ship too, because the daemon cannot start a channel without them.
+MANIFEST="$REPO/graphs/minimal.txt"
+[ -f "$MANIFEST" ] || abort "the graph manifest $MANIFEST is missing"
+mapfile -t SHIP < <(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$MANIFEST" | grep -v '^$' || true)
+SHIP+=("${GRAPH_NAMES[@]}")
+[ "${#SHIP[@]}" -gt 0 ] || abort "the graph manifest $MANIFEST names no graphs"
+"$PY" -I "$REPO/deploy/graph-closure.py" "$REPO/graphs" "${SHIP[@]}" \
+  || abort "the shipped graph set is not closed or not pinned (named above)"
+LINT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pii-lint-XXXXXX")" || abort "cannot create a lint scratch directory"
+for g in "${SHIP[@]}"; do
+  (cd "$LINT_DIR" && PII_RUNTIME_DIR="$LINT_DIR" "$BIN_SRC/pii" graph lint "$REPO/graphs/$g.toml" >/dev/null 2>&1) \
+    || abort "graph '$g' does not lint and is not shipped: run $BIN_SRC/pii graph lint $REPO/graphs/$g.toml"
+done
+
 # ---- 2: move existing binaries aside (dated; never delete) ----
 moved=0
 for b in "${BINS[@]}"; do
@@ -206,13 +235,23 @@ write_config
 
 # ---- 4b: graphs into the persistent state dir (the unit places them in the runtime dir on each start) ----
 mkdir -p "$STATE_DIR/graphs"
+# A graph that was shipped before and is not in this set moves aside, so the directory names exactly the set.
+for old in "$STATE_DIR"/graphs/*.toml; do
+  [ -e "$old" ] || continue
+  if ! printf '%s\n' "${SHIP[@]}" | grep -qx "$(basename "$old" .toml)"; then
+    mkdir -p "$ASIDE"
+    mv "$old" "$ASIDE/graph.$(basename "$old")"
+  fi
+done
 installed_graphs=()
-for gf in "$REPO"/graphs/*.toml; do
-  gn="$(basename "$gf")"
+for g in "${SHIP[@]}"; do
+  gf="$REPO/graphs/$g.toml"
+  gn="$g.toml"
   dest="$STATE_DIR/graphs/$gn"
   if [ -e "$dest" ]; then
     cmp -s "$gf" "$dest" && { installed_graphs+=("$gn"); continue; }
     mkdir -p "$ASIDE"
+    retain_replaced_graph "$dest" "$STATE_DIR/graphs"   # an old pin still resolves (spec 384)
     mv "$dest" "$ASIDE/graph.$gn"
   fi
   install -m 0644 "$gf" "$dest"

@@ -41,12 +41,23 @@ pub fn graph_search_dirs(primary: &std::path::Path, store_path: &std::path::Path
     dirs
 }
 
-/// The graph file a name resolves to: the first search dir that holds `<name>.toml`.
+/// The graph file a name resolves to, or `None` when the name is ambiguous.
+///
+/// Spec 384 (derivation 047's first enforcement layer): a user graph may call a system graph, never the
+/// reverse — and the search path is what decides that. First-match silently defeats it: a user file named
+/// like a system graph would win by being found first. So a name present in MORE THAN ONE search dir is
+/// refused rather than resolved, and the caller reports which dirs disagree.
 #[must_use]
 pub fn find_graph(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
-    dirs.iter()
+    let hits: Vec<PathBuf> = dirs
+        .iter()
         .map(|d| d.join(format!("{name}.toml")))
-        .find(|p| p.is_file())
+        .filter(|p| p.is_file())
+        .collect();
+    match hits.as_slice() {
+        [one] => Some(one.clone()),
+        _ => None,
+    }
 }
 
 /// The refusal for a name no search dir holds: every dir searched, and how many graphs it holds.
