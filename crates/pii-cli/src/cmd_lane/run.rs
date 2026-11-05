@@ -192,7 +192,7 @@ impl Driver<'_> {
             for line in text.iter().skip(text.len().saturating_sub(5)) {
                 self.say(line);
             }
-            self.r.exit = 2;
+            self.r.exit = 9; // refused before anything was spent (spec 397), as the shell lane exits
             return;
         }
         if spec {
@@ -235,7 +235,7 @@ impl Driver<'_> {
                 "ABORT: no run id: {}",
                 lossy(&head).trim_end_matches('\n')
             ));
-            self.r.exit = 2;
+            self.r.exit = 9; // refused before anything was spent (spec 397), as the shell lane exits
             return;
         };
         self.say(format!("RUN      : {rid}"));
@@ -414,7 +414,7 @@ impl Driver<'_> {
             Ok(p) => p,
             Err(msg) => {
                 self.say(msg);
-                self.r.exit = 2;
+                self.r.exit = 9; // refused before anything was spent (spec 397), as the shell lane exits
                 return false;
             }
         };
@@ -430,7 +430,7 @@ impl Driver<'_> {
         let start = self.call(&remote);
         let Some(prid) = run_id(&lossy(&start.stdout)) else {
             self.say("ABORT: the preflight judge did not start: nothing started");
-            self.r.exit = 2;
+            self.r.exit = 9; // refused before anything was spent (spec 397), as the shell lane exits
             return false;
         };
         let mut pst = String::new();
@@ -457,7 +457,7 @@ impl Driver<'_> {
         for line in raw_lines(&trace.stdout).iter().filter(|l| why_line(l)) {
             self.say(line);
         }
-        self.r.exit = 2;
+        self.r.exit = 9; // refused before anything was spent (spec 397), as the shell lane exits
         false
     }
 }

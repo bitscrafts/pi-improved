@@ -423,7 +423,7 @@ fn daemon_down_aborts_before_anything() {
     lane.fail_daemon();
     let out = lane.run(None);
     let stdout = text(&out);
-    assert_eq!(out.status.code(), Some(2), "{stdout}");
+    assert_eq!(out.status.code(), Some(9), "{stdout}");
     assert!(
         stdout.contains("ABORT: the devbox daemon is not up:"),
         "{stdout}"
@@ -702,7 +702,7 @@ fn preflight_failure_prints_the_judges_trace_lines() {
     fs::write(&lane.stub.pre, r#"{"status":"failed"}"#).unwrap();
     let out = lane.run_with(true, None);
     let stdout = text(&out);
-    assert_eq!(out.status.code(), Some(2), "{stdout}");
+    assert_eq!(out.status.code(), Some(9), "{stdout}");
     assert!(
         stdout.contains("ABORT: container preflight failed: the daemon's judge cannot write"),
         "{stdout}"
@@ -721,7 +721,7 @@ fn no_run_id_aborts_with_300_bytes() {
     fs::write(&lane.stub.start, "x".repeat(400)).unwrap();
     let out = lane.run(None);
     let stdout = text(&out);
-    assert_eq!(out.status.code(), Some(2), "{stdout}");
+    assert_eq!(out.status.code(), Some(9), "{stdout}");
     let abort = stdout
         .lines()
         .find(|l| l.starts_with("ABORT: no run id: "))
@@ -735,7 +735,7 @@ fn has_uv_failure_aborts_with_the_probe_output() {
     fs::write(&lane.stub.uv, "").unwrap();
     let out = lane.run_with(true, None);
     let stdout = text(&out);
-    assert_eq!(out.status.code(), Some(2), "{stdout}");
+    assert_eq!(out.status.code(), Some(9), "{stdout}");
     assert!(
         stdout.contains("ABORT: container preflight failed: uv: not found"),
         "{stdout}"
