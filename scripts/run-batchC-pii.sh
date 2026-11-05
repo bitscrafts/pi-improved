@@ -229,7 +229,16 @@ fi
 DOUT=$(bash "${PII_DAEMON_SH:-$REPO/modules/devbox/daemon.sh}" up 2>&1); DRC=$?
 echo "DAEMON   : $(printf '%s' "$DOUT" | tail -1)"
 [ $DRC -eq 0 ] || { echo "ABORT: the devbox daemon is not up:"; printf '%s\n' "$DOUT" | tail -5; exit 2; }
-[ "$LANE" = spec ] && { cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$REPO/_tmp/devbox-test/graphs/" || exit 2; }
+# Spec 397: the daemon runs the graphs in ITS directory, so the lane ships the whole set it is about to run —
+# `spec`, `docs`, `preflight` AND the methodologies `spec` routes to (`sdd`, `method-judge`, `tdd`). Shipping
+# three left `sdd.toml` at an older revision than the pin held in `spec.toml`, and every dispatch died with
+# `fragment.pin.mismatch` in two seconds — which the row recorded as `worker-rc=2` (measured 2026-11-05).
+if [ "$LANE" = spec ]; then
+  while read -r g; do
+    case "$g" in ''|'#'*) continue ;; esac
+    [ -f "$REPO/graphs/$g.toml" ] && cp "$REPO/graphs/$g.toml" "$REPO/_tmp/devbox-test/graphs/" || exit 2
+  done < "$REPO/graphs/minimal.txt"
+fi
 
 git status --porcelain -- specs | sort > "$LOGD/.specs-before-$TAG"
 PIIB=$C/bin/pii
