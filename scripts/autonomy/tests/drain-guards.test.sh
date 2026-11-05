@@ -39,13 +39,17 @@ grep -qE 'OUTCOME=|drain: dispatch|pick:' "$OUT" && bad "CONTROL the drain reall
 export FAKE_PROCS=""   # nothing is running: the next case must be refused for the OTHER reason
 
 # Uncommitted work at the start of a firing belongs to someone else.
-PLANT=_tmp/autonomy/guard-test-plant.txt
+# The plant must be a path GIT CAN SEE: `_tmp/` is gitignored, so a file there is invisible to
+# `git status --porcelain` and the dirty-tree guard never fires — the test passed for a reason that was
+# not the rule (measured 2026-11-05). The file is created by this test and removed by it.
+PLANT=guard-test-plant.txt
 mkdir -p "$(dirname "$PLANT")"; printf 'x\n' > "$PLANT"
 git add -N "$PLANT" 2>/dev/null || true
 PII_HOLD="$PII_HOLD" PII_DRAIN_QUIET=0 MAX_CYCLES=1 bash scripts/autonomy/drain.sh >"$OUT" 2>&1
 grep -q 'the tree has uncommitted work' "$OUT" && pass "uncommitted work makes the drain yield" \
   || bad "uncommitted work makes the drain yield (out: $(head -2 "$OUT" | tr '\n' ' '))"
 git reset -q -- "$PLANT" 2>/dev/null || true   # never restore --: it rewrites the working tree
+rm -f "$PLANT"   # the plant this test made; nothing pre-existing is touched
 rm -f "$PLANT"
 
 # CONTROL: with a clean tree and no hold, the guard does not fire. It is only meaningful on a clean
