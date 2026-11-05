@@ -21,6 +21,14 @@ pub(crate) fn eval_ctx(input: &NodeInput) -> serde_json::Value {
 pub struct TransformNode {
     expr: Option<String>,
     value: Option<serde_json::Value>,
+    /// spec 383: `let` binds names, `out` computes one value from them. Before this, a transform could
+    /// only read a member of its input, so anything arithmetic had to become a shell string in the graph
+    /// file -- invisible, untestable, and unpinned. The bindings are evaluated in order, each seeing the
+    /// ones before it, and `out` sees all of them plus the input.
+    lets: Vec<(String, crate::expr::Expr)>,
+    out: Option<crate::expr::Expr>,
+    /// the node's own id, so a load-time refusal can name it ("node 'calc': bad expression ...")
+    node_id: String,
 }
 
 impl TransformNode {
@@ -31,22 +39,145 @@ impl TransformNode {
     pub fn new(cfg: &serde_json::Value) -> Result<Self, PiiError> {
         let expr = cfg.get("expr").and_then(|v| v.as_str()).map(str::to_string);
         let value = cfg.get("value").cloned();
-        if expr.is_none() && value.is_none() {
+        let out = cfg.get("out").and_then(|v| v.as_str()).map(str::to_string);
+        let mut lets: Vec<(String, String)> = Vec::new();
+        if let Some(tbl) = cfg.get("let") {
+            // The shipped form is an ARRAY of "name = expression", in the order they are evaluated
+            // (`let` is a sequence, not a map: a later binding may read an earlier one, and TOML tables
+            // carry no order). The object form is accepted for readability of single bindings.
+            match tbl {
+                serde_json::Value::Array(items) => {
+                    for (i, item) in items.iter().enumerate() {
+                        let Some(line) = item.as_str() else {
+                            return Err(PiiError::Invalid(format!(
+                                "transform 'let[{i}]' must be a string \"name = expression\""
+                            )));
+                        };
+                        let Some((name, e)) = line.split_once('=') else {
+                            return Err(PiiError::Invalid(format!(
+                                "transform 'let[{i}]' has no '=': {line}"
+                            )));
+                        };
+                        let name = name.trim();
+                        if name.is_empty() {
+                            return Err(PiiError::Invalid(format!(
+                                "transform 'let[{i}]' names nothing: {line}"
+                            )));
+                        }
+                        lets.push((name.to_string(), e.trim().to_string()));
+                    }
+                }
+                serde_json::Value::Object(map) => {
+                    for (k, v) in map {
+                        let Some(e) = v.as_str() else {
+                            return Err(PiiError::Invalid(format!(
+                                "transform 'let.{k}' must be an expression string"
+                            )));
+                        };
+                        lets.push((k.clone(), e.to_string()));
+                    }
+                }
+                other => {
+                    return Err(PiiError::Invalid(format!(
+                        "transform 'let' must be an array of \"name = expression\" or a table; got {other}"
+                    )));
+                }
+            }
+        }
+        if out.is_some() && (expr.is_some() || value.is_some()) {
             return Err(PiiError::Invalid(
-                "transform requires 'expr' (string) or 'value' (any)".into(),
+                "transform sets 'out' or 'expr'/'value', not both".into(),
             ));
         }
-        Ok(Self { expr, value })
+        if out.is_none() && !lets.is_empty() {
+            return Err(PiiError::Invalid(
+                "transform has 'let' but no 'out': the bindings would compute nothing".into(),
+            ));
+        }
+        if expr.is_none() && value.is_none() && out.is_none() {
+            return Err(PiiError::Invalid(
+                "transform requires 'expr' (string), 'value' (any), or 'let' plus 'out'".into(),
+            ));
+        }
+        let node_id = cfg
+            .get("node-id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?")
+            .to_string();
+        // LOAD TIME: every binding and `out` is parsed now, and a name is refused unless an earlier
+        // binding introduced it. An expression that only fails when a run reaches it is a graph that
+        // shipped broken — the same trap as a `$.` path that names nothing.
+        let mut parsed: Vec<(String, crate::expr::Expr)> = Vec::new();
+        let mut bound: Vec<String> = Vec::new();
+        for (name, e) in &lets {
+            let ast = crate::expr::Expr::parse(e)
+                .map_err(|err| PiiError::Invalid(format!("node '{node_id}': {err}")))?;
+            for used in ast.names() {
+                if !bound.iter().any(|b| b == used) {
+                    return Err(PiiError::Invalid(format!(
+                        "node '{node_id}': bad expression '{e}': name '{used}' is not bound by an earlier let"
+                    )));
+                }
+            }
+            bound.push(name.clone());
+            parsed.push((name.clone(), ast));
+        }
+        let out_ast = match &out {
+            Some(o) => {
+                let ast = crate::expr::Expr::parse(o)
+                    .map_err(|err| PiiError::Invalid(format!("node '{node_id}': {err}")))?;
+                for used in ast.names() {
+                    if !bound.iter().any(|b| b == used) {
+                        return Err(PiiError::Invalid(format!(
+                            "node '{node_id}': bad expression '{o}': name '{used}' is not bound by an earlier let"
+                        )));
+                    }
+                }
+                Some(ast)
+            }
+            None => None,
+        };
+        Ok(Self {
+            expr,
+            value,
+            lets: parsed,
+            out: out_ast,
+            node_id,
+        })
     }
 }
 
 impl super::GraphNode for TransformNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         let ec = eval_ctx(input);
-        let result = match (&self.expr, &self.value) {
-            (Some(e), _) => eval(&ec, e),
-            (None, Some(v)) => eval_or_literal(&ec, v),
-            (None, None) => Ok(serde_json::Value::Null),
+        let result = if let Some(out) = &self.out {
+            // bindings are evaluated in declaration order, each against a context that has the input plus
+            // every binding so far -- so `let m = n + 1` can read `n`, and `out = m` reads both
+            let mut ctx = ec.clone();
+            let mut failed = None;
+            for (name, ast) in &self.lets {
+                match ast.eval(&ctx) {
+                    Ok(v) => {
+                        if let Some(obj) = ctx.as_object_mut() {
+                            obj.insert(name.clone(), v);
+                        }
+                    }
+                    Err(err) => {
+                        failed = Some(err);
+                        break;
+                    }
+                }
+            }
+            match failed {
+                Some(e) => Err(e),
+                None => out.eval(&ctx),
+            }
+        } else {
+            match (&self.expr, &self.value) {
+                (Some(e), _) => eval(&ec, e),
+                (None, Some(v)) => eval_or_literal(&ec, v),
+                (None, None) => Ok(serde_json::Value::Null),
+            }
         };
         match result {
             Ok(v) => Ok(Outcome::Next {
