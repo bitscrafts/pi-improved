@@ -10,13 +10,25 @@ ok=0; fail=0
 pass(){ ok=$((ok+1)); echo "ok   $1"; }
 bad(){ fail=$((fail+1)); echo "FAIL $1"; }
 
-OUT=$(mktemp); trap 'rm -f "$OUT"' EXIT
+OUT=$(mktemp); trap 'rm -rf "$OUT" "$TMP"' EXIT
+TMP=$(mktemp -d)   # the stubbed PATH lives here, removed with the trap
 export PII_HOLD=/tmp/hold-absent-$$   # the hold guards are tested by hold.sh's own suite; here we test the two measurements
 
+# pgrep is STUBBED: the guard reads "is any worker or cycle running", and on a machine where the real
+# cron is enabled the answer is sometimes yes. A test that passes only when the machine is quiet is not
+# a test. FAKE_PROCS is the process list the guard will see.
+mkdir -p "$TMP/bin"
+cat > "$TMP/bin/pgrep" <<'PG'
+#!/usr/bin/env bash
+[ -n "$FAKE_PROCS" ] || exit 1
+printf '%s\n' "$FAKE_PROCS"
+exit 0
+PG
+chmod +x "$TMP/bin/pgrep"
+export PATH="$TMP/bin:$PATH"
+
 # The drain must not dispatch anything while a worker is running.
-bash -c 'exec -a run-batchC-pii-test sleep 6' &
-FAKE=$!
-sleep 0.2
+export FAKE_PROCS='424242 run-batchC-pii-test sleep 6'
 PII_HOLD="$PII_HOLD" PII_DRAIN_QUIET=0 MAX_CYCLES=1 bash scripts/autonomy/drain.sh >"$OUT" 2>&1
 rc=$?
 grep -q 'a worker or cycle is already running' "$OUT" && pass "a running worker makes the drain yield" \
@@ -24,7 +36,7 @@ grep -q 'a worker or cycle is already running' "$OUT" && pass "a running worker 
 # the guard line itself contains the word "cycle", so the control must look for a DISPATCH, not a word
 grep -qE 'OUTCOME=|drain: dispatch|pick:' "$OUT" && bad "CONTROL the drain really did not dispatch" \
   || pass "CONTROL the drain really did not dispatch"
-kill "$FAKE" 2>/dev/null; wait "$FAKE" 2>/dev/null
+export FAKE_PROCS=""   # nothing is running: the next case must be refused for the OTHER reason
 
 # Uncommitted work at the start of a firing belongs to someone else.
 PLANT=_tmp/autonomy/guard-test-plant.txt

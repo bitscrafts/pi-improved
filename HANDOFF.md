@@ -3,8 +3,8 @@
 ## 2026-11-04T18:20Z — row 383's third criterion could not fail, and its commit path could not stage
 
 Found while a cycle was in flight on 383 (read-only checks only; no second worker started). The row and
-spec 383 both named `graphs/boss-watch.toml`; the graph is `graphs/starter/boss-watch.toml`, so
-`! grep -q 'bash' graphs/boss-watch.toml` ran on a missing path, printed `No such file or directory`,
+spec 383 both named the graph by a path that does not exist; the graph is `graphs/starter/boss-watch.toml`, so
+the `! grep -q 'bash'` criterion ran on a missing path, printed `No such file or directory`,
 and exited **0** — a criterion that certifies nothing on every run. The same wrong path sat in column 6,
 so `git add` would have failed (rc 11, `add-failed`) *after* a green verify and a full gate, and since
 `add-failed` sets no state the next cycle would have repeated it: a stall, not a code failure.

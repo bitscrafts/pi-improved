@@ -123,3 +123,7 @@ separated on disk.
 4. Whether the value-computation primitive is an expression language in the graph file, or a
    `compute` kind, or a step toward a small typed language — this is the decision with the longest
    consequences.
+
+## A coder's prompt (spec 386)
+
+A `coder` node may carry `prompt`, a literal string whose `{{path}}` placeholders are bound to the run's values. `path` is an expression against `input`, `payload` or `nodes.<id>`. Load checks it: a `nodes.<id>` naming no declared node is refused, as is a prompt that is unclosed, over 64 KiB, on a non-coder node, or set together with `brief`. A placeholder that resolves to nothing at run time refuses the run before anything spawns; it never becomes a blank. The resolved prompt is journalled as `coder.prompt`. A prompt grants nothing: the node's caps and the graph's ceiling are unchanged.
