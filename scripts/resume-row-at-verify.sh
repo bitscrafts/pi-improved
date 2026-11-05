@@ -8,8 +8,13 @@ cd /projects/pi-improved || exit 1
 export PATH=/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}
 # Take the CYCLE lock the same way the cron's cycle does (flock -E 75): a cron cycle in flight would not yield it,
 # and a started-then-locked resume does nothing but print OUTCOME=locked (measured twice, 2026-11-05).
-exec 9>/projects/pi-improved/_tmp/autonomy/lock
+LOCK="${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}"
+exec 9>"$LOCK"
 flock -n 9 || { echo "STOPPED: the cycle lock is held (a cron cycle is in flight); run this again after it ends"; exit 75; }
+# This process now HOLDS the lock. cycle.sh's launcher would flock the same file on a new descriptor, which conflicts
+# with its own parent and prints OUTCOME=locked (measured three times, 2026-11-05); PII_CYCLE_LOCKED=1 is how a
+# caller that already holds it says so.
+export PII_CYCLE_LOCKED=1
 OWNER="resume-$ROW-$$"
 bash scripts/autonomy/hold.sh take "$OWNER" 14400 100 || { echo "STOPPED: could not take the tree hold"; exit 8; }
 trap 'bash scripts/autonomy/hold.sh release "$OWNER" >/dev/null 2>&1; echo "RELEASED : $OWNER"' EXIT
