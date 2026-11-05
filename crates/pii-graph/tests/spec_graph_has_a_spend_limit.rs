@@ -122,10 +122,21 @@ fn CONTROL_the_called_docs_graph_has_no_budget_of_its_own() {
 #[test]
 fn CONTROL_docs_toml_is_the_digest_spec_toml_pins() {
     // (d): this change did not edit the called graph. The pin is read from `spec.toml`, not hard-coded here.
+    //
+    // The pin must be the one belonging to the `docs` CALL. Reading the first `sha256` in the file was
+    // true only while `spec.toml` made a single call: spec 385 added a methodology route, so two pins now
+    // precede the docs one and the control compared the docs file against the sdd digest.
     let spec_src = read_graph("spec.toml");
     let pin = spec_src
         .lines()
-        .find_map(|l| l.strip_prefix("sha256 = \""))
+        .scan(false, |after_docs, line| {
+            if line.trim() == "graph = \"docs\"" {
+                *after_docs = true;
+            }
+            Some((*after_docs, line))
+        })
+        .filter(|(after_docs, _)| *after_docs)
+        .find_map(|(_, l)| l.trim().strip_prefix("sha256 = \""))
         .and_then(|rest| rest.strip_suffix('"'))
         .expect("spec.toml pins the docs graph by sha256");
     assert_eq!(sha256_hex(read_graph("docs.toml").as_bytes()), pin);

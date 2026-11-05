@@ -230,9 +230,20 @@ fn CONTROL_the_wall_boundary_is_the_coder_sum() {
 #[test]
 fn CONTROL_docs_toml_is_the_digest_spec_toml_pins() {
     // (e): this change did not edit the called graph. The pin is read from `spec.toml`, not hard-coded here.
+    //
+    // The pin is the one belonging to the `docs` CALL, not the first `sha256` in the file: spec 385 gave
+    // spec.toml a methodology route, so two other pins now precede it and this control compared the
+    // docs file against the sdd digest.
     let pin = read_graph("spec.toml")
         .lines()
-        .find_map(|l| l.strip_prefix("sha256 = \""))
+        .scan(false, |after_docs, line| {
+            if line.trim() == "graph = \"docs\"" {
+                *after_docs = true;
+            }
+            Some((*after_docs, line))
+        })
+        .filter(|(after, _)| *after)
+        .find_map(|(_, l)| l.trim().strip_prefix("sha256 = \""))
         .and_then(|rest| rest.strip_suffix('"'))
         .expect("spec.toml pins the docs graph by sha256")
         .to_string();

@@ -174,7 +174,10 @@ if [ "$LANE" = spec ]; then
         || { echo "ABORT: graphs/$G.toml differs from HEAD (the pin protects the reviewed graph): nothing started"; exit 2; }
     done
   fi
-  PIN=$(grep -o 'sha256 = "[0-9a-f]*"' "$REPO/graphs/spec.toml" | head -1 | cut -d'"' -f2)
+  # The pin belonging to the DOCS call, not the first sha256 in the file: spec 385 gave spec.toml a
+  # methodology route, so other pins now precede the docs one and the first-pin reading compared the docs
+  # digest against the sdd digest — the lane aborted for every row.
+  PIN=$(grep -A6 'graph = "docs"' "$REPO/graphs/spec.toml" | grep -m1 -o 'sha256 = "[0-9a-f]*"' | cut -d'"' -f2)
   DIG=$(sha256sum "$REPO/graphs/docs.toml" 2>/dev/null | cut -c1-64)
   [ -n "$DIG" ] && [ "$PIN" = "$DIG" ] || { echo "ABORT: graphs/docs.toml digest '$DIG' is not the pin in graphs/spec.toml ('$PIN'): nothing started"; exit 2; }
   [ -f "$REPO/graphs/preflight.toml" ] || { echo "ABORT: graphs/preflight.toml is missing (the preflight judge graph): nothing started"; exit 2; }
@@ -188,7 +191,11 @@ if [ "$LANE" = spec ]; then
 import json, sys, tomllib
 p, agent, model, provider, spec, base, workdir, brief, docs_brief, cap, graph, sid = sys.argv[1:]
 limit = tomllib.load(open(graph, "rb"))["limits"]["max_micro_usd"] / 1e6
-open(p, "w").write(json.dumps({"agent": agent, "model": model, "provider": provider, "spec": spec, "base": base, "workdir": workdir,
+# spec 385: `spec.toml` ROUTES on $.input.method, so the lane must say which methodology it wants.
+# Default sdd (the RED-before-GREEN method); PII_METHOD picks another, and an unknown name is refused by
+# the graph's own route at run time rather than guessed here.
+method = (__import__("os").environ.get("PII_METHOD") or "sdd").strip()
+open(p, "w").write(json.dumps({"method": method, "agent": agent, "model": model, "provider": provider, "spec": spec, "base": base, "workdir": workdir,
     "brief": open(brief).read(), "docs_brief": docs_brief, "max_budget_usd": min(float(cap), limit), "sid": sid or None}))
 PY
 fi

@@ -23,7 +23,7 @@ kind = "select"
 id = "implement"
 kind = "call"
 graph = "spec"
-sha256 = "771d098b39db7369dd71ed1fb23ffa63b90b25fed7788c830e4bfb214c424443"
+sha256 = "6642f5b2211ec22bde5a8a2f8a50619ff1b5896dcd0ec22ca42808491a114edd"
 # spec 362: a coder without fs_write cannot implement anything — measured 2026-11-03, the agent spawned with these caps
 # stopped and reported "no write or execute tool is available" instead of writing code.
 caps = ["spawn", "proc", "fs_read", "fs_write"]

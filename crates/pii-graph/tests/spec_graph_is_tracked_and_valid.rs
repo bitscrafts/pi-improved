@@ -54,7 +54,11 @@ impl NodeFactory for StubJudge {
         "judge"
     }
     fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-        Ok(vec![PortName::from("ok"), PortName::from("fail")])
+        Ok(vec![
+            PortName::from("ok"),
+            PortName::from("fail"),
+            PortName::from("unrunnable"),
+        ])
     }
     fn required_caps(&self) -> CapKind {
         CapKind::empty()
@@ -81,6 +85,14 @@ fn graphs_dir() -> std::path::PathBuf {
 
 fn tracked_source() -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../graphs/spec.toml");
+    std::fs::read_to_string(path).unwrap()
+}
+
+/// The source of any shipped graph, by file name.
+fn tracked_source_of(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../graphs")
+        .join(name);
     std::fs::read_to_string(path).unwrap()
 }
 
@@ -121,13 +133,16 @@ fn a_graph_with_an_absolute_path_is_caught_by_the_same_check() {
 
 #[test]
 fn spec_graph_timeout_is_a_literal() {
-    let doc = parsed(&tracked_source());
+    // Spec 385 moved the coder out of `spec.toml` into the methodology the driver picks, so the graph
+    // that owns a coder node is `sdd.toml`. The property is unchanged: the coder's wall clock is a
+    // LITERAL in the graph, not a value resolved at run time.
+    let doc = parsed(&tracked_source_of("sdd.toml"));
     let code = doc["node"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|n| n["id"].as_str() == Some("code"))
-        .expect("a code node");
+        .find(|n| n["kind"].as_str() == Some("coder"))
+        .expect("a coder node in the graph that implements");
     let timeout = code["timeout_ms"]
         .as_integer()
         .expect("timeout_ms is an integer");

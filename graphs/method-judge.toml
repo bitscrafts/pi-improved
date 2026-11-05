@@ -1,0 +1,77 @@
+# Spec 385: the judge methodology as a graph. A coder implements the spec, then the judge proves its criteria. It is the
+# second methodology `spec` can select (the first is `sdd`, which proves RED before GREEN). It holds no docs step: the
+# driver (`spec`) owns documentation and the re-judge after it. No absolute path and no credential lives in this file.
+# `exit = "done"` lets the driver call it and route on its ports.
+name = "method-judge"
+entry = "code"
+exit = "done"
+needs = ["agent", "model", "provider", "spec", "workdir", "base"]
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[limits]
+max_wall_ms = 4800000
+
+[[node]]
+id = "code"
+kind = "coder"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "Implement the spec named above. Follow it as the contract. Do not edit its criteria to make them pass. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
+timeout_ms = 3000000
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
+
+[[node]]
+id = "verify"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+# `unverified` and `refused` take a route from exclusive ports, so their join is `any`: whichever arm arrives ends the run.
+[[node]]
+id = "unverified"
+kind = "refuse"
+join = "any"
+hook = "judge"
+reason = "the spec's criteria failed"
+
+[[node]]
+id = "refused"
+kind = "refuse"
+join = "any"
+hook = "coder"
+reason = "the agent failed"
+
+[[edge]]
+from = "code"
+port = "ok"
+to = "verify"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "verify"
+port = "fail"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "code"
+port = "err"
+to = "refused"
+kind = "data"

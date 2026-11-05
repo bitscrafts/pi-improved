@@ -1,19 +1,22 @@
 # Spec 373: the SDD loop as a graph. A spec is the contract. `contract` proves its criteria are present and runnable
 # (each fails before the code exists). `tdd` (a called graph, spec 372) writes the tests, proves them RED, implements and
-# proves them GREEN. `verify` re-judges the criteria. `docs` (a called graph) documents the work, and `reverify` judges
-# the criteria again: a docs step that broke them is refused. Three verdicts end the run: `done`, `unverified` (the
-# criteria fail) and `refused` (the run could not proceed). No absolute path and no credential lives in this file.
-# `exit = "done"` lets the night call this graph.
+# proves them GREEN. `verify` re-judges the criteria. Spec 385: the docs step is owned by the driver (`spec`), so this
+# graph ends at `verify`. Three verdicts end the run: `done`, `unverified` (the criteria fail) and `refused` (the run
+# could not proceed). No absolute path and no credential lives in this file. `exit = "done"` lets a host call this graph.
 name = "sdd"
 entry = "contract"
 exit = "done"
-needs = ["agent", "model", "provider", "spec", "workdir", "base", "docs_brief"]
+needs = ["agent", "model", "provider", "spec", "workdir", "base"]
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [[node]]
 id = "contract"
 kind = "judge"
 caps = ["proc"]
+
+[limits]
+max_steps = 1000
+max_wall_ms = 5400000   # 1.5 h: two coders at 1.8 M each plus the four judges between them
 spec = "$.input.spec"
 base = "$.input.base"
 workdir = "$.input.workdir"
@@ -22,46 +25,7 @@ expect = "fail"
 
 # Spec 372: the TDD loop, pinned. Its exit is `green`, so `ok` is every test GREEN and `fail` is a test still RED.
 [[node]]
-id = "tdd"
-kind = "call"
-graph = "tdd"
-sha256 = "7a826d3bcecca35c627f8382914bf5dbd640a84363f60763c79581940a03bd6d"
-caps = ["spawn", "proc", "fs_read", "fs_write"]
-
-[node.in]
-agent = "$.input.agent"
-model = "$.input.model"
-provider = "$.input.provider"
-spec = "$.input.spec"
-workdir = "$.input.workdir"
-base = "$.input.base"
-
-[[node]]
 id = "verify"
-kind = "judge"
-caps = ["proc"]
-spec = "$.input.spec"
-base = "$.input.base"
-workdir = "$.input.workdir"
-
-# Spec 272: the docs graph, pinned. It documents the verified work in its own session, with its own brief.
-[[node]]
-id = "docs"
-kind = "call"
-graph = "docs"
-sha256 = "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980"
-caps = ["spawn", "proc"]
-
-[node.in]
-agent = "$.input.agent"
-model = "$.input.model"
-provider = "$.input.provider"
-spec = "$.input.spec"
-workdir = "$.input.workdir"
-brief = "$.input.docs_brief"
-
-[[node]]
-id = "reverify"
 kind = "judge"
 caps = ["proc"]
 spec = "$.input.spec"
@@ -90,12 +54,6 @@ reason = "the agent failed or the criteria could not run"
 
 [[edge]]
 from = "contract"
-port = "ok"
-to = "tdd"
-kind = "data"
-
-[[edge]]
-from = "contract"
 port = "fail"
 to = "refused"
 kind = "data"
@@ -107,49 +65,165 @@ to = "refused"
 kind = "data"
 
 [[edge]]
-from = "tdd"
-port = "ok"
-to = "verify"
-kind = "data"
-
-[[edge]]
-from = "tdd"
-port = "fail"
-to = "unverified"
-kind = "data"
-
-[[edge]]
 from = "verify"
-port = "ok"
-to = "docs"
-kind = "data"
-
-[[edge]]
-from = "verify"
-port = "fail"
-to = "unverified"
-kind = "data"
-
-[[edge]]
-from = "docs"
-port = "ok"
-to = "reverify"
-kind = "data"
-
-[[edge]]
-from = "docs"
-port = "err"
-to = "refused"
-kind = "data"
-
-[[edge]]
-from = "reverify"
 port = "ok"
 to = "done"
 kind = "data"
 
 [[edge]]
-from = "reverify"
+from = "verify"
+port = "fail"
+to = "unverified"
+kind = "data"
+
+[[node]]
+id = "tdd_write_test"
+kind = "coder"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "Write only the tests that the spec's Exit Criteria name. Do NOT write the implementation: the tests must fail against the code as it is. Do not commit."
+timeout_ms = 1800000
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
+
+[[node]]
+id = "tdd_red"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+expect = "fail"
+
+[[node]]
+id = "tdd_implement"
+kind = "coder"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+brief = "Implement the spec named above until its tests pass. Follow it as the contract. Do not edit the tests to make them pass. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
+timeout_ms = 1800000
+env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
+
+[[node]]
+id = "tdd_green"
+kind = "judge"
+caps = ["proc"]
+spec = "$.input.spec"
+base = "$.input.base"
+workdir = "$.input.workdir"
+
+[[node]]
+id = "tdd_done"
+kind = "transform"
+value = "done"
+
+# The two ways the loop goes wrong, and the coder refusals. Each is its own terminal port, so the run says which one.
+
+[[node]]
+id = "tdd_refused"
+kind = "refuse"
+join = "any"
+hook = "coder"
+reason = "the agent failed"
+
+[[node]]
+id = "tdd_not-red"
+kind = "refuse"
+join = "all"
+hook = "judge"
+reason = "the test passed before the code existed, so it proves nothing"
+
+[[node]]
+id = "tdd_unrunnable"
+kind = "refuse"
+join = "all"
+hook = "judge"
+reason = "a criterion could not run, so RED is unproven"
+
+[[node]]
+id = "tdd_still-red"
+kind = "refuse"
+join = "all"
+hook = "judge"
+reason = "the implementation did not make the test pass"
+
+[[edge]]
+from = "tdd_write_test"
+port = "ok"
+to = "tdd_red"
+kind = "data"
+
+[[edge]]
+from = "tdd_write_test"
+port = "err"
+to = "tdd_refused"
+kind = "data"
+
+[[edge]]
+from = "tdd_red"
+port = "ok"
+to = "tdd_implement"
+kind = "data"
+
+[[edge]]
+from = "tdd_red"
+port = "fail"
+to = "tdd_not-red"
+kind = "data"
+
+[[edge]]
+from = "tdd_red"
+port = "unrunnable"
+to = "tdd_unrunnable"
+kind = "data"
+
+[[edge]]
+from = "tdd_implement"
+port = "ok"
+to = "tdd_green"
+kind = "data"
+
+[[edge]]
+from = "tdd_implement"
+port = "err"
+to = "tdd_refused"
+kind = "data"
+
+[[edge]]
+from = "tdd_green"
+port = "ok"
+to = "tdd_done"
+kind = "data"
+
+[[edge]]
+from = "tdd_green"
+port = "fail"
+to = "tdd_still-red"
+kind = "data"
+
+# the test-first flow is INLINE (spec 385): calling tdd made night -> queue -> spec -> sdd -> tdd,
+# five deep against a cap of four. A merge is an inline, not a call.
+[[edge]]
+from = "contract"
+port = "ok"
+to = "tdd_write_test"
+kind = "data"
+
+[[edge]]
+from = "tdd_green"
+port = "ok"
+to = "verify"
+kind = "data"
+
+[[edge]]
+from = "tdd_green"
 port = "fail"
 to = "unverified"
 kind = "data"

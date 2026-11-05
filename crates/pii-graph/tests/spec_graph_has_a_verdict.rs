@@ -57,7 +57,11 @@ fn registry() -> NodeRegistry {
     }));
     reg.register(Arc::new(Stub {
         kind: "judge",
-        ports: &["ok", "fail"],
+        // Must mirror the REAL judge (crates/pii-server/src/node_kinds/nodes/judge_spec.rs): a spec-mode
+        // judge reports a criterion it cannot run as `unrunnable`, and sdd routes that verdict to
+        // `refused`. A stub that lists fewer ports makes a legal graph look broken — the same drift that
+        // 381 was about, one level down.
+        ports: &["ok", "fail", "unrunnable"],
     }));
     reg
 }
@@ -103,10 +107,27 @@ fn has_absolute_path(doc: &toml::Value) -> bool {
 #[test]
 fn the_graph_routes_ok_through_verify_to_done() {
     let spec = loaded();
-    assert!(has_edge(&spec, "code", "ok", "verify"), "code.ok -> verify");
-    // Spec 272 put the documentation step between the verdict and `done`, and judges again after it.
+    // Spec 385: the implementer is a METHODOLOGY the driver picks, so `code` and `verify` now live one
+    // level down, namespaced by the call that inlined them. The properties are unchanged; only the ids
+    // moved. Asserting the old bare ids asserted a shape the shipped graph no longer has.
+    // `pick` routes on $.input.method, so its ports are the METHOD NAMES, not ok/err: choosing a
+    // methodology is a route, and the chosen graph is inlined behind the port carrying its name.
     assert!(
-        !has_edge(&spec, "verify", "ok", "done"),
+        has_edge(&spec, "pick", "method-judge", "method-judge__in"),
+        "pick --method-judge--> the method-judge graph"
+    );
+    assert!(
+        has_edge(&spec, "pick", "sdd", "sdd__in"),
+        "pick --sdd--> the sdd graph"
+    );
+    assert!(
+        has_edge(&spec, "method-judge__code", "ok", "method-judge__verify"),
+        "code.ok -> verify"
+    );
+    // Spec 272 put the documentation step between the verdict and `done`, and judges again after it:
+    // a verified methodology still has to reach the host's `passed`/`reverify`, not jump to `done`.
+    assert!(
+        !has_edge(&spec, "method-judge__verify", "ok", "done"),
         "verify.ok must not skip the docs step"
     );
     assert!(
@@ -118,14 +139,13 @@ fn the_graph_routes_ok_through_verify_to_done() {
         "reverify.fail -> unverified"
     );
     assert!(
-        has_edge(&spec, "verify", "fail", "unverified"),
-        "verify.fail -> unverified"
+        has_edge(&spec, "method-judge__code", "err", "method-judge__refused"),
+        "a coder that fails reaches a refusal"
     );
     assert!(
-        has_edge(&spec, "code", "err", "refused"),
-        "code.err -> refused"
+        !has_edge(&spec, "method-judge__code", "ok", "done"),
+        "no code.ok -> done"
     );
-    assert!(!has_edge(&spec, "code", "ok", "done"), "no code.ok -> done");
 }
 
 #[test]
@@ -153,7 +173,11 @@ fn the_graph_still_validates_with_no_absolute_path() {
     let spec = load_host_with_graphs(&src, &graphs_dir(), &[graphs_dir()], &registry())
         .unwrap()
         .spec;
-    assert!(validate(&spec, &registry()).is_ok(), "no validation errors");
+    let vres = validate(&spec, &registry());
+    assert!(
+        vres.is_ok(),
+        "the shipped spec graph must validate: {vres:?}"
+    );
     let doc: toml::Value = toml::from_str(&src).unwrap();
     assert!(
         !has_absolute_path(&doc),

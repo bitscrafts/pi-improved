@@ -1,11 +1,16 @@
 # Spec 342: the night, as a composition of graphs pii already has.
 #
-# There is no `night_pick` and no `night_land` here. `queue` is called by pin (spec 255, extended by 343): the load
-# inlines it and namespaces its ids (`sdd__select`, `sdd__record`), the run is ONE run with ONE journal, and a
-# suspension inside the queue — a judge waiting on a gate, a timer — suspends the night at that node. The report is
-# spec 128's `post`. Every kind in this file exists in a graph it composes: `timer`, `call`, `post`.
+# Spec 385: the night is a clock with two jobs: fill the queue when it is empty, and drain it. The shape is
+#   tick → drain (call queue) → empty? → fill (call self-improve) → drain again (call queue) → review → report
+# `drain` runs first, and its record carries the status: only an `empty` status fills, so a night never re-plans work that
+# is already queued (spec 385 Q2). The second drain takes whatever the fill planned, and it runs whether the fill
+# succeeded or was refused: a night that cannot plan can still finish what it has (spec 385 guardrail).
 #
-# `max_entries` must be at least the loop budget: the call is re-entered on every tick, and `max_entries` survives a
+# `queue` and `self-improve` are called by pin (spec 255): the load inlines them and namespaces their ids, the run is ONE
+# run with ONE journal, and a suspension inside a call suspends the night at that node. The report is spec 128's `post`.
+# The night reads `$.input.finding` (the text a fill plans from) along with `workdir` and `base`.
+#
+# `max_entries` must be at least the loop budget: a call is re-entered on every tick, and `max_entries` survives a
 # resume (it is in the stored spec), so a night that outlives its budget dies on the next tick rather than looping
 # forever.
 name = "night"
@@ -14,37 +19,75 @@ exit = "report"
 caps = ["spawn", "proc", "post", "fs_read", "fs_write"]
 
 [limits]
-# A night's ticks plus two coder passes plus a judge, checked before each next node.
-max_wall_ms = 7200000
+# Two drains (6 000 000 ms each: the queue's own bound) plus one fill (self-improve's 6 300 000 ms), checked before each
+# next node.
+max_wall_ms = 19800000
 
 [[node]]
 id = "tick"
 kind = "timer"
 in_ms = "$.input.in_ms"
 
-# Spec 373: the node named `sdd` calls the SDD graph, so the name is true. `queue` stays a graph of its own for row work.
+# Spec 385 R4: the drain. The queue's record carries `status`: `empty` when nothing waited, otherwise the row's outcome.
 [[node]]
-id = "sdd"
+id = "drain"
 kind = "call"
-graph = "sdd"
-sha256 = "f2eeb3c22655fa5caea4dcd43d32d383849bdf876106e067114f7a97258719b4"
+graph = "queue"
+sha256 = "59f180722161833edcc5f5475ea54cdc8cc37da27415b911072419b8639bdd6f"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 max_entries = 12
 
 [node.in]
-agent = "$.input.agent"
-model = "$.input.model"
-provider = "$.input.provider"
-spec = "$.input.spec"
-base = "$.input.base"
 workdir = "$.input.workdir"
-docs_brief = "$.input.docs_brief"
+base = "$.input.base"
 
+# Spec 385 Q2: only an empty queue fills. Any other status goes straight to review.
+[[node]]
+id = "empty-gate"
+kind = "route"
+on = "$.payload.status"
+rules = [
+  { eq = "empty", port = "fill" },
+  { port = "other" },
+]
+
+# Spec 385 R4: the fill. Its ok and its refusal both reach the second drain: a fill that cannot plan must not stop a drain.
+[[node]]
+id = "fill"
+kind = "call"
+graph = "self-improve"
+sha256 = "c1063499a4e66d7f572d3a64c971ff5f71b029f755a4dc3223bb7218055e2678"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+max_entries = 12
+
+[node.in]
+finding = "$.input.finding"
+workdir = "$.input.workdir"
+base = "$.input.base"
+
+[[node]]
+id = "merge-fill"
+kind = "transform"
+join = "any"
+expr = "$.payload"
+
+[[node]]
+id = "drain-again"
+kind = "call"
+graph = "queue"
+sha256 = "59f180722161833edcc5f5475ea54cdc8cc37da27415b911072419b8639bdd6f"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+max_entries = 12
+
+[node.in]
+workdir = "$.input.workdir"
+base = "$.input.base"
+
+# Spec 342 R5: the call's ok port carries both a claimed item and an empty queue; review passes the record through, and
+# the report says which it was. Spec 381 R3: one of its three arms (ok, unverified, refused) arrives, so the join is any.
 [[node]]
 id = "review"
 kind = "transform"
-# Spec 342 R5: the call's ok port carries both a claimed item and an empty queue; review passes the record through, and
-# the report says which it was. Spec 381 R3: one of its three arms (ok, unverified, refused) arrives, so the join is any.
 join = "any"
 expr = "$.payload"
 
@@ -62,25 +105,45 @@ topic = "status"
 [[edge]]
 from = "tick"
 port = "fired"
-to = "sdd"
+to = "drain"
 kind = "data"
 
 [[edge]]
-from = "sdd"
+from = "drain"
 port = "ok"
-to = "review"
-kind = "data"
-
-# Spec 381 R3: both refusals of the call reach the report, so a night that refused says so.
-[[edge]]
-from = "sdd"
-port = "unverified"
-to = "review"
+to = "empty-gate"
 kind = "data"
 
 [[edge]]
-from = "sdd"
-port = "refused"
+from = "empty-gate"
+port = "fill"
+to = "fill"
+kind = "data"
+
+[[edge]]
+from = "empty-gate"
+port = "other"
+to = "review"
+kind = "data"
+
+[[edge]]
+from = "fill"
+port = "ok"
+to = "merge-fill"
+kind = "data"
+
+# Spec 385: a fill that fails still drains. A call returns on its callee's EXIT ports, and
+# self-improve's exit is a transform -- so the port is `err`, not `refused`. The two arms are merged
+# first: ok and err are exclusive ports of ONE node, and a join over them can never be satisfied.
+[[edge]]
+from = "fill"
+port = "err"
+to = "merge-fill"
+kind = "data"
+
+[[edge]]
+from = "drain-again"
+port = "ok"
 to = "review"
 kind = "data"
 
@@ -88,4 +151,10 @@ kind = "data"
 from = "review"
 port = "ok"
 to = "report"
+kind = "data"
+
+[[edge]]
+from = "merge-fill"
+port = "ok"
+to = "drain-again"
 kind = "data"

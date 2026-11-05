@@ -1,8 +1,12 @@
 # Spec 257: one tracked graph implements any spec. The run input chooses the agent, model, spec, workdir and brief:
 #   pii run start spec --input '{"agent":"pi","model":"<model>","provider":"<provider>","spec":"specs/N-x.md","workdir":"<dir>","brief":"<text>"}'
 # No absolute path and no credential lives in this file: only the NAMES in env_pass are copied from the daemon's environment.
+# Spec 385: `spec` is a DRIVER. It holds no coder and no judge of its own: it routes on the methodology, calls ONE of two
+# pinned methodology graphs (`sdd`: RED before GREEN; `method-judge`: implement, then judge), then documents the work and
+# re-judges the criteria. The run input may name the methodology as `method`: "sdd" or "method-judge". Without it, the
+# fallback is `method-judge`. Each call is pinned, so a review of a pin is a review of a specific file.
 name = "spec"
-entry = "code"
+entry = "pick"
 # Spec 364: named so the queue can inline this graph by `call`. A host routes on `done`'s ports, and may wire a refusal
 # by name (`<call>.unverified`, `<call>.refused`) to take it back as a verdict; run directly, a refusal fails the run.
 exit = "done"
@@ -13,36 +17,63 @@ caps = ["spawn", "proc", "fs_read", "fs_write"]
 # (the docs graph) is inlined and shares this budget.
 [limits]
 max_micro_usd = 1000000
-# Spec 290: the wall covers the coders. `code` 3 000 000 + the inlined docs coder 1 200 000, plus 1 800 000 for the two judges
-# (a stated allowance: judge_spec.rs has no timeout to measure) and the call's steps. The default 600 000 failed real passes
-# at `verify` with the agent's work done and exit 0 (r000000000261: 601 s, r000000000260: 717 s).
-max_wall_ms = 6000000
+# Spec 290: the wall covers the methodology call (`sdd` runs two coders, its tdd allowance is 4 200 000) or `method-judge`
+# (one coder, 3 000 000), plus the inlined docs coder 1 200 000 and the call's steps. The default 600 000 failed real
+# passes at `verify` with the agent's work done and exit 0 (r000000000261: 601 s, r000000000260: 717 s).
+max_wall_ms = 10800000   # 3 h: the two coders reached through the methodology sum to 7.8 M ms;
+                           # the wall must cover them plus the docs step, and it is a literal on purpose
 
+# Spec 385 R6: the methodology is chosen from the run input. An input `method` of "sdd" routes to the RED/GREEN graph;
+# anything else (absent, or "method-judge") routes to the judge graph.
 [[node]]
-id = "code"
-kind = "coder"
+id = "pick"
+kind = "route"
+on = "$.input.method"
+rules = [
+  { eq = "sdd", port = "sdd" },
+  { port = "method-judge" },
+]
+
+# Spec 385 R2: the RED/GREEN methodology, pinned. Its `ok` is every criterion GREEN.
+[[node]]
+id = "sdd"
+kind = "call"
+graph = "sdd"
+sha256 = "9be2ef20a98046027601d6c3dca43fd4a1678ac544b38eafaa0e1e947ed2994e"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[node.in]
 agent = "$.input.agent"
 model = "$.input.model"
 provider = "$.input.provider"
 spec = "$.input.spec"
 workdir = "$.input.workdir"
-brief = "$.input.brief"
-max_budget_usd = "$.input.max_budget_usd"
-# Spec 303: the resumed session. Optional: absent (or null) in the input means a fresh session, as the one-node graph's coder has it.
-sid = "$.input.sid"
-timeout_ms = 3000000
-env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
-
-[[node]]
-id = "verify"
-kind = "judge"
-caps = ["proc"]
-spec = "$.input.spec"
 base = "$.input.base"
-workdir = "$.input.workdir"
 
-# Spec 272: after `verify` passes, the docs graph documents the work (its own session, its own brief), then `reverify`
+# Spec 385 R3: the judge methodology, pinned. Its `ok` is the criteria judged passing.
+[[node]]
+id = "method-judge"
+kind = "call"
+graph = "method-judge"
+sha256 = "c7cd16f33bdbd0ea484f48b5cf26c209a222f3f9c3a0ac9b25b2fdad66b8b45a"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
+
+[node.in]
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
+base = "$.input.base"
+
+# Spec 385: either methodology's `ok` reaches `passed`, which joins on whichever arrives (the two are exclusive).
+[[node]]
+id = "passed"
+kind = "transform"
+join = "any"
+expr = "$.payload"
+
+# Spec 272: after a methodology passes, the docs graph documents the work (its own session, its own brief), then `reverify`
 # judges the same criteria again: a docs step that broke them is refused. The pin is the digest of graphs/docs.toml.
 [[node]]
 id = "docs"
@@ -73,7 +104,7 @@ id = "done"
 kind = "transform"
 value = "done"
 
-# Spec 272: `unverified` and `refused` take a route from two exclusive ports (verify or reverify; code or docs), so their
+# Spec 272: `unverified` and `refused` take a route from two exclusive ports (a methodology or reverify; docs), so their
 # join is `any`: whichever arm arrives ends the run.
 [[node]]
 id = "unverified"
@@ -90,15 +121,58 @@ hook = "coder"
 reason = "the agent failed"
 
 [[edge]]
-from = "code"
-port = "ok"
-to = "verify"
+from = "pick"
+port = "sdd"
+to = "sdd"
 kind = "data"
 
 [[edge]]
-from = "verify"
+from = "pick"
+port = "method-judge"
+to = "method-judge"
+kind = "data"
+
+[[edge]]
+from = "sdd"
+port = "ok"
+to = "passed"
+kind = "data"
+
+[[edge]]
+from = "method-judge"
+port = "ok"
+to = "passed"
+kind = "data"
+
+[[edge]]
+from = "passed"
 port = "ok"
 to = "docs"
+kind = "data"
+
+# Spec 381 R3 / 385: both methodologies can refuse or leave their criteria unverified, and the driver says which.
+[[edge]]
+from = "sdd"
+port = "unverified"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "sdd"
+port = "refused"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "method-judge"
+port = "unverified"
+to = "unverified"
+kind = "data"
+
+[[edge]]
+from = "method-judge"
+port = "refused"
+to = "refused"
 kind = "data"
 
 [[edge]]
@@ -123,16 +197,4 @@ kind = "data"
 from = "reverify"
 port = "fail"
 to = "unverified"
-kind = "data"
-
-[[edge]]
-from = "verify"
-port = "fail"
-to = "unverified"
-kind = "data"
-
-[[edge]]
-from = "code"
-port = "err"
-to = "refused"
 kind = "data"

@@ -186,14 +186,18 @@ impl NodeFactory for JudgeFactory {
 
     fn ports(&self, cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
         // Spec 372: an `expect = "fail"` judge also reports a criterion that could not run, on its own port.
-        if cfg.get("spec").is_some() && expects_failure(cfg)? {
-            return Ok(vec![
-                PortName::from("ok"),
-                PortName::from("fail"),
-                PortName::from("unrunnable"),
-            ]);
-        }
-        Ok(vec![PortName::from("ok"), PortName::from("fail")])
+        //
+        // The declaration is UNCONDITIONAL, and that is the fix rather than a widening: the validator asks
+        // a KIND for its ports without the node's cfg, so a conditional list declared `ok|fail` at lint
+        // time and `ok|fail|unrunnable` at run time. Every graph that routed `unrunnable` then failed V1
+        // ("node has no port 'unrunnable'") while the same graph ran fine — a declaration that depends on
+        // configuration the checker does not have is a declaration that lies to the checker.
+        let _ = cfg;
+        Ok(vec![
+            PortName::from("ok"),
+            PortName::from("fail"),
+            PortName::from("unrunnable"),
+        ])
     }
 
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
