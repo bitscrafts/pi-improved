@@ -144,13 +144,14 @@ fn approve(out: &mut String, sop: &Sop, s: &Step) -> Vec<(String, &'static str)>
     wrln!(out, "gate = {}", q(id));
     wr!(
         out,
-        "\n[[node]]\nid = {}\nkind = \"gate\"\npolicy = \"sop\"\nprompt = {}\n",
+        "\n[[node]]\nid = {}\nkind = \"gate\"\npolicy = \"sop\"\nprompt = {}\ndeadline_ms = {}\n",
         q(id),
         q(&format!(
             "SOP '{}' step '{id}': {}",
             sop.id,
             s.prompt.as_deref().unwrap_or_default()
-        ))
+        )),
+        s.deadline_ms.unwrap_or_default()
     );
     edge(out, &format!("{id}.begin"), "ok", &format!("{id}.await"));
     edge(out, &format!("{id}.await"), "ok", id);

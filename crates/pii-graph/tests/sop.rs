@@ -29,6 +29,7 @@ command = "true"
 id = "c"
 kind = "approve"
 prompt = "ship?"
+deadline_ms = 86400000
 
 [[step]]
 id = "d"
@@ -207,6 +208,58 @@ fn lint_refuses_expression_looking_literals() {
     let errs = lint_errors(&GOOD.replace("command = \"true\"", "command = \"$.input.x\""));
     assert!(
         errs.iter().any(|e| e.contains("must not start with '$.'")),
+        "{errs:?}"
+    );
+}
+
+/// Spec 397: a suspension with no end is a decision nobody made, so an `approve` step must say how long it may
+/// wait, and the gate it compiles to carries exactly that.
+#[test]
+fn approve_deadline_reaches_the_gate() {
+    let g = graph_of(GOOD);
+    let gate = g["node"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["id"].as_str() == Some("c"))
+        .unwrap();
+    assert_eq!(gate["deadline_ms"].as_integer(), Some(86_400_000));
+}
+
+fn with_approve(extra: &str) -> String {
+    format!(
+        "id = \"r\"\ntitle = \"R\"\n\n[[step]]\nid = \"a\"\nkind = \"approve\"\nprompt = \"ok?\"\n{extra}"
+    )
+}
+
+#[test]
+fn an_approve_without_a_deadline_is_refused_naming_the_step() {
+    let errs = sop::load(&with_approve("")).unwrap_err();
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("step 'a'") && e.contains("deadline_ms")),
+        "{errs:?}"
+    );
+}
+
+#[test]
+fn an_approve_with_a_zero_deadline_is_refused() {
+    let errs = sop::load(&with_approve("deadline_ms = 0\n")).unwrap_err();
+    assert!(errs.iter().any(|e| e.contains("deadline_ms")), "{errs:?}");
+}
+
+#[test]
+fn control_an_approve_with_a_positive_deadline_loads() {
+    assert!(sop::load(&with_approve("deadline_ms = 1\n")).is_ok());
+}
+
+#[test]
+fn control_only_an_approve_takes_a_deadline() {
+    let src = "id = \"r\"\ntitle = \"R\"\n\n[[step]]\nid = \"a\"\nkind = \"check\"\ncommand = \"true\"\ndeadline_ms = 5\n";
+    let errs = sop::load(src).unwrap_err();
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("step 'a'") && e.contains("deadline_ms")),
         "{errs:?}"
     );
 }

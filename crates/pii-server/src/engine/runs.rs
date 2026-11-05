@@ -304,6 +304,26 @@ pub fn abandon_run(engine: &Engine, run_id: &RunId, reason: &str) -> Result<(), 
     )
 }
 
+/// Spec 397 R2/R3: fails a run suspended past its gate's deadline.
+///
+/// The run closes as `Failed` (`wait_deadline_exceeded`, naming
+/// the node and the deadline) and returns the queue row it held to `pending`, session and attempts intact.
+///
+/// # Errors
+/// As [`close_failed`], and store errors from the queue.
+pub fn fail_wait_deadline(
+    engine: &Engine,
+    run_id: &RunId,
+    node: &str,
+    deadline_ms: u64,
+) -> Result<(), PiiError> {
+    let reason =
+        format!("wait_deadline_exceeded: node '{node}' passed its deadline_ms {deadline_ms}");
+    close_failed(engine, run_id, reason.clone(), "cancel it first")?;
+    engine.queue.release_run(run_id.as_str(), &reason)?;
+    Ok(())
+}
+
 /// Appends a `Failure` terminal with `error` to a recorded run that is not in flight.
 pub(super) fn close_failed(
     engine: &Engine,

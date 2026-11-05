@@ -30,13 +30,14 @@ kind = "act"
 prompt = "Bump the version."
 tools = ["fs_read"]           # optional (act): the agent's tools
 max_turns = 4                 # optional (act)
+deadline_ms = 86400000        # required (approve): how long it may wait for a decision
 ```
 
 | `kind`    | required | what it compiles to |
 |-----------|----------|---------------------|
 | `act`     | `prompt` | an `agent` node; the prompt is its user message |
 | `check`   | `command`| a `bash` `tool` node + a `route` on its exit code; non-zero fails the run |
-| `approve` | `prompt` | a `gate` node named after the step (policy `sop`) |
+| `approve` | `prompt`, `deadline_ms` | a `gate` node named after the step (policy `sop`), carrying the same `deadline_ms` |
 | `notify`  | `message`, optional `path` | an `emit` node that appends the message to `path` (default `_tmp/sop-<step>-notify.log`, relative to the run's working directory) |
 
 `requires = ["a", "b"]` names steps that must have **finished** before this one
@@ -85,6 +86,11 @@ idempotent (spec 88). The approval's `node` is the step id and its prompt reads
 `SOP '<sop>' step '<step>': <prompt>`, so `pii approve ls` says what is being
 approved. `sop.step.awaiting_approval` carries the same `approval` id.
 `pii approve allow|deny <id>` works unchanged and resumes the run.
+
+An approval has an end (spec 397): `deadline_ms` is required on every `approve` step, and `lint` refuses a
+missing or zero one, naming the step. A run that waits for ever holds its queue row for ever; past the
+deadline the daemon fails the run with `wait_deadline_exceeded` (naming the node and the deadline) and returns
+its queue row to `pending`, session and attempts intact. It is a failure, not a denial: nobody decided.
 
 Approvals are resolved by the daemon, so run an SOP that has an `approve` step
 under it: put the compiled graph in the daemon's graph dir

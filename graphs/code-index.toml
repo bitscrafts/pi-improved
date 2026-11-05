@@ -47,6 +47,7 @@ Do not invent a number. Do not commit.
 [[node]]
 id = "gate"
 kind = "gate"
+deadline_ms = 600000
 
 require = ["entities_created", "crates_scanned", "relationships"]
 brief = """

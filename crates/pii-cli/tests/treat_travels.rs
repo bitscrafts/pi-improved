@@ -48,7 +48,16 @@ fn repo_with(dir: &Path, content: &str) -> String {
     git(dir, &["config", "user.name", "treat"]);
     std::fs::write(dir.join("app.txt"), content).unwrap();
     git(dir, &["add", "app.txt"]);
-    git(dir, &["commit", "-q", "-m", "base"]);
+    // The id covers the dates: repos built a second apart must still share a base, or the import is refused.
+    let pinned = "2026-01-01T00:00:00Z";
+    let out = Command::new("git")
+        .args(["commit", "-q", "-m", "base"])
+        .current_dir(dir)
+        .env("GIT_AUTHOR_DATE", pinned)
+        .env("GIT_COMMITTER_DATE", pinned)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git commit: {out:?}");
     git(dir, &["rev-parse", "HEAD"])
 }
 
@@ -423,4 +432,14 @@ fn export_is_deterministic() {
             "{file} differs between two exports"
         );
     }
+}
+
+/// Repos built a second apart share a base commit (the control: different content does not).
+#[test]
+fn two_repos_built_apart_share_one_base_commit() {
+    let (a, b, c) = (scratch("tb-a"), scratch("tb-b"), scratch("tb-c"));
+    let first = repo_with(a.path(), "broken\n");
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    assert_eq!(first, repo_with(b.path(), "broken\n"));
+    assert_ne!(first, repo_with(c.path(), "other\n"));
 }

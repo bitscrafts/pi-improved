@@ -37,6 +37,7 @@ id = "unexpected_ok"
 kind = "gate"
 policy = "heal-escalation"
 prompt = "heal-fix: the seeded break did not reproduce (probe exited 0). Nothing to repair; review before closing."
+deadline_ms = 600000
 
 # --- patch: agent confined to the worktree (no bash tool) ---
 [[node]]
@@ -105,6 +106,7 @@ id = "escalate"
 kind = "gate"
 policy = "heal-escalation"
 prompt = "heal-fix: the seeded break was repaired and the test passes in the disposable worktree (patch above). Approve to make the patch collectable via `xtask heal-collect`, or deny to discard. The main repo was never touched."
+deadline_ms = 600000
 
 [[node]]
 id = "done"

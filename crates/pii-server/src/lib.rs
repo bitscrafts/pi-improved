@@ -480,6 +480,7 @@ impl Engine {
         let (src, woven) = self.load_woven(graph)?;
         // Spec 288: a call's `needs` the input cannot supply refuses here, before any run exists.
         engine::preflight::check_needs(&woven.calls, &src, input)?;
+        engine::preflight::check_gate_deadlines(&woven.spec)?;
         let spec = woven.spec;
         let run_id = self.store.next_run_id()?;
         on_id(&run_id);

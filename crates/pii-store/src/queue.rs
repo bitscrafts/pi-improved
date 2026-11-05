@@ -404,6 +404,53 @@ impl QueueStore {
         Ok(requeued)
     }
 
+    /// Releases every `Running` row claimed by `run` back to `Pending` (spec 397 R3), recording `reason`. The
+    /// session and the attempt count stay as they were. Returns how many rows went back.
+    ///
+    /// # Errors
+    /// [`PiiError::Internal`] on a redb or codec failure.
+    pub fn release_run(&self, run: &str, reason: &str) -> Result<u64, PiiError> {
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| internal("begin_write", e))?;
+        let mut released = 0;
+        {
+            let mut table = write
+                .open_table(ITEM)
+                .map_err(|e| internal("open item", e))?;
+            let mut held = Vec::new();
+            for row in table.iter().map_err(|e| internal("iter", e))? {
+                let (_, v) = row.map_err(|e| internal("iter row", e))?;
+                let item = from_bytes::<WorkItem>(v.value())?;
+                if item.status == ItemStatus::Running && item.claimed_by.as_deref() == Some(run) {
+                    held.push(item);
+                }
+            }
+            for mut item in held {
+                item.status = ItemStatus::Pending;
+                item.reason = Some(reason.to_owned());
+                item.claimed_by = None;
+                item.claimed_at_ms = None;
+                let bytes = to_bytes(&item)?;
+                table
+                    .insert(item.id.as_str(), bytes.as_slice())
+                    .map_err(|e| internal("insert release", e))?;
+                append_event(
+                    &write,
+                    &item.id,
+                    "released_after_wait_deadline",
+                    ItemStatus::Pending,
+                    Some(reason),
+                    "daemon",
+                )?;
+                released += 1;
+            }
+        }
+        write.commit().map_err(|e| internal("commit release", e))?;
+        Ok(released)
+    }
+
     /// The status journal of `id`, oldest first.
     ///
     /// # Errors

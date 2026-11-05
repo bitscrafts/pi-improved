@@ -86,6 +86,14 @@ fn step_fields(s: &RawStep, n: usize, errs: &mut Vec<String>) {
         )),
         Some(_) => {}
     }
+    // Spec 397: an approval that may wait for ever is a run that holds its row for ever.
+    match (kind, s.deadline_ms) {
+        (StepKind::Approve, None | Some(0)) => errs.push(format!(
+            "{who} (kind 'approve') needs a positive 'deadline_ms' (how long it may wait for a decision)"
+        )),
+        (StepKind::Approve, Some(_)) | (_, None) => {}
+        (_, Some(_)) => errs.push(format!("{who}: only an 'approve' step takes a 'deadline_ms'")),
+    }
     if let Some(p) = &s.path
         && p.starts_with("$.")
     {
@@ -171,6 +179,7 @@ pub(super) fn build(raw: RawSop) -> Sop {
             path: s.path,
             tools: s.tools,
             max_turns: s.max_turns,
+            deadline_ms: s.deadline_ms,
         })
         .collect();
     Sop {

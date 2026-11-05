@@ -69,3 +69,23 @@ fn mapped_input_name<'a>(host: &'a Table, call: &CallRecord, key: &str) -> Optio
     let plain = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     plain.then_some(name)
 }
+
+/// Spec 397 R1: a `gate` that declares no `deadline_ms` refuses the start, naming the node.
+///
+/// # Errors
+/// [`PiiError::Invalid`] naming the first gate without a positive `deadline_ms`.
+pub fn check_gate_deadlines(spec: &pii_graph::GraphSpec) -> Result<(), PiiError> {
+    let missing = spec.nodes.iter().find(|n| {
+        n.kind == "gate"
+            && n.cfg
+                .get("deadline_ms")
+                .and_then(serde_json::Value::as_u64)
+                .is_none_or(|d| d == 0)
+    });
+    missing.map_or(Ok(()), |n| {
+        Err(PiiError::Invalid(format!(
+            "gate '{}' requires 'deadline_ms' (positive milliseconds it may wait for a decision)",
+            n.id
+        )))
+    })
+}

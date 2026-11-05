@@ -24,6 +24,7 @@ pub mod since_deploy;
 pub mod status;
 mod suspend;
 pub mod sys_status;
+pub mod wait_deadline;
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -296,6 +297,7 @@ impl Daemon {
         let mut handles = vec![tokio::spawn(Arc::clone(&self.scheduler).run())];
         handles.extend(router::spawn_all(&self.engine, &self.ctx));
         handles.push(self.spawn_reactive_loop());
+        handles.push(wait_deadline::spawn(Arc::clone(&self.engine)));
         handles.push(self.spawn_promotion_loop());
         handles.extend(self.spawn_learn_loop());
         handles

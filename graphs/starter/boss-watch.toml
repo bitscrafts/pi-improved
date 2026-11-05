@@ -43,6 +43,7 @@ id = "escalate"
 kind = "gate"
 policy = "boss-escalation"
 prompt = "Boss detected silent-noop-check failure. Approve promotion/heal attempt?"
+deadline_ms = 600000
 
 [[node]]
 id = "done"

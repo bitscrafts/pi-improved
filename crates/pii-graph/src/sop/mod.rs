@@ -65,6 +65,8 @@ pub struct Step {
     pub tools: Vec<String>,
     /// `act`: the agent's turn bound.
     pub max_turns: Option<u32>,
+    /// `approve`: how long the run may wait for a decision, in milliseconds (a suspension needs an end).
+    pub deadline_ms: Option<u64>,
 }
 
 /// A validated SOP.
@@ -105,6 +107,7 @@ struct RawStep {
     #[serde(default)]
     tools: Vec<String>,
     max_turns: Option<u32>,
+    deadline_ms: Option<u64>,
 }
 
 /// Parses and lints an SOP document.

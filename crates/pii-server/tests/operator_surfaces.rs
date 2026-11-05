@@ -29,6 +29,7 @@ id = "gate"
 kind = "gate"
 policy = "p"
 prompt = "ok?"
+deadline_ms = 60000
 
 [[node]]
 id = "done"

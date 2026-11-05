@@ -57,6 +57,16 @@ impl NodeFactory for GateFactory {
             .get("cycle")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
+        // Spec 397 R1: a suspension with no end is a decision nobody made.
+        if cfg
+            .get("deadline_ms")
+            .and_then(serde_json::Value::as_u64)
+            .is_none_or(|d| d == 0)
+        {
+            return Err(PiiError::Invalid(String::from(
+                "gate requires 'deadline_ms' (positive milliseconds it may wait for a decision)",
+            )));
+        }
         Ok(Box::new(GateNode {
             policy,
             prompt,

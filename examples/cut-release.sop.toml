@@ -24,6 +24,8 @@ id = "approve-tag"
 kind = "approve"
 requires = ["manifest-present"]
 prompt = "Tag the release and publish it?"
+# a person has a day to answer; past it the run fails (wait_deadline_exceeded) instead of waiting for ever
+deadline_ms = 86400000
 
 [[step]]
 id = "publish"

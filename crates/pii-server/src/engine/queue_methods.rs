@@ -72,11 +72,16 @@ pub(crate) fn queue_list(engine: &Arc<Engine>, req: &Request) -> Response {
         Ok(items) => {
             let rows: Vec<QueueRow> = items
                 .into_iter()
-                .map(|i| QueueRow {
-                    id: i.id,
-                    state: i.status.name().to_owned(),
-                    title: i.title,
-                    spec: i.spec,
+                .map(|i| {
+                    let (suspended_ms, deadline_ms) = suspension_of(engine, &i);
+                    QueueRow {
+                        id: i.id,
+                        state: i.status.name().to_owned(),
+                        title: i.title,
+                        spec: i.spec,
+                        suspended_ms,
+                        deadline_ms,
+                    }
                 })
                 .collect();
             value_response(req, serde_json::to_value(rows).ok(), err)
@@ -104,4 +109,32 @@ pub(crate) fn queue_claim(engine: &Arc<Engine>, req: &Request) -> Response {
         Ok(_) => Response::ok(req.id.clone(), serde_json::Value::Null),
         Err(e) => err_code(err, &e),
     }
+}
+
+/// Spec 397 R4: for a row whose claiming run is suspended at a gate, how long it has waited and against which
+/// deadline, so waiting and stuck can be told apart.
+fn suspension_of(engine: &Engine, item: &WorkItem) -> (Option<u64>, Option<u64>) {
+    use pii_core::Clock as _;
+    let Some(run) = item.claimed_by.as_deref() else {
+        return (None, None);
+    };
+    let Ok(Some(header)) = engine.store.get_run(&pii_abi::RunId::from(run)) else {
+        return (None, None);
+    };
+    if header.status != pii_abi::RunStatus::Suspended {
+        return (None, None);
+    }
+    let Some(waiting) = engine
+        .approvals
+        .pending_approvals()
+        .ok()
+        .and_then(|all| all.into_iter().find(|a| a.run_id == run))
+    else {
+        return (None, None);
+    };
+    let waited = pii_core::SystemClock
+        .now_ms()
+        .saturating_sub(waiting.requested_at_ms);
+    let deadline = crate::daemon::wait_deadline::deadline_of(engine, &header.graph, &waiting.node);
+    (Some(waited), deadline)
 }

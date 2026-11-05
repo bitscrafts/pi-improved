@@ -15,7 +15,10 @@ const USAGE: &str = "usage: pii queue add --id <id> --spec <path> --title <text>
 pub(crate) fn cmd_queue(args: &mut std::env::ArgsOs) -> ExitCode {
     match next_str(args).as_deref() {
         Some("add") => cmd_add(args),
-        Some("ls") => print_result(Method::QueueList, serde_json::json!({})),
+        Some("ls") => {
+            warn!("rows: state, and for a suspended run suspended_ms against deadline_ms");
+            print_result(Method::QueueList, serde_json::json!({}))
+        }
         Some("claim") => cmd_claim(args),
         _ => {
             warn!("{USAGE}");

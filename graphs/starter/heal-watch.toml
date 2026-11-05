@@ -32,6 +32,7 @@ id = "escalate"
 kind = "gate"
 policy = "heal-escalation"
 prompt = "quality-gate failed twice in a row (reproducible). Review the failure, fix it or acknowledge it, then approve/deny the escalation."
+deadline_ms = 600000
 
 [[node]]
 id = "done"

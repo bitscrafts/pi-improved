@@ -53,6 +53,12 @@ pub struct QueueRow {
     pub title: String,
     /// The item's spec path.
     pub spec: String,
+    /// Spec 397 R4: how long a run holding this row has been suspended, in ms; absent when it is not suspended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suspended_ms: Option<u64>,
+    /// Spec 397 R4: the deadline (`deadline_ms`) the suspension is held against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_ms: Option<u64>,
 }
 
 /// A JSON-RPC id: number or string.
