@@ -39,7 +39,7 @@ rules = [
 id = "sdd"
 kind = "call"
 graph = "sdd"
-sha256 = "63fba9314183c7178c3d4af99c1333fe709909ca6bb6bcf3a6b180b9bbd0dac3"
+sha256 = "3124cca3cf9848786964f11460e10a9a0366472691c5d9e22b2b298cb2c43901"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
@@ -49,13 +49,14 @@ provider = "$.input.provider"
 spec = "$.input.spec"
 workdir = "$.input.workdir"
 base = "$.input.base"
+brief = "$.input.brief"
 
 # Spec 385 R3: the judge methodology, pinned. Its `ok` is the criteria judged passing.
 [[node]]
 id = "method-judge"
 kind = "call"
 graph = "method-judge"
-sha256 = "c7cd16f33bdbd0ea484f48b5cf26c209a222f3f9c3a0ac9b25b2fdad66b8b45a"
+sha256 = "89a04519c0852dd1ed85da7793d47964f38634ba4fd950ce9367fd3d62a08243"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
@@ -65,6 +66,7 @@ provider = "$.input.provider"
 spec = "$.input.spec"
 workdir = "$.input.workdir"
 base = "$.input.base"
+brief = "$.input.brief"
 
 # Spec 385: either methodology's `ok` reaches `passed`, which joins on whichever arrives (the two are exclusive).
 [[node]]

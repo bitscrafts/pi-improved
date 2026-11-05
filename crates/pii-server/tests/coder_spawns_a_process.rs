@@ -127,7 +127,9 @@ fn coder_spawns_pi_and_passes_on_green_criteria() {
             _ => None,
         })
         .collect();
-    assert_eq!(observed, ["coder.spawned", "coder.exited"]);
+    // Spec 386 added `coder.prompt` between the spawn and the exit: what the model was told is now part of
+    // the record (redacted, with its digest). Three events, in this order, and no fourth.
+    assert_eq!(observed, ["coder.prompt", "coder.spawned", "coder.exited"]);
     let spawned = events
         .iter()
         .find(|e| e.kind == names::CODER_SPAWNED)

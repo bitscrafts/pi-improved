@@ -7,23 +7,18 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
-use pii_core::{CapKind, Ctx};
-use pii_graph::node::{GraphNode, NodeFactory};
+use pii_abi::{NodeInput, Outcome, PiiError, PortName};
+use pii_core::Ctx;
+use pii_graph::node::GraphNode;
 use pii_store::queue::{QueueStore, WorkItem};
 
 use super::plan::resolved_text;
 
-/// Factory for `enqueue`: the queue store is the one the `select` node claims from.
-pub struct EnqueueFactory {
-    /// The queue store the row is added to.
-    pub store: Arc<QueueStore>,
-}
-
-/// A built `enqueue` node. Its config is resolved at run time, as `plan`'s is.
-struct EnqueueNode {
-    store: Arc<QueueStore>,
-    cfg: serde_json::Value,
+/// `queue.put` (spec 391, was `enqueue`): the queue store is the one the `select` node claims from.
+/// Its config is resolved at run time, as `plan`'s is.
+pub(super) struct EnqueueNode {
+    pub(super) store: Arc<QueueStore>,
+    pub(super) cfg: serde_json::Value,
 }
 
 /// The `## Files` entries in order: the first backticked span of each bullet under the heading. Mirrors `row-paths.py`.
@@ -145,34 +140,5 @@ impl GraphNode for EnqueueNode {
             "ok",
             serde_json::json!({ "id": id, "spec": spec, "criteria": commands, "touches": files }),
         ))
-    }
-}
-
-impl NodeFactory for EnqueueFactory {
-    fn kind(&self) -> &'static str {
-        "enqueue"
-    }
-
-    fn is_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> Effects {
-        Effects::MUTATES_EXTERNAL
-    }
-
-    fn required_caps(&self) -> CapKind {
-        CapKind::FS_READ
-    }
-
-    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-        Ok(vec![PortName::from("ok"), PortName::from("err")])
-    }
-
-    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
-        Ok(Box::new(EnqueueNode {
-            store: Arc::clone(&self.store),
-            cfg: cfg.clone(),
-        }))
     }
 }

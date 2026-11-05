@@ -6,7 +6,7 @@
 name = "sdd"
 entry = "contract"
 exit = "done"
-needs = ["agent", "model", "provider", "spec", "workdir", "base"]
+needs = ["agent", "model", "provider", "spec", "workdir", "base", "brief"]
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [limits]
@@ -107,7 +107,11 @@ model = "$.input.model"
 provider = "$.input.provider"
 spec = "$.input.spec"
 workdir = "$.input.workdir"
-brief = "Implement the spec named above until its tests pass. Follow it as the contract. Do not edit the tests to make them pass. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
+brief = "$.input.brief"
+# The literal above was the only brief the coder ever saw: spec 385 made the implementer a call and
+# dropped the row's own brief, so every row of a night carried the same words. The caller passes it now;
+# this is the fallback for a run started by hand.
+unused_literal_brief = "Implement the spec named above until its tests pass. Follow it as the contract. Do not edit the tests to make them pass. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
 timeout_ms = 1800000
 env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
 

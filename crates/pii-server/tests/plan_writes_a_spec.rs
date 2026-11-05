@@ -17,7 +17,7 @@ use std::sync::Arc;
 use pii_abi::{NodeInput, Outcome};
 use pii_core::{Budget, CapKind, CapSet, Ctx, PathScope};
 use pii_graph::node::NodeFactory;
-use pii_server::node_kinds::nodes::enqueue::EnqueueFactory;
+use pii_server::node_kinds::nodes::ledger::LedgerFactory;
 use pii_server::node_kinds::nodes::plan::PlanFactory;
 use pii_store::queue::QueueStore;
 
@@ -37,7 +37,7 @@ fn repo() -> PathBuf {
 /// A context granting `fs_write` over exactly `root/specs`, which is the only place a plan may write.
 fn ctx_over(root: &Path) -> Ctx {
     let mut caps = CapSet::empty();
-    caps.kinds = CapKind::FS_WRITE;
+    caps.kinds = CapKind::FS_WRITE | CapKind::LEDGER;
     caps.fs_write = PathScope::new(vec![dunce::canonicalize(root.join("specs")).unwrap()]);
     Ctx::root(caps, Budget::unlimited())
 }
@@ -45,7 +45,7 @@ fn ctx_over(root: &Path) -> Ctx {
 /// A context granting `fs_read` over exactly `root`, which is all `enqueue` needs.
 fn read_ctx(root: &Path) -> Ctx {
     let mut caps = CapSet::empty();
-    caps.kinds = CapKind::FS_READ;
+    caps.kinds = CapKind::FS_READ | CapKind::LEDGER;
     caps.fs_read = PathScope::new(vec![dunce::canonicalize(root).unwrap()]);
     Ctx::root(caps, Budget::unlimited())
 }
@@ -103,9 +103,12 @@ fn enqueue(
         "spec": spec,
         "title": title,
         "workdir": root.display().to_string(),
+        "op": "queue.put",
     });
-    let node = EnqueueFactory {
-        store: Arc::clone(store),
+    let node = LedgerFactory {
+        queue: Arc::clone(store),
+        memory: None,
+        heals: None,
     }
     .build(&cfg)
     .unwrap();

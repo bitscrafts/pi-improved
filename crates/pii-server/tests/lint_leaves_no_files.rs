@@ -32,7 +32,7 @@ fn a_lint_leaves_no_redb_file_in_the_state_or_runtime_dir() {
     let runtime = tempfile::tempdir().unwrap();
     let reg = pii_server::lint_registry(state.path(), runtime.path());
     // The four store-backed kinds must still be known to lint, so lint still checks them.
-    for kind in ["gate", "memory", "select", "heal_detect"] {
+    for kind in ["gate", "memory", "ledger", "heal_detect"] {
         assert!(reg.factory(kind).is_ok(), "lint must still know '{kind}'");
     }
 

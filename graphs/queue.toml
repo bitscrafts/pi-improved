@@ -24,7 +24,7 @@ op = "queue.claim"
 id = "implement"
 kind = "call"
 graph = "spec"
-sha256 = "c757dba429ff8b64c3b53b092f21f69d35ee28f902e7a84db9d3584da3f55483"
+sha256 = "9e9def2fcbb5f122fd86baedd4d62b71a928c7ba6fb05f36f7b137fba6347df7"
 # spec 362: a coder without fs_write cannot implement anything — measured 2026-11-03, the agent spawned with these caps
 # stopped and reported "no write or execute tool is available" instead of writing code.
 caps = ["spawn", "proc", "fs_read", "fs_write"]
@@ -38,7 +38,9 @@ base = "$.input.base"
 # spec 362: the claimed row carries the spec; without this the coder has no document to implement and
 # improvises (measured 2026-11-03: it wrote the WRONG spec's test files while its row said otherwise).
 spec = "$.nodes.select.item.spec"
-brief = "Implement the spec named above. Follow it as the contract. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
+# The row's own brief, from the run input (spec 385 dropped this plumbing and every row of a night
+# carried the same words). A run started by hand without one falls back to the spec alone.
+brief = "$.input.brief"
 docs_brief = "Document the work the spec named above just added. Change documentation only."
 
 [[node]]

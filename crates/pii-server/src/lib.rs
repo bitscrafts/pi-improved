@@ -282,6 +282,7 @@ impl Engine {
             &mut reg,
             Arc::clone(&queue),
             Some(Arc::clone(&memory)),
+            Some(Arc::clone(&heals)),
         );
         reg.register(Arc::new(node_kinds::nodes::mqtt::MqttFactory {
             hub: Arc::clone(&mqtt),

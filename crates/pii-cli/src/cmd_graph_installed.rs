@@ -373,7 +373,7 @@ fn effect_of(kind: &str) -> Option<&'static str> {
     match kind {
         "post" => Some("post"),
         "recall" | "remember" | "memory" => Some("memory"),
-        "record" | "heal_record" => Some("store"),
+        "ledger" => Some("store"),
         _ => None,
     }
 }

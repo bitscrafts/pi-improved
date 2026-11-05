@@ -292,7 +292,10 @@ impl Parser<'_> {
                     return Err(self.err("'$' must be followed by a path"));
                 }
                 let start = self.at;
-                while matches!(self.peek(), Some(c) if c.is_alphanumeric() || c == '_' || c == '.')
+                // '-' too: node ids carry it (`method-judge`, `self-improve`), and a path grammar that
+                // stops at the hyphen sends `$.nodes.implement__method-judge__in__agent` to the error arm —
+                // which `require` reads as a MISSING KEY and refuses the whole callee.
+                while matches!(self.peek(), Some(c) if c.is_alphanumeric() || c == '_' || c == '.' || c == '-')
                 {
                     self.at += 1;
                 }

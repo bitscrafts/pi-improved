@@ -59,13 +59,9 @@ fn nodes(out: &mut String, sop: &Sop, s: &Step) {
     let id = &s.id;
     let mut begin = sop_node(sop, s, "begin", "begin");
     wrln!(begin, "requires = {}", list(&s.requires));
-    if s.kind == StepKind::Act {
-        wrln!(
-            begin,
-            "prompt = {}",
-            q(s.prompt.as_deref().unwrap_or_default())
-        );
-    }
+    // The Act step's instruction lives on the AGENT node (`system`), which is the node that reads it.
+    // Its `begin` node used to carry the same text as `prompt` — a field no non-agent kind reads, and
+    // spec 386 refuses a prompt on such a node (measured 2026-11-05: three sop_engine tests).
     out.push_str(&begin);
     let fail_from: Vec<(String, &str)> = match s.kind {
         StepKind::Act => act(out, sop, s),

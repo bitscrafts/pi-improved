@@ -171,9 +171,16 @@ fn night_routes_an_empty_queue_to_review() {
         "queue: select.blocked -> record"
     );
     let night = edges(&graph("night"));
+    // Spec 385: the night's implementer is the QUEUE, so the verdict it hands on comes from `drain`.
+    // `sdd` is reached through queue → spec, one call further down; a night that still wired sdd
+    // directly would be wiring a node it no longer has.
     assert!(
-        has(&night, "sdd", "ok", "review"),
-        "night: sdd.ok -> review"
+        !night.iter().any(|(f, _, _)| f == "sdd"),
+        "the night no longer calls sdd directly: {night:?}"
+    );
+    assert!(
+        has(&night, "drain", "ok", "empty-gate"),
+        "night: drain.ok -> empty-gate (the gate that routes an empty queue)"
     );
     assert!(
         has(&night, "review", "ok", "report"),

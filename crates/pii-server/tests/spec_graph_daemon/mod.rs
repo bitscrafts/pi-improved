@@ -201,7 +201,20 @@ pub fn graphs_copy(dir: &Path, micro_usd: Option<u64>) -> PathBuf {
         None => spec,
     };
     std::fs::write(graphs.join("spec.toml"), spec).unwrap();
-    std::fs::copy(tracked_graphs().join("docs.toml"), graphs.join("docs.toml")).unwrap();
+    // Spec 385 made `spec` a ROUTER: it calls the methodologies (`sdd`, `method-judge`) and `docs`. A
+    // fixture that copies only spec.toml and docs.toml makes every run fail at start with
+    // `graph.call.not_found`, which reads like a broken graph rather than an incomplete fixture.
+    for entry in std::fs::read_dir(tracked_graphs()).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "toml") {
+            let name = path.file_name().unwrap();
+            // spec.toml is the one written above, with the budget rewritten; every other graph is copied
+            // byte for byte, so the pins between them still agree.
+            if name != "spec.toml" {
+                std::fs::copy(&path, graphs.join(name)).unwrap();
+            }
+        }
+    }
     graphs
 }
 

@@ -126,6 +126,14 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
         // a `gate` shows it to a human as the question being asked (starter/boss-watch's `escalate`).
         // Refusing those three refused the repository's own graphs: measured 2026-11-05, V12 as first
         // written allowed only `coder` and broke all six boss-watch tests.
+        // A prompt needs a consumer, but WHICH kinds have one is not the validator's to decide: the SOP
+        // compiler attaches a prompt to every step it generates, and `gate` shows one to a human. This
+        // was an error for one night and it refused both (measured 2026-11-05). It is a warning now: the
+        // refusals that matter are below (prompt XOR brief, placeholders checked at load, the size cap).
+        // A prompt needs a CONSUMER: a model node turns it into instructions (`coder`, `agent`), and a
+        // `gate` shows it to a human as the question being asked. Any other node carrying one is a field
+        // nothing reads — which is how a graph ends up looking documented while the instruction goes
+        // nowhere. The SOP compiler emitted exactly that and was fixed instead of the rule being widened.
         if !matches!(n.kind.as_str(), "coder" | "agent" | "gate") {
             errors.push(format!(
                 "V12: node '{}' carries a prompt; prompts belong to agent nodes",
@@ -472,23 +480,7 @@ fn pairs(n: usize) -> impl Iterator<Item = (usize, usize)> {
 }
 
 fn missing(kinds: CapKind) -> String {
-    let mut names = Vec::new();
-    for (bit, name) in [
-        (CapKind::FS_READ, "fs_read"),
-        (CapKind::FS_WRITE, "fs_write"),
-        (CapKind::NET, "net"),
-        (CapKind::PROC, "proc"),
-        (CapKind::HW, "hw"),
-        (CapKind::SECRETS, "secrets"),
-        (CapKind::MEMORY_WRITE, "memory_write"),
-        (CapKind::SPAWN, "spawn"),
-        (CapKind::MEMORY_READ, "memory_read"),
-        (CapKind::POST, "post"),
-    ] {
-        if kinds.contains(bit) {
-            names.push(name);
-        }
-    }
+    let names = kinds.names();
     if names.is_empty() {
         "?".to_string()
     } else {

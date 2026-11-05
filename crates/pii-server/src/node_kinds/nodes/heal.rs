@@ -279,57 +279,38 @@ pub fn signature(gate: &str, detail: &str) -> String {
 /// for) and `$.input.gate` (optional, defaults to `"heal-fix"`), plus the
 /// `fix_node`'s `model`/`tokens_in`/`tokens_out` and the `diff_node`'s
 /// `stdout` (the patch text) from the blackboard.
-pub struct HealRecordFactory {
-    /// The shared heal-attempt ledger.
-    pub heals: Arc<HealStore>,
-}
-
-impl NodeFactory for HealRecordFactory {
-    fn kind(&self) -> &'static str {
-        "heal_record"
-    }
-
-    fn effects(&self) -> pii_abi::Effects {
-        pii_abi::Effects::MUTATES_EXTERNAL
-    }
-
-    fn required_caps(&self) -> CapKind {
-        CapKind::empty()
-    }
-
-    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-        Ok(vec![PortName::from("ok")])
-    }
-
-    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
-        let gate_before = cfg
-            .get("gate_before")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'gate_before'")))?
-            .to_owned();
-        let gate_after = cfg
-            .get("gate_after")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'gate_after'")))?
-            .to_owned();
-        let fix_node = cfg
-            .get("fix_node")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'fix_node'")))?
-            .to_owned();
-        let diff_node = cfg
-            .get("diff_node")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'diff_node'")))?
-            .to_owned();
-        Ok(Box::new(HealRecordNode {
-            heals: Arc::clone(&self.heals),
-            gate_before,
-            gate_after,
-            fix_node,
-            diff_node,
-        }))
-    }
+/// `heal.record_run` (spec 391, was `heal_record`): builds the node from its config over the shared heal ledger.
+pub(super) fn record_run(
+    heals: &Arc<HealStore>,
+    cfg: &serde_json::Value,
+) -> Result<Box<dyn GraphNode>, PiiError> {
+    let gate_before = cfg
+        .get("gate_before")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'gate_before'")))?
+        .to_owned();
+    let gate_after = cfg
+        .get("gate_after")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'gate_after'")))?
+        .to_owned();
+    let fix_node = cfg
+        .get("fix_node")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'fix_node'")))?
+        .to_owned();
+    let diff_node = cfg
+        .get("diff_node")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| PiiError::Invalid(String::from("heal_record requires 'diff_node'")))?
+        .to_owned();
+    Ok(Box::new(HealRecordNode {
+        heals: Arc::clone(heals),
+        gate_before,
+        gate_after,
+        fix_node,
+        diff_node,
+    }))
 }
 
 struct HealRecordNode {

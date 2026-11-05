@@ -62,9 +62,11 @@ async fn a_passing_run_documents_through_the_daemon() {
             *n == head || *n == "verify" || *n == "reverify" || *n == "done" || coders.contains(n)
         })
         .collect();
+    // Spec 385 moved the implementer (and its `verify`) inside the methodology the driver picks, so the
+    // coder ids are namespaced under `method-judge` and only the HOST's tail is seen here: the docs step,
+    // the re-judge, the end.
     let expected = vec![
         coders[0].clone(),
-        "verify".to_owned(),
         head,
         coders[1].clone(),
         "reverify".to_owned(),

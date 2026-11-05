@@ -110,10 +110,19 @@ impl GraphNode for CoderNode {
             None => spec.clone(),
         };
         let prompt = prompt::brief_with_spec(&brief, &spec.spec);
-        // Spec 386 R4: the text the model is given is journalled, so "what was it told" is answered from the record.
+        // Spec 386 R4: "what was it told" must be answerable from the record — answered by the prompt's
+        // DIGEST and size, never by its text. The brief carries the operator's words and occasionally a
+        // credential, and a journal is written to disk, indexed and shipped. Measured 2026-11-05: a brief
+        // containing `--api-key sk-live-...` was journalled verbatim; coder_secret_never_journalled caught it.
         self.observe(
             ctx,
-            &Event::new("coder", Level::Info, names::CODER_PROMPT).field("prompt", prompt.clone()),
+            &Event::new("coder", Level::Info, names::CODER_PROMPT)
+                .field("prompt", prompt::redacted(&prompt))
+                .field(
+                    "prompt_sha256",
+                    pii_graph::fragment::sha256_hex(prompt.as_bytes()),
+                )
+                .field("prompt_bytes", prompt.len().to_string()),
         );
         let dispatch = match plan(&planned, &prompt, &env, "direct", self.log.as_ref()) {
             Ok(dispatch) => dispatch,

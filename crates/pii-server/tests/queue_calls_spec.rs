@@ -177,6 +177,15 @@ fn tick_row(criterion: &str, work: &str, held: bool) -> Ran {
     let input = serde_json::json!({
         "workdir": repo_dir.path().display().to_string(),
         "base": base,
+        // Spec 385 made the methodology a CALL whose sub-graph declares `needs`, and the queue maps only
+        // `agent`/`model`/`provider` as literals; the rest must exist in the run's input or the callee's
+        // `require` node refuses before the implementer is ever reached.
+        // spec 385 routes the row into a methodology, which passes the row's own brief down to its coder;
+        // without one the coder has nothing to act on and the run stops before the queue's `record`.
+        "brief": "Implement the spec named above. Follow it as the contract. Do not commit.",
+        "agent": "pi",
+        "model": "deepseek-v4.1-flash:cloud",
+        "provider": "ollama-cloud",
     });
     let terminal = pii_graph::run::run_with_validate(
         &store,

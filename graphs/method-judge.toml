@@ -5,7 +5,7 @@
 name = "method-judge"
 entry = "code"
 exit = "done"
-needs = ["agent", "model", "provider", "spec", "workdir", "base"]
+needs = ["agent", "model", "provider", "spec", "workdir", "base", "brief"]
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [limits]
@@ -20,7 +20,8 @@ model = "$.input.model"
 provider = "$.input.provider"
 spec = "$.input.spec"
 workdir = "$.input.workdir"
-brief = "Implement the spec named above. Follow it as the contract. Do not edit its criteria to make them pass. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
+brief = "$.input.brief"
+unused_literal_brief = "Implement the spec named above. Follow it as the contract. Do not edit its criteria to make them pass. Do not commit. If a criterion cannot pass, stop and say why instead of weakening it."
 timeout_ms = 3000000
 env_pass = ["PATH", "HOME", "IS_SANDBOX", "OLLAMA_API_KEY", "PI_CODING_AGENT_DIR", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]
 

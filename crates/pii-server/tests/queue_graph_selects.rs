@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use pii_abi::Terminal;
 use pii_graph::NodeRegistry;
-use pii_server::node_kinds::nodes::queue::SelectFactory;
+use pii_server::node_kinds::nodes::ledger::LedgerFactory;
 use pii_store::queue::{ItemStatus, QueueStore, WorkItem};
 
 /// A queue store over a scratch file, seeded with `items` in the order given.
@@ -32,15 +32,21 @@ fn run_select(queue: Arc<QueueStore>) -> Terminal {
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "queue-run-").unwrap();
     let run_store = pii_store::Store::open(&run_dir.path().join("store.redb")).unwrap();
     let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(SelectFactory { store: queue }));
-    let src = "name = \"select-test\"\nentry = \"select\"\n\n\
-        [[node]]\nid = \"select\"\nkind = \"select\"\n\n\
+    reg.register(Arc::new(LedgerFactory {
+        queue,
+        memory: None,
+        heals: None,
+    }));
+    // Spec 391: a graph that claims a row must DECLARE the `ledger` capability in its own header;
+    // V2 checks the graph, not only the root context.
+    let src = "name = \"select-test\"\nentry = \"select\"\ncaps = [\"ledger\"]\n\n\
+        [[node]]\nid = \"select\"\nkind = \"ledger\"\nop = \"queue.claim\"\n\n\
         [[node]]\nid = \"dispatched\"\nkind = \"transform\"\nvalue = \"dispatched\"\n\n\
         [[edge]]\nfrom = \"select\"\nport = \"ok\"\nto = \"dispatched\"\nkind = \"data\"\n";
     let spec = pii_graph::load_toml_with_registry(src, &reg).unwrap();
     let run_id = run_store.next_run_id().unwrap();
     let mut caps = pii_core::CapSet::empty();
-    caps.kinds = pii_core::CapKind::empty();
+    caps.kinds = pii_core::CapKind::LEDGER;
     let ctx = pii_core::Ctx::root(caps, pii_core::Budget::unlimited());
     pii_graph::run::run_with_validate(
         &run_store,

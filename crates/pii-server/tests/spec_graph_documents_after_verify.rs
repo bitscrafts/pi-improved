@@ -281,7 +281,10 @@ fn a_passing_run_documents_after_verify() {
     );
     assert_eq!(
         r.order(),
-        ["code", "verify", "docs__docs", "reverify", "done"],
+        // Spec 385: the implementer lives inside the methodology the driver picks, so this test's `order()`
+        // observes the host's tail — the docs step, then the re-judge, then the end. The methodology's own
+        // steps are asserted by spec_selects_a_methodology.
+        ["docs__docs", "reverify", "done"],
         "the docs step runs between verify and reverify"
     );
     assert_eq!(r.calls_to("docs"), 1, "one graph.call for docs");
@@ -338,7 +341,7 @@ fn reverify_catches_a_docs_step_that_breaks_the_criteria() {
     let r = run("test -f built.txt", DOCS_BREAK, true);
     assert_eq!(
         r.order(),
-        ["code", "verify", "docs__docs", "reverify", "unverified"],
+        ["docs__docs", "reverify", "unverified"],
         "the run ends at unverified, through reverify"
     );
     assert!(!r.started("done"), "done never runs");
@@ -384,6 +387,16 @@ fn the_pin_is_the_real_digest_and_a_change_breaks_it() {
     let changed = String::from_utf8(docs)
         .unwrap()
         .replacen("1200000", "1200001", 1);
+    // `spec` routes to the methodologies now, so the copy must hold every graph the pin chain can reach:
+    // with only spec.toml and docs.toml the loader fails on `sdd` before it ever compares the docs pin,
+    // and the test would pass for the wrong reason (or fail with the wrong message).
+    for entry in std::fs::read_dir(graphs_dir()).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "toml") {
+            let name = path.file_name().unwrap().to_owned();
+            std::fs::copy(&path, copy.path().join(name)).unwrap();
+        }
+    }
     std::fs::write(copy.path().join("spec.toml"), &spec).unwrap();
     std::fs::write(copy.path().join("docs.toml"), changed).unwrap();
     let reg = NodeRegistry::builtin();

@@ -241,7 +241,10 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         };
     }
 
-    let is_effect = env.reg.factory(&ns.kind).is_ok_and(|f| f.is_effect());
+    let is_effect = env
+        .reg
+        .factory(&ns.kind)
+        .is_ok_and(|f| f.is_effect_for(&ns.cfg));
     let max_retries = ns.retry.max;
     let mut attempt: u32 = 1;
     loop {

@@ -34,14 +34,9 @@ fn port(name: &str, value: serde_json::Value) -> Outcome {
     }
 }
 
-/// Factory for `select`: claims the first pending item whose needs are done, or reports why it cannot.
-pub struct SelectFactory {
-    /// The queue store the claim is made against.
-    pub store: Arc<QueueStore>,
-}
-
-struct SelectNode {
-    store: Arc<QueueStore>,
+/// `queue.claim` (spec 391, was `select`): claims the first pending item whose needs are done, or reports why it cannot.
+pub(super) struct SelectNode {
+    pub(super) store: Arc<QueueStore>,
 }
 
 impl GraphNode for SelectNode {
@@ -77,37 +72,6 @@ impl GraphNode for SelectNode {
                 serde_json::json!({ "outcome": "already-running", "id": id }),
             ),
         })
-    }
-}
-
-impl NodeFactory for SelectFactory {
-    fn kind(&self) -> &'static str {
-        "select"
-    }
-
-    fn is_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> Effects {
-        Effects::MUTATES_EXTERNAL
-    }
-
-    fn required_caps(&self) -> CapKind {
-        CapKind::empty()
-    }
-
-    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-        Ok(["ok", "blocked", "empty", "running"]
-            .into_iter()
-            .map(PortName::from)
-            .collect())
-    }
-
-    fn build(&self, _cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
-        Ok(Box::new(SelectNode {
-            store: Arc::clone(&self.store),
-        }))
     }
 }
 
@@ -185,19 +149,20 @@ impl NodeFactory for JudgeFactory {
     }
 
     fn ports(&self, cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-        // Spec 372: an `expect = "fail"` judge also reports a criterion that could not run, on its own port.
-        //
-        // The declaration is UNCONDITIONAL, and that is the fix rather than a widening: the validator asks
-        // a KIND for its ports without the node's cfg, so a conditional list declared `ok|fail` at lint
-        // time and `ok|fail|unrunnable` at run time. Every graph that routed `unrunnable` then failed V1
-        // ("node has no port 'unrunnable'") while the same graph ran fine — a declaration that depends on
-        // configuration the checker does not have is a declaration that lies to the checker.
-        let _ = cfg;
-        Ok(vec![
-            PortName::from("ok"),
-            PortName::from("fail"),
-            PortName::from("unrunnable"),
-        ])
+        // Spec 372: an `expect = "fail"` judge also reports a criterion that could not run, on its own
+        // port. The declaration stays CONDITIONAL on purpose, and every caller passes the node's own cfg
+        // (`pii-graph/src/validate.rs:57`, `splice.rs:323`, `cmd_graph_installed/explain.rs:114`), so it is
+        // truthful in both directions: a plain judge cannot produce `unrunnable`, and a control test says
+        // so. When this looked wrong on 2026-11-05 the cause was an EMPTY cfg — an sdd.toml whose `[limits]`
+        // table sat inside the contract node — not the condition.
+        if cfg.get("spec").is_some() && expects_failure(cfg)? {
+            return Ok(vec![
+                PortName::from("ok"),
+                PortName::from("fail"),
+                PortName::from("unrunnable"),
+            ]);
+        }
+        Ok(vec![PortName::from("ok"), PortName::from("fail")])
     }
 
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
@@ -210,7 +175,16 @@ impl NodeFactory for JudgeFactory {
             .get("workdir")
             .and_then(serde_json::Value::as_str)
             .map(PathBuf::from)
-            .ok_or_else(|| PiiError::Internal("judge: config needs `workdir`".to_owned()))?;
+            .ok_or_else(|| {
+                // name the node: an error that says only "judge needs workdir" cannot be acted on when a
+                // woven graph holds six judges, and finding which one cost twenty minutes once.
+                PiiError::Internal(format!(
+                    "judge: node '{}' needs a literal `workdir` or a `spec` (spec mode)",
+                    cfg.get("node-id")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("?")
+                ))
+            })?;
         Ok(Box::new(JudgeNode {
             workdir,
             select: peer_of(cfg, "select"),
@@ -218,22 +192,15 @@ impl NodeFactory for JudgeFactory {
     }
 }
 
-/// Factory for `record`: writes the item's verdict to the queue store.
+/// `queue.set_status` (spec 391, was `record`): writes the item's verdict to the queue store.
 ///
 /// A pass marks the item `done`; a failure or a refusal parks it with the reason, journalled by the store.
 /// When `memory` is set, the outcome is also learned as one memory document naming the item and the failing
 /// criterion (spec 208 R6).
-pub struct RecordFactory {
-    /// The queue store the status is written to.
-    pub store: Arc<QueueStore>,
-    /// The memory the outcome is learned into; `None` in lint, where nothing is written.
-    pub memory: Option<Arc<MemStore>>,
-}
-
-struct RecordNode {
-    select: String,
-    store: Arc<QueueStore>,
-    memory: Option<Arc<MemStore>>,
+pub(super) struct RecordNode {
+    pub(super) select: String,
+    pub(super) store: Arc<QueueStore>,
+    pub(super) memory: Option<Arc<MemStore>>,
 }
 
 /// The string field `key` of `value`, or an empty string.
@@ -313,36 +280,6 @@ impl GraphNode for RecordNode {
             "ok",
             serde_json::json!({ "id": id, "status": status.name(), "reason": reason }),
         ))
-    }
-}
-
-impl NodeFactory for RecordFactory {
-    fn kind(&self) -> &'static str {
-        "record"
-    }
-
-    fn is_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> Effects {
-        Effects::MUTATES_EXTERNAL
-    }
-
-    fn required_caps(&self) -> CapKind {
-        CapKind::empty()
-    }
-
-    fn ports(&self, _cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
-        Ok(vec![PortName::from("ok")])
-    }
-
-    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
-        Ok(Box::new(RecordNode {
-            select: peer_of(cfg, "select"),
-            store: Arc::clone(&self.store),
-            memory: self.memory.clone(),
-        }))
     }
 }
 

@@ -44,7 +44,9 @@ fn spec_declares_an_exit_and_its_caps_cover_its_coder() {
         .spec
         .nodes
         .iter()
-        .find(|n| n.id.as_str() == "implement__code")
+        // spec 385 put the implementer behind the methodology call, so the coder is namespaced one level
+        // deeper: implement → method-judge → code.
+        .find(|n| n.id.as_str() == "implement__method-judge__code")
         .expect("the callee's coder is inlined");
     assert_eq!(code.kind, "coder");
 

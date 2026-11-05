@@ -53,6 +53,10 @@ pub trait NodeFactory: Send + Sync {
     fn is_effect(&self) -> bool {
         false
     }
+    /// The effect class of one node, from its config: a kind whose ops differ in effect (spec 391 `ledger`) says so here.
+    fn is_effect_for(&self, _cfg: &serde_json::Value) -> bool {
+        self.is_effect()
+    }
     /// Program paths this kind's nodes may exec beyond the run scope (spec 207: a coder node's agent binary).
     /// Granted to that kind's nodes only; empty by default.
     fn proc_argv0_grant(&self) -> Vec<String> {

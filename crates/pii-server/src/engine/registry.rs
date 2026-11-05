@@ -57,12 +57,11 @@ pub fn registry(
     }));
     reg.register(Arc::new(nodes::gate::GateFactory { approvals }));
     reg.register(Arc::new(nodes::heal::HealFactory {
-        heals: Arc::clone(&heals),
+        heals,
         runner: Arc::new(nodes::heal::VerdictRunner {
             workspace: cfg.workspace.clone(),
         }),
     }));
-    reg.register(Arc::new(nodes::heal::HealRecordFactory { heals }));
     reg.register(Arc::new(nodes::sop::SopFactory {
         log: Arc::clone(&log),
     }));
@@ -93,22 +92,25 @@ pub fn registry(
     reg
 }
 
-/// Registers the queue graph's `select`, `judge` and `record` kinds over `store` (spec 208). The store is the one
-/// source of truth for the development queue; the nodes never read `plan.tsv`.
+/// Registers the queue graph's `judge` and `ledger` kinds over `store` and `heals` (spec 208, spec 391).
+///
+/// The store is the one source of truth for the development queue; the nodes never read `plan.tsv`. The four retired
+/// kinds are registered too, so a graph that still names one refuses at load.
 pub fn register_queue_nodes(
     reg: &mut NodeRegistry,
     store: Arc<pii_store::queue::QueueStore>,
     memory: Option<Arc<pii_store::MemStore>>,
+    heals: Option<Arc<pii_store::heal::HealStore>>,
 ) {
-    reg.register(Arc::new(nodes::queue::SelectFactory {
-        store: Arc::clone(&store),
-    }));
     reg.register(Arc::new(nodes::queue::JudgeFactory));
-    // Spec 363 R3: `enqueue` admits a written spec to the same store `select` claims from.
-    reg.register(Arc::new(nodes::enqueue::EnqueueFactory {
-        store: Arc::clone(&store),
+    reg.register(Arc::new(nodes::ledger::LedgerFactory {
+        queue: store,
+        memory,
+        heals,
     }));
-    reg.register(Arc::new(nodes::queue::RecordFactory { store, memory }));
+    for retired in nodes::ledger::retired_kinds() {
+        reg.register(retired);
+    }
 }
 
 /// Registers `remember`/`recall` over a fresh, empty hub and returns it (spec 126). The daemon
@@ -177,7 +179,12 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
 /// The lint registry's queue kinds, over an in-memory lint-only store (spec 208, spec 371 R1).
 fn register_lint_queue_nodes(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe::Observer>) {
     match pii_store::queue::QueueStore::open_in_memory() {
-        Ok(queue) => register_queue_nodes(reg, Arc::new(queue), None),
+        Ok(queue) => {
+            let heals = pii_store::heal::HealStore::open_in_memory()
+                .ok()
+                .map(Arc::new);
+            register_queue_nodes(reg, Arc::new(queue), None, heals);
+        }
         Err(e) => store_unavailable(log, "queue", &e),
     }
 }
@@ -267,12 +274,11 @@ pub fn lint_registry_with_log(
         Ok(heals) => {
             let heals = Arc::new(heals);
             reg.register(Arc::new(nodes::heal::HealFactory {
-                heals: Arc::clone(&heals),
+                heals,
                 runner: Arc::new(nodes::heal::VerdictRunner {
                     workspace: workspace.to_path_buf(),
                 }),
             }));
-            reg.register(Arc::new(nodes::heal::HealRecordFactory { heals }));
         }
         Err(e) => store_unavailable(&log, "heal_detect", &e),
     }

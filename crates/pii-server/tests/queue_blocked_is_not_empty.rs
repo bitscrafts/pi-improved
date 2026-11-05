@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use pii_abi::Terminal;
 use pii_graph::NodeRegistry;
-use pii_server::node_kinds::nodes::queue::SelectFactory;
+use pii_server::node_kinds::nodes::ledger::LedgerFactory;
 use pii_store::queue::{ItemStatus, QueueStore, WorkItem};
 
 /// A queue store over a scratch file, seeded with `items` in the order given.
@@ -31,13 +31,21 @@ fn run_select(queue: Arc<QueueStore>) -> Terminal {
         pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "queue-run-").unwrap();
     let run_store = pii_store::Store::open(&run_dir.path().join("store.redb")).unwrap();
     let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(SelectFactory { store: queue }));
-    let src = "name = \"select-blocked\"\nentry = \"select\"\n\n\
-        [[node]]\nid = \"select\"\nkind = \"select\"\n";
+    reg.register(Arc::new(LedgerFactory {
+        queue,
+        memory: None,
+        heals: None,
+    }));
+    // Spec 391: the node declares what it touches. A graph that claims a row needs the `ledger`
+    // capability declared in its own header — V2 checks the graph's caps, not only the root context.
+    let src = "name = \"select-blocked\"\nentry = \"select\"\ncaps = [\"ledger\"]\n\n\
+        [[node]]\nid = \"select\"\nkind = \"ledger\"\nop = \"queue.claim\"\n";
     let spec = pii_graph::load_toml_with_registry(src, &reg).unwrap();
     let run_id = run_store.next_run_id().unwrap();
     let mut caps = pii_core::CapSet::empty();
-    caps.kinds = pii_core::CapKind::empty();
+    // Spec 391: the queue's claim and its verdict write are `ledger` nodes, which require LEDGER.
+    // A root without it makes V2 refuse the graph — the capability working, not the graph broken.
+    caps.kinds = pii_core::CapKind::LEDGER;
     let ctx = pii_core::Ctx::root(caps, pii_core::Budget::unlimited());
     pii_graph::run::run_with_validate(
         &run_store,

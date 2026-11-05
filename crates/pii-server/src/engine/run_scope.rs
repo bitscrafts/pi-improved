@@ -85,6 +85,10 @@ pub(super) fn run_caps(
         | pii_core::CapKind::SPAWN
         | pii_core::CapKind::MEMORY_READ
         | pii_core::CapKind::MEMORY_WRITE
+        // Spec 391: the queue's own writes are `ledger` nodes, and `ledger` requires LEDGER. Without it in
+        // the run's root every graph that claims or records a row refuses at its first node — the queue,
+        // self-improve and the night all stop, and the refusal looks like a broken graph.
+        | pii_core::CapKind::LEDGER
         | pii_core::CapKind::POST;
     if net_host.is_some() {
         caps.kinds |= pii_core::CapKind::NET;

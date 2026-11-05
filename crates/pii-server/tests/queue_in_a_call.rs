@@ -94,7 +94,9 @@ fn CONTROL_the_queue_graph_still_loads_alone() {
     )
     .expect("graphs/queue.toml loads standalone");
     let ids: Vec<&str> = woven.spec.nodes.iter().map(|n| n.id.as_str()).collect();
-    for id in ["select", "implement__code", "record"] {
+    // Spec 385 put the implementer behind a METHODOLOGY call, so the coder is namespaced one level
+    // deeper. The property (the queue holds a claim, an implementer and a verdict writer) is unchanged.
+    for id in ["select", "implement__method-judge__code", "record"] {
         assert!(ids.contains(&id), "{id} is missing: {ids:?}");
     }
 }

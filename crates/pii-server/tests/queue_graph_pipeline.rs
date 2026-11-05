@@ -16,7 +16,8 @@ use pii_core::{ArgvScope, Budget, CapKind, CapSet, Ctx};
 use pii_graph::NodeRegistry;
 use pii_observe::{Event, Observer};
 use pii_server::node_kinds::nodes::coder::{CoderFactory, agent_binaries};
-use pii_server::node_kinds::nodes::queue::{JudgeFactory, RecordFactory, SelectFactory};
+use pii_server::node_kinds::nodes::ledger::LedgerFactory;
+use pii_server::node_kinds::nodes::queue::JudgeFactory;
 use pii_store::MemStore;
 use pii_store::queue::{ItemStatus, QueueStore, WorkItem};
 
@@ -38,7 +39,9 @@ fn fake_pi() -> tempfile::TempDir {
 
 fn root_ctx(bin: &Path) -> Ctx {
     let mut caps = CapSet::empty();
-    caps.kinds = CapKind::SPAWN | CapKind::PROC;
+    // Spec 391: `select`/`record` are `ledger` nodes now; the root and the graph header must both
+    // declare it, or V2 refuses the graph before anything runs.
+    caps.kinds = CapKind::SPAWN | CapKind::PROC | CapKind::LEDGER;
     let mut argv0 = vec![String::from("/bin/sh")];
     argv0.extend(agent_binaries(bin));
     caps.proc_argv0 = ArgvScope::new(argv0);
@@ -52,8 +55,10 @@ fn tick(queue: Arc<QueueStore>, memory: Arc<MemStore>, bin: &Path, workdir: &Pat
     let run_store = pii_store::Store::open(&run_dir.path().join("store.redb")).unwrap();
     let log: Arc<dyn Observer> = Arc::new(Silent);
     let mut reg = NodeRegistry::builtin();
-    reg.register(Arc::new(SelectFactory {
-        store: Arc::clone(&queue),
+    reg.register(Arc::new(LedgerFactory {
+        queue,
+        memory: Some(memory),
+        heals: None,
     }));
     reg.register(Arc::new(CoderFactory::with_env(
         bin.to_path_buf(),
@@ -61,18 +66,14 @@ fn tick(queue: Arc<QueueStore>, memory: Arc<MemStore>, bin: &Path, workdir: &Pat
         log,
     )));
     reg.register(Arc::new(JudgeFactory));
-    reg.register(Arc::new(RecordFactory {
-        store: queue,
-        memory: Some(memory),
-    }));
     let work = workdir.display();
     let src = format!(
-        "name = \"queue\"\nentry = \"select\"\ncaps = [\"spawn\", \"proc\"]\n\n\
-        [[node]]\nid = \"select\"\nkind = \"select\"\n\n\
-        [[node]]\nid = \"dispatch\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\"]\nagent = \"pi\"\nmodel = \"m\"\n\
+        "name = \"queue\"\nentry = \"select\"\ncaps = [\"spawn\", \"proc\", \"ledger\"]\n\n\
+        [[node]]\nid = \"select\"\nkind = \"ledger\"\nop = \"queue.claim\"\n\n\
+        [[node]]\nid = \"dispatch\"\nkind = \"coder\"\ntimeout_ms = 60000\ncaps = [\"spawn\", \"proc\", \"ledger\"]\nagent = \"pi\"\nmodel = \"m\"\n\
         workdir = \"{work}\"\nbrief = \"do it\"\n\n\
-        [[node]]\nid = \"judge\"\nkind = \"judge\"\ncaps = [\"proc\"]\nworkdir = \"{work}\"\n\n\
-        [[node]]\nid = \"record\"\nkind = \"record\"\njoin = \"any\"\n\n\
+        [[node]]\nid = \"judge\"\nkind = \"judge\"\ncaps = [\"proc\", \"ledger\"]\nworkdir = \"{work}\"\n\n\
+        [[node]]\nid = \"record\"\nkind = \"ledger\"\nop = \"queue.set_status\"\njoin = \"any\"\n\n\
         [[edge]]\nfrom = \"select\"\nport = \"ok\"\nto = \"dispatch\"\nkind = \"data\"\n\n\
         [[edge]]\nfrom = \"dispatch\"\nport = \"ok\"\nto = \"judge\"\nkind = \"data\"\n\n\
         [[edge]]\nfrom = \"dispatch\"\nport = \"err\"\nto = \"record\"\nkind = \"data\"\n\n\

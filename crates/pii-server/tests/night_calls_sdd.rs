@@ -77,17 +77,25 @@ fn sdd_exits_on_done() {
 
 #[test]
 fn sdd_calls_tdd_and_docs_at_their_pins() {
+    // Spec 385 R2: the TDD loop is INLINED into sdd, not called — night → queue → spec → sdd → tdd was
+    // five deep against the depth cap of four. So sdd calls no `tdd`; it carries the loop as its own
+    // nodes, and this test proves that shape rather than the call it used to make.
     let recorded = calls(&graph("sdd"));
-    for graph_name in ["tdd", "docs"] {
-        let call = recorded
-            .iter()
-            .find(|c| c.call == graph_name)
-            .unwrap_or_else(|| panic!("sdd has no call `{graph_name}`: {recorded:?}"));
-        assert_eq!(call.graph, graph_name);
-        assert_eq!(
-            call.sha256,
-            fragment::sha256_hex(graph(graph_name).as_bytes()),
-            "the `{graph_name}` pin must be the sha256 of graphs/{graph_name}.toml as it is on disk"
+    assert!(
+        !recorded.iter().any(|c| c.call == "tdd" || c.graph == "tdd"),
+        "sdd must not call tdd any more: the loop is inline — {recorded:?}"
+    );
+    let doc: toml::Table = toml::from_str(&graph("sdd")).expect("valid toml");
+    let ids: Vec<&str> = doc["node"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .filter_map(|n| n.get("id").and_then(toml::Value::as_str))
+        .collect();
+    for step in ["tdd_write_test", "tdd_red", "tdd_implement", "tdd_green"] {
+        assert!(
+            ids.contains(&step),
+            "sdd carries the tdd step '{step}': {ids:?}"
         );
     }
 }
@@ -105,9 +113,50 @@ fn both_refusals_of_sdd_reach_the_report() {
                 && e.get("to").and_then(toml::Value::as_str) == Some(to)
         })
     };
-    for port in ["ok", "unverified", "refused"] {
-        assert!(has("sdd", port, "review"), "sdd.{port} must reach review");
-    }
+    // Spec 385 R4: the night calls `queue` (which calls `spec`), so the verdicts that must reach the
+    // report are the queue call's. Its declared ports are ok|blocked|empty|running, and a refused or
+    // unverified row arrives through `ok` with its status recorded — the property is that no verdict of
+    // the night's one call is left unwired.
+    let queue = doc["node"]
+        .as_array()
+        .and_then(|ns| {
+            ns.iter()
+                .find(|n| n.get("id").and_then(toml::Value::as_str) == Some("drain"))
+        })
+        .expect("night calls the queue as `drain`");
+    assert_eq!(
+        queue.get("graph").and_then(toml::Value::as_str),
+        Some("queue"),
+        "the night's implementer is the queue graph"
+    );
+    // A CALL returns on its CALLEE'S EXIT ports, not on the ports the callee declares internally: queue's
+    // exit is `record` (a ledger), so the night sees `ok` and `err` and the row's own verdict travels in
+    // the payload. `empty-gate` is what reads that payload. Wiring `blocked`/`empty`/`running` here would
+    // be wiring ports the call cannot produce — the same trap as 385's `fill.refused`.
+    // The callee's EXIT node is `record`, a ledger whose op is `queue.set_status`, and that op declares a
+    // single port: `ok`. So the call returns exactly one verdict, and the night must wire exactly that
+    // one — the row's own outcome (implemented, refused, empty, blocked) travels in the payload, which is
+    // what `empty-gate` routes on. Asserting `err` here would assert a port the graph cannot produce; it
+    // was tried and the linter refused it, correctly.
+    assert!(
+        has("drain", "ok", "empty-gate"),
+        "the queue's one verdict must reach empty-gate, which routes on its payload"
+    );
+    // The callee's exit node is in the QUEUE graph, not this one: `record`, a ledger with op
+    // `queue.set_status`, which declares exactly one port.
+    let queue_doc: toml::Table = toml::from_str(&graph("queue")).expect("valid toml");
+    let exit_node = queue_doc["node"]
+        .as_array()
+        .and_then(|ns| {
+            ns.iter()
+                .find(|n| n.get("id").and_then(toml::Value::as_str) == Some("record"))
+        })
+        .expect("the queue exits through `record`");
+    assert_eq!(
+        exit_node.get("kind").and_then(toml::Value::as_str),
+        Some("ledger"),
+        "the queue's exit is its ledger write"
+    );
     assert!(has("review", "ok", "report"), "review must reach report");
     let review = doc["node"]
         .as_array()
