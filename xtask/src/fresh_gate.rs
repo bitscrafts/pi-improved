@@ -649,4 +649,15 @@ mod tests {
         assert!(!safe_to_remove(base, Path::new("")));
         assert!(!safe_to_remove(Path::new(""), Path::new("fresh-gate-1")));
     }
+
+    /// Spec 387 R4: the crate ratchet is a gate step, so a crate that grows its debt reddens the gate it runs in.
+    #[test]
+    fn the_gate_runs_the_crate_ratchet() {
+        let list = std::fs::read_to_string(workspace_root().join("gate-steps.txt")).unwrap();
+        assert!(
+            list.lines()
+                .any(|l| l.starts_with("crate-audit|") && l.contains("crate-audit --ratchet")),
+            "gate-steps.txt must run `crate-audit --ratchet`"
+        );
+    }
 }

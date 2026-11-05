@@ -41,6 +41,10 @@ coverage-floor|if [ "${QG_SKIP_COVERAGE:-0}" = "1" ]; then echo "SKIPPED: covera
 # 450-effective-line file gate (spec 67, Fix 1): pure text scan; also enforced here for pidag runs.
 lint-files|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-files
 
+# Spec 387 R4: a crate whose over-450-line file count grew past its checked-in baseline reddens the gate, naming the
+# file. The baseline only moves through `crate-audit --update-baseline`, never in this step.
+crate-audit|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- crate-audit --ratchet
+
 # Spec 96: tempdir_in on a crate-local `_tmp` must be preceded by create_dir_all / tmp_scratch (N1 class).
 lint-scratch|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-scratch
 

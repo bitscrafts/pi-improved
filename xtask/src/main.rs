@@ -18,6 +18,7 @@
 mod bench;
 pub mod cli_parse;
 mod coverage_floor;
+mod crate_audit;
 mod deps;
 mod disk;
 mod doc_drift;
@@ -46,7 +47,7 @@ use cli_parse::{
     parse_mem_eval, parse_promote_collect, parse_report_flag, parse_rss_gate, parse_worktree_flag,
 };
 
-const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|lint-scratch|lint-observability|coverage-floor <summary.json> [--floor N]|silent-noop-check|reachability-check|doc-drift-check [--modules]|doc-drift-inventory|memory-eval|rss-gate|heal-seed|heal-collect <sig>|promote-build [--worktree P]|promote-collect <sig> <approval_id> [--approval-db P] [--by NAME]|heal-prune [--all]|fresh-gate [--worktree] [--overlay src=dest]|proto-gen|proto-check|bench-gate [--budget-ms N]|ci>";
+const USAGE: &str = "usage: cargo xtask <deps-check|net-check|lint-files|lint-scratch|lint-observability|coverage-floor <summary.json> [--floor N]|silent-noop-check|reachability-check|doc-drift-check [--modules]|doc-drift-inventory|memory-eval|rss-gate|heal-seed|heal-collect <sig>|promote-build [--worktree P]|promote-collect <sig> <approval_id> [--approval-db P] [--by NAME]|heal-prune [--all]|fresh-gate [--worktree] [--overlay src=dest]|proto-gen|proto-check|bench-gate [--budget-ms N]|crate-audit [--ratchet|--update-baseline]|ci>";
 
 fn report(result: Result<(), Vec<String>>) -> ExitCode {
     match result {
@@ -256,6 +257,7 @@ fn main() -> ExitCode {
             }
         }
         Some("lint-scratch") => report(lint_scratch::run()),
+        Some("crate-audit") => report(crate_audit::run(&rest)),
         Some("coverage-floor") => report(coverage_floor::run(&rest)),
         Some("lint-observability") => report(lint_observability::run()),
         Some("proto-gen") => report(proto_gen::generate().map_err(|e| vec![e])),
