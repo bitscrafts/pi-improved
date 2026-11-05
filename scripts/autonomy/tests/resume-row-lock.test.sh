@@ -31,8 +31,11 @@ kill $HOLD 2>/dev/null; wait $HOLD 2>/dev/null; sleep 0.3
 OUT=$(PII_LOCK="$LOCK" timeout 20 bash "$S" 99999999 2>&1 | head -3); 
 check "CONTROL a free lock is not refused as in flight" "$(printf '%s' "$OUT" | grep -c 'in flight')" "0"
 check "CONTROL ... it reaches the tree hold" "$(printf '%s' "$OUT" | grep -c 'TAKEN')" "1"
-bash scripts/autonomy/hold.sh release "resume-99999999-$(printf '%s' "$OUT" | grep -o 'resume-99999999-[0-9]*' | head -1 | sed 's/.*-//')" >/dev/null 2>&1
-bash scripts/autonomy/hold.sh check 2>&1 | grep -o 'resume-99999999-[0-9]*' | while read h; do bash scripts/autonomy/hold.sh release "$h" >/dev/null 2>&1; done
-check "CONTROL ... and the test left no hold behind" "$(bash scripts/autonomy/hold.sh check 2>&1 | tail -1 | grep -c FREE)" "1"
+# release the hold THIS test's run took (named for the row it was given), then assert none of THAT name is left. The
+# global hold may be held by someone else - in the gate the resume script itself holds it - so "FREE" is not the claim.
+for h in $(bash scripts/autonomy/hold.sh check 2>&1 | grep -o 'resume-99999999-[0-9]*'); do
+  bash scripts/autonomy/hold.sh release "$h" >/dev/null 2>&1
+done
+check "CONTROL ... and the test left no hold of its own behind" "$(bash scripts/autonomy/hold.sh check 2>&1 | grep -c 'resume-99999999')" "0"
 
 echo "$OK ok, $FAILS FAIL"; [ "$FAILS" -eq 0 ]
