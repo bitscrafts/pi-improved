@@ -60,10 +60,26 @@ new behaviour, so the guards are stated under Guardrails and enforced by the gat
 - Do NOT treat "no deadline" as "infinite by default": that is the state this spec exists to remove.
 
 ## Files
-- `crates/pii-server/src/node_kinds/nodes/gate.rs`
-- `crates/pii-server/src/engine/runs.rs`
+- `_docs/02-guides/writing-an-sop.md`
 - `crates/pii-cli/src/cmd_queue.rs`
+- `crates/pii-cli/tests/treat_travels.rs`
+- `crates/pii-graph/src/sop/compile.rs`
+- `crates/pii-graph/src/sop/lint.rs`
+- `crates/pii-graph/src/sop/mod.rs`
+- `crates/pii-graph/tests/sop.rs`
+- `crates/pii-proto/src/lib.rs`
+- `crates/pii-server/src/daemon/mod.rs`
+- `crates/pii-server/src/daemon/wait_deadline.rs`
+- `crates/pii-server/src/engine/preflight.rs`
+- `crates/pii-server/src/engine/queue_methods.rs`
+- `crates/pii-server/src/engine/runs.rs`
+- `crates/pii-server/src/lib.rs`
+- `crates/pii-server/src/node_kinds/nodes/gate.rs`
+- `crates/pii-server/tests/gate_deadline.rs`
+- `crates/pii-server/tests/operator_surfaces.rs`
+- `crates/pii-store/src/queue.rs`
+- `examples/cut-release.sop.toml`
+- `graphs/code-index.toml`
 - `graphs/starter/boss-watch.toml`
 - `graphs/starter/heal-fix.toml`
 - `graphs/starter/heal-watch.toml`
-- `graphs/code-index.toml`
