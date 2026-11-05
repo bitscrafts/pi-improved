@@ -84,11 +84,13 @@ fn CONTROL_a_wrong_pin_fails_check() {
         spec.replace(&sha, &"0".repeat(64)),
     )
     .unwrap();
-    std::fs::copy(
-        graphs_dir().join("docs.toml"),
-        copy.path().join("docs.toml"),
-    )
-    .unwrap();
+    // `spec` is a router (spec 385): it calls the methodology graphs too, and a call to a graph that is not in
+    // the dir is refused as `not_found` before the docs pin is ever read. Copy what it routes to, so the pin
+    // is the only thing wrong.
+    for g in ["docs", "sdd", "method-judge"] {
+        let f = format!("{g}.toml");
+        std::fs::copy(graphs_dir().join(&f), copy.path().join(&f)).unwrap();
+    }
     let out = pii(&[
         "graph",
         "check",
