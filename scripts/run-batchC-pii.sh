@@ -336,7 +336,23 @@ echo "== $RID final: ${ST:-unknown} after ~${WAITED}s" | tee -a "$LOG"
 X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run explain $RID 2>&1 | head -60'" >> "$LOG" 2>&1
 # a refused spec run says WHY (spec 298): the criteria its trace names. explain names none, so the reason comes from the trace
 if [ "$LANE" = spec ]; then case "$ST" in *succeeded*) ;; *)
-  WHY=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run trace $RID 2>&1'" | grep -E 'crit=|fail=')
+  TRACE=$(X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run trace $RID 2>&1'")
+  # A run that FAILED without any coder node ever running was refused before a worker was bought: the contract
+  # judge found a criterion that already passes, or one that cannot run. That is a refusal, not an attempt, and
+  # it must not share exit 1 with a worker that tried and failed (measured 2026-11-05: eight dispatches, all
+  # recorded worker-rc=1, none of which ever reached a coder). Decided from the trace's KIND column, not from
+  # the message text, so a reworded refusal cannot defeat it.
+  # Two conditions, both required: the run ENDED (failed, not cancelled at the lane's own deadline) and it
+  # ended by a refusal the trace names (`fail=run.refused{...}`) with no coder line before it. A run the lane
+  # killed at its wall has an empty trace and no coder either, but it ran, and calling it "refused" would
+  # hide a timeout as a free retry (caught by the control in lane-refused-before-coder.test.sh).
+  case "$ST" in *failed*|*refused*)
+    if printf '%s\n' "$TRACE" | grep -q 'fail=run\.refused' \
+       && ! printf '%s\n' "$TRACE" | awk '$3 == "coder" { found = 1 } END { exit !found }'; then
+      REFUSED_BEFORE_ANY_CODER=1
+    fi ;;
+  esac
+  WHY=$(printf '%s\n' "$TRACE" | grep -E 'crit=|fail=')
   if [ -n "$WHY" ]; then { echo "== why the run was not accepted:"; printf '%s\n' "$WHY"; } | tee -a "$LOG"
   else echo "== why the run was not accepted: (the trace names no criterion)" | tee -a "$LOG"; fi ;;
 esac; fi
@@ -370,4 +386,8 @@ TOUCHED=$(comm -13 "$LOGD/.specs-before-$TAG" "$LOGD/.specs-after-$TAG")
 if [ -n "$TOUCHED" ]; then echo "SPEC-GUARD: the agent changed files under specs/ (read-only for implementers):"; echo "$TOUCHED" | tee -a "$LOG"; exit 9; fi
 
 echo "== tree after: $(git status --porcelain | wc -l) dirty paths"; git status --porcelain | head -12
+if [ "${REFUSED_BEFORE_ANY_CODER:-0}" = 1 ]; then
+  echo "REFUSED  : the run ended before any coder ran — nothing was spent, and this is not a worker failure"
+  exit 9
+fi
 case "$ST" in *succeeded*) exit 0 ;; *) exit 1 ;; esac

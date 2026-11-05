@@ -423,11 +423,6 @@ impl RefuseNode {
 
 impl super::GraphNode for RefuseNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        let Some(port) = &self.returns else {
-            return Ok(Outcome::Fail {
-                error: format!("run.refused{{hook={}, reason={}}}", self.hook, self.reason),
-            });
-        };
         // A join's payload is keyed by source, and the arm that arrived says why.
         let arm = input
             .payload
@@ -435,6 +430,20 @@ impl super::GraphNode for RefuseNode {
             .and_then(|arms| arms.values().find(|v| v.get("reason").is_some()))
             .unwrap_or(&input.payload);
         let why = arm.get("reason").and_then(|v| v.as_str());
+        let Some(port) = &self.returns else {
+            // The configured text is a fallback for a refusal that arrives with no reason (a coder that
+            // really failed). When the verdict that reached this node CARRIES one, it is the answer:
+            // `sdd`'s contract judge refuses a row whose criteria already pass, and the run used to fail
+            // as "the agent failed" for rows that never reached a coder (measured 2026-11-05: eight
+            // dispatches recorded as worker failures, none of them ever spent).
+            let reason = why.map_or_else(
+                || self.reason.clone(),
+                |why| format!("{}: {why}", self.reason),
+            );
+            return Ok(Outcome::Fail {
+                error: format!("run.refused{{hook={}, reason={reason}}}", self.hook),
+            });
+        };
         let reason = why.map_or_else(
             || format!("{port}: {}", self.reason),
             |why| format!("{port}: {}: {why}", self.reason),
