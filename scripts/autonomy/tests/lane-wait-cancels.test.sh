@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# exit 9 = refused before anything was spent (was 2, shared with a wrong command line; see run-batchC-pii.sh)
 # requires: dev-tree
 # why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: the spec lane waits as long as its graph allows, and cancels the run when it gives up (spec 299). The real lane script runs
@@ -81,7 +82,7 @@ if grep -q '^WAIT     : up to 7600s ' "$D/out"; then ok "deadline_comes_from_the
 
 # CONTROL 2: a graph without a numeric wall aborts with exit 2, and nothing is started
 R=$(mkrepo nowall none); D=$(fx nowall running); LANE_GRAPH=spec lane "$R" "$D"
-if [ "$(cat "$D/rc")" = 2 ] && grep -q 'no numeric max_wall_ms' "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_graph_without_a_wall_aborts"; else bad "CONTROL_a_graph_without_a_wall_aborts (rc [$(cat "$D/rc")])"; fi
+if [ "$(cat "$D/rc")" = 9 ] && grep -q 'no numeric max_wall_ms' "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_graph_without_a_wall_aborts"; else bad "CONTROL_a_graph_without_a_wall_aborts (rc [$(cat "$D/rc")])"; fi
 
 # 3: a run that outlives the deadline is cancelled with --kill and the reason, and the lane exits 1
 R=$(mkrepo wall2000 2000); D=$(fx outlives running)

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# exit 9 = refused before anything was spent (was 2, shared with a wrong command line; see run-batchC-pii.sh)
 # requires: dev-tree
 # why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: the spec lane requires its graphs (spec.toml, docs.toml, preflight.toml) to equal their content at HEAD, before the pin comparison (spec 302).
@@ -41,11 +42,11 @@ if [ "$CLEAN_RC" = 0 ] && grep -q 'DRY RUN' "$SCRATCH/clean.out" && ! grep -q 'A
 
 # CONTROL 2: a matching edit of docs.toml and its pin is refused: the pin agrees, HEAD does not
 C=$(mkclone matching); pinned_edit "$C"; run_dry "$C" spec
-if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out" && ! grep -q 'DRY RUN' "$C.out"; then ok "CONTROL_a_matching_edit_of_docs_and_pin_is_refused"; else bad "CONTROL_a_matching_edit_of_docs_and_pin_is_refused (rc [$(cat "$C.rc")])"; fi
+if [ "$(cat "$C.rc")" = 9 ] && grep -q 'differs from HEAD' "$C.out" && ! grep -q 'DRY RUN' "$C.out"; then ok "CONTROL_a_matching_edit_of_docs_and_pin_is_refused"; else bad "CONTROL_a_matching_edit_of_docs_and_pin_is_refused (rc [$(cat "$C.rc")])"; fi
 
 # CONTROL 3: a graph removed from the index (untracked) is refused, though its content still equals HEAD
 C=$(mkclone untracked); git -C "$C" rm -q --cached graphs/preflight.toml; run_dry "$C" spec
-if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CONTROL_an_untracked_graph_is_refused"; else bad "CONTROL_an_untracked_graph_is_refused (rc [$(cat "$C.rc")])"; fi
+if [ "$(cat "$C.rc")" = 9 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CONTROL_an_untracked_graph_is_refused"; else bad "CONTROL_an_untracked_graph_is_refused (rc [$(cat "$C.rc")])"; fi
 
 # 4: the coder lane ignores the graph edits: the same edited clone dry-runs without the HEAD line
 C=$(mkclone coder); pinned_edit "$C"; run_dry "$C" coder
@@ -53,16 +54,16 @@ if ! grep -q 'differs from HEAD' "$C.out" && grep -q 'DRY RUN' "$C.out"; then ok
 
 # CONTROL 5: a docs.toml edit whose pin is NOT repaired is refused by HEAD, not only by the pin
 C=$(mkclone docs-only); printf '# worker edit\n' >> "$C/graphs/docs.toml"; run_dry "$C" spec
-if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CONTROL_a_docs_only_edit_is_refused_by_head"; else bad "CONTROL_a_docs_only_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
+if [ "$(cat "$C.rc")" = 9 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CONTROL_a_docs_only_edit_is_refused_by_head"; else bad "CONTROL_a_docs_only_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
 
 # CONTROL 6: a preflight.toml edit is refused too: the third graph is checked, not only the pinned pair
 C=$(mkclone preflight-only); printf '# worker edit\n' >> "$C/graphs/preflight.toml"; run_dry "$C" spec
-if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CONTROL_a_preflight_edit_is_refused_by_head"; else bad "CONTROL_a_preflight_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
+if [ "$(cat "$C.rc")" = 9 ] && grep -q 'differs from HEAD' "$C.out"; then ok "CONTROL_a_preflight_edit_is_refused_by_head"; else bad "CONTROL_a_preflight_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
 
 # CONTROL 7 (review of A166): a spec.toml edit alone is refused by HEAD. Every earlier case edits docs.toml or preflight.toml, or repairs the pin through spec.toml,
 # so a check that skipped spec.toml survived mutation. The pin still matches docs.toml here, so only the HEAD comparison can refuse it.
 C=$(mkclone spec-only); printf '# worker edit\n' >> "$C/graphs/spec.toml"; run_dry "$C" spec
-if [ "$(cat "$C.rc")" = 2 ] && grep -q 'differs from HEAD' "$C.out" && grep -q 'graphs/spec.toml' "$C.out"; then ok "CONTROL_a_spec_only_edit_is_refused_by_head"; else bad "CONTROL_a_spec_only_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
+if [ "$(cat "$C.rc")" = 9 ] && grep -q 'differs from HEAD' "$C.out" && grep -q 'graphs/spec.toml' "$C.out"; then ok "CONTROL_a_spec_only_edit_is_refused_by_head"; else bad "CONTROL_a_spec_only_edit_is_refused_by_head (rc [$(cat "$C.rc")])"; fi
 
 # spec 303 (R5): ONE opt-out, PII_GRAPH_EDIT_OK=1, and only for a dry run. A row that must edit a graph otherwise cannot run a single test that dry-runs
 # the lane on the tree holding its own uncommitted edit; the reviewed graph is still required whenever a run can spend.
@@ -74,13 +75,13 @@ if [ "$ORC" = 0 ] && grep -q 'NOTE: graph edits allowed (PII_GRAPH_EDIT_OK)' "$C
 for V in unset 0; do
   if [ "$V" = unset ]; then env -u PII_GRAPH_EDIT_OK PII_LANE_GRAPH=spec bash "$C/scripts/run-batchC-pii.sh" 302 --dry-run > "$C.$V.out" 2>&1; VRC=$?
   else PII_LANE_GRAPH=spec PII_GRAPH_EDIT_OK=0 bash "$C/scripts/run-batchC-pii.sh" 302 --dry-run > "$C.$V.out" 2>&1; VRC=$?; fi
-  if [ "$VRC" = 2 ] && grep -q 'differs from HEAD' "$C.$V.out" && ! grep -q 'NOTE: graph edits allowed' "$C.$V.out"; then ok "CONTROL_the_opt_out_${V}_still_aborts"
+  if [ "$VRC" = 9 ] && grep -q 'differs from HEAD' "$C.$V.out" && ! grep -q 'NOTE: graph edits allowed' "$C.$V.out"; then ok "CONTROL_the_opt_out_${V}_still_aborts"
   else bad "CONTROL_the_opt_out_${V}_still_aborts (rc [$VRC])"; fi
 done
 
 # CONTROL: the opt-out does not cover a real start — the graphs are compared with HEAD whenever a run can spend
 PII_LANE_GRAPH=spec PII_GRAPH_EDIT_OK=1 bash "$C/scripts/run-batchC-pii.sh" 302 > "$C.real.out" 2>&1; RRC=$?
-if [ "$RRC" = 2 ] && grep -q 'differs from HEAD' "$C.real.out" && ! grep -q 'NOTE: graph edits allowed' "$C.real.out"; then ok "CONTROL_the_opt_out_does_not_cover_a_real_start"
+if [ "$RRC" = 9 ] && grep -q 'differs from HEAD' "$C.real.out" && ! grep -q 'NOTE: graph edits allowed' "$C.real.out"; then ok "CONTROL_the_opt_out_does_not_cover_a_real_start"
 else bad "CONTROL_the_opt_out_does_not_cover_a_real_start (rc [$RRC])"; fi
 
 trash

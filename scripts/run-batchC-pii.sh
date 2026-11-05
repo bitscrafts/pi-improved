@@ -242,7 +242,7 @@ echo "DAEMON   : $(printf '%s' "$DOUT" | tail -1)"
 if [ "$LANE" = spec ]; then
   while read -r g; do
     case "$g" in ''|'#'*) continue ;; esac
-    [ -f "$REPO/graphs/$g.toml" ] && cp "$REPO/graphs/$g.toml" "$REPO/_tmp/devbox-test/graphs/" || exit 2
+    [ -f "$REPO/graphs/$g.toml" ] && cp "$REPO/graphs/$g.toml" "$REPO/_tmp/devbox-test/graphs/" || { echo "ABORT: could not ship graphs/$g.toml to the daemon: nothing started"; exit 9; }
   done < "$REPO/graphs/minimal.txt"
 fi
 
@@ -272,7 +272,7 @@ if [ "$LANE" = spec ]; then
   case "$PST" in *succeeded*) echo "PREFLIGHT: the daemon's judge wrote $SCRATCH ok ($PRID)" ;; *)
     echo "ABORT: container preflight failed: the daemon's judge cannot write $SCRATCH ($PRID: ${PST:-no status})"
     X sh -c "'env PII_RUNTIME_DIR=$C/run $PIIB run trace $PRID 2>&1'" | grep -E 'crit=|fail='
-    exit 2 ;;
+    exit 9 ;;
   esac
 fi
 

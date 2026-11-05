@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# exit 9 = refused before anything was spent (was 2, shared with a wrong command line; see run-batchC-pii.sh)
 # requires: dev-tree
 # why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: the spec lane preflights the devbox before it spends, and logs why a refused run was refused (spec 298). The real lane script runs with a
@@ -69,7 +70,7 @@ if grep -q 'podman exec pii-devbox sh -c .command -v uv' "$D/argv"; then ok "pre
 
 # CONTROL 3: a failing preflight aborts before anything is started
 D=$(fx preflight-fails succeeded "" 1); lane "$D"
-if [ "$(cat "$D/rc")" = 2 ] && grep -q 'ABORT: container preflight failed' "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_failing_preflight_aborts_with_nothing_started"; else bad "CONTROL_a_failing_preflight_aborts_with_nothing_started (rc [$(cat "$D/rc")])"; fi
+if [ "$(cat "$D/rc")" = 9 ] && grep -q 'ABORT: container preflight failed' "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_failing_preflight_aborts_with_nothing_started"; else bad "CONTROL_a_failing_preflight_aborts_with_nothing_started (rc [$(cat "$D/rc")])"; fi
 
 # 4: a dry run prints the skip and never calls ssh
 D=$(fx dry succeeded); lane "$D" --dry-run
@@ -105,7 +106,7 @@ if [ -n "$PST" ] && [ -n "$RUNST" ] && [ "$PST" -lt "$RUNST" ] && grep -q 'run g
 
 # CONTROL 11 (spec 301): a preflight judge the daemon fails aborts before the real run starts
 D=$(fx judge-fails succeeded "$TRACE_CRIT" 0 failed); lane "$D"
-if [ "$(cat "$D/rc")" = 2 ] && grep -q 'ABORT: container preflight failed: the daemon.s judge cannot write' "$D/out" && grep -qF "$TRACE_CRIT" "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_failed_preflight_judge_aborts"; else bad "CONTROL_a_failed_preflight_judge_aborts (rc [$(cat "$D/rc")])"; fi
+if [ "$(cat "$D/rc")" = 9 ] && grep -q 'ABORT: container preflight failed: the daemon.s judge cannot write' "$D/out" && grep -qF "$TRACE_CRIT" "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_failed_preflight_judge_aborts"; else bad "CONTROL_a_failed_preflight_judge_aborts (rc [$(cat "$D/rc")])"; fi
 
 # 12 (spec 301): the preflight graph is tracked with one judge node, and the spec lane copies it to the daemon's graph dir
 rm -f "$REPO/_tmp/devbox-test/graphs/preflight.toml"
