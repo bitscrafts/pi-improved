@@ -74,14 +74,32 @@ else
   bad "CONTROL the pick path was replaced instead of guarded"
 fi
 
-# ---- a behavioural check, not only a textual one: the forced item really is used ------------------
-# Build a throwaway plan + state and ask state.py get, which is what the forced branch reads.
-FIX=$TMP/fix; mkdir -p "$FIX/scripts/autonomy"
-cp scripts/autonomy/state.py "$FIX/scripts/autonomy/" 2>/dev/null || true
-if PII_PLAN="$ROOT/scripts/autonomy/plan.tsv" python3 scripts/autonomy/state.py get 391 >/dev/null 2>&1; then
-  pass "state.py get <row> answers for the forced branch"
+# ---- a behavioural check: what the forced branch READS must be a dispatchable row -----------------
+# The previous version of this check asked `state.py get`, which answered — while the forced branch glued
+# that JSON behind the id and handed the cycle a "spec" of `{` and an empty title, so every forced item ended
+# in needs-spec (measured 2026-11-05). A check that passes while the live path is broken is worse than none.
+# So this one runs the call the cycle makes (`pick --row`) and inspects the FIELDS the cycle then uses.
+ROWID=$(python3 scripts/autonomy/state.py list | awk -F'\t' 'NR==1{print $1}')
+GOT=$(python3 scripts/autonomy/state.py pick --row "$ROWID" 2>/dev/null)
+NF_=$(printf '%s' "$GOT" | awk -F'\t' '{print NF}')
+SPEC_=$(printf '%s' "$GOT" | awk -F'\t' '{print $2}')
+TITLE_=$(printf '%s' "$GOT" | awk -F'\t' '{print $4}')
+if [ "$NF_" = 9 ] && [ -f "specs/$SPEC_" ] && [ -n "$TITLE_" ]; then
+  pass "the forced row reads as a real plan row: 9 fields, a spec that exists, a title"
 else
-  bad "state.py get <row> does not answer, so the forced branch cannot read its row"
+  bad "the forced row does not read as a plan row (fields=$NF_ spec='$SPEC_' title='$TITLE_')"
+fi
+# CONTROL: a row that is not in the plan must be REFUSED, not turned into an empty dispatch
+if [ "$(python3 scripts/autonomy/state.py pick --row no-such-row-xyz 2>/dev/null)" = "NONE" ]; then
+  pass "CONTROL a row that is not in the plan is refused (NONE), not dispatched"
+else
+  bad "CONTROL an unknown forced row was not refused"
+fi
+# CONTROL: the cycle must be using that call, not the status JSON
+if grep -q 'state.py pick --row' scripts/autonomy/cycle.sh && ! grep -q 'state.py get "\$PII_FORCE_ITEM"' scripts/autonomy/cycle.sh; then
+  pass "the cycle forces a row through pick --row and no longer through the status JSON"
+else
+  bad "the cycle still builds a forced row out of the status JSON"
 fi
 
 

@@ -140,8 +140,21 @@ def main():
     if cmd == "pick":
         st = load()
         skipped = []
+        # `pick --row <id>`: the same checks and the same 9-column output, for ONE named row. The dispatcher
+        # uses it when a row owns the dirty tree, and scripts/retry-rows-with-model.sh uses it to retry a
+        # row on purpose. The status filter is skipped (that is the point: the row is named), the checks are not:
+        # a row whose paths or verify column drifted from its spec is refused here exactly as it is by the pick.
+        want = a[a.index("--row") + 1] if "--row" in a else None
+        if "--row" in a and not any(r["id"] == want for r in rows()):
+            print(f"no such row: {want}", file=sys.stderr)
+            print("NONE")
+            return
         for r in rows():
+            if want is not None and r["id"] != want:
+                continue
             s = st.get(r["id"], {}).get("status", "pending")
+            if want is not None:
+                s = "pending"
             # a needs-review row parked by a closed window waits for the clock, not a person: once the window guard lets
             # a cycle start, it is offered again with its session (spec 280). A worker that stopped early (worker-rc=N) left
             # its session for the next cycle to resume, so it is offered again too (spec 312)

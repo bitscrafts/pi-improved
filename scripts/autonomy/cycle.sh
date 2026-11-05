@@ -79,8 +79,14 @@ esac
 if [ -n "${PII_FORCE_ITEM:-}" ]; then
   # the drain named the row that owns the dirty tree: only that row may advance from this tree, and the
   # pick is not consulted (it would skip a needs-review row and leave the work sitting again).
-  PICK=$(python3 scripts/autonomy/state.py get "$PII_FORCE_ITEM")
-  PICK="${PII_FORCE_ITEM}"$'\t'"$PICK"
+  # `state.py pick --row` — the pick's own checks and its 9-column output for the NAMED row. `state.py get`
+  # returns the row's status JSON, and gluing it behind the id gave a "spec" of `{` and an empty title, so a
+  # forced item always ended in needs-spec (measured 2026-11-05 on the first forced dispatch).
+  PICK=$(python3 scripts/autonomy/state.py pick --row "$PII_FORCE_ITEM")
+  if [ -z "$PICK" ] || [ "$PICK" = "NONE" ]; then
+    say "the forced item '$PII_FORCE_ITEM' is not dispatchable (not in plan.tsv, or its paths/criteria are refused) — nothing spent"
+    echo "OUTCOME=plan-error"; exit 4
+  fi
   say "item forced by the dispatcher: $PII_FORCE_ITEM (the tree holds its work)"
 else
   PICK=$(python3 scripts/autonomy/state.py pick)
