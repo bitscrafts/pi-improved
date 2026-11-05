@@ -31,13 +31,17 @@ ship with an empty brief.
   section rather than duplicating it.
 
 ## Exit Criteria
-
-- [ ] `test -f _docs/manuals/pii-arch-dev.pdf`
-- [ ] `grep -q 'How a call passes data' _docs/manuals/src/arch-dev/src/chapters/05-composition.tex`
-- [ ] `grep -q 'nodes.inventory.payload.stdout' _docs/manuals/src/arch-dev/src/chapters/05-composition.tex`
 - [ ] `grep -q 'fragment/call_output.rs' _docs/manuals/src/arch-dev/src/chapters/05-composition.tex`
 
+Why this section has fewer criteria than the requirements imply: `sdd`'s contract step runs every
+criterion BEFORE any code exists and refuses a row if one already passes (measured 2026-11-05: eight
+dispatches refused, none spent). A criterion that passes today is a regression guard, not a test of the
+new behaviour, so the guards are stated under Guardrails and enforced by the gate.
+
 ## Guardrails
+- Already true and must stay true: the PDF `_docs/manuals/pii-arch-dev.pdf` exists, and chapter 05 carries the heading
+  `How a call passes data` and the path `nodes.inventory.payload.stdout`. The remaining work is the reference
+  to `fragment/call_output.rs`, and a rebuild of the PDF so it matches the source.
 
 - Do NOT describe the mechanism from memory. Three moves are documented because the loader was read:
   input keys become `<call>__in__<key>`, ids are namespaced, and the alias is a rewrite.

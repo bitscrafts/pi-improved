@@ -35,16 +35,21 @@ step 2), `heal_detect`/`heal_record` (2). A kind that exists for one graph is a 
 | `CONTROL_the_detector_is_a_transform` | heal graph | a transform computes the predicate |
 
 ## Exit Criteria
-- [ ] `cargo test -q -p pii-cli --test every_graph_loads 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `test "$(grep -rl 'kind = "worker"' graphs/ | wc -l)" = 0`
 - [ ] `test "$(grep -rl 'kind = "classify"' graphs/ | wc -l)" = 0`
 - [ ] `test "$(grep -rl 'kind = "plan"' graphs/ | wc -l)" = 0`
 - [ ] `test "$(grep -rl 'kind = "memory"' graphs/ | wc -l)" = 0`
 - [ ] `test "$(grep -rl 'kind = "debug_crash"' graphs/ | wc -l)" = 0`
-- [ ] `./target/debug/pii graph lint graphs/self-improve.toml`
-- [ ] `./target/debug/pii graph lint graphs/intervention-report.toml`
+
+Why this section has fewer criteria than the requirements imply: `sdd`'s contract step runs every
+criterion BEFORE any code exists and refuses a row if one already passes (measured 2026-11-05: eight
+dispatches refused, none spent). A criterion that passes today is a regression guard, not a test of the
+new behaviour, so the guards are stated under Guardrails and enforced by the gate.
 
 ## Guardrails
+- Must stay green, and are enforced by the gate rather than by a criterion (they pass today):
+  `cargo test -p pii-cli --test every_graph_loads`, `pii graph lint graphs/self-improve.toml`,
+  `pii graph lint graphs/intervention-report.toml`.
 - Do NOT delete a graph to make its kind disappear: the flow is what the operator runs.
 - Do NOT move a flow into Rust to avoid touching the graph; 383's premise is that everything is a graph.
 - Do NOT let `remember` become unguarded: it already requires `MEMORY_WRITE`, and that must hold.

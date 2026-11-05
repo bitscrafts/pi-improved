@@ -55,10 +55,15 @@ still runs the older reading. Until this is measured inside the harness, do not 
 
 ## Exit Criteria
 - [ ] `timeout 120 cargo test -q -p pii-cli --test lane_plan_parity 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
-- [ ] `grep -q 'graph = "docs"' scripts/run-batchC-pii.sh`
-- [ ] `python3 deploy/graph-closure.py graphs $(sed -n '/^spec$/,$p' graphs/minimal.txt | tr '\n' ' ')`
+
+Why this section has fewer criteria than the requirements imply: `sdd`'s contract step runs every
+criterion BEFORE any code exists and refuses a row if one already passes (measured 2026-11-05: eight
+dispatches refused, none spent). A criterion that passes today is a regression guard, not a test of the
+new behaviour, so the guards are stated under Guardrails and enforced by the gate.
 
 ## Guardrails
+- The regression guards that used to be criteria: `grep -q 'graph = "docs"' scripts/run-batchC-pii.sh` and
+  `python3 deploy/graph-closure.py graphs $(sed -n '/^spec$/,$p' graphs/minimal.txt | tr '\n' ' ')` must stay green.
 - Do NOT regenerate the goldens to match an abort: the golden says the lane starts, and that is the
   behaviour a row depends on.
 - Do NOT make the pin check optional, and do not move it behind a flag: it is what makes a reviewed graph

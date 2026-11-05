@@ -44,10 +44,16 @@ distinguishes "waiting for a human" from "stuck".
 ## Exit Criteria
 - [ ] `grep -q 'deadline_ms' crates/pii-server/src/node_kinds/nodes/gate.rs`
 - [ ] `cargo test -q -p pii-server --test gate_deadline 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
-- [ ] `python3 deploy/graph-closure.py graphs $(sed -n '/^spec$/,$p' graphs/minimal.txt | tr '\n' ' ') >/dev/null 2>&1`
 - [ ] `./target/debug/pii queue ls 2>&1 | grep -qi 'suspended'`
 
+Why this section has fewer criteria than the requirements imply: `sdd`'s contract step runs every
+criterion BEFORE any code exists and refuses a row if one already passes (measured 2026-11-05: eight
+dispatches refused, none spent). A criterion that passes today is a regression guard, not a test of the
+new behaviour, so the guards are stated under Guardrails and enforced by the gate.
+
 ## Guardrails
+- The closure check `python3 deploy/graph-closure.py graphs $(sed -n '/^spec$/,$p' graphs/minimal.txt | tr '\n' ' ')`
+  must stay green: it used to be a criterion and already passed.
 - Do NOT fail a suspended run on `max_wall_ms` alone: a run may legitimately wait days for a human, and
   the graph author must choose that number (`deadline_ms`), not inherit one.
 - Do NOT delete the suspension state on failure: the row keeps its session, and the operator can resume.

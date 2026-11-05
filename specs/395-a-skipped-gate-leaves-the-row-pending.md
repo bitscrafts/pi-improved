@@ -35,10 +35,15 @@ a lock.
 | `CONTROL_a_green_gate_still_advances` | room on disk, gate passes | status advances, attempts unchanged |
 
 ## Exit Criteria
-- [ ] `cargo test -q -p xtask --test gate_skip_is_not_a_pass 2>&1 | grep -qE 'test result: ok'`
 - [ ] `bash scripts/autonomy/tests/skip-is-not-a-pass.test.sh 2>&1 | tail -1 | grep -q '0 FAIL'`
-- [ ] `grep -q 'status=pending' scripts/autonomy/cycle.sh`
 - [ ] `test "$(grep -c 'attempts=$((ATTEMPTS+1)) last=gate-skipped' scripts/autonomy/cycle.sh)" = 0`
+- [ ] `cargo test -q -p xtask --test gate_skip_is_not_a_pass 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
+- [ ] `! grep -q 'status=needs-review attempts=$((ATTEMPTS+1)) last=gate-skipped' scripts/autonomy/cycle.sh`
+
+Why this section has fewer criteria than the requirements imply: `sdd`'s contract step runs every
+criterion BEFORE any code exists and refuses a row if one already passes (measured 2026-11-05: eight
+dispatches refused, none spent). A criterion that passes today is a regression guard, not a test of the
+new behaviour, so the guards are stated under Guardrails and enforced by the gate.
 
 ## Guardrails
 - Do NOT keep `needs-review` for a skipped gate: that is the defect, not the label.
