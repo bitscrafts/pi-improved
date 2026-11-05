@@ -48,5 +48,5 @@ a lock.
 ## Files
 - `scripts/autonomy/cycle.sh`
 - `scripts/autonomy/disk-floor.sh`
-- `scripts/autonomy/tests/skip-is-not-a-pass.test.sh` (new)
-- `crates/pii-cli/tests/gate_skip_is_not_a_pass.rs` (new, drives cycle.sh on a fixture tree)
+- `scripts/autonomy/tests/skip-is-not-a-pass.test.sh`
+- `crates/pii-cli/tests/gate_skip_is_not_a_pass.rs`

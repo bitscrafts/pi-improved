@@ -54,7 +54,8 @@ flagged this, and the second finding is the security one.
 - `crates/pii-abi/src/cap.rs`
 - `crates/pii-server/src/node_kinds/nodes/queue.rs`
 - `crates/pii-server/src/node_kinds/nodes/heal.rs`
-- `crates/pii-server/src/node_kinds/nodes/ledger.rs` (new)
+- `crates/pii-server/src/node_kinds/nodes/ledger.rs`
 - `crates/pii-server/src/engine/registry.rs`
-- `crates/pii-server/tests/ledger_kind.rs` (new)
-- `graphs/queue.toml`, `graphs/self-improve.toml`
+- `crates/pii-server/tests/ledger_kind.rs`
+- `graphs/queue.toml`
+- `graphs/self-improve.toml`

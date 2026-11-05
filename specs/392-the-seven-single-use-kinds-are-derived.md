@@ -50,10 +50,17 @@ step 2), `heal_detect`/`heal_record` (2). A kind that exists for one graph is a 
 - Do NOT let `remember` become unguarded: it already requires `MEMORY_WRITE`, and that must hold.
 
 ## Files
-- `crates/pii-server/src/node_kinds/nodes/worker.rs`, `classify.rs`, `plan.rs`, `memory.rs`,
-  `heal.rs`, `debug_crash.rs`
+- `crates/pii-server/src/node_kinds/nodes/worker.rs`
+- `classify.rs`
+- `plan.rs`
+- `memory.rs`
+- `heal.rs`
+- `debug_crash.rs`
 - `crates/pii-server/src/engine/registry.rs`
-- `graphs/code-index.toml`, `graphs/intervention-report.toml`, `graphs/self-improve.toml`,
-  `graphs/digest-now.toml`, `graphs/discord-triage.toml`
-- `crates/pii-graph/tests/fixtures/crash.toml` (new)
+- `graphs/code-index.toml`
+- `graphs/intervention-report.toml`
+- `graphs/self-improve.toml`
+- `graphs/digest-now.toml`
+- `graphs/discord-triage.toml`
+- `crates/pii-graph/tests/fixtures/crash.toml`
 - `crates/pii-cli/tests/every_graph_loads.rs`

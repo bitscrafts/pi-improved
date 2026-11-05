@@ -51,8 +51,11 @@ repository, an expected refusal gets silenced, and a silenced check is how the n
 - Do NOT run a shell string from `tool`: authority comes from the committed spec, not from the graph.
 
 ## Files
-- `xtask/src/lint_graph_kinds.rs` (new), `xtask/src/main.rs`, `xtask/src/fresh_gate.rs`
-- `xtask/tests/lint_graph_kinds.rs` (new)
-- `graphs/VOCABULARY` (new)
-- `crates/pii-graph/src/nodes.rs` (tool surface), `crates/pii-graph/tests/tool_surface_is_closed.rs` (new)
+- `xtask/src/lint_graph_kinds.rs`
+- `xtask/src/main.rs`
+- `xtask/src/fresh_gate.rs`
+- `xtask/tests/lint_graph_kinds.rs`
+- `graphs/VOCABULARY`
+- `crates/pii-graph/src/nodes.rs`
+- `crates/pii-graph/tests/tool_surface_is_closed.rs`
 - `docs/03-reference/graph-vocabulary.md`
