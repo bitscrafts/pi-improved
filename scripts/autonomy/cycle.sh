@@ -411,6 +411,9 @@ if [ -n "$GATE_ON" ]; then
   # ${GATE_WRITE_DIRS:-}: unset in production, so an unbound expansion under `set -u` failed the
   # command and the failure was reported as a disk shortage -- measured 2026-11-04, the gate was
   # skipped on a row with 127 GB free. A check must not turn its own defect into a diagnosis.
+  # The cycle owns the dirs its gate writes to: make them first, so the floor judges ROOM and not whether a clean
+  # removed a directory (measured 2026-11-05: a finished row's gate skipped on 112 GB free, "MISSING llvm-cov-target").
+  bash scripts/autonomy/ensure-write-dirs.sh ${GATE_WRITE_DIRS:-} || say "write dir(s) could not be made; the floor will report them"
   DISK=$(bash scripts/autonomy/disk-floor.sh 20000 /projects ${GATE_WRITE_DIRS:-}); DRC=$?
   if [ "$DRC" -ne 0 ]; then
     LOWL=$(echo "$DISK" | grep -m1 -E '^(LOW|MISSING): ')
