@@ -38,7 +38,7 @@ them. A hanging test is worse than a failing one: it spends the wall clock and r
 - [ ] `timeout 240 cargo test -q -p pii-cli --test control_plane_is_not_behind_runs 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
 - [ ] `grep -q '/proc/' crates/pii-cli/tests/control_plane_is_not_behind_runs.rs`
 - [ ] `timeout 240 cargo test -q -p pii-cli --test control_plane_is_not_behind_runs >/dev/null 2>&1`
-- [ ] `timeout 240 cargo test -q -p pii-cli --test pii_run_cancel 2>&1 | grep -qE 'test result: ok'`
+- [ ] `timeout 240 cargo test -q -p pii-cli --test heavy_lock_checks_its_owner 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
 
 ## Guardrails
 - Every criterion is wrapped in `timeout 240`. A criterion that hangs must FAIL in four minutes, not sit

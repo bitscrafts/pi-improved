@@ -71,78 +71,14 @@ fn until_with(what: &str, budget: Duration, mut f: impl FnMut() -> bool) {
         "waited {secs}s for {what} — if this is the only failure, the suite starved it; if it repeats alone, {what} is stuck"
     );
 }
-/// They therefore take turns. A lock FILE rather than a Mutex, because `clippy.toml` bans `std::sync::Mutex` in
-/// this repo and a file lock survives the test binary's own process boundaries.
-///
-/// It is released when its HOLDER is gone, not when a timestamp says it is old: a killed test must not block
-/// the suite, and the pid it records is the check. Age is only the fallback for a pid `/proc` cannot see.
-pub struct HeavyGuard(std::path::PathBuf);
+#[path = "heavy_lock/mod.rs"]
+pub mod heavy_lock;
 
-impl Drop for HeavyGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
-
-fn only_one_heavy_test_at_a_time() -> HeavyGuard {
-    // The lock lives under the tree's own _tmp, not the system temp dir: the repo's lint-scratch rule says
-    // scratch outside the tree is invisible to cleanup and outlives the run that made it.
+fn only_one_heavy_test_at_a_time() -> heavy_lock::HeavyGuard {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("_tmp")
         .join("control-plane-heavy.lock");
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    // Spec 394: a lock is held by a PROCESS, so it is released when that process is gone — not when a
-    // timestamp says it is old. The file records the holder's pid; reading it is the whole check. Age is
-    // only the fallback for a pid this kernel cannot see (`/proc` absent, a container boundary).
-    //
-    // Measured 2026-11-05: the pid was written and never read, a killed test left the file, and the six
-    // tests after it each waited the full fifteen minutes before panicking — which the gate reported as a
-    // hang on three different names and which killed three work batches before it was found.
-    let give_up = Instant::now() + Duration::from_mins(2);
-    loop {
-        match std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&path)
-        {
-            Ok(mut f) => {
-                use std::io::Write;
-                let _ = writeln!(f, "{}", std::process::id());
-                return HeavyGuard(path);
-            }
-            Err(e) => {
-                if let Some(holder) = holder_pid(&path)
-                    && !Path::new(&format!("/proc/{holder}")).exists()
-                {
-                    // The holder is gone. Take the lock it left behind and say so: a reaped lock is a
-                    // normal event, not a failure.
-                    let _ = std::fs::remove_file(&path);
-                    continue;
-                }
-                let stale = std::fs::metadata(&path)
-                    .and_then(|m| m.modified())
-                    .is_ok_and(|t| t.elapsed().is_ok_and(|d| d.as_secs() > 900));
-                if stale {
-                    let _ = std::fs::remove_file(&path);
-                    continue;
-                }
-                assert!(
-                    Instant::now() < give_up,
-                    "another heavy test has held {} for two minutes (holder pid {:?}, {e})",
-                    path.display(),
-                    holder_pid(&path)
-                );
-                std::thread::sleep(Duration::from_millis(200));
-            }
-        }
-    }
-}
-
-/// The pid the lock file names, if it names one.
-fn holder_pid(path: &Path) -> Option<u32> {
-    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+    heavy_lock::take(&path, Duration::from_mins(2))
 }
 
 fn scratch(tag: &str) -> tempfile::TempDir {

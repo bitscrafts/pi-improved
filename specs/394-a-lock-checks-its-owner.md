@@ -32,13 +32,15 @@ mid-flight. The defect is in the test harness, and it cost a night.
 | `CONTROL_no_lock_file_still_works` | no file | taken |
 
 ## Exit Criteria
-- [ ] `cargo test -q -p pii-cli --test control_plane_is_not_behind_runs a_dead_holder_is_reaped_immediately 2>&1 | grep -qE 'test result: ok'`
-- [ ] `grep -q '/proc/' crates/pii-cli/tests/control_plane_is_not_behind_runs.rs`
-- [ ] `cargo test -q -p pii-cli --test control_plane_is_not_behind_runs 2>&1 | grep -qE 'test result: ok'`
+- [ ] `cargo test -q -p pii-cli --test heavy_lock_checks_its_owner 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
+- [ ] `grep -q '/proc/' crates/pii-cli/tests/heavy_lock/mod.rs`
+- [ ] `timeout 240 cargo test -q -p pii-cli --test control_plane_is_not_behind_runs 2>&1 | grep -qE 'test result: ok\. [1-9][0-9]* passed'`
 
 ## Guardrails
 - Do NOT raise the fifteen-minute budget: the budget is not the defect, the missing owner check is.
 - Do NOT delete a lock file blindly on start: a live holder must still be respected.
 
 ## Files
+- `crates/pii-cli/tests/heavy_lock/mod.rs`
+- `crates/pii-cli/tests/heavy_lock_checks_its_owner.rs`
 - `crates/pii-cli/tests/control_plane_is_not_behind_runs.rs`
