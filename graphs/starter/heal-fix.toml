@@ -8,7 +8,7 @@
 # human approval; a patch leaves the sandbox only via `xtask heal-collect`.
 name = "starter/heal-fix"
 entry = "probe"
-caps = ["fs_read", "fs_write", "proc"]
+caps = ["fs_read", "fs_write", "proc", "ledger"]
 
 [limits]
 max_steps = 1000
@@ -91,7 +91,8 @@ args = { command = "git diff", cwd = "$.input.worktree" }
 # evidence exists regardless of the approve/deny decision that follows.
 [[node]]
 id = "record_fixed"
-kind = "heal_record"
+kind = "ledger"
+op = "heal.record_run"
 gate_before = "fail"
 gate_after = "pass"
 fix_node = "fix"

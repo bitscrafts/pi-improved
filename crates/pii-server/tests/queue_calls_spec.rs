@@ -25,7 +25,8 @@ use pii_graph::NodeRegistry;
 use pii_observe::{Event, Observer};
 use pii_server::node_kinds::nodes::coder::{CoderFactory, agent_binaries};
 use pii_server::node_kinds::nodes::criteria;
-use pii_server::node_kinds::nodes::queue::{JudgeFactory, RecordFactory, SelectFactory};
+use pii_server::node_kinds::nodes::ledger::LedgerFactory;
+use pii_server::node_kinds::nodes::queue::JudgeFactory;
 use pii_store::queue::{ItemStatus, QueueStore, WorkItem};
 
 const SPEC: &str = "specs/900-queued.md";
@@ -82,7 +83,11 @@ fn fake_bin(work: &str) -> tempfile::TempDir {
 
 fn root_ctx(bin: &Path, run: &pii_abi::RunId) -> Ctx {
     let mut caps = CapSet::empty();
-    caps.kinds = CapKind::SPAWN | CapKind::PROC | CapKind::FS_READ | CapKind::FS_WRITE;
+    // Spec 391: the queue's own writes are `ledger` nodes now, and `ledger` requires LEDGER. A root that
+    // does not grant it proves nothing about the queue — it proves the ledger refuses, which is the
+    // capability working, not the graph running.
+    caps.kinds =
+        CapKind::SPAWN | CapKind::PROC | CapKind::FS_READ | CapKind::FS_WRITE | CapKind::LEDGER;
     let mut argv0 = vec![String::from("/bin/sh")];
     argv0.extend(agent_binaries(bin));
     argv0.extend(criteria::programs(&BTreeMap::new()));
@@ -151,8 +156,10 @@ fn tick_row(criterion: &str, work: &str, held: bool) -> Ran {
     let mut reg = NodeRegistry::builtin();
     let env = BTreeMap::from([(String::from("OLLAMA_API_KEY"), String::from("placeholder"))]);
     let log: Arc<dyn Observer> = Arc::new(Silent);
-    reg.register(Arc::new(SelectFactory {
-        store: Arc::clone(&queue),
+    reg.register(Arc::new(LedgerFactory {
+        queue: Arc::clone(&queue),
+        memory: None,
+        heals: None,
     }));
     reg.register(Arc::new(CoderFactory::with_env(
         bin.path().to_path_buf(),
@@ -160,10 +167,6 @@ fn tick_row(criterion: &str, work: &str, held: bool) -> Ran {
         log,
     )));
     reg.register(Arc::new(JudgeFactory));
-    reg.register(Arc::new(RecordFactory {
-        store: Arc::clone(&queue),
-        memory: None,
-    }));
     let src = std::fs::read_to_string(graphs_dir().join("queue.toml")).unwrap();
     let frags = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "qcs-frags-").unwrap();
     let woven =
@@ -208,9 +211,9 @@ fn a_row_is_implemented_by_the_spec_graph() {
             .unwrap_or_else(|| panic!("{n} never started: {nodes:?}"))
     };
     assert!(
-        at("select") < at("implement__code")
-            && at("implement__code") < at("implement__verify")
-            && at("implement__verify") < at("implement__docs__docs")
+        at("select") < at("implement__method-judge__code")
+            && at("implement__method-judge__code") < at("implement__method-judge__verify")
+            && at("implement__method-judge__verify") < at("implement__docs__docs")
             && at("implement__docs__docs") < at("implement__reverify")
             && at("implement__reverify") < at("implement__done")
             && at("implement__done") < at("record"),
@@ -240,7 +243,7 @@ fn CONTROL_the_queue_runs_no_judge_of_its_own() {
     let judges: Vec<&String> = nodes.iter().filter(|n| n.contains("verify")).collect();
     assert_eq!(
         judges,
-        ["implement__verify", "implement__reverify"],
+        ["implement__method-judge__verify", "implement__reverify"],
         "the only judges are the callee's: {nodes:?}"
     );
     // The row's criterion cannot pass, so a Done row proves it was not run and that the callee's verdict decided.
@@ -277,7 +280,11 @@ fn a_refusing_callee_fails_the_row() {
     // The agent fails: the other refusal port, and the judges never run.
     let r = tick("test -f built.txt", CRASHES);
     assert!(r.started("implement__refused"), "{:?}", r.nodes());
-    assert!(!r.started("implement__verify"), "{:?}", r.nodes());
+    assert!(
+        !r.started("implement__method-judge__verify"),
+        "{:?}",
+        r.nodes()
+    );
     assert_eq!(r.item.status, ItemStatus::Parked, "{:?}", r.item);
     let reason = r.item.reason.unwrap_or_default();
     assert!(reason.contains("refused"), "names the port: {reason}");

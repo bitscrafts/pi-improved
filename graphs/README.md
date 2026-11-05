@@ -15,7 +15,7 @@ entry = "select"                # where a run begins
 exit  = "record"                # REQUIRED for a graph to be callable by another graph's `call` node
 caps  = ["spawn", "proc", "fs_read", "fs_write"]   # what the whole graph may hold
 
-[[node]] id = "select" kind = "select"             # a node: a kind plus its configuration
+[[node]] id = "select" kind = "ledger" op = "queue.claim"   # a node: a kind plus its configuration
 [[edge]] from = "select" port = "ok" to = "dispatch"   # an edge: from a node, out of a port, into a node
 ```
 

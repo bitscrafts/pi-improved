@@ -7,7 +7,7 @@ name = "queue"
 entry = "select"
 # Spec 343 R6: declared so the graph can be inlined by `call`, which routes the host on the exit node's ports.
 exit = "record"
-caps = ["spawn", "proc", "fs_read", "fs_write"]
+caps = ["spawn", "proc", "fs_read", "fs_write", "ledger"]
 
 [limits]
 # Spec 364: the called spec graph's own bound, because a call shares its host's wall (see graphs/spec.toml).
@@ -15,7 +15,8 @@ max_wall_ms = 6000000
 
 [[node]]
 id = "select"
-kind = "select"
+kind = "ledger"
+op = "queue.claim"
 
 # Spec 364: one implementation of "implement a spec". The callee's `verify` and `reverify` own the verdict, so the row's
 # own criteria are not run here. The pin is the digest of graphs/spec.toml.
@@ -23,7 +24,7 @@ kind = "select"
 id = "implement"
 kind = "call"
 graph = "spec"
-sha256 = "6642f5b2211ec22bde5a8a2f8a50619ff1b5896dcd0ec22ca42808491a114edd"
+sha256 = "c757dba429ff8b64c3b53b092f21f69d35ee28f902e7a84db9d3584da3f55483"
 # spec 362: a coder without fs_write cannot implement anything — measured 2026-11-03, the agent spawned with these caps
 # stopped and reported "no write or execute tool is available" instead of writing code.
 caps = ["spawn", "proc", "fs_read", "fs_write"]
@@ -42,7 +43,8 @@ docs_brief = "Document the work the spec named above just added. Change document
 
 [[node]]
 id = "record"
-kind = "record"
+kind = "ledger"
+op = "queue.set_status"
 # Any one verdict arrives: the callee's done, one of its refusals, or an exhausted select. These ports are exclusive.
 join = "any"
 

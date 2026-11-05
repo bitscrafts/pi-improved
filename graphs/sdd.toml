@@ -9,14 +9,14 @@ exit = "done"
 needs = ["agent", "model", "provider", "spec", "workdir", "base"]
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
+[limits]
+max_steps = 1000
+max_wall_ms = 5400000   # 1.5 h: two coders at 1.8 M each plus the four judges between them
+
 [[node]]
 id = "contract"
 kind = "judge"
 caps = ["proc"]
-
-[limits]
-max_steps = 1000
-max_wall_ms = 5400000   # 1.5 h: two coders at 1.8 M each plus the four judges between them
 spec = "$.input.spec"
 base = "$.input.base"
 workdir = "$.input.workdir"

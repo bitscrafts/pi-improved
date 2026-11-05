@@ -39,7 +39,7 @@ rules = [
 id = "sdd"
 kind = "call"
 graph = "sdd"
-sha256 = "9be2ef20a98046027601d6c3dca43fd4a1678ac544b38eafaa0e1e947ed2994e"
+sha256 = "63fba9314183c7178c3d4af99c1333fe709909ca6bb6bcf3a6b180b9bbd0dac3"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
