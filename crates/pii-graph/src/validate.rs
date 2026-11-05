@@ -183,6 +183,12 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
     let cycle = find_cycle_error(spec);
     if let Some(msg) = &cycle {
         errors.push(msg.clone());
+    } else {
+        // A BOUNDED loop is legal and silent, which is the wrong pair for an administrator editing a system
+        // graph: they need to see where the loop is and what stops it. Spec 397.
+        for note in bounded_cycles(spec) {
+            warnings.push(note);
+        }
     }
 
     // V6 statically unsatisfiable `All` join — only meaningful when the graph
@@ -304,6 +310,52 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
     } else {
         Err(errors)
     }
+}
+
+/// Every bounded cycle in `spec`, one line each: the members, and the `loop_budget` that ends it.
+fn bounded_cycles(spec: &GraphSpec) -> Vec<String> {
+    let mut g: DiGraph<(), ()> = DiGraph::new();
+    let mut indices: BTreeMap<&str, _> = BTreeMap::new();
+    for n in &spec.nodes {
+        let i = g.add_node(());
+        indices.insert(n.id.as_str(), i);
+    }
+    for e in &spec.edges {
+        if let (Some(&a), Some(&b)) = (indices.get(e.from.as_str()), indices.get(e.to.as_str())) {
+            g.add_edge(a, b, ());
+        }
+    }
+    let mut out = Vec::new();
+    for scc in tarjan_scc(&g) {
+        let nodes: Vec<&str> = scc
+            .iter()
+            .filter_map(|&i| {
+                spec.nodes
+                    .iter()
+                    .find(|n| indices.get(n.id.as_str()) == Some(&i))
+                    .map(|n| n.id.as_str())
+            })
+            .collect();
+        let is_cycle = scc.len() > 1
+            || (scc.len() == 1 && scc.first().is_some_and(|&n| g.find_edge(n, n).is_some()));
+        if !is_cycle {
+            continue;
+        }
+        let budget = nodes.iter().find_map(|id| {
+            spec.nodes
+                .iter()
+                .find(|n| n.id.as_str() == *id)
+                .and_then(|n| n.loop_budget)
+                .map(|b| (*id, b))
+        });
+        if let Some((id, b)) = budget {
+            out.push(format!(
+                "V3: cycle [{}] is bounded by loop_budget={b} on '{id}'",
+                nodes.join(", ")
+            ));
+        }
+    }
+    out
 }
 
 fn find_cycle_error(spec: &GraphSpec) -> Option<String> {
