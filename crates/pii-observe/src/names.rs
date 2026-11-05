@@ -88,6 +88,8 @@ pub const CODER_LOGS_UNREADABLE: &str = "coder.logs_unreadable";
 pub const CODER_EXITED: &str = "coder.exited";
 /// Event: the environment names a coder call was given (`names`, comma-joined; never a value) (spec 217 R3).
 pub const CODER_ENV_NAMES: &str = "coder.env.names";
+/// Event: the prompt a coder call was given, placeholders resolved (`prompt`) (spec 386 R4).
+pub const CODER_PROMPT: &str = "coder.prompt";
 /// Event: a coder call's environment was refused because a name would journal a value (spec 217 R3).
 pub const CODER_ENV_REFUSED: &str = "coder.env.refused";
 /// Event: boot recovery reaped an agent a dead daemon left (`run`, `kind`, `id`, `result`: `killed`|`already_gone`|`failed`) (spec 242).
@@ -610,6 +612,7 @@ pub const ALL: &[&str] = &[
     METRIC_MEMORY_TIER,
     METRIC_MEMORY_TIER_CHANGES_TOTAL,
     METRIC_MEMORY_ARCHIVE_OPS_TOTAL,
+    CODER_PROMPT,
 ];
 
 #[cfg(test)]

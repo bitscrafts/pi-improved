@@ -15,17 +15,33 @@ fn expr_of(value: &serde_json::Value) -> Option<&str> {
     value.as_str().filter(|s| s.starts_with("$."))
 }
 
+/// The evaluation context a designated key or a prompt placeholder resolves against.
+fn context(input: &NodeInput) -> serde_json::Value {
+    serde_json::json!({
+        "input": input.input,
+        "payload": input.payload,
+        "nodes": input.nodes,
+    })
+}
+
+/// Spec 386: the prompt the node carries, with each `{{path}}` placeholder bound to the value it resolves to. `Ok(None)` when
+/// the node carries no prompt; an error names the placeholder that resolves to nothing, so the caller refuses before anything spawns.
+pub(super) fn prompt(cfg: &serde_json::Value, input: &NodeInput) -> Result<Option<String>, String> {
+    let Some(template) = cfg.get("prompt").and_then(serde_json::Value::as_str) else {
+        return Ok(None);
+    };
+    pii_graph::expr::render(&context(input), template)
+        .map(Some)
+        .map_err(|e| format!("prompt: {e}"))
+}
+
 /// The effective config: `cfg` with each designated `$.` key resolved against `input`. The second value is the refusal
 /// reason when a required key resolves to nothing usable; the caller refuses before anything spawns.
 pub(super) fn resolve(
     cfg: &serde_json::Value,
     input: &NodeInput,
 ) -> (serde_json::Value, Option<String>) {
-    let ctx = serde_json::json!({
-        "input": input.input,
-        "payload": input.payload,
-        "nodes": input.nodes,
-    });
+    let ctx = context(input);
     let mut out = cfg.clone();
     for &key in REQUIRED.iter().chain(OPTIONAL.iter()) {
         let Some(expr) = cfg.get(key).and_then(expr_of) else {

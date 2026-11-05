@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
+use crate::expr::{PROMPT_CAP_BYTES, placeholders};
 use crate::node::NodeRegistry;
 use crate::spec::{EdgeKind, GraphSpec, JoinPolicy, NodeSpec};
 use pii_abi::NodeId;
@@ -112,6 +113,61 @@ pub fn validate(spec: &GraphSpec, reg: &NodeRegistry) -> Result<Vec<String>, Vec
                 "V10: node '{}' spawns a process and requires a positive 'timeout_ms'",
                 n.id
             ));
+        }
+    }
+
+    // V12 (spec 386): a node's `prompt` is checked at load. Only an agent node carries one; it does not share a node with
+    // `brief`; it is bounded; and each placeholder names a path the graph can supply.
+    for n in &spec.nodes {
+        let Some(prompt) = n.cfg.get("prompt") else {
+            continue;
+        };
+        // A prompt needs a CONSUMER. A model node turns it into instructions (`coder`, `agent`);
+        // a `gate` shows it to a human as the question being asked (starter/boss-watch's `escalate`).
+        // Refusing those three refused the repository's own graphs: measured 2026-11-05, V12 as first
+        // written allowed only `coder` and broke all six boss-watch tests.
+        if !matches!(n.kind.as_str(), "coder" | "agent" | "gate") {
+            errors.push(format!(
+                "V12: node '{}' carries a prompt; prompts belong to agent nodes",
+                n.id
+            ));
+            continue;
+        }
+        if n.cfg.get("brief").is_some() {
+            errors.push(format!(
+                "V12: node '{}' sets both 'prompt' and 'brief'; a node says where its instruction comes from once",
+                n.id
+            ));
+        }
+        let Some(text) = prompt.as_str() else {
+            errors.push(format!("V12: node '{}' prompt must be a string", n.id));
+            continue;
+        };
+        if text.len() > PROMPT_CAP_BYTES {
+            errors.push(format!(
+                "V12: node '{}' prompt is {} bytes; the cap is {PROMPT_CAP_BYTES}",
+                n.id,
+                text.len()
+            ));
+        }
+        match placeholders(text) {
+            Err(e) => errors.push(format!("V12: node '{}': {e}", n.id)),
+            Ok(paths) => {
+                for path in paths {
+                    let mut parts = path.split('.');
+                    let supplied = match parts.next() {
+                        Some("input" | "payload") => true,
+                        Some("nodes") => parts.next().is_some_and(|id| known.contains(id)),
+                        _ => false,
+                    };
+                    if !supplied {
+                        errors.push(format!(
+                            "V12: node '{}' placeholder '{{{{{path}}}}}' names a path the graph cannot supply",
+                            n.id
+                        ));
+                    }
+                }
+            }
         }
     }
 

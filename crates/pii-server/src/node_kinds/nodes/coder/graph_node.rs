@@ -40,7 +40,13 @@ impl GraphNode for CoderNode {
         if let Some(reason) = unresolved {
             return Ok(self.refuse(ctx, &agent, &model, &reason));
         }
-        let (spec, brief) = match (WorkerSpec::from_cfg(cfg), text(cfg, "brief")) {
+        // Spec 386: a node's prompt template, bound to the run's values, is its brief; a node has one or the other.
+        let brief = match input_cfg::prompt(cfg, input) {
+            Ok(Some(prompt)) => Some(prompt),
+            Ok(None) => text(cfg, "brief"),
+            Err(reason) => return Ok(self.refuse(ctx, &agent, &model, &reason)),
+        };
+        let (spec, brief) = match (WorkerSpec::from_cfg(cfg), brief) {
             (Ok(spec), Some(brief)) if !spec.spec.is_empty() && super::brief_is_usable(&brief) => {
                 (spec, brief)
             }
@@ -104,6 +110,11 @@ impl GraphNode for CoderNode {
             None => spec.clone(),
         };
         let prompt = prompt::brief_with_spec(&brief, &spec.spec);
+        // Spec 386 R4: the text the model is given is journalled, so "what was it told" is answered from the record.
+        self.observe(
+            ctx,
+            &Event::new("coder", Level::Info, names::CODER_PROMPT).field("prompt", prompt.clone()),
+        );
         let dispatch = match plan(&planned, &prompt, &env, "direct", self.log.as_ref()) {
             Ok(dispatch) => dispatch,
             Err(e) => return Ok(refuse_planned(ctx, &agent, &model, &format!("{e}"))),
