@@ -12,6 +12,8 @@ max_wall_ms = 600000
 id = "verify"
 kind = "judge"
 caps = ["proc"]
+# a cargo criterion needs a target dir the sandbox lets it write; the daemon names one (CARGO_TARGET_DIR)
+env = ["CARGO_TARGET_DIR"]
 spec = "$.input.spec"
 base = "$.input.base"
 workdir = "$.input.workdir"

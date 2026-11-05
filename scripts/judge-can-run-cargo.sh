@@ -30,7 +30,7 @@ probe() { # <label> <criterion>
 
 probe "cargo is on the PATH"            'command -v cargo'
 probe "cargo runs"                      'cargo --version'
-probe "/work-target is writable"        'touch /work-target/.judge-probe && rm -f /work-target/.judge-probe'
+probe "CARGO_TARGET_DIR is writable"      'touch "$CARGO_TARGET_DIR/.judge-probe" && rm -f "$CARGO_TARGET_DIR/.judge-probe"'
 probe "HOME is set"                     'test -n "$HOME"'
 probe "CARGO_TARGET_DIR is set"         'test -n "$CARGO_TARGET_DIR"'
 probe "cargo metadata (offline)"        'cd /projects/pi-improved && cargo metadata --offline --format-version 1 --no-deps >/dev/null'

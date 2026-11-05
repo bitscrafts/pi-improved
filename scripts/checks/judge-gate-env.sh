@@ -64,13 +64,18 @@ fi
 python3 - <<'PY' || bad=$((bad+1))
 import tomllib, sys, pathlib
 miss = []
-for g in ("sdd", "tdd", "method-judge", "spec"):
-    for n in tomllib.loads(pathlib.Path(f"graphs/{g}.toml").read_text()).get("node", []):
-        if n.get("kind") == "judge" and "spec" in n and "CARGO_TARGET_DIR" not in n.get("env", []):
-            miss.append(f"{g}:{n['id']}")
+seen = 0
+for f in sorted(pathlib.Path("graphs").rglob("*.toml")):
+    for n in tomllib.loads(f.read_text()).get("node", []):
+        if n.get("kind") == "judge" and "spec" in n:
+            seen += 1
+            if "CARGO_TARGET_DIR" not in n.get("env", []):
+                miss.append(f"{f.stem}:{n['id']}")
+if seen == 0:
+    print("FAIL no spec-mode judge found: the scan matched nothing, so it proves nothing"); sys.exit(1)
 if miss:
     print("FAIL these spec-mode judges do not forward CARGO_TARGET_DIR:", ", ".join(miss)); sys.exit(1)
-print("ok   every spec-mode judge forwards CARGO_TARGET_DIR")
+print(f"ok   every one of the {seen} spec-mode judges in graphs/ forwards CARGO_TARGET_DIR")
 PY
 
 echo "JUDGE-GATE-ENV: $ok ok, $bad FAIL"
