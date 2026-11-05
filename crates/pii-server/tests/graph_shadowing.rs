@@ -1,69 +1,67 @@
-//! Spec 384: a system graph never resolves to a user graph.
+//! Spec 384: the search path resolves by PRECEDENCE, and the rule is stated rather than implied.
 //!
-//! Derivation 047's first enforcement layer: the search path decides the dependency direction. A user
-//! file named like a system graph would otherwise SHADOW it under first-match, and every system graph
-//! calling `docs` by name would run user code — the one-way dependency defeated by a filename.
+//! Derivation 047's first enforcement layer is the search path: a user graph may call a system graph,
+//! never the reverse. That is a property of which dir is searched first. Refusing duplicate names at
+//! LOAD was tried and reverted — a host legitimately holds the same names in its installation and in its
+//! devbox copy, and refusing them made `spec` unable to reach `docs` and `preflight` (measured
+//! 2026-11-05: every dispatch aborted with `graph.call.not_found`). The refusal that survives is at the
+//! INSTALLER (never write a user graph over a system name) and in the CLI lint (report the shadow).
+//!
+//! These tests pin the precedence, so a later change cannot silently invert it.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+use pii_server::find_graph;
+use std::path::PathBuf;
 
-use std::path::{Path, PathBuf};
-
-use pii_server::graph_paths::find_graph;
-
-/// Scratch is rooted under the repo (`lint-scratch` refuses `temp_dir()`): the guard removes the
-/// directory on drop, so a failed assertion cannot leave a tree behind either.
-fn dir(tag: &str) -> tempfile::TempDir {
-    pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), tag).unwrap()
-}
-
-fn write(p: &Path, name: &str) {
-    std::fs::write(
-        p.join(format!("{name}.toml")),
-        format!("name = \"{name}\"\n"),
-    )
-    .unwrap();
+fn dir(name: &str, graphs: &[(&str, &str)]) -> PathBuf {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("_tmp")
+        .join(format!("shadowing-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    for (file, body) in graphs {
+        std::fs::write(root.join(format!("{file}.toml")), body).unwrap();
+    }
+    root
 }
 
 #[test]
-fn a_user_file_cannot_shadow_a_system_graph() {
-    let system = dir("shadow-sys-");
-    let user = dir("shadow-usr-");
-    write(system.path(), "docs");
-    write(user.path(), "docs");
-    let dirs: Vec<PathBuf> = vec![system.path().to_path_buf(), user.path().to_path_buf()];
-    let found = find_graph(&dirs, "docs");
-    assert!(
-        found.is_none(),
-        "a name in two search dirs must be refused, not first-matched: {found:?}"
+fn the_first_dir_wins_when_a_name_exists_in_both() {
+    let system = dir(
+        "system",
+        &[("docs", "name = \"docs\""), ("night", "name = \"night\"")],
+    );
+    let user = dir("user", &[("docs", "name = \"docs\" # the user's copy")]);
+    let dirs = vec![system.clone(), user.clone()];
+    let got = find_graph(&dirs, "docs").expect("docs resolves");
+    assert_eq!(
+        got,
+        system.join("docs.toml"),
+        "the INSTALLATION is searched first: a user copy cannot take the name"
     );
 }
 
 #[test]
 fn a_user_graph_with_its_own_name_resolves() {
-    let system = dir("shadow-sys2-");
-    let user = dir("shadow-usr2-");
-    write(system.path(), "docs");
-    write(user.path(), "my-night");
-    let dirs: Vec<PathBuf> = vec![system.path().to_path_buf(), user.path().to_path_buf()];
-    let found = find_graph(&dirs, "my-night");
-    let want = user.path().join("my-night.toml");
+    let system = dir("sys2", &[("docs", "name = \"docs\"")]);
+    let user = dir("user2", &[("my-night", "name = \"my-night\"")]);
+    let dirs = vec![system, user.clone()];
     assert_eq!(
-        found.as_deref(),
-        Some(want.as_path()),
-        "a user graph resolves"
+        find_graph(&dirs, "my-night").expect("my-night resolves"),
+        user.join("my-night.toml")
     );
 }
 
 #[test]
-fn control_a_single_copy_still_resolves() {
-    let system = dir("shadow-sys3-");
-    write(system.path(), "docs");
-    let dirs: Vec<PathBuf> = vec![system.path().to_path_buf()];
-    let found = find_graph(&dirs, "docs");
-    let want = system.path().join("docs.toml");
+fn CONTROL_a_name_in_no_dir_resolves_to_nothing() {
+    let system = dir("sys3", &[("docs", "name = \"docs\"")]);
+    assert!(find_graph(&[system], "nowhere").is_none());
+}
+
+#[test]
+fn CONTROL_one_copy_is_not_ambiguous() {
+    let only = dir("only", &[("docs", "name = \"docs\"")]);
     assert_eq!(
-        found.as_deref(),
-        Some(want.as_path()),
-        "one copy is not a shadow"
+        find_graph(&[only.clone()], "docs").expect("resolves"),
+        only.join("docs.toml")
     );
 }

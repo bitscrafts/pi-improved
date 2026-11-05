@@ -41,23 +41,20 @@ pub fn graph_search_dirs(primary: &std::path::Path, store_path: &std::path::Path
     dirs
 }
 
-/// The graph file a name resolves to, or `None` when the name is ambiguous.
+/// The graph file a name resolves to: the first search dir that holds `<name>.toml`.
 ///
-/// Spec 384 (derivation 047's first enforcement layer): a user graph may call a system graph, never the
-/// reverse — and the search path is what decides that. First-match silently defeats it: a user file named
-/// like a system graph would win by being found first. So a name present in MORE THAN ONE search dir is
-/// refused rather than resolved, and the caller reports which dirs disagree.
+/// PRECEDENCE, stated instead of implied: the primary dir (the installation) wins over the dir beside
+/// the store, which wins over the state dir under `$HOME`. Spec 384 wanted a user graph refused rather
+/// than shadowing, and refusing at LOAD was the wrong seam: a host legitimately holds the same names in
+/// its installation and in its devbox copy, and a loader that treats every duplicate as ambiguous refused
+/// `docs` and `preflight` for `spec` (measured 2026-11-05: every dispatch aborted with
+/// `graph.call.not_found`). Shadowing is therefore reported by the CLI lint, where a human reads it, and
+/// the installer refuses to write a user graph over a system name.
 #[must_use]
 pub fn find_graph(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
-    let hits: Vec<PathBuf> = dirs
-        .iter()
+    dirs.iter()
         .map(|d| d.join(format!("{name}.toml")))
-        .filter(|p| p.is_file())
-        .collect();
-    match hits.as_slice() {
-        [one] => Some(one.clone()),
-        _ => None,
-    }
+        .find(|p| p.is_file())
 }
 
 /// The refusal for a name no search dir holds: every dir searched, and how many graphs it holds.
