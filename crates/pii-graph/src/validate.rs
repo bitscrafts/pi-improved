@@ -336,9 +336,8 @@ fn bounded_cycles(spec: &GraphSpec) -> Vec<String> {
                     .map(|n| n.id.as_str())
             })
             .collect();
-        let is_cycle = scc.len() > 1
-            || (scc.len() == 1 && scc.first().is_some_and(|&n| g.find_edge(n, n).is_some()));
-        if !is_cycle {
+        let self_edge = scc.len() == 1 && scc.first().is_some_and(|&n| g.find_edge(n, n).is_some());
+        if scc.len() < 2 && !self_edge {
             continue;
         }
         let budget = nodes.iter().find_map(|id| {

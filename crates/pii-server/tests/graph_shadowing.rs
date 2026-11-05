@@ -34,7 +34,7 @@ fn the_first_dir_wins_when_a_name_exists_in_both() {
         &[("docs", "name = \"docs\""), ("night", "name = \"night\"")],
     );
     let user = dir("user", &[("docs", "name = \"docs\" # the user's copy")]);
-    let dirs = vec![system.clone(), user.clone()];
+    let dirs = vec![system.clone(), user];
     let got = find_graph(&dirs, "docs").expect("docs resolves");
     assert_eq!(
         got,
@@ -54,17 +54,19 @@ fn a_user_graph_with_its_own_name_resolves() {
     );
 }
 
+// CONTROL for the first-dir rule: a name NOBODY has must still resolve to nothing.
 #[test]
-fn CONTROL_a_name_in_no_dir_resolves_to_nothing() {
+fn a_name_in_no_dir_resolves_to_nothing() {
     let system = dir("sys3", &[("docs", "name = \"docs\"")]);
     assert!(find_graph(&[system], "nowhere").is_none());
 }
 
+// CONTROL for the shadowing rule: ONE copy is not a shadow, so it must resolve normally.
 #[test]
-fn CONTROL_one_copy_is_not_ambiguous() {
+fn one_copy_is_not_ambiguous() {
     let only = dir("only", &[("docs", "name = \"docs\"")]);
     assert_eq!(
-        find_graph(&[only.clone()], "docs").expect("resolves"),
+        find_graph(std::slice::from_ref(&only), "docs").expect("resolves"),
         only.join("docs.toml")
     );
 }

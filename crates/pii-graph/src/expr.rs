@@ -38,11 +38,11 @@ pub enum Expr {
     /// A name bound by an earlier `let`.
     Var(String),
     /// `length(x)` — characters in a string.
-    Len(Box<Expr>),
+    Len(Box<Self>),
     /// `a + b` — integers add, strings concatenate, nothing else mixes.
-    Add(Box<Expr>, Box<Expr>),
+    Add(Box<Self>, Box<Self>),
     /// `a == b`, `a != b`, `a < b`, `a > b` — produces a boolean.
-    Cmp(CmpOp, Box<Expr>, Box<Expr>),
+    Cmp(CmpOp, Box<Self>, Box<Self>),
 }
 
 /// The four comparisons the language has.
@@ -61,10 +61,10 @@ pub enum CmpOp {
 impl CmpOp {
     fn as_str(self) -> &'static str {
         match self {
-            CmpOp::Eq => "==",
-            CmpOp::Ne => "!=",
-            CmpOp::Lt => "<",
-            CmpOp::Gt => ">",
+            Self::Eq => "==",
+            Self::Ne => "!=",
+            Self::Lt => "<",
+            Self::Gt => ">",
         }
     }
 }
@@ -99,13 +99,13 @@ impl Expr {
 
     fn collect_names<'a>(&'a self, out: &mut Vec<&'a str>) {
         match self {
-            Expr::Var(n) => out.push(n),
-            Expr::Len(e) => e.collect_names(out),
-            Expr::Add(a, b) | Expr::Cmp(_, a, b) => {
+            Self::Var(n) => out.push(n),
+            Self::Len(e) => e.collect_names(out),
+            Self::Add(a, b) | Self::Cmp(_, a, b) => {
                 a.collect_names(out);
                 b.collect_names(out);
             }
-            Expr::Path(_) | Expr::Int(_) | Expr::Str(_) => {}
+            Self::Path(_) | Self::Int(_) | Self::Str(_) => {}
         }
     }
 
@@ -116,7 +116,7 @@ impl Expr {
     /// mismatch, or an integer overflow.
     pub fn eval(&self, ctx: &Value) -> Result<Value, PiiError> {
         match self {
-            Expr::Path(path) => {
+            Self::Path(path) => {
                 let mut cur = ctx;
                 for key in path.split('.') {
                     cur = match cur.get(key) {
@@ -126,22 +126,27 @@ impl Expr {
                 }
                 refuse_float(cur)
             }
-            Expr::Int(i) => Ok(Value::from(*i)),
-            Expr::Str(s) => Ok(Value::from(s.clone())),
-            Expr::Var(name) => {
+            Self::Int(i) => Ok(Value::from(*i)),
+            Self::Str(s) => Ok(Value::from(s.clone())),
+            Self::Var(name) => {
                 let v = ctx.get(name).ok_or_else(|| {
                     PiiError::Invalid(format!("name '{name}' is not bound in this transform"))
                 })?;
                 refuse_float(v)
             }
-            Expr::Len(inner) => match inner.eval(ctx)? {
-                Value::String(s) => Ok(Value::from(s.chars().count() as i64)),
+            Self::Len(inner) => match inner.eval(ctx)? {
+                Value::String(s) => {
+                    let n = i64::try_from(s.chars().count()).map_err(|_| {
+                        PiiError::Invalid("length() does not fit in an integer".into())
+                    })?;
+                    Ok(Value::from(n))
+                }
                 other => Err(PiiError::Invalid(format!(
                     "length() takes a string, got {}",
                     kind_of(&other)
                 ))),
             },
-            Expr::Add(a, b) => match (a.eval(ctx)?, b.eval(ctx)?) {
+            Self::Add(a, b) => match (a.eval(ctx)?, b.eval(ctx)?) {
                 (Value::Number(x), Value::Number(y)) => {
                     let (Some(x), Some(y)) = (x.as_i64(), y.as_i64()) else {
                         return Err(PiiError::Invalid("'+' on integers only".into()));
@@ -157,7 +162,7 @@ impl Expr {
                     kind_of(&y)
                 ))),
             },
-            Expr::Cmp(op, a, b) => {
+            Self::Cmp(op, a, b) => {
                 let (x, y) = (a.eval(ctx)?, b.eval(ctx)?);
                 let truth = match (*op, &x, &y) {
                     (CmpOp::Eq, _, _) => x == y,
@@ -194,12 +199,13 @@ impl Expr {
 /// A float is refused wherever a value is read: rounding is a silent decision, and a graph must not make
 /// one on the operator's behalf.
 fn refuse_float(v: &Value) -> Result<Value, PiiError> {
-    if let Value::Number(n) = v {
-        if n.as_i64().is_none() && n.as_f64().is_some() {
-            return Err(PiiError::Invalid(format!(
-                "float values are not supported here: {n} — use an integer"
-            )));
-        }
+    if let Value::Number(n) = v
+        && n.as_i64().is_none()
+        && n.as_f64().is_some()
+    {
+        return Err(PiiError::Invalid(format!(
+            "float values are not supported here: {n} — use an integer"
+        )));
     }
     Ok(v.clone())
 }
@@ -287,68 +293,9 @@ impl Parser<'_> {
         self.ws();
         match self.peek() {
             None => Err(self.err("it ends where a value is expected")),
-            Some('$') => {
-                if !self.take("$.") {
-                    return Err(self.err("'$' must be followed by a path"));
-                }
-                let start = self.at;
-                // '-' too: node ids carry it (`method-judge`, `self-improve`), and a path grammar that
-                // stops at the hyphen sends `$.nodes.implement__method-judge__in__agent` to the error arm —
-                // which `require` reads as a MISSING KEY and refuses the whole callee.
-                while matches!(self.peek(), Some(c) if c.is_alphanumeric() || c == '_' || c == '.' || c == '-')
-                {
-                    self.at += 1;
-                }
-                if self.at == start {
-                    return Err(self.err("'$.' must name at least one key"));
-                }
-                Ok(Expr::Path(
-                    self.from(start)
-                        .iter()
-                        .take(self.at.saturating_sub(start))
-                        .collect(),
-                ))
-            }
-            Some('"') => {
-                self.at += 1;
-                let mut s = String::new();
-                loop {
-                    match self.peek() {
-                        None => return Err(self.err("unterminated string")),
-                        Some('"') => {
-                            self.at += 1;
-                            break;
-                        }
-                        Some('\\') => {
-                            self.at += 1;
-                            match self.peek() {
-                                Some('"') => s.push('"'),
-                                Some('\\') => s.push('\\'),
-                                Some('n') => s.push('\n'),
-                                Some(other) => {
-                                    s.push('\\');
-                                    s.push(other);
-                                }
-                                None => return Err(self.err("unterminated escape")),
-                            }
-                            self.at += 1;
-                        }
-                        Some(c) => {
-                            s.push(c);
-                            self.at += 1;
-                        }
-                    }
-                }
-                Ok(Expr::Str(s))
-            }
-            Some('(') => {
-                self.at += 1;
-                let e = self.expr()?;
-                if !self.take(")") {
-                    return Err(self.err("'(' is never closed"));
-                }
-                Ok(e)
-            }
+            Some('$') => self.path(),
+            Some('"') => self.string(),
+            Some('(') => self.paren(),
             Some(c) if c.is_ascii_digit() => {
                 let start = self.at;
                 while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
@@ -392,6 +339,72 @@ impl Parser<'_> {
             }
             Some(c) => Err(self.err(&format!("'{c}' cannot start a value"))),
         }
+    }
+    /// `$.a.b` — a path into the evaluation context. '-' is part of a key: graph ids carry it.
+    fn path(&mut self) -> Result<Expr, PiiError> {
+        if !self.take("$.") {
+            return Err(self.err("'$' must be followed by a path"));
+        }
+        let start = self.at;
+        // '-' too: node ids carry it (`method-judge`, `self-improve`), and a path grammar that
+        // stops at the hyphen sends `$.nodes.implement__method-judge__in__agent` to the error arm —
+        // which `require` reads as a MISSING KEY and refuses the whole callee.
+        while matches!(self.peek(), Some(c) if c.is_alphanumeric() || c == '_' || c == '.' || c == '-')
+        {
+            self.at += 1;
+        }
+        if self.at == start {
+            return Err(self.err("'$.' must name at least one key"));
+        }
+        Ok(Expr::Path(
+            self.from(start)
+                .iter()
+                .take(self.at.saturating_sub(start))
+                .collect(),
+        ))
+    }
+
+    /// A double-quoted string literal, with `\"`, `\\` and `\n` escapes.
+    fn string(&mut self) -> Result<Expr, PiiError> {
+        self.at += 1;
+        let mut s = String::new();
+        loop {
+            match self.peek() {
+                None => return Err(self.err("unterminated string")),
+                Some('"') => {
+                    self.at += 1;
+                    break;
+                }
+                Some('\\') => {
+                    self.at += 1;
+                    match self.peek() {
+                        Some('"') => s.push('"'),
+                        Some('\\') => s.push('\\'),
+                        Some('n') => s.push('\n'),
+                        Some(other) => {
+                            s.push('\\');
+                            s.push(other);
+                        }
+                        None => return Err(self.err("unterminated escape")),
+                    }
+                    self.at += 1;
+                }
+                Some(c) => {
+                    s.push(c);
+                    self.at += 1;
+                }
+            }
+        }
+        Ok(Expr::Str(s))
+    }
+    /// `( expr )` — grouping, so a comparison can be an operand.
+    fn paren(&mut self) -> Result<Expr, PiiError> {
+        self.at += 1;
+        let e = self.expr()?;
+        if !self.take(")") {
+            return Err(self.err("'(' is never closed"));
+        }
+        Ok(e)
     }
 }
 
