@@ -29,3 +29,4 @@ crates/pii-cli/src/cmd_graph_installed/edit.rs  # pii graph list/show/explain/ed
 crates/pii-cli/src/cmd_graph_installed/explain.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7; spec 269 adds the call line)  # 18
 crates/pii-cli/src/cmd_graph_installed/list.rs  # pii graph list/show/explain/edit print the graph audit on stdout, which is the command's product (spec 213, spec 227 R7)  # 3
 crates/pii-cli/src/cmd_project.rs  # pii project init prints the scaffold it wrote on stdout, which is the command's product (spec 225, spec 227 R7)  # 7
+crates/pii-cli/src/cmd_graph_index.rs  # `pii graph index/find` is an operator command: usage, per-file refusals, the indexed tally and the R5 counters print raw; the catalogue's answer itself is `find`'s product  # 7

@@ -97,4 +97,4 @@ reading the files was the only honest source.
 - `crates/pii-server/src/node_kinds/agent/tools.rs`
 - `crates/pii-tools/src/lib.rs`
 - `crates/pii-tools/src/memory.rs`
-- `docs/03-reference/graph-vocabulary.md`
+- `docs/03-reference/graph-vocabulary.md`- `xtask/observability-allowlist.txt`
