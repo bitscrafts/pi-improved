@@ -5,6 +5,9 @@
 #   - a budget that is not a positive number is refused before anything is dispatched.
 # Drives the REAL script with a stub cycle.sh in a scratch copy of the repo layout; nothing is dispatched or spent.
 set -u
+# The script waits for a running drain or cycle; inside the gate the cycle IS running, so a test that drives the real
+# script must say that nothing it cares about is busy (measured 2026-11-06: rc=124 on three gates of row 388).
+export PII_BUSY_PATTERN="pii-never-matches-$$" WAIT_ROUNDS=1
 cd "$(dirname "$0")/../../.." || exit 1
 OK=0; FAILS=0
 check(){ if [ "$2" = "$3" ]; then echo "ok $1"; OK=$((OK+1)); else echo "FAIL $1"; echo "  got '$2', want '$3'" >&2; FAILS=$((FAILS+1)); fi; }
