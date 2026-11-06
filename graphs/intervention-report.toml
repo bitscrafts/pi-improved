@@ -1,11 +1,11 @@
 # intervention-report.toml — document and report an intervention, AS A GRAPH.
 #
 # The rule (user, 2026-10-18): "everything is a graph". So the report is not a document someone remembers to write — it is
-# a run: recall what actually happened, have a worker turn it into a dated report, gate the report on the sections that
+# a run: recall what actually happened, have a coder turn it into a dated report, gate the report on the sections that
 # make it honest, post it, and store it so the NEXT intervention starts from evidence instead of from memory.
 #
-# Needs: a [[channel]] named "discord", and a run whose input carries `to` (the forum id) and `topic`.
-# Shape: timer → memory(recall) → worker(write) → gate → post → memory(record)
+# Needs: a [[channel]] named "discord", and a run whose input carries `to` (the forum id), `topic` and `spec`.
+# Shape: timer → recall → coder(write) → gate → post → remember(record)
 #
 # NOTE: field names below follow the digest graph's style and must be checked against the node schemas before this runs;
 # a graph that fails to load must REFUSE (176/177), not silently do nothing.
@@ -14,7 +14,12 @@ name = "intervention-report"
 description = "Turn an intervention's own events into a dated report, gate it, post it, remember it."
 entry = "start"
 exit = "post"
-caps = ["spawn", "proc", "fs_read", "post"]
+caps = ["spawn", "proc", "fs_read", "post", "memory_read", "memory_write"]
+
+[limits]
+# The coder below may take 1 800 000 ms (spec 290: a run's wall must cover its coders, or the run fails at verify with the
+# work done). The rest of the flow (recall, gate, post, remember) is seconds; 600 000 ms of headroom is generous.
+max_wall_ms = 2400000
 [[node]]
 id = "start"
 kind = "timer"
@@ -22,14 +27,16 @@ cron = "0 21 * * *"            # 18:00 local (UTC-3), end of the working day
 
 [[node]]
 id = "evidence"
-kind = "memory"
-op = "search"                  # recall the intervention's items: decisions, measurements, failures, commits
-query = "$.input.topic"
+kind = "recall"
+op = "by_name"                 # recall the intervention's items: decisions, measurements, failures, commits
+name = "$.input.topic"
 limit = 40
 
 [[node]]
 id = "write"
-kind = "worker"
+kind = "coder"
+spec = "$.input.spec"
+timeout_ms = 1800000
 
 agent = "pi"                   # free first; Claude only when the ladder escalates (spec 183)
 model = "deepseek-v4-flash"
@@ -66,10 +73,11 @@ text = "$.nodes.write.output"
 
 [[node]]
 id = "record"
-kind = "memory"
-
-op = "put"
-text = "$.nodes.write.output"
+kind = "remember"
+op = "entity"
+entity_kind = "intervention-report"
+name = "$.input.topic"
+attributes = "$.nodes.write"
 
 # edges: the loader reads [[edge]] triples named by port (spec 380).
 [[edge]]

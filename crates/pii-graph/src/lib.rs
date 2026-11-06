@@ -22,12 +22,14 @@ pub mod node;
 pub mod node_id;
 pub mod nodes;
 pub mod nodes_require;
+pub mod nodes_route;
 pub mod render;
 pub mod run;
 pub mod run_helpers;
 pub mod sched;
 pub mod sop;
 pub mod spec;
+pub mod template;
 pub mod toml_load;
 pub mod validate;
 

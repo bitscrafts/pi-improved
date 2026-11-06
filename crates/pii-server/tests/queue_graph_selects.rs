@@ -36,6 +36,8 @@ fn run_select(queue: Arc<QueueStore>) -> Terminal {
         queue,
         memory: None,
         heals: None,
+        gates: None,
+        log: None,
     }));
     // Spec 391: a graph that claims a row must DECLARE the `ledger` capability in its own header;
     // V2 checks the graph, not only the root context.

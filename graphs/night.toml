@@ -16,7 +16,7 @@
 name = "night"
 entry = "tick"
 exit = "report"
-caps = ["spawn", "proc", "post", "fs_read", "fs_write", "ledger"]
+caps = ["spawn", "proc", "post", "fs_read", "fs_write", "ledger", "net"]
 
 [limits]
 # Two drains (6 000 000 ms each: the queue's own bound) plus one fill (self-improve's 6 300 000 ms), checked before each
@@ -56,8 +56,8 @@ rules = [
 id = "fill"
 kind = "call"
 graph = "self-improve"
-sha256 = "292719d5896de52d586d47acef1aab7e2d799a6523fd9e9c9a3cb142dc8b3d58"
-caps = ["spawn", "proc", "fs_read", "fs_write", "ledger"]
+sha256 = "bd2aa0b4509477353700b2c1e57bc2921ff8216b1f1c92f7ae74c38ce6472271"
+caps = ["spawn", "proc", "fs_read", "fs_write", "ledger", "net"]
 max_entries = 12
 
 [node.in]

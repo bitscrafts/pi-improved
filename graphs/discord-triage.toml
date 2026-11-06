@@ -1,6 +1,6 @@
 # Spec 128 R3a: triage a Discord message with rules, no model. The channel ingress starts this
-# graph per message (input: text, chat, user, channel); `classify` sorts the text into
-# question | status | spec | alert | done (anything else is `chat`); `reply` posts the class back
+# graph per message (input: text, chat, user, channel); the `classify` route sorts the text into
+# question | status | spec | alert | done (anything else is `chat`); the `reply-*` node of that class posts it back
 # into the SAME thread (`to = $.input.chat`); `done` records the outcome and ends with text = ""
 # so the router's automatic reply stays silent (the post node already answered).
 #
@@ -8,43 +8,170 @@
 # the graph and the post node both hold the `post` capability. Posting twice for one run is
 # prevented by `key` (a retried step posts nothing). Never put a secret in `template`.
 name = "discord-triage"
-entry = "classify"
+entry = "normal"
 caps = ["post"]
 
 [[node]]
+id = "normal"
+kind = "transform"
+out = "lower(trim($.input.text))"
+
+# Spec 392 R2: a classifier is a route over a computed predicate. The first rule that holds wins.
+[[node]]
 id = "classify"
-kind = "classify"
-on = "$.input.text"
-default = "chat"
+kind = "route"
+on = "$.payload"
 rules = [
-  { class = "alert", prefix = ["[alert]", "alert:"], any = ["outage", "is down", "on fire", "!!"] },
-  { class = "done", prefix = ["[done]", "done:"], any = ["finished", "merged", "shipped"] },
-  { class = "spec", prefix = ["[spec]", "spec:", "spec "] },
-  { class = "status", prefix = ["[status]", "status"], any = ["progress", "how far"] },
-  { class = "question", prefix = ["[question]"], suffix = ["?"] },
+  { when = 'starts_with($.payload, "[alert]")', port = "alert" },
+  { when = 'starts_with($.payload, "alert:")', port = "alert" },
+  { when = 'contains($.payload, "outage")', port = "alert" },
+  { when = 'contains($.payload, "is down")', port = "alert" },
+  { when = 'contains($.payload, "on fire")', port = "alert" },
+  { when = 'contains($.payload, "!!")', port = "alert" },
+  { when = 'starts_with($.payload, "[done]")', port = "done" },
+  { when = 'starts_with($.payload, "done:")', port = "done" },
+  { when = 'contains($.payload, "finished")', port = "done" },
+  { when = 'contains($.payload, "merged")', port = "done" },
+  { when = 'contains($.payload, "shipped")', port = "done" },
+  { when = 'starts_with($.payload, "[spec]")', port = "spec" },
+  { when = 'starts_with($.payload, "spec:")', port = "spec" },
+  { when = 'starts_with($.payload, "spec ")', port = "spec" },
+  { when = 'starts_with($.payload, "[status]")', port = "status" },
+  { when = 'starts_with($.payload, "status")', port = "status" },
+  { when = 'contains($.payload, "progress")', port = "status" },
+  { when = 'contains($.payload, "how far")', port = "status" },
+  { when = 'starts_with($.payload, "[question]")', port = "question" },
+  { when = 'ends_with($.payload, "?")', port = "question" },
+  { port = "chat" },
 ]
 
 [[node]]
-id = "reply"
+id = "reply-alert"
 kind = "post"
 caps = ["post"]
 channel = "discord"
 to = "$.input.chat"
-template = "[${payload.class}] ${payload.text}"
+template = "[alert] ${input.text}"
+key = "triage-${run}"
+timeout_ms = 5000
+
+[[node]]
+id = "reply-done"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.chat"
+template = "[done] ${input.text}"
+key = "triage-${run}"
+timeout_ms = 5000
+
+[[node]]
+id = "reply-spec"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.chat"
+template = "[spec] ${input.text}"
+key = "triage-${run}"
+timeout_ms = 5000
+
+[[node]]
+id = "reply-status"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.chat"
+template = "[status] ${input.text}"
+key = "triage-${run}"
+timeout_ms = 5000
+
+[[node]]
+id = "reply-question"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.chat"
+template = "[question] ${input.text}"
+key = "triage-${run}"
+timeout_ms = 5000
+
+[[node]]
+id = "reply-chat"
+kind = "post"
+caps = ["post"]
+channel = "discord"
+to = "$.input.chat"
+template = "[chat] ${input.text}"
 key = "triage-${run}"
 timeout_ms = 5000
 
 [[node]]
 id = "done"
 kind = "transform"
+join = "any"
 value = { text = "", outcome = "triaged" }
 
 [[edge]]
-from = "classify"
+from = "normal"
 port = "ok"
-to = "reply"
+to = "classify"
 
 [[edge]]
-from = "reply"
+from = "classify"
+port = "alert"
+to = "reply-alert"
+
+[[edge]]
+from = "reply-alert"
+port = "ok"
+to = "done"
+
+[[edge]]
+from = "classify"
+port = "done"
+to = "reply-done"
+
+[[edge]]
+from = "reply-done"
+port = "ok"
+to = "done"
+
+[[edge]]
+from = "classify"
+port = "spec"
+to = "reply-spec"
+
+[[edge]]
+from = "reply-spec"
+port = "ok"
+to = "done"
+
+[[edge]]
+from = "classify"
+port = "status"
+to = "reply-status"
+
+[[edge]]
+from = "reply-status"
+port = "ok"
+to = "done"
+
+[[edge]]
+from = "classify"
+port = "question"
+to = "reply-question"
+
+[[edge]]
+from = "reply-question"
+port = "ok"
+to = "done"
+
+[[edge]]
+from = "classify"
+port = "chat"
+to = "reply-chat"
+
+[[edge]]
+from = "reply-chat"
 port = "ok"
 to = "done"

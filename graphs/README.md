@@ -171,12 +171,10 @@ Generated from the files; each name links to its page.
 | [starter/assistant](DOCS/starter__assistant.md) | `graphs/starter/assistant.toml` | 4 | `agent` → — | fs_read, fs_write, proc, net | sample: an assistant loop |
 | [starter/boss-watch](DOCS/starter__boss-watch.md) | `graphs/starter/boss-watch.toml` | 5 | `tick` → — | proc | sample: watch a boss process |
 | [starter/consolidate](DOCS/starter__consolidate.md) | `graphs/starter/consolidate.toml` | 3 | `tick` → — | — | sample: consolidate records |
-| [starter/crash](DOCS/starter__crash.md) | `graphs/starter/crash.toml` | 1 | `boom` → — | — | sample: a node that fails on purpose |
 | [starter/failover](DOCS/starter__failover.md) | `graphs/starter/failover.toml` | 10 | `primary` → — | fs_read, fs_write, proc | sample: fail over between paths |
 | [starter/heal-fix](DOCS/starter__heal-fix.md) | `graphs/starter/heal-fix.toml` | 11 | `probe` → — | fs_read, fs_write, proc | sample: detect then fix |
 | [starter/heal-watch](DOCS/starter__heal-watch.md) | `graphs/starter/heal-watch.toml` | 4 | `tick` → — | proc | sample: watch and heal |
 | [starter/react](DOCS/starter__react.md) | `graphs/starter/react.toml` | 3 | `agent` → — | fs_read, fs_write, proc | sample: react to a signal |
-| [starter/slow](DOCS/starter__slow.md) | `graphs/starter/slow.toml` | 2 | `wait` → — | — | sample: a slow node |
 | [starter/soak](DOCS/starter__soak.md) | `graphs/starter/soak.toml` | 1 | `step` → — | — | sample: one soak step |
 | [starter/soak_cron](DOCS/starter__soak_cron.md) | `graphs/starter/soak_cron.toml` | 2 | `tick` → — | — | sample: soak on a cron |
 | [starter/verify-fix](DOCS/starter__verify-fix.md) | `graphs/starter/verify-fix.toml` | 5 | `fix` → — | fs_read, fs_write, proc | sample: fix then verify |

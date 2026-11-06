@@ -58,7 +58,7 @@ fn the_flow_is_a_composition() {
         "the pin is the sha256 of graphs/queue.toml on disk"
     );
 
-    let mut allowed: BTreeSet<String> = ["transform", "call", "plan"]
+    let mut allowed: BTreeSet<String> = ["transform", "call", "agent", "ledger"]
         .into_iter()
         .map(str::to_owned)
         .collect();

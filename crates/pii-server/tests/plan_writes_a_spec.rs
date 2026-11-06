@@ -109,6 +109,8 @@ fn enqueue(
         queue: Arc::clone(store),
         memory: None,
         heals: None,
+        gates: None,
+        log: None,
     }
     .build(&cfg)
     .unwrap();
@@ -252,4 +254,49 @@ fn a_malformed_spec_is_refused_not_enqueued() {
         store.list_items().unwrap().is_empty(),
         "a refused spec leaves the queue unchanged"
     );
+}
+
+/// Spec 392 R3: an `agent` drafts and `ledger` op `spec.write` writes: the next free number, the fence stripped, and
+/// nothing written without a draft.
+#[test]
+fn the_write_half_of_a_planner_is_a_ledger_op() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir(root.join("specs")).unwrap();
+    std::fs::write(root.join("specs/7-older.md"), "older\n").unwrap();
+    let factory = LedgerFactory {
+        queue: Arc::new(QueueStore::open_in_memory().unwrap()),
+        memory: None,
+        heals: None,
+        gates: None,
+        log: None,
+    };
+    let node = factory
+        .build(&serde_json::json!({
+            "op": "spec.write",
+            "finding": "$.input.finding",
+            "workdir": "$.input.workdir",
+            "text": "$.payload.text",
+        }))
+        .unwrap();
+    let input = |text: &str| NodeInput {
+        input: serde_json::json!({ "finding": FINDING, "workdir": root }),
+        payload: serde_json::json!({ "text": text }),
+        nodes: serde_json::json!({}),
+    };
+    let ctx = ctx_over(root);
+
+    let refused = node.run(&ctx, &input("  ")).unwrap();
+    assert!(matches!(&refused, Outcome::Next { port, .. } if port.as_str() == "err"));
+
+    let fenced = format!("```markdown\n{HOUSE_SPEC}```\n");
+    let Outcome::Next { port, value } = node.run(&ctx, &input(&fenced)).unwrap() else {
+        panic!("spec.write took no port");
+    };
+    assert_eq!(port.as_str(), "ok");
+    let spec = value.get("spec").and_then(|s| s.as_str()).unwrap();
+    assert!(spec.starts_with("specs/8-"), "{spec}");
+    let written = std::fs::read_to_string(root.join(spec)).unwrap();
+    assert!(written.starts_with("# Spec:"), "{written}");
+    assert!(!written.contains("```"), "{written}");
 }

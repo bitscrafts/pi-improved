@@ -4,6 +4,8 @@ use crate::expr::{eval, eval_or_literal};
 use pii_abi::{NodeInput, Outcome, PiiError, PortName, ResumeKey};
 use pii_core::Ctx;
 
+pub use crate::nodes_route::RouteNode;
+
 /// Build the evaluation context object for a node:
 /// `{ "input": ..., "payload": ..., "nodes": ... }`.
 pub(crate) fn eval_ctx(input: &NodeInput) -> serde_json::Value {
@@ -192,93 +194,6 @@ impl super::GraphNode for TransformNode {
                 value: serde_json::json!({ "error": e.to_string() }),
             }),
         }
-    }
-}
-
-/// `route`: takes `on` (expr) + `rules` (array of `{eq?: any, port: string}`).
-pub struct RouteNode {
-    on: String,
-    rules: Vec<(Option<serde_json::Value>, PortName)>,
-}
-
-impl RouteNode {
-    /// Builds from cfg.
-    ///
-    /// # Errors
-    /// Returns [`PiiError::Invalid`] on a malformed config.
-    pub fn new(cfg: &serde_json::Value) -> Result<Self, PiiError> {
-        let on = cfg
-            .get("on")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| PiiError::Invalid("route requires 'on' expr string".into()))?
-            .to_string();
-        let rules = cfg
-            .get("rules")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| PiiError::Invalid("route requires a 'rules' array".into()))?;
-        let mut parsed = Vec::new();
-        for r in rules {
-            let eq = r.get("eq").cloned();
-            let port = PortName::from(
-                r.get("port")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| PiiError::Invalid("route rule missing 'port' string".into()))?,
-            );
-            parsed.push((eq, port));
-        }
-        if parsed.is_empty() {
-            return Err(PiiError::Invalid(
-                "route 'rules' must define at least one".into(),
-            ));
-        }
-        Ok(Self { on, rules: parsed })
-    }
-}
-
-/// Equality for a routing rule: strings compare trimmed, everything else compares exactly.
-///
-/// The trim is deliberate and load-bearing — a route fed by a command's stdout compares against a
-/// value that carries a trailing newline (see `RouteNode::run`).
-fn same_value(expected: &serde_json::Value, actual: &serde_json::Value) -> bool {
-    match (expected.as_str(), actual.as_str()) {
-        (Some(e), Some(a)) => e.trim() == a.trim(),
-        _ => expected == actual,
-    }
-}
-
-impl super::GraphNode for RouteNode {
-    fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        let ec = eval_ctx(input);
-        let on_val = eval(&ec, &self.on)?;
-        // The routed payload travels on the chosen port (not just `on_val`):
-        // downstream agents/gates need the WHOLE input (test stdout/stderr
-        // next to exit_code) to localize and re-route — spec F6.2's gate
-        // feeds <test output> back to the fix agent.
-        let port = self.rules.iter().find_map(|(eq, port)| match eq {
-            // A routing value is compared TRIMMED when both sides are strings. A command's stdout
-            // carries its trailing newline, and `say!` writes with `writeln!`, so an exact
-            // comparison of "nothing-stale" against "nothing-stale\n" never matched: the books
-            // graph's `nothing-to-do` port was unreachable and its coder ran on every invocation
-            // (found by the 045 review, 2026-11-04). Trimming here fixes every graph that routes
-            // on a command's output, rather than teaching each graph about newlines.
-            Some(expected) if same_value(expected, &on_val) => Some(port),
-            Some(_) => None,
-            // fallback rule (no eq)
-            None => Some(port),
-        });
-        port.map_or_else(
-            || {
-                Err(PiiError::Invalid(format!(
-                    "route: no rule matched value {on_val} and no fallback"
-                )))
-            },
-            |port| {
-                Ok(Outcome::Next {
-                    port: port.clone(),
-                    value: input.payload.clone(),
-                })
-            },
-        )
     }
 }
 
@@ -553,7 +468,7 @@ impl super::GraphNode for TimerNode {
 
 #[cfg(test)]
 mod trim_tests {
-    use super::same_value;
+    use crate::nodes_route::same_value;
     use serde_json::json;
 
     #[test]

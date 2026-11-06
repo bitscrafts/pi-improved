@@ -1,12 +1,11 @@
 # S0.3 heal-watch: every 30 min run the quality gate; a reproducible failure
 # (fails twice) writes ONE heal_attempt ledger row and suspends on a `gate`
 # node for human acknowledgement. No patching, no FS_WRITE anywhere in this
-# graph (guardrail: heal_detect is read-only detection).
+# graph (guardrail: `heal.observe` is read-only detection).
 name = "starter/heal-watch"
 entry = "tick"
-# PROC is the ONLY capability this graph needs or grants — heal_detect must
-# never receive FS_WRITE (guardrail).
-caps = ["proc"]
+# PROC runs the gate and LEDGER writes the row: the graph is never granted FS_WRITE (guardrail).
+caps = ["proc", "ledger"]
 
 [limits]
 max_steps = 1000
@@ -19,13 +18,39 @@ cron = "*/30 * * * *"
 
 [[node]]
 id = "check"
-kind = "heal_detect"
 # R3 (spec 20): `quality-gate` is NOT an xtask subcommand → `cargo xtask
-# quality-gate` prints USAGE and exits 2, so this heal_detect node recorded a
+# quality-gate` prints USAGE and exits 2, so this node recorded a
 # phantom permanent failure every 30 min. Use a real xtask subcommand:
 # reachability-check is the deterministic self-improvement gate.
+kind = "ledger"
+op = "heal.observe"
 gate = "reachability-check"
 caps = ["proc"]
+
+# Spec 392 R6: detection is a comparison. Reproducible means both runs really failed: one failure is a flake, and a
+# timeout is inconclusive, never a failure (doc 064, D2).
+[[node]]
+id = "detect"
+kind = "transform"
+expr = "$.payload.failures == 2"
+
+[[node]]
+id = "decide"
+kind = "route"
+on = "$.payload"
+rules = [
+  { eq = true, port = "detected" },
+  { port = "clear" },
+]
+
+# ONE ledger row per reproducible failure, on the detected arm only.
+[[node]]
+id = "record"
+kind = "ledger"
+op = "heal.record_run"
+signature = "$.nodes.check.signature_hash"
+gate = "$.nodes.check.gate"
+detail = "$.nodes.check.detail"
 
 [[node]]
 id = "escalate"
@@ -49,17 +74,29 @@ kind = "data"
 [[edge]]
 from = "check"
 port = "ok"
+to = "detect"
+kind = "data"
+
+[[edge]]
+from = "detect"
+port = "ok"
+to = "decide"
+kind = "data"
+
+[[edge]]
+from = "decide"
+port = "clear"
 to = "done"
 kind = "data"
 
 [[edge]]
-from = "check"
-port = "flake"
-to = "done"
-kind = "data"
-
-[[edge]]
-from = "check"
+from = "decide"
 port = "detected"
+to = "record"
+kind = "data"
+
+[[edge]]
+from = "record"
+port = "ok"
 to = "escalate"
 kind = "data"

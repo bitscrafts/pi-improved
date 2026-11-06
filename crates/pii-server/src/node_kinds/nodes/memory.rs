@@ -59,9 +59,9 @@ impl NodeFactory for MemoryFactory {
     }
 }
 
-struct ConsolidateNode {
-    store: Arc<MemStore>,
-    log: Arc<dyn pii_observe::Observer>,
+pub(super) struct ConsolidateNode {
+    pub(super) store: Arc<MemStore>,
+    pub(super) log: Arc<dyn pii_observe::Observer>,
 }
 
 impl GraphNode for ConsolidateNode {

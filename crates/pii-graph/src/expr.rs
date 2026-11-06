@@ -9,7 +9,9 @@
 //! expr    := cmp
 //! cmp     := add (("==" | "!=" | "<" | ">") add)?
 //! add     := atom ("+" atom)*
-//! atom    := "$." path | integer | "string" | name | "length(" expr ")" | "(" expr ")"
+//! atom    := "$." path | integer | "string" | name | "(" expr ")"
+//!          | ("length" | "lower" | "trim") "(" expr ")"
+//!          | ("starts_with" | "ends_with" | "contains") "(" expr "," expr ")"
 //! ```
 //!
 //! Integers and strings only. A float is refused, not rounded: a graph that silently computes 1.5 as 1
@@ -21,6 +23,8 @@
 
 use pii_abi::PiiError;
 use serde_json::Value;
+
+pub use crate::template::{placeholders, render};
 
 /// Spec 386: the largest prompt template a node may carry, in bytes.
 pub const PROMPT_CAP_BYTES: usize = 64 * 1024;
@@ -39,10 +43,34 @@ pub enum Expr {
     Var(String),
     /// `length(x)` — characters in a string.
     Len(Box<Self>),
+    /// `lower(x)`, `trim(x)` — a string computed from a string (spec 392).
+    Text(TextFn, Box<Self>),
+    /// `starts_with(s, x)`, `ends_with(s, x)`, `contains(s, x)` — produces a boolean (spec 392).
+    Has(HasFn, Box<Self>, Box<Self>),
     /// `a + b` — integers add, strings concatenate, nothing else mixes.
     Add(Box<Self>, Box<Self>),
     /// `a == b`, `a != b`, `a < b`, `a > b` — produces a boolean.
     Cmp(CmpOp, Box<Self>, Box<Self>),
+}
+
+/// The functions from a string to a string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextFn {
+    /// `lower(x)`
+    Lower,
+    /// `trim(x)`
+    Trim,
+}
+
+/// The tests of a string against a string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HasFn {
+    /// `starts_with(s, x)`
+    Prefix,
+    /// `ends_with(s, x)`
+    Suffix,
+    /// `contains(s, x)`
+    Within,
 }
 
 /// The four comparisons the language has.
@@ -100,8 +128,8 @@ impl Expr {
     fn collect_names<'a>(&'a self, out: &mut Vec<&'a str>) {
         match self {
             Self::Var(n) => out.push(n),
-            Self::Len(e) => e.collect_names(out),
-            Self::Add(a, b) | Self::Cmp(_, a, b) => {
+            Self::Len(e) | Self::Text(_, e) => e.collect_names(out),
+            Self::Add(a, b) | Self::Cmp(_, a, b) | Self::Has(_, a, b) => {
                 a.collect_names(out);
                 b.collect_names(out);
             }
@@ -146,6 +174,8 @@ impl Expr {
                     kind_of(&other)
                 ))),
             },
+            Self::Text(func, inner) => eval_text(*func, &inner.eval(ctx)?),
+            Self::Has(func, hay, needle) => eval_has(*func, &hay.eval(ctx)?, &needle.eval(ctx)?),
             Self::Add(a, b) => match (a.eval(ctx)?, b.eval(ctx)?) {
                 (Value::Number(x), Value::Number(y)) => {
                     let (Some(x), Some(y)) = (x.as_i64(), y.as_i64()) else {
@@ -330,6 +360,9 @@ impl Parser<'_> {
                     }
                     return Ok(Expr::Len(Box::new(inner)));
                 }
+                if let Some(call) = self.string_call(&name)? {
+                    return Ok(call);
+                }
                 if matches!(self.peek(), Some('.')) {
                     return Err(self.err(&format!(
                         "'{name}.' is not a path — a path starts with '$.'"
@@ -340,6 +373,39 @@ impl Parser<'_> {
             Some(c) => Err(self.err(&format!("'{c}' cannot start a value"))),
         }
     }
+    /// `lower(x)`, `trim(x)`, `starts_with(s, x)`, `ends_with(s, x)`, `contains(s, x)`: `None` when `name` is not one of them.
+    fn string_call(&mut self, name: &str) -> Result<Option<Expr>, PiiError> {
+        let text_fn = match name {
+            "lower" => Some(TextFn::Lower),
+            "trim" => Some(TextFn::Trim),
+            _ => None,
+        };
+        let has_fn = match name {
+            "starts_with" => Some(HasFn::Prefix),
+            "ends_with" => Some(HasFn::Suffix),
+            "contains" => Some(HasFn::Within),
+            _ => None,
+        };
+        if (text_fn.is_none() && has_fn.is_none()) || !self.take("(") {
+            return Ok(None);
+        }
+        let first = Box::new(self.expr()?);
+        let call = if let Some(func) = text_fn {
+            Expr::Text(func, first)
+        } else if let Some(func) = has_fn {
+            if !self.take(",") {
+                return Err(self.err(&format!("{name}( takes two values")));
+            }
+            Expr::Has(func, first, Box::new(self.expr()?))
+        } else {
+            return Ok(None);
+        };
+        if !self.take(")") {
+            return Err(self.err(&format!("{name}( is never closed")));
+        }
+        Ok(Some(call))
+    }
+
     /// `$.a.b` — a path into the evaluation context. '-' is part of a key: graph ids carry it.
     fn path(&mut self) -> Result<Expr, PiiError> {
         if !self.take("$.") {
@@ -408,6 +474,34 @@ impl Parser<'_> {
     }
 }
 
+fn eval_text(func: TextFn, value: &Value) -> Result<Value, PiiError> {
+    let Value::String(text) = value else {
+        return Err(PiiError::Invalid(format!(
+            "{func:?} takes a string, got {}",
+            kind_of(value)
+        )));
+    };
+    Ok(Value::from(match func {
+        TextFn::Lower => text.to_lowercase(),
+        TextFn::Trim => text.trim().to_owned(),
+    }))
+}
+
+fn eval_has(func: HasFn, hay: &Value, needle: &Value) -> Result<Value, PiiError> {
+    let (Value::String(hay_str), Value::String(needle_str)) = (hay, needle) else {
+        return Err(PiiError::Invalid(format!(
+            "{func:?} takes two strings, got {} and {}",
+            kind_of(hay),
+            kind_of(needle)
+        )));
+    };
+    Ok(Value::from(match func {
+        HasFn::Prefix => hay_str.starts_with(needle_str.as_str()),
+        HasFn::Suffix => hay_str.ends_with(needle_str.as_str()),
+        HasFn::Within => hay_str.contains(needle_str.as_str()),
+    }))
+}
+
 /// Evaluates `$.path.into.context` (the pre-383 form, kept for every caller that names a member).
 ///
 /// # Errors
@@ -426,57 +520,6 @@ pub fn eval_or_literal(ctx: &Value, v: &Value) -> Result<Value, PiiError> {
         Value::String(s) if s.starts_with("$.") => eval(ctx, s),
         other => Ok(other.clone()),
     }
-}
-
-/// Spec 386: the `{{path}}` placeholders of a prompt template, in order of appearance.
-///
-/// # Errors
-/// Returns [`PiiError::Invalid`] if a `{{` is never closed by `}}`.
-pub fn placeholders(template: &str) -> Result<Vec<&str>, PiiError> {
-    let mut out = Vec::new();
-    let mut rest = template;
-    while let Some(open) = rest.find("{{") {
-        let after = &rest[open + 2..];
-        let close = after
-            .find("}}")
-            .ok_or_else(|| PiiError::Invalid(format!("unclosed placeholder in '{template}'")))?;
-        out.push(after[..close].trim());
-        rest = &after[close + 2..];
-    }
-    Ok(out)
-}
-
-/// Spec 386: `template` with each `{{path}}` replaced by the value `path` resolves to in `ctx`.
-///
-/// A string value is inserted as is; any other value as its JSON text. A path that resolves to nothing is an error,
-/// never a blank.
-///
-/// # Errors
-/// Returns [`PiiError::Invalid`] on an unclosed placeholder or a path that resolves to nothing.
-pub fn render(ctx: &Value, template: &str) -> Result<String, PiiError> {
-    let mut out = String::new();
-    let mut rest = template;
-    while let Some(open) = rest.find("{{") {
-        out.push_str(&rest[..open]);
-        let after = &rest[open + 2..];
-        let close = after
-            .find("}}")
-            .ok_or_else(|| PiiError::Invalid(format!("unclosed placeholder in '{template}'")))?;
-        let path = after[..close].trim();
-        let value = eval(ctx, &format!("$.{path}"))?;
-        match value {
-            Value::Null => {
-                return Err(PiiError::Invalid(format!(
-                    "placeholder '{{{{{path}}}}}' resolved to nothing"
-                )));
-            }
-            Value::String(s) => out.push_str(&s),
-            other => out.push_str(&other.to_string()),
-        }
-        rest = &after[close + 2..];
-    }
-    out.push_str(rest);
-    Ok(out)
 }
 
 #[cfg(test)]
@@ -541,5 +584,36 @@ mod tests {
     fn a_float_literal_never_parses() {
         let err = Expr::parse("1.5 + 1").unwrap_err().to_string();
         assert!(err.contains("float"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod string_function_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn run(src: &str) -> Result<Value, PiiError> {
+        Expr::parse(src)?.eval(&json!({"text": "  Is It DOWN?  ", "n": 3}))
+    }
+
+    #[test]
+    fn the_string_functions_compute_what_a_classifier_needs() -> Result<(), PiiError> {
+        assert_eq!(run("lower(trim($.text))")?, json!("is it down?"));
+        assert_eq!(
+            run(r#"starts_with(lower(trim($.text)), "is")"#)?,
+            json!(true)
+        );
+        assert_eq!(run(r#"ends_with(trim($.text), "?")"#)?, json!(true));
+        assert_eq!(run(r#"contains($.text, "DOWN")"#)?, json!(true));
+        assert_eq!(run(r#"contains($.text, "down")"#)?, json!(false));
+        Ok(())
+    }
+
+    #[test]
+    fn a_string_function_refuses_what_is_not_a_string() {
+        assert!(run("lower($.n)").is_err());
+        assert!(run(r#"contains($.n, "3")"#).is_err());
+        assert!(Expr::parse(r"contains($.text)").is_err());
+        assert!(Expr::parse("lower($.text").is_err());
     }
 }

@@ -2,14 +2,14 @@
 # graph run on the daemon — dogfooding (008 §3/§4). Every 30 min it runs the
 # silent-noop-check gate (spec 24) on the daemon itself; a detected failure
 # escalates through a `gate` node so a human approves before anything heals.
-# No FS_WRITE anywhere in this graph (heal_detect is read-only detection; the
+# No FS_WRITE anywhere in this graph (`heal.observe` is read-only detection; the
 # gate node itself is PURE). No `agent`/model node anywhere — detection,
 # forwarding, and the approval decision are all deterministic nodes; the
 # boss's "decide what to do next with a model" is a later spec. Periodicity
 # is the daemon scheduler's timer wheel (F5.6), not an in-process loop.
 name = "starter/boss-watch"
 entry = "tick"
-caps = ["proc"]
+caps = ["proc", "ledger"]
 
 [limits]
 max_steps = 1000
@@ -22,12 +22,38 @@ cron = "*/30 * * * *"
 
 [[node]]
 id = "check"
-kind = "heal_detect"
+kind = "ledger"
+op = "heal.observe"
 gate = "silent-noop-check"
 caps = ["proc"]
 
+# Spec 392 R6: detection is a comparison. Reproducible means both runs really failed: one failure is a flake, and a
+# timeout is inconclusive, never a failure (doc 064, D2).
+[[node]]
+id = "detect"
+kind = "transform"
+expr = "$.payload.failures == 2"
+
+[[node]]
+id = "decide"
+kind = "route"
+on = "$.payload"
+rules = [
+  { eq = true, port = "detected" },
+  { port = "clear" },
+]
+
+# ONE ledger row per reproducible failure, on the detected arm only.
+[[node]]
+id = "record"
+kind = "ledger"
+op = "heal.record_run"
+signature = "$.nodes.check.signature_hash"
+gate = "$.nodes.check.gate"
+detail = "$.nodes.check.detail"
+
 # `cyc` is LOAD-BEARING (spec 26 R1, A17a): `gate` reads `input.payload.cycle`
-# at runtime. `heal_detect`'s `detected` value is `{signature_hash, detail}`
+# at runtime. `record`'s value is `{signature_hash, detail}`
 # with NO `cycle`, so without this node the gate falls back to `cfg.cycle=0`,
 # finds its cached decision, and auto-allows. `expr = "$.input"` forwards the
 # run's root input (which carries `cycle`) as the gate's payload — this is
@@ -60,27 +86,30 @@ kind = "data"
 [[edge]]
 from = "check"
 port = "ok"
+to = "detect"
+kind = "data"
+
+[[edge]]
+from = "detect"
+port = "ok"
+to = "decide"
+kind = "data"
+
+[[edge]]
+from = "decide"
+port = "clear"
 to = "done"
 kind = "data"
 
 [[edge]]
-from = "check"
-port = "flake"
-to = "done"
-kind = "data"
-
-# A timeout is INCONCLUSIVE, never a failure: the host may simply have been busy. It finishes the run with NO ledger row
-# and no escalation to a human gate (measured 2026-10-16, doc 064 D2: a two-minute cap turned a busy host into a
-# "reproducible gate failure").
-[[edge]]
-from = "check"
-port = "inconclusive"
-to = "done"
-kind = "data"
-
-[[edge]]
-from = "check"
+from = "decide"
 port = "detected"
+to = "record"
+kind = "data"
+
+[[edge]]
+from = "record"
+port = "ok"
 to = "cyc"
 kind = "data"
 

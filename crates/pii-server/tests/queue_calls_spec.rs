@@ -160,6 +160,8 @@ fn tick_row(criterion: &str, work: &str, held: bool) -> Ran {
         queue: Arc::clone(&queue),
         memory: None,
         heals: None,
+        gates: None,
+        log: None,
     }));
     reg.register(Arc::new(CoderFactory::with_env(
         bin.path().to_path_buf(),

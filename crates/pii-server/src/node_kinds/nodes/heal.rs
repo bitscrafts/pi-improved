@@ -258,6 +258,73 @@ impl GraphNode for HealDetectNode {
     }
 }
 
+/// `ledger` op `heal.observe` (spec 392 R6): runs the gate, again when it fails, and reports what it saw. It writes nothing
+/// and judges nothing: `failures` counts runs that really failed, `timeouts` counts runs that hit the time budget, and the
+/// graph's own `transform` decides what those numbers mean.
+pub(super) struct HealObserveNode {
+    pub(super) gate: String,
+    pub(super) runner: Arc<dyn GateRunner>,
+}
+
+impl GraphNode for HealObserveNode {
+    fn run(&self, ctx: &Ctx, _input: &NodeInput) -> Result<Outcome, PiiError> {
+        let mut runs = vec![self.runner.run_gate(ctx, &self.gate)?];
+        if runs.iter().any(|r| !r.pass) {
+            runs.push(self.runner.run_gate(ctx, &self.gate)?);
+        }
+        let failures = runs.iter().filter(|r| !r.pass && !r.timed_out).count();
+        let timeouts = runs.iter().filter(|r| r.timed_out).count();
+        let detail = runs
+            .iter()
+            .rev()
+            .map(|r| r.detail.as_str())
+            .find(|d| !d.is_empty())
+            .unwrap_or_default();
+        Ok(Outcome::Next {
+            port: PortName::from("ok"),
+            value: serde_json::json!({
+                "gate": self.gate,
+                "failures": failures,
+                "timeouts": timeouts,
+                "detail": detail,
+                "signature_hash": signature(&self.gate, detail),
+            }),
+        })
+    }
+}
+
+/// `ledger` op `heal.record_run` with `signature` set (spec 392 R6): writes ONE `Detected` row for what the graph judged
+/// reproducible.
+struct HealRecordDetectedNode {
+    heals: Arc<HealStore>,
+    cfg: serde_json::Value,
+}
+
+impl GraphNode for HealRecordDetectedNode {
+    fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
+        let text = |key: &str| {
+            super::plan::resolved_text(&self.cfg, input, key).ok_or_else(|| {
+                PiiError::Invalid(format!("heal.record_run: '{key}' resolved to no text"))
+            })
+        };
+        let (sig, gate, detail) = (text("signature")?, text("gate")?, text("detail")?);
+        self.heals.record_run(
+            &sig,
+            &gate,
+            HealAttemptRun {
+                run_id: ctx.trace().run.to_string(),
+                outcome: pii_store::heal::HealState::Detected,
+                ts_ms: ctx.now_ms(),
+                detail: detail.clone(),
+            },
+        )?;
+        Ok(Outcome::Next {
+            port: PortName::from("ok"),
+            value: serde_json::json!({"signature_hash": sig, "detail": detail}),
+        })
+    }
+}
+
 /// `blake3(gate, first-N bytes of failure output)` — deterministic so
 /// re-detecting the SAME failure updates the same row (S0.1).
 #[must_use]
@@ -284,6 +351,12 @@ pub(super) fn record_run(
     heals: &Arc<HealStore>,
     cfg: &serde_json::Value,
 ) -> Result<Box<dyn GraphNode>, PiiError> {
+    if cfg.get("signature").is_some() {
+        return Ok(Box::new(HealRecordDetectedNode {
+            heals: Arc::clone(heals),
+            cfg: cfg.clone(),
+        }));
+    }
     let gate_before = cfg
         .get("gate_before")
         .and_then(serde_json::Value::as_str)

@@ -51,6 +51,7 @@ fn test_node(provider: Arc<RecordingProvider>) -> AgentNode {
     AgentNode {
         tier: None,
         system: String::from("You are pii."),
+        prompt: None,
         route_step: None,
         max_turns: 4,
         model: None,
@@ -131,6 +132,7 @@ fn provider_failure_with_context_overflow_routes_to_fail() {
     let node = AgentNode {
         tier: None,
         system: String::from("You are pii."),
+        prompt: None,
         route_step: None,
         max_turns: 4,
         model: None,
@@ -173,6 +175,7 @@ fn provider_failure_5xx_routes_to_fail_after_retry_exhausted() {
     let node = AgentNode {
         tier: None,
         system: String::from("You are pii."),
+        prompt: None,
         route_step: None,
         max_turns: 4,
         model: None,
@@ -208,6 +211,7 @@ fn non_provider_error_still_routes_to_err() {
     let node = AgentNode {
         tier: None,
         system: String::from("You are pii."),
+        prompt: None,
         route_step: None,
         max_turns: 4,
         model: None,
@@ -495,6 +499,7 @@ fn agent_emits_assistant_delta() {
     let node = AgentNode {
         tier: None,
         system: String::from("You are pii."),
+        prompt: None,
         route_step: None,
         max_turns: 4,
         model: None,
@@ -575,6 +580,7 @@ fn agent_streaming_uses_session_from_input() {
     let node = AgentNode {
         tier: None,
         system: String::from("You are pii."),
+        prompt: None,
         route_step: None,
         max_turns: 4,
         model: None,
@@ -718,6 +724,7 @@ fn memorize_marker_is_written_and_stripped() {
     let node = AgentNode {
         tier: None,
         system: String::from("You are pii."),
+        prompt: None,
         route_step: None,
         max_turns: 4,
         model: None,

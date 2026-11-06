@@ -35,6 +35,8 @@ fn run_select(queue: Arc<QueueStore>) -> Terminal {
         queue,
         memory: None,
         heals: None,
+        gates: None,
+        log: None,
     }));
     // Spec 391: the node declares what it touches. A graph that claims a row needs the `ledger`
     // capability declared in its own header — V2 checks the graph's caps, not only the root context.

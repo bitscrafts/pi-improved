@@ -12,7 +12,7 @@ if [ -d "$T" ]; then
     mv "$T" "$T.old-$(date +%s)"
 fi
 mkdir -p "$T/graphs/starter"
-cp graphs/starter/slow.toml "$T/graphs/starter/slow.toml"
+cp crates/pii-graph/tests/fixtures/slow.toml "$T/graphs/starter/slow.toml"
 
 export PII_RUNTIME_DIR="$PWD/$T/rt"
 export PII_MODEL="scripted:fixtures/phase3/model/assistant.json"
@@ -20,7 +20,7 @@ export PII_MODEL="scripted:fixtures/phase3/model/assistant.json"
 "$PII" daemon --sandbox off --store "$PWD/$T/store.redb" >"$T/daemon.log" 2>&1 &
 DPID=$!
 mkdir -p "$PII_RUNTIME_DIR/graphs/starter"
-cp graphs/starter/slow.toml "$PII_RUNTIME_DIR/graphs/starter/slow.toml"
+cp crates/pii-graph/tests/fixtures/slow.toml "$PII_RUNTIME_DIR/graphs/starter/slow.toml"
 
 for _ in $(seq 1 100); do
     [ -e "$PII_RUNTIME_DIR/control.sock" ] && break

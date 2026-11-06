@@ -59,6 +59,8 @@ fn tick(queue: Arc<QueueStore>, memory: Arc<MemStore>, bin: &Path, workdir: &Pat
         queue,
         memory: Some(memory),
         heals: None,
+        gates: None,
+        log: None,
     }));
     reg.register(Arc::new(CoderFactory::with_env(
         bin.to_path_buf(),

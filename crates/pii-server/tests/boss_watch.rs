@@ -50,6 +50,7 @@ use pii_graph::spec::GraphSpec;
 use pii_server::daemon::approvals;
 use pii_server::node_kinds::nodes::gate::approval_id;
 use pii_server::node_kinds::nodes::heal::{GateResult, GateRunner, HealFactory};
+use pii_server::node_kinds::nodes::ledger::LedgerFactory;
 use pii_server::{Engine, EngineConfig};
 use pii_tools::sandbox::SandboxProfileName;
 
@@ -146,11 +147,20 @@ fn engine_with_stub_at(
     let engine = engine_in_at(dir, graph_dir);
     let mut engine =
         Arc::try_unwrap(engine).unwrap_or_else(|_| panic!("engine has unexpected extra refs"));
+    let runner: Arc<dyn GateRunner> = Arc::new(StubRunner {
+        results: Mutex::new(results),
+    });
     engine.reg.register(Arc::new(HealFactory {
         heals: Arc::clone(&engine.heals),
-        runner: Arc::new(StubRunner {
-            results: Mutex::new(results),
-        }),
+        runner: Arc::clone(&runner),
+    }));
+    // Spec 392 R6: the real graphs observe through `ledger`, so it holds the same stub.
+    engine.reg.register(Arc::new(LedgerFactory {
+        queue: Arc::clone(&engine.queue),
+        memory: None,
+        heals: Some(Arc::clone(&engine.heals)),
+        gates: Some(runner),
+        log: None,
     }));
     Arc::new(engine)
 }
@@ -348,13 +358,13 @@ fn boss_watch_validates_on_daemon_registry() {
     }
 }
 
-/// R5: the kind set is a subset of `{timer, heal_detect, transform, gate}`.
+/// R5: the kind set is a subset of `{timer, ledger, transform, route, gate}`: no model node, and detection is deterministic.
 #[test]
 fn boss_watch_no_model_node() {
     let dir = scratch(&format!("nomodel-{}", std::process::id()));
     let engine = engine_in(&dir);
     let spec = engine.load_spec("starter/boss-watch").unwrap();
-    let allowed = ["timer", "heal_detect", "transform", "gate"];
+    let allowed = ["timer", "ledger", "transform", "route", "gate"];
     for n in &spec.nodes {
         assert!(
             allowed.contains(&n.kind.as_str()),
@@ -1099,6 +1109,70 @@ fn heal_detect_routes_on_recorded_verdicts_and_spawns_nothing() {
             heals.list_attempts().unwrap().len(),
             usize::from(want == "detected"),
             "{name}: ledger rows"
+        );
+    }
+}
+
+/// Spec 392 R6: `heal.observe` writes nothing and reports the counts the graph's `detect` compares. Only two real failures
+/// are `failures == 2`: a flake and a timeout are not, which is what keeps them from a ledger row and a human gate.
+#[test]
+fn heal_observe_counts_what_the_detector_compares() {
+    use pii_graph::node::NodeFactory as _;
+
+    let pass = || GateResult {
+        pass: true,
+        detail: String::new(),
+        timed_out: false,
+    };
+    let timeout = || GateResult {
+        pass: false,
+        detail: String::from("timeout"),
+        timed_out: true,
+    };
+    let cases = [
+        ("green", vec![pass()], 0, 0),
+        ("flake", vec![fail("boom"), pass()], 1, 0),
+        ("reproduced", vec![fail("boom"), fail("boom")], 2, 0),
+        ("timeout second", vec![fail("boom"), timeout()], 1, 1),
+        ("timeout first", vec![timeout(), pass()], 0, 1),
+    ];
+    for (name, results, failures, timeouts) in cases {
+        let heals = Arc::new(pii_store::heal::HealStore::open_in_memory().unwrap());
+        let factory = LedgerFactory {
+            queue: Arc::new(pii_store::queue::QueueStore::open_in_memory().unwrap()),
+            memory: None,
+            heals: Some(Arc::clone(&heals)),
+            gates: Some(Arc::new(StubRunner {
+                results: Mutex::new(results),
+            })),
+            log: None,
+        };
+        let node = factory
+            .build(&serde_json::json!({"op": "heal.observe", "gate": "g"}))
+            .unwrap();
+        let input = pii_abi::NodeInput {
+            input: serde_json::Value::Null,
+            payload: serde_json::Value::Null,
+            nodes: serde_json::json!({}),
+        };
+        let ctx = Ctx::root(CapSet::empty(), Budget::unlimited());
+        let pii_abi::Outcome::Next { port, value } = node.run(&ctx, &input).unwrap() else {
+            panic!("{name}: the observation did not take a port");
+        };
+        assert_eq!(port.as_str(), "ok", "{name}");
+        assert_eq!(
+            value.get("failures"),
+            Some(&serde_json::json!(failures)),
+            "{name}: failures in {value}"
+        );
+        assert_eq!(
+            value.get("timeouts"),
+            Some(&serde_json::json!(timeouts)),
+            "{name}: timeouts in {value}"
+        );
+        assert!(
+            heals.list_attempts().unwrap().is_empty(),
+            "{name}: wrote a row"
         );
     }
 }

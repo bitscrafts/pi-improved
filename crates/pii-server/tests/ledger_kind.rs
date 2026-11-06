@@ -89,6 +89,8 @@ fn CONTROL_a_graph_with_the_bit_claims_once() {
         queue: Arc::clone(&queue),
         memory: None,
         heals: None,
+        gates: None,
+        log: None,
     }
     .build(&serde_json::json!({ "op": "queue.claim" }))
     .unwrap();

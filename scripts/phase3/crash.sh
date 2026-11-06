@@ -12,12 +12,12 @@ if [ -d "$T" ]; then
     mv "$T" "$T.old-$(date +%s)"
 fi
 mkdir -p "$T/graphs/starter"
-cp graphs/starter/crash.toml "$T/graphs/starter/crash.toml"
+cp crates/pii-graph/tests/fixtures/crash.toml "$T/graphs/starter/crash.toml"
 
 export PII_RUNTIME_DIR="$PWD/$T/rt"
 export PII_MODEL="scripted:fixtures/phase3/model/assistant.json"
 mkdir -p "$PII_RUNTIME_DIR/graphs/starter"
-cp graphs/starter/crash.toml "$PII_RUNTIME_DIR/graphs/starter/crash.toml"
+cp crates/pii-graph/tests/fixtures/crash.toml "$PII_RUNTIME_DIR/graphs/starter/crash.toml"
 
 "$PII" daemon --sandbox off --store "$PWD/$T/store.redb" >"$T/daemon.log" 2>&1 &
 DPID=$!

@@ -303,7 +303,7 @@ async fn a_message_is_classified_by_rules_and_posted_back_into_its_thread() {
         println!("JOURNAL {rid}: {part}");
     }
     assert!(
-        text.contains("\"class\"") && text.contains("\"bytes\""),
+        text.contains("reply-") && text.contains("\"bytes\""),
         "{text}"
     );
     assert!(

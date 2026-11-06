@@ -1,5 +1,6 @@
 name = "starter/consolidate"
 entry = "tick"
+caps = ["ledger"]
 
 [limits]
 max_steps = 1000
@@ -14,8 +15,8 @@ cron = "*/15 * * * *"
 
 [[node]]
 id = "run"
-kind = "memory"
-op = "consolidate"
+kind = "ledger"
+op = "memory.consolidate"
 
 [[node]]
 id = "done"

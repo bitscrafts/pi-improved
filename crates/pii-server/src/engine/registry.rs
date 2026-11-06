@@ -101,12 +101,16 @@ pub fn register_queue_nodes(
     store: Arc<pii_store::queue::QueueStore>,
     memory: Option<Arc<pii_store::MemStore>>,
     heals: Option<Arc<pii_store::heal::HealStore>>,
+    gates: Option<Arc<dyn nodes::heal::GateRunner>>,
+    log: Option<Arc<dyn pii_observe::Observer>>,
 ) {
     reg.register(Arc::new(nodes::queue::JudgeFactory));
     reg.register(Arc::new(nodes::ledger::LedgerFactory {
         queue: store,
         memory,
         heals,
+        gates,
+        log,
     }));
     for retired in nodes::ledger::retired_kinds() {
         reg.register(retired);
@@ -183,7 +187,7 @@ fn register_lint_queue_nodes(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe::
             let heals = pii_store::heal::HealStore::open_in_memory()
                 .ok()
                 .map(Arc::new);
-            register_queue_nodes(reg, Arc::new(queue), None, heals);
+            register_queue_nodes(reg, Arc::new(queue), None, heals, None, None);
         }
         Err(e) => store_unavailable(log, "queue", &e),
     }

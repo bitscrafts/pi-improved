@@ -21,7 +21,7 @@ export PII_DISCORD_CHANNEL_ID=123456789
 export PII_DISCORD_API_BASE="http://127.0.0.1:1" # unreachable: never contacted
 
 mkdir -p "$PII_RUNTIME_DIR/graphs/starter"
-cp graphs/starter/slow.toml "$PII_RUNTIME_DIR/graphs/starter/slow.toml"
+cp crates/pii-graph/tests/fixtures/slow.toml "$PII_RUNTIME_DIR/graphs/starter/slow.toml"
 
 "$PII" daemon --sandbox off --store "$PWD/$T/store.redb" >"$T/daemon.log" 2>&1 &
 DPID=$!

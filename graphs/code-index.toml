@@ -5,14 +5,14 @@
 #
 # PRODUCTION-DEPENDENCY NOTE (user rule 2026-10-19: companion scripts are fine in DEVELOPMENT, but production must be
 # reviewed for them). This graph is the PRODUCTION form: it calls the VERB `pii index code`, never a script.
-#   · until spec 204 lands that verb, this graph must NOT be installed on the host: the worker brief below would fail, and a
+#   · until spec 204 lands that verb, this graph must NOT be installed on the host: the coder brief below would fail, and a
 #     graph that cannot run is worse than an absent graph.
 #   · the dev-time equivalent is a script run by hand (scripts are dev-only and never shipped: the installer builds three
 #     binaries from a clean export).
 # Measured before writing: entities=1415 in memory.redb from a python indexer, relationships=0 — because `pii memory link`
 # accepts no arguments in this build, so nothing connects a module to its symbols and the graph lane stays inactive.
 #
-# Shape: timer → index(worker) → gate(entities>0 and relationships>0?) → memory(record)
+# Shape: timer → index(coder) → gate(entities>0 and relationships>0?) → remember(record)
 # NOTE: field names mirror the digest and intervention-report graphs; a graph that fails to load must REFUSE (176/177).
 
 name = "code-index"
@@ -27,7 +27,9 @@ cron = "0 3 * * *"                 # 00:00 local (UTC-3): the idle window, when 
 
 [[node]]
 id = "index"
-kind = "worker"
+kind = "coder"
+spec = "specs/204-the-index-is-a-pii-verb-not-a-script.md"
+timeout_ms = 600000
 
 agent = "claude"
 model = "claude-haiku-5-5"         # mechanical work: run the indexer, report counts. No judgement needed.
@@ -57,11 +59,11 @@ A report claiming the codebase is indexed while relationships=0 is FALSE and mus
 
 [[node]]
 id = "record"
-kind = "memory"
-
-op = "put"
-text = "$.nodes.index.output"      # the snapshot becomes knowledge the next run can diff against
-kind_tag = "code-index"
+kind = "remember"
+op = "entity"
+entity_kind = "code-index"
+name = "snapshot"
+attributes = "$.nodes.index"    # the snapshot becomes knowledge the next run can diff against
 
 # edges: the loader reads [[edge]] triples named by port (spec 380).
 [[edge]]

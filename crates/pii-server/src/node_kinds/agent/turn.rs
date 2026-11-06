@@ -78,11 +78,21 @@ impl GraphNode for AgentNode {
                 model: self.model.clone().unwrap_or_default(),
             });
         }
-        let user_text = input
-            .payload
-            .get("prompt")
-            .and_then(|p| p.as_str())
-            .map_or_else(|| input.payload.to_string(), str::to_owned);
+        let user_text = match &self.prompt {
+            Some(template) => {
+                let ctx = serde_json::json!({
+                    "input": input.input,
+                    "payload": input.payload,
+                    "nodes": input.nodes,
+                });
+                pii_graph::expr::render(&ctx, template)?
+            }
+            None => input
+                .payload
+                .get("prompt")
+                .and_then(|p| p.as_str())
+                .map_or_else(|| input.payload.to_string(), str::to_owned),
+        };
         let mut messages = vec![ChatMessage::new(Role::System, &self.system)];
         messages.extend(history_messages(&input.payload));
         // G1 (spec 09 v2): inject relevant global memory as a labeled system

@@ -152,7 +152,9 @@ fn with_wall(src: &str, ms: Option<u64>) -> String {
                 out.push_str(line);
                 out.push('\n');
                 if line.starts_with("max_micro_usd = ") {
-                    out.push_str(&format!("max_wall_ms = {ms}\n"));
+                    out.push_str("max_wall_ms = ");
+                    out.push_str(&ms.to_string());
+                    out.push('\n');
                 }
             }
             out

@@ -142,11 +142,6 @@ impl GraphNode for PlanNode {
         let Some(model) = resolved_text(&self.cfg, input, "model") else {
             return Ok(Self::refuse("plan needs a planner model"));
         };
-        let number = match next_number(&Path::new(&root).join("specs")) {
-            Ok(number) => number,
-            Err(reason) => return Ok(Self::refuse(reason)),
-        };
-        let spec = format!("specs/{number}-{}.md", slug(&finding));
         let request = ChatRequest {
             model,
             messages: vec![
@@ -162,29 +157,58 @@ impl GraphNode for PlanNode {
             Ok(reply) => reply,
             Err(e) => return Ok(Self::refuse(format!("planner call failed: {e}"))),
         };
-        if reply.text.trim().is_empty() {
-            return Ok(Self::refuse("planner returned no text"));
+        write_spec(ctx, &finding, &root, &reply.text)
+    }
+}
+
+/// Spec 392 R3: the half of a planner that is not a model call. Writes the reply to the next free `specs/<NN>-<slug>.md`.
+fn write_spec(ctx: &Ctx, finding: &str, root: &str, reply: &str) -> Result<Outcome, PiiError> {
+    if reply.trim().is_empty() {
+        return Ok(PlanNode::refuse("planner returned no text"));
+    }
+    let number = match next_number(&Path::new(root).join("specs")) {
+        Ok(number) => number,
+        Err(reason) => return Ok(PlanNode::refuse(reason)),
+    };
+    let spec = format!("specs/{number}-{}.md", slug(finding));
+    let body = spec_body(reply);
+    // The one write: the path is `specs/` by construction, the run's fs_write scope bounds it, and an existing file
+    // is never replaced.
+    let target = Path::new(root).join(&spec);
+    if target.exists() {
+        return Ok(PlanNode::refuse(format!("{spec} already exists")));
+    }
+    ctx.fs()?.write(&target, body.as_bytes())?;
+    let title: String = finding
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .take(TITLE_MAX)
+        .collect();
+    Ok(port(
+        "ok",
+        serde_json::json!({ "spec": spec, "number": number, "title": title }),
+    ))
+}
+
+/// `ledger` op `spec.write` (spec 392 R3): an `agent` node drafts the spec, and this node writes the draft in `text`.
+pub(super) struct SpecWriteNode {
+    pub(super) cfg: serde_json::Value,
+}
+
+impl GraphNode for SpecWriteNode {
+    fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
+        let finding = resolved_text(&self.cfg, input, "finding").unwrap_or_default();
+        if finding.trim().is_empty() {
+            return Ok(PlanNode::refuse("plan needs a finding"));
         }
-        let body = spec_body(&reply.text);
-        // The one write: the path is `specs/` by construction, the run's fs_write scope bounds it, and an existing file
-        // is never replaced.
-        let target = Path::new(&root).join(&spec);
-        if target.exists() {
-            return Ok(Self::refuse(format!("{spec} already exists")));
-        }
-        ctx.fs()?.write(&target, body.as_bytes())?;
-        let title: String = finding
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .trim()
-            .chars()
-            .take(TITLE_MAX)
-            .collect();
-        Ok(port(
-            "ok",
-            serde_json::json!({ "spec": spec, "number": number, "title": title }),
-        ))
+        let Some(root) = resolved_text(&self.cfg, input, "workdir") else {
+            return Ok(PlanNode::refuse("plan needs a workdir"));
+        };
+        let text = resolved_text(&self.cfg, input, "text").unwrap_or_default();
+        write_spec(ctx, &finding, &root, &text)
     }
 }
 

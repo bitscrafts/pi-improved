@@ -1,6 +1,6 @@
 # Spec 363: a finding becomes one spec, the spec becomes one queue row, and the queue runs that row.
-#   case → plan → enqueue → queue (call, pinned) → report
-# `plan` writes exactly one new `specs/<NN>-<slug>.md` through the planner's model call; `enqueue` admits it only when it
+#   case → plan → write → enqueue → queue (call, pinned) → report
+# `plan` is the planner's model call, `write` puts its draft in exactly one new `specs/<NN>-<slug>.md`; `enqueue` admits it only when it
 # passes the lane's two validators, naming the reason otherwise. `queue` is called by pin (spec 255), so the run is one
 # run with one journal, and the queue's own `select` claims the next pending row, which is the one `enqueue` added when
 # nothing older waits.
@@ -9,7 +9,7 @@
 name = "self-improve"
 entry = "case"
 exit = "report"
-caps = ["spawn", "proc", "fs_read", "fs_write", "ledger"]
+caps = ["spawn", "proc", "fs_read", "fs_write", "ledger", "net"]
 
 [limits]
 # The queue's own bound is 6 000 000 ms; the planner call and the enqueue add a small allowance on top.
@@ -21,14 +21,38 @@ id = "case"
 kind = "transform"
 expr = "$.input"
 
-# Spec 363 R1: the planner writes one new spec; `model` is the planner role, not the workhorse.
+# Spec 392 R3: a planner is a model call. `model` is the planner role, not the workhorse. It holds no write capability.
 [[node]]
 id = "plan"
-kind = "plan"
+kind = "agent"
+caps = ["fs_read", "net"]
+tools = ["fs_read"]
+model = "glm-5.3"
+max_turns = 1
+system = "You write one spec for the pii repository. Reply with the spec document only: no preamble, no code fence, and no file writes. Do not implement the spec."
+prompt = """
+Finding: {{input.finding}}
+Repository: {{input.workdir}}
+
+Write the spec that fixes this finding.
+Use exactly these headings, in this order:
+# Spec: <title>
+## Requirements (R1., R2., ... each one checkable)
+## TDD contract (a table: file | test | assertion)
+## Exit Criteria (one line each, exactly: - [ ] `command`)
+## Files (one line each, exactly: - `path`)
+Every Exit Criteria line is one shell command in backticks. Every Files line names one file path in backticks.
+"""
+
+# Spec 363 R1: the one write. The path is `specs/` by construction, and an existing file is never replaced.
+[[node]]
+id = "write"
+kind = "ledger"
+op = "spec.write"
 caps = ["fs_write"]
 finding = "$.input.finding"
 workdir = "$.input.workdir"
-model = "glm-5.3"
+text = "$.nodes.plan.text"
 
 # Spec 363 R3: admits the written spec as one queue row, refusing a spec that fails the house shape.
 [[node]]
@@ -36,8 +60,8 @@ id = "enqueue"
 kind = "ledger"
 op = "queue.put"
 caps = ["fs_read"]
-spec = "$.nodes.plan.spec"
-title = "$.nodes.plan.title"
+spec = "$.nodes.write.spec"
+title = "$.nodes.write.title"
 workdir = "$.input.workdir"
 
 # Spec 255: the queue graph is inlined, pinned by the digest of graphs/queue.toml as it is on disk.
@@ -62,7 +86,7 @@ expr = "$.nodes.enqueue"
 [[node]]
 id = "refused"
 kind = "transform"
-# `plan` and `enqueue` refuse on exclusive paths, so whichever arm arrives ends the run.
+# `plan`, `write` and `enqueue` refuse on exclusive paths, so whichever arm arrives ends the run.
 join = "any"
 expr = "$.payload"
 
@@ -75,7 +99,31 @@ kind = "data"
 [[edge]]
 from = "plan"
 port = "ok"
+to = "write"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "budget"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "fail"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "write"
+port = "ok"
 to = "enqueue"
+kind = "data"
+
+[[edge]]
+from = "write"
+port = "err"
+to = "refused"
 kind = "data"
 
 [[edge]]

@@ -30,6 +30,8 @@ pub struct AgentNode {
     /// spec 28 R3).
     pub(crate) route_step: Option<String>,
     pub(crate) system: String,
+    /// Spec 392 R3: the prompt template the node carries; without one, the user turn comes from the payload.
+    pub(crate) prompt: Option<String>,
     pub(crate) max_turns: u32,
     pub(crate) model: Option<String>,
     pub(crate) provider: Arc<dyn ModelProvider>,
@@ -244,6 +246,10 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             tier,
             route_step,
             system,
+            prompt: cfg
+                .get("prompt")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
             max_turns: cfg
                 .get("max_turns")
                 .and_then(serde_json::Value::as_u64)
