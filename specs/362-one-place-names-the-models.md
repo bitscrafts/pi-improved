@@ -211,6 +211,7 @@ is part of the change, not scope creep.
 - `crates/pii-server/src/daemon/crash_file.rs`
 - `graphs/night.toml`
 - `graphs/self-improve.toml`
+- `crates/pii-server/tests/queue_calls_spec.rs`
 
 Added after the restore: the spawn-time resolution of a role that arrives through the run input, the later row-397 test
 that builds an engine config, the panic-hook helper moved out of the daemon module to keep it under the line rule, and the
