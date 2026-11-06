@@ -80,6 +80,7 @@ reading the files was the only honest source.
 - `crates/pii-cli/src/cmd_graph_index.rs`
 - `crates/pii-cli/src/cmd_graph_installed.rs`
 - `crates/pii-cli/src/main.rs`
+- `crates/pii-cli/tests/control_plane_is_not_behind_runs.rs`
 - `crates/pii-cli/tests/graph_catalogue.rs`
 - `crates/pii-cli/tests/graph_catalogue/agent.rs`
 - `crates/pii-cli/tests/graph_catalogue/fixture.rs`
@@ -97,4 +98,4 @@ reading the files was the only honest source.
 - `crates/pii-server/src/node_kinds/agent/tools.rs`
 - `crates/pii-tools/src/lib.rs`
 - `crates/pii-tools/src/memory.rs`
-- `docs/03-reference/graph-vocabulary.md`- `xtask/observability-allowlist.txt`
+- `docs/03-reference/graph-vocabulary.md`
