@@ -58,7 +58,7 @@ for row in "$@"; do
   python3 scripts/autonomy/state.py set "$row" status=pending attempts=0 >/dev/null
   python3 scripts/autonomy/state.py repair "$row" "retried with $MODEL: the earlier attempts used another model and died at the coder" >/dev/null 2>&1
   python3 scripts/autonomy/state.py set "$row" status=pending attempts=0 >/dev/null
-  OUT=$(PII_FORCE_ITEM="$row" CLAUDE_MODEL="$MODEL" ${BUDGET:+PII_MAX_BUDGET_USD="$BUDGET"} bash scripts/autonomy/cycle.sh 2>&1 | tail -3)
+  OUT=$( [ -n "$BUDGET" ] && export PII_MAX_BUDGET_USD="$BUDGET"; PII_FORCE_ITEM="$row" CLAUDE_MODEL="$MODEL" bash scripts/autonomy/cycle.sh 2>&1 | tail -3)
   echo "$OUT" | sed 's/^/   /' | cut -c1-160
   LAST=$(printf '%s\n' "$OUT" | grep -o 'OUTCOME=[a-z0-9-]*' | tail -1)
   echo "   $LAST   HEAD $(git rev-parse --short HEAD)   tree dirty: $(git status --porcelain | wc -l)"
