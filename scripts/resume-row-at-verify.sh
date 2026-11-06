@@ -21,7 +21,9 @@ trap 'bash scripts/autonomy/hold.sh release "$OWNER" >/dev/null 2>&1; echo "RELE
 echo "row $ROW before: $(python3 scripts/autonomy/state.py get "$ROW" | tr -d '\n ' | cut -c1-170)"
 echo "tree: $(git status --porcelain | wc -l) changed paths"
 python3 scripts/autonomy/state.py set "$ROW" status=pending last=worker-ok >/dev/null
-OUT=$(PII_FORCE_ITEM="$ROW" bash scripts/autonomy/cycle.sh 2>&1 | tail -8)
+# 9>&- : the cycle must not inherit the lock descriptor. cargo starts an sccache server that outlives the run, inherits it
+# and holds the cycle lock for hours (measured 2026-11-06: OUTCOME=locked on the next retry pass, holder = sccache).
+OUT=$(PII_FORCE_ITEM="$ROW" bash scripts/autonomy/cycle.sh 9>&- 2>&1 | tail -8)
 echo "$OUT" | sed 's/^/   /' | cut -c1-190
 echo "row $ROW after: $(python3 scripts/autonomy/state.py get "$ROW" | tr -d '\n ' | cut -c1-190)"
 echo "HEAD $(git log --oneline -1 | cut -c1-80)   dirty $(git status --porcelain | wc -l)"
