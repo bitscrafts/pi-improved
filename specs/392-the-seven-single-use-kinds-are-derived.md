@@ -35,11 +35,9 @@ step 2), `heal_detect`/`heal_record` (2). A kind that exists for one graph is a 
 | `CONTROL_the_detector_is_a_transform` | heal graph | a transform computes the predicate |
 
 ## Exit Criteria
-- [ ] `test "$(grep -rl 'kind = "worker"' graphs/ | wc -l)" = 0`
 - [ ] `test "$(grep -rl 'kind = "classify"' graphs/ | wc -l)" = 0`
 - [ ] `test "$(grep -rl 'kind = "plan"' graphs/ | wc -l)" = 0`
 - [ ] `test "$(grep -rl 'kind = "memory"' graphs/ | wc -l)" = 0`
-- [ ] `test "$(grep -rl 'kind = "debug_crash"' graphs/ | wc -l)" = 0`
 
 Why this section has fewer criteria than the requirements imply: `sdd`'s contract step runs every
 criterion BEFORE any code exists and refuses a row if one already passes (measured 2026-11-05: eight
@@ -48,6 +46,8 @@ new behaviour, so the guards are stated under Guardrails and enforced by the gat
 
 ## Guardrails
 - Must stay green, and are enforced by the gate rather than by a criterion (they pass today):
+  no graph uses `kind = "worker"` or `kind = "debug_crash"` (R1 and R5 landed in the working tree; the same
+  `grep -rl` test, expecting 0),
   `cargo test -p pii-cli --test every_graph_loads`, `pii graph lint graphs/self-improve.toml`,
   `pii graph lint graphs/intervention-report.toml`.
 - Do NOT delete a graph to make its kind disappear: the flow is what the operator runs.
@@ -55,17 +55,23 @@ new behaviour, so the guards are stated under Guardrails and enforced by the gat
 - Do NOT let `remember` become unguarded: it already requires `MEMORY_WRITE`, and that must hold.
 
 ## Files
+- `crates/pii-server/src/node_kinds/nodes/mod.rs`
+- `crates/pii-server/src/node_kinds/nodes/classify.rs`
+- `crates/pii-server/src/node_kinds/nodes/plan.rs`
+- `crates/pii-server/src/node_kinds/nodes/memory.rs`
 - `crates/pii-server/src/node_kinds/nodes/worker.rs`
-- `classify.rs`
-- `plan.rs`
-- `memory.rs`
-- `heal.rs`
-- `debug_crash.rs`
+- `crates/pii-server/src/lib.rs`
 - `crates/pii-server/src/engine/registry.rs`
+- `crates/pii-server/tests/live_registry_refuses_a_drifted_skill.rs`
+- `crates/pii-server/tests/live_registry_supplies_the_skill_source.rs`
+- `crates/pii-server/tests/model_routing.rs`
+- `crates/pii-server/tests/skill_edit_through_the_daemons_store.rs`
+- `crates/pii-server/tests/skill_put_through_the_daemon.rs`
+- `crates/pii-cli/tests/every_graph_loads.rs`
+- `crates/pii-graph/tests/fixtures/crash.toml`
 - `graphs/code-index.toml`
 - `graphs/intervention-report.toml`
+- `graphs/starter/crash.toml`
 - `graphs/self-improve.toml`
 - `graphs/digest-now.toml`
 - `graphs/discord-triage.toml`
-- `crates/pii-graph/tests/fixtures/crash.toml`
-- `crates/pii-cli/tests/every_graph_loads.rs`
