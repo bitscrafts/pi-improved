@@ -418,10 +418,11 @@ if [ -n "$GATE_ON" ]; then
   if [ "$DRC" -ne 0 ]; then
     LOWL=$(echo "$DISK" | grep -m1 -E '^(LOW|MISSING): ')
     FREE=$(echo "$LOWL" | sed -n 's/^LOW: .* free=\([0-9]*\)M .*/\1/p')
-    # A skipped gate must NOT fall through to the commit: an ungated commit is worse than a parked item.
-    python3 scripts/autonomy/state.py set "$ITEM" status=needs-review attempts=$((ATTEMPTS+1)) last=gate-skipped-disk
-    say "gate SKIPPED: $LOWL (needs 20000M free) — the item is NOT committed without a gate"
-    echo "OUTCOME=gate-skipped-disk ITEM=$ITEM FREE_MB=$FREE WHY=$(printf %s "$DISK" | tr '\n' ' ')"
+    # A skipped gate must NOT fall through to the commit, and must NOT advance the row: nothing was tried (spec 395).
+    if [ "$DRC" -eq 4 ]; then WHYSKIP=wiring; say "WIRING: $LOWL — a write dir is absent; this is not a disk shortage"; else WHYSKIP=disk; fi
+    python3 scripts/autonomy/state.py set "$ITEM" status=pending last=gate-skipped:$WHYSKIP
+    say "gate SKIPPED ($WHYSKIP): $LOWL — the item is NOT committed without a gate and stays pending"
+    echo "OUTCOME=gate-skipped-$WHYSKIP ITEM=$ITEM ADVANCED=no (row not advanced) FREE_MB=$FREE WHY=$(printf %s "$DISK" | tr '\n' ' ')"
     bash scripts/autonomy/control.sh ask "disk is down to ${FREE}M: the gate cannot run, so $ITEM cannot be committed. Reclaim with cargo clean (an operator action here)?" >/dev/null 2>&1 || true
     exit 13
   else

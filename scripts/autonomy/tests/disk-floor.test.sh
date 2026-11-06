@@ -42,16 +42,20 @@ else
   check "a symlink resolves to its target and reports the target's mount" "$(echo "$OUT" | grep -c "^$T/tmplink -> /tmp free=[0-9]*M mount=$TM\$")" "1"
 fi
 
-# (d) a missing path exits 1 and is reported MISSING
+# (d) a missing path exits 4 (wiring, spec 395 R3 - not 1, which is a shortage) and is reported MISSING
 OUT=$(run 1 "$T/nope")
-check "a missing path exits 1" "$(echo "$OUT" | tail -1)" "rc=1"
+check "a missing path exits 4 (wiring, not a shortage)" "$(echo "$OUT" | tail -1)" "rc=4"
 check "a missing path is reported MISSING" "$(echo "$OUT" | grep -c "MISSING.*$T/nope")" "1"
 
-# (e) two paths, one failing (missing): exit 1, the real directory is not LOW and the missing one is MISSING
+# (e) two paths, one missing: exit 4, the real directory is not LOW and the missing one is MISSING
 OUT=$(run 1 "$T/dir" "$T/nope")
-check "one failing path exits 1" "$(echo "$OUT" | tail -1)" "rc=1"
+check "one missing path among a good one exits 4" "$(echo "$OUT" | tail -1)" "rc=4"
 check "the passing directory is not named LOW:" "$(echo "$OUT" | grep -c "LOW:.*$T/dir")" "0"
 check "the failing path is named MISSING" "$(echo "$OUT" | grep -c "MISSING.*$T/nope")" "1"
+
+# CONTROL: a path that is present but LOW is a shortage (1), not wiring (4): the new code must not turn every failure into 4
+OUT=$(run 99999999 "$T/dir")
+check "CONTROL a low path still exits 1, not 4" "$(echo "$OUT" | tail -1)" "rc=1"
 
 # (f) no arguments and a non-numeric floor both exit 2
 check "no arguments exits 2" "$(run | tail -1)" "rc=2"
