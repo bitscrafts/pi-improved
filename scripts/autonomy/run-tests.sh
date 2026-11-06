@@ -66,6 +66,13 @@ for T in "${FILES[@]}"; do
   OUT=$(timeout "$PER_TEST_TIMEOUT" bash "$T" 2>&1)
   RC=$?
   TAIL=$(printf '%s\n' "$OUT" | tail -1)
+  # A test that PRINTS a failure count must not pass on its exit code alone (measured 2026-11-06: lane-graph-select
+  # printed "PASS: 5 FAIL: 3" and exited 0 through every gate). Two shapes are read, nothing looser: "FAIL: <n>" and
+  # "<n> FAIL" at the END of a comma-separated tally -- so "PASS: 5 FAIL: 0" is zero failures, not five.
+  PRINTED=$(printf '%s\n' "$TAIL" | sed -n 's/.*FAIL: *\([0-9][0-9]*\)[^0-9]*$/\1/p; s/.*, *\([0-9][0-9]*\) FAIL[^0-9]*$/\1/p' | head -1)
+  if [ "$RC" -eq 0 ] && [ -n "${PRINTED:-}" ] && [ "$PRINTED" -gt 0 ] 2>/dev/null; then
+    RC=1; TAIL="$TAIL  [exit 0, but the test printed $PRINTED failure(s): a printed count is not a pass]"
+  fi
   if [ "$RC" -eq 0 ]; then
     PASS=$((PASS+1)); echo "ok   $NAME — $TAIL"
   else

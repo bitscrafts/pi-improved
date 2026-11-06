@@ -42,3 +42,4 @@ for t in lane-graph-select lane-graph-wall; do
   case "$R" in *"FAIL: 0") ok "lane_tests_survive_the_knob_set_to_spec: $t";; *) bad "lane_tests_survive_the_knob_set_to_spec: $t ($R)";; esac
 done
 echo "PASS: $PASS FAIL: $FAIL"
+[ "$FAIL" -eq 0 ]

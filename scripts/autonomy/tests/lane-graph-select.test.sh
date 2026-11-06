@@ -93,8 +93,8 @@ OUT=$(PII_LANE_GRAPH=spec timeout 60 bash "$S" 294 --dry-run 2>&1); RC=$?
 I=$(field "$OUT" INPUT)
 if [ "$RC" = 0 ] && printf '%s\n' "$OUT" | grep -q '^LANE-GRAPH: spec$' && [ -f "$I" ]; then
   KEYS=$(uv run --no-project python -I -c 'import json,sys; print(" ".join(sorted(json.load(open(sys.argv[1])))))' "$I" 2>&1)
-  WANT="agent base brief docs_brief max_budget_usd model provider sid spec workdir"
-  if [ "$KEYS" = "$WANT" ]; then ok "spec_graph_is_selected: LANE-GRAPH spec, input with all ten keys"
+  WANT="agent base brief docs_brief max_budget_usd method model provider sid spec workdir"
+  if [ "$KEYS" = "$WANT" ]; then ok "spec_graph_is_selected: LANE-GRAPH spec, input with all eleven keys (spec 385 added `method`)"
   else bad "spec_graph_is_selected: input keys [$KEYS], want [$WANT]"; fi
   trash "$I"
 else bad "spec_graph_is_selected: exit $RC, LANE-GRAPH line or input missing"; printf '%s\n' "$OUT" | head -20; fi
@@ -121,7 +121,7 @@ if [ "$RC" = 0 ]; then ok "control_unchanged_pin_is_accepted: exit 0"; else bad 
 echo "== control: docs.toml with one byte changed"
 printf ' ' >> "$SCRATCH/repo/graphs/docs.toml"
 OUT=$(PII_LANE_GRAPH=spec timeout 60 bash "$SCRATCH/repo/run.sh" 294 --dry-run 2>&1); RC=$?
-if [ "$RC" = 2 ] && printf '%s\n' "$OUT" | grep -q '^ABORT' && ! printf '%s\n' "$OUT" | grep -qE '^(DAEMON|RUN|DRY RUN)'; then ok "CONTROL_a_changed_pin_is_refused: exit 2, nothing started"
+if [ "$RC" = 9 ] && printf '%s\n' "$OUT" | grep -q '^ABORT' && ! printf '%s\n' "$OUT" | grep -qE '^(DAEMON|RUN|DRY RUN)'; then ok "CONTROL_a_changed_pin_is_refused: exit 9 (refused before any work), nothing started"
 else bad "CONTROL_a_changed_pin_is_refused: exit $RC"; printf '%s\n' "$OUT" | head -10; fi
 
 echo "== control: PII_MAX_BUDGET_USD=9 is capped at the graph's own limit"
@@ -129,8 +129,9 @@ cp "$REPO/graphs/docs.toml" "$SCRATCH/repo/graphs/docs.toml"
 OUT=$(PII_LANE_GRAPH=spec PII_MAX_BUDGET_USD=9 timeout 60 bash "$S" 294 --dry-run 2>&1); RC=$?
 I=$(field "$OUT" INPUT)
 CAP=$( [ -f "$I" ] && uv run --no-project python -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["max_budget_usd"])' "$I" 2>/dev/null)
-if [ "$RC" = 0 ] && [ "$CAP" = 1.0 ]; then ok "CONTROL_cap_never_exceeds_the_limit: max_budget_usd 1.0"
-else bad "CONTROL_cap_never_exceeds_the_limit: exit $RC, max_budget_usd [$CAP], want 1.0"; fi
+LIMIT=$(sed -n 's/^max_micro_usd *= *\([0-9]*\).*/\1/p' "$REPO/graphs/spec.toml" | head -1 | awk '{printf "%.1f", $1/1000000}')
+if [ "$RC" = 0 ] && [ -n "$LIMIT" ] && [ "$CAP" = "$LIMIT" ]; then ok "CONTROL_cap_never_exceeds_the_limit: max_budget_usd $CAP (the tracked limit in graphs/spec.toml, asked for 9)"
+else bad "CONTROL_cap_never_exceeds_the_limit: exit $RC, max_budget_usd [$CAP], want the tracked limit [$LIMIT]"; fi
 trash "$I" "$(field "$OUT" GRAPH)"
 
 trash "$SCRATCH"
@@ -140,3 +141,4 @@ NOTE=$(uv run --no-project python -c 'import json,sys; print(json.load(open(sys.
 if [ -n "$NOTE" ] && git check-ignore -q "$NOTE"; then ok "the docs note lands in an ignored path ($NOTE)"; else bad "the docs note lands in an ignored path (got [$NOTE])"; fi
 if printf '%s' "$(uv run --no-project python -c 'import json,sys; print(json.load(open(sys.argv[1]))["docs_brief"])' "$IN" 2>/dev/null)" | grep -q 'in the repository root'; then bad "CONTROL: the brief still says the repository root"; else ok "CONTROL: the brief no longer says the repository root"; fi
 echo "PASS: $PASS FAIL: $FAIL"
+[ "$FAIL" -eq 0 ]
