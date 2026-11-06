@@ -232,7 +232,9 @@ brief = "$.nodes.implement.stdout"
 \end{verbatim}
 
 is silently read as \texttt{\$.nodes.implement\_\_done.stdout} after the load. The host never names an
-internal node; it names the call, and the alias makes the callee's exit answer it.
+internal node; it names the call, and the alias makes the callee's exit answer it. The rewrite is
+implemented in \verb|pii-graph/src/fragment/call_output.rs|; the splice and the \texttt{in} transforms
+are in \verb|pii-graph/src/fragment/call.rs|.
 
 \begin{center}
 \resizebox{\linewidth}{!}{%
