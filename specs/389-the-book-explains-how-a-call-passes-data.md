@@ -52,3 +52,5 @@ new behaviour, so the guards are stated under Guardrails and enforced by the gat
 
 - `_docs/manuals/src/arch-dev/src/chapters/05-composition.tex`
 - `_docs/manuals/pii-arch-dev.pdf`
+- `crates/pii-cli/tests/book_names_call_output_file.rs`
+- `scripts/rebuild-arch-dev-book.sh`
