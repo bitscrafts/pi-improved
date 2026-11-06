@@ -37,6 +37,14 @@ echo "MODEL    : $MODEL   (provider: anthropic, the claude login inside the devb
 echo "ROWS     : $*"
 echo "BUDGET   : ${BUDGET:-queue default} per run"
 echo "STARTED  : $(date -u +%FT%TZ)   HEAD $(git rev-parse --short HEAD)"
+OWNER="retry-$MODEL-$$"
+bash scripts/autonomy/hold.sh take "$OWNER" 14400 100 || { echo "STOPPED: could not take the tree hold"; exit 8; }
+trap 'bash scripts/autonomy/hold.sh release "$OWNER" >/dev/null 2>&1; echo "RELEASED : hold $OWNER — the dispatcher is back on its default model (claude-haiku-5-5)"' EXIT
+# A cron drain already running checks the hold only at its start and keeps dispatching (measured 2026-11-06), so wait for
+# it to end before the first row: a pass that starts under a live drain is refused at the cycle lock with nothing done.
+BUSY="${PII_BUSY_PATTERN:-scripts/autonomy/(cycle|drain)\.sh}"
+for _ in $(seq 1 "${WAIT_ROUNDS:-120}"); do pgrep -f "$BUSY" >/dev/null || break; sleep 10; done
+pgrep -f "$BUSY" >/dev/null && { echo "STOPPED: a drain or cycle is still in flight after the wait"; exit 75; }
 # A dirty tree is the FIRST row's own unfinished work when every dirty path is one that row declares (a worker cut off
 # or a cheaper model that got part-way leaves exactly that): the cycle resumes it, it does not discard it. Anything
 # else dirty is somebody else's and stops the pass. unlisted-changes.sh is the same test the commit step applies, and
@@ -47,9 +55,6 @@ bash scripts/autonomy/unlisted-changes.sh "$FIRST_PATHS" >/tmp/retry-unowned.$$ 
 rm -f /tmp/retry-unowned.$$
 [ -z "$(git status --porcelain)" ] || echo "NOTE: the tree holds row $FIRST's own unfinished work ($(git status --porcelain | wc -l) paths); the cycle resumes it"
 
-OWNER="retry-$MODEL-$$"
-bash scripts/autonomy/hold.sh take "$OWNER" 14400 100 || { echo "STOPPED: could not take the tree hold"; exit 8; }
-trap 'bash scripts/autonomy/hold.sh release "$OWNER" >/dev/null 2>&1; echo "RELEASED : hold $OWNER — the dispatcher is back on its default model (claude-haiku-5-5)"' EXIT
 
 for row in "$@"; do
   echo; echo "════ row $row"
