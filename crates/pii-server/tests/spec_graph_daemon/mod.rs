@@ -532,7 +532,31 @@ pub fn tracked_limit_micro() -> u64 {
         .expect("spec.toml declares max_micro_usd")
 }
 
-/// Micro-USD as `--max-budget-usd` prints it: `4000000` is `4`, `3600000` is `3.6`.
+/// Micro-USD as `--max-budget-usd` prints it: `4000000` is `4`, `3600000` is `3.6`. Integer arithmetic on purpose: a float
+/// here would be a rounding decision, and the flag's text is exactly the decimal digits with trailing zeros dropped.
 pub fn usd_flag(micro: u64) -> String {
-    format!("{}", micro as f64 / 1_000_000.0)
+    let (whole, frac) = (micro / 1_000_000, micro % 1_000_000);
+    if frac == 0 {
+        return whole.to_string();
+    }
+    format!("{whole}.{frac:06}")
+        .trim_end_matches('0')
+        .to_string()
+}
+
+#[test]
+fn usd_flag_prints_the_decimal_digits() {
+    assert_eq!(usd_flag(4_000_000), "4", "a whole dollar has no point");
+    assert_eq!(usd_flag(3_600_000), "3.6", "trailing zeros are dropped");
+    assert_eq!(
+        usd_flag(600_000),
+        "0.6",
+        "CONTROL: under a dollar keeps its leading zero"
+    );
+    assert_eq!(usd_flag(1_250_000), "1.25");
+    assert_eq!(
+        usd_flag(1),
+        "0.000001",
+        "the smallest unit is not rounded away"
+    );
 }

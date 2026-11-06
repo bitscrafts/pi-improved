@@ -142,12 +142,18 @@ fn the_tracked_limit_caps_the_first_claude_run() {
     let first = argv.lines().next().unwrap_or_default();
     assert_eq!(
         cap_flag(first).as_deref(),
-        Some(usd_flag(tracked_limit()).as_str()),
+        Some(whole_usd(tracked_limit()).as_str()),
         "the first claude run is capped at the tracked limit: {argv:?}"
     );
 }
 
-/// Micro-USD as `--max-budget-usd` prints it: `4000000` is `4`.
-fn usd_flag(micro: u64) -> String {
-    format!("{}", micro as f64 / 1_000_000.0)
+/// The tracked limit as the flag prints it. The limit is a whole number of dollars by policy (4.00 USD); a fractional one
+/// would need the flag's own formatting, and this refuses it loudly instead of guessing.
+fn whole_usd(micro: u64) -> String {
+    assert_eq!(
+        micro % 1_000_000,
+        0,
+        "the tracked limit is not a whole number of dollars: {micro}"
+    );
+    (micro / 1_000_000).to_string()
 }
