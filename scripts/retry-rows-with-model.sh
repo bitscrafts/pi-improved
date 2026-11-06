@@ -29,7 +29,15 @@ case "$MODEL" in claude-*) ;; *) echo "refusing: '$MODEL' is not a claude model 
 echo "MODEL    : $MODEL   (provider: anthropic, the claude login inside the devbox)"
 echo "ROWS     : $*"
 echo "STARTED  : $(date -u +%FT%TZ)   HEAD $(git rev-parse --short HEAD)"
-[ -z "$(git status --porcelain)" ] || { echo "STOPPED: the tree is dirty; commit or park it first"; git status --porcelain | head; exit 8; }
+# A dirty tree is the FIRST row's own unfinished work when every dirty path is one that row declares (a worker cut off
+# or a cheaper model that got part-way leaves exactly that): the cycle resumes it, it does not discard it. Anything
+# else dirty is somebody else's and stops the pass. unlisted-changes.sh is the same test the commit step applies, and
+# exits 0 for a clean tree.
+FIRST="$1"
+FIRST_PATHS=$(awk -F'\t' -v r="$FIRST" '$1==r {print $6}' scripts/autonomy/plan.tsv)
+bash scripts/autonomy/unlisted-changes.sh "$FIRST_PATHS" >/tmp/retry-unowned.$$ 2>&1 || { echo "STOPPED: the tree has changes row $FIRST does not own; commit or park them first"; head /tmp/retry-unowned.$$; rm -f /tmp/retry-unowned.$$; exit 8; }
+rm -f /tmp/retry-unowned.$$
+[ -z "$(git status --porcelain)" ] || echo "NOTE: the tree holds row $FIRST's own unfinished work ($(git status --porcelain | wc -l) paths); the cycle resumes it"
 
 OWNER="retry-$MODEL-$$"
 bash scripts/autonomy/hold.sh take "$OWNER" 14400 100 || { echo "STOPPED: could not take the tree hold"; exit 8; }
