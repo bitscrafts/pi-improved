@@ -26,8 +26,16 @@ MODEL="${1:-}"; shift || true
 [ -n "$MODEL" ] && [ $# -ge 1 ] || { echo "usage: retry-rows-with-model.sh <model> <row>..."; exit 2; }
 case "$MODEL" in claude-*) ;; *) echo "refusing: '$MODEL' is not a claude model id (this lane runs the claude CLI)"; exit 2 ;; esac
 
+# A pass may carry a per-run budget (PII_BUDGET_USD): the reviewer model spent the whole 1.00 default reading and writing
+# tests on row 392 (measured 2026-11-06). It is exported to cycle.sh as PII_MAX_BUDGET_USD on THIS pass's environment
+# only, exactly as CLAUDE_MODEL is; with none given nothing is set and the queue's own default decides.
+BUDGET="${PII_BUDGET_USD:-}"
+if [ -n "$BUDGET" ]; then
+  awk -v b="$BUDGET" 'BEGIN { exit !(b ~ /^[0-9]+(\.[0-9]+)?$/ && b + 0 > 0) }' || { echo "refusing: PII_BUDGET_USD='$BUDGET' is not a positive number (a budget of this pass)"; exit 2; }
+fi
 echo "MODEL    : $MODEL   (provider: anthropic, the claude login inside the devbox)"
 echo "ROWS     : $*"
+echo "BUDGET   : ${BUDGET:-queue default} per run"
 echo "STARTED  : $(date -u +%FT%TZ)   HEAD $(git rev-parse --short HEAD)"
 # A dirty tree is the FIRST row's own unfinished work when every dirty path is one that row declares (a worker cut off
 # or a cheaper model that got part-way leaves exactly that): the cycle resumes it, it does not discard it. Anything
@@ -50,7 +58,7 @@ for row in "$@"; do
   python3 scripts/autonomy/state.py set "$row" status=pending attempts=0 >/dev/null
   python3 scripts/autonomy/state.py repair "$row" "retried with $MODEL: the earlier attempts used another model and died at the coder" >/dev/null 2>&1
   python3 scripts/autonomy/state.py set "$row" status=pending attempts=0 >/dev/null
-  OUT=$(PII_FORCE_ITEM="$row" CLAUDE_MODEL="$MODEL" bash scripts/autonomy/cycle.sh 2>&1 | tail -3)
+  OUT=$(PII_FORCE_ITEM="$row" CLAUDE_MODEL="$MODEL" ${BUDGET:+PII_MAX_BUDGET_USD="$BUDGET"} bash scripts/autonomy/cycle.sh 2>&1 | tail -3)
   echo "$OUT" | sed 's/^/   /' | cut -c1-160
   LAST=$(printf '%s\n' "$OUT" | grep -o 'OUTCOME=[a-z0-9-]*' | tail -1)
   echo "   $LAST   HEAD $(git rev-parse --short HEAD)   tree dirty: $(git status --porcelain | wc -l)"
