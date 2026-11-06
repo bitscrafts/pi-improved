@@ -53,5 +53,6 @@ new behaviour, so the guards are stated under Guardrails and enforced by the gat
 ## Files
 - `scripts/autonomy/cycle.sh`
 - `scripts/autonomy/disk-floor.sh`
+- `scripts/autonomy/tests/disk-floor.test.sh`
 - `scripts/autonomy/tests/skip-is-not-a-pass.test.sh`
-- `crates/pii-cli/tests/gate_skip_is_not_a_pass.rs`
+- `xtask/tests/gate_skip_is_not_a_pass.rs`
