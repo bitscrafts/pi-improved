@@ -114,12 +114,14 @@ WIP: `/projects/_trash/362-needs-spawn-role-resolution-20261104T122618Z` (90 pat
 
 ## Files
 
-Adding a required field to Config touches every literal that builds one; that blast
-radius is part of the change, not scope creep.
+Adding a required field to EngineConfig touches every literal that builds one -- including
+the one in pii-mcp's test, which the first pass missed and the gate caught. That blast radius
+is part of the change, not scope creep.
 
 - `crates/pii-cli/src/cmd_daemon.rs`
 - `crates/pii-cli/src/cmd_oneshot.rs`
 - `crates/pii-cli/src/cmd_tui.rs`
+- `crates/pii-mcp/src/main.rs`
 - `crates/pii-server/src/daemon/config.rs`
 - `crates/pii-server/src/daemon/identity.rs`
 - `crates/pii-server/src/daemon/lag.rs`
@@ -204,4 +206,12 @@ radius is part of the change, not scope creep.
 - `graphs/coder-selffix.toml`
 - `graphs/intervention-report.toml`
 - `graphs/queue.toml`
-- `scripts/autonomy/plan.tsv`
+- `crates/pii-server/src/node_kinds/nodes/coder/graph_node.rs`
+- `crates/pii-server/tests/gate_deadline.rs`
+- `crates/pii-server/src/daemon/crash_file.rs`
+- `graphs/night.toml`
+- `graphs/self-improve.toml`
+
+Added after the restore: the spawn-time resolution of a role that arrives through the run input, the later row-397 test
+that builds an engine config, the panic-hook helper moved out of the daemon module to keep it under the line rule, and the
+two graphs that re-pin because they call the queue and spec graphs.
