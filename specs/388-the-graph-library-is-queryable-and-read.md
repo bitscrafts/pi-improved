@@ -77,10 +77,24 @@ reading the files was the only honest source.
 - Do NOT make the catalogue a capability: reading it grants nothing a file read would not.
 
 ## Files
-
-- `crates/pii-cli/src/cmd_graph.rs`
 - `crates/pii-cli/src/cmd_graph_index.rs`
+- `crates/pii-cli/src/cmd_graph_installed.rs`
+- `crates/pii-cli/src/main.rs`
 - `crates/pii-cli/tests/graph_catalogue.rs`
+- `crates/pii-cli/tests/graph_catalogue/agent.rs`
+- `crates/pii-cli/tests/graph_catalogue/fixture.rs`
+- `crates/pii-mcp/src/main.rs`
+- `crates/pii-memory/src/catalogue.rs`
+- `crates/pii-memory/src/lib.rs`
+- `crates/pii-proto/src/method.rs`
+- `crates/pii-proto/tests/wire_roundtrip.rs`
+- `crates/pii-server/src/engine/conn.rs`
+- `crates/pii-server/src/engine/dispatch.rs`
+- `crates/pii-server/src/engine/graph_methods.rs`
+- `crates/pii-server/src/engine/methods.rs`
+- `crates/pii-server/src/engine/mod.rs`
+- `crates/pii-server/src/lib.rs`
+- `crates/pii-server/src/node_kinds/agent/tools.rs`
 - `crates/pii-tools/src/lib.rs`
-- `crates/pii-server/src/node_kinds/registry.rs`
+- `crates/pii-tools/src/memory.rs`
 - `docs/03-reference/graph-vocabulary.md`
