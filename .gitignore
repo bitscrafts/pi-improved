@@ -1,6 +1,7 @@
 target/
 .pidag/
 _tmp/
+scratch/
 _repos/
 **/*.rs.bk
 *.profraw

@@ -72,11 +72,21 @@ struct Scratch {
     extra: PathBuf,
 }
 
+/// `create_dir_all` succeeds on a directory that already exists, even one the sandbox forbids writing into (a
+/// leftover `/var/tmp/pii-lane317` made the judge pick it and then fail 44 tests with "Permission denied"), so a base
+/// counts only when a directory can really be made inside it. The probe name is per thread: threads probe at once.
+fn can_write_in(base: &Path) -> bool {
+    let probe = base.join(format!(".probe-{:?}", std::thread::current().id()));
+    let made = fs::create_dir(&probe).is_ok();
+    let _ = fs::remove_dir(&probe);
+    made
+}
+
 /// The scratch base: a directory outside every `_tmp` component (the port refuses a root inside `_tmp/`, R1, and
 /// both the gate's target dir and a fresh-gate export live under one), short enough to pad a unique name up to
 /// [`REPO_LEN`], and disposable. The runtime dir comes first - tmpfs, and the sanctioned root for scratch that
 /// cannot live in the tree; `CARGO_TARGET_TMPDIR` keeps an ordinary `cargo test` inside `target/`; `/var/tmp` is
-/// the last resort. Never `/tmp`: the project's rule is that no test roots scratch there.
+/// next, and `scratch/` in the checkout is the last resort (the only one the judge can write). Never `/tmp`: the project's rule is that no test roots scratch there.
 fn scratch_base() -> PathBuf {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(rt) = std::env::var_os("XDG_RUNTIME_DIR") {
@@ -84,6 +94,11 @@ fn scratch_base() -> PathBuf {
     }
     candidates.push(PathBuf::from(env!("CARGO_TARGET_TMPDIR")));
     candidates.push(PathBuf::from("/var/tmp"));
+    // The daemon's judge may write only inside the workspace (and a 63 MB /dev/shm), and a path under `_tmp/` is
+    // refused below, so inside the judge the only base left is a gitignored sibling of `_tmp/`.
+    let in_checkout = live().join("scratch");
+    let _ = fs::create_dir_all(&in_checkout); // canonicalize below needs it to exist
+    candidates.push(in_checkout);
     for candidate in candidates {
         let Ok(candidate) = fs::canonicalize(candidate) else {
             continue;
@@ -91,7 +106,7 @@ fn scratch_base() -> PathBuf {
         let base = candidate.join("pii-lane317");
         let outside_tmp = !base.components().any(|c| c.as_os_str() == "_tmp");
         let fits = base.as_os_str().len() + 8 < REPO_LEN;
-        if outside_tmp && fits && fs::create_dir_all(&base).is_ok() {
+        if outside_tmp && fits && fs::create_dir_all(&base).is_ok() && can_write_in(&base) {
             return base;
         }
     }
@@ -1021,5 +1036,20 @@ fn CONTROL_an_unrepaired_docs_edit_still_aborts() {
     assert!(
         !stdout.contains("ABORT: graphs/docs.toml digest"),
         "{stdout}"
+    );
+}
+
+/// A base that exists but cannot be written into (the judge's `/var/tmp/pii-lane317`) is not a base, and one that can
+/// be written into still is: the check is the write, not the existence. A FILE stands in for the unwritable
+/// directory, since no directory can be made inside it even for root (mode bits do not bind root).
+#[test]
+fn a_base_counts_only_when_a_directory_can_be_made_in_it() {
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    assert!(can_write_in(dir.path()), "CONTROL: a writable dir counts");
+    let file = dir.path().join("not-a-dir");
+    fs::write(&file, "x").unwrap();
+    assert!(
+        !can_write_in(&file),
+        "a base inside which nothing can be made must not count"
     );
 }
