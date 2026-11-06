@@ -144,10 +144,19 @@ fn with_wall(src: &str, ms: Option<u64>) -> String {
     }
     match ms {
         None => kept,
-        Some(ms) => kept.replace(
-            "max_micro_usd = 1000000\n",
-            &format!("max_micro_usd = 1000000\nmax_wall_ms = {ms}\n"),
-        ),
+        // The wall line goes right after the spend limit, whatever its value: this used to hard-code 1000000, so
+        // changing the spend policy (4.00 USD, 2026-11-06) silently turned the control into a no-op that failed.
+        Some(ms) => {
+            let mut out = String::new();
+            for line in kept.lines() {
+                out.push_str(line);
+                out.push('\n');
+                if line.starts_with("max_micro_usd = ") {
+                    out.push_str(&format!("max_wall_ms = {ms}\n"));
+                }
+            }
+            out
+        }
     }
 }
 

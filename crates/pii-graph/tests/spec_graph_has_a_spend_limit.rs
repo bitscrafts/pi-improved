@@ -101,8 +101,8 @@ fn tracked_spec() -> GraphSpec {
 
 #[test]
 fn the_tracked_spec_graph_declares_the_spend_limit() {
-    // (a): the shipped graph carries the policy number (1.00 USD, spec 282 R1).
-    assert_eq!(tracked_spec().limits.max_micro_usd, 1_000_000);
+    // (a): the shipped graph carries the policy number (4.00 USD since 2026-11-06, spec 282 R1: a reviewer-model run spent the old 1.00 reading the code).
+    assert_eq!(tracked_spec().limits.max_micro_usd, 4_000_000);
 }
 
 #[test]

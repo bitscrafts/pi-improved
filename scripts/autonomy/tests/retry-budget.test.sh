@@ -32,7 +32,9 @@ run_stub(){ ( cd "$T" && git init -q . 2>/dev/null; sed -i 's|cd /projects/pi-im
 OUT=$(run_stub PII_BUDGET_USD=4.00)
 check "a budget reaches the cycle as PII_MAX_BUDGET_USD" "$(printf '%s' "$OUT" | grep -c 'STUB budget=\[4.00\]')" "1"
 check "... along with the model and the row, unchanged" "$(printf '%s' "$OUT" | grep -c 'model=\[claude-opus-5-5\] force=\[1\]')" "1"
-OUT=$(run_stub PII_BUDGET_USD=)
+# the gate runs this with PII_MAX_BUDGET_USD already in its environment; "no budget" must mean none reaches the cycle
+# from the script, so the ambient one is cleared for the control (a test that passed by hand and failed in the gate)
+OUT=$(run_stub -u PII_MAX_BUDGET_USD PII_BUDGET_USD=)
 check "CONTROL no budget: the cycle sees none, so the queue default decides" "$(printf '%s' "$OUT" | grep -c 'STUB budget=\[unset\]')" "1"
 check "nothing in the pass failed with a command not found" "$(printf '%s' "$OUT" | grep -c 'command not found')" "0"
 echo "$OK ok, $FAILS FAIL"; [ "$FAILS" -eq 0 ]
