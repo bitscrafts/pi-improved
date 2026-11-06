@@ -16,7 +16,9 @@ caps = ["spawn", "proc", "fs_read", "fs_write"]
 # queue's daemon cost claude_cost_usd = 0.070610 (run r000000000130); 1.00 USD is about fourteen such passes. A `call`
 # (the docs graph) is inlined and shares this budget.
 [limits]
-max_micro_usd = 1000000
+# 4.00 USD: a run by the reviewer model (claude-opus-5-5) spent its whole $1.00 reading and writing tests on row 392,
+# measured 2026-11-06; the per-row cap the queue sets (PII_MAX_BUDGET_USD) still applies below this ceiling.
+max_micro_usd = 4000000
 # Spec 290: the wall covers the methodology call (`sdd` runs two coders, its tdd allowance is 4 200 000) or `method-judge`
 # (one coder, 3 000 000), plus the inlined docs coder 1 200 000 and the call's steps. The default 600 000 failed real
 # passes at `verify` with the agent's work done and exit 0 (r000000000261: 601 s, r000000000260: 717 s).
