@@ -45,6 +45,9 @@ lint-files|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-file
 # file. The baseline only moves through `crate-audit --update-baseline`, never in this step.
 crate-audit|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- crate-audit --ratchet
 
+# Spec 393 R4: a graph kind outside graphs/VOCABULARY, used by one graph alone, or a repeated flow reddens the gate.
+lint-graph-kinds|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-graph-kinds
+
 # Spec 96: tempdir_in on a crate-local `_tmp` must be preceded by create_dir_all / tmp_scratch (N1 class).
 lint-scratch|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-scratch
 

@@ -122,9 +122,9 @@ Three verdicts, not two: **done** (code and docs both verified), **unverified** 
 ### 4. Documentation of the code — specified, not built
 
 `graphs/docs.toml` is a **called** graph: a coder writes documentation for whatever brief the host gives it. It has no
-inventory and no way to tell whether the document is true. **Spec 374** adds `graphs/doc-code.toml`, which composes it:
-`inventory` → `select` (or `nothing-to-do`) → `call docs` → `verify` (every path and symbol the document names must
-exist) → `done`.
+inventory and no way to tell whether the document is true. **Spec 374** adds `graphs/doc-code.toml`, which **spec 393**
+reduces to one `call` of `books` (below) with the commands for the Rust modules: `doc-drift-inventory`, and
+`doc-drift-check --modules` (every path and symbol the document names must exist).
 
 **Spec 379** adds `graphs/books.toml`, the same composition for the two manuals: `inventory` (`pii docs stale`, the chapters
 whose stamp is behind HEAD or whose documented paths moved) → `select` (or `nothing-to-do`) → `call-docs` → `verify`

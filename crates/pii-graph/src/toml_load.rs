@@ -247,6 +247,7 @@ pub fn load_toml_with_registry(
     };
 
     check_grant_ceiling(caps, &nodes, registry.grant_ceiling())?;
+    crate::nodes::check_tool_surface(&nodes)?;
 
     Ok(GraphSpec {
         name: name.to_string(),

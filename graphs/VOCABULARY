@@ -1,0 +1,17 @@
+# The declared graph vocabulary (spec 393 R2): <name> <capability> <effect class>, one kind per line.
+# `xtask lint-graph-kinds` refuses a [[node]] kind not named here. Prose: docs/03-reference/graph-vocabulary.md.
+# Capability is what the kind's factory requires, `none` when empty; `call` is inlined at load and holds the host's.
+transform  none          pure
+route      none          pure
+refuse     none          pure
+call       host          inlined
+timer      none          pure
+gate       none          pure
+post       post          mutates_external
+tool       per_node      mutates_external
+judge      proc          mutates_external
+coder      spawn,proc    mutates_external
+agent      per_node,net  mutates_external
+recall     memory_read   reads_fs
+remember   memory_write  mutates_external
+ledger     ledger        mutates_external

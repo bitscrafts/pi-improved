@@ -54,21 +54,23 @@ fn doc_code_declares_its_exit_so_a_night_can_call_it() {
 #[test]
 fn doc_code_has_the_four_steps_and_the_honest_middle() {
     let ids = node_ids(&table(&graph("doc-code")));
-    for want in [
-        "inventory",
-        "select",
-        "nothing-to-do",
-        "write",
-        "verify",
-        "done",
-        "unverified",
-    ] {
+    for want in ["write", "done", "unverified"] {
         assert!(ids.contains(want), "doc-code has no `{want}` node: {ids:?}");
     }
 }
 
+/// Spec 393: the four steps live in `books`, and a run over a documented tree still writes nothing (spec 374 R4), because
+/// `doc-drift-inventory` prints nothing for one and `books` routes an empty inventory to `nothing-to-do`.
 #[test]
-fn doc_code_writes_through_one_pinned_call_of_docs() {
+fn an_empty_inventory_ends_on_nothing_to_do() {
+    assert!(
+        graph("books").contains("{ eq = \"\", port = \"nothing-to-do\" }"),
+        "books must route an empty inventory to nothing-to-do"
+    );
+}
+
+#[test]
+fn doc_code_writes_through_one_pinned_call_of_books() {
     let src = graph("doc-code");
     let doc = table(&src);
     let calls: Vec<&toml::Table> = nodes(&doc)
@@ -77,9 +79,9 @@ fn doc_code_writes_through_one_pinned_call_of_docs() {
         .collect();
     assert_eq!(calls.len(), 1, "exactly one writing step: {calls:?}");
     assert_eq!(
-        src.matches("graph = \"docs\"").count(),
+        src.matches("graph = \"books\"").count(),
         1,
-        "one `graph = \"docs\"` line"
+        "one `graph = \"books\"` line"
     );
     let pin = calls[0]
         .get("sha256")
@@ -87,8 +89,8 @@ fn doc_code_writes_through_one_pinned_call_of_docs() {
         .expect("the call is pinned");
     assert_eq!(
         pin,
-        fragment::sha256_hex(graph("docs").as_bytes()),
-        "the pin must be the sha256 of graphs/docs.toml as it is on disk"
+        fragment::sha256_hex(graph("books").as_bytes()),
+        "the pin must be the sha256 of graphs/books.toml as it is on disk"
     );
 }
 
@@ -102,8 +104,8 @@ fn doc_code_loads_and_its_call_resolves() {
     )
     .expect("doc-code loads");
     assert!(
-        woven.calls.iter().any(|c| c.graph == "docs"),
-        "the write step must inline graphs/docs.toml: {:?}",
+        woven.calls.iter().any(|c| c.graph == "books"),
+        "the write step must inline graphs/books.toml: {:?}",
         woven.calls
     );
 }
@@ -117,7 +119,7 @@ fn doc_code_verifies_with_the_doc_drift_tree_walk() {
     );
     assert!(
         src.contains("nothing-to-do"),
-        "select must name its no-op exit"
+        "the file must name the no-op exit it relies on"
     );
 }
 

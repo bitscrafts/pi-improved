@@ -23,6 +23,7 @@ pii-store = { path = "../crates/pii-store" }
 pii-memory = { path = "../crates/pii-memory" }
 pii-core = { path = "../crates/pii-core" }
 serde = { workspace = true }
+toml = { workspace = true }
 
 [lints]
 workspace = true

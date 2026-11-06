@@ -8,6 +8,7 @@
 name = "books"
 entry = "inventory"
 exit = "done"
+needs = ["agent", "model", "provider", "spec", "workdir", "inventory", "verify"]
 caps = ["fs_read", "fs_write", "proc", "spawn"]
 
 [limits]
@@ -26,6 +27,7 @@ kind = "route"
 on = "$.payload.stdout"
 rules = [
   { eq = "nothing-stale", port = "nothing-to-do" },
+  { eq = "", port = "nothing-to-do" },
   { port = "write" },
 ]
 
@@ -44,6 +46,11 @@ caps = ["spawn", "proc"]
 
 [node.in]
 brief = "$.nodes.inventory.stdout"
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
+workdir = "$.input.workdir"
 
 # verify proves the claims, not the presence of the file; only a pass rewrites the stamp (R4).
 [[node]]

@@ -127,3 +127,17 @@ separated on disk.
 ## A coder's prompt (spec 386)
 
 A `coder` node may carry `prompt`, a literal string whose `{{path}}` placeholders are bound to the run's values. `path` is an expression against `input`, `payload` or `nodes.<id>`. Load checks it: a `nodes.<id>` naming no declared node is refused, as is a prompt that is unclosed, over 64 KiB, on a non-coder node, or set together with `brief`. A placeholder that resolves to nothing at run time refuses the run before anything spawns; it never becomes a blank. The resolved prompt is journalled as `coder.prompt`. A prompt grants nothing: the node's caps and the graph's ceiling are unchanged.
+
+## The fence (spec 393)
+
+`graphs/VOCABULARY` is the list: one kind per line, with its capability and effect class. `xtask lint-graph-kinds` runs in the gate, parses the `[[node]]` tables of `graphs/**/*.toml`, and prints what it measured (`14 kinds over 31 graphs, 0 specialised`). It refuses three things, and it has no exception list:
+
+- a kind outside the list;
+- a kind only one graph uses (`specialised`);
+- a graph with the same node kinds and call targets as a shipped graph (`duplicate-of <graph>`). Shipped means named in `graphs/minimal.txt`, so unlisted samples may share a shape with each other, as the four `coder-*`/`claude-probe` samples do. A tree with no manifest treats every graph as shipped.
+
+The first graph it moved was `doc-code`: its flow was `books`' flow with other commands, so it is now one pinned `call` of `books`.
+
+A `tool` node's `run` must be an argv array with a literal argv0 that is not a shell. Anything else is refused at load, naming the node.
+
+**Still open.** The surface is not closed yet. `run` is refused at load but `ToolNode` does not execute it, and `tool = "bash"` still reaches a shell: `books`, `doc-code` (through `books`), `starter/heal-fix`, `starter/verify-fix` and the graphs `sop` compiles. The lint does not measure this. Closing it means giving `tool` a working `run` and moving those graphs off `bash`, including the ones whose command arrives as `$.input.test_command`.

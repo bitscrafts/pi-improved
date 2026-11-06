@@ -660,4 +660,15 @@ mod tests {
             "gate-steps.txt must run `crate-audit --ratchet`"
         );
     }
+
+    /// Spec 393 R4: the vocabulary fence is a gate step, so the vocabulary cannot grow silently.
+    #[test]
+    fn the_gate_runs_the_vocabulary_fence() {
+        let list = std::fs::read_to_string(workspace_root().join("gate-steps.txt")).unwrap();
+        assert!(
+            list.lines()
+                .any(|l| l.starts_with("lint-graph-kinds|") && l.contains("-- lint-graph-kinds")),
+            "gate-steps.txt must run `lint-graph-kinds`"
+        );
+    }
 }

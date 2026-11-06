@@ -1,10 +1,10 @@
-# Spec 374: the documentation of the code, as a graph. `inventory` lists the Rust modules that have no `//!` header
-# (`xtask doc-drift-inventory`), `select` ends on `nothing-to-do` when there are none, `write` calls the docs graph (pinned
-# by sha256, so there is no second coder here), and `verify` proves the written documents true: every path and symbol they
-# name must exist (`xtask doc-drift-check --modules`, the same tree walk as the HANDOFF check). A run over a documented tree
-# writes nothing. No absolute path and no credential lives in this file: paths arrive through `input`.
+# Spec 374: the documentation of the code, as a graph. Spec 393: its flow was `books`' flow with other commands, so it
+# calls `books` (pinned by sha256) and supplies them: `doc-drift-inventory` lists the Rust modules that have no `//!`
+# header, an empty list ends inside `books` on `nothing-to-do` and writes nothing, and `doc-drift-check --modules` proves
+# the written documents true: every path and symbol they name must exist (the same tree walk as the HANDOFF check). No
+# absolute path and no credential lives in this file: paths arrive through `input`.
 name = "doc-code"
-entry = "inventory"
+entry = "write"
 # Spec 374 R5: declared so a night can call it, which routes the host on the exit node's ports.
 exit = "done"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
@@ -14,122 +14,41 @@ caps = ["spawn", "proc", "fs_read", "fs_write"]
 max_wall_ms = 1800000
 
 [[node]]
-id = "inventory"
-kind = "tool"
-tool = "bash"
-args = { command = "cargo xtask doc-drift-inventory", cwd = "$.input.workdir" }
-
-# Spec 374 R4: no undocumented module means nothing to write, and the run ends here without touching the tree.
-[[node]]
-id = "select"
-kind = "route"
-on = "$.payload.stdout"
-rules = [
-  { eq = "", port = "nothing-to-do" },
-  { port = "write" },
-]
-
-[[node]]
-id = "nothing-to-do"
-kind = "transform"
-value = "nothing-to-do"
-
-# Spec 374 R2: the writing step is the docs graph, called and pinned. The inventory's list is the brief.
-[[node]]
 id = "write"
 kind = "call"
-graph = "docs"
-sha256 = "b7f8eacdb79aa051070046e19ca1e6c0527fde72f0df0383b08c0c192e020980"
-caps = ["spawn", "proc"]
+graph = "books"
+sha256 = "563d2885d71a46e4643a4868499a3a0628bde0e22611b6e6af3525d0c2f7e7ce"
+caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
-brief = "$.nodes.inventory.stdout"
-
-# Spec 374 R3: verify proves the document is true, not merely present. A named path or symbol that does not exist fails it.
-[[node]]
-id = "verify"
-kind = "tool"
-tool = "bash"
-args = { command = "cargo xtask doc-drift-check --modules", cwd = "$.input.workdir" }
-
-[[node]]
-id = "gate"
-kind = "route"
-on = "$.payload.exit_code"
-rules = [
-  { eq = 0, port = "pass" },
-  { port = "fail" },
-]
+inventory = "cargo xtask doc-drift-inventory"
+verify = "cargo xtask doc-drift-check --modules"
+workdir = "$.input.workdir"
+agent = "$.input.agent"
+model = "$.input.model"
+provider = "$.input.provider"
+spec = "$.input.spec"
 
 [[node]]
 id = "done"
 kind = "transform"
 value = "done"
 
-# `unverified` is the honest middle: documents may exist, and are not proven. Its inbound ports are exclusive, so `any`.
+# `unverified` is the honest middle: documents may exist, and are not proven.
 [[node]]
 id = "unverified"
 kind = "refuse"
-join = "any"
 hook = "judge"
 reason = "the written documentation names a path or symbol that does not exist, or could not be written"
 
 [[edge]]
-from = "inventory"
-port = "ok"
-to = "select"
-kind = "data"
-
-[[edge]]
-from = "inventory"
-port = "err"
-to = "unverified"
-kind = "data"
-
-[[edge]]
-from = "select"
-port = "nothing-to-do"
-to = "nothing-to-do"
-kind = "data"
-
-[[edge]]
-from = "select"
-port = "write"
-to = "write"
-kind = "data"
-
-[[edge]]
 from = "write"
 port = "ok"
-to = "verify"
-kind = "data"
-
-[[edge]]
-from = "write"
-port = "err"
-to = "unverified"
-kind = "data"
-
-[[edge]]
-from = "verify"
-port = "ok"
-to = "gate"
-kind = "data"
-
-[[edge]]
-from = "verify"
-port = "err"
-to = "unverified"
-kind = "data"
-
-[[edge]]
-from = "gate"
-port = "pass"
 to = "done"
 kind = "data"
 
 [[edge]]
-from = "gate"
-port = "fail"
+from = "write"
+port = "err"
 to = "unverified"
 kind = "data"

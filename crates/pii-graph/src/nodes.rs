@@ -16,6 +16,37 @@ pub(crate) fn eval_ctx(input: &NodeInput) -> serde_json::Value {
     })
 }
 
+/// Spec 393 R3: a `tool` node's `run` is an argv array whose first entry is a literal program, never a shell. A shell
+/// string, a `$.` argv0 and `["bash", "-c", ..]` are all refused, naming the node: authority comes from the committed
+/// spec, not from the graph.
+pub(crate) fn check_tool_surface(nodes: &[crate::spec::NodeSpec]) -> Result<(), PiiError> {
+    const SHELLS: &[&str] = &["sh", "bash", "dash", "zsh", "ksh", "fish", "env"];
+    for node in nodes.iter().filter(|n| n.kind == "tool") {
+        let Some(run) = node.cfg.get("run") else {
+            continue;
+        };
+        let argv: Option<Vec<&str>> = run
+            .as_array()
+            .and_then(|items| items.iter().map(serde_json::Value::as_str).collect());
+        let argv0 = argv.as_ref().and_then(|a| a.first()).copied();
+        let literal = argv0.is_some_and(|p| {
+            let program = p.rsplit('/').next().unwrap_or(p);
+            !p.starts_with("$.")
+                && !program.is_empty()
+                && !p.contains(char::is_whitespace)
+                && !SHELLS.contains(&program)
+        });
+        if !literal {
+            return Err(PiiError::Invalid(format!(
+                "tool.run.shell: node '{}' has `run` = {run}; `run` takes an argv array with a literal argv0 and \
+                 no shell",
+                node.id
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// `transform`: takes `expr` (string) or `value` (any).
 ///
 /// A malformed expr returns `Next{err, {"error": ..}}`; otherwise
