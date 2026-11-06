@@ -437,7 +437,9 @@ if [ -n "$GATE_ON" ]; then
     # spec 266: the skip switch is pinned off here too (gate_skip_coverage prints 0, the QG_SKIP_COVERAGE=0 this line carries).
     GLIST=$(gate_steps_file); GCOUNT=$(gate_step_labels "$GLIST" | wc -l | tr -d ' ')
     say "gate steps: $(gate_step_labels "$GLIST" | paste -sd, - | sed 's/,/, /g') ($GCOUNT steps)"
-    ( export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt QG_SKIP_COVERAGE=$(gate_skip_coverage) CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
+    # 2026-11-06: a PII_BUILD_REVISION left in the launching shell is honoured by pii-server's build.rs BEFORE git, so every
+    # binary in the gate was stamped with a stale commit and lane_run_parity (rightly) refused it. The gate stamps from git.
+    ( unset PII_BUILD_REVISION; export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt QG_SKIP_COVERAGE=$(gate_skip_coverage) CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
     GTRC=$?
     if [ "$GTRC" -eq 0 ]; then
       # spec 266: a green gate that never measured coverage is not a pass for a queue commit
