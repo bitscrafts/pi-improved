@@ -30,7 +30,7 @@ flowchart LR
 |---|---|---|
 | `start` | `timer` | — |
 | `evidence` | `memory` | — |
-| `write` | `worker` | agent=`pi` · model=`deepseek-v4-flash` · workdir=`/projects/pi-improved` |
+| `write` | `worker` | agent=`pi` · model=`@workhorse` · workdir=`/projects/pi-improved` |
 | `check` | `gate` | — |
 | `post` | `post` | — |
 | `record` | `memory` | — |

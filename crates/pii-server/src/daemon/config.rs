@@ -27,6 +27,8 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use super::model_roles::ModelRole;
+
 /// `[core]`: settings every entrypoint needs before it can do anything else.
 ///
 /// All fields are `Option` so an absent key means
@@ -509,6 +511,8 @@ pub struct Config {
     pub evolve: EvolveSection,
     /// `[[model_tier]]` (spec 114).
     pub model_tier: Vec<ModelTierSection>,
+    /// `[models.<role>]` (spec 362): the roles a node may name as `model = "@<role>"`.
+    pub models: BTreeMap<String, ModelRole>,
 }
 
 impl Config {

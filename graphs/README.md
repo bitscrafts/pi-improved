@@ -93,7 +93,7 @@ Every configuration around the coder was measured, and each was a defect before 
 | field | why it is there |
 |---|---|
 | `spec = "$.nodes.select.item.spec"` | without it the coder had no document and improvised another spec's files |
-| `model` + `provider` | the old id `deepseek-v4-flash` had not existed for months; the graph died at spawn |
+| `model` + `provider` | the old flash id had not existed for months; the graph died at spawn |
 | `caps` with `fs_read`/`fs_write` | a coder without them cannot implement anything |
 | `env_pass` (in `spec.toml`) | a spawned agent inherits almost nothing: the key and the config dirs must be named |
 | `timeout_ms` (in `spec.toml`) | a coder pass past ten minutes is normal; the default killed real work |

@@ -69,7 +69,7 @@ workdir = "$.input.workdir"
 id = "queue"
 kind = "call"
 graph = "queue"
-sha256 = "78f4cfdfa80b73d01edbec390d01b0c3e5f6737b440c302c725eab36c0c43b29"
+sha256 = "694be343762fd5750720ac2d55fc2f79fad814bd10a9af277030f727cbed4abe"
 caps = ["spawn", "proc", "fs_read", "fs_write", "ledger"]
 
 [node.in]

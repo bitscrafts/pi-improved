@@ -40,7 +40,7 @@ flowchart LR
 | node | kind | key configuration |
 |---|---|---|
 | `select` | `select` | — |
-| `dispatch` | `coder` | agent=`pi` · model=`deepseek-v4.1-flash:cloud` · provider=`ollama-cloud` · workdir=`$.input.workdir` · spec=`$.nodes.select.item.spec` · caps=`["spawn", "proc", "fs_read", "fs_write"]` |
+| `dispatch` | `coder` | agent=`pi` · model=`@workhorse` · workdir=`$.input.workdir` · spec=`$.nodes.select.item.spec` · caps=`["spawn", "proc", "fs_read", "fs_write"]` |
 | `judge` | `judge` | workdir=`$.input.workdir` · caps=`["proc"]` |
 | `record` | `record` | — |
 

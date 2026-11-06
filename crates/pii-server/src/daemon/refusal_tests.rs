@@ -46,6 +46,7 @@ fn fixture() -> Fixture {
         tiers: Vec::new(),
         session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: crate::daemon::empty_model_roles(),
         mqtt_tool_url: None,
     })
     .unwrap();

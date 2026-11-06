@@ -8,12 +8,14 @@ pub mod approvals;
 mod channel_wiring;
 pub mod config;
 pub mod config_layers;
+mod crash_file;
 mod cron;
 pub mod identity;
 mod lag;
 mod learn_loop;
 #[cfg(test)]
 mod learn_rpc_tests;
+mod model_roles;
 #[cfg(test)]
 mod refusal_tests;
 pub mod router;
@@ -26,6 +28,8 @@ mod suspend;
 pub mod sys_status;
 pub mod wait_deadline;
 
+pub use model_roles::{ModelRole, check_listed, empty_model_roles, resolve_role};
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -35,7 +39,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use parking_lot::Mutex;
 
 use pii_abi::PiiError;
-use pii_core::Clock as _;
 use pii_proto::event::Event;
 
 use crate::Engine;
@@ -275,7 +278,7 @@ impl Daemon {
         let crashes_dir = self.ctx.crashes_dir.clone();
         let prev = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            write_crash_file(&crashes_dir, info);
+            crash_file::write_crash_file(&crashes_dir, info);
             prev(info);
         }));
     }
@@ -524,36 +527,6 @@ fn react(
     }
 }
 
-fn write_crash_file(crashes_dir: &Path, info: &std::panic::PanicHookInfo<'_>) {
-    let ts_ms = pii_core::SystemClock.now_ms();
-    let thread = std::thread::current()
-        .name()
-        .unwrap_or("unnamed")
-        .to_owned();
-    let location = info.location().map_or_else(String::new, |l| {
-        format!("{}:{}:{}", l.file(), l.line(), l.column())
-    });
-    let message = panic_message(info);
-    let _ = std::fs::create_dir_all(crashes_dir);
-    let path = crashes_dir.join(format!("{ts_ms}.json"));
-    let payload = serde_json::json!({
-        "ts_ms": ts_ms, "thread": thread, "location": location, "message": message,
-        "run": Option::<String>::None,
-    });
-    let _ = std::fs::write(&path, serde_json::to_vec(&payload).unwrap_or_default());
-}
-
-fn panic_message(info: &std::panic::PanicHookInfo<'_>) -> String {
-    info.payload().downcast_ref::<&str>().map_or_else(
-        || {
-            info.payload()
-                .downcast_ref::<String>()
-                .map_or_else(|| String::from("non-string panic payload"), String::clone)
-        },
-        |s| (*s).to_owned(),
-    )
-}
-
 /// Cooperative process shutdown (F5.3): the first `SIGTERM`/`SIGINT`
 /// triggers graceful shutdown; a second one while shutting down forces an
 /// immediate, harder exit (`was_forced()` reports which happened).
@@ -673,6 +646,7 @@ mod tests {
             mqtt_tool_url: None, // fixture engines have no broker
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
             llama_host: None,
+            models: crate::daemon::empty_model_roles(),
         })
         .unwrap();
         engine.attach_daemon_ctx(test_ctx(&dir));
@@ -842,6 +816,7 @@ mod tests {
             tiers: Vec::new(),
             session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
             llama_host: None,
+            models: crate::daemon::empty_model_roles(),
             mqtt_tool_url: None,
         })
         .unwrap();

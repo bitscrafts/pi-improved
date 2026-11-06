@@ -365,6 +365,7 @@ async fn run_daemon(
         graph_dir,
         route_policy: cfg.evolve.routing.clone(),
         tiers: cfg.model_tier.clone(),
+        models: cfg.models.clone(),
         session_runs_cap: cfg.core.session_runs_cap(),
         llama_host: cfg.llama.host.clone(),
         // The MODEL gets the mqtt tool only when a broker is configured: the tool is the door to the house's

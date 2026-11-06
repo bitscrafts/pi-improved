@@ -77,6 +77,7 @@ pub fn registry(
             .with_skills(Arc::new(nodes::coder_skills::StoreSkills::new(Arc::clone(
                 &memory,
             ))))
+            .with_models(Arc::new(cfg.models.clone()))
             .with_runs_dir(store_dir.join("runs")),
     ));
     reg.register(Arc::new(nodes::memory::MemoryFactory {

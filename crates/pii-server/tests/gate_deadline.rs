@@ -73,6 +73,7 @@ fn daemon_in(dir: &Path, deadline: Option<u64>) -> Arc<Daemon> {
         llama_host: None,
         graph_dir: dir.join("graphs"),
         mqtt_tool_url: None,
+        models: pii_server::daemon::empty_model_roles(),
     })
     .expect("engine");
     let cfg_path = dir.join("pii.toml");

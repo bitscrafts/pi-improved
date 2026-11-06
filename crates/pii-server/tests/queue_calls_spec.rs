@@ -163,11 +163,16 @@ fn tick_row(criterion: &str, work: &str, held: bool) -> Ran {
         gates: None,
         log: None,
     }));
-    reg.register(Arc::new(CoderFactory::with_env(
-        bin.path().to_path_buf(),
-        env,
-        log,
-    )));
+    // Spec 362: `queue.toml` passes `model = "@workhorse"` into the spec graph, so the factory is given the roles a
+    // real config names. Without them the role refuses, which is correct, and is not what this test is about.
+    let roles = pii_server::daemon::config::Config::parse(
+        "[models.workhorse]\nmodel = \"deepseek-v4.1-flash\"\nprovider = \"ollama-cloud\"\n",
+    )
+    .unwrap()
+    .models;
+    reg.register(Arc::new(
+        CoderFactory::with_env(bin.path().to_path_buf(), env, log).with_models(Arc::new(roles)),
+    ));
     reg.register(Arc::new(JudgeFactory));
     let src = std::fs::read_to_string(graphs_dir().join("queue.toml")).unwrap();
     let frags = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "qcs-frags-").unwrap();

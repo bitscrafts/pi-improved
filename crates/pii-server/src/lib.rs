@@ -61,6 +61,8 @@ pub struct EngineConfig {
     pub grant_ceiling: Option<pii_core::CapKind>,
     /// `[[model_tier]]` table (spec 114). Empty = no tiers.
     pub tiers: Vec<daemon::config::ModelTierSection>,
+    /// `[models.<role>]` table (spec 362). Empty = no roles; a node naming `@<role>` is then refused.
+    pub models: BTreeMap<String, daemon::ModelRole>,
     /// Broker URL for the `mqtt` TOOL (the model's door to the devices). `None` = the tool is absent, which is the
     /// honest default: a model with no broker configured must not believe it can drive the house.
     pub mqtt_tool_url: Option<String>,

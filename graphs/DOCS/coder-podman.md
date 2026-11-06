@@ -32,7 +32,7 @@ flowchart LR
 
 | node | kind | key configuration |
 |---|---|---|
-| `code` | `coder` | agent=`pi` · model=`deepseek-v4-flash` · workdir=`/tmp` · spec=`specs/207-the-coder-node-spawns-an-agent.md` · caps=`["spawn", "proc"]` |
+| `code` | `coder` | agent=`pi` · model=`@workhorse` · workdir=`/tmp` · spec=`specs/207-the-coder-node-spawns-an-agent.md` · caps=`["spawn", "proc"]` |
 | `done` | `transform` | — |
 | `refused` | `refuse` | — |
 

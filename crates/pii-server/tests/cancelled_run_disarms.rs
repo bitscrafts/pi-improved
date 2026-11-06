@@ -45,6 +45,7 @@ fn scratch_daemon(clock: &Arc<FixedClock>) -> (tempfile::TempDir, Arc<Daemon>, A
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: pii_server::daemon::empty_model_roles(),
         graph_dir: dir.join("graphs"),
         mqtt_tool_url: None,
     })

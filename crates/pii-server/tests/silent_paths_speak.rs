@@ -41,6 +41,7 @@ fn engine_in(dir: &Path) -> Arc<Engine> {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: pii_server::daemon::empty_model_roles(),
         graph_dir: dir.to_path_buf(),
         mqtt_tool_url: None,
     })
@@ -180,6 +181,7 @@ async fn a_panicking_poll_is_recorded() {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: pii_server::daemon::empty_model_roles(),
         mqtt_tool_url: None,
     })
     .expect("engine");

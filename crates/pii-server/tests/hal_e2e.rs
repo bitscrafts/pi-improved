@@ -107,6 +107,7 @@ fn daemon_in(dir: &Path, config_text: &str) -> (Arc<Daemon>, Arc<Recorder>) {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: pii_server::daemon::empty_model_roles(),
         graph_dir: dir.join("graphs"),
         mqtt_tool_url: None,
     })
@@ -337,6 +338,7 @@ fn an_unknown_backend_or_a_bad_scope_entry_is_refused_at_daemon_build() {
             tiers: Vec::new(),
             session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
             llama_host: None,
+            models: pii_server::daemon::empty_model_roles(),
             graph_dir: dir.path().join("graphs"),
             mqtt_tool_url: None,
         })

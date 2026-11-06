@@ -39,7 +39,7 @@ spec = "$.input.spec"
 timeout_ms = 1800000
 
 agent = "pi"                   # free first; Claude only when the ladder escalates (spec 183)
-model = "deepseek-v4-flash"
+model = "@workhorse"
 workdir = "/projects/pi-improved"
 brief = """
 Write a dated intervention report in Markdown from the evidence below. Use exactly these sections, in this order:

@@ -31,8 +31,10 @@ caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
 agent = "pi"
-model = "deepseek-v4.1-flash:cloud"
-provider = "ollama-cloud"
+# spec 362: the role names the model AND its provider. The callee declares `provider` in its `needs` (spec 385), so the
+# key is passed; the coder replaces it with the role's own provider when the role resolves, so the table stays the one place.
+model = "@workhorse"
+provider = "@workhorse"
 workdir = "$.input.workdir"
 base = "$.input.base"
 # spec 362: the claimed row carries the spec; without this the coder has no document to implement and

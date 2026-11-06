@@ -51,6 +51,7 @@ async fn a_daily_timer_is_one_run_over_a_window_far_longer_than_its_re_arm() {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: pii_server::daemon::empty_model_roles(),
         graph_dir: dir.join("graphs"),
         mqtt_tool_url: None,
     })

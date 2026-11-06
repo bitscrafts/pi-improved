@@ -91,6 +91,7 @@ fn engine_in_at(dir: &std::path::Path, graph_dir: PathBuf) -> Arc<Engine> {
         tiers: Vec::new(),
         session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: pii_server::daemon::empty_model_roles(),
         graph_dir,
         mqtt_tool_url: None,
     })

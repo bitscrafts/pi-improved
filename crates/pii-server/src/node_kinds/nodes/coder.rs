@@ -24,6 +24,8 @@ use pii_core::{CapKind, Ctx};
 use pii_graph::node::{GraphNode, NodeFactory};
 use pii_observe::{Event, Level, Observer, names};
 
+use crate::daemon::{ModelRole, resolve_role};
+
 use super::agent_worker::WorkerSpec;
 use super::coder_container::PODMAN_BIN;
 use super::coder_runtime::{Launch, Refusal, Spawn, elapsed_ms};
@@ -89,6 +91,8 @@ pub struct CoderFactory {
     skills: Arc<dyn SkillSource>,
     runs_dir: Option<PathBuf>,
     runtime_socket: Option<PathBuf>,
+    /// `[models.<role>]` (spec 362): the roles a node may name as `model = "@<role>"`, resolved when the node is built.
+    models: Arc<BTreeMap<String, ModelRole>>,
 }
 
 impl CoderFactory {
@@ -119,7 +123,15 @@ impl CoderFactory {
             skills: Arc::new(NoSkills),
             runs_dir: None,
             runtime_socket: None,
+            models: Arc::new(crate::daemon::empty_model_roles()),
         }
+    }
+
+    /// Names the `[models.<role>]` table a node may resolve its `@<role>` model against (spec 362).
+    #[must_use]
+    pub fn with_models(mut self, models: Arc<BTreeMap<String, ModelRole>>) -> Self {
+        self.models = models;
+        self
     }
 
     /// Points container runs at `podman`; production keeps [`PODMAN_BIN`].
@@ -168,6 +180,8 @@ struct CoderNode {
     skills: Arc<dyn SkillSource>,
     runs_dir: Option<PathBuf>,
     runtime_socket: Option<PathBuf>,
+    /// The roles a `@<role>` model arriving through the run input resolves against at spawn (spec 362 R2).
+    models: Arc<BTreeMap<String, ModelRole>>,
     cfg: serde_json::Value,
 }
 
@@ -391,6 +405,9 @@ impl NodeFactory for CoderFactory {
     }
 
     fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        // Spec 362 R2: a `@<role>` model is resolved here, so an unknown role refuses before any run starts.
+        let mut cfg = cfg.clone();
+        resolve_role(&mut cfg, &self.models)?;
         Ok(Box::new(CoderNode {
             bin_dir: self.bin_dir.clone(),
             env: self.env.clone(),
@@ -400,7 +417,8 @@ impl NodeFactory for CoderFactory {
             skills: Arc::clone(&self.skills),
             runs_dir: self.runs_dir.clone(),
             runtime_socket: self.runtime_socket.clone(),
-            cfg: cfg.clone(),
+            models: Arc::clone(&self.models),
+            cfg,
         }))
     }
 }

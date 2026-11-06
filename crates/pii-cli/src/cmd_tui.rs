@@ -121,6 +121,9 @@ async fn run_tui(
             llama_host: pii_server::daemon::config::Config::load_from_default_path()
                 .ok()
                 .and_then(|c| c.llama.host),
+            models: pii_server::daemon::config::Config::load_from_default_path()
+                .map(|c| c.models)
+                .unwrap_or_default(),
         };
         let engine = match Engine::new(cfg) {
             Ok(e) => e,

@@ -29,6 +29,7 @@ fn engine(prefix: &str) -> (tempfile::TempDir, Arc<crate::Engine>) {
         tiers: Vec::new(),
         session_runs_cap: crate::DEFAULT_SESSION_RUNS_CAP,
         llama_host: None,
+        models: crate::daemon::empty_model_roles(),
         graph_dir: dir.path().join("graphs"),
         mqtt_tool_url: None,
     })

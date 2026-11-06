@@ -28,18 +28,27 @@ use super::CoderNode;
 use super::helpers::{
     deferred_verdict, refuse_planned, stop_reason, text, texts, with_selected_spec,
 };
+use crate::daemon::resolve_role;
 
 impl GraphNode for CoderNode {
     #[allow(clippy::too_many_lines)] // reason: the node's refusals, spawn and criteria decide in one linear sequence
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         // Spec 257: the designated keys resolve against the run input; a required one that resolves to nothing refuses here.
-        let (cfg, unresolved) = input_cfg::resolve(&with_selected_spec(&self.cfg, input), input);
-        let cfg = &cfg;
-        let agent = text(cfg, "agent").unwrap_or_default();
-        let model = text(cfg, "model").unwrap_or_default();
+        let (mut cfg, unresolved) =
+            input_cfg::resolve(&with_selected_spec(&self.cfg, input), input);
+        let agent = text(&cfg, "agent").unwrap_or_default();
         if let Some(reason) = unresolved {
+            let model = text(&cfg, "model").unwrap_or_default();
             return Ok(self.refuse(ctx, &agent, &model, &reason));
         }
+        // Spec 362 R2/R3: a role that arrived through the run input (`model = "$.input.model"`) was not present when the
+        // node was built, so it is resolved HERE, by the same rule, and an unknown one refuses by name before anything spawns.
+        if let Err(e) = resolve_role(&mut cfg, &self.models) {
+            let model = text(&cfg, "model").unwrap_or_default();
+            return Ok(self.refuse(ctx, &agent, &model, &e.to_string()));
+        }
+        let cfg = &cfg;
+        let model = text(cfg, "model").unwrap_or_default();
         // Spec 386: a node's prompt template, bound to the run's values, is its brief; a node has one or the other.
         let brief = match input_cfg::prompt(cfg, input) {
             Ok(Some(prompt)) => Some(prompt),
