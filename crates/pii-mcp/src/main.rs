@@ -307,6 +307,7 @@ mod tests {
             "bash",
             "memory_search",
             "memory_put",
+            "graph_find",
         ] {
             assert!(
                 names.iter().any(|n| n == want),

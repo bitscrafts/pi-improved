@@ -28,6 +28,7 @@ pub mod conn;
 #[cfg(test)]
 mod conn_heartbeat_tests;
 pub mod dispatch;
+pub mod graph_methods;
 #[cfg(test)]
 mod inline_measure_tests;
 pub mod learn_methods;

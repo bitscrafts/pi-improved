@@ -194,6 +194,43 @@ impl Tool for MemoryPutTool {
     }
 }
 
+/// `graph_find { question }` (spec 388 R4): asks the graph catalogue what exists before a graph is written.
+///
+/// It holds nothing the graph files do not publish, so unlike `memory_search` it asks for no capability.
+#[derive(Default)]
+pub struct GraphFindTool {
+    /// Explicit control-socket path (tests only); `None` uses the normal
+    /// `pii_uds::runtime_dir` resolution.
+    pub sock_override: Option<PathBuf>,
+}
+
+impl Tool for GraphFindTool {
+    fn name(&self) -> &'static str {
+        "graph_find"
+    }
+
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: String::from("graph_find"),
+            description: String::from(
+                "Ask which graphs already do a flow: each candidate comes with its purpose, kinds and calls",
+            ),
+            schema: json!({"type":"object","required":["question"],"properties":{
+                "question":{"type":"string"}}}),
+        }
+    }
+
+    fn timeout(&self) -> Option<u64> {
+        Some(MEMORY_RPC_TIMEOUT_MS)
+    }
+
+    fn call(&self, _ctx: &Ctx, args: &Value) -> Result<Value, PiiError> {
+        let question = require_str(args, "question")?;
+        let sock = resolve_sock(self.sock_override.as_ref())?;
+        call_daemon(Method::GraphFind, json!({"question": question}), sock)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

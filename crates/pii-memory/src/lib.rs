@@ -3,6 +3,7 @@
 //! `pii_store::MemStore` (deps-check invariant 5).
 
 pub mod bm25;
+pub mod catalogue;
 pub mod consolidate;
 pub mod decay;
 pub mod doc;

@@ -16,6 +16,7 @@ mod cmd_deploy_card;
 mod cmd_disk;
 mod cmd_docs;
 mod cmd_entity;
+mod cmd_graph_index;
 mod cmd_graph_installed;
 mod cmd_health;
 mod cmd_incidents;
@@ -290,7 +291,9 @@ fn main() -> ExitCode {
 
 fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
     let Some(sub) = args.next() else {
-        eprintln!("usage: pii graph {{lint|check|show|run|resume|trace|list|explain|edit}} ...");
+        eprintln!(
+            "usage: pii graph {{lint|check|show|run|resume|trace|list|explain|edit|index|find}} ..."
+        );
         return ExitCode::from(2);
     };
     let sub = sub.to_str().map_or_else(|| "?".to_owned(), str::to_owned);
@@ -319,6 +322,8 @@ fn cmd_graph(args: &mut std::env::ArgsOs) -> ExitCode {
         "list" => cmd_graph_installed::cmd_list(args),
         "explain" => cmd_graph_installed::cmd_explain(args),
         "edit" => cmd_graph_installed::cmd_edit(args),
+        "index" => cmd_graph_index::cmd_index(args),
+        "find" => cmd_graph_index::cmd_find(args),
         _ => {
             eprintln!(
                 "usage: pii graph {{lint|check|show|run|resume|trace|list|explain|edit}} ..."

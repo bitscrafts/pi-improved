@@ -132,6 +132,12 @@ pub enum Method {
     /// Change a live skill document's text in the daemon's store, keeping its id (spec 234 R1).
     #[serde(rename = "skill.edit")]
     SkillEdit,
+    /// Bring the graph catalogue to the entries given (spec 388 R1).
+    #[serde(rename = "graph.index")]
+    GraphIndex,
+    /// Answer a question from the graph catalogue (spec 388 R3).
+    #[serde(rename = "graph.find")]
+    GraphFind,
     /// Add one work item to the daemon's queue (spec 352 R1).
     #[serde(rename = "queue.add")]
     QueueAdd,
@@ -188,6 +194,8 @@ impl std::fmt::Display for Method {
             Self::SkillPut => "skill.put",
             Self::SkillList => "skill.list",
             Self::SkillEdit => "skill.edit",
+            Self::GraphIndex => "graph.index",
+            Self::GraphFind => "graph.find",
             Self::QueueAdd => "queue.add",
             Self::QueueList => "queue.list",
             Self::QueueClaim => "queue.claim",
@@ -242,6 +250,8 @@ impl std::str::FromStr for Method {
             "skill.put" => Self::SkillPut,
             "skill.list" => Self::SkillList,
             "skill.edit" => Self::SkillEdit,
+            "graph.index" => Self::GraphIndex,
+            "graph.find" => Self::GraphFind,
             "queue.add" => Self::QueueAdd,
             "queue.list" => Self::QueueList,
             "queue.claim" => Self::QueueClaim,

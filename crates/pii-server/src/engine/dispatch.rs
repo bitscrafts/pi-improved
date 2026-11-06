@@ -147,6 +147,8 @@ pub fn dispatch(
         Method::LearnSweep => crate::engine::learn_methods::learn_sweep(engine, req),
         Method::SkillPut => crate::engine::skill_methods::skill_put(engine, req),
         Method::SkillList => crate::engine::skill_methods::skill_list(engine, req),
+        Method::GraphIndex => crate::engine::graph_methods::graph_index(engine, req),
+        Method::GraphFind => crate::engine::graph_methods::graph_find(engine, req),
         Method::SkillEdit => crate::engine::skill_methods::skill_edit(engine, req),
         Method::QueueAdd => match crate::engine::queue_methods::admit(engine, req) {
             Ok(item) => match engine.queue.put_item(&item) {

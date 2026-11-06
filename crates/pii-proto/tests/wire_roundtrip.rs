@@ -63,6 +63,8 @@ const METHODS: &[(Method, &str)] = &[
     (Method::SkillPut, "skill.put"),
     (Method::SkillList, "skill.list"),
     (Method::SkillEdit, "skill.edit"),
+    (Method::GraphIndex, "graph.index"),
+    (Method::GraphFind, "graph.find"),
 ];
 
 #[test]

@@ -18,7 +18,7 @@ use pii_proto::{ErrorCode, Request, Response, RpcError};
 use crate::engine::dispatch::{err_code, value_response};
 use crate::{Engine, daemon};
 
-fn err(req: &Request, c: ErrorCode, m: &str) -> Response {
+pub(super) fn err(req: &Request, c: ErrorCode, m: &str) -> Response {
     Response::err(req.id.clone(), RpcError::new(c, m))
 }
 

@@ -78,6 +78,7 @@ pub struct EngineConfig {
     pub llama_host: Option<String>,
 }
 
+pub use engine::graph_methods::graphs_written_without_a_lookup;
 pub use graph_paths::{find_graph, graph_not_found, graph_search_dirs, resolve_graph_dir};
 
 pub mod graph_paths;

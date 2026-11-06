@@ -229,6 +229,8 @@ fn is_heavy(req: &Request) -> bool {
             | Method::SkillPut
             | Method::SkillList
             | Method::SkillEdit
+            | Method::GraphIndex
+            | Method::GraphFind
     )
 }
 

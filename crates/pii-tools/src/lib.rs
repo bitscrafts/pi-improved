@@ -23,7 +23,7 @@ use serde_json::Value;
 
 use crate::bash::BashTool;
 use crate::fs::{EditTool, FsReadTool, FsWriteTool, MultiEditTool};
-use crate::memory::{MemoryPutTool, MemorySearchTool};
+use crate::memory::{GraphFindTool, MemoryPutTool, MemorySearchTool};
 use crate::search::{GlobTool, GrepTool};
 use crate::worktree::WorktreeTool;
 
@@ -88,6 +88,8 @@ impl ToolSet {
             Arc::new(WorktreeTool { workspace }),
             Arc::new(MemorySearchTool::default()) as Arc<dyn Tool>,
             Arc::new(MemoryPutTool::default()) as Arc<dyn Tool>,
+            // graph_find: the graph catalogue, read beside memory_search (spec 388 R4).
+            Arc::new(GraphFindTool::default()) as Arc<dyn Tool>,
         ] {
             tools.insert(t.name(), t);
         }

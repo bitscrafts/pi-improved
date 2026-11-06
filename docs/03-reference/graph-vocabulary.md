@@ -141,3 +141,11 @@ The first graph it moved was `doc-code`: its flow was `books`' flow with other c
 A `tool` node's `run` must be an argv array with a literal argv0 that is not a shell. Anything else is refused at load, naming the node.
 
 **Still open.** The surface is not closed yet. `run` is refused at load but `ToolNode` does not execute it, and `tool = "bash"` still reaches a shell: `books`, `doc-code` (through `books`), `starter/heal-fix`, `starter/verify-fix` and the graphs `sop` compiles. The lint does not measure this. Closing it means giving `tool` a working `run` and moving those graphs off `bash`, including the ones whose command arrives as `$.input.test_command`.
+
+## The catalogue (spec 388)
+
+`pii graph index [--dir D]` derives one entry per graph from the system and user directories and writes it to the memory store as a skill document: purpose, entry, exit, kinds, ports, calls, capabilities and the sha256 it was built from. A file that does not load is reported by name. Nothing is hand-written: the purpose is the graph's `description`, else the first clause of its opening comment.
+
+`pii graph find <question>` answers through the memory lanes, one hit per graph, with the kinds and outgoing calls on the hit's own lines. If a file has changed since the index, one `stale:` line names it and the answer still comes. The `graph_find` tool gives an `agent` node the same answer and needs no capability.
+
+`pii graph index` also reports `duplicate-flow` for two graphs with one call shape, and the counters `graphs_written_without_a_lookup` and `duplicate_flows_found`. An agent's `graph_find` and its `fs_write`, `edit` or `multi_edit` of a graph file are journalled, and the first counter is read from those journals. A write made through `bash` is not seen.

@@ -275,6 +275,19 @@ fn check(
     Ok(Checked { spec, woven, calls })
 }
 
+/// Whether a graph file passes the checks `pii graph lint` makes, woven from its own directory (spec 388 R1).
+pub(crate) fn lint_file(src: &str, file: &Path) -> Result<(), String> {
+    let dirs =
+        crate::graph_dirs::dirs_for(file, Some(crate::graph_dirs::default_store().as_path()));
+    check(
+        src,
+        &crate::graph_dirs::fragments_for(file),
+        &dirs,
+        &registry(),
+    )
+    .map(|_| ())
+}
+
 /// The `.toml` stems of a directory, sorted, without dotfiles.
 fn graph_files(dir: &Path) -> Result<BTreeSet<String>, String> {
     let entries = std::fs::read_dir(dir).map_err(|e| format!("read {}: {e}", dir.display()))?;

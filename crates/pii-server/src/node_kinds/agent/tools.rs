@@ -65,6 +65,18 @@ impl AgentNode {
                 Ok(v) => (true, v.to_string()),
                 Err(e) => (false, e.to_string()),
             };
+            // Spec 388 R5: the journal is what certifies a graph was looked up before it was written.
+            if call.name == "graph_find" {
+                ctx.observer().event(&pii_core::ObsEvent::NodeObserved {
+                    kind: crate::engine::graph_methods::GRAPH_ASKED.to_owned(),
+                    fields: serde_json::json!({
+                        "tool": call.name,
+                        "question": call.arguments.get("question"),
+                        "ok": ok,
+                        "answer": content,
+                    }),
+                });
+            }
             self.emit_live(pii_proto::event::Event::ToolResult {
                 run_id: run_id.to_owned(),
                 node: node.to_owned(),
@@ -85,6 +97,16 @@ impl AgentNode {
                 } else {
                     self.workspace.join(p).display().to_string()
                 };
+                if std::path::Path::new(&resolved)
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("toml"))
+                    && resolved.contains("graphs/")
+                {
+                    ctx.observer().event(&pii_core::ObsEvent::NodeObserved {
+                        kind: crate::engine::graph_methods::GRAPH_WRITTEN.to_owned(),
+                        fields: serde_json::json!({ "tool": call.name, "path": resolved }),
+                    });
+                }
                 if !files_changed.contains(&resolved) {
                     files_changed.push(resolved);
                 }

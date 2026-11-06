@@ -9,31 +9,21 @@ use super::*;
 
 /// The agent's graph holds no memory capability and no catalogue capability: R4 and the guardrail say reading the
 /// catalogue needs nothing a file read would not. The scripted model asks with `question`, as `pii graph find` does.
-#[test]
-fn the_agent_can_call_graph_find() {
+/// A fixture whose scripted agent answers once through `graph_find`, plus its daemon and log path.
+fn ask_daemon() -> (Fixture, daemon_guard::DaemonGuard, std::path::PathBuf) {
     let fx = Fixture::new();
     let state = fx.state();
     let graph = "name = \"asks\"\nentry = \"ask\"\nexit = \"ask\"\ncaps = [\"fs_read\", \"fs_write\", \"proc\"]\n\n[[node]]\nid = \"ask\"\nkind = \"agent\"\nsystem = \"s\"\ntools = [\"graph_find\"]\ncaps = [\"fs_read\", \"fs_write\", \"proc\"]\n";
     std::fs::create_dir_all(state.join("graphs")).unwrap();
     std::fs::write(state.join("graphs/asks.toml"), graph).unwrap();
     let turns = serde_json::json!({"turns": [
-        {
-            "text": "asking",
-            "tool_calls": [{
-                "id": "c1",
-                "name": "graph_find",
-                "arguments": {"question": FLOW_QUESTION},
-            }],
-            "tokens_in": 1,
-            "tokens_out": 1,
-        },
+        {"text": "asking", "tool_calls": [{"id": "c1", "name": "graph_find", "arguments": {"question": FLOW_QUESTION}}], "tokens_in": 1, "tokens_out": 1},
         {"text": "done", "tool_calls": [], "tokens_in": 1, "tokens_out": 1},
     ]});
     let script = fx.root.path().join("model.json");
     std::fs::write(&script, turns.to_string()).unwrap();
     let log = fx.root.path().join("daemon.log");
-
-    let mut daemon = daemon_guard::spawn(
+    let daemon = daemon_guard::spawn(
         fx.envs(&mut Command::new(env!("CARGO_BIN_EXE_pii")))
             .arg("daemon")
             .args(["--sandbox", "off", "--workspace"])
@@ -43,24 +33,47 @@ fn the_agent_can_call_graph_find() {
             .env("PII_MODEL", format!("scripted:{}", script.display()))
             .stderr(Stdio::null()),
     );
+    (fx, daemon, log)
+}
 
-    // A memory search answers only through the daemon, so its success means the socket is up.
-    let up = wait_until(|| fx.pii(&["memory", "search", "up"]).status.success());
+#[test]
+fn the_agent_can_call_graph_find() {
+    let (fx, mut daemon, log) = ask_daemon();
+
+    // A memory search answers only through the daemon, so its success means the socket is up. Every miss names its
+    // reason on stderr, because under the gate the only evidence that survives is this test's own captured output.
+    let up = wait_until(|| {
+        let out = fx.pii(&["memory", "search", "up"]);
+        if !out.status.success() {
+            note(&format!(
+                "daemon up: miss: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+            return false;
+        }
+        true
+    });
     let indexed = up.then(|| combined(&fx.pii(&["graph", "index", "--dir", "graphs"])));
     let started = up.then(|| fx.pii(&["run", "start", "asks", "--input", r#"{"text":"hi"}"#]));
     let run_id = started.as_ref().and_then(|out| {
         let reply: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
         reply["run_id"].as_str().map(str::to_owned)
     });
-    let finished = run_id.as_deref().is_some_and(|run| {
-        wait_until(|| {
-            let running = fx.pii(&["run", "ls", "--status", "running"]);
-            running.status.success() && !String::from_utf8_lossy(&running.stdout).contains(run)
-        })
-    });
+    let run_still_listed = |run: &str| {
+        let listing = fx.pii(&["run", "ls", "--status", "running"]);
+        listing.status.success() && String::from_utf8_lossy(&listing.stdout).contains(run)
+    };
+    let finished = run_id
+        .as_deref()
+        .is_some_and(|run| wait_until(|| !run_still_listed(run)));
     daemon.kill_now();
 
-    assert!(up, "the daemon never answered");
+    if !up {
+        let log_text =
+            std::fs::read_to_string(&log).unwrap_or_else(|e| format!("daemon.log unreadable: {e}"));
+        note(&format!("daemon.log after the timeout:\n{log_text}"));
+        panic!("the daemon never answered; daemon.log follows on stderr");
+    }
     let indexed = indexed.unwrap();
     assert!(
         indexed_count(&indexed).is_some_and(|n| n > 0),
@@ -78,7 +91,7 @@ fn the_agent_can_call_graph_find() {
         "the graph_find dispatches in the daemon log"
     );
 
-    let store = Store::open(&state.join("store.redb")).unwrap();
+    let store = Store::open(&fx.state().join("store.redb")).unwrap();
     let journal = store
         .read_journal(&pii_abi::RunId::from(run_id.as_str()))
         .unwrap();
