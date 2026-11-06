@@ -1,6 +1,6 @@
 //! Spec 282 (e): the tracked `graphs/spec.toml` declares the run's spend limit, and it bites the coder. The limit is read
 //! through the loader the daemon uses, handed to `Budget::new`, and the FIRST claude run is capped by it: the cap is read
-//! from the argv the fake claude recorded (`--max-budget-usd 1`), which is the live path and not the config text.
+//! from the argv the fake claude recorded (`--max-budget-usd <the tracked limit>`), which is the live path and not the config text.
 
 #![allow(
     clippy::unwrap_used,
@@ -142,7 +142,12 @@ fn the_tracked_limit_caps_the_first_claude_run() {
     let first = argv.lines().next().unwrap_or_default();
     assert_eq!(
         cap_flag(first).as_deref(),
-        Some("1"),
-        "the first claude run is capped at the tracked 1.00 USD: {argv:?}"
+        Some(usd_flag(tracked_limit()).as_str()),
+        "the first claude run is capped at the tracked limit: {argv:?}"
     );
+}
+
+/// Micro-USD as `--max-budget-usd` prints it: `4000000` is `4`.
+fn usd_flag(micro: u64) -> String {
+    format!("{}", micro as f64 / 1_000_000.0)
 }

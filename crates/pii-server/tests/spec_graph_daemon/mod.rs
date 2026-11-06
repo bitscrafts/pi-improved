@@ -155,7 +155,7 @@ impl Case {
         .expect("engine")
     }
 
-    /// The run input for `spec` with `agent = claude` and a $3.00 ceiling; `docs_brief` is absent when false.
+    /// The run input for `spec` with `agent = claude` and a $9.00 ceiling (above the tracked limit, so the limit is what binds); `docs_brief` is absent when false.
     pub fn input(&self, docs_brief: bool) -> serde_json::Value {
         let mut v = serde_json::json!({
             "agent": "claude",
@@ -166,7 +166,7 @@ impl Case {
             "workdir": self.work.display().to_string(),
             "brief": IMPL,
             "base": self.base,
-            "max_budget_usd": 3.00,
+            "max_budget_usd": 9.00,
             "docs_brief": DOCS,
         });
         if !docs_brief {
@@ -192,12 +192,27 @@ pub fn graphs_copy(dir: &Path, micro_usd: Option<u64>) -> PathBuf {
     let graphs = dir.join("graphs");
     std::fs::create_dir_all(&graphs).unwrap();
     let spec = std::fs::read_to_string(tracked_graphs().join("spec.toml")).unwrap();
+    // Rewrite the spend line whatever its value is. This used to match the literal `max_micro_usd = 1000000`, so when the
+    // policy moved to 4.00 USD the two "exhausted budget" controls silently stopped exhausting anything. A graph with no
+    // such line is a failed fixture, not an unmodified one.
     let spec = match micro_usd {
-        Some(m) => spec.replacen(
-            "max_micro_usd = 1000000",
-            &format!("max_micro_usd = {m}"),
-            1,
-        ),
+        Some(m) => {
+            assert!(
+                spec.lines().any(|l| l.starts_with("max_micro_usd = ")),
+                "spec.toml has no `max_micro_usd = ` line to rewrite"
+            );
+            spec.lines()
+                .map(|l| {
+                    if l.starts_with("max_micro_usd = ") {
+                        format!("max_micro_usd = {m}")
+                    } else {
+                        l.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n"
+        }
         None => spec,
     };
     std::fs::write(graphs.join("spec.toml"), spec).unwrap();
@@ -504,4 +519,20 @@ fn git(dir: &Path, args: &[&str]) -> String {
         .unwrap();
     assert!(out.status.success(), "git {args:?}: {out:?}");
     String::from_utf8(out.stdout).unwrap().trim().to_owned()
+}
+
+/// The tracked `spec.toml` spend limit in micro-USD, read from the file the runs load.
+pub fn tracked_limit_micro() -> u64 {
+    std::fs::read_to_string(tracked_graphs().join("spec.toml"))
+        .unwrap()
+        .lines()
+        .find_map(|l| l.strip_prefix("max_micro_usd = "))
+        .and_then(|v| v.split_whitespace().next())
+        .and_then(|v| v.parse().ok())
+        .expect("spec.toml declares max_micro_usd")
+}
+
+/// Micro-USD as `--max-budget-usd` prints it: `4000000` is `4`, `3600000` is `3.6`.
+pub fn usd_flag(micro: u64) -> String {
+    format!("{}", micro as f64 / 1_000_000.0)
 }

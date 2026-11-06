@@ -18,6 +18,7 @@ mod spec_graph_daemon;
 use pii_abi::RunStatus;
 use spec_graph_daemon::{
     Case, DOCS_BREAK, DOCS_OK, graphs_copy, in_child, observed, settle, started, tracked_graphs,
+    tracked_limit_micro, usd_flag,
 };
 
 const CRITERION: &str = "test -f built.txt";
@@ -143,12 +144,16 @@ async fn the_budget_is_shared_through_the_call() {
         "{status:?}: {journal:?}"
     );
 
-    // The `[limits]` ceiling of $1.00 beats the input's $3.00 for the first coder; the docs coder inside the called
-    // graph gets what the first one left after charging $0.40, which proves the call shares the host's budget.
+    // The `[limits]` ceiling beats the input's $9.00 for the first coder; the docs coder inside the called graph gets
+    // what the first one left after charging $0.40, which proves the call shares the host's budget. Both numbers come
+    // from the tracked graph, so a change of policy moves them and not this test.
+    let limit = tracked_limit_micro();
     let argv = case.agent_argv();
     assert_eq!(argv.len(), 2, "two agent calls: {argv:?}");
-    assert!(argv[0].contains("--max-budget-usd 1 "), "{}", argv[0]);
-    assert!(argv[1].contains("--max-budget-usd 0.6 "), "{}", argv[1]);
+    let first = format!("--max-budget-usd {} ", usd_flag(limit));
+    let second = format!("--max-budget-usd {} ", usd_flag(limit - 400_000));
+    assert!(argv[0].contains(&first), "{}", argv[0]);
+    assert!(argv[1].contains(&second), "{}", argv[1]);
 }
 
 #[tokio::test]
