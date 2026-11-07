@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# requires: dev-tree
+# why: run-batchC-pii.sh writes its graph under the hard-coded /projects/pi-improved, so an export never finds the graph the test reads
 # Test: the graph run-batchC-pii.sh GENERATES carries a wall limit that outlives its coder node. The input is the live artefact: the REAL
 # script is run (DEVBOX_HOST unreachable, so it writes its graph and then fails at the first ssh), and the graph file it left is parsed.
 # A control runs a copy of the script with the [limits] block removed: the same check must FAIL on it.

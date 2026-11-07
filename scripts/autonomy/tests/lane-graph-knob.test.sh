@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# requires: dev-tree
+# why: it runs lane-graph-select and lane-graph-wall, which need the dev tree
 # Test: scripts/autonomy/env.sh reads the lane graph from a one-word file (spec 295), so the cron tick can switch the queue without
 # an edit. Every case sources the REAL env.sh in a fresh bash with PII_LANE_FILE pointed at a scratch file and prints what it left in
 # PII_LANE_GRAPH. Controls: an absent file, a garbage word, an empty file and an environment value that must win over the file.

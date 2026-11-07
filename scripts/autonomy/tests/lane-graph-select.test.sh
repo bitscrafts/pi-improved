@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# requires: dev-tree
+# why: it runs run-batchC-pii.sh, which pins the lane graph against git HEAD of /projects/pi-improved; an export has no .git
 # Test: run-batchC-pii.sh selects its lane graph (spec 294). Every case uses --dry-run, which prints the lane and writes the graph or the
 # input and exits BEFORE the daemon, ssh or any agent. The default one-node graph must stay byte-identical to the one the script wrote
 # before the lane existed (the only difference allowed is the run's timestamp in its name). Controls: a changed pin, and a cap over the limit.
