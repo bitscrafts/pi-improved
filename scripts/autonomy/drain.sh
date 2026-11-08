@@ -15,7 +15,8 @@
 #
 # Env: MAX_CYCLES (default 8), PII_DRAIN_QUIET=1 to print only the summary.
 set -uo pipefail
-cd /projects/pi-improved || exit 1
+# PII_DRAIN_ROOT is a seam for tests only (a throwaway repo holding a copy of scripts/autonomy and a stub cycle.sh); the cron never sets it.
+cd "${PII_DRAIN_ROOT:-/projects/pi-improved}" || exit 1
 # The tree hold (2026-11-01): an interactive turn can be editing this tree with no lock of its own, so a dispatcher
 # that only checks the cycle's flock cannot know. Passing --from-cron is what makes this a BACKGROUND caller: it
 # yields and exits 0, which reduces its rights and can never gain any.
@@ -108,6 +109,14 @@ for i in $(seq 1 "$MAX"); do
     python3 scripts/autonomy/state.py set "$ITEM" status=skipped "last=spec says $reason - never dispatch it again" >/dev/null 2>&1
     echo "drain: $ITEM retired without dispatch — $SPEC says $reason"
     continue
+  fi
+  # THE HOLD IS RE-CHECKED BEFORE EVERY CYCLE, not only at the top of the firing (measured 2026-11-06: a hold taken after a
+  # firing began was ignored for up to 8 cycles; one firing re-dispatched the same row every ~3 minutes for ~25 minutes). It is a
+  # yield, never a pause: the cron stays on, this firing ends, the next one asks again.
+  if ! bash scripts/autonomy/hold.sh check >/dev/null 2>&1; then
+    bash scripts/autonomy/hold.sh check | sed 's/^hold: /drain: /'
+    echo "drain: the tree is held — stopping before cycle $i, nothing started, nothing spent"
+    break
   fi
   say "drain: [$i] $ITEM"
   OUT=$(bash scripts/autonomy/cycle.sh 2>&1 | tail -1)
