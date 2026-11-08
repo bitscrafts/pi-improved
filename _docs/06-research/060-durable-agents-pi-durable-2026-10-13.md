@@ -104,3 +104,37 @@ them plainly.
   change into production, with the operator as far from the loop as possible and deciding only the end.
 - Dual agent-memory entries stored: `workspace/research/pi-durable-durable-agents-2026-10-13` (facts) and
   `workspace/insights/pii-from-pi-durable-2026-10-13` (the angle).
+
+## Update 2026-11-07 — measured against the tree, and a correction
+
+Re-read of the primary source (`earendil.com/posts/pi-durable/`, 2026-10-01) and of Temporal's response
+(`temporal.io/blog/the-immortal-life-of-pi…`, 2026-10-08), then each item below was checked in the tree.
+
+**Corrected.** An earlier pass (and the first answer given on 2026-11-07) called Pi Durable's `replay: "safe"` flag
+pii's missing piece. That was wrong. pii has the inverse, already enforced:
+
+- `GraphNode::is_effect` / `is_effect_for(cfg)` (`pii-graph/src/node.rs`) is declared by eight node kinds: `hal`, `plan`,
+  `spawn`, `queue`, `coder`, `post`, `memory`, `ledger` (the last per configuration).
+- The scheduler journals `EffectStarted` with an idempotency key (run, node, input digest) before the effect, and
+  `EffectConfirmed` after (`pii-graph/src/effect.rs`, `sched/dispatch.rs`; spec 186).
+- Resume of a journal holding an effect started and never confirmed is **refused** (`effect.unknown`); a confirmed effect
+  whose `NodeFinished` never landed is completed from the journal, never re-run. `pii run retry --node` is the operator
+  accepting the risk. Tests: `effect_not_repeated`, `unconfirmed_effect_refuses`.
+- A non-effect node with `NodeStarted` and no terminal event is re-run on resume (`run/resume.rs`, "the documented Phase-1
+  boundary"). That IS Pi Durable's `replay: "safe"` behaviour, expressed as "not an effect".
+- At boot, runs a dead daemon left `Running` have their agents killed and are closed (spec 242, `engine/orphans.rs`,
+  `orphans_are_reaped`); a run whose id was acknowledged is already on disk (spec 305, `acked_run_survives_kill`); a
+  `Suspended` run with no timer is re-armed (spec 353, `boot_recovers_suspended`).
+
+So the durability CONTRACT is in place. What differs is a POLICY: pii closes an in-flight run as failed at boot and leaves
+resuming to the operator; Pi Durable's opt-in `retry_unfinished` resumes automatically. Pi Durable's own default is the
+same as pii's ("mark interrupted, do not retry", `durable-harness.md`). Specs 143 and 144 therefore stay RESEARCH: there is
+no measured run that an automatic resume would have saved, and "I would have liked it" is not that measurement.
+
+**Still unmeasured, so not built:** exactly-once run starts. No idempotency key exists on `run start` (searched
+`pii-server/src` and `pii-cli/src`); channel posts and promotions have one. Whether a duplicate start has ever happened is
+not recorded anywhere. The first step is a counter, not a feature.
+
+**Does not transfer:** the 15,000-line self-comprehension budget (pii: about 90,000 lines in 734 `.rs` files; the useful
+equivalent is `graphs/VOCABULARY`, 14 kinds); Temporal's cross-machine failover (pii is one daemon per host by decision);
+the package itself (TypeScript; pii is a single Rust binary).
