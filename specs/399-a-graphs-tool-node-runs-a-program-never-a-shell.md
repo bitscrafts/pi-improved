@@ -40,6 +40,21 @@ and making `tool = "bash"` a load-time refusal.
   `heal-fix` and `verify-fix` take `test_argv` (an array) instead of `test_command` (a string); `heal-fix`'s
   `git diff` becomes `["git","diff"]`. The `needs` lists, the run-input documentation in
   `crates/pii-server/src/lib.rs` / `engine/runs.rs` / `cmd_oneshot.rs`, and the tests move with them.
+- R8 a `tool` node with `tool = "run"` MUST declare `programs`: an array of bare program names (`["cargo"]`), or a `$.input.<name>`
+  reference to one. A `run` tool node without `programs` is refused at load, naming the node. The node executes an argv only when
+  its first entry EQUALS a declared program (exact match, not a prefix); any other first entry is `Denied` naming the program,
+  BEFORE the process capability is consulted. A program the run scope happens to admit for another reason is not enough.
+- R9 the process scope follows the declaration: a `tool` node can exec exactly its declared programs and nothing else, and the run
+  scope admits those programs for `tool` nodes of that graph only. Measured premise (read before writing code):
+  `node_proc_argv0` (`crates/pii-graph/src/sched/dispatch.rs`) filters every program that ANOTHER kind has claimed out of all
+  other kinds' scopes, and the `coder` kind claims `cargo` through the criteria table. So `["cargo", ...]` is denied to a
+  `tool` node today even though the run scope contains `cargo`. A declared `cargo` must work for the tool node and stay
+  claimed against every other non-coder kind.
+- R10 `books` takes `programs` as a required input next to `inventory` and `verify`, and passes it to both of its `run`
+  nodes. `doc-code` supplies it as a literal array in its committed `[node.in]` (`programs = ["cargo"]`). `heal-fix` and
+  `verify-fix` take `test_programs` the same way. The graph that CALLS a generic graph is where the authority is written.
+  Stated limit: a generic callee started directly by an operator (`pii run start books --input ...`) takes the operator's
+  `programs`; that is the operator's authority, as it is for any input. What no input can do after this row is reach a shell.
 - R5 `graphs/` contains no `tool = "bash"`, and `docs/03-reference/graph-vocabulary.md` no longer says the
   surface is still open.
 
@@ -77,8 +92,13 @@ Key decisions:
 | `CONTROL_a_tool_node_naming_run_loads` | `tool` node with `tool = "run"` | loads |
 | `books_runs_its_inventory_as_an_argv` | books with `inventory = ["true"]`, `verify = ["true"]` | the graph runs to its exit |
 | `CONTROL_books_still_ends_on_nothing_to_do_for_an_empty_inventory` | inventory prints nothing | `nothing-to-do`, as before |
+| `a_run_node_without_programs_is_refused_at_load` | `tool = "run"` with no `programs` | load error naming the node |
+| `an_undeclared_program_is_denied_even_if_the_run_scope_has_it` | node declares `["true"]`, argv `["cargo","--version"]` (cargo IS in the run scope) | `Denied`, names `cargo`; nothing ran |
+| `CONTROL_a_declared_cargo_runs_for_a_tool_node` | node declares `["cargo"]`, argv `["cargo","--version"]` | stdout starts with `cargo` |
+| `CONTROL_cargo_stays_claimed_against_a_non_coder_kind` | a `transform`/other non-coder node asks the scope for `cargo` | still not admitted |
+| `a_prefix_of_a_declared_program_is_not_the_program` | node declares `["car"]`, argv `["cargo","--version"]` | `Denied` (the scope check is a prefix match; this node's check is exact) |
 
-Acceptance test: `a_shell_argv0_is_refused_even_when_it_arrives_as_data`. The requirement a plausible
+Acceptance tests: `a_shell_argv0_is_refused_even_when_it_arrives_as_data` and `an_undeclared_program_is_denied_even_if_the_run_scope_has_it`. The requirement a plausible
 implementation satisfies in appearance only is R2: a load-time check passes every shipped graph while an
 argv supplied through `--input` still reaches a shell. The test drives the node with the argv as RUN INPUT.
 
@@ -87,6 +107,7 @@ argv supplied through `--input` still reaches a shell. The test drives the node 
 Each is verified to FAIL before the change. A criterion that passes today is a Guardrail, never a criterion here.
 - [ ] `cargo test -q -p pii-tools --test run_tool 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `cargo test -q -p pii-graph --test tool_surface_is_closed a_tool_node_naming_bash_is_refused 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `cargo test -q -p pii-server --test tool_programs_are_declared 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `test -d graphs && ! grep -rq 'tool = "bash"' graphs/`
 - [ ] `cargo test -q -p pii-server --test books_graph books_runs_its_inventory_as_an_argv 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `cargo test -q -p pii-server --test books_graph CONTROL_books_still_ends_on_nothing_to_do 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
@@ -108,6 +129,11 @@ Each is verified to FAIL before the change. A criterion that passes today is a G
 - `crates/pii-graph/src/nodes.rs`
 - `crates/pii-graph/tests/tool_surface_is_closed.rs`
 - `crates/pii-server/src/lib.rs`
+- `crates/pii-server/src/engine/tool.rs`
+- `crates/pii-server/src/engine/run_scope.rs`
+- `crates/pii-graph/src/node.rs`
+- `crates/pii-graph/src/sched/dispatch.rs`
+- `crates/pii-server/tests/tool_programs_are_declared.rs`
 - `crates/pii-server/src/engine/runs.rs`
 - `crates/pii-cli/src/cmd_oneshot.rs`
 - `crates/pii-server/tests/books_graph.rs`
