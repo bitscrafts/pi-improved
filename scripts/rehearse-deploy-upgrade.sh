@@ -18,6 +18,7 @@ setup(){ # $1 = scratch root on the host
     cp -a ~/.local/state/pii/graphs/. \$R/.local/state/pii/graphs/
     mkdir -p \$R/run/pii/graphs && cp -a /run/user/1000/pii/graphs/. \$R/run/pii/graphs/
     for f in store memory approval heal queue; do head -c 4096 /dev/urandom > \$R/.local/state/pii/\$f.redb; done
+    printf 'PII_DISCORD_TOKEN=rehearsal-not-a-token\\nPII_DISCORD_CHANNEL_ID=000000000000000000\\n' > \$R/.local/pii/pii.env   # fake values: the Discord step is rehearsed, no credential is touched
     cd \$R && find .local run -type f ! -name '*.prev-*' -print0 | sort -z | xargs -0 sha256sum > \$R/BEFORE.sha256; wc -l < \$R/BEFORE.sha256"
 }
 TS=$(date +%s)
@@ -27,6 +28,7 @@ RA=/home/mvcorrea/pii-rehearsal-A-$TS
 echo "files in scratch: $(setup "$RA")"
 REMOTE_ROOT=$RA NO_UNIT=1 bash scripts/deploy-upgrade-host.sh "$REV" --apply 2>&1 | tail -22
 echo "-- after A: installed binary label / models block / graphs:"
+sshx "grep -c '^\\[\\[channel\\]\\]' '$RA'/.local/pii/pii.toml; grep -c '^\\[\\[cron\\]\\]' '$RA'/.local/pii/pii.toml" | paste -sd' ' | sed 's/^/channel+cron blocks in the scratch config (want 1 1): /'
 sshx "R='$RA'; strings -n 12 \$R/.local/bin/pii | grep -oE '${REV:0:7}[0-9a-f]{5}' | sort -u | head -2; grep -c '^\[models\.' \$R/.local/pii/pii.toml; ls \$R/.local/state/pii/graphs/*.toml | wc -l; ls \$R/.local/state/pii/graphs/.by-sha256 2>/dev/null | wc -l"
 echo
 echo "######## B. forced bad health: must roll back to the BEFORE state byte-for-byte"

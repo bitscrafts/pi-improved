@@ -110,6 +110,30 @@ TOML
   python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' "$CONF" || rollback "the config does not parse after the [models] block"
   echo "config: [models.workhorse] [models.planner] appended"
 else echo "config: [models] already present, left as is"; fi
+# Discord: the host already holds the credential (names checked, values never read into the log). When the config has no
+# [[channel]] yet, add the inbound channel and the daily digest the installer writes (deploy/install-pii.sh, spec 142); the forum id
+# is an id, not a secret, and is read here on the host.
+ENVF=$R/.local/pii/pii.env
+if ! grep -q '^\[\[channel\]\]' "$CONF" && [ -f "$ENVF" ] && grep -q '^PII_DISCORD_TOKEN=.' "$ENVF" && grep -q '^PII_DISCORD_CHANNEL_ID=.' "$ENVF"; then
+  CID=$(sed -n 's/^PII_DISCORD_CHANNEL_ID=//p' "$ENVF" | head -1)
+  cat >> "$CONF" <<TOML
+
+# --- appended by scripts/deploy-upgrade-host.sh (spec 142 blocks): ONE Discord forum channel and ONE daily digest ---
+# The token (PII_DISCORD_TOKEN) comes only from the unit's EnvironmentFile, never from here.
+[[channel]]
+name = "discord"
+kind = "discord"
+graph = "discord-triage"
+
+[[cron]]
+name = "digest"
+graph = "discord-digest"
+schedule = "0 12 * * *"
+input = { to = "$CID" }
+TOML
+  python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' "$CONF" || rollback "the config does not parse after the Discord blocks"
+  echo "config: [[channel]] discord + [[cron]] digest appended (credential names present, values not read into this log)"
+else echo "config: Discord left as is (a [[channel]] exists, or the credential is not on the host)"; fi
 # graphs: old bytes retained by digest (a user graph's pin still resolves), then replaced
 mkdir -p "$GR/.by-sha256"; n=0
 for f in "$S"/*.toml; do
@@ -133,6 +157,9 @@ if [ "$NO_UNIT" != 1 ]; then
   [ "$LOADED" -ge "$(echo $SHIPLIST | wc -w)" ] || rollback "the daemon lists fewer graphs than were shipped"
 fi
 [ "$NO_UNIT" = 1 ] || { [ "$(systemctl --user is-active pii)" = active ] || rollback "unit not active"; echo "unit: active, NRestarts=$(systemctl --user show pii -p NRestarts --value)"; }
+if [ "$NO_UNIT" != 1 ]; then
+  PII_RUNTIME_DIR=$RT $BIN health --json 2>/dev/null | python3 -c 'import json,sys; h=json.load(sys.stdin); print("health: channels=%d cron_entries=%s" % (len(h.get("channels",[])), h.get("cron_entries","?")))' 2>/dev/null
+fi
 echo "UPGRADE OK: $REVNOW (backup kept at $B)"
 REMOTE
 RC=$?
