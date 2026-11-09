@@ -208,8 +208,9 @@ caps = ["fs_read", "fs_write", "proc"]
 [[node]]
 id = "b"
 kind = "tool"
-tool = "bash"
-args = { command = "sudo ls" }
+tool = "run"
+programs = ["sudo"]
+args = { argv = ["sudo", "ls"] }
 "#;
 
 /// A bash deny-list hit inside a REAL run reaches the log as `tools.*`

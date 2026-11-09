@@ -17,12 +17,13 @@ max_wall_ms = 1800000
 id = "write"
 kind = "call"
 graph = "books"
-sha256 = "563d2885d71a46e4643a4868499a3a0628bde0e22611b6e6af3525d0c2f7e7ce"
+sha256 = "e00d4bcb06b2d5f888ab07784468b972ce87ec8039d291009e62894bb58e2d60"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
-inventory = "cargo xtask doc-drift-inventory"
-verify = "cargo xtask doc-drift-check --modules"
+inventory = ["cargo", "xtask", "doc-drift-inventory"]
+verify = ["cargo", "xtask", "doc-drift-check", "--modules"]
+programs = ["cargo"]
 workdir = "$.input.workdir"
 agent = "$.input.agent"
 model = "$.input.model"

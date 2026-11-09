@@ -15,8 +15,9 @@ compact_at_tokens = 24000
 [[node]]
 id = "test"
 kind = "tool"
-tool = "bash"
-args = { command = "$.input.test_command", cwd = "$.input.workspace" }
+tool = "run"
+programs = "$.input.test_programs"
+args = { argv = "$.input.test_argv", cwd = "$.input.workspace" }
 
 [[node]]
 id = "gate"

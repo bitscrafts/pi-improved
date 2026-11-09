@@ -242,6 +242,33 @@ impl Ctx {
         }
     }
 
+    /// Widening by declaration (spec 399 R9): the same context with `programs` added to its process scope. The run
+    /// calls this once, with the programs its graph's `tool` nodes declare; every other capability, the budget, the
+    /// cancel token and the principal are shared unchanged.
+    #[must_use]
+    pub fn with_proc_programs(&self, programs: &[String]) -> Self {
+        let mut allowed = self.inner.caps.proc_argv0.allowed().to_vec();
+        allowed.extend(programs.iter().cloned());
+        let widened = CapSet {
+            proc_argv0: crate::ArgvScope::new(allowed),
+            ..self.inner.caps.as_ref().clone()
+        };
+        Self {
+            inner: Arc::new(CtxInner {
+                cancel: self.inner.cancel.clone(),
+                started: self.inner.started,
+                deadline: self.inner.deadline,
+                deadline_ms: self.inner.deadline_ms,
+                clock: Arc::clone(&self.inner.clock),
+                budget: Arc::clone(&self.inner.budget),
+                caps: Arc::new(widened),
+                principal: self.inner.principal.clone(),
+                trace: self.inner.trace.clone(),
+                obs: Arc::clone(&self.inner.obs),
+            }),
+        }
+    }
+
     /// Attenuation only: caps = self ∩ narrow; budget CARVED from self (never
     /// duplicated); cancel is a child token; principal is replaced; span
     /// increments.

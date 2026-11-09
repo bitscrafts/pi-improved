@@ -29,6 +29,25 @@ pub fn deny_list_hit(command: &str) -> Option<&'static str> {
     DENY_LIST.iter().find(|d| command.contains(**d)).copied()
 }
 
+/// The deny-list entry an ARGV matches, if any (spec 399).
+///
+/// [`deny_list_hit`] matches a substring of a shell string, which on an argv would deny `grep reboot docs`. An entry applies
+/// here only when the PROGRAM is the entry's first word (`sudo`, `mkfs.ext4` for `mkfs`, `dd` for `dd of=/dev`) and the joined
+/// line contains the whole entry: the list is about what a program does, not about what an argument says.
+#[must_use]
+pub fn deny_list_hit_argv(argv: &[String]) -> Option<&'static str> {
+    let program = argv.first()?;
+    let name = program.rsplit('/').next().unwrap_or(program);
+    let line = argv.join(" ");
+    DENY_LIST
+        .iter()
+        .find(|d| {
+            let head = d.split_whitespace().next().unwrap_or(d);
+            name.starts_with(head) && line.contains(**d)
+        })
+        .copied()
+}
+
 /// `bash { command, cwd?, timeout_ms? }` (F3.7).
 pub struct BashTool {
     /// Workspace the tool is bound to (cwd must stay inside).
@@ -63,36 +82,45 @@ impl Tool for BashTool {
                 "command matches deny list ('{d}')"
             )));
         }
-        let cwd = match args.get("cwd").and_then(Value::as_str) {
-            Some(c) => {
-                let canon = dunce::canonicalize(c)
-                    .map_err(|e| PiiError::Invalid(format!("cwd {c}: {e}")))?;
-                if !canon.starts_with(&self.workspace) {
-                    return Err(PiiError::Denied(format!(
-                        "cwd {c} is outside the workspace"
-                    )));
-                }
-                canon
-            }
-            None => self.workspace.clone(),
-        };
-        let timeout_ms = args
-            .get("timeout_ms")
-            .and_then(Value::as_u64)
-            .map_or(120_000u64, |t| t.min(600_000));
+        let cwd = scoped_cwd(&self.workspace, args)?;
         let shell_argv = vec![
             String::from("/bin/sh"),
             String::from("-c"),
             command.to_owned(),
         ];
-        let out = ctx
-            .proc()?
-            .run(&shell_argv, &cwd, Duration::from_millis(timeout_ms))?;
+        let out = ctx.proc()?.run(&shell_argv, &cwd, timeout_of(args))?;
         Ok(render(&out))
     }
 }
 
-fn require_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, PiiError> {
+/// The `cwd` argument, canonicalised and required to sit inside `workspace` (defaults to the workspace). Shared with
+/// the `run` builtin so both tools keep the same scope.
+pub(crate) fn scoped_cwd(workspace: &Path, args: &Value) -> Result<std::path::PathBuf, PiiError> {
+    match args.get("cwd").and_then(Value::as_str) {
+        Some(c) => {
+            let canon =
+                dunce::canonicalize(c).map_err(|e| PiiError::Invalid(format!("cwd {c}: {e}")))?;
+            if !canon.starts_with(workspace) {
+                return Err(PiiError::Denied(format!(
+                    "cwd {c} is outside the workspace"
+                )));
+            }
+            Ok(canon)
+        }
+        None => Ok(workspace.to_path_buf()),
+    }
+}
+
+/// The `timeout_ms` argument, defaulting to 120 s and capped at 600 s. Shared with the `run` builtin.
+pub(crate) fn timeout_of(args: &Value) -> Duration {
+    let timeout_ms = args
+        .get("timeout_ms")
+        .and_then(Value::as_u64)
+        .map_or(120_000u64, |t| t.min(600_000));
+    Duration::from_millis(timeout_ms)
+}
+
+pub(crate) fn require_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, PiiError> {
     args.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| PiiError::Invalid(format!("{key} must be a string")))

@@ -56,3 +56,24 @@ fn CONTROL_a_literal_argv_loads_and_other_kinds_keep_their_keys() {
                  expr = \"$.input\"\nrun = \"bash -c true\"\n";
     load_toml(other).unwrap();
 }
+
+/// Spec 399 R3: `tool = "bash"` is the shell surface itself, so a graph `tool` node may not name it. The refusal names the
+/// node and says to use `run`. The agent-facing `bash` tool is a different surface and is untouched.
+#[test]
+fn a_tool_node_naming_bash_is_refused() {
+    let src = r#"name = "shelled"
+entry = "by_the_shell"
+
+[[node]]
+id = "by_the_shell"
+kind = "tool"
+tool = "bash"
+args = { command = "$.input.command" }
+"#;
+    let err = load_toml(src)
+        .expect_err("a `tool` node naming bash must be refused at load")
+        .to_string();
+    assert!(err.contains("tool.bash.shell"), "names the refusal: {err}");
+    assert!(err.contains("by_the_shell"), "names the node: {err}");
+    assert!(err.contains("run"), "says to use `run`: {err}");
+}

@@ -17,7 +17,7 @@ max_turns = 4
 id = "manifest-present"
 kind = "check"
 requires = ["prepare"]
-command = "test -f Cargo.toml && grep -q '^version' Cargo.toml"
+argv = ["grep", "-q", "^version", "Cargo.toml"]
 
 [[step]]
 id = "approve-tag"

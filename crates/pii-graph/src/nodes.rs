@@ -16,12 +16,34 @@ pub(crate) fn eval_ctx(input: &NodeInput) -> serde_json::Value {
     })
 }
 
+/// Programs that read a command string or re-exec one, matched on the final path component. ONE list for the graph loader and the
+/// SOP lint, so a shell cannot be refused in one and accepted in the other.
+pub(crate) const SHELLS: &[&str] = &["sh", "bash", "dash", "zsh", "ksh", "fish", "env"];
+
 /// Spec 393 R3: a `tool` node's `run` is an argv array whose first entry is a literal program, never a shell. A shell
 /// string, a `$.` argv0 and `["bash", "-c", ..]` are all refused, naming the node: authority comes from the committed
 /// spec, not from the graph.
 pub(crate) fn check_tool_surface(nodes: &[crate::spec::NodeSpec]) -> Result<(), PiiError> {
-    const SHELLS: &[&str] = &["sh", "bash", "dash", "zsh", "ksh", "fish", "env"];
     for node in nodes.iter().filter(|n| n.kind == "tool") {
+        // Spec 399 R3/R8: `bash` is the shell itself, so a graph `tool` node never names it; `run` must declare the
+        // programs it may exec, because its argv can arrive as run input where this check cannot see it.
+        match node.cfg.get("tool").and_then(serde_json::Value::as_str) {
+            Some("bash") => {
+                return Err(PiiError::Invalid(format!(
+                    "tool.bash.shell: node '{}' has `tool` = \"bash\"; a graph `tool` node runs a program, not a \
+                     shell: use `tool = \"run\"` with an argv array",
+                    node.id
+                )));
+            }
+            Some("run") if node.cfg.get("programs").is_none() => {
+                return Err(PiiError::Invalid(format!(
+                    "tool.run.programs: node '{}' has `tool` = \"run\" without `programs`; declare the bare program \
+                     names it may exec",
+                    node.id
+                )));
+            }
+            _ => {}
+        }
         let Some(run) = node.cfg.get("run") else {
             continue;
         };

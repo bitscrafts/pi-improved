@@ -62,6 +62,15 @@ pub trait NodeFactory: Send + Sync {
     fn proc_argv0_grant(&self) -> Vec<String> {
         Vec::new()
     }
+    /// Programs one node declares it may exec (spec 399 R9), resolved from its config and input. Granted to that
+    /// node only, and only where the run scope already admits them; empty by default.
+    fn declared_programs(
+        &self,
+        _cfg: &serde_json::Value,
+        _run_input: &serde_json::Value,
+    ) -> Vec<String> {
+        Vec::new()
+    }
     /// Builds a node instance for a config.
     ///
     /// # Errors

@@ -36,7 +36,7 @@ deadline_ms = 86400000        # required (approve): how long it may wait for a d
 | `kind`    | required | what it compiles to |
 |-----------|----------|---------------------|
 | `act`     | `prompt` | an `agent` node; the prompt is its user message |
-| `check`   | `command`| a `bash` `tool` node + a `route` on its exit code; non-zero fails the run |
+| `check`   | `argv`   | a `run` `tool` node declaring `argv[0]` as its program + a `route` on its exit code; non-zero fails the run. `argv` is a program and its arguments, never a shell string (a `command` is refused, and so is a shell as the program) |
 | `approve` | `prompt`, `deadline_ms` | a `gate` node named after the step (policy `sop`), carrying the same `deadline_ms` |
 | `notify`  | `message`, optional `path` | an `emit` node that appends the message to `path` (default `_tmp/sop-<step>-notify.log`, relative to the run's working directory) |
 
@@ -46,7 +46,7 @@ starts. Steps run in declaration order; `requires` adds dependencies on top, so 
 `lint` refuses it. `notify` writes to a file under the run's write scope; wiring
 it to a `pii-channels` adapter is not part of this engine yet.
 
-Strings in `prompt`/`command`/`message`/`path` must not start with `$.` (the graph
+Strings in `prompt`/`argv`/`message`/`path` must not start with `$.` (the graph
 would evaluate them as expressions); `lint` refuses that.
 
 ## The compilation rule
@@ -69,7 +69,7 @@ them, so an SOP can never widen what the process granted it.
 
 ## Preconditions refuse loudly
 
-- A `check` whose command exits non-zero ends the run: `sop.step.failed` is
+- A `check` whose program exits non-zero ends the run: `sop.step.failed` is
   emitted and the terminal is `Failure` reading
   `sop '<sop>' step '<step>' failed: exit code N: <output>`. Later steps do not
   start.

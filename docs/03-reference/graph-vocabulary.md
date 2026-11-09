@@ -140,7 +140,7 @@ The first graph it moved was `doc-code`: its flow was `books`' flow with other c
 
 A `tool` node's `run` must be an argv array with a literal argv0 that is not a shell. Anything else is refused at load, naming the node.
 
-**Still open.** The surface is not closed yet. `run` is refused at load but `ToolNode` does not execute it, and `tool = "bash"` still reaches a shell: `books`, `doc-code` (through `books`), `starter/heal-fix`, `starter/verify-fix` and the graphs `sop` compiles. The lint does not measure this. Closing it means giving `tool` a working `run` and moving those graphs off `bash`, including the ones whose command arrives as `$.input.test_command`.
+`tool = "bash"` is refused at load, naming the node. A `tool = "run"` node must also declare `programs`, the bare program names it may exec, and `ToolNode` execs an argv only when its first entry equals one of them, before the process capability is consulted. The shipped graphs (`books`, `doc-code`, `starter/heal-fix`, `starter/verify-fix`) take their commands as argv arrays (spec 399).
 
 ## The catalogue (spec 388)
 

@@ -55,13 +55,25 @@ impl ToolSet {
         let Some(tool) = self.get(name) else {
             return;
         };
-        let deny_entry = (tool.name() == "bash")
-            .then(|| {
-                args.get("command")
-                    .and_then(Value::as_str)
-                    .and_then(crate::bash::deny_list_hit)
-            })
-            .flatten();
+        let deny_entry = match tool.name() {
+            "bash" => args
+                .get("command")
+                .and_then(Value::as_str)
+                .and_then(crate::bash::deny_list_hit),
+            // spec 399: `run` honours the same list on its argv, so a denied program reaches the log the way a denied command did.
+            "run" => args
+                .get("argv")
+                .and_then(Value::as_array)
+                .and_then(|items| {
+                    let line: Vec<String> = items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect();
+                    crate::bash::deny_list_hit_argv(&line)
+                }),
+            _ => None,
+        };
         // The run's observer carries the event to the daemon log (the
         // daemon's tool sets have no observer of their own).
         ctx.observer().event(&pii_core::ObsEvent::ToolCall {

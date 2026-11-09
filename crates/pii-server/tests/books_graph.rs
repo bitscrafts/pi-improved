@@ -13,9 +13,14 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
+use pii_abi::{NodeId, PortName, RunEvent, RunStatus};
 use pii_core::CapKind;
 use pii_graph::fragment;
+use pii_server::{Engine, EngineConfig};
+use pii_tools::sandbox::SandboxProfileName;
 
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -130,4 +135,109 @@ fn books_graph_carries_no_absolute_project_paths() {
     for path in ["/projects/", "/root/"] {
         assert!(!src.contains(path), "books may not hard-code {path}");
     }
+}
+
+/// Runs `books` with an inventory that prints nothing and a verify that passes, through the engine, and settles it.
+async fn run_books_with_an_empty_inventory() -> (RunStatus, Vec<(u64, RunEvent)>) {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let engine: Arc<Engine> = Engine::new(EngineConfig {
+        grant_ceiling: None,
+        workspace: ws.clone(),
+        store_path: tmp.path().join("store.redb"),
+        model: format!(
+            "scripted:{}",
+            repo().join("fixtures/phase2/hello.json").display()
+        ),
+        sandbox: SandboxProfileName::Off,
+        route_policy: std::collections::BTreeMap::new(),
+        tiers: Vec::new(),
+        session_runs_cap: pii_server::DEFAULT_SESSION_RUNS_CAP,
+        llama_host: None,
+        models: pii_server::daemon::empty_model_roles(),
+        graph_dir: repo().join("graphs"),
+        mqtt_tool_url: None,
+    })
+    .expect("engine");
+    // Spec 399 R4: the commands are argv arrays, and `programs` names what they may exec.
+    let input = serde_json::json!({
+        "agent": "claude",
+        "model": "scripted",
+        "provider": "scripted",
+        "spec": "specs/none.md",
+        "workdir": std::fs::canonicalize(&ws).unwrap(),
+        "inventory": ["true"],
+        "verify": ["true"],
+        "programs": ["true"],
+    });
+    let run = engine
+        .start_run("books", &input)
+        .expect("books starts with its inputs");
+    for _ in 0..500 {
+        if let Some(header) = engine.store.get_run(&run).unwrap()
+            && matches!(header.status, RunStatus::Succeeded | RunStatus::Failed)
+        {
+            let journal = engine.store.read_journal(&run).unwrap();
+            return (header.status, journal);
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("run {run} did not settle");
+}
+
+/// The port a node finished on, if it finished.
+fn finished_on(journal: &[(u64, RunEvent)], id: &str) -> Option<PortName> {
+    journal.iter().find_map(|(_, ev)| match ev {
+        RunEvent::NodeFinished { node, port, .. } if *node == NodeId::from(id) => {
+            Some(port.clone())
+        }
+        _ => None,
+    })
+}
+
+fn started(journal: &[(u64, RunEvent)], id: &str) -> bool {
+    journal.iter().any(|(_, ev)| match ev {
+        RunEvent::NodeStarted { node, .. } => *node == NodeId::from(id),
+        _ => false,
+    })
+}
+
+/// Spec 399 R4: `inventory` is a `run` tool node whose argv arrives as input, so the graph runs to its exit.
+#[tokio::test]
+async fn books_runs_its_inventory_as_an_argv() {
+    let (status, journal) = run_books_with_an_empty_inventory().await;
+    assert_eq!(
+        finished_on(&journal, "inventory"),
+        Some(PortName::from("ok")),
+        "{journal:?}"
+    );
+    assert_eq!(
+        finished_on(&journal, "done"),
+        Some(PortName::from("ok")),
+        "{journal:?}"
+    );
+    assert!(
+        matches!(status, RunStatus::Succeeded),
+        "{status:?}: {journal:?}"
+    );
+}
+
+/// Spec 399 R4: an inventory that prints nothing still ends on `nothing-to-do`, and the writing step never starts.
+#[tokio::test]
+#[allow(non_snake_case)] // reason: the spec names its controls with the CONTROL_ prefix
+async fn CONTROL_books_still_ends_on_nothing_to_do_for_an_empty_inventory() {
+    let (status, journal) = run_books_with_an_empty_inventory().await;
+    assert!(
+        finished_on(&journal, "nothing-to-do").is_some(),
+        "{journal:?}"
+    );
+    assert!(
+        !started(&journal, "call-docs"),
+        "the writing step must not start: {journal:?}"
+    );
+    assert!(
+        matches!(status, RunStatus::Succeeded),
+        "{status:?}: {journal:?}"
+    );
 }

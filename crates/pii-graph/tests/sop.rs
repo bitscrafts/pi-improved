@@ -23,7 +23,7 @@ prompt = "do a"
 id = "b"
 kind = "check"
 requires = ["a"]
-command = "true"
+argv = ["true"]
 
 [[step]]
 id = "c"
@@ -181,10 +181,10 @@ fn lint_refuses_unknown_requires_kind_and_missing_fields() {
         errs.iter().any(|e| e.contains("unknown kind 'frobnicate'")),
         "{errs:?}"
     );
-    let errs = lint_errors(&GOOD.replace("command = \"true\"\n", ""));
+    let errs = lint_errors(&GOOD.replace("argv = [\"true\"]\n", ""));
     assert!(
         errs.iter()
-            .any(|e| e.contains("step 'b'") && e.contains("'command'")),
+            .any(|e| e.contains("step 'b'") && e.contains("'argv'")),
         "{errs:?}"
     );
     let errs =
@@ -205,7 +205,7 @@ fn lint_refuses_unknown_requires_kind_and_missing_fields() {
 /// so an SOP author cannot smuggle `$.` into a literal field.
 #[test]
 fn lint_refuses_expression_looking_literals() {
-    let errs = lint_errors(&GOOD.replace("command = \"true\"", "command = \"$.input.x\""));
+    let errs = lint_errors(&GOOD.replace("argv = [\"true\"]", "argv = [\"echo\", \"$.input.x\"]"));
     assert!(
         errs.iter().any(|e| e.contains("must not start with '$.'")),
         "{errs:?}"
@@ -255,7 +255,7 @@ fn control_an_approve_with_a_positive_deadline_loads() {
 
 #[test]
 fn control_only_an_approve_takes_a_deadline() {
-    let src = "id = \"r\"\ntitle = \"R\"\n\n[[step]]\nid = \"a\"\nkind = \"check\"\ncommand = \"true\"\ndeadline_ms = 5\n";
+    let src = "id = \"r\"\ntitle = \"R\"\n\n[[step]]\nid = \"a\"\nkind = \"check\"\nargv = [\"true\"]\ndeadline_ms = 5\n";
     let errs = sop::load(src).unwrap_err();
     assert!(
         errs.iter()

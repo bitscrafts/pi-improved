@@ -3,7 +3,7 @@
 # worktree (scope_root in run input) — confinement is a capability, not a
 # policy. The fix agent has fs/edit tools ONLY (NO bash): every write it
 # makes goes through Ctx::fs() and is mechanically bound to the worktree.
-# bash runs only in `tool` nodes, from human-authored graph commands.
+# `run` executes an argv in `tool` nodes, from human-authored graph argv arrays (spec 399): no shell.
 # Nothing auto-resumes: the terminal step suspends on a `gate` node for
 # human approval; a patch leaves the sandbox only via `xtask heal-collect`.
 name = "starter/heal-fix"
@@ -19,8 +19,9 @@ max_tokens = 20000
 [[node]]
 id = "probe"
 kind = "tool"
-tool = "bash"
-args = { command = "$.input.test_command", cwd = "$.input.worktree" }
+tool = "run"
+programs = "$.input.test_programs"
+args = { argv = "$.input.test_argv", cwd = "$.input.worktree" }
 
 [[node]]
 id = "route_probe"
@@ -62,8 +63,9 @@ system = "You are repairing one deliberately seeded source break in a disposable
 [[node]]
 id = "retest"
 kind = "tool"
-tool = "bash"
-args = { command = "$.input.test_command", cwd = "$.input.worktree" }
+tool = "run"
+programs = "$.input.test_programs"
+args = { argv = "$.input.test_argv", cwd = "$.input.worktree" }
 
 [[node]]
 id = "route_retest"
@@ -84,8 +86,9 @@ expr = "$.payload"
 [[node]]
 id = "summarize"
 kind = "tool"
-tool = "bash"
-args = { command = "git diff", cwd = "$.input.worktree" }
+tool = "run"
+programs = ["git"]
+args = { argv = ["git", "diff"], cwd = "$.input.worktree" }
 
 # R4 (spec 33): the ledger row for a validated repair — gate_before/
 # gate_after/patch_hash/model/tokens — written BEFORE the human gate so the

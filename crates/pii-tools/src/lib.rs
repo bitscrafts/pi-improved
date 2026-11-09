@@ -10,6 +10,7 @@ pub mod fs;
 pub mod memory;
 pub mod mqtt;
 mod observe;
+pub mod run;
 pub mod sandbox;
 pub mod search;
 pub mod worktree;
@@ -24,6 +25,7 @@ use serde_json::Value;
 use crate::bash::BashTool;
 use crate::fs::{EditTool, FsReadTool, FsWriteTool, MultiEditTool};
 use crate::memory::{GraphFindTool, MemoryPutTool, MemorySearchTool};
+use crate::run::RunTool;
 use crate::search::{GlobTool, GrepTool};
 use crate::worktree::WorktreeTool;
 
@@ -83,6 +85,10 @@ impl ToolSet {
                 workspace: workspace.clone(),
             }),
             Arc::new(BashTool {
+                workspace: workspace.clone(),
+            }) as Arc<dyn Tool>,
+            // run: an argv executed without a shell (spec 399 R1); the graph `tool` node's exec path.
+            Arc::new(RunTool {
                 workspace: workspace.clone(),
             }) as Arc<dyn Tool>,
             Arc::new(WorktreeTool { workspace }),

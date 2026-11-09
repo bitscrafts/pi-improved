@@ -428,7 +428,7 @@ mod graph_show {
         // The whole rendered block is stable: fix/test/gate/done/retry each
         // appear exactly once (no duplication / lane-crossing mess).
         assert_eq!(out.matches("fix [agent]").count(), 1, "{out}");
-        assert_eq!(out.matches("test [tool: bash]").count(), 1, "{out}");
+        assert_eq!(out.matches("test [tool: run]").count(), 1, "{out}");
         assert_eq!(
             out.matches("gate [route: $.payload.exit_code]").count(),
             1,

@@ -134,6 +134,32 @@ pub fn node_proc_argv0(
     root.intersect(&pii_core::ArgvScope::new(allowed))
 }
 
+/// The programs one node declares (spec 399 R9); empty for a kind that declares none.
+#[must_use]
+pub fn node_declared_programs(
+    reg: &crate::node::NodeRegistry,
+    kind: &str,
+    cfg: &serde_json::Value,
+    run_input: &serde_json::Value,
+) -> Vec<String> {
+    reg.factory(kind)
+        .map(|f| f.declared_programs(cfg, run_input))
+        .unwrap_or_default()
+}
+
+/// Every program the graph's nodes declare, resolved against the run input (spec 399 R9). The run's root admits these.
+#[must_use]
+pub fn graph_declared_programs(
+    reg: &crate::node::NodeRegistry,
+    spec: &GraphSpec,
+    run_input: &serde_json::Value,
+) -> Vec<String> {
+    spec.nodes
+        .iter()
+        .flat_map(|n| node_declared_programs(reg, &n.kind, &n.cfg, run_input))
+        .collect()
+}
+
 /// Builds the join payload for a node: an object keyed by source node id
 /// holding the value of every `Fired` inbound Data edge. A node with no
 /// inbound Data edges gets the run input.
@@ -205,7 +231,29 @@ pub fn dispatch(env: &Env<'_>, ns: &NodeSpec) -> DispatchOutcome {
         };
     };
     let mut caps = node_capset(env.root.caps(), env.spec.caps, ns.caps);
-    caps.proc_argv0 = node_proc_argv0(env.reg, &ns.kind, &env.root.caps().proc_argv0);
+    // Spec 399 R9: the run admits every program its graph declares; a node sees the run scope minus the programs
+    // OTHER nodes of this graph declare, plus its own. A declared program therefore reaches only the node that
+    // declared it, and a claimed one (cargo, claimed by coder) still reaches its claimant through the grant.
+    let declared_here = node_declared_programs(env.reg, &ns.kind, &ns.cfg, &input.input);
+    let graph_declared = graph_declared_programs(env.reg, env.spec, &input.input);
+    let visible = pii_core::ArgvScope::new(
+        env.root
+            .caps()
+            .proc_argv0
+            .allowed()
+            .iter()
+            .filter(|p| declared_here.contains(p) || !graph_declared.contains(p))
+            .cloned()
+            .collect(),
+    );
+    let base = node_proc_argv0(env.reg, &ns.kind, &visible);
+    caps.proc_argv0 = pii_core::ArgvScope::new(
+        base.allowed()
+            .iter()
+            .cloned()
+            .chain(declared_here)
+            .collect(),
+    );
     let ctx = env.root.child_with_token(
         Principal::GraphNode {
             run: env.run.clone(),

@@ -72,19 +72,31 @@ fn step_fields(s: &RawStep, n: usize, errs: &mut Vec<String>) {
         ));
         return;
     };
-    let (field, value) = match kind {
-        StepKind::Act | StepKind::Approve => ("prompt", &s.prompt),
-        StepKind::Check => ("command", &s.command),
-        StepKind::Notify => ("message", &s.message),
+    let text_field = match kind {
+        StepKind::Act | StepKind::Approve => Some(("prompt", &s.prompt)),
+        StepKind::Notify => Some(("message", &s.message)),
+        StepKind::Check => None,
     };
-    match value.as_deref() {
-        None | Some("") => errs.push(format!(
-            "{who} (kind '{kind_name}') needs a '{field}'"
-        )),
-        Some(v) if v.starts_with("$.") => errs.push(format!(
-            "{who}: '{field}' must not start with '$.' (the graph would evaluate it as an expression)"
-        )),
-        Some(_) => {}
+    match text_field {
+        Some((field, value)) => match value.as_deref() {
+            None | Some("") => errs.push(format!(
+                "{who} (kind '{kind_name}') needs a '{field}'"
+            )),
+            Some(v) if v.starts_with("$.") => errs.push(format!(
+                "{who}: '{field}' must not start with '$.' (the graph would evaluate it as an expression)"
+            )),
+            Some(_) => {}
+        },
+        None => check_argv(&who, s, errs),
+    }
+    // Spec 399: a `command` was a shell string; the compiled node no longer runs one, so it is refused by name, not ignored.
+    if s.command.is_some() {
+        errs.push(format!(
+            "{who}: `command` is a shell string and a step no longer runs one; a 'check' takes `argv = [\"program\", \"arg\", ...]`"
+        ));
+    }
+    if !matches!(kind, StepKind::Check) && s.argv.is_some() {
+        errs.push(format!("{who}: only a 'check' step takes an 'argv'"));
     }
     // Spec 397: an approval that may wait for ever is a run that holds its row for ever.
     match (kind, s.deadline_ms) {
@@ -98,6 +110,28 @@ fn step_fields(s: &RawStep, n: usize, errs: &mut Vec<String>) {
         && p.starts_with("$.")
     {
         errs.push(format!("{who}: 'path' must not start with '$.'"));
+    }
+}
+
+/// A `check` runs a program: `argv` names it first, no entry is an expression, and the program is not a shell (spec 399).
+fn check_argv(who: &str, s: &RawStep, errs: &mut Vec<String>) {
+    let argv = s.argv.as_deref().unwrap_or_default();
+    let Some(program) = argv.first().filter(|p| !p.is_empty()) else {
+        errs.push(format!(
+            "{who} (kind 'check') needs an 'argv' (a program and its arguments)"
+        ));
+        return;
+    };
+    if let Some(bad) = argv.iter().find(|a| a.starts_with("$.")) {
+        errs.push(format!(
+            "{who}: 'argv' entry '{bad}' must not start with '$.' (the graph would evaluate it as an expression)"
+        ));
+    }
+    let name = program.rsplit('/').next().unwrap_or(program);
+    if crate::nodes::SHELLS.contains(&name) {
+        errs.push(format!(
+            "{who}: 'argv' names a shell ('{program}') as its program; a check runs a program, not a shell"
+        ));
     }
 }
 
@@ -174,7 +208,7 @@ pub(super) fn build(raw: RawSop) -> Sop {
             id: s.id.unwrap_or_default(),
             requires: s.requires,
             prompt: s.prompt,
-            command: s.command,
+            argv: s.argv.unwrap_or_default(),
             message: s.message,
             path: s.path,
             tools: s.tools,

@@ -169,6 +169,12 @@ pub fn execute(
     started: Started,
 ) -> Result<Terminal, PiiError> {
     let Started { header, bb, built } = started;
+    // Spec 399 R9: the run admits the programs its graph declares, against the run input it was started with.
+    let root = ctx.with_proc_programs(&crate::sched::dispatch::graph_declared_programs(
+        reg,
+        spec,
+        &bb.read().input,
+    ));
     let jr = Journaler::adopt(store, ctx.observer().clone(), header, Arc::clone(&bb));
     let tokens = fresh_tokens(ctx, spec);
     let mut st = RunState::from_spec(spec);
@@ -178,7 +184,7 @@ pub fn execute(
     let engine = Engine {
         spec,
         reg,
-        root: ctx,
+        root: &root,
         run_id,
         bb: &bb,
         jr: &jr,

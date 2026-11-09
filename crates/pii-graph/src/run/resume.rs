@@ -190,10 +190,14 @@ fn resume_with(
 
     let built = build_nodes(&spec, reg)?;
     let tokens = fresh_tokens(ctx, &spec);
+    // Spec 399 R9: the resumed run admits the programs its graph declares, as the run it resumes did.
+    let root = ctx.with_proc_programs(&crate::sched::dispatch::graph_declared_programs(
+        reg, &spec, &input,
+    ));
     let engine = Engine {
         spec: &spec,
         reg,
-        root: ctx,
+        root: &root,
         run_id,
         bb: &bb,
         jr: &jr,

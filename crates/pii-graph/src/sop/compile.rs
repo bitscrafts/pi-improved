@@ -123,9 +123,10 @@ fn check(out: &mut String, s: &Step) -> Vec<(String, &'static str)> {
     let id = &s.id;
     wr!(
         out,
-        "\n[[node]]\nid = {}\nkind = \"tool\"\ntool = \"bash\"\nargs = {{ command = {} }}\n",
+        "\n[[node]]\nid = {}\nkind = \"tool\"\ntool = \"run\"\nprograms = [{}]\nargs = {{ argv = {} }}\n",
         q(id),
-        q(s.command.as_deref().unwrap_or_default())
+        q(s.argv.first().map_or("", String::as_str)),
+        list(&s.argv)
     );
     wr!(
         out,

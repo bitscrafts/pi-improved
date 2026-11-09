@@ -77,11 +77,11 @@ fn run_ctx(ws: &Path) -> Ctx {
     Ctx::root(caps, Budget::unlimited())
 }
 
-/// The example SOP, compiled, optionally with the check command replaced.
-fn compiled(ws: &Path, check_cmd: Option<&str>) -> String {
+/// The example SOP, compiled, optionally with the check argv (a TOML array literal) replaced.
+fn compiled(ws: &Path, check_argv: Option<&str>) -> String {
     let mut src = std::fs::read_to_string(root().join("examples/cut-release.sop.toml")).unwrap();
-    if let Some(cmd) = check_cmd {
-        src = src.replace("test -f Cargo.toml && grep -q '^version' Cargo.toml", cmd);
+    if let Some(argv) = check_argv {
+        src = src.replace(r#"["grep", "-q", "^version", "Cargo.toml"]"#, argv);
     }
     // The example's notify path is relative to the process cwd; the resumed
     // run is workspace-scoped, so point it at the workspace explicitly.
@@ -245,14 +245,14 @@ async fn example_suspends_at_the_approval_then_resumes_to_completion() {
 #[test]
 fn a_failing_check_ends_the_run_naming_the_step() {
     let rig = rig("sop-fail-");
-    let (run, term) = start(&rig, &compiled(&rig.ws, Some("exit 3")));
+    let (run, term) = start(&rig, &compiled(&rig.ws, Some(r#"["false"]"#)));
     let Terminal::Failure { error } = term else {
         panic!("expected a named failure, got {term:?}");
     };
     assert!(
         error.contains("cut-release")
             && error.contains("manifest-present")
-            && error.contains("exit code 3"),
+            && error.contains("exit code 1"),
         "{error}"
     );
     assert_eq!(

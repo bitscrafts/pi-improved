@@ -12,7 +12,18 @@ use pii_tools::ToolSet;
 pub struct ToolNode {
     tool: String,
     args: serde_json::Value,
+    /// Spec 399 R8: the programs a `run` node may exec, a literal array or a `$.input.<name>` reference.
+    programs: serde_json::Value,
     toolset: ToolSet,
+}
+
+/// The evaluation context a node's `$.` expressions resolve against (the same object `ToolNode` builds).
+fn eval_ctx(input: &NodeInput) -> serde_json::Value {
+    serde_json::json!({
+        "input": input.input,
+        "payload": input.payload,
+        "nodes": input.nodes,
+    })
 }
 
 /// Factory registered into the engine's registry.
@@ -45,27 +56,89 @@ impl pii_graph::node::NodeFactory for ToolFactory {
             .ok_or_else(|| PiiError::Invalid("tool node requires 'tool' string".into()))?
             .to_owned();
         let args = cfg.get("args").cloned().unwrap_or(serde_json::Value::Null);
+        let programs = cfg
+            .get("programs")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         Ok(Box::new(ToolNode {
             tool,
             args,
+            programs,
             toolset: self.toolset.clone(),
         }))
+    }
+
+    /// Spec 399 R9: a `run` node's declared programs join its process scope (see `dispatch`).
+    fn declared_programs(
+        &self,
+        cfg: &serde_json::Value,
+        run_input: &serde_json::Value,
+    ) -> Vec<String> {
+        if cfg.get("tool").and_then(serde_json::Value::as_str) != Some("run") {
+            return Vec::new();
+        }
+        let programs = cfg
+            .get("programs")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        declared(&serde_json::json!({ "input": run_input }), &programs).unwrap_or_default()
+    }
+}
+
+/// The program names a `run` node declares, resolved. Anything that is not an array of strings declares nothing,
+/// so a malformed `programs` fails closed.
+fn declared(ec: &serde_json::Value, programs: &serde_json::Value) -> Option<Vec<String>> {
+    let resolved = eval_or_literal(ec, programs).ok()?;
+    resolved
+        .as_array()?
+        .iter()
+        .map(|p| p.as_str().map(str::to_owned))
+        .collect()
+}
+
+impl ToolNode {
+    /// Spec 399 R8: a `run` node execs an argv only when its first entry EQUALS a declared program. This is checked
+    /// before the tool and before the process capability, so a program the run scope admits for another reason is
+    /// still denied, and the refusal names it.
+    fn check_declared(
+        &self,
+        ec: &serde_json::Value,
+        resolved: &serde_json::Value,
+    ) -> Result<(), PiiError> {
+        if self.tool != "run" {
+            return Ok(());
+        }
+        let program = resolved
+            .get("argv")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|argv| argv.first())
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if declared(ec, &self.programs)
+            .unwrap_or_default()
+            .iter()
+            .any(|p| p == program)
+        {
+            Ok(())
+        } else {
+            Err(PiiError::Denied(format!(
+                "program '{program}' is not in this node's `programs`"
+            )))
+        }
     }
 }
 
 impl GraphNode for ToolNode {
     fn run(&self, ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         // Resolve `$.`-expressions in args against the node's eval context.
-        let ec = serde_json::json!({
-            "input": input.input,
-            "payload": input.payload,
-            "nodes": input.nodes,
-        });
+        let ec = eval_ctx(input);
         let resolved = resolve_args(&ec, &self.args)?;
-        let result = self.toolset.get(&self.tool).map_or_else(
-            || Err(PiiError::Invalid(format!("unknown tool '{}'", self.tool))),
-            |tool| tool.call(ctx, &resolved),
-        );
+        let result = self.check_declared(&ec, &resolved).and_then(|()| {
+            self.toolset.get(&self.tool).map_or_else(
+                || Err(PiiError::Invalid(format!("unknown tool '{}'", self.tool))),
+                |tool| tool.call(ctx, &resolved),
+            )
+        });
         self.toolset
             .observe_call(ctx, &self.tool, &resolved, &result);
         match result {

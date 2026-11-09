@@ -8,7 +8,7 @@
 name = "books"
 entry = "inventory"
 exit = "done"
-needs = ["agent", "model", "provider", "spec", "workdir", "inventory", "verify"]
+needs = ["agent", "model", "provider", "spec", "workdir", "inventory", "verify", "programs"]
 caps = ["fs_read", "fs_write", "proc", "spawn"]
 
 [limits]
@@ -17,8 +17,9 @@ max_wall_ms = 1800000
 [[node]]
 id = "inventory"
 kind = "tool"
-tool = "bash"
-args = { command = "$.input.inventory", cwd = "$.input.workdir" }
+tool = "run"
+programs = "$.input.programs"
+args = { argv = "$.input.inventory", cwd = "$.input.workdir" }
 caps = ["fs_read", "proc"]
 
 [[node]]
@@ -56,8 +57,9 @@ workdir = "$.input.workdir"
 [[node]]
 id = "verify"
 kind = "tool"
-tool = "bash"
-args = { command = "$.input.verify", cwd = "$.input.workdir" }
+tool = "run"
+programs = "$.input.programs"
+args = { argv = "$.input.verify", cwd = "$.input.workdir" }
 caps = ["fs_read", "fs_write", "proc"]
 
 [[node]]

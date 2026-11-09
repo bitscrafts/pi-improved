@@ -7,7 +7,7 @@
 //! Format (TOML): `id`, `title`, `caps`, and ordered `[[step]]` entries with
 //! `id`, `kind` (`act` | `check` | `approve` | `notify`), optional `requires`
 //! (ids of steps that must have finished) and the per-kind input
-//! (`prompt` / `command` / `prompt` / `message`).
+//! (`prompt` / `argv` / `prompt` / `message`).
 
 mod compile;
 mod lint;
@@ -23,7 +23,7 @@ pub use compile::compile;
 pub enum StepKind {
     /// An agent turn driven by `prompt`.
     Act,
-    /// A verifier: `command` must exit 0 or the run fails naming the step.
+    /// A verifier: the program in `argv` must exit 0 or the run fails naming the step.
     Check,
     /// A human gate: the run suspends until `pii approve allow|deny`.
     Approve,
@@ -55,8 +55,8 @@ pub struct Step {
     pub requires: Vec<String>,
     /// `act` / `approve`: the prompt.
     pub prompt: Option<String>,
-    /// `check`: the shell command.
-    pub command: Option<String>,
+    /// `check`: the program and its arguments; the first entry is the program. Never a shell string (spec 399).
+    pub argv: Vec<String>,
     /// `notify`: the message.
     pub message: Option<String>,
     /// `notify`: the file the message is appended to.
@@ -101,7 +101,9 @@ struct RawStep {
     #[serde(default)]
     requires: Vec<String>,
     prompt: Option<String>,
+    /// Kept only to refuse it by name: a `command` string used to be a shell string (spec 399).
     command: Option<String>,
+    argv: Option<Vec<String>>,
     message: Option<String>,
     path: Option<String>,
     #[serde(default)]
