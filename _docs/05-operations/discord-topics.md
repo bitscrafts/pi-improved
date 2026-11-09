@@ -28,6 +28,18 @@ done    a run finished, a row closed, a deploy landed
 (a probe, cached for `SHAPE_TTL`, because tags get renamed on the phone), so a post never invents one — an unknown
 name is a refusal, not a silent untagged post.
 
+## What pii reads, and who it answers
+
+A forum has no messages of its own, so `pii` reads the forum's active threads: each thread under the forum whose
+last message is newer than the cursor, read oldest first. An archived thread is not read. A reply is posted into
+the thread it came from, never as a new thread.
+
+- Our own bot's messages are never read back (a reply answered again would loop). Another bot's messages are context
+  and are never read as requests.
+- Only the allow list is answered: the ids in `PII_DISCORD_ALLOW_USERS`, else the guild owner. Anyone else's message
+  is dropped and counted, and its text is not logged. If the allow list or the bot's identity cannot be resolved,
+  the poll is refused rather than run unfiltered.
+
 ## Rules
 
 - One tag per post. If a message wants two topics, it is two messages.

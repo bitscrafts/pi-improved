@@ -30,8 +30,11 @@ const MAX_CONTENT: usize = 2000;
 pub(super) enum Shape {
     /// Anything that takes plain messages.
     Text,
-    /// A forum, with its tags as `(name, id)`.
-    Forum(Vec<(String, String)>),
+    /// A forum, with its tags as `(name, id)` and its guild id (spec 401 reads the guild's threads).
+    Forum {
+        tags: Vec<(String, String)>,
+        guild: String,
+    },
 }
 
 /// Probed shapes by channel id, each with the instant it was learned. Only successes are stored.
@@ -44,6 +47,8 @@ struct Probe {
     kind: u64,
     #[serde(default)]
     available_tags: Vec<ProbeTag>,
+    #[serde(default)]
+    guild_id: String,
 }
 
 #[derive(Deserialize)]
@@ -80,12 +85,14 @@ impl DiscordChannel {
             PiiError::Unavailable(format!("discord: cannot tell what channel {to} is: {e}"))
         })?;
         Ok(if p.kind == TYPE_FORUM {
-            Shape::Forum(
-                p.available_tags
+            Shape::Forum {
+                tags: p
+                    .available_tags
                     .into_iter()
                     .map(|t| (t.name, t.id))
                     .collect(),
-            )
+                guild: p.guild_id,
+            }
         } else {
             Shape::Text
         })
@@ -121,7 +128,7 @@ impl DiscordChannel {
         let mut tags = tags.to_vec();
         let mut id = find_tag(&tags, wanted);
         if id.is_none()
-            && let Shape::Forum(fresh) = self.probe(ctx, to)?
+            && let Shape::Forum { tags: fresh, .. } = self.probe(ctx, to)?
         {
             tags = fresh;
             id = find_tag(&tags, wanted);
@@ -180,6 +187,7 @@ mod tests {
 
     use super::{DiscordChannel, ShapeCache};
     use crate::Channel;
+    use crate::discord::inbound::Inbound;
     use crate::post::{ChannelHub, PostOutcome, PostRequest};
 
     /// Routes by method + path suffix; records every request.
@@ -248,6 +256,7 @@ mod tests {
             timeout_ms: 10_000,
             forum_tag: forum_tag.to_owned(),
             shapes: ShapeCache::default(),
+            inbound: Inbound::default(),
         }
     }
 

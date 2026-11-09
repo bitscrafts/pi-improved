@@ -115,7 +115,8 @@ fn a_poll_response_larger_than_the_window_is_still_refused() {
         r#"[{{"id":"1","content":"{}","author":{{"username":"u"}}}}]"#,
         "x".repeat(4096)
     );
-    let addr = responder(big, 1);
+    // Two connections: the poll first probes the channel's shape (spec 401 R1), then reads it.
+    let addr = responder(big, 2);
     let ch = channel(addr, 1024);
     let err = ch.poll(&ctx(), None).unwrap_err();
     assert!(

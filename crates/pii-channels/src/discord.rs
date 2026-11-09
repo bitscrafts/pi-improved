@@ -11,9 +11,10 @@ use pii_abi::{HttpMethod, HttpRequest, PiiError};
 use pii_core::{Ctx, HttpTransport};
 use serde::Deserialize;
 
-use crate::{Channel, Incoming};
+use crate::{Channel, ChannelCounters, Incoming};
 
 mod forum;
+mod inbound;
 
 /// Default Discord API base: the versioned REST API on `discord.com`.
 ///
@@ -38,7 +39,11 @@ struct DiscordMessage {
 #[derive(Debug, Deserialize)]
 struct DiscordAuthor {
     #[serde(default)]
+    id: String,
+    #[serde(default)]
     username: String,
+    #[serde(default)]
+    bot: bool,
 }
 
 /// A Discord channel bound to one guild channel id (F6.3).
@@ -54,6 +59,8 @@ pub struct DiscordChannel {
     forum_tag: String,
     /// Channel shapes already probed, each valid for [`forum::SHAPE_TTL`].
     shapes: forum::ShapeCache,
+    /// The forum read's loop guard and allow list, and what it has learned (spec 401).
+    inbound: inbound::Inbound,
 }
 
 impl DiscordChannel {
@@ -91,6 +98,7 @@ impl DiscordChannel {
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| String::from(forum::DEFAULT_FORUM_TAG)),
             shapes: forum::ShapeCache::default(),
+            inbound: inbound::Inbound::new(env("PII_DISCORD_ALLOW_USERS")),
         })
     }
 
@@ -138,36 +146,15 @@ impl Channel for DiscordChannel {
     }
 
     fn poll(&self, ctx: &Ctx, cursor: Option<u64>) -> Result<Vec<Incoming>, PiiError> {
-        let req = HttpRequest {
-            method: HttpMethod::Get,
-            url: self.messages_url(cursor),
-            headers: vec![self.auth_header()],
-            body: Vec::new(),
-            timeout_ms: self.timeout_ms,
-        };
-        let resp = self.transport.request(ctx, &req)?;
-        if !resp.is_success() {
-            return Err(self.refusal("poll", &resp));
+        // A forum holds no messages: its replies live in its threads (spec 401 R1).
+        match self.shape_of(ctx, &self.channel_id)? {
+            forum::Shape::Forum { guild, .. } => self.poll_forum(ctx, cursor, &guild),
+            forum::Shape::Text => self.poll_messages(ctx, cursor),
         }
-        let msgs: Vec<DiscordMessage> = serde_json::from_slice(&resp.body)
-            .map_err(|e| PiiError::Unavailable(format!("discord: bad poll body: {e}")))?;
-        let mut out = Vec::with_capacity(msgs.len());
-        for m in msgs {
-            let cursor = m.id.parse::<u64>().map_err(|e| {
-                PiiError::Unavailable(format!("discord: non-numeric message id '{}': {e}", m.id))
-            })?;
-            out.push(Incoming {
-                channel: self.name.clone(),
-                chat: self.channel_id.clone(),
-                user: m.author.username,
-                text: m.content,
-                cursor,
-            });
-        }
-        // Discord returns newest-first; the router advances the cursor
-        // monotonically, so oldest-first is the order it must see.
-        out.reverse();
-        Ok(out)
+    }
+
+    fn counters(&self) -> Option<ChannelCounters> {
+        Some(self.inbound.counters())
     }
 
     fn send(&self, ctx: &Ctx, to: &str, text: &str) -> Result<(), PiiError> {
@@ -184,7 +171,7 @@ impl Channel for DiscordChannel {
         // A forum takes threads, not messages: ask Discord which this is (spec 132 R1).
         match self.shape_of(ctx, to)? {
             forum::Shape::Text => self.send_message(ctx, to, text),
-            forum::Shape::Forum(tags) => self.send_forum_post(ctx, to, text, tag, &tags),
+            forum::Shape::Forum { tags, .. } => self.send_forum_post(ctx, to, text, tag, &tags),
         }
     }
 }
@@ -306,6 +293,7 @@ mod tests {
             timeout_ms: 10_000,
             forum_tag: String::from("chat"),
             shapes: super::forum::ShapeCache::default(),
+            inbound: super::inbound::Inbound::default(),
         }
     }
 
