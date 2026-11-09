@@ -84,7 +84,7 @@ argv supplied through `--input` still reaches a shell. The test drives the node 
 
 ## Exit Criteria
 ### New in this row
-Each is verified to FAIL before the change.
+Each is verified to FAIL before the change. A criterion that passes today is a Guardrail, never a criterion here.
 - [ ] `cargo test -q -p pii-tools --test run_tool 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `cargo test -q -p pii-graph --test tool_surface_is_closed a_tool_node_naming_bash_is_refused 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `test -d graphs && ! grep -rq 'tool = "bash"' graphs/`
@@ -92,12 +92,9 @@ Each is verified to FAIL before the change.
 - [ ] `cargo test -q -p pii-server --test books_graph CONTROL_books_still_ends_on_nothing_to_do 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `test -f docs/03-reference/graph-vocabulary.md && ! grep -q 'still reaches a shell' docs/03-reference/graph-vocabulary.md`
 
-### Carried re-checks
-These pass before this row; their passing is not evidence it is done.
-- [ ] `cargo test -q -p pii-graph --test tool_surface_is_closed 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
-- [ ] `cargo run -q -p xtask -- lint-graph-kinds 2>&1 | grep -q '0 specialised'`
-
 ## Guardrails
+- Keep these two green; they pass today, so they are not criteria (the spec lane refuses a row whose criteria already pass):
+  `cargo test -q -p pii-graph --test tool_surface_is_closed` and `cargo run -q -p xtask -- lint-graph-kinds` (must still print `0 specialised`).
 - Do NOT split a string into an argv, anywhere. A string is refused, not interpreted.
 - Do NOT remove or change the coder's agent-facing `bash` tool or its deny list.
 - Do NOT add an exception to the shell list to make a graph pass; move the graph.
