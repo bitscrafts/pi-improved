@@ -55,6 +55,16 @@ and making `tool = "bash"` a load-time refusal.
   `verify-fix` take `test_programs` the same way. The graph that CALLS a generic graph is where the authority is written.
   Stated limit: a generic callee started directly by an operator (`pii run start books --input ...`) takes the operator's
   `programs`; that is the operator's authority, as it is for any input. What no input can do after this row is reach a shell.
+- R11 every PRODUCER of `tool = "bash"` moves with the row, not only the shipped graphs. The SOP compiler turned every `check`
+  step into a `tool = "bash"` node whose `command` was a shell string, so closing `tool` closes `pii sop run`. A `check` step now
+  takes `argv = ["program", "arg", ...]` and compiles to a `run` node that declares `argv[0]` as its only program. The SOP lint
+  refuses, naming the step: a `command` (a shell string; says to write `argv`), an empty or missing `argv`, a shell as the program
+  (same list as the graph loader: one `SHELLS` constant), an entry starting with `$.`, and an `argv` on any step that is not a
+  `check`. `examples/cut-release.sop.toml` and `_docs/02-guides/writing-an-sop.md` move with it.
+- R12 the `run` tool honours the SAME deny list `bash` does, applied to the argv: an entry denies only when the PROGRAM is the
+  entry's first word and the joined line contains the whole entry, so `["sudo","ls"]` is denied (`Denied`, "deny list", and the
+  `tools.deny_list_hit` event reaches the log) while `["echo","reboot","sudo"]` still runs. Without it, moving a tool node from
+  `bash` to `run` silently drops the deny list.
 - R5 `graphs/` contains no `tool = "bash"`, and `docs/03-reference/graph-vocabulary.md` no longer says the
   surface is still open.
 
@@ -92,6 +102,12 @@ Key decisions:
 | `CONTROL_a_tool_node_naming_run_loads` | `tool` node with `tool = "run"` | loads |
 | `books_runs_its_inventory_as_an_argv` | books with `inventory = ["true"]`, `verify = ["true"]` | the graph runs to its exit |
 | `CONTROL_books_still_ends_on_nothing_to_do_for_an_empty_inventory` | inventory prints nothing | `nothing-to-do`, as before |
+| `a_check_step_compiles_to_a_run_node_declaring_its_program` | SOP check `argv = ["grep","-q","^version","Cargo.toml"]` | compiled node is `tool = "run"`, `programs = ["grep"]`, the same argv, no `bash` anywhere |
+| `a_check_command_string_is_refused_and_says_what_to_write` | SOP check with `command = "..."` | lint error names the step, says shell string, says `argv` |
+| `a_check_argv_whose_program_is_a_shell_is_refused` | argv0 `sh`, `/bin/bash`, `env`, `/usr/bin/env` | lint error names the step and "shell" |
+| `CONTROL_a_program_named_like_a_shell_prefix_is_a_program` | argv0 `shfmt`, `/usr/bin/bashful` | loads |
+| `a_denied_command_in_an_argv_is_refused_by_the_deny_list` | `run` with `["sudo","ls"]`, `["dd","of=/dev/null"]` | `Denied`, message names the deny list |
+| `CONTROL_an_argument_that_names_a_denied_word_is_not_denied` | `run` with `["echo","reboot","sudo","mkfs"]` | runs, prints the words |
 | `a_run_node_without_programs_is_refused_at_load` | `tool = "run"` with no `programs` | load error naming the node |
 | `an_undeclared_program_is_denied_even_if_the_run_scope_has_it` | node declares `["true"]`, argv `["cargo","--version"]` (cargo IS in the run scope) | `Denied`, names `cargo`; nothing ran |
 | `CONTROL_a_declared_cargo_runs_for_a_tool_node` | node declares `["cargo"]`, argv `["cargo","--version"]` | the result is an `ok` port carrying an `exit_code` (the process was admitted and spawned; a denial has none). stdout is NOT asserted: the child env is scrubbed to an allowlist without `RUSTUP_HOME`, so a rustup shim cannot choose a toolchain (measured 2026-11-09) |
@@ -108,6 +124,9 @@ Each is verified to FAIL before the change. A criterion that passes today is a G
 - [ ] `cargo test -q -p pii-tools --test run_tool 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `cargo test -q -p pii-graph --test tool_surface_is_closed a_tool_node_naming_bash_is_refused 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `cargo test -q -p pii-server --test tool_programs_are_declared 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `cargo test -q -p pii-graph --test sop_check_is_argv 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `cargo test -q -p pii-server --test sop_engine 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `cargo test -q -p pii-server --test log_wiring 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `test -d graphs && ! grep -rq 'tool = "bash"' graphs/`
 - [ ] `cargo test -q -p pii-server --test books_graph books_runs_its_inventory_as_an_argv 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `cargo test -q -p pii-server --test books_graph CONTROL_books_still_ends_on_nothing_to_do 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
@@ -146,3 +165,11 @@ Each is verified to FAIL before the change. A criterion that passes today is a G
 - `crates/pii-graph/src/render.rs`
 - `crates/pii-graph/src/run/mod.rs`
 - `crates/pii-graph/src/run/resume.rs`
+- `crates/pii-graph/src/sop/mod.rs`
+- `crates/pii-graph/src/sop/lint.rs`
+- `crates/pii-graph/src/sop/compile.rs`
+- `crates/pii-graph/tests/sop.rs`
+- `crates/pii-graph/tests/sop_check_is_argv.rs`
+- `crates/pii-tools/src/observe.rs`
+- `crates/pii-server/tests/log_wiring.rs`
+- `crates/pii-server/tests/sop_engine.rs`
