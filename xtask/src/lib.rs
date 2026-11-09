@@ -65,6 +65,9 @@ pub fn workspace_root() -> std::path::PathBuf {
 /// tests (`lint_files`' unit tests parse the `--report` flag through it).
 #[cfg(test)]
 pub mod cli_parse;
+/// `cargo xtask crate-audit` and `lint-files`: the one physical line counter and per-file ratchet (spec 402).
+#[cfg_attr(not(test), allow(unreachable_pub))]
+pub mod file_size;
 /// `cargo xtask heal-collect`/`promote-collect`: the ONLY way a repair patch
 /// leaves a disposable worktree sandbox.
 pub mod heal_collect;

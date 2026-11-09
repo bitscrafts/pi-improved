@@ -22,6 +22,7 @@ mod crate_audit;
 mod deps;
 mod disk;
 mod doc_drift;
+mod file_size;
 mod fresh_gate;
 pub mod heal_collect;
 mod heal_prune;

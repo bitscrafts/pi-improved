@@ -1,19 +1,13 @@
-//! Spec 387: `cargo xtask crate-audit` measures every crate against the 450-line budget. `--ratchet` refuses any crate
-//! whose over-budget count grew past its checked-in baseline; debt may fall and may not rise. The baseline moves only
-//! through `--update-baseline`, which writes it on first creation and afterwards refuses any raise.
-//!
-//! The count is physical lines (`wc -l`) over every `.rs` file of the crate, `src/` and `tests/` alike, `target/`
-//! skipped. That is stricter than `lint-files` (effective lines, `src/` only): a comment-heavy file can pass that gate
-//! and still be counted here. The gap is deliberate, and the spec's `// filler` fixtures are comment lines.
+//! Spec 387: `cargo xtask crate-audit` measures every crate against the 450-line budget and prints the report. The
+//! ratchet (`--ratchet`, `--update-baseline`, `--migrate-from-crate-counts`) is spec 402's per-file ratchet in
+//! `file_size`: one counter (physical lines), one baseline keyed by path, and a file may only ever shrink.
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use crate::file_size;
 use xtask::workspace_root;
 
-const BUDGET: usize = 450;
-const BASELINE: &str = "_docs/05-operations/crate-audit-baseline.tsv";
+const BUDGET: usize = file_size::LIMIT;
 
 /// One crate's measurement. `over` names every file over the budget with its physical line count.
 struct Row {
@@ -26,26 +20,32 @@ struct Row {
     over: Vec<(String, usize)>,
 }
 
-/// Entry point for `cargo xtask crate-audit [--ratchet | --update-baseline]`.
+/// Entry point for `cargo xtask crate-audit [--ratchet | --update-baseline | --migrate-from-crate-counts]`.
 pub fn run(args: &[String]) -> Result<(), Vec<String>> {
     let mut ratchet = false;
     let mut update = false;
+    let mut migrate = false;
     for arg in args {
         match arg.as_str() {
             "--ratchet" => ratchet = true,
             "--update-baseline" => update = true,
+            "--migrate-from-crate-counts" => migrate = true,
             other => return Err(vec![format!("crate-audit: unknown arg '{other}'")]),
         }
     }
     let root = workspace_root();
     let rows = measure_all(&root).map_err(|e| vec![e])?;
     print_report(&rows);
-    if update {
-        update_baseline(&root, &rows)
-    } else if ratchet {
-        check_ratchet(&root, &rows)
+    if !(ratchet || update || migrate) {
+        return Ok(());
+    }
+    let measured = file_size::measure(&root).map_err(|e| vec![e])?;
+    if migrate {
+        file_size::migrate(&root, &measured)
+    } else if update {
+        file_size::update_baseline(&root, &measured)
     } else {
-        Ok(())
+        file_size::check_ratchet(&root, &measured)
     }
 }
 
@@ -76,7 +76,7 @@ fn measure(root: &Path, name: &str) -> Result<Row, String> {
     for path in files {
         let text = std::fs::read_to_string(&path)
             .map_err(|e| format!("crate-audit: cannot read {}: {e}", path.display()))?;
-        let lines = text.lines().count();
+        let lines = file_size::physical_lines(&path).map_err(|e| format!("crate-audit: {e}"))?;
         let rel = path
             .strip_prefix(root)
             .unwrap_or(&path)
@@ -175,88 +175,4 @@ fn print_report(rows: &[Row]) {
             println!("  {:<12} {path} ({lines})", r.name);
         }
     }
-}
-
-fn read_baseline(root: &Path) -> Result<BTreeMap<String, usize>, String> {
-    let path = root.join(BASELINE);
-    let text = std::fs::read_to_string(&path).map_err(|e| {
-        format!(
-            "crate-audit: no baseline at {BASELINE} ({e}); create it with `crate-audit --update-baseline`"
-        )
-    })?;
-    let mut map = BTreeMap::new();
-    for line in text.lines().skip(1) {
-        let (name, count) = line
-            .split_once('\t')
-            .ok_or_else(|| format!("crate-audit: malformed baseline row {line:?}"))?;
-        let count = count
-            .trim()
-            .parse::<usize>()
-            .map_err(|e| format!("crate-audit: malformed baseline count in {line:?}: {e}"))?;
-        map.insert(name.trim().to_owned(), count);
-    }
-    Ok(map)
-}
-
-/// Crates whose over-budget count exceeds their baseline. A crate with no baseline row is held to zero.
-fn grown(rows: &[Row], baseline: &BTreeMap<String, usize>) -> Vec<String> {
-    rows.iter()
-        .filter_map(|r| {
-            let base = baseline.get(&r.name).copied().unwrap_or(0);
-            (r.over.len() > base).then(|| {
-                let files: Vec<String> = r
-                    .over
-                    .iter()
-                    .map(|(p, l)| format!("{p} ({l} lines)"))
-                    .collect();
-                format!(
-                    "crate {}: {} over-budget file(s) against a baseline of {base}: {}",
-                    r.name,
-                    r.over.len(),
-                    files.join(", ")
-                )
-            })
-        })
-        .collect()
-}
-
-fn check_ratchet(root: &Path, rows: &[Row]) -> Result<(), Vec<String>> {
-    let baseline = read_baseline(root).map_err(|e| vec![e])?;
-    let grown = grown(rows, &baseline);
-    if grown.is_empty() {
-        println!("crate-audit: ratchet holds, no crate above its baseline");
-        Ok(())
-    } else {
-        Err(grown)
-    }
-}
-
-fn update_baseline(root: &Path, rows: &[Row]) -> Result<(), Vec<String>> {
-    let path = root.join(BASELINE);
-    if path.is_file() {
-        let baseline = read_baseline(root).map_err(|e| vec![e])?;
-        let raised = grown(rows, &baseline);
-        if !raised.is_empty() {
-            return Err(raised
-                .into_iter()
-                .map(|g| format!("refused, the audit never raises a baseline: {g}"))
-                .collect());
-        }
-    }
-    write_baseline(&path, rows).map_err(|e| vec![e])?;
-    println!("crate-audit: wrote {BASELINE} ({} crates)", rows.len());
-    Ok(())
-}
-
-fn write_baseline(path: &Path, rows: &[Row]) -> Result<(), String> {
-    let mut body = String::from("crate\tover_budget\n");
-    for r in rows {
-        let _ = writeln!(body, "{}\t{}", r.name, r.over.len());
-    }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| format!("crate-audit: cannot create {}: {e}", dir.display()))?;
-    }
-    std::fs::write(path, body)
-        .map_err(|e| format!("crate-audit: cannot write {}: {e}", path.display()))
 }

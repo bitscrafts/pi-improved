@@ -1,4 +1,5 @@
-//! 450-line file-size gate over effective (non-blank, non-comment) lines.
+//! 450-line file-size gate (spec 402): judges PHYSICAL lines through `file_size`, the same counter `crate-audit`
+//! uses. Effective lines (non-blank, non-comment, `#[cfg(test)]` bodies excluded) are a `--report` column only.
 
 // reason: see deps.rs — `pub(super)` is the correct visibility for these
 // binary-internal helpers; clippy `redundant_pub_crate` conflicts with rustc
@@ -9,15 +10,13 @@
 #![allow(clippy::redundant_pub_crate)]
 
 use std::fs;
-use std::path::{Path, PathBuf};
 
-const MAX_EFFECTIVE_LINES: usize = 450;
-const WARN_EFFECTIVE_LINES: usize = 380;
-const ROOTS: &[&str] = &["crates", "xtask"];
+use crate::file_size;
+
 /// `--report` default: top-20 files by effective line count.
 pub const REPORT_DEFAULT_N: usize = 20;
 
-/// One entry for report mode: path, effective count, raw `wc -l` count.
+/// One entry for report mode: path, effective count, physical `wc -l` count.
 type CountedFile = (String, usize, usize);
 
 /// Counts lines that are non-empty after trimming and do not start with
@@ -67,50 +66,27 @@ pub fn count_effective_lines(src: &str) -> usize {
     count
 }
 
-/// Pure check over pre-counted files; fails on any file over the gate.
-fn check_counts(files: &[(String, usize)]) -> Result<(), Vec<String>> {
-    let mut violations = Vec::new();
-    for (path, count) in files {
-        if *count > MAX_EFFECTIVE_LINES {
-            violations.push(format!(
-                "{path}: {count} effective lines exceeds {MAX_EFFECTIVE_LINES}"
-            ));
-        } else if *count > WARN_EFFECTIVE_LINES {
-            println!("warning: {path}: {count} effective lines (warn at {WARN_EFFECTIVE_LINES})");
-        }
-    }
-    if violations.is_empty() {
-        Ok(())
-    } else {
-        Err(violations)
-    }
-}
-
-/// Walks `crates/*/src/**/*.rs` and `xtask/src/**/*.rs`, skipping
-/// `target/`, counting effective and raw lines per file.
+/// Every `.rs` file under `crates/` (`src/` and `tests/` alike, `target/` skipped), measured physically.
 ///
 /// # Errors
 /// Returns one I/O error line per unreadable file.
 fn collect_counts() -> Result<Vec<CountedFile>, Vec<String>> {
-    let mut files: Vec<CountedFile> = Vec::new();
-    for root in ROOTS {
-        let mut paths = Vec::new();
-        collect_rs_files(Path::new(root), &mut paths);
-        for path in paths {
+    let root = crate::workspace_root();
+    let measured = file_size::measure(&root).map_err(|e| vec![e])?;
+    measured
+        .into_iter()
+        .map(|(path, raw)| {
             let src =
-                fs::read_to_string(&path).map_err(|e| vec![format!("{}: {e}", path.display())])?;
-            let effective = count_effective_lines(&src);
-            let raw = src.lines().count();
-            files.push((path.display().to_string(), effective, raw));
-        }
-    }
-    Ok(files)
+                fs::read_to_string(root.join(&path)).map_err(|e| vec![format!("{path}: {e}")])?;
+            Ok((path, count_effective_lines(&src), raw))
+        })
+        .collect()
 }
 
 /// Prints the top-`n` files by effective line count, descending, ties
 /// broken by path ascending. Output format (one line per file):
-/// `<effective>  <raw>  <path>` — effective first (the enforced gate
-/// metric), then the raw `wc -l` count for comparison, then the path.
+/// `<effective>  <raw>  <path>` — effective first, then the raw `wc -l`
+/// count (the enforced metric), then the path.
 fn print_report(files: &[CountedFile], n: usize) {
     let mut sorted: Vec<&CountedFile> = files.iter().collect();
     sorted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -119,8 +95,8 @@ fn print_report(files: &[CountedFile], n: usize) {
     }
 }
 
-/// `--report [N]` mode: print the top-N files by effective line count and
-/// exit 0 unconditionally — a reporting tool, not a gate check.
+/// `--report [N]` mode: print the top-N files by effective line count, then the files within
+/// [`file_size::HEADROOM`] lines of the limit, and exit 0 unconditionally — a reporting tool, not a gate check.
 ///
 /// # Errors
 /// Propagates a collect failure (unreadable file) so the caller can report
@@ -132,48 +108,39 @@ pub fn run_report(n: usize) -> Result<(), Vec<String>> {
         files.len()
     );
     print_report(&files, n);
+    let measured: Vec<(String, usize)> =
+        files.iter().map(|(p, _, raw)| (p.clone(), *raw)).collect();
+    let near = file_size::near_limit(&measured);
+    println!(
+        "headroom: {} file(s) within {} lines of the {}-line limit (raw, path):",
+        near.len(),
+        file_size::HEADROOM,
+        file_size::LIMIT
+    );
+    for (path, raw) in near {
+        println!("{raw:5}  {path}");
+    }
     Ok(())
 }
 
-/// Walks `crates/*/src/**/*.rs` and `xtask/src/**/*.rs`, skipping
-/// `target/`, and fails on any file over the gate.
+/// Walks `crates/` and fails on any file over the per-file ratchet in `file_size`.
 ///
 /// # Errors
-/// Returns one message per violating file, or an I/O error line.
+/// Returns one message per refusal, or an I/O error line.
 pub fn run() -> Result<(), Vec<String>> {
-    let files = collect_counts()?;
-    let pass_fail: Vec<(String, usize)> =
-        files.iter().map(|(p, eff, _)| (p.clone(), *eff)).collect();
-    check_counts(&pass_fail)?;
-    let (max_path, max_count) = files
+    let root = crate::workspace_root();
+    let measured = file_size::measure(&root).map_err(|e| vec![e])?;
+    file_size::check_ratchet(&root, &measured)?;
+    let (max_path, max_count) = measured
         .iter()
-        .max_by_key(|(_, count, _)| *count)
-        .map_or_else(|| (String::from("<none>"), 0), |(p, c, _)| (p.clone(), *c));
+        .max_by_key(|(_, count)| *count)
+        .map_or_else(|| (String::from("<none>"), 0), |(p, c)| (p.clone(), *c));
     println!(
-        "lint-files: {} files checked, max effective {} lines (file: {max_path})",
-        files.len(),
+        "lint-files: {} files checked, max physical {} lines (file: {max_path})",
+        measured.len(),
         max_count
     );
     Ok(())
-}
-
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if path.is_dir() {
-            if name == "target" || name == "tests" {
-                continue;
-            }
-            collect_rs_files(&path, out);
-        } else if name.ends_with(".rs") {
-            out.push(path);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -185,8 +152,10 @@ mod tests {
         clippy::indexing_slicing
     )]
 
-    use super::{check_counts, count_effective_lines, run_report};
+    use super::{count_effective_lines, run_report};
     use crate::cli_parse::parse_report_flag;
+    use crate::file_size::violations;
+    use std::collections::BTreeMap;
 
     fn code_lines(n: usize) -> String {
         (0..n)
@@ -197,17 +166,23 @@ mod tests {
 
     #[test]
     fn lint_files_accepts_450_lines() {
-        // 450 code + 60 blank + 40 comment lines == 450 effective.
+        let src = code_lines(450);
+        assert_eq!(count_effective_lines(&src), 450);
+        let counted = vec![(String::from("crates/x/src/f.rs"), 450)];
+        assert_eq!(violations(&counted, &BTreeMap::new()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn lint_files_judges_physical_lines_not_effective() {
+        // 450 code + 60 blank + 40 comment lines: 450 effective, 550 physical. The gate judges physical.
         let mut src = code_lines(450);
         src.push('\n');
         src.push_str(&"\n".repeat(60));
         src.push_str(&"// comment\n".repeat(40));
         assert_eq!(count_effective_lines(&src), 450);
-        let counted = vec![(
-            String::from("crates/x/src/f.rs"),
-            count_effective_lines(&src),
-        )];
-        assert!(check_counts(&counted).is_ok());
+        let counted = vec![(String::from("crates/x/src/f.rs"), src.lines().count())];
+        let errs = violations(&counted, &BTreeMap::new());
+        assert!(errs.iter().any(|e| e.contains("f.rs") && e.contains("550")));
     }
 
     #[test]
@@ -215,7 +190,7 @@ mod tests {
         let src = code_lines(451);
         assert_eq!(count_effective_lines(&src), 451);
         let counted = vec![(String::from("crates/x/src/big.rs"), 451)];
-        let errs = check_counts(&counted).unwrap_err();
+        let errs = violations(&counted, &BTreeMap::new());
         assert!(
             errs.iter()
                 .any(|e| e.contains("big.rs") && e.contains("451"))
@@ -297,7 +272,10 @@ mod tests {
             .collect();
         assert_eq!(rendered, vec![String::from("  600    900  big.rs")]);
         // The same fixture fails the normal gate but passes report mode.
-        assert!(check_counts(&[("big.rs".into(), 600)]).is_err());
+        assert_ne!(
+            violations(&[("big.rs".into(), 600)], &BTreeMap::new()),
+            Vec::<String>::new()
+        );
         assert!(run_report(1).is_ok(), "report mode is not a gate check");
     }
 
@@ -312,9 +290,15 @@ mod tests {
         // The normal gate path still fails on oversized files and passes on
         // an empty (clean) set — identical pass/fail semantics as before.
         let oversized = vec![(String::from("big.rs"), 451)];
-        assert!(check_counts(&oversized).is_err());
+        assert_ne!(
+            violations(&oversized, &BTreeMap::new()),
+            Vec::<String>::new()
+        );
         let at_limit = vec![(String::from("ok.rs"), 450)];
-        assert!(check_counts(&at_limit).is_ok());
+        assert_eq!(
+            violations(&at_limit, &BTreeMap::new()),
+            Vec::<String>::new()
+        );
         // parse_report_flag: no flag => None (normal mode), bare flag => 20,
         // valued flag => N.
         assert_eq!(parse_report_flag(&[]), Ok(None));

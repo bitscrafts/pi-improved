@@ -5,8 +5,8 @@
 //! library surface. Growth fixtures are scratch workspaces under `_tmp/`, selected by the cwd: `workspace_root`
 //! walks up from the cwd to the first directory holding both `Cargo.toml` and `xtask/Cargo.toml`.
 //!
-//! Baseline format assumed here (the spec leaves it open): `_docs/05-operations/crate-audit-baseline.tsv`, a
-//! `crate<TAB>over_budget` header line, then one `crate<TAB>count` row per crate.
+//! Baseline format (spec 402): `_docs/05-operations/crate-audit-baseline.tsv`, a `path<TAB>lines` header line, then one
+//! `path<TAB>lines` row per over-budget FILE. (Spec 387 wrote one `crate<TAB>count` row per crate; the ratchet is per file now.)
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -70,12 +70,13 @@ fn add_crate(root: &Path, name: &str, file: &str, lines: usize) {
     std::fs::write(src.join(file), "// filler\n".repeat(lines)).unwrap();
 }
 
+/// Writes the per-file baseline: one `path<TAB>lines` row per over-budget file (spec 402).
 fn write_baseline(root: &Path, rows: &[(&str, usize)]) {
     let path = root.join(BASELINE);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let mut body = String::from("crate\tover_budget\n");
-    for (name, count) in rows {
-        writeln!(body, "{name}\t{count}").unwrap();
+    let mut body = String::from("path\tlines\n");
+    for (file, lines) in rows {
+        writeln!(body, "{file}\t{lines}").unwrap();
     }
     std::fs::write(path, body).unwrap();
 }
@@ -159,7 +160,7 @@ fn the_audit_measures_every_crate() {
 fn the_audit_refuses_growth() {
     let root = fixture("growth");
     add_crate(&root, "pii-x", "big.rs", BUDGET + 1);
-    write_baseline(&root, &[("pii-x", 0)]);
+    write_baseline(&root, &[]);
 
     let out = xtask(&root, &["crate-audit", "--ratchet"]);
     let text = combined(&out);
@@ -178,12 +179,18 @@ fn the_audit_allows_payment() {
     let root = fixture("payment");
     add_crate(&root, "pii-x", "a.rs", BUDGET + 1);
     add_crate(&root, "pii-x", "b.rs", BUDGET + 1);
-    write_baseline(&root, &[("pii-x", 3)]);
+    write_baseline(
+        &root,
+        &[
+            ("crates/pii-x/src/a.rs", BUDGET + 10),
+            ("crates/pii-x/src/b.rs", BUDGET + 10),
+        ],
+    );
 
     let out = xtask(&root, &["crate-audit", "--ratchet"]);
     assert!(
         out.status.success(),
-        "2 over-budget files against a baseline of 3 is payment, not growth: {}",
+        "two over-budget files that shrank below their recorded counts are payment, not growth: {}",
         combined(&out)
     );
 }
@@ -193,7 +200,7 @@ fn the_audit_allows_payment() {
 fn CONTROL_a_new_file_under_the_budget_is_not_a_violation() {
     let root = fixture("under-budget");
     add_crate(&root, "pii-x", "fresh.rs", 400);
-    write_baseline(&root, &[("pii-x", 0)]);
+    write_baseline(&root, &[]);
 
     let out = xtask(&root, &["crate-audit", "--ratchet"]);
     assert!(
@@ -207,7 +214,7 @@ fn CONTROL_a_new_file_under_the_budget_is_not_a_violation() {
 fn control_the_baseline_cannot_be_raised_by_the_audit_itself() {
     let root = fixture("no-self-baseline");
     add_crate(&root, "pii-x", "big.rs", BUDGET + 1);
-    write_baseline(&root, &[("pii-x", 0)]);
+    write_baseline(&root, &[]);
     let before = std::fs::read(root.join(BASELINE)).unwrap();
 
     xtask(&root, &["crate-audit"]);

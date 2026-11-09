@@ -3,6 +3,12 @@
 # Format: <label>|<shell command>   (one line per step; `#` lines and blank lines are ignored).
 # A step passes only if its command exits 0; every step runs even after an earlier failure.
 
+# Spec 402 R4: the size checks run FIRST, before fmt and the build, so a file-size failure costs seconds, not minutes.
+# One counter (physical lines, `file_size`) and one per-file baseline; the baseline only moves through
+# `crate-audit --update-baseline`, never in this step.
+lint-files|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-files
+crate-audit|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- crate-audit --ratchet
+
 fmt|cargo fmt --all --check
 
 # F-01 fix: clippy's --all-targets build writes libschemars/libserde_json (and other
@@ -38,12 +44,7 @@ test (doc)|CARGO_TARGET_DIR="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gat
 # instrumented build on a small volume). It is NEVER implied: unset means the floor is measured.
 coverage-floor|if [ "${QG_SKIP_COVERAGE:-0}" = "1" ]; then echo "SKIPPED: coverage-floor (QG_SKIP_COVERAGE=1 — the floor was NOT measured in this run,"; echo "         the repo gate enforces it by default and this line is the record that it was skipped)"; else cargo llvm-cov --workspace --lib --bins --tests --json --summary-only --output-path target/coverage-summary.json >/dev/null && CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- coverage-floor target/coverage-summary.json; fi
 
-# 450-effective-line file gate (spec 67, Fix 1): pure text scan; also enforced here for pidag runs.
-lint-files|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-files
 
-# Spec 387 R4: a crate whose over-450-line file count grew past its checked-in baseline reddens the gate, naming the
-# file. The baseline only moves through `crate-audit --update-baseline`, never in this step.
-crate-audit|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- crate-audit --ratchet
 
 # Spec 393 R4: a graph kind outside graphs/VOCABULARY, used by one graph alone, or a repeated flow reddens the gate.
 lint-graph-kinds|CARGO_TARGET_DIR="_tmp/tools-gate" cargo run -q -p xtask -- lint-graph-kinds
