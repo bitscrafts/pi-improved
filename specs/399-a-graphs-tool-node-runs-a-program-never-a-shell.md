@@ -173,3 +173,6 @@ Each is verified to FAIL before the change. A criterion that passes today is a G
 - `crates/pii-tools/src/observe.rs`
 - `crates/pii-server/tests/log_wiring.rs`
 - `crates/pii-server/tests/sop_engine.rs`
+- `crates/pii-tools/src/bash.rs`
+- `examples/cut-release.sop.toml`
+- `_docs/02-guides/writing-an-sop.md`
