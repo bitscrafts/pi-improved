@@ -76,3 +76,5 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `gate-steps.txt`
 - `_docs/05-operations/crate-audit-baseline.tsv`
 - `docs/03-reference/crate-standard.md`
+- `xtask/src/lib.rs`
+- `xtask/tests/crate_audit.rs`
