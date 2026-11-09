@@ -130,7 +130,7 @@ fn require_runtime() -> Result<(), PiiError> {
         .map_err(|_| PiiError::Invalid("spawn_run called outside a Tokio runtime".into()))
 }
 
-/// The run input: the prompt and session, with any extra graph input merged over them. F5: `test_argv`/`test_programs`/`workspace`
+/// The run input: the prompt and session, with any extra graph input merged over them. F5: `test_argv`/`workspace`
 /// reach verify-fix graphs this way.
 fn run_input(
     prompt: String,

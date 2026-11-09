@@ -20,6 +20,47 @@ pub(crate) fn eval_ctx(input: &NodeInput) -> serde_json::Value {
 /// SOP lint, so a shell cannot be refused in one and accepted in the other.
 pub(crate) const SHELLS: &[&str] = &["sh", "bash", "dash", "zsh", "ksh", "fish", "env"];
 
+/// Spec 400 R1/R2: a `run` node's `programs` is a literal, non-empty array of program names, and none of them is a shell.
+/// An expression, a string or a table is refused, so run input can never supply the program; a shell is refused by its
+/// final path component, so `/bin/bash` is one too.
+fn check_declared_programs(node: &crate::spec::NodeSpec) -> Result<(), PiiError> {
+    let refuse = |why: &str| {
+        PiiError::Invalid(format!(
+            "tool.run.programs: node '{}' {why}; `programs` is a literal array of bare program names in this file",
+            node.id
+        ))
+    };
+    let Some(programs) = node
+        .cfg
+        .get("programs")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Err(refuse(
+            "has `tool` = \"run\" without a literal array `programs`",
+        ));
+    };
+    if programs.is_empty() {
+        return Err(refuse("declares no program"));
+    }
+    for entry in programs {
+        let Some(name) = entry
+            .as_str()
+            .filter(|n| !n.trim().is_empty() && !n.starts_with("$."))
+        else {
+            return Err(refuse(&format!(
+                "has the `programs` entry {entry}, which is not a literal name"
+            )));
+        };
+        let program = name.rsplit('/').next().unwrap_or(name);
+        if SHELLS.contains(&program) {
+            return Err(refuse(&format!(
+                "declares the shell `{name}`; a `tool` node runs a program, not a shell"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Spec 393 R3: a `tool` node's `run` is an argv array whose first entry is a literal program, never a shell. A shell
 /// string, a `$.` argv0 and `["bash", "-c", ..]` are all refused, naming the node: authority comes from the committed
 /// spec, not from the graph.
@@ -35,13 +76,7 @@ pub(crate) fn check_tool_surface(nodes: &[crate::spec::NodeSpec]) -> Result<(), 
                     node.id
                 )));
             }
-            Some("run") if node.cfg.get("programs").is_none() => {
-                return Err(PiiError::Invalid(format!(
-                    "tool.run.programs: node '{}' has `tool` = \"run\" without `programs`; declare the bare program \
-                     names it may exec",
-                    node.id
-                )));
-            }
+            Some("run") => check_declared_programs(node)?,
             _ => {}
         }
         let Some(run) = node.cfg.get("run") else {

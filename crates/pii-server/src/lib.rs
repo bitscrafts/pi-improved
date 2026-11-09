@@ -459,8 +459,8 @@ impl Engine {
     /// Starts a graph run directly (F6, opus review: `run.start`). Allocates
     /// the run and returns BEFORE execution (< 50 ms, N4). The input is the
     /// graph's run input — it is forwarded to the graph (`$.input`) so
-    /// parameterised graphs (verify-fix's `test_argv`/`test_programs`/`workspace`,
-    /// heal-fix's `scope_root`/`worktree`/`test_argv`/`test_programs`) receive their
+    /// parameterised graphs (verify-fix's `test_argv`/`workspace`,
+    /// heal-fix's `scope_root`/`worktree`/`test_argv`) receive their
     /// params — and the prompt is derived from it for the agent node.
     ///
     /// # Errors

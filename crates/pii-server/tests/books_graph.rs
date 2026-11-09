@@ -139,6 +139,20 @@ fn books_graph_carries_no_absolute_project_paths() {
 
 /// Runs `books` with an inventory that prints nothing and a verify that passes, through the engine, and settles it.
 async fn run_books_with_an_empty_inventory() -> (RunStatus, Vec<(u64, RunEvent)>) {
+    run_books(&serde_json::json!({
+        "agent": "claude",
+        "model": "scripted",
+        "provider": "scripted",
+        "spec": "specs/none.md",
+        "inventory": ["true"],
+        "verify": ["true"],
+        "programs": ["true"],
+    }))
+    .await
+}
+
+/// Runs `books` with `input` (its `workdir` is filled in), through the engine, and settles it.
+async fn run_books(input: &serde_json::Value) -> (RunStatus, Vec<(u64, RunEvent)>) {
     let tmp = tempfile::tempdir().unwrap();
     let ws = tmp.path().join("ws");
     std::fs::create_dir_all(&ws).unwrap();
@@ -160,17 +174,9 @@ async fn run_books_with_an_empty_inventory() -> (RunStatus, Vec<(u64, RunEvent)>
         mqtt_tool_url: None,
     })
     .expect("engine");
-    // Spec 399 R4: the commands are argv arrays, and `programs` names what they may exec.
-    let input = serde_json::json!({
-        "agent": "claude",
-        "model": "scripted",
-        "provider": "scripted",
-        "spec": "specs/none.md",
-        "workdir": std::fs::canonicalize(&ws).unwrap(),
-        "inventory": ["true"],
-        "verify": ["true"],
-        "programs": ["true"],
-    });
+    // Spec 399 R4: the commands are argv arrays; the program comes from the graph file (spec 400 R4).
+    let mut input = input.clone();
+    input["workdir"] = serde_json::json!(std::fs::canonicalize(&ws).unwrap());
     let run = engine
         .start_run("books", &input)
         .expect("books starts with its inputs");
@@ -240,4 +246,81 @@ async fn CONTROL_books_still_ends_on_nothing_to_do_for_an_empty_inventory() {
         matches!(status, RunStatus::Succeeded),
         "{status:?}: {journal:?}"
     );
+}
+
+/// Spec 400 R4: `books` declares its program in the file. Every `run` tool node carries a literal, non-empty `programs`
+/// array, and `programs` is no longer a run input the graph needs.
+#[test]
+fn books_declares_its_program_in_the_file() {
+    let src = graph("books");
+    let doc = table(&src);
+    let runs: Vec<&toml::Table> = nodes(&doc)
+        .into_iter()
+        .filter(|n| {
+            n.get("kind").and_then(toml::Value::as_str) == Some("tool")
+                && n.get("tool").and_then(toml::Value::as_str) == Some("run")
+        })
+        .collect();
+    assert!(!runs.is_empty(), "books has `run` tool nodes");
+    for node in runs {
+        let id = node.get("id").and_then(toml::Value::as_str).unwrap_or("?");
+        let programs = node
+            .get("programs")
+            .and_then(toml::Value::as_array)
+            .unwrap_or_else(|| panic!("`{id}` declares `programs` as a literal array: {node:?}"));
+        assert!(!programs.is_empty(), "`{id}` declares a program");
+        for program in programs {
+            let name = program.as_str().unwrap_or_default();
+            assert!(
+                !name.trim().is_empty() && !name.starts_with("$."),
+                "`{id}` declares a literal name, not {program:?}"
+            );
+        }
+    }
+    let needs: Vec<&str> = doc
+        .get("needs")
+        .and_then(toml::Value::as_array)
+        .map(|n| n.iter().filter_map(toml::Value::as_str).collect())
+        .unwrap_or_default();
+    assert!(
+        !needs.contains(&"programs"),
+        "the run input may not supply `programs`: {needs:?}"
+    );
+}
+
+/// Spec 400 R4: a run input cannot widen the programs. `books` is run with a hostile `programs = ["python3"]` input and an
+/// inventory that is a `python3` argv; the file declares no `python3`, so the node is denied and nothing ran.
+#[tokio::test]
+async fn run_input_cannot_widen_the_programs() {
+    let (_status, journal) = run_books(&serde_json::json!({
+        "agent": "claude",
+        "model": "scripted",
+        "provider": "scripted",
+        "spec": "specs/none.md",
+        "inventory": ["python3", "-c", "print(1)"],
+        "verify": ["true"],
+        "programs": ["python3"],
+    }))
+    .await;
+    assert_eq!(
+        finished_on(&journal, "inventory"),
+        Some(PortName::from("err")),
+        "the hostile program is denied, not run: {journal:?}"
+    );
+    let value = journal
+        .iter()
+        .find_map(|(_, ev)| match ev {
+            RunEvent::NodeFinished { node, value, .. } if *node == NodeId::from("inventory") => {
+                Some(value.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_default();
+    let error = value["error"].as_str().unwrap_or_default();
+    assert!(
+        error.contains("is not in this node's `programs`"),
+        "denied by the declaration, not by a spawn: {value}"
+    );
+    assert!(value.get("stdout").is_none(), "nothing ran: {value}");
+    assert!(value.get("exit_code").is_none(), "nothing ran: {value}");
 }

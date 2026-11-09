@@ -142,6 +142,8 @@ A `tool` node's `run` must be an argv array with a literal argv0 that is not a s
 
 `tool = "bash"` is refused at load, naming the node. A `tool = "run"` node must also declare `programs`, the bare program names it may exec, and `ToolNode` execs an argv only when its first entry equals one of them, before the process capability is consulted. The shipped graphs (`books`, `doc-code`, `starter/heal-fix`, `starter/verify-fix`) take their commands as argv arrays (spec 399).
 
+The rule (spec 400): `programs` is a literal array of bare program names written in the committed graph file, and run input can supply arguments but never the program. A `$.` expression, a string, a table, an empty array or a blank entry is refused at load, naming the node; so is a declared shell (`sh`, `/bin/bash`, `env`, matched on the final path component). The limit that stays: a declared program that itself runs commands (an interpreter such as `python3`, or `cargo`, which runs build scripts) is the committed file's decision, reviewed with the graph.
+
 ## The catalogue (spec 388)
 
 `pii graph index [--dir D]` derives one entry per graph from the system and user directories and writes it to the memory store as a skill document: purpose, entry, exit, kinds, ports, calls, capabilities and the sha256 it was built from. A file that does not load is reported by name. Nothing is hand-written: the purpose is the graph's `description`, else the first clause of its opening comment.

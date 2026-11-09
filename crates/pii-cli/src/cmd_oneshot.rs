@@ -35,7 +35,7 @@ struct OneshotArgs {
     workspace: PathBuf,
     sandbox: SandboxProfileName,
     connect: Option<String>,
-    /// Extra graph input (F5, opus review): `--input '{"test_argv":[..],"test_programs":[..]}'`
+    /// Extra graph input (F5, opus review): `--input '{"test_argv":[..]}'`
     /// is merged into the run input so verify-fix graphs get their params.
     input: serde_json::Value,
 }

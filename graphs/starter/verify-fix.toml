@@ -16,7 +16,7 @@ compact_at_tokens = 24000
 id = "test"
 kind = "tool"
 tool = "run"
-programs = "$.input.test_programs"
+programs = ["cargo"]
 args = { argv = "$.input.test_argv", cwd = "$.input.workspace" }
 
 [[node]]

@@ -12,7 +12,7 @@ use pii_tools::ToolSet;
 pub struct ToolNode {
     tool: String,
     args: serde_json::Value,
-    /// Spec 399 R8: the programs a `run` node may exec, a literal array or a `$.input.<name>` reference.
+    /// Spec 399 R8, 400 R3: the programs a `run` node may exec, a literal array from the committed graph file.
     programs: serde_json::Value,
     toolset: ToolSet,
 }
@@ -68,28 +68,24 @@ impl pii_graph::node::NodeFactory for ToolFactory {
         }))
     }
 
-    /// Spec 399 R9: a `run` node's declared programs join its process scope (see `dispatch`).
+    /// Spec 399 R9: a `run` node's declared programs join its process scope (see `dispatch`). Spec 400 R3: they are read
+    /// from the graph file as written, never evaluated against run input; the load check refuses anything else.
     fn declared_programs(
         &self,
         cfg: &serde_json::Value,
-        run_input: &serde_json::Value,
+        _run_input: &serde_json::Value,
     ) -> Vec<String> {
         if cfg.get("tool").and_then(serde_json::Value::as_str) != Some("run") {
             return Vec::new();
         }
-        let programs = cfg
-            .get("programs")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        declared(&serde_json::json!({ "input": run_input }), &programs).unwrap_or_default()
+        cfg.get("programs").and_then(declared).unwrap_or_default()
     }
 }
 
-/// The program names a `run` node declares, resolved. Anything that is not an array of strings declares nothing,
-/// so a malformed `programs` fails closed.
-fn declared(ec: &serde_json::Value, programs: &serde_json::Value) -> Option<Vec<String>> {
-    let resolved = eval_or_literal(ec, programs).ok()?;
-    resolved
+/// The program names a `run` node declares. Anything that is not an array of strings declares nothing, so a malformed
+/// `programs` fails closed.
+fn declared(programs: &serde_json::Value) -> Option<Vec<String>> {
+    programs
         .as_array()?
         .iter()
         .map(|p| p.as_str().map(str::to_owned))
@@ -100,11 +96,7 @@ impl ToolNode {
     /// Spec 399 R8: a `run` node execs an argv only when its first entry EQUALS a declared program. This is checked
     /// before the tool and before the process capability, so a program the run scope admits for another reason is
     /// still denied, and the refusal names it.
-    fn check_declared(
-        &self,
-        ec: &serde_json::Value,
-        resolved: &serde_json::Value,
-    ) -> Result<(), PiiError> {
+    fn check_declared(&self, resolved: &serde_json::Value) -> Result<(), PiiError> {
         if self.tool != "run" {
             return Ok(());
         }
@@ -114,7 +106,7 @@ impl ToolNode {
             .and_then(|argv| argv.first())
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
-        if declared(ec, &self.programs)
+        if declared(&self.programs)
             .unwrap_or_default()
             .iter()
             .any(|p| p == program)
@@ -133,7 +125,7 @@ impl GraphNode for ToolNode {
         // Resolve `$.`-expressions in args against the node's eval context.
         let ec = eval_ctx(input);
         let resolved = resolve_args(&ec, &self.args)?;
-        let result = self.check_declared(&ec, &resolved).and_then(|()| {
+        let result = self.check_declared(&resolved).and_then(|()| {
             self.toolset.get(&self.tool).map_or_else(
                 || Err(PiiError::Invalid(format!("unknown tool '{}'", self.tool))),
                 |tool| tool.call(ctx, &resolved),

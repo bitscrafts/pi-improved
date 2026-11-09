@@ -20,7 +20,7 @@ max_tokens = 20000
 id = "probe"
 kind = "tool"
 tool = "run"
-programs = "$.input.test_programs"
+programs = ["cargo"]
 args = { argv = "$.input.test_argv", cwd = "$.input.worktree" }
 
 [[node]]
@@ -64,7 +64,7 @@ system = "You are repairing one deliberately seeded source break in a disposable
 id = "retest"
 kind = "tool"
 tool = "run"
-programs = "$.input.test_programs"
+programs = ["cargo"]
 args = { argv = "$.input.test_argv", cwd = "$.input.worktree" }
 
 [[node]]

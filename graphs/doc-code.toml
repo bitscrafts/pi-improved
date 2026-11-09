@@ -17,7 +17,7 @@ max_wall_ms = 1800000
 id = "write"
 kind = "call"
 graph = "books"
-sha256 = "e00d4bcb06b2d5f888ab07784468b972ce87ec8039d291009e62894bb58e2d60"
+sha256 = "93cf8a72f2c2ca8fa24cb72025ac645da4bb93945d7ece5b24fd703050087a9e"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
