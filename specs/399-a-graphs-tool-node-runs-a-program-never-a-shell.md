@@ -94,7 +94,7 @@ Key decisions:
 | `CONTROL_books_still_ends_on_nothing_to_do_for_an_empty_inventory` | inventory prints nothing | `nothing-to-do`, as before |
 | `a_run_node_without_programs_is_refused_at_load` | `tool = "run"` with no `programs` | load error naming the node |
 | `an_undeclared_program_is_denied_even_if_the_run_scope_has_it` | node declares `["true"]`, argv `["cargo","--version"]` (cargo IS in the run scope) | `Denied`, names `cargo`; nothing ran |
-| `CONTROL_a_declared_cargo_runs_for_a_tool_node` | node declares `["cargo"]`, argv `["cargo","--version"]` | stdout starts with `cargo` |
+| `CONTROL_a_declared_cargo_runs_for_a_tool_node` | node declares `["cargo"]`, argv `["cargo","--version"]` | the result is an `ok` port carrying an `exit_code` (the process was admitted and spawned; a denial has none). stdout is NOT asserted: the child env is scrubbed to an allowlist without `RUSTUP_HOME`, so a rustup shim cannot choose a toolchain (measured 2026-11-09) |
 | `CONTROL_cargo_stays_claimed_against_a_non_coder_kind` | a `transform`/other non-coder node asks the scope for `cargo` | still not admitted |
 | `a_prefix_of_a_declared_program_is_not_the_program` | node declares `["car"]`, argv `["cargo","--version"]` | `Denied` (the scope check is a prefix match; this node's check is exact) |
 
@@ -130,17 +130,19 @@ Each is verified to FAIL before the change. A criterion that passes today is a G
 - `crates/pii-graph/tests/tool_surface_is_closed.rs`
 - `crates/pii-server/src/lib.rs`
 - `crates/pii-server/src/engine/tool.rs`
-- `crates/pii-server/src/engine/run_scope.rs`
 - `crates/pii-graph/src/node.rs`
 - `crates/pii-graph/src/sched/dispatch.rs`
 - `crates/pii-server/tests/tool_programs_are_declared.rs`
 - `crates/pii-server/src/engine/runs.rs`
 - `crates/pii-cli/src/cmd_oneshot.rs`
 - `crates/pii-server/tests/books_graph.rs`
-- `crates/pii-server/tests/doc_code_graph.rs`
 - `graphs/books.toml`
 - `graphs/doc-code.toml`
 - `graphs/starter/heal-fix.toml`
 - `graphs/starter/verify-fix.toml`
 - `graphs/README.md`
 - `docs/03-reference/graph-vocabulary.md`
+- `crates/pii-core/src/ctx.rs`
+- `crates/pii-graph/src/render.rs`
+- `crates/pii-graph/src/run/mod.rs`
+- `crates/pii-graph/src/run/resume.rs`
