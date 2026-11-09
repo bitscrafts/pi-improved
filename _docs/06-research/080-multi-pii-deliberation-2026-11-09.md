@@ -63,3 +63,23 @@ deliberation graphs, which post to the item and, when they need a person, to thi
 2. Three roles on the local model give a verdict token that parses; an unparseable reply fails closed. Reuse the judge harness (spec 144), 30 labelled items.
 3. A round ends at the attempt limit with one question and no further model call (control: below the limit it continues).
 4. Cost per round is recorded and the ceiling stops a loop (control: a loop under the ceiling completes).
+
+## 5. Addendum (2026-11-09, decisions taken in discussion with the operator)
+
+1. **The spec stays a FILE** under `specs/NNN-*.md`, committed on the PR branch. The PR body only LINKS it at a commit sha (a permalink cannot change).
+   A body copy was rejected: it can be edited after review, has no line review, has a size limit and creates a second source of truth.
+   A PR with no diff yet opens with an empty first commit.
+2. **Approval is `approve <spec-commit-sha>`** from the owner's allow-listed login. The lane runs a spec's criteria only for the approved commit; a later
+   edit is a new commit and needs a new approval. A verdict cites the commit it reviewed, so a verdict on an old version never counts for a newer one.
+3. **Templates for everything** (drafted under `/projects/_tmp/pii-templates/`): a PR template, an issue template and five comment templates
+   (proposal, critique, implementation-ready, decision, question). A comment that does not match its template is ignored and counted. Free model text never decides.
+4. **A unique id per installation**: random 128 bits generated at first start, stored in the STATE directory (never the config, so a copied config cannot copy an
+   identity), shown as a short form. An id proves nothing alone: the vote counts only when the id matches the roster entry of the comment's GitHub AUTHOR login.
+   Two installs claiming one id both refuse to vote and ask the human. To confirm: the deploy backup and rollback must keep the id file, or a rollback
+   silently changes the host's identity. Instance names must not contain a tool or assistant name.
+5. **The roster** is a committed `.pii/roster.toml`, changed only by a PR the owner merges.
+6. **Discordance goes to a human.** Unanimity is the only thing that proceeds alone. Any dissent, abstention or silence by the deadline is one question to the
+   owner on the PR and on the pii Discord channel (same template). The owner's decision, from the allow-listed login, is final for that round. Merge is always the owner's.
+7. **Order**: the Discord two-way channel (row 401, done) comes first so pii can ask; the mechanism is proven on a throwaway sandbox repo (to be created only
+   with the operator's go-ahead, an external action); only then does it act on a real repository.
+8. **Spec review before queueing** (see note 081): the proposer/critic/arbiter loop is the same loop as the EGM review, with the PR as the medium.
