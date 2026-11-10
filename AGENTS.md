@@ -29,7 +29,7 @@ Outside contributions go through issues and pull requests: see [`CONTRIBUTING.md
   5-step list used per item.
 - `cargo run -q -p xtask -- fresh-gate --worktree` runs the same list in a clean export. When the two disagree, believe the fresh
   one: a gate can be green in a tree and red in a clone. Manual: [`_docs/02-guides/quality-gate-and-fresh-tree.md`](_docs/02-guides/quality-gate-and-fresh-tree.md).
-- A cold gate needs about 40 GB of build output; the cycle refuses to gate below 20 GB free on `/projects`.
+- A cold gate needs about 40 GB of build output; the cycle refuses to gate below 20 GB free on the build volume.
 - `.github/workflows/checks.yml` runs the cheap half of the gate on every push and pull request. `gate.yml` is the full gate, run on demand.
 
 ## Rules
