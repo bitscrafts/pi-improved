@@ -29,6 +29,42 @@ pub(super) fn rewrite(v: &mut Value, refs: &Refs<'_>) {
     }
 }
 
+/// Rewrites one field of an inlined node. Only a `prompt` string takes the placeholder rule; every other field keeps
+/// `rewrite`, so a `system` or a `value` holding braces stays data (R2).
+pub(super) fn rewrite_field(key: &str, v: &mut Value, refs: &Refs<'_>) {
+    match v {
+        Value::String(s) if key == "prompt" => *s = rewrite_prompt(s, refs),
+        _ => rewrite(v, refs),
+    }
+}
+
+/// Renames each `{{path}}` placeholder by the rule its `$.path` expression follows. A placeholder that is not renamed
+/// keeps its text byte for byte, spacing included (R3); one that names no sub-graph node stays as written (R4).
+fn rewrite_prompt(text: &str, refs: &Refs<'_>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((before, after)) = rest.split_once("{{") {
+        out.push_str(before);
+        out.push_str("{{");
+        let Some((inner, tail)) = after.split_once("}}") else {
+            out.push_str(after);
+            return out;
+        };
+        let body = inner.trim();
+        let start = inner.len() - inner.trim_start().len();
+        let (lead, body_and_trail) = inner.split_at(start);
+        let closing_ws = body_and_trail.strip_prefix(body).unwrap_or_default();
+        let next = rewrite_expr(&format!("$.{body}"), refs);
+        out.push_str(lead);
+        out.push_str(next.strip_prefix("$.").unwrap_or(body));
+        out.push_str(closing_ws);
+        out.push_str("}}");
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
 fn rewrite_expr(expr: &str, refs: &Refs<'_>) -> String {
     let segs: Vec<&str> = expr[2..].split('.').collect();
     match segs.as_slice() {

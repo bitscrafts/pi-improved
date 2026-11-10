@@ -26,7 +26,7 @@ use crate::node::NodeRegistry;
 
 use super::call_needs::{self, Scope};
 use super::call_record::{self, CallRecord};
-use super::call_rewrite::{Refs, rewrite};
+use super::call_rewrite::{Refs, rewrite_field};
 use super::check::sha256_hex;
 
 /// The deepest chain of nested calls a load accepts (spec 255 R7).
@@ -312,7 +312,7 @@ fn splice(
         };
         for (k, v) in &mut node {
             if k != "id" {
-                rewrite(v, &refs);
+                rewrite_field(k, v, &refs);
             }
         }
         added.push(node);
