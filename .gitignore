@@ -25,3 +25,7 @@ __pycache__/
 # state, not source, and untracked in the minilam repo too; left visible it made the
 # cycle report FOREIGN 1 and refuse to dispatch (rc 7, measured 2026-10-31T182028Z).
 .minilam/
+
+# local agent working directories (not part of the project)
+.claude/
+.hermes/
