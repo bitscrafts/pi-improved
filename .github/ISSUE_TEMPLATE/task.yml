@@ -1,0 +1,26 @@
+name: Task
+description: A change to make. The maintainer labels it `ready` before anyone works on it.
+labels: ["triage"]
+body:
+  - type: textarea
+    id: change
+    attributes:
+      label: What changes
+      description: One behaviour, in a sentence or two. Name the crate or file if you know it.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Exit criteria
+      description: Shell commands that exit 0 when the change is done and non-zero before it. One per line. A command that already passes today is not a criterion.
+      placeholder: "cargo test -q -p pii-graph --test my_new_test"
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files it may touch
+      description: The paths the change is allowed to edit. Anything else is out of scope.
+    validations:
+      required: true

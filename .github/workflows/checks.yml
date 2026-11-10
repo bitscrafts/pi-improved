@@ -1,0 +1,52 @@
+name: checks
+
+# The cheap half of the gate: formatting, the repository's own lints and the documentation checks. Every step here is a line of
+# gate-steps.txt, run the way the gate runs it. The heavy half (clippy, build, tests, coverage) is in gate.yml.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain (the version rust-toolchain.toml pins)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> _tmp/tools-gate"
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: the repository's lints and documentation checks
+        run: |
+          set -u
+          fail=0
+          for step in lint-files "crate-audit --ratchet" lint-graph-kinds lint-scratch lint-observability reachability-check deps-check net-check doc-drift-check; do
+            echo "::group::xtask $step"
+            CARGO_TARGET_DIR=_tmp/tools-gate cargo run -q -p xtask -- $step || { echo "::error::xtask $step failed"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail
+      - name: shell checks
+        run: |
+          set -u
+          fail=0
+          for cmd in "bash scripts/autonomy/sync-verify.sh --check" "bash scripts/autonomy/item-ids.sh --check" "bash modules/devbox/check.sh" "bash scripts/checks/daemon-tests-are-guarded.sh"; do
+            echo "::group::$cmd"
+            $cmd || { echo "::error::$cmd failed"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail

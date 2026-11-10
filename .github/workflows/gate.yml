@@ -1,0 +1,40 @@
+name: gate
+
+# The full gate minus the coverage floor: clippy with warnings denied, a workspace build, every test and the doc tests.
+# The floor needs cargo-llvm-cov, which a runner does not have; QG_SKIP_COVERAGE makes the gate print SKIPPED for it instead of passing it.
+# It is heavy (a cold run is tens of minutes) and has not yet been proven on a GitHub runner, so it runs when asked and once a week,
+# not on every push. A green run here is what lets it join `checks` as a required check.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain (the version rust-toolchain.toml pins)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: system packages the build needs
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> _tmp/gate-target"
+      - name: disk before
+        run: df -h . | tail -1
+      - name: the gate (the same step list the local gate reads)
+        env:
+          FRESH_GATE_TARGET: ${{ github.workspace }}/_tmp/gate-target
+          QG_SKIP_COVERAGE: "1"   # coverage-floor is reported SKIPPED, never PASS
+        run: bash quality-gate.sh --routine
+      - name: disk after
+        if: always()
+        run: df -h . | tail -1
