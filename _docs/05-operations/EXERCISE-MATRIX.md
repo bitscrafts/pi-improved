@@ -107,5 +107,5 @@ exercise. The delegation that happens today is the autonomy loop's shell script 
 
 ## How the harness runs
 
-`scripts/exercise-pii.sh` — injects, then observes only. It restores nothing; a fault still present at the end is the
+`scripts/archive/exercise-pii.sh` — injects, then observes only. It restores nothing; a fault still present at the end is the
 finding. Every fault in the matrix is reversible by a separate, deliberate operator action.

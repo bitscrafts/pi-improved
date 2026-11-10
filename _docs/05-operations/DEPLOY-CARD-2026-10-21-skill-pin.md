@@ -54,7 +54,7 @@ Treat step 3 as a shape to adapt from the selffix graph's credential fields, not
 ### 1. Install HEAD and restart the daemon
 
 ```bash
-bash scripts/deploy-lnx-test.sh
+bash scripts/archive/deploy-lnx-test.sh
 ```
 
 It builds `target/release/pii` here, `mv`s it into place on lnx (a plain `scp` onto a running binary fails),

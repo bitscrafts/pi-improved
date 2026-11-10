@@ -7,10 +7,10 @@ six times. This is the diagnosis and the exact remaining fix, so the next sessio
 
 ## Where the harness lives
 
-- `scripts/experiments/prove-fix-in-7-cycles.sh` — lists/seeds the 7 candidates (dry run free).
-- `scripts/experiments/run-experiment-batch.sh` — loops them, stops when the account leaves `severity: normal`,
+- `scripts/archive/experiments/prove-fix-in-7-cycles.sh` — lists/seeds the 7 candidates (dry run free).
+- `scripts/archive/experiments/run-experiment-batch.sh` — loops them, stops when the account leaves `severity: normal`,
   prints the pre-registered decision.
-- `scripts/experiments/measure-proven-fix.sh <idx> <fingerprint> <fix-commit> <crate> <paths>` — one candidate:
+- `scripts/archive/experiments/measure-proven-fix.sh <idx> <fingerprint> <fix-commit> <crate> <paths>` — one candidate:
   seeds a tree at `fix-commit^`, one worker (sonnet, `--max-turns 60`, no budget cap), then measures.
 - Results: `_tmp/autonomy/experiment/results.tsv` (append-only). Trees: `/projects/_tmp/exp-prove-fix/`.
 

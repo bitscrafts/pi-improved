@@ -25,7 +25,7 @@ change the default.
 ## Verified Premises
 - **NOT PRESENT** (measured 2026-10-27, `grep -n -- '--dry-run\|DRY' scripts/run-batchC-pii.sh` found nothing): the script has no dry-run, so R0 adds it and every test below relies on it.
 - **CONFIRMED** `scripts/run-batchC-pii.sh:88-132` writes the one-node graph; `:152` starts it by name; `:180` reads `rc`, `tree_changed`, `quota_exhausted` from the LAST `coder.exited`.
-- **CONFIRMED** `scripts/composed-real-run.sh` already builds the spec graph's input with `uv run` and passes `max_budget_usd`; it is the pattern to follow.
+- **CONFIRMED** `scripts/archive/composed-real-run.sh` already builds the spec graph's input with `uv run` and passes `max_budget_usd`; it is the pattern to follow.
 - **CONFIRMED** `graphs/spec.toml` declares `needs` for `docs_brief` and has `[limits] max_micro_usd = 1_000_000` and `max_wall_ms = 6000000`.
 - **CONFIRMED** the real composed run reads `FACTS` from the journal by the lines added since the start (`LINES_BEFORE`); the lane does the same.
 

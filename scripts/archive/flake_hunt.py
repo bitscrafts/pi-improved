@@ -13,7 +13,7 @@ sensitive" and are listed even at 0 of N.
                  (path printed) and never deleted by this script.
   --compile-load also run `cargo check --workspace --tests` (own target dir under --keep-logs) beside each round.
 
-usage: scripts/flake_hunt.py [--env tree|export] [--rounds N] [--hogs N] [--cpus N] [--compile-load] [--direct]
+usage: scripts/archive/flake_hunt.py [--env tree|export] [--rounds N] [--hogs N] [--cpus N] [--compile-load] [--direct]
                              [--filter SUBSTR] [--keep-logs DIR] [--export-dir DIR]
 """
 import argparse, os, re, subprocess, sys, tempfile, time

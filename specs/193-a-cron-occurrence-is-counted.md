@@ -80,7 +80,7 @@ and clusters repeated refusals by kind. What it cannot see today is a FIRING: th
 ## Closure
 
 **Verified 2026-10-19 09:47Z by the orchestrator on the committed tree (`65588c3`), and EXERCISED live
-(`scripts/exercise-193-196-live.sh`).**
+(`scripts/archive/exercise-193-196-live.sh`).**
 
 *The criteria, run by hand:* `cargo test -p pii-learn --test incidents_runtime_cron` → `test result: ok` (6
 passed); `cargo test -p pii-observe --lib` → ok (58); `cargo test -p pii-server --test log_wiring` → ok (10);

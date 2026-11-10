@@ -3,7 +3,7 @@
 # Inject: hold the store's exclusive lock (redb takes one) BEFORE the daemon starts, prove the
 # hold with a marker file, and only then start the daemon. The harness only observes.
 # Verdict rule: if the marker never appears, the inject did not fire — ABORT, no verdict at all.
-# Run: bash scripts/exercise-e9-store-lock.sh
+# Run: bash scripts/archive/exercise-e9-store-lock.sh
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 . scripts/autonomy/env.sh 2>/dev/null

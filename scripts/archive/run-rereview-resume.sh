@@ -9,7 +9,7 @@
 #   1. the brief must FORBID background subagents (a print-mode run has no turn to wait in);
 #   2. the dispatch must stream (stream-json), not buffer — the answer must survive a mid-run exit.
 #
-#   bash scripts/run-rereview-resume.sh [extra-prompt-file]
+#   bash scripts/archive/run-rereview-resume.sh [extra-prompt-file]
 #
 # Exit: 0 ran · 2 window shut (nothing spent) · 1 run/filing/validity failure.
 set -uo pipefail

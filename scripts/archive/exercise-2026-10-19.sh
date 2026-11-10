@@ -20,7 +20,7 @@
 #   E2 extra (beyond the matrix, observed only): with BOTH paths gone the daemon still answers health
 #   and names the refusal in its log, instead of crashing.
 #
-# Run:  bash scripts/exercise-2026-10-19.sh
+# Run:  bash scripts/archive/exercise-2026-10-19.sh
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 . scripts/autonomy/env.sh 2>/dev/null

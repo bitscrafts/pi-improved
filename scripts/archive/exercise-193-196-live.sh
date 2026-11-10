@@ -8,7 +8,7 @@
 #   (196) cancelling a suspended timer run REMOVES its wheel entry, and the re-armed run's entry survives;
 #   (196) resuming a run that already finished is REFUSED, loudly (`run.resume.refused`), not silently.
 #
-# Run: bash scripts/exercise-193-196-live.sh
+# Run: bash scripts/archive/exercise-193-196-live.sh
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 . scripts/autonomy/env.sh 2>/dev/null

@@ -2,12 +2,12 @@
 
 **Date**: 2026-10-10. Closes spec 110's F2, F3, F8. Debug build, scripted model, shared host (load average
 ~10-15 throughout), one persistent client connection unless stated. Every number below was produced by
-`scripts/leak_bisect.py` or by the named test; the raw per-poll series are in
+`scripts/archive/leak_bisect.py` or by the named test; the raw per-poll series are in
 `/projects/_tmp/leak-bisect/*/state.json` (scratch, not committed).
 
 ## R1 — F2: where the RSS growth comes from
 
-**Harness** (committed, re-runnable): `python3 scripts/leak_bisect.py --runs N --every K --variants a,b [--graph G]
+**Harness** (committed, re-runnable): `python3 scripts/archive/leak_bisect.py --runs N --every K --variants a,b [--graph G]
 [--parallel] [--keep|--resume]`. Fresh store and daemon per variant, one run = `run.start` + poll `run.get`,
 samples `/proc/<pid>/status` (`VmRSS`, `RssAnon`, `RssFile`), `sys.status` store bytes, `/proc/<pid>/io`, CPU.
 Variants: `base obs-off audit-off both-off traj-on conn-per-run idle-conn`. Two runs of
@@ -176,7 +176,7 @@ Modified: `crates/pii-cli/src/{cmd_daemon,cmd_metrics,daemon_log}.rs`, `crates/p
 `crates/pii-proto/src/sys.rs`, `crates/pii-server/src/{lib.rs,daemon/config.rs,daemon/identity.rs,engine/runs.rs}`,
 `crates/pii-server/tests/{health_identity,log_wiring}.rs`, `crates/pii-store/{Cargo.toml,src/lib.rs}` (+`parking_lot`),
 `examples/pii.production.toml`, `_docs/05-operations/105-runbook.md`, `Cargo.lock`.
-New: `scripts/leak_bisect.py`, `crates/pii-observe/src/rss_trend.rs`, `crates/pii-observe/tests/rss_probe.rs`,
+New: `scripts/archive/leak_bisect.py`, `crates/pii-observe/src/rss_trend.rs`, `crates/pii-observe/tests/rss_probe.rs`,
 `crates/pii-graph/tests/{write_amp,rss_probe}.rs`, `crates/pii-store/tests/write_amp.rs`, this report.
 Config keys: `[core] observer`, `[core] audit`. Flags: `--observer`, `--audit`. Wire: `sys.status.rss_bytes_per_run`.
 

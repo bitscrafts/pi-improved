@@ -3,7 +3,7 @@
 **Date:** 2026-10-27. **HEAD:** `3cc4ffe5a397`. **Daemon:** the production devbox daemon, revision `3cc4ffe5a397` (== HEAD), installed by
 `daemon.sh refresh` (`installed 20adef32d275`, daemon binary sha `20adef32d275`). **Agent:** the real `claude` on `claude-haiku-5-5`, provider
 `anthropic`, through the real transport. **Cap:** USD 1.00 (graph `[limits]` and the input's `max_budget_usd`). **Repo:** a throwaway git repo
-under `_tmp/devbox-test/`; the live project was never the workdir. Run with `scripts/composed-real-run.sh` (and `--control`).
+under `_tmp/devbox-test/`; the live project was never the workdir. Run with `scripts/archive/composed-real-run.sh` (and `--control`).
 
 ## The run (r000000000322)
 

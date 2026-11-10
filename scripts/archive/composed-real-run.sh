@@ -9,7 +9,7 @@
 # the workdir. Nothing is committed anywhere by the worker. Every printed fact is read from the daemon's own journal / CLI, never retyped.
 # --control: the real docs coder is told to DELETE hello.txt; `reverify` must refuse (run failed, hello.txt gone). The control that proves the
 # real run's PASS can fail, with the real transport this time.
-# Usage: scripts/composed-real-run.sh [--dry-run] [--control]     (--dry-run prints the plan and the input, spends nothing, starts nothing)
+# Usage: scripts/archive/composed-real-run.sh [--dry-run] [--control]     (--dry-run prints the plan and the input, spends nothing, starts nothing)
 set -u
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"   # uv lives here; a background shell does not inherit the interactive PATH
 REPO=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)

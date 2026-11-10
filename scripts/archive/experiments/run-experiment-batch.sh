@@ -31,7 +31,7 @@ TBL
   fix=$(git log --grep="^$spec[-:]" --reverse --format=%h | head -1)
   if [ -z "$fix" ]; then echo "[$spec] no fix commit found by content — skipped"; continue; fi
   echo "=== $spec ($fp): fix=$fix base=$(git rev-parse --short "$fix^")"
-  bash scripts/experiments/measure-proven-fix.sh "$spec" "$fp" "$fix" "$crate" "$paths"
+  bash scripts/archive/experiments/measure-proven-fix.sh "$spec" "$fp" "$fix" "$crate" "$paths"
 done
 echo "batch done — results: _tmp/autonomy/experiment/results.tsv"
 python3 - <<'PY'

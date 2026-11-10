@@ -7,7 +7,7 @@
 # If a fault is still in place at the end, that is a FINDING, not a cleanup step. Reversing it is a separate,
 # deliberate operator action — never something a test does to make its own result look good.
 #
-# Run:  bash scripts/exercise-pii.sh
+# Run:  bash scripts/archive/exercise-pii.sh
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 export XDG_RUNTIME_DIR=/run/user/0

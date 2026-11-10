@@ -112,7 +112,7 @@ Three facts about the path, read in the tree today (not assumed):
 Restored with `git checkout --` and verified by `sha256sum -c` (`router.rs f4d4a502…`, `lib.rs fd4313a7…`
 both OK), `touch`ed, criteria re-ran green, tree clean.
 
-*Exercised live — the A/B that makes the criterion behavioural (`scripts/exercise-e5-poll-retry-after.sh`,
+*Exercised live — the A/B that makes the criterion behavioural (`scripts/archive/exercise-e5-poll-retry-after.sh`,
 scratch daemon, fake Discord answering 429 with `retry_after: 2`, `poll_interval_ms = 100`, nothing repaired
 by the harness):*
 

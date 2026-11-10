@@ -16,7 +16,7 @@
 #   event.log shows ZERO `cron.rearmed` at start (v3 runs a daemon whose arm took the EXISTING run)
 #             and EXACTLY ONE `cron.rearmed` after the firing — a second one inside the window is
 #             the 178/183 bug class (re-arm before the next occurrence).
-# Run: bash scripts/exercise-e10-one-firing.sh
+# Run: bash scripts/archive/exercise-e10-one-firing.sh
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 . scripts/autonomy/env.sh 2>/dev/null

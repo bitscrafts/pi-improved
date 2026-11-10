@@ -87,7 +87,7 @@ exports** — a cold target, HEAD+overlay, running beside compile load, i.e. a d
   injected 400 ms stall reddens the old test; the fix waits on the **observer** for `NodeStarted(b)`, notified at
   append time, and is green with the stall still injected. Teeth: making resume forget completed nodes → red (`a`
   runs twice).
-**The harness**: `scripts/flake_hunt.py` — N rounds of the gate's own test command under a stated load, per-test
+**The harness**: `scripts/archive/flake_hunt.py` — N rounds of the gate's own test command under a stated load, per-test
 failure counts, dev tree or a fresh export, optional core pinning; every sleep/timeout-using test is listed even at
 "0 of N". `DO-NOT-REPEAT` §1 gained row **1.42**: *a test that needs a duration to be correct is a defect*.
 
@@ -108,7 +108,7 @@ be run after committing — done below.
 `fresh-gate` (plain, exactly HEAD after committing the harness and the two test fixes): **`quality-gate: ALL PASS` ·
 `fresh-gate: PASS`**, exit 0 — with the three new checks reporting (`PASS: doc-drift-check` visible in the tail).
 The two criteria the worker could not close itself are now closed: **criterion 1** (the harness is committed —
-`scripts/flake_hunt.py`) and **criterion 7** (the plain form, which it could not run without committing).
+`scripts/archive/flake_hunt.py`) and **criterion 7** (the plain form, which it could not run without committing).
 **119: 8/8.** The one thing it could not fix — `reload_drops_no_requests`, a product race, not a test problem — is
 spec 120, now running, and its own reproduction evidence (0/10, 6/25, 2/15 across three invocations) is recorded
 there along with the cwd path bug my attempt 2 uncovered.

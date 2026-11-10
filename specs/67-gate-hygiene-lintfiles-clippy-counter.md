@@ -20,7 +20,7 @@ Four small, related fixes.
 That script runs fmt, clippy, build, and test — it never runs `cargo
 run -q -p xtask -- lint-files` (the 450-effective-line-per-file gate).
 The line gate is enforced only by manual `cargo xtask ci` invocation,
-`scripts/mvp-verify.sh`, or per-spec exit criteria when a spec author
+`scripts/archive/mvp-verify.sh`, or per-spec exit criteria when a spec author
 remembered to list it (54 of 77 existing spec files do; 23 don't). A
 pidag SDD run whose spec's exit criteria omit `lint-files` can push a
 file over 450 effective lines and the loop will still report success.
@@ -32,7 +32,7 @@ file over 450 effective lines and the loop will still report success.
 specifically to avoid a race on `schemars`/`serde_json` rlib hashes
 (the F-01 fix — search git log/HANDOFF for "F-01" if you want the
 original incident). `xtask ci` (`xtask/src/main.rs`) and
-`scripts/mvp-verify.sh` still run `clippy --all-targets` followed by
+`scripts/archive/mvp-verify.sh` still run `clippy --all-targets` followed by
 `cargo test --workspace` in the SAME shared `target/debug`, the exact
 shape that raced before. Neither has hit it recently (this is
 latent, not currently failing), but whoever next runs `cargo xtask ci`
@@ -80,7 +80,7 @@ have moved since this spec was drafted):
   start with `#[` while `in_cfg_test` is true and brace depth is still
   `0`, before starting brace-depth tracking for real).
 - `xtask/src/main.rs` — the `ci` subcommand's cargo invocations.
-- `scripts/mvp-verify.sh` — its cargo invocations.
+- `scripts/archive/mvp-verify.sh` — its cargo invocations.
 - `clippy.toml` — the `disallowed-macros` `println` entry.
 - `crates/pii-abi/src/failover.rs` — the confirmed miscounted
   instance, to verify Fix 4 against a real before/after measurement.
@@ -103,7 +103,7 @@ have moved since this spec was drafted):
   cannot distinguish "lint-files ran and passed" from "did not run
   at all"). Keep the existing failure-path output format unchanged.
 - R3 (Fix 2). Change `xtask ci` (`xtask/src/main.rs`) and
-  `scripts/mvp-verify.sh` to invoke `quality-gate.sh` for their
+  `scripts/archive/mvp-verify.sh` to invoke `quality-gate.sh` for their
   cargo-related steps (fmt/clippy/build/test) instead of running their
   own separate cargo invocations in the shared target dir. If a clean
   swap to calling the script directly isn't straightforward (e.g. `ci`

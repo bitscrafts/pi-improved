@@ -5,8 +5,8 @@
 # read-only (test-mode) re-review against the amended brief, proves the tree stayed clean,
 # then files the report into the project SSOT + index + pointer + amem.
 #
-#   bash scripts/run-rereview-opus.sh              # probe, then run
-#   DRY_RUN=1 bash scripts/run-rereview-opus.sh    # print what it would do, spend nothing
+#   bash scripts/archive/run-rereview-opus.sh              # probe, then run
+#   DRY_RUN=1 bash scripts/archive/run-rereview-opus.sh    # print what it would do, spend nothing
 #
 # Exit codes: 0 ran or dry-ran · 2 window shut (nothing spent) · 1 the run or filing failed.
 # Everything the run needs is set INSIDE this script (a background shell inherits nothing).

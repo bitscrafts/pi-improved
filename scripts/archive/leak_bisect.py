@@ -8,7 +8,7 @@ count) every --every runs. It prints one table per variant and the
 least-squares slope in KB per 1000 runs. Nothing is written outside --scratch;
 the scratch dir of a previous run is moved aside, never deleted.
 
-  scripts/leak_bisect.py --runs 20000 --every 2000 --variants base,obs-off
+  scripts/archive/leak_bisect.py --runs 20000 --every 2000 --variants base,obs-off
   long series in foreground chunks: add --keep, then repeat with --resume
   (the last chunk without --keep stops the daemons)
   variants: base obs-off audit-off both-off traj-on conn-per-run idle-conn

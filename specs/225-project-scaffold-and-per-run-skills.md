@@ -121,7 +121,7 @@ criterion 7). The deploy binary note is recorded there — `target/release/pii` 
 ### 2026-10-21 18:20Z — criterion 6's reading is pre-registered, not taken
 
 `_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md` now carries the exact sequence for this criterion and
-spec 227's criterion 7 (one reading, shared): install HEAD with `scripts/deploy-lnx-test.sh` and read the
+spec 227's criterion 7 (one reading, shared): install HEAD with `scripts/archive/deploy-lnx-test.sh` and read the
 `READING build:` line; `pii skill add` with `via daemon` on stderr (a `via store <path>` line is a stop — it would
 prove the store half and leave the daemon half unmeasured); the pinned graph with
 `skills = [{ name, sha256 }]`; `coder.spawned` carrying `skill=`/`sha256=` read from the daemon's JSON event line,
@@ -133,7 +133,7 @@ has been run: the deploy restarts lnx's daemon, and the operator switch in `_tmp
 ### 2026-10-24 12:25Z — criterion 6 TAKEN on lnx; the item is done
 
 Deployed HEAD (`7211e238a94b`) to the lnx test daemon (health read back at that revision) and took the reading with
-`scripts/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. One reading serves
+`scripts/archive/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. One reading serves
 this criterion and spec 227's criterion 7.
 
 - **The store's skill is put THROUGH the daemon, not behind its lock**: `added 69122b218677… lint-live-20261024t122427z

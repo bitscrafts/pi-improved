@@ -23,7 +23,7 @@ script dies on an unbound variable after writing the state, so no `OUTCOME=` lin
 - **CONFIRMED** (2026-10-27) `run-batchC-pii.sh:218-232` parses `EXITED` (first line) and `DOCS_EXITED` (second line) but only `QX=$(fact "$EXITED" quota_exhausted)` feeds the quota line.
 - **CONFIRMED** `scripts/autonomy/window.sh:17-18` parses the worker log, not stdout.
 - **CONFIRMED** `cycle.sh:152` is the only assignment of `RECOVER`; `:290` uses it; `set -u` is on at `:33`.
-- **CONFIRMED** the real `coder.exited` journal line shape is `{"kind":"coder.exited", ... "quota_exhausted":"yes","quota_reset":"resets 8:20pm (UTC)" ...}` (captured by `scripts/composed-quota-check.sh`; its fixtures write exactly this).
+- **CONFIRMED** the real `coder.exited` journal line shape is `{"kind":"coder.exited", ... "quota_exhausted":"yes","quota_reset":"resets 8:20pm (UTC)" ...}` (captured by `scripts/archive/composed-quota-check.sh`; its fixtures write exactly this).
 
 ## TDD Contract
 | Test (scripts/autonomy/tests/lane-facts.test.sh) | Input | Expected |

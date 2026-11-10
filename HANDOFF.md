@@ -609,17 +609,17 @@ State: HEAD at the time of writing `2b8579a` (+ the other writer's spec 312 work
 (A169–A175 landed: 305, 307, 308, 306, 309, 310, 311) · every script below is committed and re-runnable.
 
 **Proved on real agents through the production devbox daemon (real transport), each with a control that can fail:**
-- `scripts/composed-chain-real.sh` (25 rows): a 3-level call chain (`chain3 -> chain2 -> chain1 -> docs`) with a real claude at the leaf —
+- `scripts/archive/composed-chain-real.sh` (25 rows): a 3-level call chain (`chain3 -> chain2 -> chain1 -> docs`) with a real claude at the leaf —
   one run, exactly ONE agent spawn, real work on disk, trace names every level; a real mid-chain cancel kills the real leaf (paired with
   an "alive before" row), the cancelled run reports a real duration and the trace has a line for the killed leaf; a one-line change to the
   middle graph is refused by its pin (`fragment.pin.mismatch`, both digests named).
-- `scripts/composed-chain-limits.sh concurrent|pi|loop|restart|midfail` (8/6/8/9/10 rows): four chains at once (four sessions, nothing
+- `scripts/archive/composed-chain-limits.sh concurrent|pi|loop|restart|midfail` (8/6/8/9/10 rows): four chains at once (four sessions, nothing
   shared); pi on ollama-cloud at the leaf; a looped call with `max_entries = 2` makes exactly 2 real spawns then fails naming the call
   (control: limit above the loop budget does not fire); daemon SIGKILL leaves the leaf an orphan (control) and the new daemon reaps it;
   a refuse node in the MIDDLE graph is named in `run explain` and the trace as `via2__bad` (control: same graphs without it succeed).
-- `scripts/lane-resume-e2e.sh` (10 rows): a composed row is RESUMED with a real claude — run 2 writes a token only run 1's conversation
+- `scripts/archive/lane-resume-e2e.sh` (10 rows): a composed row is RESUMED with a real claude — run 2 writes a token only run 1's conversation
   held; a fresh control cannot (the criterion carries the token's SHA-256, never the token).
-- `scripts/lane-resume-proof.sh` (8 rows): the shipped `spec` graph must write its code session where the resume lookup searches.
+- `scripts/archive/lane-resume-proof.sh` (8 rows): the shipped `spec` graph must write its code session where the resume lookup searches.
 - Stand-in simulations on the landed code: `_tmp/composition-sim.py` (scratch, not committed) 48 pass / 0 fail: 40 runs/80 sessions at
   once, 36 chaos runs, depth 2/3/4 one spawn each, width 4/12, cancel 6/6, kill-loop 3 rounds, 0/30 lost run ids, 12 runs in flight with
   `run get` at 0.0 s.
@@ -794,8 +794,8 @@ State: HEAD `bb2bed8` · lane knob `_tmp/autonomy/lane-graph` = `spec` (gitignor
 **The cron tick dispatched A160 (spec 296) through the composed lane on its own** (`LANE-GRAPH: spec`, run r000000000418, 115 s, USD 0.0253 over the code and docs
 coders). The run succeeded; the cycle's verify then failed (`lane-graph-select` 7 ok 1 FAIL) because the knob leaked into two tests that expect the default lane — fixed in `e4ec77f`, A160 committed as `bb2bed8`.
 
-- **Real-agent proof (claude haiku 5.5 and pi/ollama-cloud, production devbox daemon), each with a control that can fail** — `scripts/composed-real-run.sh`,
-  `scripts/composed-real-faults.sh {concurrent,cancel,restart,wall,impl,pi}`, `scripts/composed-quota-check.sh`; record in
+- **Real-agent proof (claude haiku 5.5 and pi/ollama-cloud, production devbox daemon), each with a control that can fail** — `scripts/archive/composed-real-run.sh`,
+  `scripts/archive/composed-real-faults.sh {concurrent,cancel,restart,wall,impl,pi}`, `scripts/archive/composed-quota-check.sh`; record in
   `_docs/05-operations/COMPOSITION-REAL-RUN.md` and `COMPOSITION-REAL-FAULTS.md`. Two runs at once (4 sessions); cancel with the real docs agent alive (gone, 0
   orphans); SIGKILL of the real daemon with the real claude mid-work (new daemon, run reconciled, claude reaped); a run of 885 s succeeds with the shipped
   `max_wall_ms` and the same graph without it fails at 884 s with both agents exiting 0; a four-file implementation checked outside the agent; pi composed; quota refusal
@@ -1048,7 +1048,7 @@ non-done rows are A65 skipped, A71 skipped, A79 revoked).
   ssh and has podman, its daemon is healthy at revision **8d77adff8016** (14 commits behind HEAD) — so the
   reading is now measurable from here without a person, which is what the next card is for.
 - **Then it was measured, and the queue is empty again — honestly this time.** HEAD `7211e238a94b` was deployed to
-  the lnx test daemon (`health.build.revision` read back equal) and `scripts/orch-225-227-live-skill-pin.sh` took the
+  the lnx test daemon (`health.build.revision` read back equal) and `scripts/archive/orch-225-227-live-skill-pin.sh` took the
   one shared reading for A94 c6 / A95 c7: `pii skill add` answered `added 69122b21… sha256=a3171ae3…` **via daemon**;
   run `r000000000324` journalled `coder.spawned{pid 1780181, runtime=socket, container f35f32c7…,
   skill=lint-live-20261024t122427z, sha256=a3171ae3…}`; after `pii skill edit` (body 114 -> 122) run
@@ -1441,7 +1441,7 @@ State: HEAD `85389e7` before this tick's commit (tree clean) · lock free (18:15
   so the pin is read from the daemon's JSON event line, not the trace. The post-edit pin comes from the
   `skill.drift` event's own `found` hash (`coder.rs:335`), not from hashing the file by hand.
 - **Not done, deliberately:** the deploy itself. It stops and restarts lnx's live daemon; the operator switch is
-  still `PAUSED` and no host action is authorized from an unattended tick. `bash scripts/deploy-lnx-test.sh` plus
+  still `PAUSED` and no host action is authorized from an unattended tick. `bash scripts/archive/deploy-lnx-test.sh` plus
   the card is the whole of the remaining work.
 
 ## 2026-10-21 12:30Z — A94/A95's local halves re-measured at HEAD, and the drift guard reddened (one lnx deploy still the only open action)
@@ -1462,7 +1462,7 @@ user directive)` · selftest this tick **34 passed, 0 failed / VERDICT: ALL MECH
   discarded, not recorded).
 - **Nothing was authored from 059 §4: it is exhausted but for rank 1 (the deploy), and every other rank already has
   a row** (A1-A8 done). Authoring a spec would have restated a closed finding.
-- **The queue's one action is unchanged and still behind the operator switch:** `bash scripts/deploy-lnx-test.sh`
+- **The queue's one action is unchanged and still behind the operator switch:** `bash scripts/archive/deploy-lnx-test.sh`
   restarts the lnx daemon, so it was not run under a hand-set pause. Note for its card: `target/release/pii`
   (11,173,424 B, 06:30Z) was built at `7023cd9`, so `health.build.revision` will read `7023cd9` unless rebuilt at
   HEAD `b4d5bb4` (docs-only difference) — expected, not drift.
@@ -1491,7 +1491,7 @@ had been making every cycle read the tree as dirty with no session and keep a ph
 - **lnx, read-only probe (nothing changed there):** reachable over BatchMode ssh, `pii.service` `active`, installed
   binary `/home/mvcorrea/.local/bin/pii` **11,150,384 B dated 2026-10-20T12:38:35Z** — 7 commits and one gate behind
   HEAD. That single fact is A94 criterion 6 and A95 criterion 7.
-- **The deploy was NOT run, deliberately.** The one action left is `bash scripts/deploy-lnx-test.sh` (release build →
+- **The deploy was NOT run, deliberately.** The one action left is `bash scripts/archive/deploy-lnx-test.sh` (release build →
   scp to `pii.new` → `mv` → env-matched daemon restart → pinned coder run + drifted skill edit), and it restarts the
   user's live daemon. Under a `PAUSED` switch that the user wrote by hand, an unattended restart of a live service is
   the one failure this loop must not create: if the new binary does not come up, the daemon stays down with nobody to
@@ -1781,7 +1781,7 @@ and name every path a row can ripple into.
   wait). E5/E6 remain open and are now **specs 194/195 (rows A60/A61)**; 070 §5's last instrument is **spec
   193 (row A62)**; the cancel defect is spec 196. All four rows carry their criteria verbatim (checked
   programmatically against the specs).
-- **The 12:00Z occurrence is armed and watched**: `scripts/checks/digest-occurrence-1200Z.sh` writes
+- **The 12:00Z occurrence is armed and watched**: `scripts/archive/checks/digest-occurrence-1200Z.sh` writes
   snapshots A (11:59:30Z) / B (+90 s) / C (+6 min) / D (+16 min) to `_tmp/occ-watch/` and computes the 070 §1
   step-2 verdict from run-set arithmetic (fired == 1, no second run, armed back to 1, posted +1, refused +0).
   It injects nothing.
@@ -1860,7 +1860,7 @@ and name every path a row can ripple into.
 - **Next:** A57/190 (posts read from the store, one scratch daemon and a restart). Then 070 §5's third bullet —
   `starts`/`hard_deaths` and the per-cron `runs_per_occurrence == 1` assertion — then 070 §1 steps 2-6, which need
   the host (the 09:00 UTC occurrence is the first of them).
-- **Left alone, deliberately:** `scripts/retire-stale-and-rearm.sh` is untracked in the tree (22:01Z) — an
+- **Left alone, deliberately:** `scripts/archive/retire-stale-and-rearm.sh` is untracked in the tree (22:01Z) — an
   operator script for the live host, not this repo's work. Not committed, not removed.
 
 ## 2026-10-18 18:30Z — 187 verified by hand (criteria + mutation), the selftest re-read, and 070 §5's instrument authored as 188
@@ -2528,7 +2528,7 @@ incident, model-escalation config, Opus/026 analysis derivation, etc.).
 ## 2026-10-07 21:55Z — batch B LANDED (direct-pi lane): specs 73+74, quality gate green
 
 - Lane: pi DIRECT glm-5.3-flash (no pi-orchestration; user rule 2026-08-19) via
-  scripts/run-spec-direct.sh — resumed twice on handoff envelopes after iteration-budget
+  scripts/archive/run-spec-direct.sh — resumed twice on handoff envelopes after iteration-budget
   recon cuts (resume-first working as designed; recon billed once).
 - Spec 73 (candidate 7 + D9): boss_watch helpers take PII_TEST_DEADLINE_SECS (default 60),
   R3 messages carry condition+deadline+last journal len; 9th test ships #[ignore] (the
@@ -3117,7 +3117,7 @@ Spec 128 (Discord `post` node + triage/digest graphs) is in flight.
 
 ## 2026-10-16 (12:15Z–12:35Z, autonomy skill lane) — the queue is empty, the parks are the gate, and the gate is now a named defect
 
-- **A paid review is in flight and owns the tree's next step.** `scripts/reviews/opus-boss-watch-stall.sh` resumed
+- **A paid review is in flight and owns the tree's next step.** `scripts/archive/reviews/opus-boss-watch-stall.sh` resumed
   session `f3a2a7df` at 12:13:58Z on the boss-watch defect's five questions (not a fresh session: the project state
   it already established was not re-derived). Its stream is `/projects/_tmp/pii-review-20261016/`, and its
   deliverable is a dated file under `_docs/06-research/`. Nothing was dispatched beside it.

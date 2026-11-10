@@ -91,7 +91,7 @@ not `crates/pii-channels/tests` or `crates/pii-server/src/daemon/router.rs` — 
 tree while HEAD would have been red on a fresh clone. That is open-items 9a, measured again; the row's paths
 are now widened.
 
-*Exercised, `scripts/exercise-e6-send-pacing.sh`* (fake Discord: first POST → 429 `retry_after: 3`, then
+*Exercised, `scripts/archive/exercise-e6-send-pacing.sh`* (fake Discord: first POST → 429 `retry_after: 3`, then
 200; three CLI-channel messages at +0 s, +0.8 s, +3.6 s):
 
 | binary | dials after run 1 | dials after run 2 (inside the window) | dials after run 3 | delivered | paced refusals |

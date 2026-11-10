@@ -53,7 +53,7 @@ The same line has a second hole, measured the same night: the newest log belonge
 - Mutations the tests must kill: the state fallback removed; the no-op guard removed (`tree_changed` ignored); the record written before the log is parsed; the trailer read from the FIRST `LANE-GRAPH:` line.
 
 ## Follow-up
-- The lane knob `_tmp/autonomy/lane-graph` read `coder` at 2026-10-28 00:19:08Z, so no run this night used the composed lane. Whoever flips it back to `spec` should re-run `scripts/composed-real-run.sh` once — the lane's last real-agent proof predates specs 303/304.
+- The lane knob `_tmp/autonomy/lane-graph` read `coder` at 2026-10-28 00:19:08Z, so no run this night used the composed lane. Whoever flips it back to `spec` should re-run `scripts/archive/composed-real-run.sh` once — the lane's last real-agent proof predates specs 303/304.
 
 ## Closure
 (pending — filled by the orchestrator after the item's criteria, gate and mutation review)

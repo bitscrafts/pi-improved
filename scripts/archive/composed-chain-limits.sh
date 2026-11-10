@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Real-agent LIMIT scenarios for composed call chains, through the production devbox daemon (real transport). One scenario per call; each prints PASS/FAIL rows and a verdict.
-#   scripts/composed-chain-limits.sh restart | concurrent | pi | loop      (spend: haiku / ollama-cloud, a few cents each)
+#   scripts/archive/composed-chain-limits.sh restart | concurrent | pi | loop      (spend: haiku / ollama-cloud, a few cents each)
 # restart    SIGKILL the daemon while a real agent works at the leaf of a 3-level chain: the agent is an orphan (CONTROL: alive after the kill), the new daemon reconciles the run and REAPS it.
 # concurrent four 3-level chains at once: four distinct sessions, each repo with its own result, nothing shared.
 # pi         the same chain with pi (ollama-cloud) at the leaf instead of claude.
@@ -23,7 +23,7 @@ status_of() { cli run get "$1" | grep -o '"status":"[a-z_]*"' | head -1 | cut -d
 wait_status() { local i s; for i in $(seq 1 "${2:-240}"); do s=$(status_of "$1"); case "$s" in succeeded|failed|refused|cancelled) echo "$s"; return; esac; sleep 3; done; echo timeout; }
 journal() { "${SSH[@]}" "podman exec pii-devbox sh -c 'tail -n +$((${LB:-0}+1)) $C/pii.log'" 2>/dev/null; }
 wait_spawn() { local i p; for i in $(seq 1 "${2:-120}"); do p=$(journal | grep -a 'coder.spawned' | sed -n "${1}p" | grep -o '"pid":[0-9]*' | head -1 | cut -d: -f2); [ -n "$p" ] && { echo "$p"; return; }; sleep 0.5; done; }
-eval "$(grep -E '^SLOW=' "$REPO/scripts/composed-real-faults.sh")"
+eval "$(grep -E '^SLOW=' "$REPO/scripts/archive/composed-real-faults.sh")"
 [ -n "${SLOW:-}" ] || { say "ABORT: the slow docs brief was not found"; exit 2; }
 CHAINQ='Create NOTES.md in the repository root containing exactly one line: chain ok. Do not commit and do not edit anything else.'
 AGENT=claude; MODEL=claude-haiku-5-5; PROVIDER=anthropic

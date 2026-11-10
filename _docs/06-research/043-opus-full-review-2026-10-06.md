@@ -139,7 +139,7 @@ Method: export HEAD to scratch, revert each fix in isolation, and run its target
 | 65 | layer persisted on write | `MEM_LAYER` insert dropped | **green on a used dev tree**; red only after moving stale `crates/pii-memory/_tmp/phase3/cons-*.redb` aside. pii-store tests stay green. | **partly guarded.** The tests are not hermetic, and no pii-store test reads a layer back. |
 | 66 | `PiiError::store_op` | op and resource swapped | only the constructor test red; all pii-store tests green | **partly guarded.** No test asserts the message at any of the converted call sites. |
 | 67 | line-counter attribute stack | fix reverted | `handles_attribute_stack_before_cfg_test_body` red. `failover.rs` now counts 195 effective lines, not 359. | guarded (the second regression test, `handles_bare_cfg_test_fn`, guards nothing) |
-| 67 | lint-files in gate; `std::println` path; `xtask ci` delegates to `quality-gate.sh` | source read | `quality-gate.sh:68-75`, `clippy.toml:22`, `xtask/src/main.rs:94`, `scripts/mvp-verify.sh:47` | done (C-read; clippy log shows zero warnings, C-run) |
+| 67 | lint-files in gate; `std::println` path; `xtask ci` delegates to `quality-gate.sh` | source read | `quality-gate.sh:68-75`, `clippy.toml:22`, `xtask/src/main.rs:94`, `scripts/archive/mvp-verify.sh:47` | done (C-read; clippy log shows zero warnings, C-run) |
 | 68 | `cmd_run` exit codes, `cmd_soak` status match | codes swapped, strings renamed | red | guarded |
 | 68 | `cmd_sandbox_exec` `& 0xff` | changed to `& 0x7f`, or mask dropped | **29 of 29 green** | **unguarded.** `as u8` already truncates, so the mask is dead code. The "300 to 44" case is vacuous, and no case uses an exit code of 128 or more. |
 | 68 | chmod failure logged; `200-OK` literal | source read | `cmd_daemon.rs:252-255` prints a warning; `pii-http-fetch/src/lib.rs:96` reads `-> status={status}` | done (C-read) |
@@ -481,7 +481,7 @@ Each candidate is one bounded spec with an exit criterion a validator can check.
 | Items marked I in section 7 (A1-A8, B1-B3, C1-C6, E1-E3, F2) | from a delegated read-only review; each needs the named test before it is acted on. A1, A2, D4, D5 and D6 were checked by me as far as their C-read labels say. |
 | Whether D1's split occurs in production with Ollama | the split is proven to break decoding; how often real TCP reads land on that boundary was not measured |
 | Whether a panic in D1 or D2 kills the daemon or only the request thread | not run against a live daemon (read-only run, nothing started) |
-| `scripts/mvp-verify.sh` live suite | needs a running daemon and a model; out of scope for a read-only run |
+| `scripts/archive/mvp-verify.sh` live suite | needs a running daemon and a model; out of scope for a read-only run |
 | `cargo audit` / `cargo deny`, `cargo public-api`, `cargo machete` | not installed; installing tools would change the environment |
 | Doc items marked I (about 79 of about 85 checks) | six re-checked by me, all held |
 | graphify node and edge counts in 037 | the graph was not rebuilt; I only queried the existing one, which matches unchanged code |

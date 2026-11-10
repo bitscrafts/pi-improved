@@ -6,7 +6,7 @@
 #   Q2 the host's work survived (hello.txt) and the trace shows the call
 #   Q3 CONTROL (spec 281's near miss): a docs agent that merely READ a file quoting the phrase is NOT flagged and the run succeeds
 #   Q4 CONTROL: a refusal with is_error false does not count
-# Usage: bash scripts/composed-quota-check.sh      Exit 0 all rows | 1 a row failed | 3 refused
+# Usage: bash scripts/archive/composed-quota-check.sh      Exit 0 all rows | 1 a row failed | 3 refused
 set -uo pipefail
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)

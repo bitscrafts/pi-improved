@@ -165,7 +165,7 @@ final passing run. Nothing in the card has been executed — it restarts lnx's d
 ### 2026-10-24 12:25Z — criterion 7 TAKEN on lnx; every criterion is now measured
 
 HEAD `7211e238a94b` deployed to the lnx test daemon (`health.build.revision` read back equal to it), then
-`scripts/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. This is the same
+`scripts/archive/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. This is the same
 reading as spec 225's criterion 6, taken once and recorded in both.
 
 - `pii skill add --file …` answered `added 69122b218677… lint-live-20261024t122427z sha256=a3171ae3…5e54` with

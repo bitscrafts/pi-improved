@@ -10,7 +10,7 @@
 # daemon's own provider. The engine under test is reached with --connect loopback, and the CONTROL
 # arm (same command, the operator's real config, whose llama host answers) proves the injection:
 # control succeeds, injected run refuses.
-# Run: bash scripts/exercise-e4-provider-refusal.sh <model-spec>   (default llamacpp-server:granite-4.2-3b)
+# Run: bash scripts/archive/exercise-e4-provider-refusal.sh <model-spec>   (default llamacpp-server:granite-4.2-3b)
 set -uo pipefail
 cd /projects/pi-improved || exit 1
 export XDG_RUNTIME_DIR=/run/user/0

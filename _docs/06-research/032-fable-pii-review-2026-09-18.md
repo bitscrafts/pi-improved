@@ -16,7 +16,7 @@ What was actually executed this session:
   every file in the 031 list plus the next tier of large files.
 - Call-site counts for `PiiError::Internal` were measured per file, and
   every downstream `match`/`matches!` on that variant was searched for.
-- The gate scripts (`quality-gate.sh`, `xtask ci`, `scripts/mvp-verify.sh`),
+- The gate scripts (`quality-gate.sh`, `xtask ci`, `scripts/archive/mvp-verify.sh`),
   the pidag config, and the spec exit criteria were cross-checked for what
   is enforced where.
 - `git diff --stat 1fc2d00 HEAD -- crates xtask Cargo.toml Cargo.lock` is
@@ -88,7 +88,7 @@ and seam quality, but it is deliberately placed after the real findings.
 never runs `cargo xtask lint-files`. The line gate is enforced only by:
 
 - `cargo xtask ci` (`xtask/src/main.rs:74`), a manual invocation;
-- `scripts/mvp-verify.sh:53`, a manual, live-daemon suite;
+- `scripts/archive/mvp-verify.sh:53`, a manual, live-daemon suite;
 - per-spec exit criteria, where a spec author remembered to list it
   (54 of the 77 spec files mention it; the other 23 do not).
 
@@ -244,11 +244,11 @@ are all under 280 effective.
    gate shapes.** Add a fourth step (`cargo run -q -p xtask -- lint-files`,
    seconds, no workspace build beyond xtask) so the pidag loop enforces
    the 450 rule on every spec regardless of exit-criteria authoring. In
-   the same change make `xtask ci` and `scripts/mvp-verify.sh` call
+   the same change make `xtask ci` and `scripts/archive/mvp-verify.sh` call
    `quality-gate.sh` for fmt/clippy/build/test instead of carrying the
    pre-F-01 shared-target-dir sequence. Exit criteria: `grep -c
    lint-files quality-gate.sh` is 1; `grep -c "cargo test" xtask/src/
-   main.rs scripts/mvp-verify.sh` is 0; gate green.
+   main.rs scripts/archive/mvp-verify.sh` is 0; gate green.
 3. **Fix `count_effective_lines` attribute handling.** Consume attribute
    lines that follow `#[cfg(test)]` before starting brace tracking. Two
    new tests in `lint_files.rs` that fail today: `#[cfg(test)]

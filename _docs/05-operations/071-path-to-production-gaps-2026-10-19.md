@@ -18,7 +18,7 @@ every line names the measurement behind it. 070's seven steps are the yardstick;
 4225), joined by the one I kept. Spec 196 now requires that a cancelled run's timer does not fire it (`5a6445e`), with a
 follow-up (`46fa583`).
 
-GAP (corrected 12:35Z): the exercise this section asked for **exists** — `scripts/exercise-196-past-the-instant.sh`
+GAP (corrected 12:35Z): the exercise this section asked for **exists** — `scripts/archive/exercise-196-past-the-instant.sh`
 runs a scratch daemon with a timer three minutes ahead, cancels the run, drops the `[[cron]]` entry and watches the
 clock: the pre-fix deployed binary executed and posted 2 runs, this tree executed and posted 0. What is still
 missing is a repeat against the **deployed post-196 binary**, i.e. production terms, not code.

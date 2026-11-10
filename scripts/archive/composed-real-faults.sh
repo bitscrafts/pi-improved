@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Real-agent fault scenarios for the composed `spec` graph, through the production devbox daemon (modules/devbox/daemon.sh), real transport.
-#   scripts/composed-real-faults.sh cancel | restart | concurrent | pi     (one scenario per call; each prints PASS/FAIL rows and a verdict)
+#   scripts/archive/composed-real-faults.sh cancel | restart | concurrent | pi     (one scenario per call; each prints PASS/FAIL rows and a verdict)
 # Every "agent is gone" row is paired with an "agent was ALIVE before the fault" row, so the check can fail. Spend: haiku/ollama-cloud, a few cents.
 # Scratch repos live under _tmp/devbox-test/ ; nothing is committed by a worker. The loop must be paused and no worker in flight.
 set -u

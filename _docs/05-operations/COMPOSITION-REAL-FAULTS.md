@@ -1,7 +1,7 @@
 # Composition: real-agent fault scenarios (level 5, continued)
 
 **Date:** 2026-10-27. **HEAD:** `44ba72a588d0`; production devbox daemon at that revision. Real `claude-haiku-5-5` (anthropic) and pi on ollama-cloud.
-Run with `scripts/composed-real-faults.sh <cancel|restart|concurrent|wall|impl|pi>`. Each scenario pairs its claim with a control that can fail
+Run with `scripts/archive/composed-real-faults.sh <cancel|restart|concurrent|wall|impl|pi>`. Each scenario pairs its claim with a control that can fail
 (an agent that was ALIVE before the fault, a graph that differs only in the limit, a criterion the work cannot meet).
 
 ### Two real composed runs at once
@@ -118,7 +118,7 @@ COMPOSED-FAULTS pi: 5 pass 0 fail   (log /projects/pi-improved/_tmp/claude-batch
 - **Wall limit, real:** the shipped graph ran 885 638 ms and succeeded; the same graph without the line ran 888 774 ms and failed, with both agents exiting 0.
 - **Known gap, not counted as a pass (spec 293):** nothing the CLI prints says WHY the default-wall run failed (`max_wall_ms exceeded` is journalled and never shown), and
   `run trace` shows `crit=-` for a judge node, so a 4-of-5 verdict is invisible.
-- **Quota inside a call** is proved with stand-ins that print the CLI's real refusal shape (`scripts/composed-quota-check.sh`, 13 rows): the refused docs coder's
+- **Quota inside a call** is proved with stand-ins that print the CLI's real refusal shape (`scripts/archive/composed-quota-check.sh`, 13 rows): the refused docs coder's
   `coder.exited` carries `quota_exhausted=yes` and the reset text, the host coder's does not, a docs agent that only READ the phrase is not flagged, and
   `is_error:false` is not a refusal. The run ends `failed`; parking the row is `cycle.sh`'s separate decision and is not proved here. A real refusal cannot be provoked on demand.
 

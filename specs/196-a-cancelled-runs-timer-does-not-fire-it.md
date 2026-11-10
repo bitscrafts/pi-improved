@@ -99,7 +99,7 @@ cancel_disarms_the_timer` → ok (3 passed: the cancellation does not resurrect,
 a due timer for a finished run is refused loudly); `cargo test -p pii-server --lib` → ok (the inline
 measurement rig now times the refusal instead of asserting no error).
 
-*Exercised, `scripts/exercise-196-past-the-instant.sh`* — a scratch daemon arms one timer run for a minute
+*Exercised, `scripts/archive/exercise-196-past-the-instant.sh`* — a scratch daemon arms one timer run for a minute
 three ahead; the run is cancelled; the `[[cron]]` entry is dropped from the config and the daemon restarted,
 so from that point the ONLY way a run can start is a wheel entry the cancel failed to remove; the harness
 then watches the clock.
@@ -112,7 +112,7 @@ then watches the clock.
 The pre-fix row is the production defect reproduced: both cancelled runs executed at their instant and each
 posted. The post-fix row is the cure: nothing executed, nothing posted.
 
-*Exercised, `scripts/exercise-193-196-live.sh`* — `pii run resume <finished>` → rc=2,
+*Exercised, `scripts/archive/exercise-193-196-live.sh`* — `pii run resume <finished>` → rc=2,
 `invalid: resume r…: refused (run already finished: Failed)`, and the log carries `run.resume.refused`.
 Before 196 that call returned `{"resumed":true}` and re-ran the finished run.
 

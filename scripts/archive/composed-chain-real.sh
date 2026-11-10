@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The one composition run that had never been executed with a REAL agent: a three-level chain  chain3 -> chain2 -> chain1 -> docs,  whose leaf is a real claude, through the production devbox daemon (real transport).
-#   scripts/composed-chain-real.sh        (spend: claude-haiku-5-5, a few cents)
+#   scripts/archive/composed-chain-real.sh        (spend: claude-haiku-5-5, a few cents)
 # Rows: A) the whole chain succeeds with exactly ONE agent spawn and the leaf's real work on disk;  B) a real mid-chain cancel kills the real leaf (paired with an "agent was ALIVE before" row);  C) a one-byte change to a middle graph is REFUSED by its pin (control: A, with the same files, succeeded).
 # The loop must be paused and no worker in flight. Nothing is committed by a worker.
 set -u
@@ -18,7 +18,7 @@ status_of() { cli run get "$1" | grep -o '"status":"[a-z_]*"' | head -1 | cut -d
 wait_status() { local i s; for i in $(seq 1 "${2:-240}"); do s=$(status_of "$1"); case "$s" in succeeded|failed|refused|cancelled) echo "$s"; return; esac; sleep 3; done; echo timeout; }
 journal() { "${SSH[@]}" "podman exec pii-devbox sh -c 'tail -n +$((${LB:-0}+1)) $C/pii.log'" 2>/dev/null; }
 wait_spawn() { local i p; for i in $(seq 1 "${2:-120}"); do p=$(journal | grep -a 'coder.spawned' | sed -n "${1}p" | grep -o '"pid":[0-9]*' | head -1 | cut -d: -f2); [ -n "$p" ] && { echo "$p"; return; }; sleep 0.5; done; }
-eval "$(grep -E '^(SLOW|QUICK)=' "$REPO/scripts/composed-real-faults.sh")"
+eval "$(grep -E '^(SLOW|QUICK)=' "$REPO/scripts/archive/composed-real-faults.sh")"
 [ -n "${SLOW:-}" ] && [ -n "${QUICK:-}" ] || { say "ABORT: the docs briefs were not found"; exit 2; }
 
 head -1 "$REPO/_tmp/autonomy/control" | grep -q '^PAUSED' || { say "ABORT: the loop is not paused"; exit 3; }

@@ -131,7 +131,7 @@ Files ≥ 450 physical lines are marked **▲**; files the project's own gate fl
 ### 1.6 Non-code assets and process surface
 
 - **Graphs** `graphs/starter/`: `assistant, boss-watch, consolidate, crash, heal-fix, heal-watch, react, slow, soak, soak_cron, verify-fix` (11 TOML graphs; `heal-fix.toml` 5.0 KB is the largest).
-- **Scripts**: `quality-gate.sh` (fmt → clippy → `cargo test --workspace`), `scripts/mvp-verify.sh`, `scripts/phase2/{selfchange,uds-vs-loopback}.sh`, `scripts/phase3/{crash,cron,discord-e2e,hot-reload,secret-scan,shutdown,worker-kill}.sh`. **No `scripts/phase4.7/`** directory exists.
+- **Scripts**: `quality-gate.sh` (fmt → clippy → `cargo test --workspace`), `scripts/archive/mvp-verify.sh`, `scripts/phase2/{selfchange,uds-vs-loopback}.sh`, `scripts/phase3/{crash,cron,discord-e2e,hot-reload,secret-scan,shutdown,worker-kill}.sh`. **No `scripts/phase4.7/`** directory exists.
 - **Docs**: `_docs/01-overview/01-overview/001-pii-vision.md`; `_docs/02-guides/{feature-gating,pi-local-llamacpp,pidag-way-of-work,pii-mcp-bridge}.md`; `_docs/06-research/001…026`; `_docs/manuals/{technical,user}-manual.{tex,pdf}`; `_docs/{INDEX,TOC}.md`.
 - **Specs** `specs/01…37` (+ `36-part1/part2`), read-only for the workhorse per `AGENTS.md:50-55`.
 - **Process state** `.pidag/`: run JSON for specs 01–11, 13–17, 20, 22, 24, 28, 29; **none for 12, 18, 19, 21, 23, 25–27, 30–37**; `config.toml` sets `quality_gate_script = /projects/pi-improved/quality-gate.sh`, `max_iterations = 4`, workhorse `ollama-cloud/glm-5.3-flash:cloud`.

@@ -178,7 +178,7 @@ division for you: bytes of RSS growth per run between the oldest of up to 32 che
 the window, not an instantaneous slope, and it is `0` until 4 000 runs separate the window ends or
 while RSS did not grow. The checkpoints live in memory: a daemon restart starts a new window.
 
-Measured (debug build, scripted model, shared host; `scripts/leak_bisect.py`, one persistent
+Measured (debug build, scripted model, shared host; `scripts/archive/leak_bisect.py`, one persistent
 connection, fresh store):
 
     runs since daemon start    RSS growth per run          why
@@ -190,7 +190,7 @@ connection, fresh store):
   longer contains the warm-up). Before that it is dominated by warm-up and reads high. The warm-up
   is per process, not per store: it happens again after a restart.
 - **Expected after warm-up: under ~100 B/run.** A reading that stays above ~100 B/run with the
-  daemon past ~60 000 runs is NOT expected: file a bug with `scripts/leak_bisect.py` output.
+  daemon past ~60 000 runs is NOT expected: file a bug with `scripts/archive/leak_bisect.py` output.
 - RSS also moves with `trajectory_max_files` (the index holds ~190 B per retained file: ~9 MB at the
   default 50 000) and with the number of retained log/audit rotations (not RSS: disk).
 - The residual ~5-40 B/run is in the store/runner path, not in the observer fan-out, the audit feed,
