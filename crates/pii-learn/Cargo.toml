@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "Learning loop, stages 1-2: deterministic offline extraction of cited candidate lessons (spec 123) and their verification by isolated shadow runs (spec 124)"
 
 [dependencies]

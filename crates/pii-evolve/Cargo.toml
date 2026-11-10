@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "Self-improving boss: state.md management + UDS launcher for the boss-watch graph (P4.7, spec 23/25/27, standalone opt-in)"
 
 [dependencies]

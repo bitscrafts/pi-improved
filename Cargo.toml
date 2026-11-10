@@ -30,8 +30,9 @@ members = [
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/pi-improved/pii"
+license = "MIT"
+repository = "https://github.com/bitscrafts/pi-improved"
+authors = ["Marcelo Correa <mvcorrea@gmail.com>"]
 description = "Pii - terminal coding agent, assistant daemon, automation engine, cognitive layer"
 
 [workspace.dependencies]

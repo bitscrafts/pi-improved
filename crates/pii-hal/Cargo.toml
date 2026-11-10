@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "Hardware HAL: GPIO/I2C/SPI behind a claim + capability-scope contract, a simulated backend, one feature-gated real backend (spec 121)"
 
 [dependencies]

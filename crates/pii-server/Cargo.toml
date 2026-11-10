@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "Pii daemon: engine, JSON-RPC dispatch, UDS/loopback transports"
 
 [dependencies]

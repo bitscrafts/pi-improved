@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "The one socket: grants, authorize, resolve-once-pin, HTTP/1.1 codec"
 
 [dependencies]

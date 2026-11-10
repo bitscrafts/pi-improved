@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "MCP server + client: expose pii's tools to Hermes/other agents, and consume external MCP tool servers (P4.7)"
 
 [dependencies]

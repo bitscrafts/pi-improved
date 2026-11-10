@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "Read-only web viewer: proxies the daemon's UDS JSON-RPC over loopback HTTP (P4.6)"
 
 [dependencies]

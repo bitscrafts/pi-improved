@@ -72,4 +72,4 @@ the substrate (event-sourced daemon, graph engine, worker pool) and the enforcem
 
 ## Licence
 
-No licence file yet — treat the code as all rights reserved until one is added.
+MIT. See [`LICENSE`](LICENSE).

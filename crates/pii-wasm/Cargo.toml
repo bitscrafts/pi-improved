@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "WASM plugin host: untrusted third-party nodes behind epoch, fuel and memory limits with no ambient authority (spec 122)"
 
 [dependencies]
