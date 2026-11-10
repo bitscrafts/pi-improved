@@ -1,7 +1,7 @@
 # Spec 304: the commit's lane comes from the run that changed the tree, and it survives a resume at verify
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — lane hardening (spec 303's Follow-up, MEASURED 2026-10-28 00:44Z on A167's own commit)
 Spec 303 made a queue row keep its lane on a resume and made the cycle append `Lane: spec|coder` to its commit. A167's commit `275c2af` carries **no** `Lane:` line, though its worker log `_tmp/claude-batchC/303-a-resumed-queue-row-keeps-its-lane-and-its-commit-says-which.1793146913.log` contains `LANE-GRAPH: coder` — because `cycle.sh:260` assigns `WLOG` inside the dispatch branch only, so a commit produced after a phase-marker resume (`SKIP_DISPATCH`) reads an empty `WLOG` and the trailer is skipped silently.
 The same line has a second hole, measured the same night: the newest log belonged to run `r000000000466`, a 5-second coder-lane run that changed nothing (`tree_changed=no`, `cost_usd=0.000000`), while the tree the commit carried was produced by `r000000000465` in the spec lane. With `WLOG` fixed alone the trailer would have been `Lane: coder` — a false statement about the commit, which is worse than no trailer.

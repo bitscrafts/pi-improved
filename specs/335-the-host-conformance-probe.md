@@ -8,14 +8,14 @@ container against the container's config. Production is a different machine, use
 installer. Measured on the host that day:
 
 ```
-$ ssh mvcorrea@lnx '~/.local/bin/pii health'
+$ ssh <operator>@<host> '~/.local/bin/pii health'
 error: no daemon answered (… /run/user/1000/pii/default/control.sock: No such file or directory)
 
-$ ssh mvcorrea@lnx 'grep -nE "/root|/projects" ~/.local/pii/pii.toml | grep -v "^[0-9]*:#"'
-53:trajectory_dir = "/root/.local/state/pii/trajectory"
-63:log_file = "/root/.local/state/pii/pii.log"
+$ ssh <operator>@<host> 'grep -nE "/root|/projects" ~/.local/pii/pii.toml | grep -v "^[0-9]*:#"'
+53:trajectory_dir = "~/.local/state/pii/trajectory"
+63:log_file = "~/.local/state/pii/pii.log"
 
-$ ssh mvcorrea@lnx 'findmnt -no FSTYPE /run/user/1000'
+$ ssh <operator>@<host> 'findmnt -no FSTYPE /run/user/1000'
 tmpfs                      # channel.redb and timer.redb live there (daemon/mod.rs:201,204)
 
 $ ls _tmp/autonomy/INCIDENTS.md        # absent, and its publisher exits 0 on absence
@@ -23,7 +23,7 @@ $ ls _tmp/autonomy/INCIDENTS.md        # absent, and its publisher exits 0 on ab
 
 This spec builds the probe that turns those sentences into a command with an exit code.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening (Opus audit, `f₁`)
 
 ## Requirements

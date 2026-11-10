@@ -18,7 +18,7 @@ PASS the docs coder wrote NOTES.md
 PASS nothing was committed by a worker
 PASS total cost $0.004934 is under the $1.00 cap
 PASS no quota refusal
-COMPOSED-REAL: 9 pass 0 fail   (evidence: /projects/pi-improved/_tmp/claude-batchC/composed-real-1793068356.log, /projects/pi-improved/_tmp/devbox-test/real-1793068356/journal-lines.txt)
+COMPOSED-REAL: 9 pass 0 fail   (evidence: _tmp/claude-batchC/composed-real-1793068356.log, _tmp/devbox-test/real-1793068356/journal-lines.txt)
 ```
 
 ## The control (r000000000325): the same graph, a docs coder told to break the criterion
@@ -32,7 +32,7 @@ PASS CONTROL: hello.txt holds DOCS, the sabotage really happened
 PASS CONTROL: both coders ran and the call is in the trace
 PASS CONTROL: the trace reaches the unverified refusal
 PASS CONTROL: total cost $0.005675 is under the $1.00 cap
-COMPOSED-REAL: 5 pass 0 fail   (evidence: /projects/pi-improved/_tmp/claude-batchC/composed-real-1793068511.log, /projects/pi-improved/_tmp/devbox-test/real-1793068511/journal-lines.txt)
+COMPOSED-REAL: 5 pass 0 fail   (evidence: _tmp/claude-batchC/composed-real-1793068511.log, _tmp/devbox-test/real-1793068511/journal-lines.txt)
 ```
 
 The control ran twice and failed the same way twice (r000000000324, r000000000325).

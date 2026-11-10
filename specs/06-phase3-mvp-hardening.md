@@ -1,6 +1,6 @@
 # Spec: Phase 3.5 — MVP hardening (fix the six review BLOCKERs)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 3.5 — MVP hardening (post-Phase-3 review fixes)
 **Spec of record**: `_tmp/phase3-opus-review.md` (opus deep-analysis
 report, 2026-09-05, committed reasoning in `HANDOFF.md` §"OPUS DEEP
@@ -65,10 +65,10 @@ pass. Every fix must be a real fix, verified by a new or existing test.
   configurable/relative instead of hardcoded (see B3 below — this
   overlaps).
 
-### B3 — De-hardcode `/projects/pi-improved` paths
+### B3 — De-hardcode `<repo>` paths
 - `crates/pii-server/src/daemon/router.rs` (~line 46-71) scopes every
   channel's fs capability to the literal string
-  `"/projects/pi-improved/_tmp/phase3"`. Replace with a value derived
+  `"_tmp/phase3"`. Replace with a value derived
   from the daemon's configured workspace/runtime dir (already exists
   as `EngineConfig::workspace` or equivalent — reuse it, don't invent
   a new config key unless none exists).
@@ -77,7 +77,7 @@ pass. Every fix must be a real fix, verified by a new or existing test.
   dir or an explicit configured path, consistent with the fix above.
 - New test: run a lint/registry-construction path from a different
   CWD (e.g. `/tmp`) and confirm it does not depend on
-  `/projects/pi-improved` being the literal string anywhere in the
+  `<repo>` being the literal string anywhere in the
   produced registry/paths.
 
 ### B5 — Fix the leaked UDS connection (this closes the real rss-gate EC)

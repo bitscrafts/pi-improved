@@ -1,6 +1,6 @@
 # Spec: The scheduler writes no index that nothing reads
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus finding 12, split out of row 358
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus finding 12, split out of row 358
 (the retention half of that row is now row 376).
 
 ## Why this exists

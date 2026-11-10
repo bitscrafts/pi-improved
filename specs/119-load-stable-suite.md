@@ -1,6 +1,6 @@
 # Spec: 119 — the suite must be load-stable, or a red means nothing
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage A4** of `057`. The gate's whole value is that **red means broken**. Spec 118 could not finish its
 fresh-gate criterion because the suite is not load-stable: inside `fresh-gate`, `cargo test --workspace` failed on
 **different tests on consecutive runs**.
@@ -51,13 +51,13 @@ R6. **Write the rule where it will load again** — a `DO-NOT-REPEAT` §1 row: *
   filed follow-up spec; deleting an assertion is a fail.
 - Do not lower a timeout, widen a tolerance, or serialise the whole suite to hide a race — state the cost of any
   serialisation you add (the suite's parallelism is real and the gate's wall clock matters).
-- No test may depend on a `/projects/_tmp/` path existing, on wall-clock resolution, or on another test having run
+- No test may depend on a `<scratch>/` path existing, on wall-clock resolution, or on another test having run
   first.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon or broker left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon or broker left running. Do NOT commit.
 
 ## Orchestrator's own reproduction attempt (2026-10-10) — honest result: NOT reproduced in the dev tree
 Before dispatching this spec I ran the gate's own command under load myself
-(`/projects/_tmp/hunt-flakes.sh`: `cargo test --workspace`, 24 CPU hogs on 32 cores, 3 rounds):
+(`<scratch>/hunt-flakes.sh`: `cargo test --workspace`, 24 CPU hogs on 32 cores, 3 rounds):
 ```
 === ROUND 1 rc=0   ROUND 2 rc=0   ROUND 3 rc=0   (zero failures, no FAILED lines)
 ```

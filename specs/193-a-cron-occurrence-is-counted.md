@@ -1,6 +1,6 @@
 # Spec: 193 — a cron occurrence is counted, and a multiplied one is an incident
 
-**Project**: /projects/pi-improved · **Phase**: 070 §5's remaining instrument (its third bullet)
+**Project**: <repo> · **Phase**: 070 §5's remaining instrument (its third bullet)
 **Filed**: 2026-10-19 by the orchestrator. Specs 188/190/192 built 070 §5's first two bullets and each
 carries an explicit scope boundary excluding this one (`specs/190-…:109-111`, `specs/192-…:58`); this is it.
 

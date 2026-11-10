@@ -12,7 +12,7 @@ The answer arrived and was TRUNCATED: asked for PONG-GLM, pii received GLM plus 
 line - a peer closing the stream without TLS close_notify is treated as an error instead of end-of-stream, AND the run
 finished as success while carrying that error.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 1. A peer close without close_notify is END OF STREAM, not failure, when at least one complete frame was received: the

@@ -12,7 +12,7 @@ write result with `let _ =` (`:315`).
 
 This is the only durability item the proactivity thesis needs: **a crash must leave evidence a log reader can see.**
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: proactivity (the Opus 061 judgement; order 153 → 150 → 154 → 151 → 152)
 
 ## Requirements

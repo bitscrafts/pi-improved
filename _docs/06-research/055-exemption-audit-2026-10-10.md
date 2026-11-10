@@ -67,7 +67,7 @@ the lint RED. Without this control the rule would either be noise or would forbi
   *which bound* failed, in the log and in the event stream, instead of hanging or printing an unlabelled
   error.
 - **Deployment decision recorded (owner, 2026-10-10):** *"no need to use docker right now (it will run
-  directly on the lnx server)"* — the deployment path is the **systemd unit on the lnx host**
+  directly on the the host server)"* — the deployment path is the **systemd unit on the the host host**
   (`deploy/pii.service` + `examples/pii.production.toml` + `_docs/05-operations/105-runbook.md`); the
   untested `Dockerfile` is no longer a readiness caveat, and it stays in the tree as a spare.
 

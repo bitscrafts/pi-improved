@@ -1,6 +1,6 @@
 # Spec: 197 — the installer refuses without a deploy card for the revision it builds
 
-**Project**: /projects/pi-improved · **Phase**: 070 step 5, the one process gap a patch can close
+**Project**: <repo> · **Phase**: 070 step 5, the one process gap a patch can close
 **Filed**: 2026-10-19 by the orchestrator from the measured deploy record, not from a theory.
 
 ## Overview

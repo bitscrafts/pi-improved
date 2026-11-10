@@ -7,7 +7,7 @@
 
 ## Overview
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 1 - Core engine (harness)
 
 Phase 1 builds **the harness** as defined once and only once in pass-3 §4.1: `Ctx` + scheduler + journal + node registry + validator. Everything later in Pii (the coding harness, the IoT rule engine, the distiller) is a *graph* running on this one engine. If a second scheduler is ever written, the design has failed.
@@ -520,7 +520,7 @@ Lint negatives: `lint-bad-port.toml` (edge on port `nope` out of a `transform`) 
 - **N5** `pii --version` p95 < 20 ms in the release profile, gated in CI. `main` must not open redb, read config, or read the environment on that path.
 - **N6** No `async`, no `.await`, no `tokio`, no `async-trait`, no `futures-core` anywhere in Phase 1.
 - **N7** No `SystemTime::now` anywhere. All journal timestamps are `Instant`-derived millisecond offsets from run start, which is what makes replay deterministic.
-- **N8** Every test that touches the filesystem writes under `/projects/pi-improved/_tmp/`. Rust unit tests use `tempfile::TempDir` rooted there (`tempfile::Builder::new().tempdir_in("/projects/pi-improved/_tmp")`). Nothing is written to `/tmp`.
+- **N8** Every test that touches the filesystem writes under `_tmp/`. Rust unit tests use `tempfile::TempDir` rooted there (`tempfile::Builder::new().tempdir_in("_tmp")`). Nothing is written to `/tmp`.
 - **N9** No node dispatch happens while a redb `WriteTransaction` is open.
 
 ---
@@ -556,7 +556,7 @@ Part 4 owns:
 ## Architecture (full system — context, not a build list)
 
 ```
-/projects/pi-improved/
+
 ├── Cargo.toml                    # + members pii-core, pii-store, pii-graph
 │                                 # + workspace.dependencies: bitflags 2.13, parking_lot 0.12,
 │                                 #   petgraph 0.8, redb 4.2, toml 1.1, blake3 1.8, dunce 1.0,
@@ -709,7 +709,7 @@ Readiness is TOTAL. The empty-inbound case is checked FIRST:
 - Do NOT re-invoke a completed node on resume. `NodeFinished` carries the value; that is what makes resume free of duplicate spend and duplicate side effects. A node with `NodeStarted` and no `NodeFinished` **is** re-run — that is correct and intended.
 - Do NOT use `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `dbg!`, `process::exit`, or slice indexing (`x[i]`) in non-test code. Return `Result`; `main` returns `ExitCode`; use `.get()`.
 - Do NOT let any source file exceed 450 effective lines. Split into `sched/` and `nodes/` module folders before that happens.
-- Do NOT write anything to `/tmp`. Test artifacts and databases go under `/projects/pi-improved/_tmp/`; unit tests use `tempfile::Builder::new().tempdir_in("/projects/pi-improved/_tmp")`.
+- Do NOT write anything to `/tmp`. Test artifacts and databases go under `_tmp/`; unit tests use `tempfile::Builder::new().tempdir_in("_tmp")`.
 - Do NOT run `rm -rf` or delete/overwrite anything that existed before this run. Do NOT touch `_repos/`, `_docs/`, `specs/`, `AGENTS.md`, `HANDOFF.md`, or `.pidag/`.
 - Do NOT run `git init`, stage, or commit. File creation only.
 - Do NOT implement `llm`, `tool`, `agent`, `map`, `subgraph`, or `gate` node kinds, WASM or worker backends, `pii-model`, `pii-tools`, `pii-memory`, BM25, vectors, or cyclic *execution*. They are later phases. `GraphSpec::validate()` still implements V3 in full.

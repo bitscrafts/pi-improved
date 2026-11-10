@@ -4,9 +4,9 @@
 Measured 2026-10-17 on the DEPLOYED daemon (068, opus, C-run): revision 0e34719dce0d is alive under systemd with
 runs: 0, 0 journal events, 0 graph bodies, and a digest that has never fired. Cause: the daemon loads graphs from
 runtime_dir.join('graphs') = /run/user/0/pii/graphs, AND THAT PATH DOES NOT EXIST; the graphs are installed in
-/root/.local/state/pii/graphs. Nothing the product is configured to do in production has ever run.
+~/.local/state/pii/graphs. Nothing the product is configured to do in production has ever run.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 The daemon must load the graphs it is configured to load, or refuse loudly at start-up naming the directory it looked in

@@ -1,7 +1,7 @@
 # Spec 285: a composed run survives cancel, crash, concurrency and reuse — through the engine
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, level 2 of 4. Measured 2026-10-26: searching every composability test for cancel, resume, restart, concurrency and reuse found **nothing**. A composed run is one graph, one run id, one journal, one cancel token (the design decision for inline expansion), so these should work — but "should" is what the daemon-level gap just disproved. This spec makes each a test, through `Engine`, with a control.
 
 Spec 284 proves the happy run and four refusals. This one covers what happens **to** a run that is inside a called graph.

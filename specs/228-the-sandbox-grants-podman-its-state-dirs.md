@@ -1,8 +1,8 @@
 # Spec: the sandbox grants the container runtime its state dirs, and every refusal tells the truth
 
 ## Overview
-Spec 226 asked M0: can the sandboxed daemon start a container at all. Measured 2026-10-20 on lnx
-(10.10.10.217), podman installed, image localhost/pii-agent:1 present, digest
+Spec 226 asked M0: can the sandboxed daemon start a container at all. Measured 2026-10-20 on the host
+(<host>), podman installed, image localhost/pii-agent:1 present, digest
 sha256:2684dee9d0fab97d03fac3f90e7fb774ede93297dbb52b5507142f337d06e7b8:
 
 - Three daemon runs (r000000004552, r000000004553, r000000004554) refused with coder.image.missing,
@@ -10,7 +10,7 @@ sha256:2684dee9d0fab97d03fac3f90e7fb774ede93297dbb52b5507142f337d06e7b8:
 - Control, the same probe with the sandbox off: the digest prints, rc=0. The image IS present; the
   journal names a false cause.
 - A C reproducer of pii own landlock grant (pii-tools/src/sandbox.rs profile=workspace: handled bits
-  0..13 incl REFER, ro=/ and /dev, rw=/tmp, /run/user/1000/pii, /home/mvcorrea) was built on lnx
+  0..13 incl REFER, ro=/ and /dev, rw=/tmp, /run/user/1000/pii, /home/mvcorrea) was built on the host
   (/tmp/m0-landlock-repro.c, kept at _tmp/m0-landlock-repro.c in the repo). It printed RESTRICT OK (its
   must-fail probe, writing outside the grant, failed as required), then podman failed with:
   Error: acquiring runtime init lock: open /run/user/1000/libpod/tmp/alive.lck: permission denied (rc 125).
@@ -51,7 +51,7 @@ R2. The probe is honest: on a nonzero probe exit, launch_in_container reads Proc
 R3. The sandbox self-verification stays fail-closed and its probe stays: a granted-dir probe is ADDED as a
     control (a write INSIDE one granted runtime-state dir must SUCCEED; if it cannot, the daemon exits 4
     with the dir named) so a future regression cannot pass by making the whole grant inert.
-R4. M0 re-measures on lnx after a deploy carrying R1+R2: scripts/m0-daemon-starts-a-container.sh must print
+R4. M0 re-measures on the host after a deploy carrying R1+R2: scripts/m0-daemon-starts-a-container.sh must print
     M0 PASS <pid> with coder.spawned journalled, or M0 REFUSED <reason> where the reason is podman own
     stderr, never an invented cause. The M0 doc (_docs/05-operations/M0-2026-10-20.md) gains a 2026-10-20
     late entry quoting both verdicts (the pre-fix FAILED and the post-fix one).
@@ -78,10 +78,10 @@ R4. M0 re-measures on lnx after a deploy carrying R1+R2: scripts/m0-daemon-start
 - [ ] CARGO_TARGET_DIR=_tmp/tools-gate cargo run -q -p xtask -- lint-scratch
 - [ ] CARGO_TARGET_DIR=_tmp/tools-gate cargo run -q -p xtask -- lint-observability
 - [ ] bash quality-gate.sh --routine
-- [ ] on lnx after deploy: re-run M0; verdict pasted in _docs/05-operations/M0-2026-10-20.md
+- [ ] on the host after deploy: re-run M0; verdict pasted in _docs/05-operations/M0-2026-10-20.md
 
 ## Guardrails
 - Do NOT grant / or /home write broadly; the three runtime dirs are the narrow fix.
 - Do NOT weaken the fail-closed probe; R3 ADDS the in-grant control, it never removes the out-grant one.
 - Do NOT translate or paraphrase podman stderr into a prettier reason; quote it.
-- Do NOT run M0 on this container (no podman); lnx only.
+- Do NOT run M0 on this container (no podman); the host only.

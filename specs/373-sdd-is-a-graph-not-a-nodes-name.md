@@ -1,6 +1,6 @@
 # Spec: sdd is a graph, not a node's name
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: user directive — *"one graph that do tdd, one graph
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: user directive — *"one graph that do tdd, one graph
 that do sdd, and other graphs composing them!"* — and what `graphs/night.toml` actually says today.
 
 ## Why this exists

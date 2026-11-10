@@ -1,6 +1,6 @@
 # Spec: 102 — harden the enforcement: a bounded exemption registry and a print budget
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1 observability — the LAST step of the enforcement lane, landing only after both adoption
 sweeps (specs 100, 101) so the gate stays green throughout.
 **Why this exists** (orchestrator findings, 2026-10-09): as landed in spec 98, the exemption is a comment
@@ -48,7 +48,7 @@ R6. `specs/` is read-only for you.
 - Do NOT relax any existing rule to make a control pass; the controls above are the point.
 - Do NOT touch `lint-files`, `lint-scratch` or `reachability-check` behaviour.
 - Do NOT edit files under `specs/`.
-- Scratch under `/projects/_tmp/` only (exports are small here; still delete your own).
+- Scratch under `<scratch>/` only (exports are small here; still delete your own).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result (2026-10-09) — landed, then hardened twice by orchestrator controls

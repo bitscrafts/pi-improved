@@ -1,7 +1,7 @@
 # Spec 280: a row parked by a closed window is resumed when the window reopens
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — unattended queue. On 2026-10-25 A142's worker was refused with `You've hit your session limit · resets 8:20pm (UTC)`. The cycle did the right things: it recorded the reset time, saved the worker's session id on the row (`session=f8b9331c…`) and stopped (`scripts/autonomy/cycle.sh:268`: `status=needs-review … last=window-closed`). The window reopened at 20:20. At 19:14 the dispatcher's own probe said `OPEN` and it logged `pick: every open row is parked: A142(needs-review), A143(needs-review) - waiting for a person`. A closed window is not a question for a person; the row sat idle with its resume handle for as long as nobody noticed.
 
 The cause is one rule: `scripts/autonomy/state.py:79` skips every `needs-review` row at pick time (spec 169: a row that waits for a person must not hold the queue behind it). `window-closed` shares that status with real failures (`worker-rc=9`, `gate-skipped-disk`), so the pick cannot tell "waiting for a person" from "waiting for the clock".

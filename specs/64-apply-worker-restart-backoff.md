@@ -1,6 +1,6 @@
 # Apply restart_backoff_ms in Worker Respawn
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `pii-worker`
 - **Priority**: MEDIUM — a configured knob is silently a no-op. Sourced
   from fable review finding 7,

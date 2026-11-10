@@ -1,6 +1,6 @@
 # Spec: 237 — a spend-limit message from an agent is journalled as a quota signal
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T03:00Z by the orchestrator. Premises read, not assumed: `coder.exited` is built in
 `crates/pii-server/src/node_kinds/nodes/coder/report.rs` (field groups `criteria_fields`, `output_fields`,
 `tree_fields`, `claude_fields`, `route_fields`); the agent's captured stdout and stderr are `RunReport.agent_output` and

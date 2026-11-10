@@ -1,7 +1,7 @@
 # Spec 275: the cycle's floor is wired to every volume the gate writes
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — queue robustness. This is the follow-up spec 273's own review owed.
 
 Spec 273 moved the gate's disk floor from `df /projects` to

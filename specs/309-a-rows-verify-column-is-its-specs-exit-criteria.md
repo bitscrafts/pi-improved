@@ -1,7 +1,7 @@
 # Spec 309: a row's verify column is its spec's exit criteria, checked before dispatch
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's own reliability. `scripts/autonomy/plan.tsv` states the rule in its own header
 (`plan.tsv:10`): "The verify column MUST be the spec's own Exit Criteria, copied verbatim — same commands, same
 sense." Nothing enforces it. The row's column 5 is hand-written from a reading of the spec, and it is the only

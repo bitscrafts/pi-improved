@@ -1,6 +1,6 @@
 # Spec: spec-36 part2 — integrate tool-call grammar + parse into run()
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 4 - spec 36 (in-process llama-cpp tool calls), micro-task part 2
 
 ## Overview

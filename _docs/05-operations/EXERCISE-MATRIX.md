@@ -101,7 +101,7 @@ are: fmt/clippy/build in 3 steps. Full table: results file, "The 15:30–17:45Z 
 ## A missing capability, not a fault
 
 pii has NO worker/agent node: nothing in `crates/` spawns `pi`, speaks JSON-RPC to it, or holds a session with
-`pi_agent_rust` — despite `pi 0.2.0` being installed at `/root/.local/bin/pi`. "pii writes a spec and hands it to pi" is
+`pi_agent_rust` — despite `pi 0.2.0` being installed at `~/.local/bin/pi`. "pii writes a spec and hands it to pi" is
 something to BUILD (a `worker` node kind that owns a pi session: spawn, spec, criteria, gate, result), not something to
 exercise. The delegation that happens today is the autonomy loop's shell script driving Claude Code, outside the daemon.
 

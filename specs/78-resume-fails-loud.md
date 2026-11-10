@@ -1,6 +1,6 @@
 # Spec: 78 — close the resume fail-open (D4, 043 §10 item 4)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch C — 043 §6 D4 MED-HIGH.
 
 ## Context

@@ -1,6 +1,6 @@
 # Spec: the resume marker the cycle writes is one the queue accepts
 
-**Project**: /projects/pi-improved · **Phase**: production hardening · **Source**: measured in the autonomy lane,
+**Project**: <repo> · **Phase**: production hardening · **Source**: measured in the autonomy lane,
 2026-11-03 — the third member of the family spec 312 (`worker-rc=`), 316 (`precommit-broken`) and 318
 (`gate-failed` / `verify-failed`) closed.
 

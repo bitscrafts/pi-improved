@@ -23,7 +23,7 @@ reached the observer by then is a separate fact, and under load the observer lag
 **not a timeout** — raising the bound (already raised 2 s → 60 s by `5cb67a9`) cannot fix it, and a sleep only
 moves the fuse.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F3 / Q7)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §0, §2.2, §2.3
 
@@ -55,7 +55,7 @@ moves the fuse.
 |---|---|---|
 | `a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert` | the existing fixture, unchanged | still red on a broken premise; waits on the event; asserts the error text and the count of 1 |
 | (RED first) the same test with the event wait removed | a scratch copy with the pasted snapshot (the pre-fix shape) | red at the event expectation when delivery is delayed |
-| (CONTROL, orchestrator) the fixed test with a 300 ms pause between the commit and the event delivery | scratch harness under `/projects/_tmp/` | **10 of 10 green** — this is the acceptance, and it is run outside the spec by the orchestrator |
+| (CONTROL, orchestrator) the fixed test with a 300 ms pause between the commit and the event delivery | scratch harness under `<scratch>/` | **10 of 10 green** — this is the acceptance, and it is run outside the spec by the orchestrator |
 
 ## Exit Criteria
 
@@ -71,7 +71,7 @@ moves the fuse.
 - Do NOT raise the `finished()` bound and do NOT add a sleep: neither is the mechanism (059 §2.2 measured it).
 - Do NOT create, edit or rewrite anything under `specs/` (read-only for implementers).
 - Do NOT commit. Leave the tree for the orchestrator.
-- Destructive commands are banned; scratch under `/projects/_tmp/` only, and only scratch you create.
+- Destructive commands are banned; scratch under `<scratch>/` only, and only scratch you create.
 - If the shape differs from this spec's premise (the test was moved, the event kind renamed, the observer
   API changed), STOP and say so in one line rather than forcing the change.
 

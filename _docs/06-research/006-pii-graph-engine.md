@@ -1,6 +1,6 @@
 # Pii Graph-Based Automation Engine — Architecture & Design
 
-**Date**: 2026-09-06 · **Author**: orchestrator (via `pii-graph-engine` skill) · **Project**: /projects/pi-improved
+**Date**: 2026-09-06 · **Author**: orchestrator (via `pii-graph-engine` skill) · **Project**: <repo>
 
 ## 1. Overview
 

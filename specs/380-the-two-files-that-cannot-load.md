@@ -17,7 +17,7 @@ $ pii graph lint graphs/intervention-report.toml   error: invalid: missing 'name
 
 Found by documentation work, 2026-11-04 (`_docs/06-research/manual-audit-20261104.md`, F-4).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: graph library integrity
 
 ## Requirements

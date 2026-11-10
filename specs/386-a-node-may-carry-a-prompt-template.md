@@ -21,7 +21,7 @@ So an instruction that needs *both* text and values has nowhere to live. It ends
 (a `tool` node), in a file outside the graph, or in a verb written for one graph — the three ways
 logic escapes the review that a pinned graph provides.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: graph format
 
 

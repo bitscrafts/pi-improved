@@ -1,6 +1,6 @@
 # Spec: 126 — entities and relationships: the memory pillar's structure (and what the engine may read)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage D** of `057` — vision pillar 3 (long-term memory). Spec 127 adds tiering; this spec gives
 memory its **shape**: typed entities, typed relationships, provenance, and a bounded query surface the engine can
 use. Until now `pii-memory` holds notes/documents; there is no way to say *"this run was about the ESP32 board, and
@@ -70,7 +70,7 @@ R11. **Docs**: `_docs/0X-guides/memory-entities.md` (the types, provenance, caps
 - Never let a query scan the whole store: every query path is capped, and the cap is a named refusal, not a silent
   truncation.
 - Do not touch the trajectory substrate or the ledger schema; memory references them, it does not extend them.
-- Scratch under `/projects/_tmp/`, delete only your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete only your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator verification (2026-10-10) — after a quota interruption and a resumed session
 

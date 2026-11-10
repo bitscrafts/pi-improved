@@ -30,7 +30,7 @@ Two minor defects from the same closure are folded in because they live in the s
   `input = { to = ... }` writes it there. The comment is false (the id is not a secret; the token is
   correctly kept out).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (059 §4 rank 1, completing spec 142)
 **Source**: `specs/142-deploy-head-on-the-host.md` `## Closure`
 

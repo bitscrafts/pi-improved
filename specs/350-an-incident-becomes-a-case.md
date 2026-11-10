@@ -12,7 +12,7 @@ attached, deduplicated by fingerprint, and a case is not dispatchable until its 
 made today expensive to learn: a row must carry a criterion that can fail, and an auto-generated spec cannot invent
 one.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: self-improvement — the link between detection on the host and the workshop in the container.
 
 ## Verified premises (measured 2026-11-02)

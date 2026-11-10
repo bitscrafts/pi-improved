@@ -1,7 +1,7 @@
 # Spec: a refused criterion fails its node, and the run keeps THAT error
 
 ## Overview
-Measured 2026-10-20 on lnx with the daemon log open (`pii loop events --log`), the coder node's real reason finally appeared:
+Measured 2026-10-20 on the host with the daemon log open (`pii loop events --log`), the coder node's real reason finally appeared:
 
     {"kind":"criteria.unknown","level":"warn","subsystem":"coder",
      "fields":{"agent":"pi","criterion":"cargo test","model":"glm-5.3-flash:cloud"}}
@@ -23,7 +23,7 @@ So the node refused because `cargo test` is not a NAMED criterion (spec 215's ta
 - [ ] `cargo test -p pii-server --test refused_criterion_fails_the_node`
 - [ ] `cargo test -p pii-graph --test run_error_keeps_the_node_reason`
 - [ ] `cargo test -p pii-cli --test trace_prints_the_refusal_reason`
-- [ ] on lnx: a coder node with `criteria = ["cargo test"]` produces a run whose error string contains `criteria.unknown`
+- [ ] on the host: a coder node with `criteria = ["cargo test"]` produces a run whose error string contains `criteria.unknown`
 
 ## Guardrails
 - Do NOT widen the criteria table to accept a shell string to make a demo pass; add a NAMED entry instead.

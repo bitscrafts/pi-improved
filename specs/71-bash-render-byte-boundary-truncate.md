@@ -1,6 +1,6 @@
 # Spec: 71 — bash render truncates on byte boundaries only
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: intervention batch A — proven bug D2 (report 043 §6)
 **Status**: NOT STARTED (worker lane)
 **Derives from**: `_docs/06-research/043-opus-full-review-2026-10-06.md` (candidate 2, D2)

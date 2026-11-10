@@ -1,7 +1,7 @@
 # Spec 256: the call's caps ceiling against its host has a test that can fail
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition (spec 255 follow-up found by its independent verification, 2026-10-24)
 
 Spec 255 R6 has two caps rules: every inlined node's caps fit inside the call node's `caps`, and the call node's `caps` fit inside the host graph's. The code has both

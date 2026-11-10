@@ -1,6 +1,6 @@
 # Spec: 108 — P3: measure coverage, and decide what each subsystem MUST make observable
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P3 of the road to production (`_docs/06-research/052-production-readiness-2026-10-09.md` §8) —
 "close the quality gaps in what already ships". Two deliverables, and the second is the honest one.
 
@@ -63,7 +63,7 @@ R5. **A mutation control for anything you add** (this repo's standing rule): for
 - Do NOT lower a threshold to make a run green; if the measured value changed because code moved, say so.
 - Coverage is not correctness: state plainly that a high number with weak assertions is still weak.
 - Emit through `pii-observe`; no new raw prints beyond the file's budget.
-- Scratch under `/projects/_tmp/`; delete your own exports (a coverage run can be large; one fresh-gate
+- Scratch under `<scratch>/`; delete your own exports (a coverage run can be large; one fresh-gate
   export is ~8G). Do not leave a daemon running.
 - Do NOT commit; leave the tree for the orchestrator.
 
@@ -108,9 +108,9 @@ export — measured 18G in ~5 minutes, which took `/projects` to 99% with 9.5G f
 (`quality-gate.sh` ALL PASS, including `PASS: coverage-floor` at 77.01% >= 74.00%) and every other criterion
 was reproduced by the orchestrator. **Resume with:**
 ```
-cd /projects/pi-improved && FRESH_GATE_MIN_FREE_MB=6000 cargo run -q -p xtask -- fresh-gate --worktree
+cd <repo> && FRESH_GATE_MIN_FREE_MB=6000 cargo run -q -p xtask -- fresh-gate --worktree
 ```
-(afterwards: `df -h /projects`; if it failed, the export is kept under `/projects/_tmp/fresh-gate-<pid>` and
+(afterwards: `df -h /projects`; if it failed, the export is kept under `<scratch>/fresh-gate-<pid>` and
 is 18G — remove it to reclaim space before re-running).
 
 ### The open criterion is now CLOSED (2026-10-10, orchestrator run)

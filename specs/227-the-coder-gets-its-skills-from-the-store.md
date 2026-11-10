@@ -78,7 +78,7 @@ new has to be invented — one adapter and two call sites.
 - [ ] `! grep -q 'env::temp_dir()' crates/pii-server/src/node_kinds/nodes/coder.rs`
 - [ ] `CARGO_TARGET_DIR=_tmp/tools-gate cargo run -q -p xtask -- lint-scratch`
 - [ ] `CARGO_TARGET_DIR=_tmp/tools-gate cargo run -q -p xtask -- lint-observability`
-- [ ] on lnx, after a deploy: `pii run start` on a coder graph with a pinned skill journals `coder.spawned`
+- [ ] on the host, after a deploy: `pii run start` on a coder graph with a pinned skill journals `coder.spawned`
       with `skill=<name> sha256=<hex>`, and the same graph with an edited document refuses with `skill.drift`
 
 ## Guardrails
@@ -96,9 +96,9 @@ new has to be invented — one adapter and two call sites.
 
 ## Closure
 Supervisor, 2026-10-20. Criteria 1-6 are green on the committed tree, per the orchestrator's row note. M0 now
-passes on lnx (spec 230, run r258), so the container start no longer blocks criterion 7. Criterion 7 is blocked
+passes on the host (spec 230, run r258), so the container start no longer blocks criterion 7. Criterion 7 is blocked
 by something else: production has no way to put a skill into the daemon's store. These readings were taken
-against the lnx daemon, pid 3539364, binary installed 2026-10-20T12:38:35:
+against the the host daemon, pid 3539364, binary installed 2026-10-20T12:38:35:
 - a copy of `/run/user/1000/pii/memory.redb` holds zero skills (`pii skill list --all --dir <copy>` prints nothing)
 - outside tests, only `pii skill edit` constructs `DocKind::Skill`, and it edits an id that already exists
 - `pii skill` against the live dir fails with `Database already open. Cannot acquire lock.`; with no `--dir` it
@@ -114,7 +114,7 @@ refusing a dropped script (spec 234, `622826e`). The daemon's registry also supp
 same store — `crates/pii-server/src/engine/registry.rs:25`, lines 72-77 —
 so a pin can now be created, carried and drifted without touching redb under the running daemon.
 
-Criterion 7 is measurable in one deploy of HEAD to lnx, and it is the SAME reading as spec 225's criterion 6
+Criterion 7 is measurable in one deploy of HEAD to the host, and it is the SAME reading as spec 225's criterion 6
 (row A94): a coder run pinning the stored skill spawns and journals the pin in `coder.spawned`, and an edited
 document makes the next run refuse `skill.drift` before the spawn. Nothing to implement; both rows wait on that
 deploy, and this paragraph is their shared brief.
@@ -143,11 +143,11 @@ then green again: c1 2/0, c2 2/0, 225 c4 2/0.
 Two harness traps measured on the way, both of which make a *wrong* reading rather than a red one:
 1. this cron/tool shell has no `cargo` on `PATH` — every criterion returned **127** and would have read as a spec
    failure; the check now asserts `command -v cargo` before running anything;
-2. the 227 fixture needs `/root/.local/bin` on `PATH` (it resolves `pi`/`claude`), and without it **both** tests
+2. the 227 fixture needs `~/.local/bin` on `PATH` (it resolves `pi`/`claude`), and without it **both** tests
    panic in the fixture at line 81 — the mutation's first run therefore looked red for the wrong reason and was
    discarded. A red is only evidence when the failing assertion is the one the mutation targets.
 
-Criterion 7 remains the only unmeasured one and is unchanged: it needs the deploy of HEAD to lnx (same reading as
+Criterion 7 remains the only unmeasured one and is unchanged: it needs the deploy of HEAD to the host (same reading as
 spec 225's criterion 6). One detail for that deploy's card: `target/release/pii` (11,173,424 B, built 06:30Z) was
 built from `7023cd9`, and HEAD is that commit plus docs/`.gitignore` only — so `health.build.revision` will report
 `7023cd9` unless the binary is rebuilt at HEAD; that mismatch is expected, not a drift.
@@ -159,12 +159,12 @@ false-green traps for this criterion (shared with spec 225's criterion 6): the p
 `sha256=` line with `via daemon` on stderr; `coder.spawned`'s `skill=`/`sha256=` are read from the daemon's JSON
 event line because `pii run trace` does not print them; after `pii skill edit`, the drifted re-run must journal
 `skill.drift` with `pinned <old> found <new>` and **no** `coder.spawned`, and that `found` hash is the pin for the
-final passing run. Nothing in the card has been executed — it restarts lnx's daemon, and the operator switch is
+final passing run. Nothing in the card has been executed — it restarts the host's daemon, and the operator switch is
 `PAUSED`.
 
-### 2026-10-24 12:25Z — criterion 7 TAKEN on lnx; every criterion is now measured
+### 2026-10-24 12:25Z — criterion 7 TAKEN on the host; every criterion is now measured
 
-HEAD `7211e238a94b` deployed to the lnx test daemon (`health.build.revision` read back equal to it), then
+HEAD `7211e238a94b` deployed to the the host test daemon (`health.build.revision` read back equal to it), then
 `scripts/archive/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. This is the same
 reading as spec 225's criterion 6, taken once and recorded in both.
 

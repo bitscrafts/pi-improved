@@ -17,7 +17,7 @@ negotiable from here:
 - **Not a `ctl.sh` verb.** `ctl.sh` lives outside the repo and is unversioned, 158's contract covers only what can refuse,
   spend, start, stop or restart work, and 063 Q4 froze its mutating verbs.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

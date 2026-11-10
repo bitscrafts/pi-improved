@@ -1,6 +1,6 @@
 # Spec: 106 — the operator surfaces must not lie (three measured defects)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1 close-out — the residuals spec 105 flagged, plus one I measured while investigating them.
 **Origin**: all three are *proven*, not suspected. Evidence below was produced by the orchestrator on HEAD
 (`e2a47c8`) with a scripted model and a scratch runtime dir.
@@ -86,7 +86,7 @@ R5. **`health` lists EVERY store the daemon opens**, `timer.redb` included, and 
   dropped.
 - Emit through `pii-observe`; no new raw prints beyond the file's budget.
 - Do not leave a daemon running (kill what you start; `pgrep -af 'pii[ ]daemon'` empty in the report).
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)
@@ -121,4 +121,4 @@ Worker's mutation controls (its report): policy-name-as-id → the integration t
 reported set → `store_set_check_fails_when_a_store_is_omitted` FAILS. Unreported-suspension paths are
 covered by `missing_journal_entry_is_reported` and `unusable_approval_key_is_reported`.
 Gates: `quality-gate.sh` ALL PASS (incl. `PASS: lint-observability`) · `fresh-gate --worktree` PASS ·
-clippy `-D warnings` · `fmt --check`. Worker left scratch under `/projects/_tmp/` per the no-deletion rule.
+clippy `-D warnings` · `fmt --check`. Worker left scratch under `<scratch>/` per the no-deletion rule.

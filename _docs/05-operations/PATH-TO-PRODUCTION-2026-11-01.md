@@ -32,7 +32,7 @@ per new incident to `_tmp/autonomy/INCIDENTS.md`, once, with a cursor so a re-ru
 beat. No credential, no daemon, no restart. *Evidence:* 9 assertions in
 `incidents-md-publishes-once.test.sh`. Discord delivery stays open (see step 4) and must not block this.
 
-**3. Nothing posts, because the daemon never received the channel credential.** `/root/.config/pii/pii.env` exists
+**3. Nothing posts, because the daemon never received the channel credential.** `~/.config/pii/pii.env` exists
 (mode 0600, both `PII_DISCORD_*` variables) but the unit's `EnvironmentFile=` only applies to a systemd start, and
 **this container has no systemd bus** — the daemon is hand-started, so its environment has zero `PII_DISCORD_`
 variables, `cron_entries: 0`, `armed: 0`, `channel_posts: 0`. The installer also appends the digest `[[cron]]` block

@@ -1,6 +1,6 @@
 # pi-improved — spec-26: promotion-prerequisites
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: The non-negotiable promotion contract. 008 §6/§7.1 and the user's
   #1 resolved decision ("human approves every promotion") are meaningless if a
   re-entered gate auto-approves itself or reads a stale decision. This spec makes

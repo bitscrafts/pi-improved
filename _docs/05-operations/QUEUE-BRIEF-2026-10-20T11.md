@@ -19,17 +19,17 @@ rows in the plan: 97
   (since-query returned none — showing the newest commits regardless, because a brief that reports zero
    commits while work landed is worse than no brief)
   8d77adf 232: the workspace criterion is scope-checked - cargo:test:workspace/all resolves only when 
-  f175423 the lnx deploy restart stops the real daemon: the proc cmdline string-match killed the bash 
+  f175423 the the host deploy restart stops the real daemon: the proc cmdline string-match killed the bash 
   9686dc0 232: the coder verifies the workspace it points at - a scope-checked workspace criterion (th
   eb21a06 M0 verdict of record filed: PASS 3463854 through the runtime socket, with the journal fields
-  0f9a29f M0 PASS on lnx: the sandboxed daemon (29cdee273dc1, landlock workspace enforced) started loc
+  0f9a29f M0 PASS on the host: the sandboxed daemon (29cdee273dc1, landlock workspace enforced) started loc
   29cdee2 queue briefs refreshed: A99 closed with its measured fixture fix, A98 criteria green pending
   995482f the test daemons stop reading the operator's config: PII_CONFIG pinned to the scratch in the
   632b398 231: trace tells the truth about a refusal - the daemon answers run trace --reason with the 
   1a369f6 leftover from the previous item, kept for review (cycle 20261020T105012Z; the diff is also a
   1e51201 queue brief 2026-10-20T11: M0 refused live at the /dev/shm gate (the deploy predates 229), t
   4fc1932 M0 measured against review 078's predictions: the direct path dies in the landlock domain, a
-  1737a1c M0 live on lnx reached only the /dev/shm gate: the deployed build predates spec 229, and its
+  1737a1c M0 live on the host reached only the /dev/shm gate: the deployed build predates spec 229, and its
 
 ## Control and queue state
   == control: RUNNING at 2026-10-19T17:28:22Z (resumed by human)

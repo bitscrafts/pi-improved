@@ -1,6 +1,6 @@
 # Spec: Health answers in constant time
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: Opus finding 5, split out of row 357.
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: Opus finding 5, split out of row 357.
 
 ## Why this exists
 

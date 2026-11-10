@@ -1,7 +1,7 @@
 # Spec 320: the lane refuses a binary that is not the tree it is about to run, and `pii lane rev` says which build it is
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the product is one binary and ships no companion scripts (user, 2026-10-29/30)
 
 Parts 1 and 2 (specs 317, 319) put the composed lane's whole body — setup (`pii lane plan`) and run (`pii lane run`) — inside the binary,
@@ -28,7 +28,7 @@ refusal — before the daemon is touched and before anything can be spent — wh
   and only then prints `DAEMON   : …`. Nothing is spent before that line; a refusal placed above it costs nothing.
 - **CONFIRMED** the printed block of `pii lane plan` is pinned by `crates/pii-cli/tests/golden` and `lane_plan_parity`; `pii lane rev` is a
   **new** subcommand and must not add a line to that block.
-- **CONFIRMED (measured 2026-10-30, this tick)** the host's `/root/.local/bin/pii` is dated 2026-10-20 and its usage line has no `lane`
+- **CONFIRMED (measured 2026-10-30, this tick)** the host's `~/.local/bin/pii` is dated 2026-10-20 and its usage line has no `lane`
   subcommand, so no dispatch goes through the binary today. The guard this spec adds is what makes the follow-up flip safe; it is not
   needed by any caller that exists yet.
 - **NOT CLAIMED**: that the flip itself (cycle.sh → `pii lane run`) is safe. It is the next item and it needs this guard, a resolved binary

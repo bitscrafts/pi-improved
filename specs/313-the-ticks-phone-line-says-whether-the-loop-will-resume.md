@@ -1,7 +1,7 @@
 # Spec 313: the tick's phone line for a stopped worker says whether the loop will resume it
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — unattended queue. Spec 312 made the queue do what its own outcome table promised:
 a `needs-review` row whose `last` is `worker-rc=N` and which still holds a session is offered again by
 `scripts/autonomy/state.py pick`, so the next cycle resumes that session (`cycle.sh:106` reads the row's session as

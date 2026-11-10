@@ -1,6 +1,6 @@
 # pi-improved — spec-59: pii-web flag-parsing test coverage (F-20 tidy)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW — Phase 5.3 tail, smallest remaining item. `pii-web`
   has exactly 2 tests for 297 lines. One of the two existing tests
   (`web_defaults_to_loopback`) is a genuine tautology — it compares two

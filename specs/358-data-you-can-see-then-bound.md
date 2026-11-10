@@ -1,6 +1,6 @@
 # Spec: Data you can see, then bound
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
 workstream **W6** — closes findings 7, 12 and 19 (the retention half waits for four weekly samples).
 
 ## Verified premises
@@ -12,7 +12,7 @@ workstream **W6** — closes findings 7, 12 and 19 (the retention half waits for
   `pii-store/tests/store_contract.rs:132`; `RESUME_INDEX` is written by `sched/dispatch.rs:423` and read by nothing.
 - `pii-store/src/compact.rs:10-12` states there is no retention policy; compaction is offline only
   (`pii store compact`).
-- Measured on lnx: `store.redb` and `memory.redb` are byte-identical to the development machine's, so production
+- Measured on the host: `store.redb` and `memory.redb` are byte-identical to the development machine's, so production
   growth is ~0 today — the policy needs data, not speculation.
 
 ## Requirements

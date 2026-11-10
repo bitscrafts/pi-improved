@@ -5,13 +5,13 @@
 ## The setup
 
 Both local models are served by **one llama.cpp router server** on port 8082
-(`--models-preset /projects/_tmp/llama-models.ini --models-max 2 --jinja`).
+(`--models-preset <scratch>/llama-models.ini --models-max 2 --jinja`).
 The router exposes an OpenAI-compatible `/v1/chat/completions` and switches
 models via the `model` field.
 
 pi talks to it through the **built-in `llamacpp` provider** (NOT a custom
 provider name). The provider's `baseUrl` is overridden in
-`/root/.pi/agent/models.json` to point at the router:
+`<agent-config>` to point at the router:
 
 ```json
 "llamacpp": {
@@ -26,7 +26,7 @@ provider name). The provider's `baseUrl` is overridden in
 }
 ```
 
-`/root/.pi/agent/settings.json` `enabled_models` includes `"llamacpp/*"`.
+`<agent-config>` `enabled_models` includes `"llamacpp/*"`.
 
 ## The invocation (CRITICAL flag order)
 
@@ -69,5 +69,5 @@ curl -s http://localhost:8082/v1/models | jq -r '.data[].id'  # router alive
 - **Use the built-in `llamacpp` provider**, not a custom name like
   `laguna-local`/`granite-local` — pi's static provider table only knows
   `llamacpp` (and `ollama`, `mistralrs`) as keyless local providers.
-- **`pi` is at `/root/.local/bin/pi`** — not always on PATH in background shells.
+- **`pi` is at `~/.local/bin/pi`** — not always on PATH in background shells.
 - The router must be running (port 8082). If it's down, pi's request fails.

@@ -3,7 +3,7 @@
 ## Overview
 User directive 2026-10-19: "in the future you will need to implement the queue management as a graph!" Today the development queue is `scripts/autonomy/plan.tsv` + `_tmp/autonomy/state.json` + `cycle.sh` + a manual `control` file, driven by a Hermes cron. Every one of this week's queue defects came from that shape being a set of files a shell re-reads and re-interprets: three dispatchers colliding on a lock, `OUTCOME=locked` indistinguishable from work, a pause nobody resumes, duplicate spec numbers, parked rows skipped silently, and "queue empty" printed while three rows waited. pii already has the substrate that removes the whole class: a store, runs with statuses, a journal, gates, budgets, memory, and a scheduler. The queue must become one of its graphs.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Verified premises
 - `pick` is a Python function over a TSV (`scripts/autonomy/state.py`); row identity is the row id, status lives in a second file, and the lock is a flock on a third.

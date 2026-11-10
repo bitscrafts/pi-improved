@@ -2,7 +2,7 @@
 
 This is a read-only review: the only repo file written is this one, and nothing was committed. Production was
 read only through `pii health`, `pii run ls` and its log; it was never signalled. Three scratch daemons ran the
-**installed** binary under `/projects/_tmp/rev072-*`, with no network, and all of them exited. Evidence labels:
+**installed** binary under `<scratch>/rev072-*`, with no network, and all of them exited. Evidence labels:
 - **C-run**: I ran it today, 16:41-16:50 UTC.
 - **C-read**: I read the lines.
 - **asserted**: from a document or commit.
@@ -29,7 +29,7 @@ created under an earlier revision, and `since_deploy` counts only runs this revi
 under-reports in both directions: `posted` (071 §1) and `armed`. **Tomorrow's reading must use `pii run ls` and
 `cron.rearmed`, not `since_deploy`.**
 
-## 1. 196 on the deployed binary, measured (C-run, scratch, `/root/.local/bin/pii` = `420fe8a`)
+## 1. 196 on the deployed binary, measured (C-run, scratch, `~/.local/bin/pii` = `420fe8a`)
 
 | probe | result |
 |---|---|
@@ -116,7 +116,7 @@ record whose timestamp is invented can neither be ordered against the daemon's e
 
 **4. The remaining risk (three sentences).**
 
-> pii on lnx (`420fe8a`) now keeps exactly one daily digest armed across restarts and cancellations, but its
+> pii on the host (`420fe8a`) now keeps exactly one daily digest armed across restarts and cancellations, but its
 > first scheduled run on this binary is tomorrow, 2026-10-20 at 12:00 UTC, and only that reading (+1 run, +1 post,
 > nothing more by 12:05) shows the deploy carried the fix. Cancelling a run only skips that one firing, so the way
 > to stop the digest is to remove the `[[cron]]` block and restart. Read production state from `pii run ls` and
@@ -145,6 +145,6 @@ record whose timestamp is invented can neither be ordered against the daemon's e
 | the `pii-mcp` swap state and Hermes's error share | not measured this round |
 | tomorrow's 12:00Z occurrence on `420fe8a` | it is in the future; the commands are in §3.2 and 071 §4 |
 
-**Scratch:** `/projects/_tmp/rev072-*` (this run), plus `rev069-*`, `rev070-*` and `rev071-occurrence.txt` from
+**Scratch:** `<scratch>/rev072-*` (this run), plus `rev069-*`, `rev070-*` and `rev071-occurrence.txt` from
 earlier runs. All are mine and can be removed, and no scratch daemon is left (`pgrep` → 0). Nothing in the repo
 changed except this file.

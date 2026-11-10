@@ -1,6 +1,6 @@
 # Spec: 123 — extraction: turning the trajectory substrate into cited candidate lessons
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage C** of `057` — the self-improvement pillar's FIRST stage. Spec 103 built the substrate
 (trajectories + the decision ledger) and the vision's phase 3 is *"learning by design absent"*: nothing consumes
 it today. This spec builds the consumer's first half. Extraction **proposes**; nothing here changes behaviour.
@@ -71,7 +71,7 @@ R9. **Docs**: `_docs/0X-guides/learning-loop.md` describing what extraction is, 
   this spec — the next stage verifies before anything changes.
 - A candidate must not contain a raw trajectory dump; it cites paths and counts.
 - Do not weaken a refusal to make a test path simpler; refusals are the safety surface, as in 121 and 122.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator verification (2026-10-10) — plus a rule breach and a real integration defect
 
@@ -116,7 +116,7 @@ orchestrator**: the daemon now resolves the area the same way the CLI does (its 
 pii_learn_candidates{kind="repeated_failure"} 1
 pii_learn_candidates{kind="stuck_loop"} 1
 pii_learn_refusals_total 0
-health learn: candidates {cost_outlier:0, …}, root "/projects/_tmp/learn123-real"
+health learn: candidates {cost_outlier:0, …}, root "<scratch>/learn123-real"
 ```
 Recorded as `DO-NOT-REPEAT` 1.45: when a CLI writes what a daemon reads, both must resolve the location through
 the same helper, and the check must be live end-to-end — not a unit test of each half.

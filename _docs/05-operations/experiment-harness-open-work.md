@@ -12,7 +12,7 @@ six times. This is the diagnosis and the exact remaining fix, so the next sessio
   prints the pre-registered decision.
 - `scripts/archive/experiments/measure-proven-fix.sh <idx> <fingerprint> <fix-commit> <crate> <paths>` — one candidate:
   seeds a tree at `fix-commit^`, one worker (sonnet, `--max-turns 60`, no budget cap), then measures.
-- Results: `_tmp/autonomy/experiment/results.tsv` (append-only). Trees: `/projects/_tmp/exp-prove-fix/`.
+- Results: `_tmp/autonomy/experiment/results.tsv` (append-only). Trees: `<scratch>/exp-prove-fix/`.
 
 ## The six failures, all in the instrument (kept so they are not repeated)
 

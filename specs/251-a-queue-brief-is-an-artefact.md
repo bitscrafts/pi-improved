@@ -1,7 +1,7 @@
 # Spec 251: a queue brief is an artefact of the run, not a change to the tree
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the autonomy loop's hygiene (measured 2026-10-24)
 
 When the queue empties, `cycle.sh` writes a queue brief so the session ends with a file instead of a paragraph in a
@@ -79,7 +79,7 @@ No new Rust. The proof is one helper, two call sites, one behavioural reading of
 - Do NOT add `_docs/05-operations/QUEUE-BRIEF-*.md` to `.gitignore` as a shortcut: the point is that a run's artefact does
   not enter the tracked tree at all. If the helper cannot be threaded through both writers without touching another step's
   behaviour, **STOP and report** instead of widening the diff.
-- Do NOT weaken a check to make it pass, and do NOT write anything under `specs/`. No commit. Scratch under `/projects/_tmp/`.
+- Do NOT weaken a check to make it pass, and do NOT write anything under `specs/`. No commit. Scratch under `<scratch>/`.
 
 ## Closure
 

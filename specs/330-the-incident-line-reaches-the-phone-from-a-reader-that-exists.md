@@ -134,7 +134,7 @@ window, repeat threshold, fingerprint, `--new` semantics) and the carrier's outp
 **This spec asked for a phone line; the surface that exists today is a file, chosen by the user ("lets us a file by
 now!").** The row is closed against what shipped, not against the stand-in: the worker's reader resolved a binary
 and a records root and its test drove the real tick over a synthetic fixture named after a real 88-byte log, with a
-control covering 1 of ~12 assertions. That WIP is preserved at `/projects/_tmp/wip-330/` and was never committed.
+control covering 1 of ~12 assertions. That WIP is preserved at `<scratch>/wip-330/` and was never committed.
 
 What actually shipped (commits `1e8d530`, `5eb8f44`), and why each is the thing this spec was reaching for:
 

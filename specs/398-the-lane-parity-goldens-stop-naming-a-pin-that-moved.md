@@ -22,14 +22,14 @@ Measured 2026-11-05, and the measurement is what makes this a row rather than a 
 - the repository's own check passes: `grep -A6 'graph = "docs"' graphs/spec.toml` yields `b7f8eacd…`;
 - a scratch built by hand exactly as `Scratch::new` builds it (copy `specs/ graphs/ scripts/`, `git init`,
   commit) also yields `b7f8eacd…`;
-- the gate's export (`/projects/_tmp/fresh-gate-*/scripts/run-batchC-pii.sh`) contains the fixed line;
+- the gate's export (`<scratch>/fresh-gate-*/scripts/run-batchC-pii.sh`) contains the fixed line;
 - the target nevertheless aborts with the sdd digest.
 
 So the harness rewrites or invokes a copy of the lane that is not the file those three checks read — the
 rewrite at `lane_plan_parity.rs:214-226` substitutes the `REPO=` and `C=` lines, and something in that path
 still runs the older reading. Until this is measured inside the harness, do not "fix the golden".
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: test infrastructure
 
 ## Requirements

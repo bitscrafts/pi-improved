@@ -5,7 +5,7 @@
 `pii.log` records `daemon.started` — but only *after* the store is open, the engine built and the
 control socket bound (`cmd_daemon.rs:123` opens the log, `:403` writes `daemon.started`). A start that
 dies before that point leaves **nothing**: the supervisor knows, the log does not. Measured on the
-deployed log (2026-10-31, copy of `/root/.local/state/pii/pii.log`): **108 `daemon.started`, 0 `daemon.ready`**,
+deployed log (2026-10-31, copy of `~/.local/state/pii/pii.log`): **108 `daemon.started`, 0 `daemon.ready`**,
 and the runtime scan's own verdict was
 
 ```

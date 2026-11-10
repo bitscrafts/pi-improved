@@ -1,7 +1,7 @@
 # Spec 286: a committed mutation sweep over the composition code
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, level 3 of 4. Every defect found in this work was found by a **mutation I wrote by hand and kept in `_tmp/`**: m5 (spec 271, a vacuous claude assertion), m9 (spec 276, the coder's gate unreachable in a graph run), d5 (spec 273, `GATE_WRITE_DIRS` ignored). Those scripts are not in the repo, so the next change to `call.rs` is protected only by whoever remembers to rerun them. This spec commits the sweep: a table of named mutations of the composition code, applied one at a time to a **scratch copy of the files**, each required to turn a named test file red, with the originals restored byte-identically and checked by digest.
 
 ## Verified Premises

@@ -1,6 +1,6 @@
 # Spec: 100 — adoption sweep, part 1: the server-side subsystems actually emit
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1 observability. Diretiva: *"we must enforce observability! via traits on every crate!"*
 Contract: spec 97 (`pii-observe`). Enforcement shell: spec 98 (`lint-observability`). Design:
 `_docs/06-research/053-…md` §3–§4.
@@ -60,7 +60,7 @@ R5. `specs/` is read-only for you.
   may be swallowed into an event where it was previously returned.
 - Do NOT log secrets, tokens, env values, or file contents; redaction is spec 103's subject.
 - Do NOT edit files under `specs/`.
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)

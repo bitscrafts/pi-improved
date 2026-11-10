@@ -41,7 +41,7 @@ The runtime reader (156) must judge the daemon's own records as they are actuall
 ## Closure
 - **2026-10-16, orchestrator: the `gate-failed` rows this item carried were the GATE, not the worker.** The fresh-gate
   that stopped it executed `_tmp/gate-target/debug/deps/launcher-b20b8ddc02b01e72`, whose dependency file records
-  `env-dep:CARGO_MANIFEST_DIR=/projects/_tmp/fresh-gate-72466/crates/pii-evolve` — the export of a *previous* run
+  `env-dep:CARGO_MANIFEST_DIR=<scratch>/fresh-gate-72466/crates/pii-evolve` — the export of a *previous* run
   (the 01:39 fresh-gate verification), whose `crates/pii-evolve/src/` no longer exists. The three tests that read
   files relative to `CARGO_MANIFEST_DIR` (`driver_spawns_no_subprocess`, `no_raw_dial_remains_in_pii_evolve`,
   `launcher_dials_through_the_uds_client`) answered `read driver.rs: NotFound`, and the gate went red on a tree that

@@ -71,7 +71,7 @@ The pattern has four parts, all already exercised by `memory`:
 
 `pii-memory` already fuses BM25 + i8 vectors + a graph lane by RRF over
 *memory docs*. A code graph is the same shape — a corpus plus a graph lane —
-over *source files*. amem already carries `petgraph` in-workspace, so the graph
+over *source files*. the workspace memory already carries `petgraph` in-workspace, so the graph
 representation is not a new dependency class.
 
 ### The critical lesson from the failover work applies directly
@@ -160,7 +160,7 @@ is queryable instead of enumerated.
 - **Dependency discipline is the real risk.** tree-sitter drags in grammar
   crates, against a repo with a strict `deps-check` and a **450-line effective
   size gate**. Mitigations, in order: scope **Rust only** (not graphify's ~40
-  languages); reuse `petgraph` (already in-workspace via amem); and if the
+  languages); reuse `petgraph` (already in-workspace via the workspace memory); and if the
   grammar crates still fail policy, keep the parser in **`xtask`** (which is
   outside `crates/` and already hosts every gate) rather than in a new crate.
 - **`#![forbid(unsafe_code)]` is workspace-wide** (`Cargo.toml:54`); a
@@ -273,7 +273,7 @@ and `reflect` (write lessons back).
 
 ## (A) graphify as tooling on our pii work — I RAN IT
 
-Installed `uv tool install graphifyy`, then on `/projects/pi-improved`:
+Installed `uv tool install graphifyy`, then on `<repo>`:
 
 ```
 graphify extract . --code-only
@@ -353,9 +353,9 @@ that failure mode:
 - **`path` is directed.** My first `path` query returned *no path* and
   demanded `--undirected`. Direction-blind traversal is not the default.
 - **It writes 15 MB into the repo.** `graphify-out/` was created inside
-  `/projects/pi-improved`, untracked and **not gitignored** — squarely against
+  `<repo>`, untracked and **not gitignored** — squarely against
   our clean-root rule. I moved it to
-  `/projects/_tmp/graphify-out-pii-2026-09-19/` and left the repo clean.
+  `<scratch>/graphify-out-pii-2026-09-19/` and left the repo clean.
   **Any real adoption must write outside the tree or gitignore it.** The tool's
   own README flags the sibling hazard: output files invalidate Claude Code's
   prompt cache unless added to `.claudeignore`.
@@ -395,7 +395,7 @@ ingredients**, which makes a native solution far cheaper than it looks.
 - **`xtask` gates** — `deps-check`, `net-check`, `lint-files`,
   `reachability-check`, `doc-drift-check`, `silent-noop-check`, `proto-check`,
   `bench-gate`, all reachable through `cargo xtask ci`.
-- **amem** (`/projects/amem`) already proves the pattern in Rust:
+- **the workspace memory** (`<workspace>/<project>`) already proves the pattern in Rust:
   `petgraph` + `graph.rs` + a concept graph, in a pure-Rust service.
 
 ### The sharpest native opportunity: upgrade `reachability-check` from text to graph
@@ -418,7 +418,7 @@ stated purpose, with the same living-list interface it already has.
 Note the honest trade: tree-sitter adds a dependency tree (grammar crates) to
 a repo with a strict `deps-check` and a **450-line effective-size gate**. Any
 native adoption must justify the dependency and stay inside the size policy —
-which argues for reusing `petgraph` (already in-workspace via amem) and
+which argues for reusing `petgraph` (already in-workspace via the workspace memory) and
 scoping to **Rust only**, not graphify's ~40 languages.
 
 ### Should it be a *product* feature (agent-facing)?
@@ -436,10 +436,10 @@ about the sizing:
   `codegraph-rust` by Jakedismo (surrealDB backend). None is a settled,
   obvious choice — which cuts both ways: no turnkey dependency to adopt, but
   also no incumbent to beat locally.
-- **amem is the better host for a graph service.** It already has
+- **the workspace memory is the better host for a graph service.** It already has
   `petgraph`, a concept graph, a REST + MCP surface, and it is *designed* as
   a shared multi-agent service. A code-knowledge graph is arguably an
-  **amem capability** (another retrieval lane over a different corpus) rather
+  **the workspace memory capability** (another retrieval lane over a different corpus) rather
   than a new pii crate.
 - **The cheapest first step is not a new crate** — it is using graphify
   out-of-tree to answer one real question (the Opus review), and letting the
@@ -453,7 +453,7 @@ about the sizing:
   its browsing.
 - If it cannot stay inside the 450-line/`deps-check` policy, it fights the
   repo's own constitution.
-- If amem can host it (it can), a new pii crate needs a reason amem is wrong.
+- If the workspace memory can host it (it can), a new pii crate needs a reason the workspace memory is wrong.
 
 ---
 
@@ -475,7 +475,7 @@ about the sizing:
    strictly stronger oracle — and it fixes an instance of a failure mode we
    have already documented twice.
 5. **Then**: if that proves out, scope a Rust-only code-graph lane in
-   **amem** (it has `petgraph`, REST + MCP, and is the intended shared
+   **the workspace memory** (it has `petgraph`, REST + MCP, and is the intended shared
    service), rather than a new pii crate.
 6. **Only then**: expose it as an agent-facing tool via `pii-mcp`, sized
    against the existing tool surface (`bash`/`fs`/`search`/`memory`/
@@ -490,7 +490,7 @@ about the sizing:
   `crates/` and already hosts the gates)?
 - Would the reachability gate accept `EXTRACTED`-only edges (no inference), to
   keep it a hard oracle rather than a best-effort one?
-- Is amem's concept graph the same abstraction at a different corpus, or a
+- Is the workspace memory's concept graph the same abstraction at a different corpus, or a
   genuinely different structure? (Decides 5 above.)
 - Does graphify's `graph.json` schema map onto `petgraph` cleanly enough to
   reuse its output instead of writing our own extractor?
@@ -520,8 +520,8 @@ The four questions, answered in order:
 ## 1. Self-contained with uv + a gitignored `.graphify/` — YES, verified
 
 **Isolation (uv).** `uv tool install graphifyy` puts the whole thing in its own
-environment at `/root/.local/share/uv/tools/graphifyy/` with shims in
-`/root/.local/bin/`. It does not touch any project's `Cargo.toml`, lockfile, or
+environment at `~/.local/share/uv/tools/graphifyy/` with shims in
+`~/.local/bin/`. It does not touch any project's `Cargo.toml`, lockfile, or
 venv. Nothing to add to `deps-check`. Self-contained by construction.
 
 **Output location — there is a first-class knob.** `GRAPHIFY_OUT` (and
@@ -530,8 +530,8 @@ venv. Nothing to add to `deps-check`. Self-contained by construction.
 override. **Tested:**
 
 ```bash
-GRAPHIFY_OUT=/projects/pi-improved/.graphify graphify extract . --code-only
-# -> wrote /projects/pi-improved/.graphify/graph.json: 4187 nodes, 9646 edges, 216 communities
+GRAPHIFY_OUT=.graphify graphify extract . --code-only
+# -> wrote .graphify/graph.json: 4187 nodes, 9646 edges, 216 communities
 # -> no graphify-out/ created (confirmed)
 ```
 
@@ -644,7 +644,7 @@ later only if the manual step proves to be the thing we forget.
 
 ## 4. A skill in Hermes — YES, already installed and loading
 
-`graphify install --platform hermes` wrote `/root/.hermes/skills/graphify/`
+`graphify install --platform hermes` wrote `<agent-host-config>`
 (SKILL.md + 8 `references/`). `--project` variant targets
 `<project>/.hermes/skills/graphify/`. I loaded it with `skill_view('graphify')`
 and it is valid and available in this session.
@@ -761,7 +761,7 @@ in the tree".
 ### For pidag specifically
 
 **Moved to the pidag repo** — pidag-specific content belongs there:
-`/projects/pidag/docs/graphify-integration.md`. Summary of what it covers: the
+`<workspace>/<project>/docs/graphify-integration.md`. Summary of what it covers: the
 graph is already built and persists; nothing runs at session open; and
 `graphify update .` writes only inside the gitignored `graphify-out/`, so it
 cannot dirty the tracked tree or disturb that repo's workers-never-commit
@@ -778,7 +778,7 @@ would still wait.** Tested in a throwaway repo, twice.
 
 | | |
 |---|---|
-| Hook latency | **0.093 s** — `post-commit` *launches a detached background rebuild* and returns immediately (`[graphify hook] launching background rebuild (log: /root/.cache/graphify-rebuild.log)`) |
+| Hook latency | **0.093 s** — `post-commit` *launches a detached background rebuild* and returns immediately (`[graphify hook] launching background rebuild (log: ~/.cache/graphify-rebuild.log)`) |
 | Actually rebuilds? | **Yes.** ~12 s later the graph contained the new symbol (`gamma present: True`, 3 → 4 nodes) |
 | Rapid consecutive commits | **Handled.** Two commits 1 s apart → both rebuilds ran, graph ended with **both** new symbols (5 nodes) |
 | Writes go where? | **Only inside `graphify-out/`** |

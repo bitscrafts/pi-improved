@@ -17,7 +17,7 @@ Read-only review. The only file written is this one; nothing was committed. Labe
    and idle on 2026-10-11 (059 §1.1, C-run then). The lost day came from **contention**: several cargo consumers
    on one target dir, and one cycle beside another. Contention is the first thing to remove; the cold build is the
    second.
-4. **Production has not moved.** `/root/.local/bin/pii` is still dated 2026-09-17 01:30 (C-run). Every spec closed
+4. **Production has not moved.** `~/.local/bin/pii` is still dated 2026-09-17 01:30 (C-run). Every spec closed
    since then is unshipped. The deploy (M5) is the step with the most value per minute.
 
 ## Measured facts used below
@@ -117,7 +117,7 @@ Re-measure before any new spec.
    *Proof:* the orchestrator's `cargo` exits 75 within 1 s while a worker is live; 0 lock waiters over a day; 0
    new leftover commits.
 3. **Ship M5 now, using the existing card (152) and rollback.**
-   *Proof:* `/root/.local/bin/pii` mtime is after 2026-10-15, `pii health` reports HEAD's revision, and the
+   *Proof:* `~/.local/bin/pii` mtime is after 2026-10-15, `pii health` reports HEAD's revision, and the
    rollback rehearsal has been run once on the host.
 4. **Phase budgets plus a 60 s status line; the meter is retired as a progress signal.**
    *Proof:* dispatch-to-commit-or-park p90 ≤ 90 min over 5 items; 0 stale status minutes while the lock is held.

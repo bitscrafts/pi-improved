@@ -1,6 +1,6 @@
 # Spec: 99 — health must report IDENTITY: store, mounts, version, counts
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1, observability — this is the user's standing directive, verbatim:
 *"the health endpoint must report store, mounts, version, and counts to make divergences visible
 immediately"* (2026-09-20). Today `sys.status` reports liveness and counters but **no store identity,
@@ -57,7 +57,7 @@ R7. **THE decisive test (the directive's own test)**: a test that builds TWO dae
 - Do NOT leak secrets into the payload: report the config **hash**, never its contents; never report env
   values, tokens, or provider keys.
 - Do NOT edit files under `specs/`.
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)
@@ -71,9 +71,9 @@ a daemon in a scratch dir and ran the new command myself:
 ```
 $ pii health --json
 {"build":{"revision":"5c6fe70cd7ee-dirty","target":"x86_64-unknown-linux-gnu","version":"0.1.0"},
- "config":{"path":"/root/.pii/pii.toml","sha256":"0b800423…"},
+ "config":{"path":"~/.pii/pii.toml","sha256":"0b800423…"},
  "counts":{"approvals_pending":0,"cron_entries":0,"journal_events":0,"memory_docs":0,"runs":0},
- "mounts":[{"mode":"rw","name":"workspace","root":"/projects/_tmp/health-orch-demo/ws",
+ "mounts":[{"mode":"rw","name":"workspace","root":"<scratch>/health-orch-demo/ws",
             "policy":"sandbox=off: no filesystem confinement applied"}, …channels_scope, runtime_dir…],
  "sandbox_profile":"off","protocol":"pii.v2","rss_kb":18292,
  "stores":[{"name":"main","path":"…/store.redb","bytes":1056768,"format_version":1,

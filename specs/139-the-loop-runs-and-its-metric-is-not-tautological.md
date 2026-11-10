@@ -16,7 +16,7 @@ The reviewer's smallest honest next step, which this spec adopts: run extraction
 keep promotion human-gated, and replace the outcome metric with one that **quarantine cannot satisfy by
 construction**.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F8, Q2)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §2.2 (Q2, F8), §2.3
 
@@ -74,7 +74,7 @@ construction**.
   always green is the defect with extra steps.
 - Do NOT add a second action (a new kind of change the loop can make). The measurement decides whether that
   is worth building, and the measurement needs 14 days first.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

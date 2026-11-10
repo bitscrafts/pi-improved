@@ -1,6 +1,6 @@
 # pi-improved — spec-39: structured-provider-failure (A2)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — Track A2 of research doc 025 §5 / 026 report F-11.
   A1 (spec 37, `classify()`) landed with zero non-test callers: nothing
   feeds it structured data. A2 is the planner decision the 026 report

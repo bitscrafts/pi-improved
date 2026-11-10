@@ -1,6 +1,6 @@
 # pi-improved — spec-18: phase4-service
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: P4.5 — the difference between "survives a file-level recreate" and "survives a rebuild"; a day of work per the opus plan.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator
@@ -15,7 +15,7 @@
 - `crates/pii-cli/src/cmd_daemon.rs:17-60` — `pii daemon` parses `--workspace`, `--store`, `--config`, `--sandbox`. There is NO `--foreground` flag (the daemon already runs in the foreground; a supervisor needs an explicit signal).
 - `crates/pii-cli/src/cmd_daemon.rs:282-299` — the daemon exits 0 on clean SIGTERM/SIGINT, 130 on a forced second signal. This is already supervisor-friendly.
 - `crates/pii-cli/src/cmd_ctl.rs:60-71` — `print_result` returns exit 0 on success, 2 on error. `pii sys status` returns 0 when the daemon is reachable, 2 when not — a usable healthcheck exit code already.
-- `/root/.pii/start-daemon.sh` — exists (installed 2026-09-05) but is NOT wired into the container's `entrypoint.sh` (its own header comment says so). A file-level container recreate survives; a full rebuild that re-runs the entrypoint does not.
+- `~/.pii/start-daemon.sh` — exists (installed 2026-09-05) but is NOT wired into the container's `entrypoint.sh` (its own header comment says so). A file-level container recreate survives; a full rebuild that re-runs the entrypoint does not.
 - `crates/pii-cli/src/cmd_daemon.rs:64-81` — the daemon resolves `runtime_dir` and `store_path`; `--foreground` would be a no-op flag today (the daemon is already foreground).
 
 ---
@@ -127,7 +127,7 @@ pii sys status  (exit 0 = reachable, 2 = unreachable)  -- healthcheck
 |------|--------|
 | `crates/pii-cli/src/cmd_daemon.rs` | accept `--foreground` (R1) |
 | `crates/pii-cli/src/cmd_sys.rs` | (test only) assert exit codes (R2) |
-| `/root/.pii/start-daemon.sh` | log rotation (R4) |
+| `~/.pii/start-daemon.sh` | log rotation (R4) |
 | container `entrypoint.sh` | wire `start-daemon.sh` (R3) |
 
 **Not modified**: `crates/pii-server/` (no daemon behavior change), `crates/pii-proto/` (no wire change).

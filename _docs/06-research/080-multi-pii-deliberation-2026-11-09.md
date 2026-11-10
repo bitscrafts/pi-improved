@@ -4,7 +4,7 @@ Filed 2026-11-09. Design note, nothing built. It corrects the earlier evaluation
 The goal as the operator states it: **multiple pii's discuss a GitHub item and decide the best approach**, with the pii Discord channel as
 the place a person is told and answers.
 
-## 1. What amem holds (searched five ways on 2026-11-09)
+## 1. What the workspace memory holds (searched five ways on 2026-11-09)
 
 Nothing on "several pii's deliberating on a GitHub item". Neighbours, each one idea:
 
@@ -50,7 +50,7 @@ The decision has to reach the person, and the person has to answer. Measured 202
 - The forum holds 2 active threads and 6 messages, all from the bot, none from a human. Nothing archived.
 - Even if a reply were read, `reply()` sends to the forum id, and a post to a forum creates a NEW thread, so an answer would not land in the
   conversation it answers.
-- The bot token is the same as the Hermes gateway's (amem `pii/2026-11-02/discord-429-is-a-shared-bot-token`), and pii does not drop its own
+- The bot token is the same as the Hermes gateway's (the workspace memory `pii/2026-11-02/discord-429-is-a-shared-bot-token`), and pii does not drop its own
   messages. The moment it reads threads it would read its own post and answer it, forever: `discord-triage` replies to every class, "chat" included.
 - 731 of 732 logged poll failures are 429s from 11-02 02:00-03:59, before the pacing fix; none since, including after today's deploys.
 
@@ -71,7 +71,7 @@ deliberation graphs, which post to the item and, when they need a person, to thi
    A PR with no diff yet opens with an empty first commit.
 2. **Approval is `approve <spec-commit-sha>`** from the owner's allow-listed login. The lane runs a spec's criteria only for the approved commit; a later
    edit is a new commit and needs a new approval. A verdict cites the commit it reviewed, so a verdict on an old version never counts for a newer one.
-3. **Templates for everything** (drafted under `/projects/_tmp/pii-templates/`): a PR template, an issue template and five comment templates
+3. **Templates for everything** (drafted under `<scratch>/pii-templates/`): a PR template, an issue template and five comment templates
    (proposal, critique, implementation-ready, decision, question). A comment that does not match its template is ignored and counted. Free model text never decides.
 4. **A unique id per installation**: random 128 bits generated at first start, stored in the STATE directory (never the config, so a copied config cannot copy an
    identity), shown as a short form. An id proves nothing alone: the vote counts only when the id matches the roster entry of the comment's GitHub AUTHOR login.

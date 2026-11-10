@@ -4,9 +4,9 @@ Spec: `specs/377-the-parked-backlog-gets-verdicts.md`. Read-only: no code edited
 
 ## Method and environment
 
-- Criteria were executed, not read from `row-verify`. Each criterion of each row was run from `scripts/autonomy/plan.tsv` column 5, split on `;`, the same way `row-run-criteria.py` splits it. That script itself could not run here: this host has no `python3`, and `uv` cannot write `/root/.cache` or `/root/.local`.
-- Cargo criteria first failed to link because `/tmp` is not writable. Re-run with `TMPDIR=/projects/pi-improved/_tmp/tmp`, they compile and run. The results below are from the re-run.
-- **The WIP directories named in the spec are not on disk.** `/projects/_trash/` and `/projects/pi-improved/_trash/` do not exist, and `find` finds no `362-models-in-one-place-wip-*`, `364-*`, `368-*` or `369-*` directory anywhere. Per the spec, a missing WIP is reported as missing, not as done. Every "WIP sound" claim below therefore rests on the tree at HEAD, not on quarantined files.
+- Criteria were executed, not read from `row-verify`. Each criterion of each row was run from `scripts/autonomy/plan.tsv` column 5, split on `;`, the same way `row-run-criteria.py` splits it. That script itself could not run here: this host has no `python3`, and `uv` cannot write `~/.cache` or `~/.local`.
+- Cargo criteria first failed to link because `/tmp` is not writable. Re-run with `TMPDIR=_tmp/tmp`, they compile and run. The results below are from the re-run.
+- **The WIP directories named in the spec are not on disk.** `<workspace>/_trash/` and `_trash/` do not exist, and `find` finds no `362-models-in-one-place-wip-*`, `364-*`, `368-*` or `369-*` directory anywhere. Per the spec, a missing WIP is reported as missing, not as done. Every "WIP sound" claim below therefore rests on the tree at HEAD, not on quarantined files.
 
 ## Criteria results (executed)
 

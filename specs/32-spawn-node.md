@@ -1,6 +1,6 @@
 # pi-improved — spec-32: spawn-node-and-worktree-provisioning
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — closes the gap between `boss-watch` (detect + gate) and
   `heal-fix` (localize→patch→validate). Today `boss-watch`'s `escalate` gate is
   terminal in both directions; nothing turns an approved detection into a
@@ -25,7 +25,7 @@
   (`crates/pii-store/src/heal.rs:86-88`).
 - `validate_scope_root` (`crates/pii-server/src/runs.rs:261-283`) requires
   `scope_root` to be an absolute path inside the workspace — so worktrees must
-  stay under `_tmp/heal-worktrees` (do NOT relocate to `/root/.pii-dev/`).
+  stay under `_tmp/heal-worktrees` (do NOT relocate to `~/.pii-dev/`).
 - All 4 budget dims now thread through `Budget::new` (`runs.rs:56-61, 169`).
 
 ## Overview
@@ -112,7 +112,7 @@ Machine-checked (each >=1 test, non-vacuity `grep -qE "ok\\. [1-9]"`):
 - **G3 — do NOT weaken, skip or delete an existing test.**
 - **G4 — the spawn node only spawns runs the graph explicitly names.**
 - **G5 — worktrees stay under `_tmp/heal-worktrees`** (do NOT relocate to
-  `/root/.pii-dev/` — `validate_scope_root` requires workspace-relative).
+  `~/.pii-dev/` — `validate_scope_root` requires workspace-relative).
 - **G6 — do NOT touch `specs/`** (read-only for implementers).
 
 ## Files to Modify

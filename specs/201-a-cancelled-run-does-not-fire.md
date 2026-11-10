@@ -3,7 +3,7 @@
 ## Overview
 Written 2026-10-19 to close a bookkeeping hole: row A65 named this file and it did not exist. The substance of this work shipped as spec 196 (5a6445e) and was re-proven as spec 198; the four posts at 09:00:01Z came from runs whose records were cancelled while their timer-wheel entries stayed armed.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 `pii run cancel <id>` must disarm the run's timer as well as closing its record. A cancelled run never executes, and the cancellation is visible with its reason.

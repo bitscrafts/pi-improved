@@ -1,6 +1,6 @@
 # pi-improved — spec-36: in-process-llama-cpp-tool-calls
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — add structured tool-call support to the in-process
   `LlamaCppProvider` (spec 35), so ds4-bench's B1/B3/B4 (tool-calling and
   multi-step autonomy) become meaningful against granite running inside Pii.

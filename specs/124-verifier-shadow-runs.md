@@ -1,6 +1,6 @@
 # Spec: 124 — the verifier: a candidate lesson must survive a shadow run before it is believed
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage C** of `057`, second stage. Spec 123 extracts candidates that *propose*; this stage decides
 whether a proposal is **true**. Nothing is promoted here either — 125 acts on verified results only, and that
 separation is the whole point: a system that both proposes and acts has no gate at all.
@@ -65,7 +65,7 @@ R9. **Docs**: extend `_docs/0X-guides/learning-loop.md` with the verification st
 - Never treat "the evidence is gone" as refutation (R5), and never treat "the claim feels right" as confirmation.
 - No model in the loop for the verdict: the verdict comes from an executed run's own numbers.
 - Do not promote anything. If you find yourself editing a config or a default to make a verdict possible, stop.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator verification (2026-10-10)
 **My controls:**

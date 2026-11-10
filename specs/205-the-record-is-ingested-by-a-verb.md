@@ -3,7 +3,7 @@
 ## Overview
 2026-10-19 user directive: "all must be implemented in rust!". `scripts/pii-ingest.py` fed 286 documents into memory — specs with their queue status and criteria, handoff sections, operational docs — from OUTSIDE the product, with a content-hash ledger in the repo to fake idempotency. None of it ships: the deployed artefact is the Rust binary, so on the host nothing would ever be ingested.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 ### Functional

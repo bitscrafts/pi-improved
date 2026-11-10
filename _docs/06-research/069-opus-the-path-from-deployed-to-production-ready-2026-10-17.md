@@ -26,7 +26,7 @@ happen. §0.1 has the confirming build: rc=101.
 
 ### 0.1 Confirmed by a clean build (C-run)
 
-`git archive HEAD` (ba554ec) into `/projects/_tmp/rev069-8e5o`, then `CARGO_TARGET_DIR=/projects/_tmp/rev069-8e5o/tgt cargo check -p pii-cli`:
+`git archive HEAD` (ba554ec) into `<scratch>/rev069-8e5o`, then `CARGO_TARGET_DIR=<scratch>/rev069-8e5o/tgt cargo check -p pii-cli`:
 
 ```
 error[E0425]: cannot find function `resolve_graph_dir` in crate `pii_server`
@@ -58,7 +58,7 @@ This is C-read and then **C-run**, and it is the most important finding of this 
   so each post opens a **new forum thread**. **Predicted: a post storm into the operator's forum, bounded only by
   Discord's rate limit.** After that, a hot loop of refused runs, because a failed terminal re-arms too.
 
-**Measured (C-run).** I used the **installed** binary (`/root/.local/bin/pii`, rev `0e34719`, the same `on_finished`)
+**Measured (C-run).** I used the **installed** binary (`~/.local/bin/pii`, rev `0e34719`, the same `on_finished`)
 and a scratch runtime dir with `graphs/loop.toml`: one `transform` node and no timer. One `[[cron]]` with
 `schedule = "0 9 * * *"`, no channel, no network, under `timeout -s KILL 8`.
 - `pii health` read **`runs: 7`, then `runs: 146` 2.4 s later: about 58 runs per second**, against a schedule that
@@ -99,7 +99,7 @@ They improve the machinery; they do not earn "production ready".
 
 ## 2. The redeploy: before and after
 
-**Before the daemon on lnx is replaced, all of these must hold. Each is one command, and each is red today.**
+**Before the daemon on the host is replaced, all of these must hold. Each is one command, and each is red today.**
 
 ```sh
 # B1  the committed tree builds and holds the fix (red today: resolve_graph_dir only in the working tree)
@@ -113,7 +113,7 @@ bash quality-gate.sh --fresh                         # → "fresh-gate: PASS", r
 # B4  the loop reproduction on the NEW binary does not loop
 #     (§0.2 scratch: one timer-less cron graph → the daemon refuses; the timer graph → runs ≤ 1 in 10 s)
 # B5  the rollback target exists and is the current good binary
-ls -la /root/.local/bin/pii    # the 0e34719 build, to be moved aside by install-pii.sh (never deleted)
+ls -la ~/.local/bin/pii    # the 0e34719 build, to be moved aside by install-pii.sh (never deleted)
 ```
 
 **After `install-pii.sh` and the unit restart.** The deploy carried the fix if and only if:
@@ -121,10 +121,10 @@ ls -la /root/.local/bin/pii    # the 0e34719 build, to be moved aside by install
 | # | command | the number |
 |---|---|---|
 | A1 | `PII_RUNTIME_DIR=/run/user/0/pii pii health --json \| jq -r .build.revision` | the new short rev, no `-dirty`, equal to the card's |
-| A2 | `jq 'select(.kind=="daemon.graphs_fallback")' /root/.local/state/pii/pii.log` | **one** event at the new start, `using` = `/root/.local/state/pii/graphs`, **or** zero events and `/run/user/0/pii/graphs` present (the unit's link) |
+| A2 | `jq 'select(.kind=="daemon.graphs_fallback")' ~/.local/state/pii/pii.log` | **one** event at the new start, `using` = `~/.local/state/pii/graphs`, **or** zero events and `/run/user/0/pii/graphs` present (the unit's link) |
 | A3 | `pii health --json \| jq .counts.runs`, 60 s after start | **0 or 1**: the digest's run suspended in its timer. **Any value ≥ 2 within the first minute is the §0.2 loop, so roll back at once** (`bash deploy/rollback-pii.sh`). |
 | A4 | the same, at 09:01 UTC | runs grow by **1** (the digest), and `channel_posts` grows by exactly 1 |
-| A5 | `pii incidents scan --source runtime --log /root/.local/state/pii/pii.log` | no new `refusal-repeated:*` after the start |
+| A5 | `pii incidents scan --source runtime --log ~/.local/state/pii/pii.log` | no new `refusal-repeated:*` after the start |
 | A6 | `grep -c daemon.started` against `grep -c daemon.stopped` in the new log, over 24 h | equal, or each excess has a runtime incident |
 
 **The single number that says "the deploy carried the fix": `counts.runs` = 1 at 09:01 UTC on the first morning,
@@ -150,7 +150,7 @@ one change that would make the product run has to be made safe *before* it ships
 
 ## 4. The remaining risk, in writing, for whoever operates this
 
-> The daemon on lnx has run nothing since it was deployed, and the committed fix for that does not build yet,
+> The daemon on the host has run nothing since it was deployed, and the committed fix for that does not build yet,
 > because half of it is still uncommitted. Once that fix ships, the daily digest will re-run about 58 times a
 > second and flood the forum, because its graph has no timer and nothing refuses a timer-less cron graph. Do not
 > redeploy until both are fixed, and roll back at once if `pii health` shows more than one run in the first
@@ -190,14 +190,14 @@ tree, and every claim was made about git.
 
 | item | why |
 |---|---|
-| the `pii/` keys in agent-memory written today | no agent-memory CLI or store reachable from this shell (`command -v amem` → none) |
+| the `pii/` keys in the workspace memory written today | no the workspace memory CLI or store reachable from this shell (`command -v the workspace memory` → none) |
 | the supervisor on the host, and SIGKILL survival | not visible from the container (068 §1), and I did not signal production |
 | 169's green gate | taken from the commit message; not re-run |
 | the Discord-side behaviour of the loop (429s, forum threads per post) | inferred from §0.2 plus `send_tagged`'s forum shape; deliberately not reproduced against the real channel |
 
 ## Scratch and repo state
 
-- Scratch: `/projects/_tmp/rev069-8e5o` (718 M) holds the clean export, its check target, and the two re-arm reproductions
+- Scratch: `<scratch>/rev069-8e5o` (718 M) holds the clean export, its check target, and the two re-arm reproductions
   (`rearm/`, `rearm2/`). I created it with `mktemp -d` in this run, and it can be removed. Nothing in it is
   referenced from the repo.
 - Repo: nothing changed except this file, and nothing was committed. The uncommitted `crates/pii-server/src/lib.rs`

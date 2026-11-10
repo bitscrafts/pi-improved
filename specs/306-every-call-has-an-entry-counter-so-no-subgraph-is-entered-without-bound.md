@@ -1,7 +1,7 @@
 # Spec 306: every `call` has an entry counter, so no subgraph can be entered without bound
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, loop safety (user request 2026-10-28: "add a counter to every subgraph to avoid infinite loops")
 A `call` is inlined at load (`<call>__in` head plus the sub-graph's nodes). Today a call inside a cycle is bounded only by the cycle's own `loop_budget` (rule V3, at least one member must carry one) and by the whole run's `max_steps` (1000) and `max_wall_ms`. Every pass through a call can spawn a real agent and spend money, so "1000 steps" is not a bound anyone wants. MEASURED: `composition_failure_matrix.rs` m-looped runs a call inside a loop that ends on its budget, so the loader accepts a call in a loop, and only the loop's own node limits it.
 

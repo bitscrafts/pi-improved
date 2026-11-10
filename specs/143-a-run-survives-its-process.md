@@ -20,7 +20,7 @@ re-sent with the partial answer marked **aborted**; a tool call cut off **reruns
 
 **STATUS: SUPERSEDED by the Opus proactivity judgement (2026-10-13, `_docs/06-research/061-…`): the measured crash leaves NO record (the journal buffers 16 events), and reconcile_boot already marks Running runs Failed. Kept as evidence; do not implement.**
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (durability; 060 §1)
 **Source of the finding**: `_docs/06-research/060-durable-agents-pi-durable-2026-10-13.md`; DO-NOT-REPEAT 1.50
 (a value asserted where nobody reads it) and 135 (a panicking node must produce a terminal)
@@ -75,7 +75,7 @@ re-sent with the partial answer marked **aborted**; a tool call cut off **reruns
 - Do NOT extend a timeout to hide a stuck run.
 - If the store's run shape cannot express `Interrupted` without a migration, say so and STOP — a migration is
   its own item.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

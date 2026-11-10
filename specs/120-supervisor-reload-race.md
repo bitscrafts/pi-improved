@@ -1,6 +1,6 @@
 # Spec: 120 — a request must not be dropped by a reload (the supervisor race spec 119 surfaced)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage A5** of `057`. Spec 119 went looking for timing-sensitive TESTS and found a timing-sensitive
 **PRODUCT**: `reload_drops_no_requests` fails under load because the supervisor can lose a request during a reload.
 The test's assertion is right; the code is at fault. This is a data-loss defect in the daemon's own reload path.
@@ -51,7 +51,7 @@ R7. **Docs**: the runbook gains the reload semantics in one short section — wh
 - Do not fix it by holding a global lock across the whole reload if that stalls requests for the reload's duration —
   state any latency cost you add, with the number.
 - A silent drop is a fail, even if it makes the test green: the fix must leave a signal.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator's reproduction attempts, all three, corrected (2026-10-10)
 1. **cargo path**, 10 runs at `taskset -c 0-3` + 16 hogs: **0 failures** — conditions too mild.

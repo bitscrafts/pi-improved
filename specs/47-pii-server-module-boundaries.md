@@ -1,8 +1,8 @@
 # pi-improved — spec-47: reorganize `pii-server` into `engine/`, `node_kinds/`, `daemon/` module boundaries
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — Phase 5.2, F-13 from the 026 report, OPTION 1 of 3
-  reviewed options (see amem `pii/phase5.2/f13-scope-options-for-opus` for
+  reviewed options (see the workspace memory `pii/phase5.2/f13-scope-options-for-opus` for
   the other two, deferred to a future opus review, not executed here).
 
 ## Overview
@@ -21,7 +21,7 @@ calls `daemon::methods` (daemon-app) for ~10 JSON-RPC methods
 untangling that requires either moving routing logic or accepting a real
 crate dependency edge that would partly defeat the point of splitting.
 That decision is EXPLICITLY DEFERRED to a future opus-reviewed spec (see
-amem key above) — this spec is the safer, lower-risk half: **reorganize
+the workspace memory key above) — this spec is the safer, lower-risk half: **reorganize
 the concerns into clear module directories inside the SAME crate**, with
 a documented boundary, so the eventual crate split (if/when opus greenlights
 it) has much less work left to do.

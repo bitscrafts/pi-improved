@@ -1,6 +1,6 @@
 # Spec: A park cannot wedge the queue
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
 workstream **(lane hardening, not from the report)** (measured 2026-11-03).
 
 ## Verified premises
@@ -15,7 +15,7 @@ workstream **(lane hardening, not from the report)** (measured 2026-11-03).
 ## Requirements
 
 **R1.** A tool `scripts/autonomy/quarantine-wip.sh <row> [reason]` copies every changed and untracked path to
-`/projects/_trash/<row>-<reason>-<ts>/` with the tree layout preserved, then returns the tree to HEAD content using
+`<workspace>/_trash/<row>-<reason>-<ts>/` with the tree layout preserved, then returns the tree to HEAD content using
 `git show HEAD:<path>` for tracked files and `mv` for untracked ones. It prints the aside directory, or `CLEAN`.
 It never deletes anything and never invokes `git checkout`.
 

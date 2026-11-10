@@ -10,7 +10,7 @@ The journal (spec 154, "an accepted run is on disk before its first node") alrea
 is missing is (a) an idempotency key per node and (b) the verbs that make replay an operator action rather than a code path
 nobody has ever run.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

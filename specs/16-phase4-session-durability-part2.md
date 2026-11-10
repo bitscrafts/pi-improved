@@ -1,6 +1,6 @@
 # pi-improved — spec-16: phase4-session-durability (part 2/2)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: R2 (daemon restart is amnesia) — sessions vanish, `session.list` lies, `session.state` fakes tokens, crashed runs stay `Running` forever.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

@@ -1,10 +1,10 @@
 # Infinity (AWS/Hydro) against pii — what fits, what does not
 
 Analysed 2026-11-04 from the primary source (`github.com/hydro-project/infinity`, Apache-2.0, Rust,
-read same day) plus two amem entries (`research/aws-infinity-agent-runtime-rust`,
+read same day) plus two the workspace memory entries (`research/aws-infinity-agent-runtime-rust`,
 `insights/aws-infinity-agent-runtime-rust`).
 
-**Correction to the amem entry:** it records 687 stars; the repository shows **434** today. The entry's
+**Correction to the the workspace memory entry:** it records 687 stars; the repository shows **434** today. The entry's
 figure is wrong or was mis-read. Everything else in it checked out, and the repo adds one name the
 entry omits: the tool protocol is **RAP — Reactive Agent Protocol**, with a compatibility layer that
 runs existing MCP servers unchanged.

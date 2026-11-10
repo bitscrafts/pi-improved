@@ -1,6 +1,6 @@
 # Spec: 74 — mutation-closure: the four partly-guarded fixes get their missing guards
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch B (from 043 §3 mutation table — the residue the 09-18 review left open)
 **Status**: NOT STARTED
 **Derives from**: 043 §2 ("four of the eight spec fixes turn out to be only partly guarded")

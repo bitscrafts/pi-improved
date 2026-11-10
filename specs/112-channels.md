@@ -1,6 +1,6 @@
 # Spec: 112 — channels: the trait as an extension point, plus three real adapters
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: Stage A of the vision plan (`057`), second row. The vision claims "30+ channels"; this spec makes
 that claim reachable and honest instead of aspirational: a documented trait anyone can implement, plus real
 adapters — and a measured count in `001`.
@@ -70,7 +70,7 @@ R7. **`001-pii-vision.md`'s channel claim becomes a number**: update the line to
 - Do not invent a channel you cannot test offline; an adapter template plus three honest adapters beats ten
   stubs (the vision's "30+" is a destination, not a milestone — count honestly in `001`).
 - Never log a token or a full URL that carries one.
-- Scratch under `/projects/_tmp/`; keep it small (volume tight), delete your own, no daemon left running.
+- Scratch under `<scratch>/`; keep it small (volume tight), delete your own, no daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Orchestrator verification (2026-10-10)

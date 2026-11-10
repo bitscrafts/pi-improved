@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: autonomy lane / gate coverage
 
 On 2026-10-31 `scripts/autonomy/tests/tick-message-worker-rc.test.sh` was found red — **and had been red
@@ -38,7 +38,7 @@ thing. The control asserts the step is present in both, so removing it fails a t
 The runner runs it when the capability is available and prints
 `SKIP <name> — requires <caps> (not available under <root>); it is NOT counted as a pass` otherwise. Today's
 only capability is `dev-tree` (the tree under test is a git work tree): the five `lane-*` tests clone
-`/projects/pi-improved` by absolute path, so in a clean export they would test the dev repo, not the export.
+`<repo>` by absolute path, so in a clean export they would test the dev repo, not the export.
 **An unknown requirement is refused (exit 2)**, so a typo can never silently skip a test, and a skip is never
 counted as a pass.
 

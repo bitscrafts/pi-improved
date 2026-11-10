@@ -1,7 +1,7 @@
 # Spec: `pii run start <name>` finds a graph that `pii graph list` already shows
 
 ## Overview
-Measured 2026-10-20 on lnx, daemon started fresh with ~/.local/state/pii/graphs populated:
+Measured 2026-10-20 on the host, daemon started fresh with ~/.local/state/pii/graphs populated:
 
     pii graph list        → coder-demo · ae84ecf558cc · nodes 5 · manual · armed 0 · installed-only
                             coder-selffix · f77d7d8c534c · nodes 3 · manual · armed 0 · installed-only
@@ -24,7 +24,7 @@ the same command worked, so the difference is a lookup path — and a user canno
 ## Exit Criteria
 - [ ] `cargo test -p pii-cli --test run_start_resolves_like_graph_list`
 - [ ] `cargo test -p pii-server --test unresolved_graph_names_the_directories`
-- [ ] on lnx: `pii graph list` shows a graph and `pii run start <that name>` returns a run id
+- [ ] on the host: `pii graph list` shows a graph and `pii run start <that name>` returns a run id
 
 ## Guardrails
 - Do NOT add a second registry: the directory IS the registry (spec 213's list/explain reads it).

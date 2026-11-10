@@ -3,7 +3,7 @@
 ## Overview
 Adds an HTTP(S) fetch tool for limited external network access by workers, routed exclusively through the pii-net chokepoint with deterministic logging and filtering. Enforces the single-socket invariant, audit logging, and future policy controls. Does NOT permit arbitrary unrestricted fetch—only credential-free, explicit external GET (no mutation, no vendor cloud APIs).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 5.1 - Secure External Fetch Service
 
 ## Requirements

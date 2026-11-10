@@ -5,7 +5,7 @@ Spec 383 step 4, deliberately last. A lint written before the library is adapted
 repository, an expected refusal gets silenced, and a silenced check is how the next defect ships. Steps
 2 and 3 shrink the vocabulary; this row keeps it small.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 383 step 4 of 4
 **Depends on**: 391 (the ledger), 392 (the derivations)
 

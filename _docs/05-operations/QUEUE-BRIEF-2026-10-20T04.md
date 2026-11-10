@@ -21,8 +21,8 @@ rows in the plan: 89
   26ae945 Revert "the criteria table gains a check for any workspace: every name in it was one of pii'
   f335e5d a refused criterion must fail its node: the daemon log showed criteria.unknown while the run
   83f6c1b the criteria table gains a check for any workspace: every name in it was one of pii's own te
-  4598db1 the lnx restart identifies the daemon by its host binary path: an env match found nothing, s
-  9ac97fd the lnx deploy copies to a new name and moves it into place: overwriting a binary that is cu
+  4598db1 the the host restart identifies the daemon by its host binary path: an env match found nothing, s
+  9ac97fd the the host deploy copies to a new name and moves it into place: overwriting a binary that is cu
   e762f2d 223 and 222: the coder's scope admits the agent binary it was told to spawn and names its re
   f39217f leftover from the previous item, kept for review (cycle 20261020T041245Z; the diff is also a
   1a008ac a coder node refuses before the spawn on a host that has podman: no pid, no image, no argv, 

@@ -1,6 +1,6 @@
 # pi-improved — spec-28: model-routing-wired-into-agent-layer
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: Fix A16 (dead `routing.rs`/`context.rs` from spec 23) properly —
   wire model routing into the agent node's config, not as a new node kind.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS

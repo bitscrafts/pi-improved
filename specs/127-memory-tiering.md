@@ -1,6 +1,6 @@
 # Spec: 127 — memory tiering: what is hot, what is dormant, and what is never silently deleted
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage D** of `057`, the last stage — vision pillar 3 completed. Spec 126 gives memory its shape
 (entities, relationships, provenance, bounded queries); this spec gives it **time**: what is in active use, what
 has gone quiet, and what to do about it without ever destroying a fact by accident.
@@ -67,7 +67,7 @@ R10. **Injection stance inherited**: entity text stays data — a hostile string
 - Reuse 126's caps and 123's determinism/provenance discipline; do not build a parallel mechanism.
 - No model in the loop: tiering is arithmetic over recorded access, not inference.
 - Do not change the archive's on-disk shape without saying so; the dump is an artefact a human may need to read.
-- Scratch under `/projects/_tmp/`, delete only your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete only your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator verification (2026-10-10)
 **My controls:**

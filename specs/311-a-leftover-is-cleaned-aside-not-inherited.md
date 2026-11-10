@@ -1,7 +1,7 @@
 # Spec 311: a leftover is cleaned aside, not inherited by the next item's gate
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's own reliability, the seam spec 309 and spec 283 both sit on.
 
 **Measured 2026-10-28/29, on this tree.** A173 (spec 309) failed its gate at 21:49:12Z. The next cycle, at 21:49:20Z,

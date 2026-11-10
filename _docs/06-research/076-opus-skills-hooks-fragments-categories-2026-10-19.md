@@ -23,7 +23,7 @@ Found WRONG (REJECT): P1, P2, P7, P8, P11, P12, plus the "19 repo graphs" count 
 | P5 | "`pii graph` = lint\|show\|run\|resume\|trace" | `check` is a hidden alias of `lint` (`pii-cli/src/main.rs:229`). 211/212/A75 all use `graph check`. | AMEND (minor). Name `check` in USAGE, or switch the specs to `lint`. |
 | P6 | "repo carries 19 → sets already diverged" | `find graphs -name '*.toml' \| wc -l` = **18** (6 top-level + 12 `starter/`), not 19. The 3 installed files are **byte-identical** to the repo copies (sha256 `ce7445f0962b`, `cff9e7983043`, `de1b1e430cce` both sides). The installer loop copies **every** top-level `graphs/*.toml` (`deploy/install-pii.sh:180-190`); `GRAPH_NAMES` (`:68`) is only the two the generated config names. So `intervention-report` is installer-shipped, not hand-copied (the earlier draft said otherwise). | **REJECT** the count of 19; **AMEND** the divergence claim. Membership differs; content does not. Real drift today is 0. The real gap is that an installed graph is not recorded as an installer or edit event, which is a provenance problem, not a hash problem. |
 | P7 | User tier lives at `~/.local/state/pii/graphs` | That is the directory the **installer** writes and the daemon loads (`pii-server/src/lib.rs:80-89`, `install-pii.sh:68-69`). | **REJECT.** The "user" tier as placed is the install target, so a reinstall overwrites operator edits. The table puts system and user in the same directory. |
-| P8 | "System graphs: `queue`, `code-index`, `heal`, triage" | None of them is installed on lnx (`ls /root/.local/state/pii/graphs` shows 3 discord/report graphs). The only graph that ships inside the binary today is `DEFAULT_TOML`, and a file **shadows** it: `load_spec` tries `graph_dir/<name>.toml` first and falls back to the built-in (`lib.rs:612-618`). | **REJECT.** The system tier is empty in production, and today's only built-in is overridable. That is the opposite of the proposed precedence. |
+| P8 | "System graphs: `queue`, `code-index`, `heal`, triage" | None of them is installed on the host (`ls ~/.local/state/pii/graphs` shows 3 discord/report graphs). The only graph that ships inside the binary today is `DEFAULT_TOML`, and a file **shadows** it: `load_spec` tries `graph_dir/<name>.toml` first and falls back to the built-in (`lib.rs:612-618`). | **REJECT.** The system tier is empty in production, and today's only built-in is overridable. That is the opposite of the proposed precedence. |
 | P9 | "Today a name resolves to one file" | True within one dir, but there is already a silent dir-level precedence: `<runtime>/graphs` if it exists, else `<store-parent>/graphs` (`lib.rs:80-89`). | AMEND. That first-match fallback is the precedent the tier model would multiply. It should become a reading (§3 Q2). |
 | P10 | 213: "REFUSE edit on an armed run unless `--force`" implies `--force` makes the edit take effect | Resume loads the **stored** graph body by hash (`pii-graph/src/run/resume.rs:113`). The body is stored at run start (`run/mod.rs:81-82`). | **AMEND.** An armed/suspended run never sees the edit, forced or not. `edit` must print `N armed runs continue on <before-hash> until cancelled`. Otherwise the operator believes the 1,846-run class of problem is fixed when it isn't. |
 | P11 | "Hooks are documents … like skills" is cheap and safe | Consolidation archives **kind-blind**. It archives anything whose `last_used` is past the threshold (`pii-memory/src/consolidate.rs:63-66`), and it archives the lower-importance doc of any near-duplicate pair (`:81-85`). | **REJECT** for hooks (see Q4). A guard that rarely fires, or two versions of one guard, gets archived by a nightly consolidate, and the weave silently loses it. |
@@ -39,12 +39,12 @@ VERDICT: AMEND — two tiers (`shipped`, `local`); project is a source, not a lo
 
 | claim | evidence | verdict |
 |---|---|---|
-| "system" is a real, distinct category | The only graph that pii itself needs today is `DEFAULT_TOML`, embedded in the binary (`lib.rs:617`). Every "system" example in the brief is uninstalled on lnx (P8). | AMEND: a *shipped* tier is real but has one member. Make it `include_str!` graphs in the binary, which is how `default` already works. |
-| system lives in "the install tree, hashed at build" | pii runs as root on lnx (`/root/.local/state/pii`). Root can rewrite both a file and its manifest hash in the same act. | REJECT the mechanism (see Q2): a hash next to a writable file is not verification. |
+| "system" is a real, distinct category | The only graph that pii itself needs today is `DEFAULT_TOML`, embedded in the binary (`lib.rs:617`). Every "system" example in the brief is uninstalled on the host (P8). | AMEND: a *shipped* tier is real but has one member. Make it `include_str!` graphs in the binary, which is how `default` already works. |
+| system lives in "the install tree, hashed at build" | pii runs as root on the host (`~/.local/state/pii`). Root can rewrite both a file and its manifest hash in the same act. | REJECT the mechanism (see Q2): a hash next to a writable file is not verification. |
 | user tier is per-operator | One daemon, one `graph_dir` (`lib.rs:56,80`). The operator is root. The installer writes the same dir (P7). | AMEND: `local` = the one graph_dir. The installer writes it **only through `pii graph edit`**, so each install becomes a recorded edit with `.prev-<epoch>`, never a raw `cp`. |
 | project tier `<repo>/.pii/graphs` | The daemon has no notion of a project root. `queue.toml` "for THIS project" would need the daemon to load from N repos, which is a second registry by stealth. | REJECT as a load tier. A repo is where graph *bytes come from*. Install with `pii graph edit <name> --file <repo>/graphs/x.toml`, and record `source=<repo>@<commit>` as provenance. |
 
-**What would settle it:** list the graphs that (a) pii needs in order to function and (b) would cause harm if an operator edited them. If, after a coder node and the queue graph have run in production on lnx (§Q7), that list is still just `{default}`, then tiers are bureaucracy. If `queue`/`heal` join it, they move into the `shipped` tier.
+**What would settle it:** list the graphs that (a) pii needs in order to function and (b) would cause harm if an operator edited them. If, after a coder node and the queue graph have run in production on the host (§Q7), that list is still just `{default}`, then tiers are bureaucracy. If `queue`/`heal` join it, they move into the `shipped` tier.
 
 **Smallest spec change:** add §"Tiers" to 213. Two sources: `shipped:<name>` (in the binary) and `file:<graph_dir>/<name>.toml`. `list` gains a `source` column. Installer installs via `graph edit`. No third directory.
 
@@ -153,24 +153,24 @@ VERDICT: AMEND — 210–213 contain two self-contradictions (211:40 vs 211:69-7
 | 212 | the user's sentence was a question (brief §1.3) but A80 is queued | `plan.tsv` | builds it | mark A80 blocked pending decision |
 | 213 | edit vs armed runs | P10 | promise `--force` makes the edit live | print "N armed runs continue on `<before>`" |
 | 213 | installer bypasses `edit` | `install-pii.sh:68-69` | `edit` audits; `install` still `cp`s | installer calls `pii graph edit` |
-| 213 | "drift vs the repo copy" — which repo, which commit, on a host with no checkout? | daemon has no repo root | hard-code `/projects/pi-improved/graphs` | `--repo <dir>` explicit; absent → `drift: unknown`, never `same` |
+| 213 | "drift vs the repo copy" — which repo, which commit, on a host with no checkout? | daemon has no repo root | hard-code `graphs` | `--repo <dir>` explicit; absent → `drift: unknown`, never `same` |
 | 213 | edit while daemon runs: does the daemon re-read? | `load_spec` reads per fire (`lib.rs:612`) | assume restart needed (or not) | state: next *new* run reads the new file; journal `graph.edited{before,after}` from the CLI |
 | all | `--json` only promised in 213 | — | four different text formats | one `--json` row schema for list across skill/fragment/graph |
 
-### Q7 — What must NOT be claimed until a coder node has run in production on lnx
+### Q7 — What must NOT be claimed until a coder node has run in production on the host
 
-VERDICT: ACCEPT — each claim below stays unmade until the named lnx journal reading exists.
+VERDICT: ACCEPT — each claim below stays unmade until the named the host journal reading exists.
 
 | do not claim | because | the reading that would permit it |
 |---|---|---|
 | "pii can use a skill" / "skills work" | no Skill doc exists in production (P1); no node consumes one | a production journal where a coder run's brief names a skill id + `PIN ok` |
-| "pii installs nothing / runs nothing on the host" | criteria are host `/bin/sh -c` (P3); no graph sets `container_image` | a lnx run journal with `podman run` argv, image digest, and criteria executed in-container |
-| "the podman skill is the repair tool" | no graph invokes `scripts/pii-podman.sh` (P2) | a heal run on lnx whose journal shows the probe verb fired |
+| "pii installs nothing / runs nothing on the host" | criteria are host `/bin/sh -c` (P3); no graph sets `container_image` | a the host run journal with `podman run` argv, image digest, and criteria executed in-container |
+| "the podman skill is the repair tool" | no graph invokes `scripts/pii-podman.sh` (P2) | a heal run on the host whose journal shows the probe verb fired |
 | "hooks can block" / "guards run on every graph" | no hook runner exists; v1 surfaces unspecified (Q3, Q6) | `run.refused{hook=…}` from a real armed run |
-| "the queue is a graph that dispatches work" | `queue.toml` not installed on lnx (P8); 14 green tests are local | one queue item selected → coder → judged → closed, on lnx, in the journal |
-| "system graphs are immutable" | no system tier exists; the only built-in is file-shadowable (`lib.rs:612-618`) | a refused shadow attempt (`graph.name.shadowed`) on lnx |
+| "the queue is a graph that dispatches work" | `queue.toml` not installed on the host (P8); 14 green tests are local | one queue item selected → coder → judged → closed, on the host, in the journal |
+| "system graphs are immutable" | no system tier exists; the only built-in is file-shadowable (`lib.rs:612-618`) | a refused shadow attempt (`graph.name.shadowed`) on the host |
 | "installed graphs have drifted" | 0 content drift today (P6) | a `pii graph list` row with `DRIFT` |
-| "edit stops a runaway schedule" | armed runs keep the stored body (P10) | an edit + cancel sequence on lnx with the journal showing the old hash stop |
+| "edit stops a runaway schedule" | armed runs keep the stored body (P10) | an edit + cancel sequence on the host with the journal showing the old hash stop |
 | memory/search quality numbers taken before the decode fix | kind and `created_ms` were mis-decoded at HEAD (§0) | re-measure after the fix lands |
 | 0.1.1 | gated on five production readings, none exist (brief §2) | those readings |
 

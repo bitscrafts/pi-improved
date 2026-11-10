@@ -1,13 +1,13 @@
 # Spec 273: the gate's disk floor checks every volume the gate writes to
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — queue robustness. Twice (2026-10-24) a gate stalled or filled the host: once `/projects` hit 0 bytes free mid-gate (four steps failed with `No space left on device`), once cache moves filled the host root to 99 %. Both times the check looked at the wrong volume or at none.
 
-`scripts/autonomy/cycle.sh:324-329` measures free space on `/projects` only and refuses under 20000 MB (`gate-skipped-disk`). But `_tmp/tools-gate/llvm-cov-target` and `_tmp/gate-target/llvm-cov-target` are SYMLINKS into `/tmp/gate-cache/` on the host root (`lnx--vg-root`, a different volume, 25 GB free), so the gate writes tens of GB to a volume the check never reads.
+`scripts/autonomy/cycle.sh:324-329` measures free space on `/projects` only and refuses under 20000 MB (`gate-skipped-disk`). But `_tmp/tools-gate/llvm-cov-target` and `_tmp/gate-target/llvm-cov-target` are SYMLINKS into `/tmp/gate-cache/` on the host root (`the host--vg-root`, a different volume, 25 GB free), so the gate writes tens of GB to a volume the check never reads.
 
 ## Verified Premises
-- **CONFIRMED** (measured 2026-10-25): `cycle.sh:324` is `df -m --output=avail /projects`; the floor is 20000 MB; `_tmp/tools-gate/llvm-cov-target -> /tmp/gate-cache/llvm-cov-target` and `_tmp/gate-target/llvm-cov-target -> /tmp/gate-cache/gate-llvm-cov-target`; `/tmp/gate-cache` is 52 GB; `/projects` is `/dev/mapper/lnx--vg-podman`, `/` is the `overlay` on `lnx--vg-root`.
+- **CONFIRMED** (measured 2026-10-25): `cycle.sh:324` is `df -m --output=avail /projects`; the floor is 20000 MB; `_tmp/tools-gate/llvm-cov-target -> /tmp/gate-cache/llvm-cov-target` and `_tmp/gate-target/llvm-cov-target -> /tmp/gate-cache/gate-llvm-cov-target`; `/tmp/gate-cache` is 52 GB; `/projects` is `/dev/mapper/the host--vg-podman`, `/` is the `overlay` on `the host--vg-root`.
 - **CONFIRMED** the outcome token `gate-skipped-disk` and `FREE_MB=` are what the queue's row note and `OUTCOME=` line carry; spec 268's `unlisted-changes.sh` is a model for a small standalone script with its own shell test.
 - **NOT CLAIMED**: that 20000 MB is the right floor for the host root; the spec keeps one floor value and names it in one place. NOT CLAIMED that this frees any space: it only refuses early and names the volume. Deleting anything is the operator's decision and is out of scope.
 

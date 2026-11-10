@@ -9,7 +9,7 @@ crates/pii-store/src/channel.rs:1-4   "a crash cannot duplicate or lose a messag
 crates/pii-store/src/timer.rs        "durable timer wheel"
 crates/pii-server/src/daemon/mod.rs:201,204   both built from `runtime_dir`
 
-$ ssh mvcorrea@lnx 'findmnt -no FSTYPE /run/user/1000'
+$ ssh <operator>@<host> 'findmnt -no FSTYPE /run/user/1000'
 tmpfs
 ```
 
@@ -17,7 +17,7 @@ So on the host a **reboot** — not a crash — empties the channel cursor (mess
 timer wheel (suspended runs forgotten). Measured 2026-11-02: the host has been up since 2026-09-16, so no install
 has ever been through one; the defect is invisible until the first reboot, which is the worst possible time.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening (Opus audit, M2's unexamined half)
 
 ## Requirements

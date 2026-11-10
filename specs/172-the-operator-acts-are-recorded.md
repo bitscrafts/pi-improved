@@ -5,7 +5,7 @@ Doc 159 measured operator distance and stated its own weakness in plain words: "
 actions. H_pre and A read the optional operator_acts array. No incident carries them, so H_pre=false and A=0 here mean
 'none recorded', not 'measured as none happened'." Until the loop writes operator_acts, only L is a real measurement.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 - Every place a person acts on the loop (clearing a park, approving or refusing a card, pausing or resuming, editing a

@@ -1,6 +1,6 @@
 # Spec: 86 — fresh-gate stays affordable, and the tree reaches a real fresh PASS
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review follow-up — the N1 class, swept to completion; plus the tool hygiene the
 disk-full incident of 2026-10-09 proved is missing.
 
@@ -34,7 +34,7 @@ R3 (definition of done). The final state has a green fresh-tree gate AND a repo-
 - [x] `[ "$(grep -c 'FRESH_GATE_MIN_FREE_MB' xtask/src/fresh_gate.rs)" -ge 1 ]` (3)
 - [x] `[ "$(grep -c 'safe_to_remove' xtask/src/fresh_gate.rs)" -ge 2 ]` (10) — orchestrator read the code: the retention removal at `:213-215` and the success cleanup both go through `safe_to_remove` (non-empty base + prefix + longer-than-prefix + parent check)
 - [ ] retention proof: run fresh-gate twice in a row, each failing, and show that at most one `fresh-gate-*` dir remains — with the survivor being the newer one
-- [x] free-space proof (ORCHESTRATOR, verbatim): `FRESH_GATE_MIN_FREE_MB=999999 cargo run -q -p xtask -- fresh-gate` → `error: fresh-gate refused: only 65921 MB free at /projects/_tmp, need 999999 MB (override with FRESH_GATE_MIN_FREE_MB)` in **0.201s**, exports before=0 after=0
+- [x] free-space proof (ORCHESTRATOR, verbatim): `FRESH_GATE_MIN_FREE_MB=999999 cargo run -q -p xtask -- fresh-gate` → `error: fresh-gate refused: only 65921 MB free at <scratch>, need 999999 MB (override with FRESH_GATE_MIN_FREE_MB)` in **0.201s**, exports before=0 after=0
 - [x] **ORCHESTRATOR reproduced the definition of done**: `fresh-gate --worktree` → `quality-gate: ALL PASS` then `fresh-gate: PASS` (exit 0). The tree is green in a FRESH EXPORT, not only in the developer tree. (On success the tool removed its own export; the failure path keeps one.)
 - [ ] `bash quality-gate.sh` exits 0 in the repo tree
 - [ ] `cargo test -p xtask` and `cargo clippy --workspace --all-targets -- -D warnings` exit 0
@@ -56,5 +56,5 @@ R3 (definition of done). The final state has a green fresh-tree gate AND a repo-
   artifact, not a spec-76 regression". That judgment was too lenient**: the export IS the CI model, so
   tests that cannot run there are a real defect. The worker fixed it by snapshotting with `tar` when
   there is no `.git`.
-- Evidence parked by the worker in `/projects/_tmp/_trash/` (fg-old-*, fg86-*) was reclaimed by the
+- Evidence parked by the worker in `<scratch>/_trash/` (fg-old-*, fg86-*) was reclaimed by the
   orchestrator (10.8G) once the failing names were recorded here; nothing pre-existing was touched.

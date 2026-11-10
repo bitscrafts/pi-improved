@@ -6,7 +6,7 @@ a numbered response to the questions at the end, and state plainly where the ana
 ## The system under review
 
 `pii` is a single Rust binary whose work is expressed as **graphs**: TOML files of nodes with typed
-ports, composed by `call`. Repository: `/projects/pi-improved`. Start with
+ports, composed by `call`. Repository: `<repo>`. Start with
 `graphs/COMPOSABILITY.md`, `graphs/README.md`, and the node kinds under
 `crates/pii-server/src/node_kinds/nodes/`.
 

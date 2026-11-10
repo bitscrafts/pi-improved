@@ -1,6 +1,6 @@
 # pi-improved — spec-29: cancellation-and-the-brake
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: Fix A6 (`ctx.check()` never called) and A7 (3/4 budget dims never
   charged) — the agent loop must be cancellable and budget-bound in every
   dimension.

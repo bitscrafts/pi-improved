@@ -1,7 +1,7 @@
 # Spec: trace tells the truth about a refusal — the full reason, and the image's real status
 
 ## Overview
-M0 run `r000000000210` on lnx (2026-10-20) printed
+M0 run `r000000000210` on the host (2026-10-20) printed
 
     6 code coder 1+31 pid=- image=missing crit=- fail=Error: failed to open 2048 locks in /libpod_rootless_lock_1000: permission denie rc=-
 
@@ -27,7 +27,7 @@ R2. The trace line's image slot distinguishes three states: a digest (a probe an
 R3. `scripts/m0-daemon-starts-a-container.sh` takes its verdict reason from the structured reply, and
     when the string it reads is at the clipping boundary it says so in the verdict line instead of
     presenting a truncated reason as the measurement.
-R5. The lnx re-measurement is recorded, not gated: with R1 in place, `pii run trace <id> --reason
+R5. The the host re-measurement is recorded, not gated: with R1 in place, `pii run trace <id> --reason
     <node>` against the live daemon prints the reason ending in `permission denied`, and the doc quotes it.
 R4. Controls: a 400-character reason survives the wire intact (asserted byte-for-byte); a genuinely
     absent image still prints `missing`; the display line still prints at most 80 characters.
@@ -41,7 +41,7 @@ R4. Controls: a 400-character reason survives the wire intact (asserted byte-for
   disappear).
 - pii-server: the trace reply builder passes the journalled string unclipped (unit test beside the
   existing trace reply tests).
-- Live: M0's verdict on lnx prints the reason ending in `permission denied`.
+- Live: M0's verdict on the host prints the reason ending in `permission denied`.
 
 ## Exit Criteria
 - [ ] cargo test -p pii-cli --test trace_reason_is_not_clipped

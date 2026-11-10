@@ -1,7 +1,7 @@
 # Spec 265: the output keeper's tail starts on a whole line — the test that proves it can fail
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — observability of the coder node (spec 263 follow-up, found 2026-10-24 by mutating its implementation: mutation m5 survived all 13 tests)
 
 Spec 263 R3 says the kept tail is "cut forward to the first newline after its start", so a line-based reader (`run_facts`) never sees half a JSON line at the seam. `OutputKeep::finish`

@@ -1,6 +1,6 @@
 # pi-improved — spec-25: pii-evolve-honesty
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: Make the pii-evolve crate's documented claims TRUE before it
   grows. The opus review (011) found it is the first module whose doc comments
   assert properties the code does not have (A14/A15/A16). A doc surface that lies

@@ -2,7 +2,7 @@
 
 ## Overview
 Verify the pidag + glm-5.3-flash:cloud workhorse pipeline works end-to-end.
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 0 - Toolchain validation
 
 ## Requirements

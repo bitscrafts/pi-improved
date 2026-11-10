@@ -32,7 +32,7 @@ only). `test (lib/bins/tests)` is a step of `gate-steps.txt`, the commit and rel
 closed "gate green" with the workspace suite red, and the loop's own gate never ran the tests that would have
 said so.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 1. `daemon::lag::tests::lagged_run_finished_still_starts_next_cron_firing` and

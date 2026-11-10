@@ -1,6 +1,6 @@
 # Spec: Delete the copies
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
 workstream **W7** — closes findings 9, 16, 17 and 18.
 
 ## Verified premises

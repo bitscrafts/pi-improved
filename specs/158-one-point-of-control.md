@@ -1,10 +1,10 @@
 # Spec 158: one point of control (the holes stop being invisible)
 
-**Project**: pi-improved (the control point covers this machine, including /root/.hermes) · **Milestone**: none — this is the repair the operator asked for on 2026-10-15: *"it must have a single point of control! there are holes everywhere!"*
+**Project**: pi-improved (the control point covers this machine, including <agent-host-config>) · **Milestone**: none — this is the repair the operator asked for on 2026-10-15: *"it must have a single point of control! there are holes everywhere!"*
 **Why now**: five failures in two days were all the same shape — a control point that existed where nobody was looking. Two gates can refuse a tool call, registered in different places, with different words. Three schedulers can start work. Two names for one build cache. Four ways to stop a process, one of which killed the caller's own shell. Two ways to restart the gateway, one of which never returns to the shell. No single component is broken; there is no single place to look.
 
 ## Requirement
-One executable, `/root/.hermes/scripts/ctl.sh`, owns every way work can be refused, spent, started, stopped or restarted:
+One executable, `<agent-host-config>`, owns every way work can be refused, spent, started, stopped or restarted:
 
 - `ctl.sh status` prints, **read from the live system on each run**: every gate that can refuse a tool call and the file each is registered in · every scheduler that can start work (Hermes cron jobs, detached watchers) · the loop's control state, lock state and next queued item · live workers with elapsed time and CPU · hot compilers · the gate cache's size · the installed pii revision and the identity it reports
 - `ctl.sh gates` prints every gate registration with its file and line
@@ -36,7 +36,7 @@ One executable, `/root/.hermes/scripts/ctl.sh`, owns every way work can be refus
 - Never kill by pattern: `/proc/<pid>/cmdline` only, with the caller and its parent excluded
 - Do NOT hard-wire the inventory: read it from the live system every run, or this script becomes the next hole
 - Rule 0f is enforced inside `restart`; never leave it to the operator to remember
-- Do NOT refactor /projects/pi-improved's loop scripts in this spec: this is a control point, not a rewrite
+- Do NOT refactor <repo>'s loop scripts in this spec: this is a control point, not a rewrite
 
 ## Milestone link
 `_docs/05-operations/RESUME-REGISTER.md`, and the incident record `INCIDENT-2026-10-14-the-gate-convoy.md`; this spec is the standing answer to "there are holes everywhere".
@@ -54,7 +54,7 @@ One executable, `/root/.hermes/scripts/ctl.sh`, owns every way work can be refus
 - **The in-flight refusal was exercised against a real paid worker, not only a fixture.** The check ran while the
   boss-watch review (`claude -p`, opus) held the host, and the day's tick shows rule 0f working live: with a worker
   in flight the tick's gateway branch reported `gw-dead-worker` and restarted nothing. One gateway process before
-  and after (PID 73, up 13 h 34 m), and `/root/.hermes/logs/gateway-restart.log` holds a single refusal from
+  and after (PID 73, up 13 h 34 m), and `<agent-host-config>` holds a single refusal from
   12:04:10Z — `Another gateway instance is already running (PID 73)` — so the guard held and no second gateway was
   ever launched.
 - **Criterion 4 was not re-run live, deliberately.** With a paid worker in flight rule 0f makes `ctl.sh restart`

@@ -1,6 +1,6 @@
 # Spec 155: the dormant surface stops reading as coverage
 
-**Project**: /projects/pi-improved · **Phase**: road to production, M7 (the last item)
+**Project**: <repo> · **Phase**: road to production, M7 (the last item)
 **Why**: 059 measured four pillars and found one with a real user. Today the tree still *looks* fuller than the machine
 is: three channel kinds with zero posts ever, and a hardware HAL whose steps sit in the gate as if they were coverage.
 A green gate that implies hardware nobody has exercised is the most expensive kind of decoration — it makes a

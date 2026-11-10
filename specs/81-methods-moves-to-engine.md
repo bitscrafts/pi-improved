@@ -1,6 +1,6 @@
 # Spec: 81 — `daemon/methods.rs` moves to `engine/methods.rs` (Decision 2 follow-up)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch D — 043 §10 item 12.
 
 ## Context

@@ -7,7 +7,7 @@ real repo tree today, not recalled from memory.
 
 ## Project identity
 
-- Root: `/projects/pi-improved`. Rust workspace, 20 crates (`pii-*`).
+- Root: `<repo>`. Rust workspace, 20 crates (`pii-*`).
 - `AGENTS.md` (repo root) is the authoritative workflow doc — read it
   for the pidag SDD workflow, cost policy, and hard rules.
 - Backlog status: specs 43 through 61 are ALL implemented, gate-
@@ -116,7 +116,7 @@ without dedicated test files, though they may have inline
 - **Modularity idea** ("microservices in a single binary" — memory/
   MQTT/harness/Chromecast as swappable modules via the graph engine's
   uniform node interface): idea-stage, in the same 029 doc.
-- **DAG format unification with pidag** (`/projects/pidag`, a sibling
+- **DAG format unification with pidag** (`<workspace>/<project>`, a sibling
   project): USER REQUIREMENT, two-phase — compatible principles now
   (already true: both are declarative-only, no runtime-code routing),
   identical shared schema later, once a concrete driver exists (e.g.
@@ -124,7 +124,7 @@ without dedicated test files, though they may have inline
   a recommendation (pidag becomes a constrained SUBSET of pii's
   port-based schema, not the reverse) pending opus confirmation. Full
   reasoning in `_docs/06-research/030-OPUS-START-HERE.md`'s
-  "USER-MANDATED" section. `/projects/pidag/docs/
+  "USER-MANDATED" section. `<workspace>/<project>/docs/
   pii-vs-pidag-dag-format-notes.md` has the detailed format
   comparison if useful context (a prior fable review of pidag wrote
   this — same reviewer, different project, worth reading for

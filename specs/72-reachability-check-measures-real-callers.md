@@ -1,6 +1,6 @@
 # Spec: 72 — reachability-check measures real callers
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: intervention batch A — proven gate defect D3 (report 043 §6, Decision 5)
 **Status**: NOT STARTED (worker lane)
 **Derives from**: 043 report candidate 3 + Decision 5 ruling (goal approved; call-graph REJECTED)
@@ -17,7 +17,7 @@ verified by the review (C-read):
 2. The needle `.invoke(` matches any same-named method on any type —
    unrelated `.invoke(` calls satisfy it.
 3. A phantom documented caller `line_is_test` does not exist.
-4. Hardcoded `/projects/pi-improved` path at :171.
+4. Hardcoded `<repo>` path at :171.
 5. The check is absent from quality-gate.sh, so nothing red ever surfaces.
 
 ## Requirements (the two-string-class fix + hardening, per Decision 5 step 1)
@@ -63,5 +63,5 @@ no behaviour change for checks that PASS; clippy/fmt clean.
 
 ## Implementation Notes (worker)
 
-- Scratch exports via `git archive` under /projects/_tmp (NEVER mutate the real tree mid-check).
+- Scratch exports via `git archive` under <scratch> (NEVER mutate the real tree mid-check).
 - Keep the check's output shape (symbols × evidence) unchanged.

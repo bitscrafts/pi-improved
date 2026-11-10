@@ -1,8 +1,8 @@
 # Spec 259: the judge reads a spec's own Exit Criteria from its committed blob — the generic graph gains a verdict
 
 ## Overview
-**Project**: /projects/pi-improved
-**Phase**: production — generic spec graph, slice 2 (operator, 2026-10-24: every spec is implemented by pii; Opus design review `/projects/_tmp/pii-graph-design/pii-graph-design-plan-20261024T155725Z.md`, Q2 and Verdict 3)
+**Project**: <repo>
+**Phase**: production — generic spec graph, slice 2 (operator, 2026-10-24: every spec is implemented by pii; Opus design review `<scratch>/pii-graph-design/pii-graph-design-plan-20261024T155725Z.md`, Q2 and Verdict 3)
 
 After spec 257 the tracked graph `graphs/spec.toml` runs one agent on one spec, but its verdict is only "the agent exited 0". The criteria that decide whether the spec is met live in the spec
 markdown (`- [ ] \`cmd\``), copied into `scripts/autonomy/plan.tsv` (a second source of truth), and run by the shell loop afterwards. The existing `judge` node (`crates/pii-server/src/node_kinds/nodes/queue.rs`)

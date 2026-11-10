@@ -22,7 +22,7 @@ RESULT: 3 ok, 3 FAIL
 
 and after it, the same file with the same fixture: `RESULT: 6 ok, 0 FAIL`.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening (path item `n1`, Opus review follow-up)
 
 ## Requirements

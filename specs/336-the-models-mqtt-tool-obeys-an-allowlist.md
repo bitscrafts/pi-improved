@@ -18,7 +18,7 @@ may only `ls`, `sub` and `send` to an allowlisted device, with no raw `pub` and 
 (`pii mqtt pub …`) keeps every verb, because the person running it is the one who owns the house. If the operator
 later wants raw publish for the model, that is a new spec with its own gate — not a default.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening (Opus audit, operator decision 3)
 
 ## Requirements

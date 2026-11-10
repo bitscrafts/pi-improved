@@ -19,7 +19,7 @@ Two measured limits of the graph language decide the shape, so they are decision
 - An `agent` node's `system` is a literal read at build. So the rubric text travels in the agent's PROMPT (a `{{path}}` template, resolved at run), and the `system`
   literal is the same one-line instruction for every reviewer.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: review before spend (follows 402; the deliberation design in note 080 reuses these graphs with its own rubrics)
 **Depends on**: 399
 

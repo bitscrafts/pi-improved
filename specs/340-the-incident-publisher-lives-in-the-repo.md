@@ -17,7 +17,7 @@ same non-event. Opus named it exactly: *that is the check that passes while the 
 also lives outside the repository (`~/.hermes/scripts/`), so it is neither reviewed nor versioned, and a spec
 cannot fix it.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening (Opus audit, M1's false green)
 
 ## Requirements

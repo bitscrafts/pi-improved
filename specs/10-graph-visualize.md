@@ -1,6 +1,6 @@
 # Spec: `pii graph show` — human-readable ASCII graph visualization
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-3.6 — developer-ergonomics feature (independent of the
 memory work in `specs/09-global-memory.md`)
 **Status**: DRAFT — spec only, no implementation authorized yet.
@@ -208,7 +208,7 @@ done [transform: $.payload]
 - [ ] `cargo test --workspace` — 0 failures
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` — 0 errors
 - [ ] `pii graph show graphs/starter/verify-fix.toml` run manually
-      against the live lnx install, output visually matches the
+      against the live the host install, output visually matches the
       Architecture section's worked example (modulo exact spacing)
 - [ ] `pii graph show` against EVERY starter graph in `graphs/starter/`
       (except the known-bad `crash.toml`, same exclusion `mvp-verify.sh`

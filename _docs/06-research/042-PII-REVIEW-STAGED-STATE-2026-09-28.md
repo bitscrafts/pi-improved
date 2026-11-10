@@ -11,16 +11,16 @@
   the six gate commands all ran; 7 sonnet subagents covered the skipped crates, the two docs areas and a
   mutation-verification of specs 62–68) — then the Anthropic **session limit** stopped it before synthesis:
   "You've hit your session limit · resets 4:10pm (UTC)". The pre-fix runner filed that error text as
-  `041-opus-full-review-2026-10-06.md` (963 bytes) and stored it in amem — **INVALID; both now tombstoned**
-  (file carries a tombstone header; amem keys overwritten with the tombstone; INDEX/030 pointer reverts
+  `041-opus-full-review-2026-10-06.md` (963 bytes) and stored it in the workspace memory — **INVALID; both now tombstoned**
+  (file carries a tombstone header; the workspace memory keys overwritten with the tombstone; INDEX/030 pointer reverts
   applied). Read-only was respected in substance (its one Edit attempt did NOT land).
-- **Runner fixed**: `/root/.hermes/scripts/pii-review-run.sh` now has a VALIDITY GATE — error-text detector
+- **Runner fixed**: `<agent-host-config>` now has a VALIDITY GATE — error-text detector
   (proven to fire on the real artifact) + 5 KB floor — refusing to file/store a non-report.
 - **Retry scheduled**: one-shot cron `288aed3a4576` at **2026-10-06T16:15Z** (reset + 5 min), running the
   same one command, probe first. Its session stays reattachable; per user directive the session is KEPT for
   continuation.
 - **After the retry lands (interactive session's job, the runner does not commit):** verify report >5 KB +
-  provenance header + amem retrievability, store the distilled summary, commit the filing set
+  provenance header + the workspace memory retrievability, store the distilled summary, commit the filing set
   (`041-opus-full-review-2026-10-06.md`, `041-BRIEF-full-review.md` amendment, INDEX, 030 pointer) with a
   HANDOFF update, then turn ranked candidates into specs.
 
@@ -30,13 +30,13 @@ exact command is below. Read this file before touching the pii review.
 ## What was requested (user, verbatim)
 
 > *"i want one more. use our new skill 'opus-review/' and run it on the 'pi-improved' project, with the same
-> commands you did with the amem project! i will check the report in the morning!"*
+> commands you did with the the workspace memory project! i will check the report in the morning!"*
 > … *"pii report ran TODAY!!!! not from fable not from day 18-09-2026! but from opus and TODAY! then it should
-> derive from those fable reports! it should be ready to run when we finish the amem intervention!"*
+> derive from those fable reports! it should be ready to run when we finish the the workspace memory intervention!"*
 
 So: an **Opus** review of **today's** tree, **derived from** the two 2026-09-18 fable reports (completing and
 superseding them, not repeating them), producing a **detailed report** and **specs** — ready to drive the pii
-intervention the moment the amem intervention finishes.
+intervention the moment the the workspace memory intervention finishes.
 
 ## The honest status: NOT RUN (twice)
 
@@ -45,7 +45,7 @@ Two dispatches were scheduled; **neither ran the review**.
 | attempt | what happened |
 |---|---|
 | 07:40 job `c3da54bab186` | all three items died in ~20 s on the ROOT/IS_SANDBOX trap (`--dangerously-skip-permissions cannot be used with root/sudo privileges`). Its pii item produced only the 1-turn PONG probe: session `d255d913-9395-465c-92f8-a22497730c35`, **0 tool calls**. |
-| 09:56 relaunch (manual) | item 1 (the amem re-review) ran; **item 2 (this) and item 3 logged `WINDOW SHUT — not starting`** — my own window guard refused with 4 minutes left before the 10:00 reset. |
+| 09:56 relaunch (manual) | item 1 (the the workspace memory re-review) ran; **item 2 (this) and item 3 logged `WINDOW SHUT — not starting`** — my own window guard refused with 4 minutes left before the 10:00 reset. |
 
 **Proof that no pii report exists from 2026-09-28:** the only `-projects-pi-improved` claude session modified
 today is `d255d913` (07:40, 123 KB, **0 tool calls**, text = `PONG55`/`PONG55`). Every file written today that
@@ -56,12 +56,12 @@ The only pii review that exists on disk is **2026-09-18**.
 
 | asset | path |
 |---|---|
-| **the brief** (derivation + gate commands + 8 decisions) | `/projects/pi-improved/_docs/06-research/041-BRIEF-full-review.md` |
-| **the inventory** (18,929 lines; an appendix to look things UP, not to read) | `/projects/_tmp/pii-review/codebase-inventory.txt` (regenerate if `_tmp` is cleared) |
-| the base to derive from | `/projects/pi-improved/_docs/06-research/031-fable-review-ground-truth-2026-09-18.md` and `032-fable-pii-review-2026-09-18.md` |
-| the project's own reviewer entry point (8 decisions) | `/projects/pi-improved/_docs/06-research/030-OPUS-START-HERE.md` |
-| the brief filed inside the project (survives `_tmp`) | `/projects/pi-improved/_docs/06-research/041-BRIEF-full-review.md` |
-| the runner | `/root/.hermes/skills/research/opus-review/scripts/run-opus-review.sh` |
+| **the brief** (derivation + gate commands + 8 decisions) | `_docs/06-research/041-BRIEF-full-review.md` |
+| **the inventory** (18,929 lines; an appendix to look things UP, not to read) | `<scratch>/pii-review/codebase-inventory.txt` (regenerate if `_tmp` is cleared) |
+| the base to derive from | `_docs/06-research/031-fable-review-ground-truth-2026-09-18.md` and `032-fable-pii-review-2026-09-18.md` |
+| the project's own reviewer entry point (8 decisions) | `_docs/06-research/030-OPUS-START-HERE.md` |
+| the brief filed inside the project (survives `_tmp`) | `_docs/06-research/041-BRIEF-full-review.md` |
+| the runner | `<agent-host-config>` |
 
 **Session to resume (REQUIRED — resume-first is the standing rule):**
 `ef17e6d6-1741-42d6-87c6-16ffc775d231` — the session that produced the 2026-09-18 analysis, so the review
@@ -71,28 +71,28 @@ resume-first on all agents).
 **Path convention — the two arguments differ on purpose:**
 - **brief (INPUT)** → the project's `_docs/`, **durable**; a `_tmp` copy was reduced to a pointer so it cannot
   drift from this one.
-- **workdir (OUTPUT)** → `/projects/_tmp/pii-review/`, scratch for results and logs. Repo rule: nothing needed
+- **workdir (OUTPUT)** → `<scratch>/pii-review/`, scratch for results and logs. Repo rule: nothing needed
   to *start* lives there, so clearing `_tmp` loses no input. It will be recreated if absent.
 
 ## THE ONE COMMAND (nothing else to assemble)
 
 ```bash
-bash /root/.hermes/scripts/pii-review-run.sh
+bash <agent-host-config>
 ```
 
 `DRY_RUN=1` in front prints what it will do and spends nothing. It probes the window, dispatches in test
-mode on the resumed session, proves the tree stayed clean, files the report into `_docs/` + amem, and
+mode on the resumed session, proves the tree stayed clean, files the report into `_docs/` + the workspace memory, and
 writes a commit-ready summary. **Exit 2 = window shut, nothing spent.**
 
 ## THE RESUME COMMAND (what the script runs, for reference)
 
 ```bash
-cd /projects/pi-improved
+cd <repo>
 REVIEW_MODE=test MAX_TURNS=200 MODEL=claude-opus-5-5 \
-  bash /root/.hermes/skills/research/opus-review/scripts/run-opus-review.sh \
-       /projects/pi-improved \
-       /projects/pi-improved/_docs/06-research/041-BRIEF-full-review.md \
-       /projects/_tmp/pii-review \
+  bash <agent-host-config> \
+       <repo> \
+       _docs/06-research/041-BRIEF-full-review.md \
+       <scratch>/pii-review \
        --resume ef17e6d6-1741-42d6-87c6-16ffc775d231
 ```
 
@@ -109,14 +109,14 @@ REVIEW_MODE=test MAX_TURNS=200 MODEL=claude-opus-5-5 \
 1. **File the report** into the project's SSOT with a provenance header:
    `_docs/06-research/041-opus-full-review-<date>.md` via
    `bash <runner-dir>/file-opus-review.sh <repo> <result.md> <dest_rel>`.
-2. **Index it** in `/projects/pi-improved/_docs/INDEX.md`.
+2. **Index it** in `_docs/INDEX.md`.
 3. **Point `030-OPUS-START-HERE.md` at it** (a dated banner at the top) so the intervention finds it first.
-4. **Store the FULL text in amem** under `pii/review/full-codebase-<date>/` (manifest + parts), not a summary —
-   the standing rule is that every implementation aspect lives in amem.
+4. **Store the FULL text in the workspace memory** under `pii/review/full-codebase-<date>/` (manifest + parts), not a summary —
+   the standing rule is that every implementation aspect lives in the workspace memory.
 5. **Commit** — the run leaves the tree dirty by design; pii's rule requires a HANDOFF update with every commit.
    The run leaves the tree dirty; the commit is yours to make (this file names the exact add/commit set).
 6. **Turn its ranked candidates into specs** (they are written implementation-ready, each with a checkable exit
-   criterion, in the shape of 032's list) — that is what makes it "ready to run when we finish the amem
+   criterion, in the shape of 032's list) — that is what makes it "ready to run when we finish the the workspace memory
    intervention".
 
 ## Constraints that apply (from the project and the workspace)
@@ -136,4 +136,4 @@ REVIEW_MODE=test MAX_TURNS=200 MODEL=claude-opus-5-5 \
   mind — including the project's veto condition ("if the code graph cannot make a gate measurably stronger, it
   does not belong in pii").
 - Ranked, implementation-ready candidates → the next spec batch.
-- The full text in amem; the INDEX and the entry point pointing at it.
+- The full text in the workspace memory; the INDEX and the entry point pointing at it.

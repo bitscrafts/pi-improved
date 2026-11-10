@@ -69,8 +69,8 @@ in `crates/pii-graph/src/sched/dispatch.rs` (a second lane's in-flight D3 work, 
 `20261006_131058_33628f`, file mtime 17:24:09Z): a `flush()` placed between the `NodeStarted` append and
 `run_caught`. It was **not touched and not committed** by this tick.
 
-1. **HEAD is green for the whole file.** `git worktree add --detach /projects/_tmp/wt-d3check 6419a70`, then
-   `CARGO_TARGET_DIR=/projects/pi-improved/target cargo test -p pii-server --test boss_watch` →
+1. **HEAD is green for the whole file.** `git worktree add --detach <scratch>/wt-d3check 6419a70`, then
+   `CARGO_TARGET_DIR=target cargo test -p pii-server --test boss_watch` →
    `test result: ok. 9 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.36s`, and it
    includes both `boss_watch_reaches_detect_after_resume` and `boss_watch_gate_suspends_and_approve_resumes`.
    The stall does not reproduce on HEAD, and the file no longer pays a cold nested xtask build (0.36 s).
@@ -95,6 +95,6 @@ Queue state at that moment: **A22 (155) and A27 (160) stay parked.** The blocker
 cannot be green either. Re-queue the two rows (resume the sessions already on disk, do not re-derive them) once
 the D3 batch lands with its test fix and the tree is clean.
 
-Cost of this check: the worktree shared the main target dir (`CARGO_TARGET_DIR=/projects/pi-improved/target`),
+Cost of this check: the worktree shared the main target dir (`CARGO_TARGET_DIR=target`),
 2m03s of build and negligible disk on a 96 %-full volume (25 GB free). The worktree and its log are left in place:
-`/projects/_tmp/wt-d3check`, `_tmp/autonomy/logs/head-boss_watch.out`.
+`<scratch>/wt-d3check`, `_tmp/autonomy/logs/head-boss_watch.out`.

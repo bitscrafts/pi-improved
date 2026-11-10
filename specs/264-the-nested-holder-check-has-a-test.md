@@ -1,13 +1,13 @@
 # Spec 264: the nested-holder check of `needs` has a test that can fail
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition (spec 261 follow-up, found 2026-10-24 by mutating spec 261's implementation: mutation m8 survived all 20 tests)
 
 Spec 261 R8 makes nesting transitive: when a sub-graph `leaf` declares `needs = ["x"]` and the call to it maps no `x`, `leaf` reads its HOLDER's input, so the holder must declare `x` or map it.
 `crates/pii-graph/src/fragment/call_needs.rs` enforces that in `check` (`if chain.len() > 1 && !passed.is_empty() {` ... `graph.call.undeclared ... which the holder does not declare`).
 
-Measured by `/projects/_tmp/probe-holder-check.sh` on the built binary, host `-> mid -> leaf`, `mid` has NO `needs`, `leaf` has `needs = ["x"]` and reads `$.input.x`, no `in` anywhere:
+Measured by `<scratch>/probe-holder-check.sh` on the built binary, host `-> mid -> leaf`, `mid` has NO `needs`, `leaf` has `needs = ["x"]` and reads `$.input.x`, no `in` anywhere:
 - With the check: `graph.call.undeclared: graph 'mid' node 'r' reads input 'x' for call 'leaf', which the holder does not declare; holder declares only []`.
 - With the check skipped (mutation m8): the graph LOADS and `leaf` reads `$.nodes.m__in.x`, which is `Null`. That is the silent-Null failure Opus ranked second among the risks.
 

@@ -1,7 +1,7 @@
 # Spec 314: the default gate runs the tests of the crates a change touches
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — gate honesty. `bash quality-gate.sh` is the command the repo documents as *the* gate, and
 the one an operator or an agent runs on the working tree before committing. In its default (`--routine`) mode it
 runs `$GATE_STEPS`, which `scripts/autonomy/env.sh:47` defaults to `gate-steps-quick.txt`: three steps, `fmt`,

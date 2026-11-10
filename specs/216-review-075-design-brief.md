@@ -1,6 +1,6 @@
 # Review: 075 — skills, hooks, fragments, graph categories
 
-BRIEF: /projects/_tmp/opus-design-20261019/brief.md
+BRIEF: <scratch>/opus-design-20261019/brief.md
 DELIVERABLE: _docs/06-research/076-opus-skills-hooks-fragments-categories-2026-10-19.md
 GOVERNS: A78 A79 A80 A81
 

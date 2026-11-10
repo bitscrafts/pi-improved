@@ -1,6 +1,6 @@
 # pi-improved — spec-56: pii-tools test coverage for bash/fs/worktree (F-19)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — Phase 5.3, F-19 remainder. `pii-tools` has 4/7
   source files with inline `#[cfg(test)]` coverage already; the
   remaining three (`bash.rs`, `fs.rs`, `worktree.rs`) have zero. No
@@ -56,7 +56,7 @@ this is a starting map, not a substitute for reading the files):
   (`fscap.rs`'s `tmp_root()`) uses `tempfile::Builder::new().tempdir_in(...)`
   rooted at a workspace `_tmp` path. Match this pattern's ISOLATION
   approach (a real tempdir per test) but do NOT copy its hardcoded
-  `PathBuf::from("/projects/pi-improved/_tmp")` literal — that predates
+  `PathBuf::from("_tmp")` literal — that predates
   the F-15 fix requiring `CARGO_MANIFEST_DIR`-relative paths in NEW
   test code (spec-53's own test file, `mem_store_contract.rs`, already
   established `concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp")` as

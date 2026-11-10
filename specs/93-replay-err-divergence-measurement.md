@@ -1,6 +1,6 @@
 # Spec: 93 — measure whether replay's discarded `apply_completion` error changes state (spec 91 finding 6)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 follow-through, finding 6 — the one remaining item that could be a REAL defect rather than
 a test gap. **This spec measures first; it does not patch.**
 
@@ -36,7 +36,7 @@ R4. If NO DIVERGENCE is found, say so plainly and add NO test — the honest ans
 
 ## Exit Criteria
 - [ ] `cargo test -p pii-graph` passes (whatever the outcome, the suite is green on the final tree)
-- [ ] the measurement is recorded verbatim in `/projects/_tmp/spec93/FINDING-6-MEASUREMENT.md`: the test name, the exact command, and the observed output for both the live and the replayed run
+- [ ] the measurement is recorded verbatim in `<scratch>/spec93/FINDING-6-MEASUREMENT.md`: the test name, the exact command, and the observed output for both the live and the replayed run
 - [ ] the report states DIVERGENCE or NO DIVERGENCE explicitly in its first line, with the reason
 - [ ] if DIVERGENCE: the reproduction test exists in `crates/pii-graph/tests/` and FAILS/FIXES nothing (it asserts the current, divergent behaviour and is labelled as a defect record); the report names what a fix spec would have to change
 - [ ] if NO DIVERGENCE: no production or test file is changed by this spec, and the report says which mechanism makes the `Err` path harmless
@@ -49,5 +49,5 @@ R4. If NO DIVERGENCE is found, say so plainly and add NO test — the honest ans
   behaviour.
 - Do NOT weaken, ignore or delete an existing test.
 - Do NOT invent a divergence: if the states match, that is the finding and it is a good outcome.
-- Scratch under `/projects/_tmp/` only; delete your own exports (one fresh-gate export is ~8G).
+- Scratch under `<scratch>/` only; delete your own exports (one fresh-gate export is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.

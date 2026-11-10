@@ -1,6 +1,6 @@
 # Spec: 238 — graph lint warns when a coder's err edge ends in a node that succeeds
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T03:00Z by the orchestrator. Premises read: `crates/pii-graph/src/validate.rs` holds the
 graph lint and builds `warnings` (V5 at lines ~162-210 is the closest model: a node with a declared port and no outgoing
 edge). Measured on 2026-10-23 with `graphs/claude-probe.toml` and `graphs/coder-selffix.toml`: the `coder` node routes a

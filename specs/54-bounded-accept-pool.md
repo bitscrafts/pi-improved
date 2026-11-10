@@ -1,6 +1,6 @@
 # pi-improved — spec-54: bounded accept pool for pii-net (F16)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — Phase 5.3 backlog item F16.
 
 ## Overview

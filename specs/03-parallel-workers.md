@@ -2,7 +2,7 @@
 
 ## Overview
 Verify pidag `--concurrency 2` runs TWO parallel glm-5.3-flash:cloud workers on ollama.
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 0 - Toolchain validation (parallel)
 
 ## Requirements

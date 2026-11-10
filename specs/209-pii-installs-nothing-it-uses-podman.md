@@ -1,14 +1,14 @@
 # Spec: pii installs nothing — podman is the tool
 
 ## Overview
-User directive 2026-10-19: "pii should install nothing! and as it has access to podman, that will be the tool pii will work with!" Today the coder node spawns a binary on the host (`/root/.local/bin/pi`, `claude`) and the deploy installs three binaries into `~/.local/bin`. That makes the host a mutable dependency: a toolchain, an agent version and a PATH all have to be installed and maintained, and every install is a state change nobody records. Podman is already on the host and already the way this workspace runs services. So pii's execution substrate is a CONTAINER, named in the graph, pulled or prebuilt — never installed by pii.
+User directive 2026-10-19: "pii should install nothing! and as it has access to podman, that will be the tool pii will work with!" Today the coder node spawns a binary on the host (`~/.local/bin/pi`, `claude`) and the deploy installs three binaries into `~/.local/bin`. That makes the host a mutable dependency: a toolchain, an agent version and a PATH all have to be installed and maintained, and every install is a state change nobody records. Podman is already on the host and already the way this workspace runs services. So pii's execution substrate is a CONTAINER, named in the graph, pulled or prebuilt — never installed by pii.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Verified premises
 - 207 added a `coder` kind whose scope admits an agent binary (`coder_scope_admits_agent` passes today).
 - The installer ships three host binaries from a clean export; the deploy step is therefore an install by definition.
-- Podman is present on lnx and is how the workspace already runs daemons (quadlets, `podman exec`).
+- Podman is present on the host and is how the workspace already runs daemons (quadlets, `podman exec`).
 
 ## Requirements
 ### Functional
@@ -39,7 +39,7 @@ User directive 2026-10-19: "pii should install nothing! and as it has access to 
 - [ ] `cargo test -p pii-server --test coder_runs_in_podman`
 - [ ] `cargo test -p pii-server --test coder_missing_image_refuses`
 - [ ] `cargo test -p pii-server --test coder_no_install_in_a_run`
-- [ ] a live run on lnx shows `podman ps -a --filter label=pii.run=<id>` empty after the node completes
+- [ ] a live run on the host shows `podman ps -a --filter label=pii.run=<id>` empty after the node completes
 - [ ] journal records the image digest for that run
 
 ## Guardrails

@@ -1,6 +1,6 @@
 # Spec: 89 — the gate compiles the llama provider (N4)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review, candidate 5 — a coverage hole spec 76 opened.
 
 ## Context
@@ -35,7 +35,7 @@ R3. Prove the step has teeth: in a `git archive` export, inject a deliberate typ
 - Do NOT make `llamacpp` a default feature anywhere (that would relink llama into every build).
 - Do NOT un-ignore the real-model tests.
 - Do NOT touch the provider's logic — this is a gate-coverage spec.
-- Scratch exports under `/projects/_tmp/` only, and clean up after yourself (one export ≈ 8G).
+- Scratch exports under `<scratch>/` only, and clean up after yourself (one export ≈ 8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Orchestrator verification (2026-10-09)

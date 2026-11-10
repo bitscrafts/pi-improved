@@ -1,6 +1,6 @@
 # Spec: 196 — a cancelled run's timer does not fire it
 
-**Project**: /projects/pi-improved · **Phase**: production blocker found by the 09:00Z evidence, 2026-10-19
+**Project**: <repo> · **Phase**: production blocker found by the 09:00Z evidence, 2026-10-19
 **Filed**: 2026-10-19 by the orchestrator, from the production log, not from a theory.
 
 ## Overview

@@ -1,6 +1,6 @@
 # Spec: 122 — the WASM plugin host: third-party nodes without rebuilding pii
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage B** of `057` (vision phase 4's third component: *"WASM plugin host"*). It is also the surface
 with the worst failure mode in this whole plan: it runs **untrusted code inside the daemon**.
 
@@ -65,7 +65,7 @@ R8. **Honest statement of what a WASM sandbox is not**: it is a security boundar
 - Never remove or widen a `deps.rs` rule to make the new dependency pass; add a narrow, stated allowance.
 - A malicious module must never take the daemon down: no `unwrap` on a guest-controlled value, no panic on a trap.
 - Do not add a second wasm runtime; one version, one crate.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator verification (2026-10-10)
 **First, the disk.** The worker stopped at 8/9 because `/projects` had 5.4 GB free and `fresh-gate` would have

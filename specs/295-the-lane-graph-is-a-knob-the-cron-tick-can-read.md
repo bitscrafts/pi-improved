@@ -1,14 +1,14 @@
 # Spec 295: the queue's lane graph is a runtime knob the cron tick can read
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, the switch. `run-batchC-pii.sh` starts the composed `spec` graph when `PII_LANE_GRAPH=spec` (spec 294), but the loop's cycles run from a
 cron tick, and `scripts/autonomy/env.sh` states that "the loop's environment is set here and not inherited". So nothing a person types can reach a cycle, and the only way to
 switch the queue to the composed graph would be to edit a script. This spec adds the knob the loop already uses for its other controls: a one-word file.
 
 ## Requirements
 ### Functional
-- R1: `scripts/autonomy/env.sh` reads the first line of the file named by `PII_LANE_FILE` (default `/projects/pi-improved/_tmp/autonomy/lane-graph`) and, when the line (spaces and CR/LF stripped) is exactly `spec` or `coder`, exports `PII_LANE_GRAPH` with it.
+- R1: `scripts/autonomy/env.sh` reads the first line of the file named by `PII_LANE_FILE` (default `_tmp/autonomy/lane-graph`) and, when the line (spaces and CR/LF stripped) is exactly `spec` or `coder`, exports `PII_LANE_GRAPH` with it.
 - R2: an absent file, an unreadable file, an empty file or any other word leaves `PII_LANE_GRAPH` exactly as it was (unset stays unset). Nothing is printed.
 - R3: a `PII_LANE_GRAPH` already set in the environment wins over the file.
 - R4: the file's one-word contract is written in a comment above the code in `env.sh`, with the date and this spec's number.

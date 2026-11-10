@@ -3,7 +3,7 @@
 ## Overview
 Four runs were cancelled (three answered cancelled:true) and all four posted at 09:00:01Z. Spec 196 fixed the timer-wheel leak and is now DEPLOYED (420fe8a7e946). This row is the PROOF in production terms, not the fix.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 On a SCRATCH daemon with a two-minute cron: start a run, cancel it, observe ten minutes. Zero executions and zero posts for that run id, and the cancelled run remains visible in run ls with its reason.

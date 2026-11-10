@@ -1,6 +1,6 @@
 # pi-improved — spec-49: split `pii-graph/src/run.rs` into `run/{mod,resume,engine}.rs`
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW — Phase 5.2, remainder of F-12 (warn-band paydown, NOT
   a hard failure). `pii-graph/src/run.rs` is 411 effective lines, in the
   380-450 warn band. Cosmetic debt reduction, not a blocker.

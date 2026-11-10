@@ -1,12 +1,12 @@
 # Spec: The gate tells the truth about the host it runs on
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Finding**: measured 2026-11-03, while the
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Finding**: measured 2026-11-03, while the
 autonomy cycle was verifying spec 355.
 
 ## Verified premises (measured 2026-11-03, on this tree)
 
 - **A gate deletes a running gate's export.** `xtask/src/fresh_gate.rs:115-125` (`stale_exports`) returns *every*
-  `fresh-gate-*` directory under `/projects/_tmp` except its own, with no age and no liveness test, and
+  `fresh-gate-*` directory under `<scratch>` except its own, with no age and no liveness test, and
   `:338-342` removes them all before creating its own export. Two gates on this host therefore cannot coexist.
   Measured: gate A (export `fresh-gate-11434`, started 12:22Z) had reached `test (lib/bins/tests)` when gate B
   (`/tmp/gate-355e.log`, export `fresh-gate-197287`, started 12:35:31Z) took its retention pass. A then failed
@@ -18,7 +18,7 @@ autonomy cycle was verifying spec 355.
   spawns the real `pii daemon` with `PII_RUNTIME_DIR` set to its scratch dir but **not** `PII_STATE_DIR`; the
   daemon resolves the durable dir through `pii_core::state_dir()` (`crates/pii-cli/src/cmd_daemon.rs:144-148`),
   which is `PII_STATE_DIR` then `$HOME/.local/state/pii` (spec 351). Measured in the 12:08Z gate:
-  `store /root/.local/state/pii/durable/channel.redb is locked: another daemon holds it`, and the test failed at
+  `store ~/.local/state/pii/durable/channel.redb is locked: another daemon holds it`, and the test failed at
   `daemon_log_wiring.rs:54`. That gate was red for as long as any daemon ran — the production condition.
 - **The same gap makes a guard test pass vacuously.** `crates/pii-cli/tests/daemon_guard_reaps.rs:26-36` has the
   same shape. A spawned daemon that dies at the durable claim (`ExitCode::from(3)`) is already gone, so the two

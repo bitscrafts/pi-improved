@@ -8,7 +8,7 @@ except where a line says NOT RUN. Fix commits are given as short hashes; "open" 
 pii managed a real external agent end to end, twice:
 
 - pi + ollama-cloud: run `r000000000609`, rc 0, criterion 1/1, 199 s, route `ollama-cloud/deepseek-v4.1-flash:cloud`,
-  no `--api-key` on argv, `/root/.pi` untouched (`269bc39`).
+  no `--api-key` on argv, `<agent-config>` untouched (`269bc39`).
 - claude + haiku: write probe `r000000000705` created `hello.txt` (PONG) in 5.3 s, 2 turns, $0.003289, route
   `claude/claude-haiku-5-5`, `tree_changed: yes`. Bad-model probe `r000000000706` failed fast at $0, rc 1, with the
   cause in `explain` (`050abc2`). Total real Anthropic spend: about $0.01 over three calls.

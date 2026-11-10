@@ -1,9 +1,9 @@
 # Spec: pii indexes its own codebase
 
 ## Overview
-Measured 2026-10-19: `grep -rln graphify` over the repository finds nothing outside `_tmp`, and `pii memory tiers` reported entities=0 — pii has entity/link/neighbours verbs and a graph lane in search, and had never indexed one line of its own source. Meanwhile the workspace HAS a graphify tool for other codebases (laya, amem), so the product could be interrogated about other people's code and not about its own. User directive: "the graphify feature! initially indexing its own codebase" and "the respective graphs must also be modified accordingly".
+Measured 2026-10-19: `grep -rln graphify` over the repository finds nothing outside `_tmp`, and `pii memory tiers` reported entities=0 — pii has entity/link/neighbours verbs and a graph lane in search, and had never indexed one line of its own source. Meanwhile the workspace HAS a graphify tool for other codebases (laya, the workspace memory), so the product could be interrogated about other people's code and not about its own. User directive: "the graphify feature! initially indexing its own codebase" and "the respective graphs must also be modified accordingly".
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 ### Functional

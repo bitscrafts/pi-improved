@@ -6,9 +6,9 @@
 
 ## Context
 
-Today Pii's only live model backend is [`OllamaProvider`](/projects/pi-improved/crates/pii-model/src/ollama.rs)
+Today Pii's only live model backend is [`OllamaProvider`](crates/pii-model/src/ollama.rs)
 — an HTTP client (`Arc<dyn HttpTransport>` → `POST {OLLAMA_HOST}/api/chat`)
-implementing the sync [`ModelProvider`](/projects/pi-improved/crates/pii-model/src/lib.rs)
+implementing the sync [`ModelProvider`](crates/pii-model/src/lib.rs)
 trait. `014-local-model-spec-implementation.md` already established that Granite 4.2's
 thinking-mode toggle (`enable_thinking=False`) is **not controllable through
 Ollama at all** — Ollama replaces the model's own Jinja chat template, so the
@@ -228,7 +228,7 @@ that should get "an LLM but never the network" is inexpressible with
 
 `014-local-model-spec-implementation.md` already pins a verified artifact:
 `granite-4.2-3b-Q4_K_M.gguf` (2.24GB) from `ibm-granite/granite-4.2-3b-GGUF`
-on Hugging Face, kept at `/projects/_tmp/`. The 8B variant (opus's
+on Hugging Face, kept at `<scratch>/`. The 8B variant (opus's
 recommended tier-1 primary, 5.3GB) is presumably available from the sibling
 `ibm-granite/granite-4.2-8b-GGUF` repo (not independently re-verified in
 this doc — treat as "very likely, same publisher pattern" not "confirmed").

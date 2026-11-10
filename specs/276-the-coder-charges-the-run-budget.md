@@ -1,7 +1,7 @@
 # Spec 276: the coder charges the run's budget with the cost its agent reports, and will not start on an empty one
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — bounded spend. Prerequisite for any unattended fix loop and for the first real run of the composed `spec` graph (specs 255-275): `code` and `docs__docs` are two coder nodes of ONE run, and today nothing stops the second from spending after the first has spent.
 
 The run already has a budget. `crates/pii-server/src/engine/runs.rs:59` builds the run's `Ctx` with `Budget::new(spec.limits.max_tokens, max_tool_calls, max_micro_usd, max_wall_ms)`, and the `agent` node charges it (`agent/turn.rs:182,199,217`). The `coder` node never does: it parses claude's `total_cost_usd` (`agent_claude.rs:50`) and only journals it as `claude_cost_usd` (`coder/report.rs:150`). A graph that declares `[limits] max_micro_usd` is therefore enforced for `agent` nodes and silently ignored for the node that spends the real money.

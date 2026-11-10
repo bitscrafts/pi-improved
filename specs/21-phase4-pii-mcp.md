@@ -1,6 +1,6 @@
 # pi-improved — spec-21: phase4-pii-mcp
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: P4.7 — the Hermes↔pii integration seam. Hermes is used daily; connecting it to pii lets Hermes exercise pii's engine as an always-on test harness. MCP is the standard, Hermes-native mechanism.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

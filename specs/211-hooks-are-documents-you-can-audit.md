@@ -7,7 +7,7 @@ all (measured at `b2e2206`: `sched/dispatch.rs` has no before/after hook, only `
 first version must be born auditable rather than bolted on later. Hermes' own history is the warning: a hook that can be
 disabled silently, or that runs on an event nobody enforces, is a hook of no use.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Verified premises
 - `DocKind = Atom | Scene | Persona | Skill` (`pii-memory/src/doc.rs:21`) — there is no Hook variant yet.

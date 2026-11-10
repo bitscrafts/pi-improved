@@ -1,6 +1,6 @@
 # Spec: The gate stops paying for its own leak
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
 workstream **W1** (findings 1 and 10).
 
 ## Verified premises
@@ -96,7 +96,7 @@ and 1 binary.
    `spawn,proc`. `graphs/night.toml` already granted them. Repaired in `crates/pii-server/tests/queue_in_a_call.rs`
    (fixture only, assertion untouched) as `eb48bdb`; the test then passed 3/3.
 2. `a_worker_state_change_reaches_the_daemon_log_file` failed at 12:08Z with
-   `store /root/.local/state/pii/durable/channel.redb is locked: another daemon holds it`. The test spawns a real
+   `store ~/.local/state/pii/durable/channel.redb is locked: another daemon holds it`. The test spawns a real
    daemon with `PII_RUNTIME_DIR` but not `PII_STATE_DIR`, so it claimed the operator's live durable store — the
    gate was red for as long as any daemon ran. Filed as spec 365.
 3. At 12:22Z **my own gate was killed by another gate's retention pass**: `stale_exports` removes every other

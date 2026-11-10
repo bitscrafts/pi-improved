@@ -1,6 +1,6 @@
 # Spec 156: pii reads its own runtime logs (M6 — the missing production milestone)
 
-**Project**: /projects/pi-improved · **Milestone**: M6 — the step that makes the operator's demand real: a process dies and the SYSTEM says so.
+**Project**: <repo> · **Milestone**: M6 — the step that makes the operator's demand real: a process dies and the SYSTEM says so.
 **Why now**: M1–M4 are implemented and committed (150 detection from our own records, 154 evidence before the first node, 151 an incident to a proven fix on a branch, 152 the deploy card). M5 is the person's two minutes. M6 is the half that does not exist: the reader only knows the BUILDER LOOP's records; the deployed daemon's runtime produces records nobody reads.
 
 ## Requirement

@@ -14,7 +14,7 @@ steal — and what dsh's hype glosses over.
 Sources: github.com/deepseek-ai/deepseek-harness (README,
 docs/architecture.md, docs/subsystems/{session,tools,persistence}.md,
 SAFETY.md), deepseek.com/harness/en, venturebeat/aitoolsreview coverage,
-plus pi-improved source reading (this repo) and prior agent-memory
+plus pi-improved source reading (this repo) and prior the workspace memory
 findings (workspace/architecture/append-only-event-log-pattern,
 workspace/research/deepseek-harness-qwen38,
 workspace/insights/harness-matters-more-than-model).
@@ -25,7 +25,7 @@ workspace/insights/harness-matters-more-than-model).
   `npx @deepseek-ai/dsh web` runs a Web UI at 127.0.0.1:3080; also a
   `headless` one-shot profile. Developer preview: "THERE WILL BE
   COMPATIBILITY-BREAKING CHANGES"; ships a SAFETY.md; prior research
-  (2026-08-29, agent-memory) records plugin bugs bricking installs,
+  (2026-08-29, the workspace memory) records plugin bugs bricking installs,
   mistimed compaction, frequent Windows errors.
 - **Everything-is-a-plugin** — built on **Cordis**
   (github.com/cordiverse/cordis; paper arxiv.org/abs/2608.25512,
@@ -73,7 +73,7 @@ workspace/insights/harness-matters-more-than-model).
   model-facing ToolSchema is built by an explicit allowlist so host-only
   fields (execute, finalizeContent, timeoutMs, isConcurrencySafe, UI
   presenters) never leak into a model request.
-- **Real-world signal** (agent-memory 2026-08-29, Kai video analysis):
+- **Real-world signal** (the workspace memory 2026-08-29, Kai video analysis):
   "the harness matters as much as the model" — same Qwen3.8-27B weights
   failed in a bare harness (black window, plan but no output) and worked
   FIRST attempt inside dsh; Qwen's own headline agentic benchmark gains
@@ -90,7 +90,7 @@ workspace/insights/harness-matters-more-than-model).
 
 | Concern | dsh | pi-improved | Verdict |
 |---|---|---|---|
-| Session/history model | append-only SessionEvent log; history derived by projection | Run journal = append-only RunEvent log (seq); resume = full replay (crates/pii-graph/src/journal.rs, run.rs) | SAME pattern, independently converged (agent-memory scored this convergence 0.95 on 2026-08-15) |
+| Session/history model | append-only SessionEvent log; history derived by projection | Run journal = append-only RunEvent log (seq); resume = full replay (crates/pii-graph/src/journal.rs, run.rs) | SAME pattern, independently converged (the workspace memory scored this convergence 0.95 on 2026-08-15) |
 | Durable persistence seam | abstract SessionPersistence + JSONL backend + handle/single-writer | pii-store::Store (redb); one append transaction; content-addressed inputs/outputs | Both real; pi uses redb (single-file, ACID) vs dsh JSONL+zstd |
 | Tool registry vs model schema | allowlist projection ToolSchema vs ToolDefinition | pii-tools Tool trait: `spec()` (model-facing) vs `call()` (execution) — separated by construction | pi is arguably STRONGER: the Rust type split makes leakage unrepresentable, no runtime allowlist to get wrong |
 | Capability attenuation | sandbox/approval plugins | Ctx capability gates; CapKind intersection at 3 levels (run caps ∩ graph caps ∩ node caps) | pi matches or exceeds (proven live this week: the two-layer NET-cap fix) |
@@ -165,13 +165,13 @@ timeout in dispatch. Small trait extension.**
 - **Language/runtime**: dsh = Node.js monorepo (pnpm, huge dep surface,
   dev-preview churn, plugin-bricking reports, SAFETY.md). pi-improved =
   single static Rust binary, workspace lints -D warnings, 450-line
-  file cap, no runtime install surface. For the lnx deployment (one
-  binary at /root/.local/bin/pii) pi's choice is the better fit; dsh's
+  file cap, no runtime install surface. For the the host deployment (one
+  binary at ~/.local/bin/pii) pi's choice is the better fit; dsh's
   plugin-tree economics buy little when you ship one binary.
 - **Graphs**: dsh is a single-agent loop with plugins; pi-improved has
   a REAL graph engine (nodes/edges/ports/join policies/loop_budget/
   route — see specs/10-graph-visualize.md, `pii graph show`). The
-  research thread "graph engineering" (agent-memory 2026-09-04:
+  research thread "graph engineering" (the workspace memory 2026-09-04:
   harness = execution env; loop = single-agent plan-execute-verify;
   graph = multi-node with private context + shared state + explicit
   routing) places graphs ABOVE harness loops — pi already implements
@@ -249,10 +249,10 @@ two independent implementations (dsh, pidag/pi) now validate it.
 
 - This file: `_docs/06-research/005-dsh-vs-pii-harness-analysis.md`
   (SSOT for the full analysis).
-- Condensed findings + insight: agent-memory backend
+- Condensed findings + insight: the workspace memory backend
   `pi-improved/research/dsh-vs-pii-harness-comparison` and
   `pi-improved/insights/dsh-validates-journal-not-metaphysics`.
-- Earlier research it builds on: agent-memory
+- Earlier research it builds on: the workspace memory
   `workspace/architecture/append-only-event-log-pattern`,
   `workspace/research/deepseek-harness-qwen38`,
   `workspace/insights/harness-matters-more-than-model`.

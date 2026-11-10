@@ -1,7 +1,7 @@
 # Spec 283: a row's file list comes from its spec, not from memory
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's own reliability. A row's commit-path column (plan.tsv column 6) is the only
 statement of what a cycle may stage. It is hand-written, and three times it has been written short of what the
 spec required: A136 omitted `nodes/coder.rs`, A141 omitted `graph_node.rs`, and A146 — 2026-10-26 — omitted

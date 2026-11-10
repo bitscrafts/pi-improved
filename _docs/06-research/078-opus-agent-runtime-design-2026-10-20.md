@@ -1,12 +1,12 @@
 # 078 — pii as an agent runtime: default image, mounted workspace, project scaffold (Opus review, 2026-10-20)
 
 > Plan-mode note: this is the full text of the deliverable. On approval it is written verbatim to
-> `/projects/pi-improved/_docs/06-research/078-opus-agent-runtime-design-2026-10-20.md`. Nothing else is modified and nothing is committed.
+> `_docs/06-research/078-opus-agent-runtime-design-2026-10-20.md`. Nothing else is modified and nothing is committed.
 
 **Read:** brief §0–§5; 077; `coder.rs`, `coder_container.rs`, `criteria.rs`, `agent_worker.rs` (pii-server
 `node_kinds/nodes/`); `pii-tools/src/sandbox.rs`; `pii-cli/src/cmd_daemon.rs`, `cmd_sandbox_exec.rs`; `deploy/pii.service`;
 root `Cargo.toml` and `rust-toolchain.toml`. **Not run:** podman is not on this machine and `/tmp/pii-ws-3aQWp1` is not here.
-Everything marked *predicted* has to be measured on lnx (§3).
+Everything marked *predicted* has to be measured on the host (§3).
 
 ## §0 Verdicts
 
@@ -180,8 +180,8 @@ that doesn't exist.
    podman ran, so none of this has been exercised. M0 decides it. The likely remedies are a daemon with `--sandbox off`
    (and the container as the only boundary) or podman over its API socket from an unconfined service. Both are decisions,
    not fixes, and both belong in 225.
-2. **"Rootless podman."** This host is uid 0; `AGENT_BIN_DIR` is `/root/.local/bin`; but `deploy/pii.service` says
-   `DynamicUser=yes` (no home, no subuid range, so rootless podman can't work at all). Which user the lnx daemon actually
+2. **"Rootless podman."** This host is uid 0; `AGENT_BIN_DIR` is `~/.local/bin`; but `deploy/pii.service` says
+   `DynamicUser=yes` (no home, no subuid range, so rootless podman can't work at all). Which user the the host daemon actually
    runs as decides whether the Red Hat rootless guidance applies. Under rootful podman, files written by container root are
    host root, and `keep-id` is not the lever. M0 records it.
 3. **"The image is used by the coder's verdict."** It isn't. Criteria run with **host** `cargo` (`coder.rs:576–585`). The
@@ -194,7 +194,7 @@ that doesn't exist.
    (M2).
 5. **"Project `.claude/` outranks user scope."** True for *settings keys*, but: `CLAUDE.md` files from every level are
    **concatenated**, not overridden; permission `deny` rules from any scope still apply; **managed** settings outrank project.
-   And "at or above cwd" means a workspace nested under another repo (e.g. under `/projects/pi-improved/_tmp/`) inherits
+   And "at or above cwd" means a workspace nested under another repo (e.g. under `_tmp/`) inherits
    *that* repo's `CLAUDE.md` and skills on the host. In the container only `/work` exists, so no walk-up happens. Host and
    container runs of the same project see different instructions.
 6. **claude headless can edit.** By default `claude -p` with no `--permission-mode`/`--allowedTools`/settings
@@ -212,7 +212,7 @@ that doesn't exist.
    red count may describe the tree before or during 224. Re-measure it, don't quote it. (Not run here: running cargo would
    write `target/`.)
 
-## §3 Measurements owed (run on lnx, as the daemon's real user, through the daemon's real sandbox)
+## §3 Measurements owed (run on the host, as the daemon's real user, through the daemon's real sandbox)
 
 Abbreviations: `IMG=localhost/pii-agent:1`, `WS=/tmp/pii-ws-3aQWp1` (recreate it if it's gone), `SB="pii sandbox-exec --profile workspace --workspace $WS --"`.
 

@@ -1,6 +1,6 @@
 # Spec: 110 — P5: what it costs, under load and over time
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P5 of the road to production (`_docs/06-research/052-production-readiness-2026-10-09.md` §8).
 **Goal**: the first MEASUREMENT of pii under load and over time, and of what specs 103-109 added to the cost
 of every run. Nothing here is a feature; everything here is a number. **Measurement only — no tuning.**

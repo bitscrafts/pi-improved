@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production identity / the deploy gate rank 1 of 059 §4 names
 
 On 2026-10-31 the running daemon was asked who it is, with a client built at `HEAD ae10568c0456`:
@@ -130,7 +130,7 @@ shape the daemon really produces.
 - Do NOT fold this state into `2`. "No daemon" and "a daemon that is not this build" are different faults, and
   the runbook's probe depends on telling them apart.
 - Do NOT weaken the existing unit tests or the existing "no daemon answered" message to make room.
-- The five existing `lane-*` tests clone `/projects/pi-improved` by absolute path; this spec touches none of
+- The five existing `lane-*` tests clone `<repo>` by absolute path; this spec touches none of
   them. If a test must reach the dev tree, declare `# requires: dev-tree` (spec 324 R6) rather than guessing a
   path.
 - STOP if `pii_server::daemon::identity::REVISION` is not reachable from `pii-cli` (it is today, through the

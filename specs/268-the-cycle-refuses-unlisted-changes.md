@@ -1,7 +1,7 @@
 # Spec 268: the cycle refuses to commit while the worker's changes include a file its row did not list
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's own commit step (found 2026-10-25: `04146bb` did not build)
 
 The cycle commits "explicit paths only" (`scripts/autonomy/cycle.sh:375-394`): `git add -- <the row's paths>`, then commit. A worker that also edits a file the row did not name leaves that edit in the working tree, uncommitted. The gate runs on the WORKING TREE, so it passes; the commit carries only the listed paths, so HEAD does not build. Measured twice on 2026-10-25 in one hour: A131 (`04146bb`, `crates/pii-graph/src/nodes.rs` had `eval_ctx` made `pub(crate)` but was not in the row) and A132 (`15ee36c`, the same missing file at that moment). `head-builds` caught it after the commit and parked both rows `needs-review`; the repair was a hand commit `c29046f`. The earlier cases were A118 and A120 (rows with no paths).

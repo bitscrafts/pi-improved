@@ -12,7 +12,7 @@ apart, so it reports all three as stalls.
 
 The honest question is: *what does the log say, and what should a reader conclude when a run has no ending?*
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening — the last unexplained residue in the incident reader.
 
 ## Verified premises — from the real fixture and the current binary, 2026-11-02 22:2xZ

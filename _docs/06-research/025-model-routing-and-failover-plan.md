@@ -6,7 +6,7 @@
 **Status**: PLAN (design + spec breakdown). No implementation.
 **Trigger**: user directive — "how Hermes deals with provider/model switching when
 it became exhausted … this model must be followed in pii", plus the ByteByteGo
-routing research already in agent-memory
+routing research already in the workspace memory
 (`research/model-routing-costs`, `insights/model-routing-maps-onto-our-chain`).
 
 **Prior art / inputs**
@@ -16,8 +16,8 @@ routing research already in agent-memory
 - Article: <https://blog.bytebytego.com/p/how-smart-model-routing-can-cut-llm>
   (ByteByteGo, 2026-09-09).
 - Pii: `crates/pii-abi/src/error.rs`, `crates/pii-model/src/lib.rs`.
-- Cost windows: `/projects/docs/03-reference/deepseek-pricing.md` and
-  `/projects/docs/03-reference/ollama-pricing.md` (workspace-level, SSOT).
+- Cost windows: `<workspace>/docs/03-reference/deepseek-pricing.md` and
+  `<workspace>/docs/03-reference/ollama-pricing.md` (workspace-level, SSOT).
 
 ---
 
@@ -334,7 +334,7 @@ value-per-effort item in the whole plan.
 - **Config drift between the daemon chain and `.pidag`/`ORCH_CHAIN`.** Two
   chains already exist in the shell world; document which layer owns which.
 - **Peak data going stale.** Prices and windows change; the docs cite sources
-  and `/root/.local/bin/llm-peak` is the runtime check. **B3 must read the
+  and `~/.local/bin/llm-peak` is the runtime check. **B3 must read the
   windows from config, not hardcode them.**
 - **Over-engineering before need.** A 16-reason taxonomy earned by Hermes's
   hundreds of provider quirks need not be ported wholesale; start with the

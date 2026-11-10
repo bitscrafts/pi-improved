@@ -1,7 +1,7 @@
 # Spec 310: a cancelled run reports how long it ran, and its trace shows the node that was killed
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — observability of composed runs (user request 2026-10-28: "when using it with other graphs it will be easy to debug, take into consideration the observability")
 
 MEASURED 2026-10-28 on run `r000000000580`, a three-level call chain cancelled while its real leaf agent worked (leaf pid 971276, alive before the cancel, gone after):

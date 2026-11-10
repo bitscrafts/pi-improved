@@ -1,6 +1,6 @@
 # Spec: 77 — let_underscore_must_use sweep in pii-graph + journal flush guards (D5 + item 5)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch C — 043 §10 item 5 (D5 flush-loss) + its paired lint pass.
 
 ## Context

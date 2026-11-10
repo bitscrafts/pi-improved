@@ -16,7 +16,7 @@ error: linking with `cc` failed: exit status: 1
 |---|---|---|---|
 | `/tmp/_trash-podman` | 33.7 GB | an earlier session's trash | **pre-existing** |
 | `/tmp/gate-cache` | 31.9 GB | a cargo build cache for gate runs | **pre-existing** |
-| `/root/.cache/uv` | 18.0 GB | uv's wheel/download cache (regenerable) | **pre-existing** |
+| `~/.cache/uv` | 18.0 GB | uv's wheel/download cache (regenerable) | **pre-existing** |
 | `/tmp/_trash-v234-1792512381` | 7.1 GB | an earlier session's trash | **pre-existing** |
 | `/var/tmp/pii-target` | 25.3 GB | the pii build target (needed for the night's gates) | pre-existing, grown by me |
 | `/var/tmp/pi080-target` | 8.4 GB | the pi 0.8.0 / pi-mcp-host build target | **mine, today** |
@@ -26,7 +26,7 @@ error: linking with `cc` failed: exit status: 1
 Only one thing was mine and no longer needed, so it was **moved**, never deleted:
 
 ```sh
-mv /var/tmp/pi080-target /projects/_trash/20261031-night/pi080-target
+mv /var/tmp/pi080-target <workspace>/_trash/20261031-night/pi080-target
 ```
 
 Result: `/` went from **0 MB → 8,446 MB** available; `/projects` from 32,072 → 23,623 MB.
@@ -44,7 +44,7 @@ delete what they did not create. Each line below is a one-line reclamation for y
 |---|---|---|
 | ~33.7 GB | `rm -rf /tmp/_trash-podman` | a trash dir an earlier session parked (its 30-day window is long past: it is from 2026-09) |
 | ~31.9 GB | `rm -rf /tmp/gate-cache` | a stale gate build cache; the next gate rebuilds it |
-| ~18.0 GB | `rm -rf /root/.cache/uv` | uv re-downloads wheels on demand |
+| ~18.0 GB | `rm -rf ~/.cache/uv` | uv re-downloads wheels on demand |
 | ~7.1 GB | `rm -rf /tmp/_trash-v234-1792512381` | another old trash dir |
 
 Freeing `_trash-podman` alone restores 33 GB and unblocks every gate; freeing `gate-cache` too puts
@@ -62,7 +62,7 @@ rustc-LLVM ERROR: IO failure on output stream: No s[pace left on device]
 
 So **no gate of any size completes at 8.4 GB**. I then moved the two smallest build targets I own or
 that were clearly old (`minilam-target` 1.8 GB, `a183-target` 2.0 GB) to
-`/projects/_trash/20261031-night/`, leaving `/` at **3.8 GB** — enough to write records, not to gate.
+`<workspace>/_trash/20261031-night/`, leaving `/` at **3.8 GB** — enough to write records, not to gate.
 
 `/var/tmp/pii-target` grew from 25.3 GB to 33.7 GB while the coverage step built; it is the pii target
 the night's gates need, and it is the single largest thing I could move — but it no longer fits in
@@ -83,5 +83,5 @@ pre-existing trashes above.**
 
 A gate that fails with `No space left on device` / `ld … Bus error` is a **disk** verdict, not a code
 verdict. Check `df -Pm / /projects` and `du -sm /tmp/* /var/tmp/*` **before** reading the failing test
-list as a regression — the same class already bit `amem` on the host the night before, where a
-transient ENOSPC poisoned a single-writer store (see `workspace/amem/outage-2026-10-30-enospc-poisoned-redb`).
+list as a regression — the same class already bit `the workspace memory` on the host the night before, where a
+transient ENOSPC poisoned a single-writer store (see `workspace/the workspace memory/outage-2026-10-30-enospc-poisoned-redb`).

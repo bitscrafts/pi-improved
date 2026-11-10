@@ -12,7 +12,7 @@ Three more facts decide the shape of the fix:
   answer would be read back and answered again without end (`discord-triage` replies for every class, "chat" included).
 - Anyone in the guild can post in a thread, so who may talk to pii is a decision of the committed config, never of the message.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: Discord two-way (follows 132, forum posting, and 333, poll pacing)
 **Depends on**: 132
 

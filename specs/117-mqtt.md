@@ -1,6 +1,6 @@
 # Spec: 117 — MQTT: the reactive pillar's front door
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage B** of the vision plan (`_docs/06-research/057-vision-implementation-plan-2026-10-10.md`),
 first row. Vision phase 4: *"IoT/reactive (MQTT, hardware HAL, WASM plugins)"* — today the graph can be driven
 by a CLI, a client socket and an HTTP webhook, but **nothing can be driven by a device**.
@@ -63,7 +63,7 @@ R7. **Docs**: `_docs/0X-guides/` a guide for the node (config keys, payload mapp
 - Never log, emit or persist a credential; the plaintext rule is a refusal, not a warning comment.
 - No unbounded queues or hot reconnect loops; every bound gets a named event when it is hit.
 - Do not add a dependency for the HAL of a second purpose — this spec is MQTT only.
-- Scratch under `/projects/_tmp/`, delete your own, no broker or daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no broker or daemon left running. Do NOT commit.
 
 ## Orchestrator verification + a cross-invariant conflict found and fixed (2026-10-10)
 **My controls (three mutations, each restored):**

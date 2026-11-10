@@ -1,6 +1,6 @@
 # Spec: The idle daemon leaves no files and no busy loops
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: Opus findings 13, 14, 15, 20 — the rest of row 357.
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: Opus findings 13, 14, 15, 20 — the rest of row 357.
 
 ## Why this exists
 

@@ -1,6 +1,6 @@
 # pi-improved — spec-45: split `pii-net/src/service.rs` into `service/{mod,conn,http,dechunk,tests}.rs`
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — `pii-net/src/service.rs` is 427 effective lines,
   in the 380-450 warn band (not a hard failure), the third Phase 5.2
   structural-debt item after specs 43 (`agent.rs`) and 44

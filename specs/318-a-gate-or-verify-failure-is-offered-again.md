@@ -1,7 +1,7 @@
 # Spec 318: a row whose gate or criteria failed is offered again, with its session
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the loop must not idle while a person is away (user, 2026-10-29: "nao pode parar!!! se para
 deixa de ter efeito!")
 

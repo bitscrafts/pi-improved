@@ -1,6 +1,6 @@
 # Spec: 105 — P1: make it operable (backup, upgrade, metrics, runbook)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P1 of the road to production (`_docs/06-research/052-production-readiness-2026-10-09.md` §8).
 **Goal**: the operator can recover, and can see the system's state without reading logs.
 
@@ -57,7 +57,7 @@ R6. **Structured logging documented**: the log file + rotation from spec 104 app
 - Metrics/logs must never carry secrets or env values.
 - No new raw prints beyond the file's budget; emit through `pii-observe`.
 - Do not leave a daemon running (kill what you start).
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)

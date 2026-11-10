@@ -1,6 +1,6 @@
 # Spec: A durable claim completes or is offered again
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening
+**Project**: <repo> · **Phase**: 0.2.1 hardening
 **Findings**: Opus optimisation #3 (timer spin + lost timer) and #4 (a claimed queue row blocks the queue)
 **Why it is first among equals**: the night run puts work in this queue. If a restart wedges the queue, the lane
 stops with its own fix half-applied.
@@ -70,7 +70,7 @@ All six must be RED before the change; paste the failing output in the Closure.
 ## Guardrails
 
 - The gate is the cycle's step, not the implementer's. `cycle.sh` gates this commit with the full step list and a
-  measured coverage floor (specs 262/266/315); a sandboxed implementer cannot write `/projects/_tmp`, where
+  measured coverage floor (specs 262/266/315); a sandboxed implementer cannot write `<scratch>`, where
   `fresh-gate` exports its tree, so naming the gate as an exit criterion makes the run refuse before its work is
   judged (measured 2026-11-03, row 351: three attempts, 4 of 5 criteria green, parked on the gate alone). Do not
   add it back as a criterion.

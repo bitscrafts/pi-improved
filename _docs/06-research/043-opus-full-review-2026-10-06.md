@@ -1,7 +1,7 @@
 <!-- Filed 2026-10-06T16:25:17Z from an Opus plan-mode analysis run.
      Produced by: Claude Code + claude-opus-5-5, plan mode, READ-ONLY (no project writes).
-     Brief: /projects/pi-improved/_docs/06-research/041-BRIEF-full-review.md
-     Inventory the report was measured against: /projects/pi-improved/_docs/06-research/041-APPENDIX-codebase-inventory.txt
+     Brief: _docs/06-research/041-BRIEF-full-review.md
+     Inventory the report was measured against: _docs/06-research/041-APPENDIX-codebase-inventory.txt
      Repo HEAD at analysis time: d713593 (tree: 3 changed paths)
      Run: session ef17e6d6-1741-42d6-87c6-16ffc775d231, stop_reason n/a, turns 21, cost $15.421959200000002
 
@@ -13,11 +13,11 @@
 
 # pi-improved full review, run 2026-10-06 (completes and supersedes 031/032)
 
-A copy of this report is at `/projects/_tmp/pii-review/opus-review-result-20261006.md`.
+A copy of this report is at `<scratch>/pii-review/opus-review-result-20261006.md`.
 
 Provenance: Opus review, test mode, resumed session ef17e6d6. Brief: `_docs/06-research/041-BRIEF-full-review.md` with the 2026-10-06 amendment. Tree: HEAD `d713593`. Code is unchanged since `55a8328` (spec-69, 2026-09-18). `git log 55a8328..HEAD -- crates xtask Cargo.toml Cargo.lock quality-gate.sh scripts clippy.toml` prints nothing.
 
-Read-only held. No tracked file was edited by this run, nothing was committed, and no dependency was changed. All mutation and demonstration work ran in scratch exports made with `git archive` under `/projects/_tmp/pii-review/`. At the end, `git status` shows only the brief, the 042 addendum and the tombstone file, all written by the orchestrator, not by this run.
+Read-only held. No tracked file was edited by this run, nothing was committed, and no dependency was changed. All mutation and demonstration work ran in scratch exports made with `git archive` under `<scratch>/pii-review/`. At the end, `git status` shows only the brief, the 042 addendum and the tombstone file, all written by the orchestrator, not by this run.
 
 **Evidence labels used throughout:**
 
@@ -46,7 +46,7 @@ Read-only held. No tracked file was edited by this run, nothing was committed, a
 
 ## 1. Gate results
 
-Logs are in `/projects/_tmp/pii-review/gate-20261006/`, files `1-fmt.log` to `6-lint.log`, `4b-test-nofailfast.log` and `bw-*.log`. The toolchain is cargo and rustc 1.95.0, matching `rust-toolchain.toml`. No command was denied.
+Logs are in `<scratch>/pii-review/gate-20261006/`, files `1-fmt.log` to `6-lint.log`, `4b-test-nofailfast.log` and `bw-*.log`. The toolchain is cargo and rustc 1.95.0, matching `rust-toolchain.toml`. No command was denied.
 
 | # | command (verbatim) | exit | interpretation |
 |---|---|---|---|
@@ -126,7 +126,7 @@ Every line read `ok. N passed; 0 failed`. The 10 ignored tests are the real-mode
 
 ## 3. Specs 62-69 verified by behaviour, not by claim
 
-Method: export HEAD to scratch, revert each fix in isolation, and run its targeted tests. A fix counts as guarded only if a test turns red. Every baseline passed unmutated. Logs and scripts are in `/projects/_tmp/pii-review/mut-H6eG/`. All rows are C-delegated except spec-69, which is C-run.
+Method: export HEAD to scratch, revert each fix in isolation, and run its targeted tests. A fix counts as guarded only if a test turns red. Every baseline passed unmutated. Logs and scripts are in `<scratch>/pii-review/mut-H6eG/`. All rows are C-delegated except spec-69, which is C-run.
 
 | spec | fix | mutation | result | verdict |
 |---|---|---|---|---|
@@ -157,7 +157,7 @@ Method: export HEAD to scratch, revert each fix in isolation, and run its target
 | 032 observation (a).1 (`println` rule) | **Fixed** | C-run |
 | 032 observation (a).2 (zero doctests) | **Still stands** (0 of 17) | C-run |
 | 032 observation (a).3 (lint-files silent) | **Fixed.** It now prints a summary line. | C-run |
-| 032 claim: "No hardcoded `/tmp` or `/projects/` paths remain in production code" | **Wrong as stated.** It held only for the 13 crates read. xtask has 15 `/projects/pi-improved` literals (section 6). | C-run |
+| 032 claim: "No hardcoded `/tmp` or `/projects/` paths remain in production code" | **Wrong as stated.** It held only for the 13 crates read. xtask has 15 `<repo>` literals (section 6). | C-run |
 | 032 claim: "pii-net ... the only lenience is consuming `\r` without confirming `\n`" | **Understated.** That lenience is a panic plus spurious errors on the model streaming path (section 6, D1). | C-run |
 | 032 F10: "Defence in depth holds because the socket dir is 0700" | **Weaker than stated.** The 0700 chmod in `engine/uds.rs:41` is also discarded. | I |
 | 031: "pii-web (2 tests)" | **Out of date.** It now has 11, including one route test. | C-run |
@@ -190,11 +190,11 @@ Method: export HEAD to scratch, revert each fix in isolation, and run its target
 |---|---|---|---|---|
 | D1 | **HIGH** | `crates/pii-net/src/service/dechunk.rs:45,54-56`, caller `service/http.rs:91,112` | The completeness check measures from the size line, not from `data_start`. A read that ends after a chunk's `\r` advances `pos` past the buffer, and `pending.drain(..consumed)` then panics. Other split points produce spurious `bad chunk size` or `truncated chunk` errors. The path is live: `pii-model/src/ollama.rs:201` streams every model turn through `request_streaming`, which calls `dechunk_step`. | Demo test in `mut-H6eG/src` (`dechunk.rs` `review_demo`) splitting `5\r\nhello\r\n0\r\n\r\n` at every offset: **5 of 16 splits fail**. The split at offset 9 gives `consumed 10 > pending 9 (drain would panic)`; offsets 7, 8, 13 and 14 give errors. `cargo test -p pii-net --lib review_demo` exits 101. C-run |
 | D2 | **HIGH** | `crates/pii-tools/src/bash.rs:115` | `s.truncate(MAX_OUTPUT)` runs on a lossily decoded `String`. A command printing more than 64 KiB of multibyte text panics when the cut lands mid-character. Line 106 does it correctly, on bytes. | Demo test (`x` followed by 40,000 `é`), `cargo test -p pii-tools --lib review_demo`: `panicked at crates/pii-tools/src/bash.rs:115:15`. C-run |
-| D3 | **HIGH (gate)** | `xtask/src/reachability.rs:44-57,132,139-145` | The gate is blind to both classes it exists for. Entry 1 searches `crates/pii-model/src`, the declaring crate, and is satisfied by pii-model's own internal calls (`lib.rs:242,266`). Entry 2's needle `.invoke(` matches any method of that name. The doc promises `line_is_test` exclusion of `#[cfg(test)]` modules, but no such function exists. Its test hardcodes `/projects/pi-improved/_tmp/...` (line 171). It is not in `quality-gate.sh`. | Scratch copy with both real callers removed (`pii-server/src/lib.rs:203` and `node_kinds/nodes/worker.rs:38`): `reachability-check` **exit 0**. With the seed corrected to `pii_model::resolve_with_transport(` in `crates/pii-server/src` and `sup.invoke(`: mutated tree **exit 1** naming both, HEAD tree **exit 0**. Logs in `/projects/_tmp/pii-review/reach-zu2N/`. C-run |
+| D3 | **HIGH (gate)** | `xtask/src/reachability.rs:44-57,132,139-145` | The gate is blind to both classes it exists for. Entry 1 searches `crates/pii-model/src`, the declaring crate, and is satisfied by pii-model's own internal calls (`lib.rs:242,266`). Entry 2's needle `.invoke(` matches any method of that name. The doc promises `line_is_test` exclusion of `#[cfg(test)]` modules, but no such function exists. Its test hardcodes `_tmp/...` (line 171). It is not in `quality-gate.sh`. | Scratch copy with both real callers removed (`pii-server/src/lib.rs:203` and `node_kinds/nodes/worker.rs:38`): `reachability-check` **exit 0**. With the seed corrected to `pii_model::resolve_with_transport(` in `crates/pii-server/src` and `sup.invoke(`: mutated tree **exit 1** naming both, HEAD tree **exit 0**. Logs in `<scratch>/pii-review/reach-zu2N/`. C-run |
 | D4 | MED-HIGH | `crates/pii-server/src/engine/runs.rs:171` (also `:151-158`) | Resume fails open. A store error in `stored_run_scope_root(..).ok().flatten()` resumes a confined heal or promotion run with workspace-wide write access, which the comment at `:166-176` says must never happen. A failed graph lookup gives an unlimited budget (`map_or(u64::MAX, ...)`). | Read, C-read. A fault-injected store test is the proof to add. |
 | D5 | MED-HIGH | `crates/pii-graph/src/journal.rs:233-240` | `flush` drains `pending` before `append_events` succeeds, so a store error loses those events. Callers discard the error: `journal.rs:165` `let _ = self.flush();`, `run/engine.rs:332`, `sched/dispatch.rs:324`. | C-read (drain order). Caller list is I. |
 | D6 | MEDIUM | `crates/pii-server/src/daemon/mod.rs:199`, `engine/bus.rs:27` | The reactive loop that arms timers and approvals on `RunSuspended` and `RunFinished` ignores `RecvError::Lagged`. It shares the 4096-slot broadcast channel with per-token `AssistantDelta` events (`agent/turn.rs:102`). A long streamed turn can make a suspended run never resume. | C-read. A test flooding more than 4096 deltas around a suspend is the proof to add. |
-| D7 | MEDIUM | `xtask/src/{heal_prune,heal_seed,heal_collect,rss_gate,memory_eval,promote_build,doc_drift,main}.rs` | 15 hardcoded `/projects/pi-improved` literals (spec-61 covered only `crates/`). xtask commands in any clone or worktree act on this checkout, which is the wrong tree, including heal worktrees and promotion builds. `workspace_root()` already exists in `xtask/src/main.rs`. | `grep -rn '/projects/pi-improved' crates xtask --include=*.rs \| grep -v '//'` prints 15 lines. C-run |
+| D7 | MEDIUM | `xtask/src/{heal_prune,heal_seed,heal_collect,rss_gate,memory_eval,promote_build,doc_drift,main}.rs` | 15 hardcoded `<repo>` literals (spec-61 covered only `crates/`). xtask commands in any clone or worktree act on this checkout, which is the wrong tree, including heal worktrees and promotion builds. `workspace_root()` already exists in `xtask/src/main.rs`. | `grep -rn '<repo>' crates xtask --include=*.rs \| grep -v '//'` prints 15 lines. C-run |
 | D8 | MEDIUM | `crates/pii-memory/tests/*`, `crates/pii-memory/_tmp/phase3/` | Tests reuse persistent redb files under a gitignored `_tmp`, so a regression can pass on any machine that ran the suite before (section 3, spec-65). | C-delegated |
 | D9 | LOW-MED | `crates/pii-server/tests/boss_watch.rs:205` | A 10-second wall-clock deadline makes the gate red under load. | Section 1. C-run |
 | D10 | LOW | `crates/pii-server/src/lib.rs:440` | `graph_dir.join(format!("{name}.toml"))` does not reject `..` in an RPC graph name. Only same-uid peers reach it, and `graph.apply` already stores arbitrary TOML, so it grants nothing new. Fix it as hygiene. | C-read |
@@ -427,7 +427,7 @@ Method: two parallel read-only passes covered every area, with about 85 concrete
 | Bodies of 002 (270 KB), 026 (100 KB), 041-APPENDIX (1.6 MB) | headers, banners and links only, by design |
 | `.tex` compilation and PDFs | read-only run; PDFs share the `.tex` date |
 | Prose accuracy of 005, 007, 016, 020-022, 034 | status headers only |
-| `/projects/pidag/docs/*`, `/projects/docs/01-overview/OPEN-REGISTER.md` rows | outside this repo |
+| `<workspace>/<project>/docs/*`, `<workspace>/docs/01-overview/OPEN-REGISTER.md` rows | outside this repo |
 | Host-infra claims in 040 (containers, ports) | not reproducible read-only |
 
 ## 10. Ranked candidate improvements (the next spec batch)
@@ -435,7 +435,7 @@ Method: two parallel read-only passes covered every area, with about 85 concrete
 Each candidate is one bounded spec with an exit criterion a validator can check. Items 1-4 each have a test that fails today, and three of those tests already exist in the scratch copy.
 
 1. **Fix the chunked decoder** (D1). In `crates/pii-net/src/service/dechunk.rs`, require `data_start + size + 2 <= raw.len()` before consuming. Consume the trailing CRLF only when both bytes are present. Reject a `\r` not followed by `\n`.
-   - Exit: the split-point test (`/projects/_tmp/pii-review/mut-H6eG/src/crates/pii-net/src/service/dechunk.rs` `review_demo`) is copied into the repo and is red before and green after.
+   - Exit: the split-point test (`<scratch>/pii-review/mut-H6eG/src/crates/pii-net/src/service/dechunk.rs` `review_demo`) is copied into the repo and is red before and green after.
    - Also: `cargo test -p pii-net` green, and the gate green.
 2. **Fix the bash render panic** (D2). Truncate bytes before `from_utf8_lossy` in `crates/pii-tools/src/bash.rs:113-117`, as line 106 does.
    - Exit: the 40,000-`é` test is red before and green after; `cargo test -p pii-tools` green.
@@ -460,8 +460,8 @@ Each candidate is one bounded spec with an exit criterion a validator can check.
    - Exit: `for i in $(seq 20); do cargo test -p pii-server --test boss_watch || break; done` passes while a parallel `cargo build` of a scratch tree runs.
 8. **Route reactive-loop control events reliably** (D6). On `RecvError::Lagged` in `daemon/mod.rs:199`, rescan `runs_by_status(Suspended)` and re-arm; or give control events their own channel.
    - Exit: a test publishing 5,000 `AssistantDelta` events around a `RunSuspended` asserts the timer is armed.
-9. **Remove xtask's hardcoded repo paths** (D7). Replace all 15 `/projects/pi-improved` literals with `workspace_root()`.
-   - Exit: `grep -rn '"/projects/pi-improved' xtask | wc -l` is 0, and `cargo test -p xtask` passes from a `git archive` export at another path.
+9. **Remove xtask's hardcoded repo paths** (D7). Replace all 15 `<repo>` literals with `workspace_root()`.
+   - Exit: `grep -rn '"<repo>' xtask | wc -l` is 0, and `cargo test -p xtask` passes from a `git archive` export at another path.
 10. **Move heavy RPC handlers off the async workers** (A1). `spawn_blocking` for `memory.*`, `worker.reload`, `run.trace` and `session.prompt` in `engine/conn.rs:170`.
     - Exit: a current_thread heartbeat test per method asserts the heartbeat is never delayed by more than 50 ms.
 11. **Documentation batch** (section 9, corrections 1-8). Docs only.
@@ -500,9 +500,9 @@ The reachability-gate fix (candidate 3) is a close second. The project says its 
 
 | path | contents |
 |---|---|
-| `/projects/_tmp/pii-review/gate-20261006/` (172K) | all gate logs |
-| `/projects/_tmp/pii-review/reach-zu2N/` (397M) | reachability mutation export and logs |
-| `/projects/_tmp/pii-review/mut-H6eG/` (4.0G) | spec mutation export, copied target, the two `review_demo` tests, `run.sh`/`fresh.sh` |
-| `/projects/_tmp/pii-review/opus-review-result-20261006.md` | this report |
+| `<scratch>/pii-review/gate-20261006/` (172K) | all gate logs |
+| `<scratch>/pii-review/reach-zu2N/` (397M) | reachability mutation export and logs |
+| `<scratch>/pii-review/mut-H6eG/` (4.0G) | spec mutation export, copied target, the two `review_demo` tests, `run.sh`/`fresh.sh` |
+| `<scratch>/pii-review/opus-review-result-20261006.md` | this report |
 
 Test runs also refreshed gitignored `crates/*/_tmp/` scratch inside the repo, which is normal test behaviour. No tracked file changed.

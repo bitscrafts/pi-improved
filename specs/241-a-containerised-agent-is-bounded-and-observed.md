@@ -1,6 +1,6 @@
 # Spec: 241 — a coder agent that runs in a container is bounded by the node's timeout_ms and its output reaches the journal
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T11:20Z by the orchestrator. Stage 2 of the operator's path: pii runs ON THE HOST (podman lives
 there) and manages development inside a container (operator, 2026-10-23: "the host runs podman and the solution must run
 from there"). Premises read in `crates/pii-server/src/node_kinds/nodes/`, not assumed:

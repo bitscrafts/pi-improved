@@ -15,7 +15,7 @@ person, while `master` ≠ production** — and the proof is run by the loop, ne
 This spec builds that path. The one thing it does NOT do is deploy: the card (spec 152) is the permission,
 and `install-pii.sh` stays behind it.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: proactivity (the Opus 061 judgement; order 153 → 150 → 154 → **151** → 152)
 
 ## Requirements

@@ -1,6 +1,6 @@
 # pi-improved — spec-60: F-11 pilot — structured context for redb/store errors
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW (pilot only) — Phase 5.3/5.4. F-11 as originally
   scoped ("357-site string-typed `PiiError`") is, per this session's
   own ground-truth count, actually **817 `PiiError::` references**

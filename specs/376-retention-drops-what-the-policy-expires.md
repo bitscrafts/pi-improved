@@ -1,6 +1,6 @@
 # Spec: Retention drops what the policy expires
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus finding 19, split out of row 358.
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus finding 19, split out of row 358.
 
 ## Why this exists
 

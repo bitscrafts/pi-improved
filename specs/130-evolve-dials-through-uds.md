@@ -1,6 +1,6 @@
 # Spec: 130 — the boss launcher dials the daemon like everyone else
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after the `057` plan (111–129). Filed 2026-10-10 by the orchestrator while verifying specs 123–127: the
 sweep found `pii-evolve`'s boss launcher dialling the daemon control socket **directly**, and a net-check
 allowlist entry withholding the fact.

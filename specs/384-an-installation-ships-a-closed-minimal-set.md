@@ -23,7 +23,7 @@ doc-code     -> docs
 
 Everything in that closure is required; everything outside it is a sample.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: installation
 
 

@@ -1,7 +1,7 @@
 # Spec 266: a queue item's gate measures coverage — the skip switch is pinned off on the gate command
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's own gate (spec 262 follow-up, found 2026-10-24 reading the A128 cycle log: `==> coverage-floor` then `SKIPPED: coverage-floor (QG_SKIP_COVERAGE=1 — the floor was NOT measured in this run`)
 
 Spec 262 made the queue gate every commit with the full step list. `scripts/autonomy/env.sh:40` still exports `QG_SKIP_COVERAGE=1` for every sourcing tool, and `cycle.sh` sources `env.sh` (line 31), so inside the

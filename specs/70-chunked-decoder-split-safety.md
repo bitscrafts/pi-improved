@@ -1,6 +1,6 @@
 # Spec: 70 — The chunked decoder cannot be driven past its buffer
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: intervention batch A — proven bug D1 (report 043 §6, verdict §1)
 **Status**: NOT STARTED (worker lane)
 **Derives from**: `_docs/06-research/043-opus-full-review-2026-10-06.md` (candidate 1, D1)

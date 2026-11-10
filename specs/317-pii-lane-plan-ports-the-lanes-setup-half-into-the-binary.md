@@ -1,7 +1,7 @@
 # Spec 317: `pii lane plan` — the composed lane's whole setup half (`run-batchC-pii.sh` lines 29-218), ported into the binary
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the product must not need companion scripts (user, 2026-10-29: "the final project doesn't have companion scripts")
 
 The composed lane that runs the queue is `scripts/run-batchC-pii.sh` (343 lines). Nearly every defect found while exercising composability on 2026-10-28/29 was in that layer (the session lookup, the pin check, the input keys, `python3` missing in the judge), not in the engine. This is part 1 of two. Part 1 ports **everything the script does before it starts a run**, lines 29-218, in both modes (dry and real): arguments, the dirty check, lane choice, the brief, the coder-lane graph or the spec-lane input, the HEAD and pin checks, the deadline, the resume lookup, the container preflight, the printed block and the log header. The two probes that touch the devbox (the resume lookup at lines 101-107 and the `uv` preflight at lines 211-216) sit behind a `Devbox` trait: this spec ships a dry implementation and a test stub, and part 2 ships the ssh implementation together with start, poll, facts, quota text and the spec guard (lines 219-343), then retires the script.
@@ -98,7 +98,7 @@ defect, neither of them in the port.
    base is 53 bytes (`_tmp/gate-target/test-gate/tmp`) and 58 under coverage (`…/llvm-cov-target/tmp`), so
    `REPO_LEN - base.len() - 1` underflowed and **0 of 40 tests ran** — a panic in the scaffold, not a product
    failure. Rooting it in the tree's own `_tmp/` instead fails for a second reason: the port refuses any root with
-   a `_tmp` component (R1) and a fresh-gate export itself lives under `/projects/_tmp/`, so every clone was refused
+   a `_tmp` component (R1) and a fresh-gate export itself lives under `<scratch>/`, so every clone was refused
    with empty stdout. The base is now the first of `XDG_RUNTIME_DIR`, `CARGO_TARGET_TMPDIR`, `/var/tmp` that has no
    `_tmp` component, fits the golden length and accepts `create_dir_all`; a `Drop` removes a passing test's clone
    (a failing test keeps it as evidence, and `PII_KEEP_SCRATCH=1` keeps it either way). Never `/tmp`, per the

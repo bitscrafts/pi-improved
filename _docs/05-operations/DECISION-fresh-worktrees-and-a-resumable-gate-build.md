@@ -56,7 +56,7 @@ So a failure is resumed like this, and only the failed step pays:
 
 ```bash
 # 1. the gate's own error names them: "failed steps: [\"fmt\", \"clippy\"]; ... export kept at <dir>"
-EXP=/projects/_tmp/fresh-gate-<pid>
+EXP=<scratch>/fresh-gate-<pid>
 
 # 2. the failed steps, as a step file (labels exactly as gate-steps.txt spells them)
 grep -E '^(fmt|clippy|test \(lib/bins/tests\)|lint-scratch)\|' gate-steps.txt > /tmp/resume-steps.txt

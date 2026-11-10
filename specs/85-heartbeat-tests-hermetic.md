@@ -1,6 +1,6 @@
 # Spec: 85 — the spec-80 heartbeat tests are hermetic too (found by fresh-gate)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review follow-up — the N1 class, second instance, found by the tool spec 84 built.
 
 ## Context
@@ -32,7 +32,7 @@ R4. If fresh-gate then names ANY other failing test, do NOT fix it in this spec:
 ## Guardrails
 - Do NOT change production code (`engine/conn.rs` etc.) — tests only.
 - Do NOT weaken the heartbeat assertions or the light-method control.
-- Do NOT `rm -rf` anything; scratch under `/projects/_tmp/` only.
+- Do NOT `rm -rf` anything; scratch under `<scratch>/` only.
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Orchestrator verification (2026-10-09)

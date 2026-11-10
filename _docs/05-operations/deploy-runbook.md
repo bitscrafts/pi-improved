@@ -5,7 +5,7 @@ host actions, then you verify. Nothing here has been run on the host by the orch
 
 ## 0. Preconditions (the script aborts, changing nothing, if one is missing)
 
-- llama.cpp answers: `curl -s http://10.10.10.217:8082/v1/models`
+- llama.cpp answers: `curl -s http://<host>/v1/models`
 - Optional (spec 157): `PII_DISCORD_TOKEN` (bot token) and `PII_DISCORD_CHANNEL_ID` (the one forum channel id)
   exported in the shell that runs the installer. When both are set the installer writes
   `~/.config/pii/pii.env` (mode 0600, outside the repo) and the digest cron's `to`; the token is never written

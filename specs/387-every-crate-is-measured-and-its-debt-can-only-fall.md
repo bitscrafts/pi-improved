@@ -40,7 +40,7 @@ pii-* (8 more)   …           …              0
 57 files is not a row. It is a program, and the program needs an instrument that makes it continuous
 rather than a once-a-year crusade.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: workspace-wide refactor
 
 ## Requirements

@@ -1,6 +1,6 @@
 # Spec: 84 — a fresh-tree gate run, so the N1 class cannot recur
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review, candidate 2 (the reviewer pairs it with 83).
 
 ## Context
@@ -13,7 +13,7 @@ Measured on today's HEAD: in a `git archive` export, `cargo test -p pii-memory` 
 R1. A new xtask subcommand, e.g. `cargo xtask fresh-gate`, that (with `--worktree` overlaying the
     current working tree, and an optional `--overlay src=dest` for a single file):
     a. exports the CURRENT tree with `git archive HEAD` (or `git stash create`-free equivalent
-       — it must not touch the working tree) into a unique dir under `/projects/_tmp/fresh-gate-<pid>/`,
+       — it must not touch the working tree) into a unique dir under `<scratch>/fresh-gate-<pid>/`,
     b. overlays the WORKING TREE's uncommitted changes when `--worktree` is passed (so it can
        gate work in progress, not only committed state),
     c. runs the gate inside that export with an isolated `CARGO_TARGET_DIR`,
@@ -34,7 +34,7 @@ R3. A test/exit criterion proving it FAILS on the pre-83 tree and PASSES after 8
       `degrades_honestly_without_embedder`, `graph_lane_recalls_doc_via_shared_concept`,
       `memory_hit_carries_doc_text`. Record verbatim in the report. If the command offers no overlay,
       use `--worktree` against a scratch checkout whose lanes.rs is the pre-83 copy.
-- [ ] **NOT MET YET — and the tool is right to say so.** With spec 83 applied, `fresh-gate --worktree` still FAILS, naming TWO OTHER tests: `engine::conn_heartbeat_tests::heartbeat_memory_consolidate` and `engine::conn_heartbeat_tests::heartbeat_control_light_method_never_late` — a SECOND instance of the N1 class, in the file spec 80 added (`conn_heartbeat_tests.rs:76` writes under `crates/pii-server/_tmp`). The tool found it on its first green run. Orchestrator reproduced it independently (export kept at `/projects/_tmp/fresh-gate-2931282`). Now spec **85**.
+- [ ] **NOT MET YET — and the tool is right to say so.** With spec 83 applied, `fresh-gate --worktree` still FAILS, naming TWO OTHER tests: `engine::conn_heartbeat_tests::heartbeat_memory_consolidate` and `engine::conn_heartbeat_tests::heartbeat_control_light_method_never_late` — a SECOND instance of the N1 class, in the file spec 80 added (`conn_heartbeat_tests.rs:76` writes under `crates/pii-server/_tmp`). The tool found it on its first green run. Orchestrator reproduced it independently (export kept at `<scratch>/fresh-gate-2931282`). Now spec **85**.
 - [ ] `cargo test -p xtask` exits 0 and `cargo clippy --workspace --all-targets -- -D warnings` exits 0
 - [ ] `cargo run -q -p xtask -- lint-files` exits 0 with no new warning
 - [ ] the export directory it created is listed in the report (and, on the red path, left in place)

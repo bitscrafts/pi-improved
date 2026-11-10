@@ -1,7 +1,7 @@
 # Spec 288: a declared `needs` key that the run input cannot supply refuses the run at start, before any node runs
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, closing a gap that spec 284's daemon test measured. Spec 267 made a called graph's declared `needs` refuse the run when a key resolves to nothing. It does so with a `require` node at the **head of the called graph**, so the refusal arrives only when the scheduler reaches the call. In the shipped `spec` graph that is **after `code` has run** — a full coder pass (measured 2026-10-26: 50 turns, $0.245 on haiku) is spent before a missing `docs_brief` is noticed. The A148 worker found it and reported it instead of bending the test (spec 284's R3 item 2 was amended to pin the late behaviour).
 
 A required input that is absent from the run input is known at **run start**: the loader recorded each call's `needs` and its mapped `in` keys (`CallRecord`, spec 269). This spec adds a preflight to `Engine::start_run` that refuses such a run before anything runs, with the same error text the `require` node would give, and leaves the `require` node as the second line of defence for keys that only resolve at run time (a mapped expression over a node output).

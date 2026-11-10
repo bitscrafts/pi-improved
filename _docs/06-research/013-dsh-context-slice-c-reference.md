@@ -19,7 +19,7 @@ This doc is the SSOT for that reference. It builds on:
   (011 A17d, unfixed); `state.md` is written by the launcher, not a node.
 - `_docs/06-research/005-dsh-vs-pii-harness-analysis.md` — the append-only
   journal + derived-projection pattern (dsh validates it; pi already has it).
-- agent-memory `workspace/research/dsh-context` (facts) and
+- the workspace memory `workspace/research/dsh-context` (facts) and
   `workspace/insights/dsh-context-relevance` (why it matters).
 
 ## 2. What dsh-context is (facts)
@@ -93,7 +93,7 @@ concrete reference design for it. The transferable lessons, in priority order:
 ## 4. What NOT to copy
 
 - The plugin-metaphysics (Cordis reversible registrations) — 005 already
-  concluded pi's static single binary is the better fit for lnx.
+  concluded pi's static single binary is the better fit for the host.
 - The web-UI chrome. pi-improved's context insight should be a `pii graph
   trace`-style CLI projection + the journal, not a browser tab.
 
@@ -108,6 +108,6 @@ design for that spec.
 ## 6. Record of where this lives
 
 - This file: `_docs/06-research/013-dsh-context-slice-c-reference.md` (SSOT).
-- Condensed facts + insight: agent-memory `workspace/research/dsh-context` and
+- Condensed facts + insight: the workspace memory `workspace/research/dsh-context` and
   `workspace/insights/dsh-context-relevance`.
 - Cross-links: 008 §3.1 (Slice C), 012 D9 (Slice C unbuilt).

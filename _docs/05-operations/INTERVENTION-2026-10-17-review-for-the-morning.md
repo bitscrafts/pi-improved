@@ -3,7 +3,7 @@
 Read this first in the morning. Everything here is measured; nothing is a promise.
 
 ## THE DEPLOY (the one thing that never was in doubt)
-`pii` is installed and running on lnx as a systemd user unit: revision **0e34719dce0d** (the revision the deploy card
+`pii` is installed and running on the host as a systemd user unit: revision **0e34719dce0d** (the revision the deploy card
 approved), `channels ['discord']` live, `channel_posts 1`, `channel_post_refusals 0`, and `kill -9` returns it in **8
 seconds** with a new PID. The card was rendered with five fields, approved, and rehearsed: the rollback fails safe with no
 restore source and restores otherwise (`deploy/rollback-pii.sh`, rehearsed in a copy prefix, live install untouched).

@@ -3,7 +3,7 @@
 ## Overview
 
 `coder.spawned.image_digest` is journalled as the literal string `sha256:` with no hex after it when the coder node
-runs through the runtime API socket. Measured on lnx 2026-10-24T12:24Z, run `r000000000324`:
+runs through the runtime API socket. Measured on the host 2026-10-24T12:24Z, run `r000000000324`:
 
 ```
 "runtime":"socket","container":"f35f32c7…","image":"localhost/pii-agent:1",
@@ -84,7 +84,7 @@ Case fixtures come from this spec's measured reply, not from a hand-written obje
 - [ ] `grep -q 'fn image_digest_from_inspect' crates/pii-server/src/node_kinds/nodes/coder_runtime_api.rs`
 - [ ] `! grep -q 'String::from("sha256:")' crates/pii-server/src/node_kinds/nodes/coder_runtime_api.rs`
 
-The live half — one redeploy to lnx and one coder run whose `coder.spawned` carries `image_digest` with 64 hex — is
+The live half — one redeploy to the host and one coder run whose `coder.spawned` carries `image_digest` with 64 hex — is
 recorded in `## Closure` by the orchestrator. It is not a checkbox here because this host has no podman and the plan's
 verify runs here; a criterion that cannot run on the host it gates is how spec 227's criterion 7 sat unmeasured for
 four days.
@@ -97,10 +97,10 @@ four days.
   reading the journal correctly; the field is what is wrong.
 - Do not change the CLI runtime's refusal text or behaviour — the socket path is brought to it, not the reverse.
 - The refusal must name the requested image, so an operator reading `run get` knows which reference to pin.
-- Scratch under `/projects/_tmp/`, never `/tmp`; no `rm -rf`; no commit.
+- Scratch under `<scratch>/`, never `/tmp`; no `rm -rf`; no commit.
 
 ## Closure
 
 (outcome, the four test names with their counts, the mutation that reddens the parse and the `sha256sum` before and
-after the restore, the gate line, and the live `coder.spawned` line from lnx with the 64-hex digest — filled in when
+after the restore, the gate line, and the live `coder.spawned` line from the host with the 64-hex digest — filled in when
 the item is closed.)

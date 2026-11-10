@@ -1,6 +1,6 @@
 # Spec: 107 — P2: make the confinement real, and make the secrets not leak
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P2 of the road to production (`_docs/06-research/052-production-readiness-2026-10-09.md` §8, and
 its CORRECTION section — read both; the correction is mine and it changes what P2 is).
 **Goal**: the capability exists; the DEFAULT is not safe, and the observability data path is untested for
@@ -71,7 +71,7 @@ R6. **seccomp: state its absence honestly** (and do not claim parity with Landlo
 - Do NOT write a canary secret into a tracked file, a doc, or a commit — generate it at test time.
 - A test that cannot fail is not a test: every new assertion needs its near-miss or mutation control.
 - Emit through `pii-observe`; no new raw prints beyond the file's budget.
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G). Do not leave a daemon running.
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G). Do not leave a daemon running.
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)

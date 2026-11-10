@@ -1,7 +1,7 @@
 # Spec 305: a run id the daemon has handed back is already in the store
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, durability (found by simulation 2026-10-28, `composition-sim.py ackloss`, probe `probe-sim.py durable`)
 `Engine::start_run` returns the run id "BEFORE execution". The run's header and its `Started` event are written later, inside `spawn_blocking`, by `pii_graph::run::run`, after graph validation, node build and two `put_graph` calls, and flushed by `jr.flush()`.
 A caller that has been given an id and then loses the daemon (SIGKILL, OOM, power) in that window finds the id **unknown to the restarted daemon** ("run 'rNNN' is unknown to this daemon (not in flight, not stored)"). MEASURED on a private daemon with stand-in agents: killing at 0 s after the last acknowledgement lost 1 of 6 ids; at 1, 2, 4 and 9 s, 0 of 6. The queue lane trusts the id it receives (it polls it, and cancels it on give-up), so an id that can vanish is a hole in "always".

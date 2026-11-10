@@ -5,7 +5,7 @@ MEASURED 2026-10-18 (070 section 0): the daily digest produced ~1,846 runs at ON
 
 Reproduced in scratch on the deployed binary: one armed run executes once per occurrence; three kill -9 restarts give suspended 1 -> 2 -> 3, and at the occurrence ALL THREE execute.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 A daemon start MUST NOT arm a second run for a cron entry that already has a suspended run for that entry. Deduplicate on the entry name in start_cron_entries, or cancel stale suspended runs at boot and log that it did — either way, after N restarts the armed count equals cron_entries.

@@ -7,7 +7,7 @@ MEASURED 2026-10-17 22:39Z, verbatim from the deployed daemon log:
 
 027895e moved the net byte window to the CONNECTION, and the post is still denied under a daemon that has made hundreds of requests. Whatever accumulates must be bounded per poll or per run rather than over the daemon life, and the refusal must stay loud.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 A channel or a cron run must be able to run for a day without exhausting its byte budget, with a scripted test that makes thousands of requests and still posts, AND a single oversized response still refused.

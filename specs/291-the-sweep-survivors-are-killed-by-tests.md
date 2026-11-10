@@ -1,7 +1,7 @@
 # Spec 291: the three composition mutants the sweep let live are killed by tests, not by renaming them
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, closing the sweep. Spec 286's first run killed 15 of 18 required mutations and recorded three survivors in `_docs/05-operations/COMPOSITION-MUTATION-SWEEP.md`. A survivor is a behaviour no test pins; this spec adds the tests, and the sweep — re-run — is the proof. The sweep exits nonzero until every required row is RED, so this spec is done when `bash scripts/mutate/composition.sh` exits 0.
 
 The three, from the document and the code read 2026-10-26:

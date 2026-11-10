@@ -9,7 +9,7 @@ compiles the whole workspace from scratch, four times over in four separate targ
 crate, three concurrent linkers, load 88 on 32 cores, and the account window frozen for two hours because compiling spends
 no tokens. FRESH_GATE_TARGET exists and is used by NOTHING on this path.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

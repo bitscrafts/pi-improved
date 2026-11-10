@@ -1,6 +1,6 @@
 # Spec: 128 — the channel egress node, and the first Discord graphs
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after the `057` plan (111–127 complete) — **the user's directive (2026-10-10)**:
 *"i think the discord deserves its own graphs"*. The Discord surfaces exist (spec 112: a `discord` channel with
 poll **and** send; the Hermes gateway delivers into the forum as thread posts — measured today), but **no graph can
@@ -77,7 +77,7 @@ R7. **Docs**: a section in the memory/channel guide (or a new `_docs/0X-guides/d
 - Never claim a live Discord post in the gate unless a test really made one (R5).
 - Do not create forum tags from code; that is the human step in R4.
 - Do not edit `specs/` except the verification section your orchestrator adds. Do not commit.
-- Scratch under `/projects/_tmp/`, delete only your own, no daemon left running.
+- Scratch under `<scratch>/`, delete only your own, no daemon left running.
 
 ## Orchestrator verification (2026-10-10)
 

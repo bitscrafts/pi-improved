@@ -16,9 +16,9 @@ capability boundaries, not bugs.
 
 ### 1.1 MCP: Hermes ↔ Pii connected
 
-- `hermes mcp list` → `pii → /root/.local/bin/pii-mcp`, status `✓ enabled`
+- `hermes mcp list` → `pii → ~/.local/bin/pii-mcp`, status `✓ enabled`
   (alongside `chromecast`).
-- Binary present: `/root/.local/bin/pii-mcp` (1.8 MB, built 2026-09-09).
+- Binary present: `~/.local/bin/pii-mcp` (1.8 MB, built 2026-09-09).
 - `pii-mcp` is *server + client* (spec 21): it exposes pii's native tools
   (fs/edit/bash/grep/glob) as an MCP server over stdio, and can consume
   external MCP servers as a client.
@@ -46,8 +46,8 @@ Driven through MCP (`mcp__pii__bash` → pii CLI → daemon UDS):
    → `{"archived":0,"candidates_capped":false,"candidates_evaluated":0,"merged":0}`
    (clean run, nothing to merge), and the doc **persisted** afterwards.
 
-- Daemon: `pii daemon --foreground --sandbox off --workspace /projects/pi-improved --store /root/.pii/store.redb`
-- Socket: `/root/.pii/runtime/control.sock`
+- Daemon: `pii daemon --foreground --sandbox off --workspace <repo> --store ~/.pii/store.redb`
+- Socket: `~/.pii/runtime/control.sock`
 - All three RPCs are real handlers (`memory_search`, `memory_put`,
   `memory_consolidate` in `pii-server/src/daemon/methods.rs`), not stubs.
 - `pii-memory` tests: **15 passing** (4 unit + 3 consolidate + 7 lanes + 1

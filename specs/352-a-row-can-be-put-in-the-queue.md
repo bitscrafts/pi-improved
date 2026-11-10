@@ -1,6 +1,6 @@
 # Spec: A row can be put in the queue from outside
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Unblocks**: the night run, and every later
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Unblocks**: the night run, and every later
 self-improvement row (a case must become work somehow)
 **Finding**: measured 2026-11-03 — `put_item` is called **only from tests**
 
@@ -67,7 +67,7 @@ say so in the Closure and paste the output).
 ## Guardrails
 
 - The gate is the cycle's step, not the implementer's. `cycle.sh` gates this commit with the full step list and a
-  measured coverage floor (specs 262/266/315); a sandboxed implementer cannot write `/projects/_tmp`, where
+  measured coverage floor (specs 262/266/315); a sandboxed implementer cannot write `<scratch>`, where
   `fresh-gate` exports its tree, so naming the gate as an exit criterion makes the run refuse before its work is
   judged (measured 2026-11-03, row 351: three attempts, 4 of 5 criteria green, parked on the gate alone). Do not
   add it back as a criterion.

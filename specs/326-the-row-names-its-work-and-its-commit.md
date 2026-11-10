@@ -23,7 +23,7 @@ Two changes, one idea: **the row names its work, and the work's commit, in field
 **R1 — the spec number is the id for new rows.** For any row whose spec is numbered `>= 326`, its id MUST equal
 that number (`326`, not `A188`). Rows written earlier keep their `A`-id, which stays a valid alias. Why a
 boundary and not a bulk rename: 183 historical rows are done, and renaming them would orphan every session id
-and every amem key that names one.
+and every the workspace memory key that names one.
 
 **R2 — a row can be annotated with what only the commit step knows.** `state.py annotate <id> --spec <path>
 --commit <sha>` writes both fields, and refuses (non-zero, nothing written) when the spec file does not exist or

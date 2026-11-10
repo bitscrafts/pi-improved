@@ -1,7 +1,7 @@
 # Spec: the coder node starts its container through the runtime's API, not by exec'ing podman
 
 ## Overview
-M0 measured on lnx (2026-10-20, `_docs/05-operations/M0-2026-10-20.md`) closes the direct path:
+M0 measured on the host (2026-10-20, `_docs/05-operations/M0-2026-10-20.md`) closes the direct path:
 rootless podman cannot initialise inside pii's landlock domain. Three gates, each reproduced under the
 daemon's exact grant with a control: the `/dev/shm` rootless lock (spec 229), the pause-process re-exec
 (`cannot re-exec process to join the existing user namespace`, rc 1), and — with a fresh podman state —
@@ -36,7 +36,7 @@ R3. Refusals are honest and named: an absent socket, a refused connect and a non
     the HTTP status — never `coder.image.missing` for a runtime failure (spec 228 R2's rule, extended).
 R4. The socket path is the sandbox's one requirement: no new grant is added to the `workspace` profile by
     this path, and a test pins that the grant list and `grant_policy` text are unchanged by this spec.
-R5. M0 is re-run on lnx after the change: `M0 PASS <pid>` with `coder.spawned` and `coder.exited` for one
+R5. M0 is re-run on the host after the change: `M0 PASS <pid>` with `coder.spawned` and `coder.exited` for one
     pid, or `M0 REFUSED <reason>` naming what still refuses. The verdict and raw output go to
     `_docs/05-operations/M0-2026-10-20.md`.
 
@@ -58,7 +58,7 @@ R5. M0 is re-run on lnx after the change: `M0 PASS <pid>` with `coder.spawned` a
 - [ ] cargo test -p pii-server --test coder_runs_in_podman
 - [ ] cargo test -p pii-tools
 - [ ] grep -q 'coder.runtime.unavailable' crates/pii-observe/src/names.rs
-- [ ] on lnx: bash scripts/m0-daemon-starts-a-container.sh -> M0 PASS <pid>, and the run's journal holds both coder.spawned and coder.exited for that pid
+- [ ] on the host: bash scripts/m0-daemon-starts-a-container.sh -> M0 PASS <pid>, and the run's journal holds both coder.spawned and coder.exited for that pid
 - [ ] _docs/05-operations/M0-2026-10-20.md carries that verdict with its raw output
 
 ## Guardrails

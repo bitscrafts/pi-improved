@@ -1,7 +1,7 @@
 # Spec 319: `pii lane run` — the composed lane's run half (`run-batchC-pii.sh` lines 219-343) in the binary, so the shell lane can be retired
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the product is one binary and ships no companion scripts (user, 2026-10-29/30)
 
 Part 1 (spec 317, landed `a9487a2`) ported everything before the run: `pii lane plan` returns a `LanePlan` and takes the two devbox probes (`resume_exists`, `has_uv`) through the `Devbox` trait, with a dry implementation. This part ports **everything after the plan**: the daemon-up call, the judge preflight, the start, the session handle, the wait, the evidence, the quota text, the spec guard and the exit code. It adds the real `Devbox`/transport implementation (ssh + `podman exec`), so `pii lane run <N> [--resume <sid>] [<extra-brief-file>]` replaces `bash scripts/run-batchC-pii.sh <N> ...` in full. The script is **not edited or deleted by this spec**: it is the reference. A later one-line row retires it once this one is proved.
@@ -10,7 +10,7 @@ Part 1 (spec 317, landed `a9487a2`) ported everything before the run: `pii lane 
 
 ## Requirements
 ### Functional
-- R1 (transport). One `Transport` trait: `exec(&self, argv_after_host: &str) -> Output` where the real implementation runs `[$PII_SSH or ssh] -o BatchMode=yes -o ConnectTimeout=15 $DEVBOX_HOST <one string>` (`S:26-27`, host default `mvcorrea@10.10.10.217`, `DEVBOX_HOST` overrides), and a `devbox_x()` helper builds `podman exec -w <agent_root> pii-devbox <args>` (`S:229`). The real `Devbox` impl for part 1's trait is built on it: `resume_exists` runs the `find <CFG> -name "<sid>.jsonl" -type f -print -quit` probe of `S:103` and `has_uv` runs `command -v uv >/dev/null` inside the container (`S:68`, `S:211-216`) with the `ABORT: container preflight failed: <output>` text and exit 2. Output of `ssh` that is not a result goes to stderr as in the script.
+- R1 (transport). One `Transport` trait: `exec(&self, argv_after_host: &str) -> Output` where the real implementation runs `[$PII_SSH or ssh] -o BatchMode=yes -o ConnectTimeout=15 $DEVBOX_HOST <one string>` (`S:26-27`, host default `mvcorrea@<host>`, `DEVBOX_HOST` overrides), and a `devbox_x()` helper builds `podman exec -w <agent_root> pii-devbox <args>` (`S:229`). The real `Devbox` impl for part 1's trait is built on it: `resume_exists` runs the `find <CFG> -name "<sid>.jsonl" -type f -print -quit` probe of `S:103` and `has_uv` runs `command -v uv >/dev/null` inside the container (`S:68`, `S:211-216`) with the `ABORT: container preflight failed: <output>` text and exit 2. Output of `ssh` that is not a result goes to stderr as in the script.
 - R2 (the run, in order, with the script's exact stdout lines, log appends and exit codes): daemon up through `PII_DAEMON_SH` (default `modules/devbox/daemon.sh up`; porting that file is the devbox-deploy item, not this one) → `DAEMON   : <last line>` and `ABORT: the devbox daemon is not up:` + last 5 lines, exit 2 (`S:222-224`); on the spec lane copy the three graphs into `_tmp/devbox-test/graphs/` (`S:225`); record `git status --porcelain -- specs | sort` before (`S:227`); the **judge preflight** (`S:234-255`: a throwaway repo under `_tmp/devbox-test/preflight-<ts>-XXXXXX`, a one-criterion spec, a base commit made with the neutral identity `pii-preflight`, a `run start preflight` through the daemon, polling up to 60 times with `PII_POLL_SECONDS` default 5, the four terminal words, and the two `ABORT` texts); `LINES_BEFORE` = the daemon log's line count; the start (spec lane: a generated `start-<tag>.sh` written under the log dir and run in the container; coder lane: `run start <graph name>`); the run id is the first `r` + 12 digits, else `ABORT: no run id: <first 300 bytes>`, exit 2; `RUN      : <id>` and `== run <id>` in the log.
 - R3 (the session handle, `S:268-274`): up to 60 tries, 2 s apart, of `tail -n +<LINES_BEFORE+1> <C>/pii.log | grep -a coder.spawned | tail -1`, the `"session":"…"` value written to `session-<tag>.txt` and `== session handle captured at spawn: <sid>` in the log.
 - R4 (the wait). Spec lane: until a terminal word (`succeeded|failed|refused|cancelled`) or `SECONDS >= DEADLINE` (part 1's `deadline_s`), then, if still running, `run cancel <id> --kill --reason lane-wait-expired` and the `== <id> still running after <n>s: cancelled by the lane` log lines. Coder lane: at most `PII_NODE_TIMEOUT_MS / 5000 + 120` polls. `== <id> final: <status|unknown> after ~<n>s`.
@@ -86,13 +86,13 @@ models CI is red.**
   2. `self.r.exit = 9` → `1` in the spec guard (`run.rs:361`) → `agent_edit_under_specs_exits_9_and_lists_it` FAILED, 21 passed.
   Both are on R6's own list of mutations the tests must kill; the controls around them stayed green.
 - **`cargo run -q -p xtask -- fresh-gate` over HEAD FAILED** — `failed steps: ["test (lib/bins/tests)"]; failing tests:
-  ["the_recorded_ssh_sequence_equals_the_shells"]`, the spec's own headline oracle (`/projects/_tmp/fresh-gate-3943206`,
+  ["the_recorded_ssh_sequence_equals_the_shells"]`, the spec's own headline oracle (`<scratch>/fresh-gate-3943206`,
   `_tmp/fresh-gate-319-closure.log`). In the export the shell reference exits 0 and the binary exits 2 **with no stdout at all**.
 - **Cause, measured, not inferred**: `crates/pii-cli/src/cmd_lane/shell.rs:96` refuses a root whose path lies inside `_tmp/`
   (`pii lane: <path> is inside _tmp/: refused`, exit 2) — R1 of spec 317 — and `fresh-gate` exports HEAD into
-  `/projects/_tmp/fresh-gate-<pid>`. The shell half is unaffected because `scripts/run-batchC-pii.sh` hardcodes
-  `REPO=/projects/pi-improved`, so in the export the two implementations are not even reading the same tree. The parity oracle
-  therefore holds only in `/projects/pi-improved` itself: `quality-gate.sh` on the dev tree is green, the CI-model door is red.
+  `<scratch>/fresh-gate-<pid>`. The shell half is unaffected because `scripts/run-batchC-pii.sh` hardcodes
+  `REPO=<repo>`, so in the export the two implementations are not even reading the same tree. The parity oracle
+  therefore holds only in `<repo>` itself: `quality-gate.sh` on the dev tree is green, the CI-model door is red.
 - **Consequence for the loop**: nothing is blocked (each cycle's gate is the dev-tree one), but this spec's acceptance is unmet
   and the next item must clear it before more lane work lands on it. Follow-up: spec 321 / row A185 (the refusal keeps its
   default and gains an exactly-`1` knob, and the differential sets it), ordered ahead of A184.

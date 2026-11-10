@@ -1,7 +1,7 @@
 # Spec 292: the reaper is proven on a spawn a real run journalled, not one a test built by hand
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the safety net that kills a dead daemon's agents. Spec 242 built `reap_orphans` and certified
 it on **hand-built events**: every one of the twelve tests in `crates/pii-server/tests/orphans_are_reaped.rs` seeds its
 `coder.spawned` with the local helper `spawned(...)` (a `RunEvent::NodeObserved` literal, `session: ""`), so no test
@@ -64,7 +64,7 @@ test asserts but the live path never reads is a false green).
   - (e) **Nothing outlives the test.** Every process it starts is killed on the way out (a `Drop` guard; `Sleepers` from
     the harness may be used), including when an assertion fails early.
 - **R2. The control that shows the seam was uncovered** — new script `scripts/checks/live-spawn-reap.sh` (the
-  `scripts/checks/` family: `set -u`, own scratch under `/projects/_tmp`, prints one verdict line, exit 0 only on
+  `scripts/checks/` family: `set -u`, own scratch under `<scratch>`, prints one verdict line, exit 0 only on
   success). Its steps, in this order:
   1. `sha256sum crates/pii-server/src/node_kinds/nodes/coder.rs` → `BEFORE`;
   2. copy the file's **bytes** into its own scratch directory (never a hardlink, never a move);

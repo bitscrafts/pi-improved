@@ -9,8 +9,8 @@ service matches the word here; "postponed" means nobody touches it and it is not
 | 2 | `matrix` channel | **postponed** | operator, 2026-11-02 | not configured, not polled |
 | 3 | `telegram` channel | **near future** | operator, 2026-11-02 | kept present and unconfigured; becomes the second surface after Discord, and lands with a spec of its own |
 | 4 | `webhook` channel | **kept — a valid insertion** | operator, 2026-11-02 | an external producer may post into pii through it |
-| 5 | `gpiod` HAL | **postponed** | operator, 2026-11-02 | not part of the production path. It has no hardware to talk to: measured 2026-11-02, neither this container nor the lnx host has a `/dev/gpiochip*` |
-| 6 | local `ollama.service` (on lnx) | **retire** | operator (AGENTS.md), reaffirmed 2026-11-02 | nothing new may be wired to a local ollama; disabling the host service is a deployment step for the operator, not an agent action |
+| 5 | `gpiod` HAL | **postponed** | operator, 2026-11-02 | not part of the production path. It has no hardware to talk to: measured 2026-11-02, neither this container nor the the host host has a `/dev/gpiochip*` |
+| 6 | local `ollama.service` (on the host) | **retire** | operator (AGENTS.md), reaffirmed 2026-11-02 | nothing new may be wired to a local ollama; disabling the host service is a deployment step for the operator, not an agent action |
 | — | `mqtt` channel | **IN the production path** | operator, 2026-11-02 | must be exercised: its own poll interval and its own gate row (see `gates.sh`) |
 | — | Discord | **the surface, now** | operator, 2026-11-02 | `pii` forum, grouped by topic; see `discord-topics.md` |
 | — | embedding a broker in pii (`rumqttd`/`mqttd` as a plugin) | **END OF THE QUEUE** | operator, 2026-11-02 | pii stays an MQTT **client**; devices keep talking to mosquitto, which outlives a pii restart. Revisit only after the rest of the path is done, and only with a measured need. What exists today does not need it: `pii mqtt ls/sub/pub/send` and the model's `mqtt` tool both work over `rumqttc` |

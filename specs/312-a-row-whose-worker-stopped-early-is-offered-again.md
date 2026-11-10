@@ -1,7 +1,7 @@
 # Spec 312: a row whose worker stopped early is offered again, not parked for ever
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — unattended queue. The queue's own contract says a worker that stops early is resumed:
 `scripts/autonomy/cycle.sh:301` prints `OUTCOME=worker-rc-$WRC … leaving the WIP for the next cycle to resume`, and
 the operating procedure's outcome table reads **rc 8 `worker-rc-N` → "the worker stopped early; its session is in

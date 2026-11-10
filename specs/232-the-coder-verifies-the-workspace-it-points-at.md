@@ -1,7 +1,7 @@
 # Spec: the coder verifies the workspace it points at — a named criterion per workspace kind
 
 ## Overview
-Measured 2026-10-20 on lnx (runs r212, r225, r257-r258, `_docs/05-operations/M0-2026-10-20.md`):
+Measured 2026-10-20 on the host (runs r212, r225, r257-r258, `_docs/05-operations/M0-2026-10-20.md`):
 
 1. M0 PASS: the sandboxed daemon started `localhost/pii-agent:1` through the podman API socket —
    `coder.spawned{pid 3463854, runtime=socket, container b48d1fc9a4f4…}` + `coder.exited{same pid,
@@ -13,7 +13,7 @@ Measured 2026-10-20 on lnx (runs r212, r225, r257-r258, `_docs/05-operations/M0-
    `cargo:test:workspace/all` -> `cargo test` was attempted (83f6c1b) and reverted by hand (26ae945)
    because a fixed table entry that runs `cargo test` in ANY workdir the graph names is exactly the
    arbitrary-host-execution spec 215 removed — the graph author chooses the workdir.
-3. The installed lnx graphs (coder-demo.toml, coder-podman.toml) still carry raw criterion strings
+3. The installed the host graphs (coder-demo.toml, coder-podman.toml) still carry raw criterion strings
    (`cargo test -p pii-server --test coder_spawns_a_process`), which no table name resolves: the
    node refuses `criteria.unknown` before spawning (runs r212/r225 measured). Two real defects:
    the demo graphs are stale against spec 215, and no honest verifier exists for a non-pii tree.
@@ -38,7 +38,7 @@ R1. A criterion may be declared `cargo:test:workspace/all` ONLY on a node whose 
     run's scope root (the workspace the daemon was started with): the graph author cannot point the
     check at an arbitrary tree by name; the daemon resolves `cargo test` against THAT workspace, and
     the argv0 scope stays `cargo` (already granted).
-R2. The stale demo graphs on lnx are rewritten to named criteria (the pii ones keep pii's names;
+R2. The stale demo graphs on the host are rewritten to named criteria (the pii ones keep pii's names;
     the demo ws graph uses R1's name) — graphs are data, the table stays compile-time fixed except
     for R1's scope-checked entry.
 R3. `pii run trace --reason <node>` falls back to the node's terminal port verdict text when

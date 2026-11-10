@@ -1,6 +1,6 @@
 # pi-improved — spec-46: move dead `HealAttempt` product fields into a generic `extra`
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — Phase 5.2, F-14 from the 026 report:
   `pii-store::heal` bakes product-specific fields into the generic
   persistence crate. **This is a real schema change to a live, persisted

@@ -8,7 +8,7 @@ messaging gateway with one performant, local-first, modular system.
 ## Project Layout
 
 ```
-/projects/pi-improved/
+
 ├── _repos/     # read-only clones of the 5 reference repos (analysis only)
 ├── _tmp/       # scratch / temporary files (research prompts, logs)
 ├── _docs/      # SSOT documentation (this tree)

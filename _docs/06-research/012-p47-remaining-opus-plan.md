@@ -15,7 +15,7 @@ What Slice E actually still lacks is narrow: heal-fix is **unreachable from boss
 
 **(b) The boss loop cannot tick. This is the blocker for everything.** `TimerNode::run` (`crates/pii-graph/src/nodes.rs:292-311`) has no code path returning `Outcome::Next` — it unconditionally returns `Outcome::Suspend { reason: Timer, key }`. `pii_graph::run::resume` (`crates/pii-graph/src/run.rs:124-160`) replays the journal, finds no `NodeFinished` for `tick`, re-dispatches it, and it suspends again with a *new* `fire_at_ms`. `boss-watch.toml`'s `entry = "tick"` therefore never reaches `check`. `pii-evolve`'s only action — `run.start` for `starter/boss-watch` (`crates/pii-evolve/src/driver.rs:108-132`) — starts a run that suspends immediately and can never advance. `heal-watch.toml` has the identical shape. This is documented honestly in `crates/pii-server/tests/boss_watch.rs:7-28`, but it means **the shipped boss detects nothing**, and `xtask silent-noop-check` cannot see it: `xtask/src/silent_noop.rs:139` scans methods, events, config keys and graph-node keys — not node control flow. Nothing else in P4.7 is worth building until this is fixed.
 
-Secondary: nothing schedules boss-watch at all. There is no `[[cron]]` entry for it anywhere in the repo or in `/root/.pii/pii.toml`, and `CronSection` (`crates/pii-server/src/daemon/config.rs:167-178`) is unused by any deployed config.
+Secondary: nothing schedules boss-watch at all. There is no `[[cron]]` entry for it anywhere in the repo or in `~/.pii/pii.toml`, and `CronSection` (`crates/pii-server/src/daemon/config.rs:167-178`) is unused by any deployed config.
 
 **(c) "Pluggable" (008 §3.5) is only half true at HEAD.** `crates/pii-evolve/Cargo.toml` has **no `[features]` block**; the root `Cargo.toml` lists `crates/pii-evolve` as an unconditional member with no `default-members`, so `cargo build --workspace` still compiles it. What *is* true — and is the load-bearing half — is that no crate depends on `pii-evolve`, so the `pii` binary links none of it. 008 §3.5 asked specifically for `cargo build --features pii-evolve`. `_docs/02-guides/feature-gating.md` still lists `evolve` as "upcoming." Decide whether structural separation satisfies the requirement (see D7).
 
@@ -79,7 +79,7 @@ There is **no `subgraph`/`spawn`/`map` node kind** (searched: `crates/pii-graph/
 
 - **R1** A `spawn` node kind (registered in `pii-server`, not `pii-graph` — it needs the `Engine`): given `graph` + an input expression, it calls the same path as `run.start` (`crates/pii-server/src/dispatch.rs:153-172`), returns the child `run_id` on `ok`, and journals a `RunSpawned`-style link so `pii graph trace` shows the parent→child edge.
 - **R2** A `worktree` provisioning step reachable from a graph: promote `heal_seed`'s git logic (`xtask/src/heal_seed.rs:81-101`) into a callable form and expose it as a `tool` (not an agent capability), returning `{worktree, branch, base_commit}` — the exact fields `HealAttempt` already carries (`crates/pii-store/src/heal.rs:86-88`).
-- **R3** The child run's `scope_root` is the worktree; `validate_scope_root` (`runs.rs:261-283`) must accept it, which requires worktrees to stay under the workspace (`_tmp/heal-worktrees`) — do **not** relocate them to `/root/.pii-dev/`.
+- **R3** The child run's `scope_root` is the worktree; `validate_scope_root` (`runs.rs:261-283`) must accept it, which requires worktrees to stay under the workspace (`_tmp/heal-worktrees`) — do **not** relocate them to `~/.pii-dev/`.
 - **R4** `boss-watch.toml` gains `escalate --allow→ provision → spawn(heal-fix) → done`; `deny` still terminates. Budget for the child run is bounded by `[limits]` (all four dims now thread through `Budget::new`, `runs.rs:56-61`, `:169`).
 - **R5** Rate limit: refuse to spawn a heal for a signature whose `attempt_count` (`heal.rs`) is ≥ 2 — route to a second escalation gate instead (008 §6).
 
@@ -121,8 +121,8 @@ T3 is the one a plausible implementation gets wrong: it will let the retry loop 
 
 Scope this honestly. 008 §6 says *"the boss may build and test its own patch, but must never replace the running daemon binary. Deploy stays human, permanently."* So Slice F is **not** "the boss deploys." It is: build the patched version in the worktree, run it as a second daemon against a separate runtime dir, soak it, gate it, and stop at a signed, human-applicable artifact.
 
-- **R1** Dev runtime dir: `[core] runtime_dir` already exists (`config.rs:43`). A dev daemon launched with `runtime_dir = /root/.pii-dev/runtime` gets its own `control.sock`, `store.redb`, `heal.redb`, `approval.redb`, `memory.redb`. Prove isolation: a run started on dev never appears in prod's `run.list`.
-- **R2** A `promote-build` xtask step: `cargo build --workspace` **inside the worktree**, then start the built binary against the dev runtime dir, run a fixed soak graph (`graphs/starter/soak.toml`), and record pass/fail. Never touches `/root/.pii/`.
+- **R1** Dev runtime dir: `[core] runtime_dir` already exists (`config.rs:43`). A dev daemon launched with `runtime_dir = ~/.pii-dev/runtime` gets its own `control.sock`, `store.redb`, `heal.redb`, `approval.redb`, `memory.redb`. Prove isolation: a run started on dev never appears in prod's `run.list`.
+- **R2** A `promote-build` xtask step: `cargo build --workspace` **inside the worktree**, then start the built binary against the dev runtime dir, run a fixed soak graph (`graphs/starter/soak.toml`), and record pass/fail. Never touches `~/.pii/`.
 - **R3** The promotion gate is a `gate` node with a **runtime** cycle (`gate.rs:83-87` reads `input.payload.cycle`; spec 26's mechanism), so re-entering the loop mints a fresh `approval_id` (`gate.rs:110-126`) and requires a fresh human decision.
 - **R4** On `allow`, the terminal action is `heal-collect` (a `.patch` under `_tmp/heal-reviews/`) plus a `HealAttempt.decision = {allow, approval_id, by, ts_ms}` bound to the gate's id. **Nothing writes the live tree, restarts prod, or merges.**
 - **R5** Provenance: the worktree branch is `heal/<sig>` (already so, `heal_seed.rs:81-101`) and the collected patch carries a machine-identifiable trailer, so a human can revert a class of boss changes at once (008 §6).
@@ -170,7 +170,7 @@ There is no HTTP client in this workspace at all: no `reqwest`/`ureq`/`hyper` cl
 
 **D2 — How the boss chains detect→heal (blocks spec 32).** A `spawn` node kind is the only shape that makes "the boss heals" true without a human in the middle of the *mechanism*. The alternative — the human runs `pii run start heal-fix` after approving — is honest but means the boss does not heal, it files tickets. **Recommendation: build the `spawn` node**, keep the human gate *before* it. Confirm this is the intent.
 
-**D3 — Worktree location vs. the dev runtime dir.** These are different things and 008 §7.4 conflates them. `scope_root` must be under the workspace (`runs.rs:261-283`), so worktrees stay at `_tmp/heal-worktrees`. `/root/.pii-dev/` is a *runtime dir* for a second daemon instance (`[core] runtime_dir`), holding its own redb files and socket. Confirm: worktrees under the workspace, `/root/.pii-dev/` as the dev daemon's state only.
+**D3 — Worktree location vs. the dev runtime dir.** These are different things and 008 §7.4 conflates them. `scope_root` must be under the workspace (`runs.rs:261-283`), so worktrees stay at `_tmp/heal-worktrees`. `~/.pii-dev/` is a *runtime dir* for a second daemon instance (`[core] runtime_dir`), holding its own redb files and socket. Confirm: worktrees under the workspace, `~/.pii-dev/` as the dev daemon's state only.
 
 **D4 — What "promotion" concretely is.** 008 §6 forbids replacing the running daemon, so the honest terminal is a collected patch plus a green dev-daemon soak, applied by a human. If you want more than that (a `git merge` into `master`, an auto-restart), that contradicts a stated non-negotiable and needs an explicit user override recorded in 008 §7 — do not let an implementer infer it.
 
@@ -214,7 +214,7 @@ Also worth folding somewhere: 011's "Optional 30" residuals (`compaction.rs:69`,
 
 ## 0. The user's ask (verbatim intent)
 
-> "the P4.7 is a tough one, we need internet research, agent-memory research, this module should be the boss, checking logs from time to time, intersect problems fix them, deploy the app (in parallel) pass all the work to the new version until its production ready (never mix development and production) and keep improving, researching the internet for new on the area, trying new tech. lets have a deep inspection on this!"
+> "the P4.7 is a tough one, we need internet research, the workspace memory research, this module should be the boss, checking logs from time to time, intersect problems fix them, deploy the app (in parallel) pass all the work to the new version until its production ready (never mix development and production) and keep improving, researching the internet for new on the area, trying new tech. lets have a deep inspection on this!"
 > "it should manage its own context! using specific models!"
 
 So P4.7 is NOT the narrow opus "Slice 2" (durable patch artifacts + ledger evolution). It is a **self-aware, self-managing, self-improving deployment loop** — a "boss" that:
@@ -225,13 +225,13 @@ So P4.7 is NOT the narrow opus "Slice 2" (durable patch artifacts + ledger evolu
 5. **Deploys in parallel** — a dev build and a prod build run side by side; work is passed to the new version until it's production-ready; **never mix dev and production**.
 6. **Keeps improving** — researches the internet for new tech, tries new things, and feeds learnings back.
 
-## 1. Research grounding (2026-09-07 web + agent-memory)
+## 1. Research grounding (2026-09-07 web + the workspace memory)
 
 ### Context management (the "manage its own context" part)
 - **Anthropic "Effective harnesses for long-running agents"** — the best way to elicit incremental progress is to have the agent **commit progress to git with descriptive messages** and **write summaries to a progress file**. This is the "state.md" pattern.
 - **Zylos "Agent Context Compaction"** — set compaction threshold at ~70-75% of the context window (not 95-98%); design for **compaction chains** (a session over 4h compacts 10+ times); **external memory must be the source of truth for durable facts, not the compaction summary**; active goal state should be written to a structured `state.md` at each milestone.
 - **Context engineering 2026** — 70%+ of AI coding failures trace to poor context design, not model capability. Conversation summarization that captures **decisions and outcomes** (not dialogue verbatim) reduces history tokens 80%+ while preserving what matters. **Sub-agent isolation** is the most powerful context-management pillar.
-- **agent-memory (our own)**: `insights/declarative-attention-relevance` — Declarative Attention's "reversible context compaction" (arXiv:2609.02737) directly addresses the destructive-compaction pain we hit. `pi-usage/diagnosis/looping-back-to-prompt-context-exhaustion` — the recurring "pi loops back to the prompt" symptom is context exhaustion; the fix is bounded context + explicit state.
+- **the workspace memory (our own)**: `insights/declarative-attention-relevance` — Declarative Attention's "reversible context compaction" (arXiv:2609.02737) directly addresses the destructive-compaction pain we hit. `pi-usage/diagnosis/looping-back-to-prompt-context-exhaustion` — the recurring "pi loops back to the prompt" symptom is context exhaustion; the fix is bounded context + explicit state.
 
 ### Model routing (the "using specific models" part)
 - **Model routing 2026** — treat "which model handles this step" as a per-request decision, not a one-time setting. Three tiers: fast/cheap, balanced, frontier. Route by task complexity, cost-quality tradeoff, and provider health. **A single routing error cascades** into downstream cost/latency/quality failures.
@@ -336,8 +336,8 @@ The routing is a **per-request decision** (a `route` node in the graph), not a o
 
 This is the user's hard requirement. The boss maintains **two parallel deployments**:
 
-- **DEV build** — where the boss experiments, patches, and tries new tech. Runs on a disposable worktree / a dev runtime dir (`/root/.pii-dev/`). Anything can break here.
-- **PROD build** — the stable, user-facing daemon (`/root/.pii/`). The boss NEVER touches prod directly.
+- **DEV build** — where the boss experiments, patches, and tries new tech. Runs on a disposable worktree / a dev runtime dir (`~/.pii-dev/`). Anything can break here.
+- **PROD build** — the stable, user-facing daemon (`~/.pii/`). The boss NEVER touches prod directly.
 
 The promotion rule: **work is passed to the new version until it's production-ready** — i.e. the dev build must pass all gates + a soak + the boss's own validation before it's promoted to prod. Promotion is a deliberate, gated step (a `gate` node + human approval), never automatic. This is the "pass all the work to the new version until its production ready" requirement.
 
@@ -346,7 +346,7 @@ The promotion rule: **work is passed to the new version until it's production-re
 A periodic (e.g. daily) research step:
 
 1. Search the web for new tech in the agent/self-healing/model-routing space.
-2. Store findings in `pii-memory` (research + insights, per the agent-memory convention).
+2. Store findings in `pii-memory` (research + insights, per the the workspace memory convention).
 3. Try promising tech in the DEV build (never prod).
 4. If it works and passes gates, promote it (gated).
 
@@ -402,8 +402,8 @@ enables it deliberately.
 1. **Promotion is human-approved.** The boss builds/validates the new version, but a human `pii approve` is REQUIRED to promote dev→prod. No auto-promotion, ever. (Per the opus review: deploy stays human.)
 2. **The boss orchestrator model = `glm-5.3:cloud`[ollama-cloud]** — Ollama has the full GLM-5.3, a strong candidate for the boss's decide-what-to-do-next role. It routes each step to the specific tier (scout/patch/review/research) but the boss itself is GLM-5.3.
 3. **First target = a deliberately-broken unit test** (not the RSS bug) — per the opus review: sub-minute reproduction, file:line from the compiler, unambiguous green/red oracle.
-4. **Dev/prod split: `/root/.pii-dev/` using git worktrees.** The boss works in disposable worktrees (`git worktree add`), never the live tree or prod.
-5. **Research is daily.** Plus: the research is relevant to the WHOLE system, and the user feeds links to agent-memory analysis often — so a permanent research project stays open.
+4. **Dev/prod split: `~/.pii-dev/` using git worktrees.** The boss works in disposable worktrees (`git worktree add`), never the live tree or prod.
+5. **Research is daily.** Plus: the research is relevant to the WHOLE system, and the user feeds links to the workspace memory analysis often — so a permanent research project stays open.
 
 ## 8. GitHub integration (research + discussion + PRs)
 
@@ -422,7 +422,7 @@ Needs: a repo remote (create `bitscrafts/pi-improved` on GitHub), and the `pr` c
 ---
 
 ### One-paragraph honest summary
-P4.7 is the capstone: a self-aware "boss" that runs on Pii's own substrate, manages its own context (state.md + external memory + compaction chains), routes each step to a specific model tier (boss = glm-5.3, scout/patch/review/research = their tiers), checks logs periodically, detects/localizes/patches/validates problems in disposable worktrees, maintains a parallel dev/prod split (**/root/.pii-dev/ via git worktrees**) with **human-approved promotion**, keeps improving by researching the web daily (whole-system scope, links fed to agent-memory), and can post issues/propose PRs on GitHub as `bitscrafts`. The research is grounded (Anthropic harnesses, Zylos compaction, model-routing 2026, Addy Osmani, opus heal review). Build order starts with the deterministic silent-no-op gates, then the boss loop skeleton, context management, model routing, patch/validate, dev/prod, and the research loop.
+P4.7 is the capstone: a self-aware "boss" that runs on Pii's own substrate, manages its own context (state.md + external memory + compaction chains), routes each step to a specific model tier (boss = glm-5.3, scout/patch/review/research = their tiers), checks logs periodically, detects/localizes/patches/validates problems in disposable worktrees, maintains a parallel dev/prod split (**~/.pii-dev/ via git worktrees**) with **human-approved promotion**, keeps improving by researching the web daily (whole-system scope, links fed to the workspace memory), and can post issues/propose PRs on GitHub as `bitscrafts`. The research is grounded (Anthropic harnesses, Zylos compaction, model-routing 2026, Addy Osmani, opus heal review). Build order starts with the deterministic silent-no-op gates, then the boss loop skeleton, context management, model routing, patch/validate, dev/prod, and the research loop.
 
 
 ---
@@ -479,11 +479,11 @@ This is the top priority to fix.
    control flow, not models; model routing belongs in the agent/config layer,
    not a new node kind. **Drop the `pii-evolve` crate from Slice C** — no new
    crate until a second consumer exists (the prior review's rule).
-7. **Move dev to `/root/.pii-dev/` as a RUNTIME DIR ONLY; worktrees stay under
+7. **Move dev to `~/.pii-dev/` as a RUNTIME DIR ONLY; worktrees stay under
    the workspace** — because `validate_scope_root` (`runs.rs:205-227`) rejects
-   any `scope_root` outside the workspace. A `/root/.pii-dev/` git worktree
-   would be outside `/projects/pi-improved` and cannot be a heal scope_root.
-   Keep worktrees under the workspace; `/root/.pii-dev/` is just the dev
+   any `scope_root` outside the workspace. A `~/.pii-dev/` git worktree
+   would be outside `<repo>` and cannot be a heal scope_root.
+   Keep worktrees under the workspace; `~/.pii-dev/` is just the dev
    daemon's runtime/store dir.
 
 ## What this changes in the P4.7 build order

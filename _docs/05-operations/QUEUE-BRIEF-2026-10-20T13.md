@@ -20,12 +20,12 @@ rows in the plan: 98
   (since-query returned none — showing the newest commits regardless, because a brief that reports zero
    commits while work landed is worse than no brief)
   035d073 leftover from the previous item, kept for review (cycle 20261020T120419Z; the diff is also a
-  09d1174 233: a skill can be added through the daemon - spec 227 criterion 7 is unreachable on lnx wi
+  09d1174 233: a skill can be added through the daemon - spec 227 criterion 7 is unreachable on the host wi
   8d77adf 232: the workspace criterion is scope-checked - cargo:test:workspace/all resolves only when 
-  f175423 the lnx deploy restart stops the real daemon: the proc cmdline string-match killed the bash 
+  f175423 the the host deploy restart stops the real daemon: the proc cmdline string-match killed the bash 
   9686dc0 232: the coder verifies the workspace it points at - a scope-checked workspace criterion (th
   eb21a06 M0 verdict of record filed: PASS 3463854 through the runtime socket, with the journal fields
-  0f9a29f M0 PASS on lnx: the sandboxed daemon (29cdee273dc1, landlock workspace enforced) started loc
+  0f9a29f M0 PASS on the host: the sandboxed daemon (29cdee273dc1, landlock workspace enforced) started loc
   29cdee2 queue briefs refreshed: A99 closed with its measured fixture fix, A98 criteria green pending
   995482f the test daemons stop reading the operator's config: PII_CONFIG pinned to the scratch in the
   632b398 231: trace tells the truth about a refusal - the daemon answers run trace --reason with the 

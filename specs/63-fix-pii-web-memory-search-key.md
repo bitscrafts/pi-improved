@@ -1,6 +1,6 @@
 # Fix pii-web Memory Search Parameter Key Mismatch
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `pii-web`
 - **Priority**: HIGH — a currently-broken user-facing feature (the web
   UI's memory search page always fails). Sourced from fable review

@@ -1,6 +1,6 @@
 # pii-cli Test Gaps and Small Hygiene Batch
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `pii-cli`, `pii-http-fetch`, `pii-channels` (doc comment
   only), `pii-web` (doc comment only), root `Cargo.toml` (comment
   only)

@@ -1,6 +1,6 @@
 # lint-files --report Mode for Size Auditing
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `xtask`
 - **Priority**: LOW — tooling convenience, not a bug fix or gate gap.
   Sourced from fable review candidate 11 (both passes, "make the gate

@@ -1,6 +1,6 @@
 # Spec: 101 — adoption sweep, part 2: the clients, channels and the evolutionary loop
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1 observability — the second half of the adoption sweep (part 1 is spec 100, the
 server-side subsystems). Enforcement hardening follows in spec 102, so the gate stays green here.
 
@@ -55,7 +55,7 @@ R5. `specs/` is read-only for you.
   (spec 102 does that).
 - Do NOT log secrets, tokens or env values.
 - Do NOT edit any file under `specs/`.
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)

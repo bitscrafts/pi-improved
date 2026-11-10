@@ -6,7 +6,7 @@ dispatch a needs-review item - so A27, A28 and everything behind them never ran,
 called, and the account window sat frozen for 35+ minutes while every watcher reported "fine". One bad row at the front
 costs a whole night of silence.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 The tick's pick must SKIP any item whose state is parked/needs-review and dispatch the next dispatchable row, naming the

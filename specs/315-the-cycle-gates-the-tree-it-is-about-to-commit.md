@@ -1,7 +1,7 @@
 # Spec 315: the cycle gates the tree it is about to commit
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — gate honesty, the other half of spec 314. Spec 314 made `bash quality-gate.sh` run the tests
 of the crates a change touches, so the *working tree* is now judged. The tree that **lands** is a different object:
 `git archive HEAD` plus exactly the paths the row stages. §9a of `_docs/05-operations/open-items.md` filed the gap and
@@ -19,7 +19,7 @@ already exists and is not used: `head-builds.sh --worktree` is documented on its
 door", and it overlays the worktree, which is not what a commit carries.
 
 **The cost is now measured, which is what §9a asked for** (2026-10-30, this host, `git archive HEAD` into
-`/projects/_tmp/stage-gate-cost-20261030T002931Z`): `cargo metadata --locked` **0 s**; `cargo check -q --workspace` in
+`<scratch>/stage-gate-cost-20261030T002931Z`): `cargo metadata --locked` **0 s**; `cargo check -q --workspace` in
 a **new** target dir **38 s**; the same check of a second export against that target **8 s**. A pre-commit door that
 reuses the warm `_tmp/head-builds-target` (2.0 G, already kept by spec 245) is therefore ~8 s per item — affordable
 where a 45-min export gate is not (the reason this was not authored as "run fresh-gate before the commit").

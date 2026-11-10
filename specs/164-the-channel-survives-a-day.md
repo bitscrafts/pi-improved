@@ -5,7 +5,7 @@ The channel died 3h29m after start because the byte budget was cumulative for th
 this pins it: 50,000 scripted polls in a row with no byte-budget refusal, and one response larger than the window still
 refused.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Exit Criteria
 - [ ] `cargo test -p pii-net --test budget_window`

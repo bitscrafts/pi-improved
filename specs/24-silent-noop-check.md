@@ -1,6 +1,6 @@
 # pi-improved — spec-24: silent-noop-check
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: Highest-leverage work in the whole repo (opus review 011 Part B §24).
   It converts the silent-no-op class — declared-but-unwired surfaces — into
   machine-checkable facts, which is the strongest self-improvement machinery and

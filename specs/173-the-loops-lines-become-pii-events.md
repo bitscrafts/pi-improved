@@ -6,7 +6,7 @@ OUTCOME= lines, the workers' streams and the gate verdicts live in FILES. They a
 thing that observes pii is not observed by pii. A gate verdict, a park and a dispatch should be pii events like any other,
 and one reader should see everything.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 - The loop reports its own lifecycle to the daemon: cycle start, dispatch (with session id), verify result, gate verdict

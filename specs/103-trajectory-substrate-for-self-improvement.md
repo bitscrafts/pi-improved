@@ -1,6 +1,6 @@
 # Spec: 103 — the trajectory substrate: the first brick of the self-improvement pillar
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1, observability — user directive (2026-10-09): *"observability is the basis of the self
 improvement loop pilar"*. Rationale: `_docs/06-research/053-…md` §8. This spec extends the contract with
 CORRELATION and adds the durable trajectory sink; it does NOT build skill extraction.
@@ -82,7 +82,7 @@ R6. Do NOT build skill extraction, distillation, or any learning loop in this sp
 - Do NOT put secret material into the contract types, and do NOT log env values or tokens.
 - Do NOT change the wire types in `pii-proto` in this spec.
 - Do NOT edit any file under `specs/`.
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)

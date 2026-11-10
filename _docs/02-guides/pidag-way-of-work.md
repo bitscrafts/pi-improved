@@ -1,6 +1,6 @@
 # Pidag — How We Implement (the SDD pipeline)
 
-**Date**: 2026-09-07 · **Status**: VERIFIED against pidag source (`/projects/pidag`) and our live config
+**Date**: 2026-09-07 · **Status**: VERIFIED against pidag source (`<workspace>/<project>`) and our live config
 
 This is the authoritative description of how pi-improved (and every project in
 this workspace) turns a spec into committed, verified code. It is grounded in
@@ -13,7 +13,7 @@ pidag's orchestrator is a **static DAG**, planned up front by the planner
 scheduler that makes no judgements at runtime**. This is a deliberate,
 research-backed choice: the dominant multi-agent failure mode is the *LLM
 orchestrator* degrading under information pressure (ICML 2026). pidag sidesteps
-it by not reasoning during the run. See `docs/ARCHITECTURE.md` in `/projects/pidag`.
+it by not reasoning during the run. See `docs/ARCHITECTURE.md` in `<workspace>/<project>`.
 
 **Consequence**: the plan (the spec) is where quality lives. 42% of failures
 are specification ambiguity; the orchestrator's job is to write specs worth

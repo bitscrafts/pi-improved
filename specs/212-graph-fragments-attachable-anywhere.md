@@ -6,7 +6,7 @@ composition step that makes skills and hooks worth having: written once as a fra
 is, resolved and woven at load time. Without it every graph re-implements its own guard, and "one graph per concern" decays
 into "one graph per occurrence of a concern" — which is exactly the sprawl this project is trying to reverse.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Verified premises
 - spec 113's `sop` node already weaves bookkeeping nodes around steps — the weaving primitive exists.

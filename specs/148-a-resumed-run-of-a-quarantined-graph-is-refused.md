@@ -6,7 +6,7 @@ Filed with spec 125 and still open in `_docs/05-operations/open-items.md` §9: t
 **new** run of a quarantined graph does not stop a run that is **resumed**. A quarantined graph can therefore be
 driven forward through the back door — the exact hole the quarantine exists to close.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: the gate's own robustness (pre-video backlog, specs 145–148)
 
 ## Requirements

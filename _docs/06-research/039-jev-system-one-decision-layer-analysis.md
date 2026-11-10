@@ -17,7 +17,7 @@ on how it can be used on pii"* → *"no implementation, just analysis!"* →
   (`AgentNode` `fail` port + `FailurePayload{status,reason,provider}`), spec 41
   (`graphs/starter/failover.toml`), spec 42 (reason on the operator surface),
   `graphs/starter/verify-fix.toml` (escalation shape).
-**Prior art (amem)**: `research/typeface-ai-and-jev`,
+**Prior art (the workspace memory)**: `research/typeface-ai-and-jev`,
 `insights/jev-system-one-models-primary`, `research/jev-herdr-model-router`,
 `insights/jev-herdr-model-router`, `research/laya-system1-alternative-to-jev`,
 `research/jev-console-url`, `insights/typeface-ai-and-jev`.
@@ -171,11 +171,11 @@ the fuzzier adjacent question ("is this request actually equivalent, so the
 cheaper provider is acceptable?"), but that is speculative; listed for
 completeness, not recommended.
 
-**J5 — Memory/consolidation judgement (amem-adjacent, not pii-core).**
+**J5 — Memory/consolidation judgement (the workspace memory-adjacent, not pii-core).**
 `Score`/`Noul` over a candidate pair — are these two memories the same fact? is
 this item worth keeping? — is a bounded decision and a direct fit. Relevant to
 the consolidation defects on the register (C22/C23/C31/C35, whose root cause is
-a small budget and an unparseable JSON body), but that work lives in **amem**,
+a small budget and an unparseable JSON body), but that work lives in **the workspace memory**,
 so it is recorded here only as a cross-reference, not a pii proposal. Placement
 by subject, per `ssot-doc-organization`.
 
@@ -416,7 +416,7 @@ workspace OPEN-REGISTER.
 **Explicitly out of scope for this doc:** any implementation, spec, node kind,
 provider impl, or `.rs` change.
 
-**Tracked in:** `/projects/docs/01-overview/OPEN-REGISTER.md` row **A16**
+**Tracked in:** `<workspace>/docs/01-overview/OPEN-REGISTER.md` row **A16**
 (AWAITING a user decision) — per the `open-item-tracking` procedure, so the
 next-step fork is findable and does not rot with this session.
 
@@ -428,14 +428,14 @@ The shared caveat above ("neither has been measured on pii's own decisions")
 was closed for Laya by actually downloading and running it in this container.
 **Everything in this section is measured here, not quoted from a vendor.**
 
-**Environment:** container `lnx`, **no GPU** (`torch.cuda.is_available()` →
+**Environment:** container `the host`, **no GPU** (`torch.cuda.is_available()` →
 `False`), 32 vCPU, 125 GB RAM. This is the CPU path — the worst case for a
 421M-parameter encoder, and the honest one to report.
 
 **Setup:** `uv venv` (CPython 3.12.14) → `uv pip install laya` → **laya 0.3.4**,
 torch 2.14.0, transformers 5.17.0. Install succeeded (no packaging defects, unlike
 Needle 3's documented missing `pydantic`/`numpy`/`sentencepiece`). Disk: venv
-5.4 GB, HF cache 2.8 GB. Scripts kept at `/projects/_tmp/laya-test/`.
+5.4 GB, HF cache 2.8 GB. Scripts kept at `<scratch>/laya-test/`.
 
 ### 6.1 The documented quickstart runs and gives the documented answers
 
@@ -534,7 +534,7 @@ authority over edges. It upgrades the recommendation from *reasoned* to *measure
 and it names the one field (`confidence`) and the one anti-field
 (`act_probability`) the integration must use.
 
-**Reproduce:** `/projects/_tmp/laya-test/` — `run_laya.py` (quickstart),
+**Reproduce:** `<scratch>/laya-test/` — `run_laya.py` (quickstart),
 `bench_laya.py` (latency + calibration), `router_laya.py` (language routing),
 `de_check.py` (thin-vs-rich state), `action_check.py` (`act_probability` head).
 

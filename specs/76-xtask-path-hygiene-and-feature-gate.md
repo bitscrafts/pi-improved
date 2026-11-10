@@ -1,17 +1,17 @@
 # Spec: 76 — xtask repo-path hygiene + dependency hygiene (D7, F1/F2)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch C — 043 §10 items 9 + 13.
 
 ## Context
-- D7 (043 §4): xtask carries 15 hardcoded `/projects/pi-improved` literals (spec-61
+- D7 (043 §4): xtask carries 15 hardcoded `<repo>` literals (spec-61
   covered only `crates/`). They break any `git archive` export at another path.
 - F1: `llama-cpp-2` is an unconditional dependency of pii-model although it is only
   used behind a compile-time choice; builds without GPU still compile/bind it.
 - F2: unused dependencies across workspace members.
 
 ## Requirements
-R1 (D7). In `xtask/src/`, replace every hardcoded `/projects/pi-improved` literal with
+R1 (D7). In `xtask/src/`, replace every hardcoded `<repo>` literal with
     the existing `workspace_root()` helper (`xtask/src/lib.rs`) or `CARGO_MANIFEST_DIR`-
     derived paths. NO behaviour change beyond path derivation.
 R2 (F1). Move `llama-cpp-2` behind a `llamacpp` feature in `crates/pii-model/Cargo.toml`
@@ -40,4 +40,4 @@ R4. Verify from a `git archive` export at a DIFFERENT path:
 - Do NOT touch `crates/pii-server/` runtime code for D7 (xtask-only).
 - Do NOT run `cargo fix`/fmt sweeps beyond the touched files.
 - Do NOT commit; leave the tree for the orchestrator.
-- Scratch exports under `/projects/_tmp/` only.
+- Scratch exports under `<scratch>/` only.

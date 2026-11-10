@@ -1,6 +1,6 @@
 # Spec: 118 — the three ungated repo checks become gate steps (after the one that lies is fixed)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage A3** of `057` — a check that runs nowhere enforces nothing. Owner's standing preference:
 **mandatory enforcement over an advisory observer.**
 
@@ -53,7 +53,7 @@ R6. **Keep the gate usable**: state each step's wall-clock contribution; if any 
   a silent deletion of the rule or of the step.
 - A promoted step must be deterministic and offline: no network, no dependence on a scratch path existing.
 - Do not increase the gate's runtime without stating the cost; the fresh tree already builds the workspace twice.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon left running. Do NOT commit.
 
 ## Result + orchestrator verification (2026-10-10) — 7/8, and my spec's two measurements were WRONG
 **What landed (verified by me):** the three checks are gate steps and the gate now has **13** steps; my runs:

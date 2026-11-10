@@ -2,7 +2,7 @@
 
 Filed 2026-11-09. Evaluation only. Primary source: `github.com/google/elephant-goldfish-model`, read on 2026-11-09 (API metadata, the file tree,
 `docs/designs/review.md`, `synthesizer.md`, `drift_report.md`, `architecture.md`, `agents/implementation_readiness.md`,
-`resources/document_standards/implementation-readiness-standard.md`, `skills/egm-review-loop/SKILL.md`). amem holds the 2026-11-04 note
+`resources/document_standards/implementation-readiness-standard.md`, `skills/egm-review-loop/SKILL.md`). the workspace memory holds the 2026-11-04 note
 (`research/elephant-goldfish-model-egm`, `insights/elephant-goldfish-model-egm`); this note adds what the code and design docs show and maps it onto pii.
 
 ## 1. What it is (verified)

@@ -1,18 +1,18 @@
 # Spec 321: the lane's parity oracle runs in a clean export — the `_tmp/` refusal keeps its default and gains an exactly-`1` knob
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the product is one binary and ships no companion scripts (user, 2026-10-29/30)
 
 Spec 319's oracle is a **differential**: `pii lane run` and `scripts/run-batchC-pii.sh` are run against the same recorded stub and their
-argv sequence, stdout, log, session file and exit code must be identical. It holds in `/projects/pi-improved` and it does **not** hold in a
+argv sequence, stdout, log, session file and exit code must be identical. It holds in `<repo>` and it does **not** hold in a
 clean export: measured 2026-10-30 on HEAD `96df40e`, `cargo run -p xtask -- fresh-gate` fails with
 `failing tests: ["the_recorded_ssh_sequence_equals_the_shells"]` — the shell reference exits 0 while the binary exits 2 and prints nothing.
 
 The cause is measured, not inferred. R1 of spec 317 refuses a lane root whose path lies inside `_tmp/`
 (`crates/pii-cli/src/cmd_lane/shell.rs:96`, `pii lane: <path> is inside _tmp/: refused`, exit 2), and `fresh-gate` exports HEAD into
-`/projects/_tmp/fresh-gate-<pid>` (`xtask/src/fresh_gate.rs`, `BASE`). The shell half never sees that refusal because
-`scripts/run-batchC-pii.sh` hardcodes `REPO=/projects/pi-improved`; in an export the two halves are not even reading the same tree.
+`<scratch>/fresh-gate-<pid>` (`xtask/src/fresh_gate.rs`, `BASE`). The shell half never sees that refusal because
+`scripts/run-batchC-pii.sh` hardcodes `REPO=<repo>`; in an export the two halves are not even reading the same tree.
 
 The refusal is right as a **default** — a lane must not run on a scratch clone — but the gate that models CI runs the whole suite in a
 scratch tree, so the default makes the oracle unpassable there. This spec keeps the default byte-for-byte and adds the deliberate escape
@@ -22,7 +22,7 @@ differential setting it.
 ## Verified Premises
 - **CONFIRMED (measured this tick)** `cargo run -q -p xtask -- fresh-gate` at HEAD `96df40e` fails only on
   `the_recorded_ssh_sequence_equals_the_shells`; the log is `_tmp/fresh-gate-319-closure.log`, the export
-  `/projects/_tmp/fresh-gate-3943206`, and the failure text prints the shell's whole block (exit 0) beside an empty binary stdout
+  `<scratch>/fresh-gate-3943206`, and the failure text prints the shell's whole block (exit 0) beside an empty binary stdout
   (exit 2).
 - **CONFIRMED (read)** the refusal is `crates/pii-cli/src/cmd_lane/shell.rs:96` — `"pii lane: {} is inside _tmp/: refused"` — reached from
   the argument/root handling before `plan` builds anything, which is why the binary prints no `ABORT:` line.
@@ -30,7 +30,7 @@ differential setting it.
   the suite reads inside `_tmp/`.
 - **CONFIRMED (read)** the differential (`crates/pii-cli/tests/lane_run_parity.rs`, `fn differential`) runs the shell with
   `current_dir(&live)` and the script's hardcoded `REPO`, and the binary with `--root <live>`: in the dev tree both name
-  `/projects/pi-improved`, in an export they name different trees.
+  `<repo>`, in an export they name different trees.
 - **NOT CLAIMED**: that the refusal should be removed, or that a lane may run on an arbitrary `_tmp` clone. The default stays.
 
 ## Requirements
@@ -94,7 +94,7 @@ without the root; the knob honoured on the shell half as well; exit 1 instead of
   and all.
 - Do NOT make the binary aware of `fresh-gate`, of export directories, or of the suite: the hatch is an environment knob, nothing else.
 - The first criterion is the one that decides this item: a green dev-tree suite is not the acceptance — **`fresh-gate: PASS` is**.
-  `fresh-gate` needs free disk under `/projects/_tmp` and takes about 12 minutes; run it once, read its last line, and do not start a
+  `fresh-gate` needs free disk under `<scratch>` and takes about 12 minutes; run it once, read its last line, and do not start a
   second one on the same tree (a second export reuses the shared test cache and can fail on a stale binary, not on the code).
 - **STOP and report** if the refusal no longer lives in `crates/pii-cli/src/cmd_lane/shell.rs`, or if `fresh-gate` no longer exports
   under a `_tmp` base: both are premises measured at HEAD `96df40e`.

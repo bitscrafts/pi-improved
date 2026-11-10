@@ -42,7 +42,7 @@ messaging gateway with one performant, local-first, modular system.
 
 - **Rust workspace of 24 crates**, with `pii-abi` as the kernel ABI (traits + types
   only, no transport deps). Enforced by `xtask deps-check` + a hard file-size gate
-  (see `quality-gate.sh` for the current limit). Measured 2026-10-13 in `/projects/pi-improved`
+  (see `quality-gate.sh` for the current limit). Measured 2026-10-13 in `<repo>`
   (re-measure with the commands, do not trust the figures): 24 workspace members
   (`cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["workspace_members"]))'`),
   400 `.rs` files (`git ls-files '*.rs' | wc -l`), ~90,500 lines of Rust

@@ -22,7 +22,7 @@ local llama.cpp server, the store counts, and the engine opens runs. The judging
 
 **STATUS: SUPERSEDED by the Opus proactivity judgement (2026-10-13, `_docs/06-research/061-…`): every incident here is an exact-match string; a model judge buys nothing yet, and my 4th criterion can never pass. Kept as evidence; do not implement.**
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (proactive capability; 060 §2)
 **Source of the finding**: `_docs/06-research/060-durable-agents-pi-durable-2026-10-13.md`; specs 128 (cron
 graphs), 129 (`llamacpp-server:`), 131 (a refused run is a decision)
@@ -95,7 +95,7 @@ graphs), 129 (`llamacpp-server:`), 131 (a refused run is a decision)
   (the demo's own table says so).
 - A test that passes with a judge that always answers `normal` is the defect this spec exists to prevent: make
   the error path and the below/at-threshold pair explicit.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

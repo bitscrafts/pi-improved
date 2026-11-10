@@ -3,7 +3,7 @@
 ## Overview
 
 ```
-$ ssh mvcorrea@lnx '~/.local/bin/pii health'
+$ ssh <operator>@<host> '~/.local/bin/pii health'
 error: no daemon answered (… /run/user/1000/pii/default/control.sock: No such file or directory)
 ```
 
@@ -15,7 +15,7 @@ The `default` suffix is the tell: when the variable is unset the **client** appe
 **daemon**, started with an explicit directory, never created. Two different ideas of "the default socket" in one
 binary.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening (Opus audit, M5's operator path)
 
 ## Requirements

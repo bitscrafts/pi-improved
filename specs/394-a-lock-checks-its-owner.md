@@ -10,7 +10,7 @@ Consequence measured on 2026-11-04/05: the gate's test step "hung", the cycle's 
 row was parked after three attempts, and parking QUARANTINES THE TREE — three batches of work were swept
 mid-flight. The defect is in the test harness, and it cost a night.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: operations (test harness)
 
 ## Requirements

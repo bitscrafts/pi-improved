@@ -1,7 +1,7 @@
 # Spec 250: the quality gate runs the devbox module's own check
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the devbox is where specs are now implemented (user directive 2026-10-24)
 
 `modules/devbox/check.sh` verifies, with no build, no container and no key read, that the devbox module says what it claims: the base is
@@ -77,5 +77,5 @@ step list extracted from that live file (`grep '^devbox-check|' gate-steps.txt >
   `sha256sum` before `699a63e0244ffb0759922187fe3aacf32ba9d2831c59e4cb7ec0a2b34e3842db`, after the **same**;
 - restored: `quality-gate: ALL PASS`, rc **0**, `PASS: devbox-check`.
 
-Leftovers: the control and mutation scratch live under `/projects/_tmp/verify250-*`, `/projects/_tmp/gate-250-*.log`,
+Leftovers: the control and mutation scratch live under `<scratch>/verify250-*`, `<scratch>/gate-250-*.log`,
 outside the repo. Nothing under `modules/` was edited; the only tracked file this item changed is `gate-steps.txt`.

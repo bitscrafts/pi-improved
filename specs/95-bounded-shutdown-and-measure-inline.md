@@ -1,6 +1,6 @@
 # Spec: 95 — bounded shutdown, and numbers before moving any more methods off the worker (N7)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review, finding N7 (ranked 11) — the last item. Two halves with different risk: one is a
 clear defect, the other is speculative until measured. This spec fixes the first and MEASURES the second.
 
@@ -36,7 +36,7 @@ R4 (control). The existing light-method control (`heartbeat_control_light_method
 ## Exit Criteria
 - [ ] `grep -c 'shutdown_timeout' pii-cli/src/cmd_daemon.rs crates/pii-cli/src/cmd_daemon.rs 2>/dev/null | grep -v ':0' | wc -l` is ≥ 1
 - [ ] a test proves the bound: with a deliberately stuck `spawn_blocking` task, daemon shutdown returns within the bound (+ a stated tolerance) and logs the timeout (record the test name and its output verbatim)
-- [ ] the measurement table exists at `/projects/_tmp/spec95/INLINE-METHODS.md`, one row per handler, with duration, harness, and verdict (moved / stays inline + why)
+- [ ] the measurement table exists at `<scratch>/spec95/INLINE-METHODS.md`, one row per handler, with duration, harness, and verdict (moved / stays inline + why)
 - [ ] every handler left inline HAS a row saying so; every handler moved has a heartbeat test that fails when the method is put back inline
 - [ ] no handler is moved without a number backing it
 - [ ] `cargo test -p pii-server`, `cargo test -p pii-cli` pass
@@ -50,7 +50,7 @@ R4 (control). The existing light-method control (`heartbeat_control_light_method
 - Do NOT make shutdown time out on tasks that would have finished in time — the bound must be generous
   enough for a normal in-flight call; say how you know.
 - Do NOT delete or weaken any existing test, and do not touch `sched/` or the graph replay path.
-- Scratch under `/projects/_tmp/`; delete your own exports (one fresh-gate export is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one fresh-gate export is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result (2026-10-09) — shutdown bounded, ONE handler moved on numbers, and the fresh-tree gate found #4

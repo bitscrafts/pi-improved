@@ -14,7 +14,7 @@ written by 10 processes — a fact recovered from run-id block arithmetic, not f
 supervisor is exactly the shape those two numbers must expose: several `starts`, `hard_deaths` > 0, and runs
 still marked `running` whose process start no longer exists.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

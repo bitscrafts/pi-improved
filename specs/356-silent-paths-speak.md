@@ -1,6 +1,6 @@
 # Spec: Silent paths speak
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
 workstream **W4** — closes the observability gaps behind findings 3, 4, 6, 8 and 15.
 
 ## Verified premises

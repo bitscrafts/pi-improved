@@ -14,7 +14,7 @@ here" companion to `pi-local-llamacpp.md` (the quick reference).
 
 | Model | File | Size | Notes |
 |-------|------|------|-------|
-| Granite 4.2 3B | `/projects/_tmp/granite-4.2-3b-Q4_K_M.gguf` | 2.2GB | IBM, Apache-2.0, non-thinking via `reasoning=off` |
+| Granite 4.2 3B | `<scratch>/granite-4.2-3b-Q4_K_M.gguf` | 2.2GB | IBM, Apache-2.0, non-thinking via `reasoning=off` |
 | Laguna XS 2.1 | `/models/laguna-xs-2.1.gguf` | 20GB | Q4_K, reasoning model |
 
 Both are **reasoning models** — they emit `reasoning_content` and leave
@@ -27,7 +27,7 @@ its token budget on a thinking trace and returns empty content.
 Instead of two separate `llama-server` processes, use llama.cpp **router mode**:
 one server, both models, switch via the `model` field.
 
-**`/projects/_tmp/llama-models.ini`**:
+**`<scratch>/llama-models.ini`**:
 ```ini
 version = 1
 
@@ -46,7 +46,7 @@ top-k = 40
 reasoning = off
 
 [granite-4.2-3b]
-model = /projects/_tmp/granite-4.2-3b-Q4_K_M.gguf
+model = <scratch>/granite-4.2-3b-Q4_K_M.gguf
 c = 32768
 temp = 0.6
 top-p = 0.95
@@ -57,7 +57,7 @@ reasoning = off
 
 **Start it**:
 ```bash
-llama-server --models-preset /projects/_tmp/llama-models.ini \
+llama-server --models-preset <scratch>/llama-models.ini \
   --host 0.0.0.0 --port 8082 --threads 16 --models-max 2 --jinja
 ```
 
@@ -76,7 +76,7 @@ Do NOT invent custom provider names like `laguna-local`/`granite-local` — pi's
 static provider table only knows `llamacpp`, `ollama`, `mistralrs` as keyless
 local providers. Override its `baseUrl` to the router port.
 
-**`/root/.pi/agent/models.json`**:
+**`<agent-config>`**:
 ```json
 "llamacpp": {
   "api": "openai-completions",
@@ -90,7 +90,7 @@ local providers. Override its `baseUrl` to the router port.
 }
 ```
 
-**`/root/.pi/agent/settings.json`** — `enabled_models` must include `"llamacpp/*"`.
+**`<agent-config>`** — `enabled_models` must include `"llamacpp/*"`.
 
 ## 4. The invocation — CRITICAL flag order
 
@@ -172,7 +172,7 @@ itself (the workhorse).
 1. **`reasoning = off`** for both models, or they emit empty content.
 2. **Use the built-in `llamacpp` provider**, not custom names.
 3. **`--provider`/`--model` before `-p`**, or pi falls back to the default.
-4. **`pi` is at `/root/.local/bin/pi`** — not always on PATH in background shells.
+4. **`pi` is at `~/.local/bin/pi`** — not always on PATH in background shells.
 5. **`cmake` + `clang`** required for the in-process build; force clang via
    `.cargo/config.toml`.
 6. The router must be running (port 8082) for the external path.

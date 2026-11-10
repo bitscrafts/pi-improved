@@ -1,6 +1,6 @@
 # pi-improved — spec-34: slice-f-dev-prod-promotion
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — Slice F: dev/prod split and a gated, collectable
   promotion artifact. Deterministic, no model.
 
@@ -18,14 +18,14 @@ soak it, gate it, and stop at a signed, human-applicable artifact.
 
 - **R1 (dev runtime dir isolation)**: `[core] runtime_dir` already exists
   (`config.rs:43`). A dev daemon launched with
-  `runtime_dir = /root/.pii-dev/runtime` gets its own `control.sock`,
+  `runtime_dir = ~/.pii-dev/runtime` gets its own `control.sock`,
   `store.redb`, `heal.redb`, `approval.redb`, `memory.redb`. Prove
   isolation: a run started on dev never appears in prod's `run.list`.
 - **R2 (promote-build xtask)**: a `promote-build` xtask step:
   `cargo build --workspace` **inside the worktree**, then start the built
   binary against the dev runtime dir, run a fixed soak graph
   (`graphs/starter/soak.toml`), and record pass/fail. Never touches
-  `/root/.pii/`.
+  `~/.pii/`.
 - **R3 (runtime-cycle promotion gate)**: the promotion gate is a `gate`
   node with a **runtime** cycle (`gate.rs:83-87` reads
   `input.payload.cycle`; spec 26's mechanism), so re-entering the loop

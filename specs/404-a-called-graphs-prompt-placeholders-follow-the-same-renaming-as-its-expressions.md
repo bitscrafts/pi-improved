@@ -14,7 +14,7 @@ Cause, read in the code: a `call` node inlines its sub-graph and renames every n
 load by V12 (`validate.rs`, against the renamed node ids) and rendered with the same evaluator. Nothing renames them, so the placeholder keeps
 naming `rubric`, which no longer exists. Any called graph that has an agent node with a `{{nodes.X}}` placeholder is affected, not only this one.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: graph composition (follows 255, which created `call`)
 **Depends on**: 255
 

@@ -1,6 +1,6 @@
 # Spec: 115 — the operator surfaces under load (spec 110's findings F1, F4, F5, F6)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: Stage A2 of `057` — the defects the first measurement found. **A surface that lies, or grows
 without bound, makes every later measurement untrustworthy**, which is why these come before the vision stages.
 
@@ -65,7 +65,7 @@ R6. **Docs**: the runbook gains the retention policy, the growth expectation wit
 - **Never silently drop the current run's data.** Pruning may remove old trajectories only.
 - Do not raise any cap to make a test pass; a cap that has to move is a finding.
 - Do not add a dependency for latency/RSS measurement; the counters are in-process.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator verification (2026-10-10) — the four defects, verified against the artefact
 **F1 (the one that mattered) — read at the source, then mutated.** `engine/dispatch.rs:308-325`

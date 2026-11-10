@@ -1,6 +1,6 @@
 # Spec: 240 — the shipped coder graphs end a failed agent in a node that fails the run
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T10:30Z by the orchestrator (defect 22 in `_docs/05-operations/agent-management-findings-2026-10-23.md`).
 Premises read, not assumed:
 

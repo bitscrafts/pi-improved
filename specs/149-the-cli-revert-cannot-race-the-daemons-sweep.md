@@ -7,7 +7,7 @@ and the daemon's own auto-revert sweep can act on the same promotion at the same
 record. This is the same class as the audit fork (§1), whose resolution the project already chose and shipped in
 spec 138: **one writer**, the daemon applies and records.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: the gate's own robustness (pre-video backlog, specs 145–148)
 
 ## Requirements

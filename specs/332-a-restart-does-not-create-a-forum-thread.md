@@ -12,7 +12,7 @@ today, and the operator's own words were: *"the messages you are sending to the 
 digests would be buried under startup notices, in the one surface that is meant to be the primary way to talk
 to pii.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening
 
 ## Requirements

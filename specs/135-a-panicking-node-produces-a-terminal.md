@@ -11,7 +11,7 @@ failure is invisible in the run record and in the events.
 This is the worst shape of defect for an autonomous system: a run that cannot end and cannot be seen to have
 failed. The fix is a terminal state plus a record, not a retry.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F2)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §0, §2.2 (F2), §2.3
 
@@ -58,7 +58,7 @@ failed. The fix is a terminal state plus a record, not a retry.
   panic means "this process must die" — if the boundary is ambiguous, **STOP and report** rather than
   choosing silently.
 - Do NOT weaken existing tests, and do NOT raise a timeout to make the new test pass.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

@@ -8,7 +8,7 @@ also recorded four stray notes in `_tmp/autonomy/notes.md` (15:07, 15:08, 15:10,
 operator-distance metric built on those records would count the tests' own noise as operator acts — so this comes
 **before** the metric.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: proactivity (the Opus 061 judgement; order 153 → 150 → 154 → 151 → 152)
 
 ## Requirements

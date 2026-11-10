@@ -1,6 +1,6 @@
 # Validate worktree `signature` and Scope-Check the Joined Path
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `pii-tools`
 - **Priority**: HIGH — security-relevant. Path-traversal-adjacent issue
   in the one tool that creates directories and shells out, bypassing

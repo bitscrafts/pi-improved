@@ -1,6 +1,6 @@
 # Spec: 94 — replay handles a completion error the way the live path does (fixes spec 93's divergence)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 follow-through. Spec 93 MEASURED a real divergence and left a defect-record test. This
 spec fixes it, so a resumed/replayed run reaches the same state the live run did.
 
@@ -52,7 +52,7 @@ R4. Re-run the measurement: the report must show the SAME experiment (`fix(loop_
 - The LIVE path (`sched/dispatch.rs`) must not change behaviour. This is replay alignment only.
 - Do NOT change the graph semantics, the `Err` values, or the budget logic to make the terminals agree.
 - Do NOT weaken the control test, and do NOT remove the `Err` handling from `dispatch::apply`.
-- Scratch under `/projects/_tmp/`; delete your own exports (one fresh-gate export is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one fresh-gate export is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result (2026-10-09) — the divergence is gone, and the test now pins the fix

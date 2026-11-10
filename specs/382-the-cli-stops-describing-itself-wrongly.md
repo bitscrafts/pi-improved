@@ -16,7 +16,7 @@ places where the binary's own description disagrees with the binary were confirm
 
 Found by documentation work, 2026-11-04 (`manual-audit-20261104.md`).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: CLI truthfulness
 
 ## Requirements

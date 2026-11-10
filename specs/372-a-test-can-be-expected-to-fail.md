@@ -1,6 +1,6 @@
 # Spec: A test can be expected to fail
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"one graph that do
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"one graph that do
 tdd, one graph that do sdd, and other graphs composing them!"* — and the gap found 2026-11-04.
 
 ## Why this exists

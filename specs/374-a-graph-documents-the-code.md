@@ -1,6 +1,6 @@
 # Spec: A graph documents the code
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: user directive 2026-11-04 — *"also a graph for
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: user directive 2026-11-04 — *"also a graph for
 documenting the code!"*
 
 ## Why this exists

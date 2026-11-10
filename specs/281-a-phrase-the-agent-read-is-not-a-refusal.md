@@ -1,7 +1,7 @@
 # Spec 281: a spend-limit phrase the agent READ is not the CLI's refusal
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — unattended queue. Supersedes nothing; narrows spec 237's detector.
 
 Between 00:02 and 00:11 UTC on 2026-10-26 the queue ran eight cycles on one row (A145) in nine minutes. Each worker finished cleanly — `rc=0`, `claude_is_error=false`, `end_turn`, 14–50 s, 0.010–0.018 USD — and each was journalled `quota_exhausted=yes` with `quota_reset=resets 8:20pm (UTC)`. The reset time was not the account's: it was read out of `scripts/autonomy/selftest.sh:51`, a test fixture the worker had opened:

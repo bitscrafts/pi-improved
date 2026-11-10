@@ -1,6 +1,6 @@
 # Spec: 132 — the Discord channel can post into a forum, because a forum needs a tag
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after 128 (the `post` node) and 130. Filed 2026-10-11 by the orchestrator.
 
 ## Overview

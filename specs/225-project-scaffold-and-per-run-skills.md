@@ -31,7 +31,7 @@ Review 078 (2026-10-20) amended the chat design in three ways that this spec tur
 - [ ] `cargo test -p pii-server --test skills_are_materialised_read_only`
 - [ ] `cargo test -p pii-server --test skill_drift_refuses_before_spawn`
 - [ ] a scaffolded directory greps clean: `grep -rE 'auth\.json|_API_KEY=|credentials' .pii .pi .claude` returns nothing
-- [ ] on lnx: a coder run whose skill pin matches proceeds to spawn; a deliberately edited skill document refuses
+- [ ] on the host: a coder run whose skill pin matches proceeds to spawn; a deliberately edited skill document refuses
 
 ## Guardrails
 - Do NOT copy a home directory "so the agent has settings" — that is how an API key reaches a commit.
@@ -53,10 +53,10 @@ tree the worker left (2026-10-20T06:57Z, cycle `20261020T050527Z`, gate `ALL PAS
 - the scaffold greps clean: `pii project init _tmp/orch-225-scaffold-*` wrote the 7 expected files and
   `grep -rE 'auth\.json|_API_KEY=|credentials' .pii .pi .claude` returned nothing (rc=1).
 
-Criterion 6 — "on lnx: a coder run whose skill pin matches proceeds to spawn; a deliberately edited skill
+Criterion 6 — "on the host: a coder run whose skill pin matches proceeds to spawn; a deliberately edited skill
 document refuses" — is **not met and cannot be observed on this host yet**. Spec 226's measurement M0 returned
 `M0 FAILED 1 core.cap.denied: {"cap":"proc",...}`: the daemon refuses the coder node at its `proc` check before
-any podman invocation, and `/usr/bin/podman` does not exist on lnx. A run therefore never reaches a spawn, so
+any podman invocation, and `/usr/bin/podman` does not exist on the host. A run therefore never reaches a spawn, so
 neither half of criterion 6 can be seen. The fake-podman shim inside `skills_are_materialised_read_only` is
 coverage of the mount plan, not live acceptance — a mock answers what you send it. The criterion is left
 untouched; the item stays parked until the spawn path has a reading.
@@ -87,14 +87,14 @@ Measured at HEAD `3258d1e`, by the orchestrator, after specs 227/230/233/234 lan
   spec 227 R2. Only `lint_registry*` (`:160`, `:200`) keeps `NoSkills`, deliberately and in a comment, because
   lint never reads the store. `grep -rn 'with_skills(' crates --include=*.rs` now returns that registration,
   not only the definitions in `coder.rs:129` and the tests.
-- **The spawn path has a reading.** Spec 230's M0 measured PASS on lnx (row A98: `coder.spawned` pid 3463854
+- **The spawn path has a reading.** Spec 230's M0 measured PASS on the host (row A98: `coder.spawned` pid 3463854
   through `podman.socket`, `coder.exited` the same pid), so "the daemon refuses the coder node at its `proc`
   check before any podman invocation" no longer describes the shipped path; 231 and 232 followed it.
 - **A skill can be put into and edited in the daemon's store** — spec 233 (`3d32079`) and spec 234 (`622826e`),
   so the drift half of criterion 6 has a way to create both pins without the redb lock.
 
 Criterion 6 is therefore measurable, and it is the SAME reading as spec 227's criterion 7 (row A95): one deploy
-of HEAD to lnx, one coder run pinning the stored skill (it must spawn, and `coder.spawned` must carry
+of HEAD to the host, one coder run pinning the stored skill (it must spawn, and `coder.spawned` must carry
 `skill=<name> sha256=<hex>`), then an edit of that document (the next run must refuse `skill.drift` before the
 spawn). Nothing is left to implement, so no workhorse is dispatched for it on this host — this host has no
 podman, so the criterion cannot be seen here at all. The row stays parked until that one deploy, and this
@@ -114,25 +114,25 @@ paragraph is its brief.
   `.claude/CLAUDE.md`, `.claude/settings.json`, `.gitignore`); `grep -rE 'auth\.json|_API_KEY=|credentials'` over
   `.pii .pi .claude` returned nothing (rc 1).
 
-Criterion 6 is the only unmeasured one, unchanged: one deploy of HEAD to lnx (shared brief with spec 227
+Criterion 6 is the only unmeasured one, unchanged: one deploy of HEAD to the host (shared brief with spec 227
 criterion 7). The deploy binary note is recorded there — `target/release/pii` was built at `7023cd9`, so
 `health.build.revision` will read `7023cd9`, not `b4d5bb4`, unless it is rebuilt.
 
 ### 2026-10-21 18:20Z — criterion 6's reading is pre-registered, not taken
 
 `_docs/05-operations/DEPLOY-CARD-2026-10-21-skill-pin.md` now carries the exact sequence for this criterion and
-spec 227's criterion 7 (one reading, shared): install HEAD with `scripts/archive/deploy-lnx-test.sh` and read the
+spec 227's criterion 7 (one reading, shared): install HEAD with `scripts/archive/deploy-the host-test.sh` and read the
 `READING build:` line; `pii skill add` with `via daemon` on stderr (a `via store <path>` line is a stop — it would
 prove the store half and leave the daemon half unmeasured); the pinned graph with
 `skills = [{ name, sha256 }]`; `coder.spawned` carrying `skill=`/`sha256=` read from the daemon's JSON event line,
 not from `run trace`, which does not print those fields; then `pii skill edit` and a re-run still pinned at the old
 hash, expecting the `skill.drift` event to carry `pinned <old> found <new>` with no `coder.spawned`. Nothing in it
-has been run: the deploy restarts lnx's daemon, and the operator switch in `_tmp/autonomy/control` remains
+has been run: the deploy restarts the host's daemon, and the operator switch in `_tmp/autonomy/control` remains
 `PAUSED`.
 
-### 2026-10-24 12:25Z — criterion 6 TAKEN on lnx; the item is done
+### 2026-10-24 12:25Z — criterion 6 TAKEN on the host; the item is done
 
-Deployed HEAD (`7211e238a94b`) to the lnx test daemon (health read back at that revision) and took the reading with
+Deployed HEAD (`7211e238a94b`) to the the host test daemon (health read back at that revision) and took the reading with
 `scripts/archive/orch-225-227-live-skill-pin.sh`; evidence `_tmp/orch-225-227-live-20261024T122427Z/`. One reading serves
 this criterion and spec 227's criterion 7.
 

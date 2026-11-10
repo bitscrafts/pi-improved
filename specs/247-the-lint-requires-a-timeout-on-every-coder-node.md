@@ -1,7 +1,7 @@
 # Spec 247: the lint requires a timeout on every coder node
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening — agent management (defect 17 in `_docs/05-operations/agent-management-findings-2026-10-23.md`)
 
 Lint rule V10 (spec 162) says a node that can block on a process must carry a positive `timeout_ms`. It finds such nodes through

@@ -1,7 +1,7 @@
 # Spec 316: a refused commit is offered again, keeps its phase marker, and reaches the phone
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — unattended queue. Spec 315 put a build gate between verify and `git commit`: when the
 pending tree does not build, `cycle.sh` does not commit, sets the row `status=needs-review` with
 `last=precommit-broken: <first error>`, and exits 18 with `OUTCOME=precommit-broken`, deliberately leaving the index

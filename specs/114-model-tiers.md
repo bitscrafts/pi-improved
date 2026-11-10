@@ -1,6 +1,6 @@
 # Spec: 114 — model tiers and tier-aware tool selection
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: Stage A of the vision plan (`057`), last row. Vision pillar 3's second half: *"tier-aware tool
 selection for model sizes 0.5B→100B+"*.
 
@@ -55,7 +55,7 @@ R7. **Docs**: `_docs/0X-guides/model-tiers.md` (the keys, the precedence, the to
 - No silent downgrade, ever — a per-tier failure must be visible in health and in the run's outcome.
 - Do not add a second model-resolution path: extend the existing chain and keep it in one place (a test that
   the one place is the only place: grep-based criterion is acceptable if it names the file).
-- Scratch under `/projects/_tmp/`; keep it small, delete your own, no daemon left running.
+- Scratch under `<scratch>/`; keep it small, delete your own, no daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Orchestrator verification (2026-10-10) — plus a flaky test root-caused and fixed
@@ -78,7 +78,7 @@ check, so it was investigated. Measured facts, in order:
    too late and the run completes.
 2. **The honest signal is `a`'s own side effect in the log**, which the emit node writes immediately. The fix
    waits for that (bounded, 15 s deadline, 5 ms poll) and then cancels — inside b's 6-second wait at any load.
-3. **Stability**: 24 runs of that test under **16 CPU hogs** → **0 failures** (`/projects/_tmp/verify-resume-flake-fix.sh`,
+3. **Stability**: 24 runs of that test under **16 CPU hogs** → **0 failures** (`<scratch>/verify-resume-flake-fix.sh`,
    re-runnable).
 4. **Teeth**: my first teeth-mutation (making `replay`'s `finished` set empty) left the test **GREEN** — a green
    mutant is a claim about the EDIT, and the edit was not at the effective site. The mutation at the PRIMARY site

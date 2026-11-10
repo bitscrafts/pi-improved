@@ -11,7 +11,7 @@ It is deliberately **not** a new mechanism, and it is not the `night_pick`/`nigh
 left in the tree: those duplicated `select` and `record`, one ran `bash -c` from a payload (criteria are data,
 spec 215), and one **made git commits**, which breaks the rule that only the orchestrator commits.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: composability — depends on 343 for the four gaps that make `call` usable from a graph.
 
 ## Verified premises (read-only review of HEAD `79e4262`, 2026-11-02)

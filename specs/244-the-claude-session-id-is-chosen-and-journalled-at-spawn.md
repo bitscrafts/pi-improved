@@ -1,6 +1,6 @@
 # Spec: 244 — the agent's session id is chosen by pii and journalled before the agent starts
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T11:40Z by the orchestrator (defect 21 in `_docs/05-operations/agent-management-findings-2026-10-23.md`).
 Premises read, not assumed:
 

@@ -1,6 +1,6 @@
 # pi-improved — spec-40: failure-as-payload (A3)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — Track A3 of research doc 026 §5.1, Phase 5.2 (F-11 →
   structural debt ratchet) is explicitly deferred until this lands so the
   `agent.rs` split does not churn the file this spec must edit. **Must land

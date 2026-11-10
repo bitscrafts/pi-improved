@@ -37,11 +37,11 @@ The next phases are therefore not new capability. In order, they are:
 
 | brief says | measured today | label |
 |---|---|---|
-| M5 done: release installed, daemon RUNNING `a5e51fb13cd6` | Installed binaries `pii`, `pii-web`, `pii-evolve` are dated 2026-10-15 19:05. The daemon is pid 3369179, started 20:00:58. **Its parent is `hermes --yolo` (pid 520685, up since 10-06), not a unit.** PID 1 is `podman-init`, and `systemctl` says "System has not been booted with systemd". The installed `pii.service` therefore cannot run here, so M5's "the unit survives 24 h" cannot be measured as written. The argv is a bare `pii daemon`, not the unit's `--store $STATE_DIR/… --workspace $STATE_DIR`. As a result, the store lives in `/run/user/0/pii` and the rw sandbox root is **`/projects/pi-improved`**, the tree the builder gates. | C-run (`ps`, `/proc/<pid>/{cmdline,cwd}`, `pii health --json`) |
+| M5 done: release installed, daemon RUNNING `a5e51fb13cd6` | Installed binaries `pii`, `pii-web`, `pii-evolve` are dated 2026-10-15 19:05. The daemon is pid 3369179, started 20:00:58. **Its parent is `hermes --yolo` (pid 520685, up since 10-06), not a unit.** PID 1 is `podman-init`, and `systemctl` says "System has not been booted with systemd". The installed `pii.service` therefore cannot run here, so M5's "the unit survives 24 h" cannot be measured as written. The argv is a bare `pii daemon`, not the unit's `--store $STATE_DIR/… --workspace $STATE_DIR`. As a result, the store lives in `/run/user/0/pii` and the rw sandbox root is **`<repo>`**, the tree the builder gates. | C-run (`ps`, `/proc/<pid>/{cmdline,cwd}`, `pii health --json`) |
 | revision `a5e51fb13cd6` | `pii health` reports `a5e51fb13cd6-dirty`. Commit `a5e51fb` is a **"leftover … kept for review"** commit: an ungated diff to `cmd_daemon.rs`. Production runs a revision that never passed the gate, and it was built from a dirty tree, so its source cannot be recovered from git. | C-run, C-read |
 | `channels: [{kind: discord}]`, `channel_posts: 1` | True. The one post is the start-up `channel.verification_posted` ("pii 0.1.0 is up"). `runs: 0` (store `run` entries 0 since 14:52), `memory_entities: 0`, `cursor: 0`, `errors: 0`. | C-run |
 | (not stated) | **5 daemon starts today** (14:52, 17:02, 19:05, 19:06, 20:01 UTC, from `audit.log`). `pii.log` holds **3 lines**, all from the last start. The four earlier starts left nothing in the file 156's reader is meant to read (cause not determined; the writer opens in append mode, `filelog.rs:97`). | C-run |
-| 156 CLOSED, 5/5 with a clean-log control | On a **copy** of today's real logs (scratch `/projects/_tmp/rev063-6pbi`), `pii incidents scan --source runtime` returns **0 incidents from `pii.log`** (5 starts, none visible) and **5 `daemon-start-not-ready` from `audit.log`**, all false: every start reached `daemon.started`, but that event goes to `pii.log`, not `audit.log`. Nothing schedules this scan: `tick.sh:54` scans only the loop's own logs, with `target/debug/pii`. The state file says "verified **by hand**". | C-run |
+| 156 CLOSED, 5/5 with a clean-log control | On a **copy** of today's real logs (scratch `<scratch>/rev063-6pbi`), `pii incidents scan --source runtime` returns **0 incidents from `pii.log`** (5 starts, none visible) and **5 `daemon-start-not-ready` from `audit.log`**, all false: every start reached `daemon.started`, but that event goes to `pii.log`, not `audit.log`. Nothing schedules this scan: `tick.sh:54` scans only the loop's own logs, with `target/debug/pii`. The state file says "verified **by hand**". | C-run |
 | 157 CLOSED fa824b0, 3/3 | The implementation `fa824b0` has a hand-made message shape, followed by an automated pass `075fee9` (A24, 3 attempts). The configured `PII_DISCORD_CHANNEL_ID=1558589728671146105` is the **forum** (`_docs/02-guides/discord-surface.md:10`, "type FORUM"). The ingress (`discord.rs:101-112`) GETs `/channels/<forum>/messages`, and the poll has no filter for the bot's own posts (`discord.rs:150-170`). | C-read, C-run |
 | 152 CLOSED 4/4 | `state.json` A21: attempts 11, "verified 4/4 **by hand**". **The real deploy did not go through a card**: `questions.md` and `operator-acts.log` have 0 card entries. | C-run |
 | 155 `7debbdf` | It is committed, but `state.json` A22 still reads `verifying`, "plan gate running". | C-run |
@@ -66,7 +66,7 @@ These are ordered by when each one happens: the first is already measurable, the
 2. **Nothing restarts the daemon, and nothing owns it.** It is a child of a Hermes agent session (`--yolo`, pid 520685).
    When that session or the container goes away, so does production. The installed unit cannot help: there is no
    systemd in this container.
-   - **Instrument:** `ps -o ppid= -p $(pgrep -f '^/root/.local/bin/pii daemon')` must name a supervisor, not
+   - **Instrument:** `ps -o ppid= -p $(pgrep -f '^~/.local/bin/pii daemon')` must name a supervisor, not
      `hermes`.
    - `pii health`'s `uptime_ms` is no help, because it resets with every start (1,570 s at 20:27).
 3. **The first scheduled digest, at 09:00 UTC (06:00 local), says nothing.** `discord-digest` posts
@@ -101,7 +101,7 @@ that ends the experiment.
 |---|---|---|
 | **151, the incident-to-branch dispatch** (second plan source, `cycle.sh:66-80`) | **0 of 6** real incidents proven, all 6 parked "no proving test recorded". The pre-registered ≥ 3/7 experiment has no result. The incidents 150 opens are loop states (`dirty-tree`, `locked`, `add-failed`, `no-change`, `parked`, `verify-failed`), not product defects with a test. Every park still costs a dispatch: the 20:12 cycle cost $0.06 to park `add-failed`. | Stop dispatching from `incidents.jsonl`, and keep the code. Reopen only when one incident carries a failing test name, which needs Q3(1) first. |
 | **152, the deploy card** | 11 attempts, closed by hand, and **not used for the one real deploy** (0 card entries anywhere). A permission that the deploy bypassed is not yet the permission. | No new fields. The next deploy goes **through** it, or the card is redesigned around how the operator actually deployed. |
-| **158, the mutating verbs** (`gate off`, `restart`, `stop-pid`) | The worker has been idle for 1700 s right now. The verbs live outside the repo (`/root/.hermes/scripts/ctl.sh`), outside the gate. Each is one more way to stop or start things, which is the class 158 exists to shrink. | Keep `ctl.sh status`, read-only, with its `UNOWNED` section: that is the actual repair. Freeze the verbs. |
+| **158, the mutating verbs** (`gate off`, `restart`, `stop-pid`) | The worker has been idle for 1700 s right now. The verbs live outside the repo (`<agent-host-config>`), outside the gate. Each is one more way to stop or start things, which is the class 158 exists to shrink. | Keep `ctl.sh status`, read-only, with its `UNOWNED` section: that is the actual repair. Freeze the verbs. |
 | **160 ("pii heals itself")** and any new anomaly kind in 156 | The detector is blind or false on the real log (§0). Healing on a false incident is worse than no healing. | Do not draft 160 further until Q3(1) is green. |
 | **159 as specified** (H_pre / L / A) | See Q2: `A` is undefined for 6 of 6 incidents, because none reaches a card. | Replace with the smaller measure below. |
 | **The `discord-triage` ingress on the forum** | `runs: 0`, `cursor: 0`. It cannot see a thread, so it serves no one. | Remove the channel's `graph` binding, or point it at one thread (see Phase E). Do not extend `classify`. |
@@ -159,7 +159,7 @@ change what runs, not what is built. Each criterion is red today, as stated.
   - `kill -9` the daemon, and it is back within 60 s with a new `daemon.started`;
   - its parent pid is the supervisor, not `hermes`;
   - `pii health` `revision` has no `-dirty`, and `git log -1 --format=%s <rev>` does not begin with "leftover";
-  - `readlink /proc/<pid>/cwd` is not `/projects/pi-improved`;
+  - `readlink /proc/<pid>/cwd` is not `<repo>`;
   - after the swap, Hermes's `mcp__pii__bash` error share over 7 days is no higher than the 7 days before.
 
 ### Phase B: the reader reads the real record, and a death is noticed in minutes
@@ -246,5 +246,5 @@ The unprompted count is the number that says "user", not "demo".
 | Classification of the 3 skill-lane deliveries | their output files embed the skill prompt, and I did not separate the reply | read the reply section of each |
 | 159 and 160 contents | no file found | the operator's draft location |
 
-Scratch used: `/projects/_tmp/rev063-6pbi/` (copies of `pii.log` and `audit.log`). Nothing in the repo was changed
+Scratch used: `<scratch>/rev063-6pbi/` (copies of `pii.log` and `audit.log`). Nothing in the repo was changed
 except this file. Nothing was committed.

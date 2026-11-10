@@ -1,6 +1,6 @@
 # pi-improved — spec-57: pii-channels test coverage for discord.rs (F-20 tidy)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW-MEDIUM — Phase 5.3 tail. `pii-channels` has 1/3
   files with inline `#[cfg(test)]` (`cli.rs`); `discord.rs` (the real
   network-facing channel, 158 lines) and `lib.rs` (a pure trait/struct

@@ -33,12 +33,12 @@ template's own `compile.sh` does it:
 
 ```sh
 cd _docs/manuals/src/user-admin
-tar czf - . | ssh mvcorrea@lnx "mkdir -p ~/podman/latex-remote/pii-manuals/user-admin && \
+tar czf - . | ssh <operator>@<host> "mkdir -p ~/podman/latex-remote/pii-manuals/user-admin && \
   cd ~/podman/latex-remote/pii-manuals/user-admin && tar xzf -"
-ssh mvcorrea@lnx "podman exec --workdir /workspace/pii-manuals/user-admin/src \
+ssh <operator>@<host> "podman exec --workdir /workspace/pii-manuals/user-admin/src \
   latex-compiler-shared pdflatex -interaction=nonstopmode -halt-on-error \
   -output-directory=../build main.tex"
-scp mvcorrea@lnx:~/podman/latex-remote/pii-manuals/user-admin/build/main.pdf \
+scp <operator>@<host>:~/podman/latex-remote/pii-manuals/user-admin/build/main.pdf \
   _docs/manuals/pii-user-admin.pdf
 ```
 

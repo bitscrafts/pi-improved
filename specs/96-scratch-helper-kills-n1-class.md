@@ -1,6 +1,6 @@
 # Spec: 96 — kill the N1 class at the root: a scratch helper that creates its own directory
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 follow-through. The N1 class has now been found FOUR times (83 lanes, 85 heartbeat, 86 the
 sweep, and now `engine/runs.rs`), and each time it was fixed per-file. This spec removes the shape.
 
@@ -41,7 +41,7 @@ R4 (proof, two levels).
 ## Exit Criteria
 - [ ] `fresh-gate --worktree` prints `fresh-gate: PASS`
 - [ ] the no-`_tmp` control: with every `crates/*/_tmp` and `xtask/_tmp` moved aside in a fresh export, the workspace test step passes (verbatim output recorded)
-- [ ] the acceptance record (`/projects/_tmp/spec96/SCRATCH-REPORT.md`) lists every converted file and every remaining bare `tempdir_in(..._tmp...)` site with the reason it stays
+- [ ] the acceptance record (`<scratch>/spec96/SCRATCH-REPORT.md`) lists every converted file and every remaining bare `tempdir_in(..._tmp...)` site with the reason it stays
 - [ ] the new lint step exists in `quality-gate.sh`, runs, and its teeth are proven: re-introducing the bare pattern in a scratch export makes it exit non-zero
 - [ ] `bash quality-gate.sh` exits 0 with the new step present
 - [ ] `cargo test --workspace --lib --bins --tests` passes
@@ -56,7 +56,7 @@ R4 (proof, two levels).
   comes from, not about what the test checks.
 - Do NOT add a global `_tmp` directory creation to `quality-gate.sh` as the fix: that would hide the
   class again (the point is that TESTS create what they need).
-- Scratch exports under `/projects/_tmp/` only; delete your OWN exports when done (one ≈ 8G).
+- Scratch exports under `<scratch>/` only; delete your OWN exports when done (one ≈ 8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result (2026-10-09) — the class is closed, and a new bare site now fails the gate

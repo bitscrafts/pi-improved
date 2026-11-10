@@ -13,7 +13,7 @@ The catalogue must be **derived**, never maintained. A hand-written index is a b
 time a graph changes; `docs/03-reference/graph-vocabulary.md` and `graphs/DOCS/` both exist because
 reading the files was the only honest source.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: graph vocabulary / discoverability
 
 ## Requirements

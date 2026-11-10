@@ -1,6 +1,6 @@
 # pi-improved — spec-35: in-process-llama-cpp
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — add native in-process LLM support via `llama-cpp-2`
   (embed Granite 4.2 inside Pii), per research doc 015.
 

@@ -13,7 +13,7 @@ host and the daemon will grant it, because the channel declares it. The configur
 The intent of `[net] grants` is that network reach is a decision recorded in the configuration, not a
 consequence of whatever a process happens to have in its environment.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F7)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §2.2 (F7), §2.3
 
@@ -64,7 +64,7 @@ consequence of whatever a process happens to have in its environment.
   every other channel: the point is that the configuration sanctioned this host for this channel.
 - Do NOT remove the environment override: it exists for a reason. Bound it, do not delete it.
 - Do NOT change the default API base (132 fixed it and a test pins it).
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

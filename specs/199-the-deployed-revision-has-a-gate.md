@@ -3,7 +3,7 @@
 ## Overview
 070 step 4 is RED: the last full fresh-export PASS was recorded on 9045484, while production runs 420fe8a7e946. A gate on HEAD is not a gate on the running binary. 197 made the card mandatory; the card quotes a gate, so the gate must exist for the revision it names.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 A fresh-export gate run on the EXACT revision now deployed, its verdict recorded in _tmp/autonomy/logs/ and quoted verbatim in that revision's card. If the gate fails, the card is invalid and the deploy is not releasable.

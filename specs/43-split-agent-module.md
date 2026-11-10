@@ -1,6 +1,6 @@
 # pi-improved — spec-43: split `agent.rs` into `agent/{mod,turn,tools,memorize}.rs`
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — first item of Phase 5.2 (structural debt ratchet), per
   the 026 report's own sequencing (deferred until Phase 5.1 Track A finished,
   which it now has — specs 37-42 all landed and gate-green).

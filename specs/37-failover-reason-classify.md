@@ -1,6 +1,6 @@
 # pi-improved — spec-37: failover-reason-classify (A1)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — Track A1 of research doc 025 §5. Everything in Track A
   and Track B depends on it. Small, pure, no runtime behaviour change.
 

@@ -1,13 +1,13 @@
 # Spec 287: a composed run through the REAL daemon process, from the CLI, with a stand-in agent
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, level 4 of 4 (free). Specs 284 and 285 drive `Engine` in a test process. The user's concern was the daemon itself: the **process** a queue worker talks to (`pii run start <graph>` over the control socket, in the devbox container, as the user `pii` runs). Between `Engine::start_run` and that is the wire, the CLI verbs, the daemon's own environment (the `PATH` the coder resolves agents from, the `env_pass` names it copies), the graph directory it loads from, and the binary actually installed (spec 279). None of that has run a composed graph.
 
 This spec adds one **re-runnable check script** that starts the real tracked `spec` graph on the devbox daemon with a **stand-in agent** (a shell script, nothing spends), and reads the result back through the CLI the way an operator would.
 
 ## Verified Premises
-- **CONFIRMED** (read 2026-10-26) the lane: `modules/devbox/daemon.sh` runs `pii` inside `pii-devbox` with `PII_RUNTIME_DIR=/projects/pi-improved/_tmp/devbox-test/run` and graphs in `_tmp/devbox-test/graphs`; `scripts/run-batchC-pii.sh` starts a run with `pii run start <name>` and reads `pii run get <rid>` and `pii run explain <rid>` (lines 146–170). `pii run trace` prints the `graph.call` lines (spec 270).
+- **CONFIRMED** (read 2026-10-26) the lane: `modules/devbox/daemon.sh` runs `pii` inside `pii-devbox` with `PII_RUNTIME_DIR=_tmp/devbox-test/run` and graphs in `_tmp/devbox-test/graphs`; `scripts/run-batchC-pii.sh` starts a run with `pii run start <name>` and reads `pii run get <rid>` and `pii run explain <rid>` (lines 146–170). `pii run trace` prints the `graph.call` lines (spec 270).
 - **CONFIRMED** the coder resolves the agent binary directory from `PATH` (project rule; `agent_bin_dir` in `coder/paths.rs`); `env_pass = ["PATH", …]` copies the **daemon's** environment, so a stand-in is selected by the daemon's `PATH`, not by the run input.
 - **CONFIRMED** the daemon refresh installs what it built and prints the digests (spec 279, `04e8203`), so the check can state which binary it exercised.
 - **MEASURE FIRST** how to give the daemon a stand-in WITHOUT touching the production daemon's environment or a queue worker in flight: the check must start a **second, private daemon** (its own `PII_RUNTIME_DIR` under `_tmp/devbox-test/check-<ts>/run`, its own socket, its own graph dir, `PATH` = a stand-in bin dir first). Confirm that two daemons coexist (distinct runtime dir and socket); if the daemon refuses a second instance, record exactly why and fall back to **stopping nothing** — the check then refuses to run while a worker is in flight and uses a temporary graph copy, never the production one.

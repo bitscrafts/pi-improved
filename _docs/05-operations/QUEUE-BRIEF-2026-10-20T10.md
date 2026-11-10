@@ -23,12 +23,12 @@ rows in the plan: 96
   1a369f6 leftover from the previous item, kept for review (cycle 20261020T105012Z; the diff is also a
   1e51201 queue brief 2026-10-20T11: M0 refused live at the /dev/shm gate (the deploy predates 229), t
   4fc1932 M0 measured against review 078's predictions: the direct path dies in the landlock domain, a
-  1737a1c M0 live on lnx reached only the /dev/shm gate: the deployed build predates spec 229, and its
+  1737a1c M0 live on the host reached only the /dev/shm gate: the deployed build predates spec 229, and its
   3b4a209 sandbox-exec applies the same container state dirs as the daemon, so the workspace profile m
-  e5fe628 M0 on lnx: the third gate is podman's user-namespace setup, and a confined process starts a 
+  e5fe628 M0 on the host: the third gate is podman's user-namespace setup, and a confined process starts a 
   09cfe3d 229-podman-shm-lock-and-rootless-reexec.md: automated pass — podman needs /dev/shm for its r
   f8816fa leftover from the previous item, kept for review (cycle 20261020T100015Z; the diff is also a
-  ba9b4ea M0 verdict of record on lnx: REFUSED at podman's /dev/shm lock, then its rootless re-exec; s
+  ba9b4ea M0 verdict of record on the host: REFUSED at podman's /dev/shm lock, then its rootless re-exec; s
   347f8f9 M0 script: the verdict quotes the daemon's trace fail= (the log names no run id), and the fi
   d23cb31 M0 script: ship a real python filter beside it for hosts without jq; no nested quoting
   266cf65 M0 script: the jq fallback separates filters from the file argument

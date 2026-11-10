@@ -4,7 +4,7 @@
 
 Two `pii daemon` processes started by a gate run on 2026-10-22 were still alive nine days later. They were found and
 reaped on 2026-11-01T23:59:57Z, with their argv, age and socket count written to
-`/projects/_tmp/reaped-test-daemons-20261101T235957Z.log`:
+`<scratch>/reaped-test-daemons-20261101T235957Z.log`:
 
 ```
 candidate 583964 age=9-21:17:18 rss=21492kB

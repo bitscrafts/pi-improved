@@ -1,6 +1,6 @@
 # Spec: 88 — lag recovery must not re-request approvals, and must recover lost `RunFinished` (N3)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review, candidate 4 — completing D6 (spec 79 closed only the timer half).
 
 ## Context (read by the reviewer, orchestration confirms the call chain)

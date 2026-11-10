@@ -1,7 +1,7 @@
 # Spec 277: the unlisted-change check reads every shape git status prints, so a rename cannot slip a commit and a quoted path cannot park a row
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's own integrity. `scripts/autonomy/unlisted-changes.sh` (spec 268) exists so that `cycle.sh`'s commit can never stage a subset of the worker's changes: the row's path list is the whole of what lands, and anything else refuses the commit and parks the row as `needs-review`. That guarantee is read from `git status --porcelain` by slicing fixed character offsets and by matching the row's paths as text — and git does not print paths as text. Two shapes are misread, in **both** dangerous directions, measured today:
 
 - **A rename is silent (false pass, the direction spec 268 exists to prevent).** `git status` prints a rename as `R  old.rs -> new.rs`; the script's `case "$ST" in "??"|?[MD])` matches only `M` and `D`, so an `R` entry is skipped entirely. Measured in a scratch repo (`_tmp/diag-unlisted2-522752`): with the only change a rename of `old.rs` to `new.rs` and the row listing only `keep.rs`, the check printed nothing and exited **0**. A worker that renames a module and edits its `mod` line in a file the row does not list would have its rename left unstaged and the commit would land a HEAD that does not build — the exact class of A131/A132 (spec 268) and of A136/A141 (rows whose path lists missed `nodes/coder.rs` and `graph_node.rs`).

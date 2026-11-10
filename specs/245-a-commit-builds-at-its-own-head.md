@@ -1,6 +1,6 @@
 # Spec: 245 — a commit builds at its own HEAD
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T12:40Z by the orchestrator (defect 24 in `_docs/05-operations/agent-management-findings-2026-10-23.md`).
 Premises read, not assumed:
 

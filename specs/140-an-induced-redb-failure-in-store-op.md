@@ -9,9 +9,9 @@ whether it behaves as promised, and a defect there would be invisible. This is t
 register carries as `g4`, and the reason it was parked is honest: there is no test-only way to induce the
 failure.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (open-items g4)
-**Source**: `/projects/pi-improved/_docs/05-operations/open-items.md` (g4); the reviewer's coverage findings
+**Source**: `_docs/05-operations/open-items.md` (g4); the reviewer's coverage findings
 (`_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §2.2), which measured line coverage 81.30%
 
 ## Requirements
@@ -60,7 +60,7 @@ failure.
 - Do NOT add an allowlist entry or an exemption to silence a check that this change reddens.
 - If the failure path proves unreachable, do NOT invent a failure to justify the branch: report it as dead
   code with the evidence and let the orchestrator decide.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

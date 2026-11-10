@@ -5,7 +5,7 @@ Review 076 premise P3 (2026-10-19): coder `criteria` run ON THE HOST as `/bin/sh
 installs nothing" is true of the coder node and false of its verifier — a criterion string is arbitrary host execution, and it
 is the highest-risk, smallest-change item in the review's order (§4.3).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 1. A coder node's criteria are NAMED checks: `criteria = ["cargo:test:pii-server/coder_spawns_a_process", …]` resolved by the

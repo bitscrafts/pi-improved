@@ -1,6 +1,6 @@
 # Gate Hygiene: Wire lint-files In, Fix clippy.toml, Fix Line Counter
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `xtask` (mostly), plus `quality-gate.sh`, `clippy.toml`
 - **Priority**: MEDIUM — closes a real enforcement gap plus two small
   correctness bugs in the gate tooling itself. Sourced from fable

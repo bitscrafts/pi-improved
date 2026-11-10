@@ -17,7 +17,7 @@ scratch directory from `CARGO_MANIFEST_DIR`. **Not all of them are this defect**
 single-writer resource (a redb store, a lock file, a socket or a fixed port) at a name shared between runs
 can collide. The job is to fix the ones that can, and to say with evidence why the others cannot.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F4; DO-NOT-REPEAT 1.48)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §2.2 (F4), §2.3
 
@@ -68,7 +68,7 @@ can collide. The job is to fix the ones that can, and to say with evidence why t
 - Do NOT add a dependency and do NOT invent a new test framework: the harness is a shell script.
 - If a site's store API differs from the one in `persistence.rs`, fix only the sites whose mechanism you can
   demonstrate — and list the rest as unexamined in the report rather than claiming a sweep you did not do.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

@@ -11,7 +11,7 @@ Today `pii incidents scan --source runtime --log <file>` (`crates/pii-cli/src/cm
 The deploy card (`crates/pii-cli/src/cmd_deploy_card.rs:19`) requires `incident.id`, so an operator has to copy one in
 by hand.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

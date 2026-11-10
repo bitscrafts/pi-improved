@@ -1,7 +1,7 @@
 # Spec 271: two coder nodes of one run get two pi sessions — the default session file carries the node id
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition, shared state (Opus context review 2026-10-24, Q5 and risk 1: "pi session collision")
 
 A pi coder's default session file is `<workdir>/.pii-sessions/<spec-stem>-<run>.jsonl` (`crates/pii-server/src/node_kinds/nodes/agent_worker.rs:31-43`, `pi_session_path`). The key is `(spec, run)`. Two coder nodes of one run on one spec and workdir therefore resolve to the SAME file, and `write_pi_session_header` leaves an existing file untouched (`agent_worker.rs:45-53`), so the second node silently RESUMES the first node's conversation. For the composition work this is the dangerous case: a `graphs/docs.toml` coder called after `spec.toml`'s implementation coder would continue the implementation session and edit code with that context. Claude is unaffected: it mints a fresh session id on every spawn when none is given (`agent_worker.rs:350-351`).

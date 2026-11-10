@@ -3,7 +3,7 @@
 ## Overview
 User directive 2026-10-19: "pii must be able to list/edit and explain its skills" — and the same day fixed the meaning: a skill is `DocKind::Skill`, a memory document (`knowledge/skill-means-dockind-skill`). Today such a document can only be reached by `pii memory search` and replaced by another `put`; there is no way to enumerate skills, read one whole, change one deliberately, or ask what it MEANS and whether its pinned script still matches. A skill nobody can list is a skill nobody can audit — and the podman skill is now pii's main repair tool, so auditing it is not optional.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Verified premises
 - `Doc` carries `id · layer · kind · text · concepts · importance · created_ms · last_used_ms · evidence · archived`; `DocKind = Atom | Scene | Persona | Skill`.

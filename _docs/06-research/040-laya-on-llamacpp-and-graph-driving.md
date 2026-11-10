@@ -38,7 +38,7 @@ the head is a few tensor ops in PyTorch.
 
 ### Measured parity (this container, CPU, identical questions)
 
-`/projects/_tmp/laya-gguf/parity_test.py` — same state, same questions, one run
+`<scratch>/laya-gguf/parity_test.py` — same state, same questions, one run
 per path:
 
 | path | dept | p(billing) | confidence | urgency | churn | wall |
@@ -93,7 +93,7 @@ env-driven (`MODEL=`, `LLAMA_CTX=`, `LLAMA_PORT=`). The user's correction —
 | entrypoint hard-wired to chat args | entrypoint gains **`LLAMA_EXTRA_ARGS`** (any mode) |
 
 - **Port 8082 is unchanged**, and the default model is still laguna, so pi's
-  `models.json` (`http://10.10.10.217:8082/v1`) needed **no change** — verified
+  `models.json` (`http://<host>/v1`) needed **no change** — verified
   live: `/v1/models` returns the laguna id and a chat completion round-trips.
 - The models directory is the **existing read-only mount**
   (`/podman/assistants/hermes/image/models` → `/models:ro`); Laya's GGUF was added
@@ -224,7 +224,7 @@ machine:
 |---|---|---|---|---|
 | L1 | **pidag/pi escalation gate** — "is this task cheap-tier or strong-tier?" | `Choice`(tier) + `Score`(difficulty) + `Noul`(must-not-be-cheap) | pii/pidag already have an escalate-on-verdict rung; this adds the *pre-dispatch* signal the free→account→topup ladder lacks. Directly answers 025 §4.4 item 5. | 1 node + 1 route |
 | L2 | **Guardrail on the agent loop** — injection / spec-drift / "does this tool call match intent?" | `Noul` ×N in one call | the literature's most-repeated pattern; ~0.3 s, $0, local | 1 node |
-| L3 | **amem consolidation judgement** — "are these two memories the same fact?" / "is this worth keeping?" | `Noul` + `Score` | the live register defects (C22/C23/C31/C35) are all *judgement* failures currently done by an LLM with a too-small budget | already-shipped LLM seam |
+| L3 | **the workspace memory consolidation judgement** — "are these two memories the same fact?" / "is this worth keeping?" | `Noul` + `Score` | the live register defects (C22/C23/C31/C35) are all *judgement* failures currently done by an LLM with a too-small budget | already-shipped LLM seam |
 | L4 | **Wake/skip triage** — "does this event need the expensive brain at all?" | `Noul` | the dev.to measured ~24M tokens skipped in 5 days on this exact idea | cron/MQTT front |
 | L5 | **Doc/route classification** — "which doc section does this fact belong to?" | `Choice` | supports the SSOT/register discipline | low |
 

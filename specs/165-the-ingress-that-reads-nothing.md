@@ -4,7 +4,7 @@
 The forum ingress is bound with no thread configured: it cannot read anything and spends 2 requests/s. It should not be
 bound until it has a thread to read, and unbinding must be visible in health.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Exit Criteria
 - [ ] `cargo test -p pii-server --test channel_wiring`

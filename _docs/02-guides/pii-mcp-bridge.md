@@ -63,7 +63,7 @@ listener table. So:
 
 ```bash
 # Hermes side (after the crate is built + daemon running)
-printf 'Y\n' | hermes mcp add pii --command /root/.local/bin/pii-mcp
+printf 'Y\n' | hermes mcp add pii --command ~/.local/bin/pii-mcp
 # → mcp_pii_* tools appear in new Hermes sessions
 ```
 

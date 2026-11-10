@@ -1,7 +1,7 @@
 # Spec 253: the journal carries the text claude gave for its own failure
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — a failed agent must say why, in the journal (user directive 2026-10-24: all specs are implemented by pii)
 
 The first real queue item through pii died in 5 s: claude called the run an error with zero tokens and zero cost, and `run explain` said "agent failed, no

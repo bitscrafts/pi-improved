@@ -1,6 +1,6 @@
 # Spec: The store paths tell the truth
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Finding**: Opus optimisation #2 (2026-11-03)
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Finding**: Opus optimisation #2 (2026-11-03)
 **Blocks**: the night run (a row seeded into the live store must be the row the daemon claims)
 
 ## Verified premises (measured 2026-11-03, on this tree)
@@ -13,7 +13,7 @@
 - That rule is **copied three times**: `daemon/mod.rs:207`, `cmd_treat.rs:53`, `cmd_daemon.rs:145`.
 - On the production host `/run/user/1000/pii/store.redb` is **561,152 B dated Oct 24** while the live store is
   `~/.local/state/pii/store.redb` at **18,812,928 B**. An ssh shell has no `PII_*` env, so `pii backup <p>`
-  without `--dir` copies the STALE set. (Measured by `stat` on lnx.)
+  without `--dir` copies the STALE set. (Measured by `stat` on the host.)
 - In this container `/run/user/0/pii/` likewise holds a stale `channel.redb` (Nov 2) and no daemon answers.
 - The socket is a different thing from state: it lives in `runtime_dir` and MUST stay there.
 
@@ -91,7 +91,7 @@ first full gate of the tree was RED on two consequences of the change, both were
 
 **Why the worker parked (not a code defect).** Criterion 5 is `cargo xtask fresh-gate`. The implementer runs
 inside the daemon's sandbox, whose read-write set is the workspace plus the store parent and runtime dir; the gate
-exports its tree to `/projects/_tmp`, outside all of them. The worker recorded it verbatim — "This process cannot
+exports its tree to `<scratch>`, outside all of them. The worker recorded it verbatim — "This process cannot
 write there" — and all three runs refused on that criterion alone (4 of 5 green each time). The gate is the
 cycle's step (specs 262/266/315 gate every queue commit with the full step list and a measured coverage floor);
 it is no longer an exit criterion in 352/353, and the reason is written in their Guardrails.
@@ -99,7 +99,7 @@ it is no longer an exit criterion in 352/353, and the reason is written in their
 **The first full gate of this tree was RED on two steps — both real, both consequences of the change:**
 
 1. `test (lib/bins/tests)`: three `channel_wiring` tests failed together with
-   `channel: open /root/.local/state/pii/durable/channel.redb: Database already open`.
+   `channel: open ~/.local/state/pii/durable/channel.redb: Database already open`.
    `daemon/mod.rs` resolved the state dir from the process-global `pii_core::state_dir()`, while `build_with_env`
    carries an INJECTED env: the tests' own scratch `PII_STATE_DIR` was ignored, so they opened the operator's live
    store and collided with the running daemon. Fixed by `pii_core::state_dir_from(env)`, with `state_dir()`

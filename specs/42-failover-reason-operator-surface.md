@@ -1,6 +1,6 @@
 # pi-improved — spec-42: failover reason on the operator surface (A5)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — Track A5 of research doc 025 §5, the last item in
   Track A before Phase 5.2 structural work begins. Per 025's own risk
   section: *"Losing the reason. A silent switch makes cost off-peak/

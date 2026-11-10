@@ -1,7 +1,7 @@
 # Spec: a coder node's scope admits the agent binary it was told to spawn
 
 ## Overview
-Measured 2026-10-20 on lnx, daemon revision 0a78d6da0c20, three graphs, each with a coder node:
+Measured 2026-10-20 on the host, daemon revision 0a78d6da0c20, three graphs, each with a coder node:
 
     coder-selffix (no image)                     → run failed in 1 ms · node "code" 0+0 · pid=- · 0 agent calls
     coder-podman  (container_image set)          → run failed in 2 ms · node "code" 0+1 · pid=- · image=- · 0 agent calls
@@ -23,7 +23,7 @@ Review 074 predicted exactly this (M4): the run scope pins `proc_argv0` and refu
 ## Exit Criteria
 - [ ] `cargo test -p pii-server --test coder_scope_admits_the_agent`
 - [ ] `cargo test -p pii-server --test coder_refusal_names_the_scope_reason`
-- [ ] on lnx: `pii run start coder-podman` produces either `coder.spawned pid=<n>` or a trace line carrying the refusal reason
+- [ ] on the host: `pii run start coder-podman` produces either `coder.spawned pid=<n>` or a trace line carrying the refusal reason
 - [ ] `pii run trace <id>` shows `image=<digest8>` (or `missing`) for any node with `container_image`
 
 ## Guardrails

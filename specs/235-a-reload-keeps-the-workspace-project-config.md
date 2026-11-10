@@ -1,6 +1,6 @@
 # Spec: 235 — a reload keeps the workspace's project config
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after 234. Filed 2026-10-22 by the orchestrator, from its own measurement while wiring the
 project-config layer into `pii daemon`.
 

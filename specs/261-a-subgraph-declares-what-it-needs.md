@@ -1,9 +1,9 @@
 # Spec 261: a called graph declares what it needs from the host — `needs`, checked at load
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition, PRIORITY (operator, 2026-10-24: "our graphs must run subgraphs sharing context! priority on that!"; then "auto accept suggestions")
-**Advice**: Opus design review `/projects/_tmp/pii-graph-context/pii-graph-context-plan-20261024T193127Z.md` (session `88f556e2-5d1b-49e6-b56e-e49b6cb84667`) REPLACED the first draft of this spec (a `context = "shared"` key on the call).
+**Advice**: Opus design review `<scratch>/pii-graph-context/pii-graph-context-plan-20261024T193127Z.md` (session `88f556e2-5d1b-49e6-b56e-e49b6cb84667`) REPLACED the first draft of this spec (a `context = "shared"` key on the call).
 
 Spec 255 expands a `call` inline at load: ONE graph, one run id, one journal, one cancel token. Its isolation is lexical only: it rewrites `$.` strings, so a sub-graph sees only what the call maps in (`in`).
 The operator needs the opposite for the real use cases (a documentation sub-graph, a judge, a fix step): the sub-graph must work on the run's own context (`spec`, `base`, `workdir`, `agent`…) without the host re-listing every key.

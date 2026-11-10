@@ -9,7 +9,7 @@ compiles llama.cpp from source with CMake, which is historically the longest ste
 make and ninja had to be installed in this container at all. One gate run costs 10-25 minutes of C++ compilation for a
 code path the daemon never executes.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

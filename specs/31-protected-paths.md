@@ -1,6 +1,6 @@
 # pi-improved — spec-31: protected-paths
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — the single highest-risk gap in the boss loop. A worktree
   is a full checkout, so `<worktree>/xtask/`, `<worktree>/quality-gate.sh`,
   `<worktree>/specs/` and every `#[test]` are INSIDE the heal agent's fs_write

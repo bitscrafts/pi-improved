@@ -7,13 +7,13 @@ gate's own log named three `pii-worker` tests failing with `spawn …/target/deb
 
 ## The measured fact
 
-From the gate run the loop made on 2026-10-16 22:53 (export kept at `/projects/_tmp/fresh-gate-624085`):
+From the gate run the loop made on 2026-10-16 22:53 (export kept at `<scratch>/fresh-gate-624085`):
 
 ```
 ----- control::tests::a_reload_reports_what_it_drained stdout ----
 panicked at crates/pii-worker/src/control.rs:645:25:
 called `Result::unwrap()` on an `Err` value: Internal(
-  "spawn /projects/_tmp/fresh-gate-624085/target/debug/pii: No such file or directory (os error 2)")
+  "spawn <scratch>/fresh-gate-624085/target/debug/pii: No such file or directory (os error 2)")
 …
 test result: FAILED. 5 passed; 3 failed  →  failing: control::tests::{a_reload_reports_what_it_drained,
                                           invoke_overtaken_by_a_reload_is_not_dropped,
@@ -24,19 +24,19 @@ error: test failed, to rerun pass `-p pii-worker --lib`   → the step aborts, s
 and, in the same export, on disk:
 
 ```
-$ ls /projects/_tmp/fresh-gate-624085/target/
+$ ls <scratch>/fresh-gate-624085/target/
 clippy-gate  doctest-gate  gate-steps  hal-gate  llamacpp-gate      # no `debug/`, so no `pii`
-$ head -1 /projects/_tmp/fresh-gate-624085/target/gate-steps/build.log
-Compiling pii-cli v0.1.0 (/projects/_tmp/fresh-gate-624085/crates/pii-cli)
+$ head -1 <scratch>/fresh-gate-624085/target/gate-steps/build.log
+Compiling pii-cli v0.1.0 (<scratch>/fresh-gate-624085/crates/pii-cli)
    Finished `dev` profile … in 2m 06s
-$ ls -l /projects/pi-improved/_tmp/gate-target/debug/pii
+$ ls -l _tmp/gate-target/debug/pii
 -rwxr-xr-x … 348139680 Oct 16 23:30 …/gate-target/debug/pii         # the build went HERE
 ```
 
 The `build` step passed. The binary it produced was never in the tree, because the gate ran with
 `CARGO_TARGET_DIR` pointing at the loop's compiler cache:
 
-- `scripts/autonomy/env.sh` exports `FRESH_GATE_TARGET=/projects/pi-improved/_tmp/gate-target` (a comment there
+- `scripts/autonomy/env.sh` exports `FRESH_GATE_TARGET=_tmp/gate-target` (a comment there
   records the 2026-10-15 intent: the export's **tree** must be fresh, its **compiler output** need not be);
 - `scripts/autonomy/cycle.sh:27` sources `env.sh`, and its gate line (L240) runs
   `cargo run -q -p xtask -- fresh-gate --worktree`;
@@ -56,7 +56,7 @@ pointed at another target dir — the export's configuration, in one command
 
 ```
 ===== pii-worker --lib control::
-called `Result::unwrap()` on an `Err` value: Internal("spawn /projects/pi-improved/target/debug/pii: No such file or directory (os error 2)")
+called `Result::unwrap()` on an `Err` value: Internal("spawn target/debug/pii: No such file or directory (os error 2)")
 test result: FAILED. 2 passed; 3 failed
 ===== pii-worker --test supervisor
 test result: FAILED. 0 passed; 10 failed
@@ -81,7 +81,7 @@ Tree path absent, binary present only in the compiler cache — `_tmp/autonomy/p
 
 ```
 == the tree path is ABSENT: ls: cannot access 'target/debug/pii': No such file or directory
-== the binary the tests must find: … /projects/pi-improved/_tmp/proof-target/debug/pii
+== the binary the tests must find: … _tmp/proof-target/debug/pii
 pii-worker --lib control::    test result: ok. 5 passed; 0 failed
 pii-worker --test supervisor  test result: ok. 10 passed; 0 failed
 ```

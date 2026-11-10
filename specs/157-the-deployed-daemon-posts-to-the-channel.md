@@ -1,6 +1,6 @@
 # Spec 157: the deployed daemon posts to the operator's channel (M5's second half)
 
-**Project**: /projects/pi-improved · **Milestone**: M5 — the deployment has exactly one acceptance line left: `pii health` reports the channel up with at least one post recorded, and seven posts inside seven days.
+**Project**: <repo> · **Milestone**: M5 — the deployment has exactly one acceptance line left: `pii health` reports the channel up with at least one post recorded, and seven posts inside seven days.
 **Why now**: the release binary is installed and running (`revision ebdd4369ba84`, verified 2026-10-15 14:52Z), but `"channels": []` — nothing is wired to the operator's Discord, so the second half of M5's acceptance cannot even begin to accumulate.
 
 ## Requirement
@@ -25,7 +25,7 @@
 ## Guardrails
 - Do NOT print, commit or copy the token: reference the variable, never the value
 - Do NOT make the daemon depend on the channel being reachable: a refused post is recorded and reported, not a crash
-- Do NOT touch /root/.hermes — the operator's own configuration is theirs
+- Do NOT touch <agent-host-config> — the operator's own configuration is theirs
 - Do NOT delete or rewrite the existing store: the verification post is its first entry, not a migration
 
 ## Milestone link

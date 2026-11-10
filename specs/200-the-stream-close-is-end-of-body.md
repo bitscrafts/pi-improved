@@ -3,7 +3,7 @@
 ## Overview
 071 section 3: the contradiction. A diagnostic compiled into target/release/pii never printed, while the same net: read: peer closed close_notify text kept appearing. A string in a binary proves a literal exists, not that its code path ran. The decisive test is BEHAVIOURAL.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 Patch the arm to emit an unmistakable token, rebuild, run the identical prompt, and see which token appears. Then: an end-of-stream after at least one frame completes the body with the answer kept and an EMPTY output.error; a close before any frame remains an error.

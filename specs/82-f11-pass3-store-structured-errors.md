@@ -1,6 +1,6 @@
 # Spec: 82 — F-11 pass 3: `pii-store/src/lib.rs` uses the structured store error (64 sites)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch D — 043 §10 item 14 (carries 032's F-11 item forward).
 
 ## Context

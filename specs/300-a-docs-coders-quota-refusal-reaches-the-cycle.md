@@ -1,7 +1,7 @@
 # Spec 300: a docs coder's quota refusal reaches the cycle, and the cycle's requeue path prints its outcome
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, lane hardening (Opus review 2026-10-27, findings F3 and F8)
 F3: in the composed lane only the FIRST `coder.exited` (the host's `code` coder) is parsed for `quota_exhausted`, and only that one writes the CLI-shaped line
 `You've hit your session limit · resets <T> (UTC)` to the worker log. The docs coder's facts go to stdout (`DOCS-FACTS`), which `scripts/autonomy/window.sh` does not read (it reads the worker log). So a

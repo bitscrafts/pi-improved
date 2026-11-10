@@ -1,6 +1,6 @@
 # Spec: 73 — boss_watch waits on condition, not on a load-sensitive clock
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch B (from 043 §10) — candidate 7: "a gate that goes red under load teaches people to re-run until green"
 **Status**: NOT STARTED
 **Derives from**: `_docs/06-research/043-opus-full-review-2026-10-06.md` §1 (step-4 failure:

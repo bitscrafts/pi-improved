@@ -45,7 +45,7 @@ drain it, review, refill.**
   routes between **two pinned calls**, so each methodology keeps its pin and a review of the pin is
   still a review of a specific file.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: composability
 
 

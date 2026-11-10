@@ -134,7 +134,7 @@ built to attribute posts to the running deploy fails to attribute the 4 posts th
 
 **4. The remaining risk (three sentences).**
 
-> pii on lnx (`121fb6d`) posts its daily digest at 12:00 UTC, and this morning it posted four times at 09:00 UTC
+> pii on the host (`121fb6d`) posts its daily digest at 12:00 UTC, and this morning it posted four times at 09:00 UTC
 > from four runs the operator had cancelled, because the deployed binary does not disarm a cancelled run's timer
 > (fixed in the tree as 196, not deployed). Until 196 is deployed, cancelling a run is not a way to stop it, so
 > disable the `[[cron]]` block instead. Treat no reading as production evidence unless `since_deploy.posted` agrees with
@@ -152,7 +152,7 @@ built to attribute posts to the running deploy fails to attribute the 4 posts th
 
 ## 4. The 12:00Z occurrence (070 step 2): the reading
 
-Recorded verbatim by the background reader (C-run, `/projects/_tmp/rev071-occurrence.txt`):
+Recorded verbatim by the background reader (C-run, `<scratch>/rev071-occurrence.txt`):
 
 | reading | runs | `channel_posts` | refusals | `since_deploy` | `run ls` |
 |---|---|---|---|---|---|

@@ -1,6 +1,6 @@
 # pi-improved — spec-30: timer-nodes-resume
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: BLOCKER for the entire boss loop. `TimerNode::run`
   (`crates/pii-graph/src/nodes.rs:292-311`) has NO code path returning
   `Outcome::Next` — every dispatch unconditionally returns

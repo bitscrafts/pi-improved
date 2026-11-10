@@ -14,7 +14,7 @@ This spec is the transport: a **treatment bundle** — the reproducer, the patch
 installation can import, verify, apply, and prove for itself. The bundle is a file: sharing today is `scp` or a git
 branch; the GitHub/PR/specs-as-issues path is a *transport* for the same format, not a new mechanism.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: self-healing — the step after detect-and-escalate (spec 07 Slices -1/0), and the first of the slices that
 spec explicitly deferred ("patching, worktrees, git tools, or PR tools").
 

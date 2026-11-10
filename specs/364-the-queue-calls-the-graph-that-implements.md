@@ -1,6 +1,6 @@
 # Spec: The queue implements a spec by calling the graph that already does
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"create a graph to
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"create a graph to
 implement specs? then use composability to integrate into the flow"*; and the standing rule that inclusion is `call`
 (spec 255) and a second inclusion mechanism must never be built.
 

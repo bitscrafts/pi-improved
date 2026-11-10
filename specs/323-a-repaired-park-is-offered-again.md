@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: autonomy lane
 
 Row **A185** (spec 321, the parity oracle in a clean export) was parked after three attempts. Commit

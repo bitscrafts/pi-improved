@@ -17,7 +17,7 @@ Two causes, both ours:
 2. `poll_pause` (spec 194) does honour `retry_after`, but as `interval.max(asked)` — so a 0.3 s answer from
    Discord was swallowed by our own 500 ms timer and the next read went out on schedule.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening
 
 ## Requirements

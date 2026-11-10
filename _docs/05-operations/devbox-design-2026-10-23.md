@@ -2,9 +2,9 @@
 
 Written 2026-10-23. Status: SUPERSEDED the same day by what was built and measured: see `modules/devbox/` (Containerfile, compose.yaml,
 build.sh, gate.sh, check.sh). Differences from this draft: root inside (not a non-root user), the project mounted at its own path
-/projects/pi-improved (not /work), Python only through uv, clang and procps added after the first in-container gates failed without
+<repo> (not /work), Python only through uv, clang and procps added after the first in-container gates failed without
 them. Kept as the record of the original reasoning. Original status: DESIGN, nothing built or run on the host. Every "measured" line below was read from the
-lnx host over `ssh mvcorrea@10.10.10.217` this session (read-only: no container was started, no file written there).
+the host host over `ssh mvcorrea@<host>` this session (read-only: no container was started, no file written there).
 
 ## What the operator asked
 
@@ -20,15 +20,15 @@ runs the gate and the agents inside it, and reads the result back from the volum
 - podman 5.4.2, rootless, user `mvcorrea` (uid 1000), `overlay` storage under `~/.local/share/containers/storage`,
   `/etc/subuid` has `mvcorrea:100000:65536`, `podman.socket` active at `/run/user/1000/podman/podman.sock`.
 - No Rust on the host. 32 cores, 125 GB RAM; `/podman` has 90 GB free (85% used), `/` 153 GB free.
-- The working tree is `/podman/assistants/hermes/projects/pi-improved` (owner mvcorrea, mode 755) — the same bytes this
-  container sees as `/projects/pi-improved`. So the "mounted volume" already exists on the host; no copy is needed.
+- The working tree is `/podman/assistants/hermes<repo>` (owner mvcorrea, mode 755) — the same bytes this
+  container sees as `<repo>`. So the "mounted volume" already exists on the host; no copy is needed.
 - Image `localhost/pii-agent:1` (1.91 GB): pi 0.1.23, claude 2.1.304, **rustc/cargo 1.85.1**, git 2.47.3; it runs as root
   inside (rootless: root maps to mvcorrea), `WORKDIR /work`. It resolves `api.anthropic.com` and `ollama.com`.
 - **The repo pins Rust 1.95** (`rust-toolchain.toml`, `rust-version = "1.95"`, edition 2024). The existing image has 1.85.1,
   so it CANNOT build this workspace. This is the first concrete gap.
 - No `ANTHROPIC_API_KEY`, `OLLAMA_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in the host user's environment, and no
   `~/.claude/.credentials.json` on the host. The keys live in the hermes container's `.env`
-  (`/podman/assistants/hermes/root/.hermes/.env`, mode 600).
+  (`/podman/assistants/hermes<agent-host-config>`, mode 600).
 - Two production-ish pii processes already run there (a daemon inside the hermes container, pid 24108, and one at
   `~/.local/bin/pii`, pid 3539364). The devbox must not touch either.
 

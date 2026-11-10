@@ -1,6 +1,6 @@
 # pi-improved — spec-16: phase4-session-durability (part 1/2)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: R2 (daemon restart is amnesia) from the opus Phase-4 review — sessions vanish on restart; new sessions reuse `s1`,`s2`; `session.list` lies and `session.state` fakes token counts.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

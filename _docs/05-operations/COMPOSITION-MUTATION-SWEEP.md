@@ -65,4 +65,4 @@ test. The first run's table is superseded by the table above.
 - A mutation that stops the test from compiling is `BROKEN` and does not count.
 - The sweep needs `TMPDIR` writable for the linker; `/tmp` is read-only in this sandbox, so `composition.sh` defaults
   `TMPDIR` to `_tmp/tmp`. The uv cache and managed Python go under `_tmp/uv` for the same reason.
-- `cargo` is not on the default `PATH` in this sandbox; it lives under `/root/.cargo/bin`.
+- `cargo` is not on the default `PATH` in this sandbox; it lives under `~/.cargo/bin`.

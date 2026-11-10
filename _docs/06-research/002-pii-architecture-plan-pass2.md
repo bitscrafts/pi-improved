@@ -5,7 +5,7 @@
 
 # Pii Architecture Plan (consolidated: passes 1-3)
 
-> Pass 1 lives at `/projects/pi-improved/_docs/06-research/002-pii-architecture-plan-pass2.md`.
+> Pass 1 lives at `_docs/06-research/002-pii-architecture-plan-pass2.md`.
 > This document **extends and challenges** it across 12 new directions. Where pass 1 and
 > pass 2 disagree, pass 2 wins and says why. Everything pass 1 decided and pass 2 does not
 > mention still stands.
@@ -28,9 +28,9 @@ Pass 2 asks the questions pass 1 deferred or got wrong:
 - The daemon is described as a consumer of the network. It should be a **provider** —
   sockets, brokers, protocol handlers, and plugins that can request them. (§4, §11)
 - redb + hand-rolled BM25 was pass 1's memory answer. There is a **proven Rust library**
-  in this workspace already (`agent-memory-core`) and a strong published layering
+  in this workspace already (`the workspace memory-core`) and a strong published layering
   (Tencent's L0→L3). Pass 1's memory design is under-specified by comparison. (§5)
-- `pidag`, `agent-memory`, `orki` exist. Which get **subsumed**, which get **embedded**,
+- `pidag`, `the workspace memory`, `orki` exist. Which get **subsumed**, which get **embedded**,
   which get **wrapped**? (§6)
 - Multiple sites. redb is single-writer *per process*, and now also per *site*. (§7)
 - Pass 1's graph engine blocks. Hermes doesn't. **Callbacks, not loops.** (§8)
@@ -56,8 +56,8 @@ corrections to **pass 1**, all verified this pass.
 | 1 | "wasmtime 47.x, WASI 0.2 (P2), component model" | **wasmtime is at 48.0.1** (2026-08-25). **WASI 0.3.0 shipped 2026-06-11** with native async (`async func`, `stream<T>`, `future<T>`), `wasi:io` **deleted**, and `wasi:sockets` promoted to stable. Wasmtime 46+ implements final 0.3. **But** `wasmtime-wasi 48.0.1`'s `p3` module is documented verbatim as *"Experimental, unstable and incomplete implementation of wasip3"*. → **Build on p2, design the WIT world so the p3 migration is mechanical, revisit at wasmtime ~52.** This is a real fork in the road pass 1 did not know existed (§10.1). |
 | 2 | "Phase 0: there is no Rust toolchain in this environment" | Still true **in this container** — `rustc: command not found`, `~/.cargo/bin` empty, no rustup targets. The brief states 1.95.0 + probe-rs/cargo-embed/cargo-flash/cargo-uf2 are installed; that is the **host**, not this container. Any CI/agent workflow must not assume a toolchain inside the container. |
 | 3 | "`tokio-serial` for the serial bridge" (§7 Phase 4) | **`tokio-serial` is unmaintained and openly seeking adoption.** Use **`serial2-tokio`** (active as of 2026-07) or `postcard-rpc`'s own transport. |
-| 4 | "Vector search: i8 brute force, no ANN index, add HNSW only when p95 exceeds budget" | Defensible, but pass 1 did not know `agent-memory-core` already ships a `VectorBackend` trait with an **HNSW default** and a Qdrant alternative, plus tantivy BM25 and a petgraph co-occurrence GraphRAG layer. The right move is not to re-derive it (§5). |
-| 5 | "Hand-roll BM25, ~600 LOC, the concrete cost of the redb choice" | Only if you ignore **tantivy**, which `agent-memory-core` already pairs with redb. ~600 LOC of hand-rolled scoring is a cost you do not have to pay. |
+| 4 | "Vector search: i8 brute force, no ANN index, add HNSW only when p95 exceeds budget" | Defensible, but pass 1 did not know `the workspace memory-core` already ships a `VectorBackend` trait with an **HNSW default** and a Qdrant alternative, plus tantivy BM25 and a petgraph co-occurrence GraphRAG layer. The right move is not to re-derive it (§5). |
+| 5 | "Hand-roll BM25, ~600 LOC, the concrete cost of the redb choice" | Only if you ignore **tantivy**, which `the workspace memory-core` already pairs with redb. ~600 LOC of hand-rolled scoring is a cost you do not have to pay. |
 | 6 | "`pii-tui` is a crate in the binary; ACP is a separate mode" | The client/server split (§3) makes the TUI a **protocol client**, and ACP a **second client of the same protocol**, not a parallel stack. This changes the crate graph. |
 | 7 | Observability appears as one trait (`Observer`) and one `TraceCtx` field with no design behind them | Observability is a **subsystem**, and the reference implementation (`zeroclaw-log`, 6,616 lines across 13 files) shows exactly how much design it takes. §2 specifies it. |
 
@@ -880,18 +880,18 @@ method = "POST"; url = "https://hooks.example/x"; body = "$.nodes.summary.value"
 
 ### 5.1 The decision
 
-> **Embed `agent-memory-core` as a native crate dependency. Do not reimplement it, do not
+> **Embed `the workspace memory-core` as a native crate dependency. Do not reimplement it, do not
 > wrap it as a WASM plugin. Build the L0–L3 layering *on top* of it as consolidation
 > graphs.**
 
 Pass 1 budgeted ~600 LOC of hand-rolled BM25 as "the concrete cost of the redb choice".
-That cost does not need paying: `agent-memory-core` is redb-based **and** pairs it with
+That cost does not need paying: `the workspace memory-core` is redb-based **and** pairs it with
 tantivy, and it already implements exactly the 3-lane RRF pass 1 §6.3 specified.
 
 What it provides (per its own architecture notes):
 
 ```
-agent-memory-core/src/
+the workspace memory-core/src/
 ├── store/redb_store.rs   # redb, ACID, 8-table schema
 ├── vector/               # VectorBackend trait: HnswBackend (default) | QdrantBackend
 ├── fulltext.rs           # tantivy, real BM25 — no external infra
@@ -920,9 +920,9 @@ pub enum MemoryBackend {
 low-RAM node (a Pi in the garage) use the household memory without carrying tantivy + HNSW.
 
 **Two redb files, one process.** `~/.pii/pii.redb` (journal, graphs, skills, grants) and
-`~/.pii/memory.redb` (agent-memory-core's 8 tables). redb's lock is per *file*, so this is
+`~/.pii/memory.redb` (the workspace memory-core's 8 tables). redb's lock is per *file*, so this is
 legal, and it isolates a corrupted vector index from the run journal. **Version-align redb
-across both** — `pidag` is on `redb 1.x`; whatever `agent-memory-core` uses becomes the
+across both** — `pidag` is on `redb 1.x`; whatever `the workspace memory-core` uses becomes the
 workspace pin, and `cargo deny bans` enforces one version.
 
 ### 5.2 The L0–L3 layering
@@ -943,7 +943,7 @@ event-sourced already. It also means L1 extraction reads *structured* input (nod
 traces) rather than a transcript, which is cheaper and higher-signal — the same trick pass 1
 applied to distillation (§6.5).
 
-**L2 is computed, not generated.** `agent-memory-core` already maintains a petgraph
+**L2 is computed, not generated.** `the workspace memory-core` already maintains a petgraph
 co-occurrence graph. A scene is a **community in that graph** (label propagation or
 Louvain), not an LLM's opinion about which atoms belong together. One cheap LLM call
 *labels* the community. Letting a model decide membership is how you get non-deterministic,
@@ -989,14 +989,14 @@ pub trait Embedder: Send + Sync {
 
 **Degrade honestly:** if no embedder is reachable, retrieval falls back to BM25 + graph
 (2 lanes instead of 3) and **says so in a log record and in `sys.status`**. It does *not*
-silently return worse results — which is precisely the bug `agent-memory-core`'s own
+silently return worse results — which is precisely the bug `the workspace memory-core`'s own
 2026-07 audit found (HNSW was memory-only and never persisted to the `VECTORS` table, so
 after every restart retrieval silently degraded to BM25-only). That specific failure becomes
 a **test**: write docs, restart, assert vector-lane recall is unchanged.
 
 ### 5.4 Consolidation, decay, and one hard budget rule
 
-Adopt `agent-memory-core`'s `consolidate()` (importance decay, duplicate merge, archive,
+Adopt `the workspace memory-core`'s `consolidate()` (importance decay, duplicate merge, archive,
 evict) as-is, run as a scheduled graph (`starter/consolidate`) rather than a background
 thread — so it is journaled, budgeted, cancellable and traceable like everything else.
 
@@ -1010,7 +1010,7 @@ rule as hermes' skill lifecycle, and for the same reason.
 > **No O(n²) candidate-generation pass may dispatch an LLM call per candidate without a hard
 > candidate cap AND an explicit `Budget`.**
 
-`agent-memory-core`'s `ConflictDetector` used a loose heuristic (shared_concepts ≥ 1 XOR
+`the workspace memory-core`'s `ConflictDetector` used a loose heuristic (shared_concepts ≥ 1 XOR
 negation-anywhere) and produced **3,800 conflict candidate pairs** on a modest workspace,
 each triggering an LLM validation call — a multi-million-token burn that had to be killed
 mid-run. The fix tightened it to `MIN_SHARED_CONCEPTS=2`, `MIN_CONCEPT_JACCARD=0.15`,
@@ -1024,7 +1024,7 @@ rather than quietly spending. Also port the tightened constants — they are har
 
 ### 5.5 Vector backend — final answer
 
-**Embedded `hnsw_rs` with int8 quantization** (agent-memory-core's default). Not Qdrant (a
+**Embedded `hnsw_rs` with int8 quantization** (the workspace memory-core's default). Not Qdrant (a
 second process defeats the single-binary claim; keep the `QdrantBackend` feature for a
 future large deployment). Not sqlite-vec (wrong database). Not `usearch` (C++ dep, same musl
 problem as fastembed).
@@ -1034,12 +1034,12 @@ existed*. One does. Keep brute force as the small-corpus path — below ~10 k do
 build cost dominates and a SIMD scan wins — and select automatically on corpus size, with
 the threshold in config and the choice reported in `sys.status`.
 
-**Keep pass 1's RRF over weighted normalisation.** `agent-memory-core` independently landed
+**Keep pass 1's RRF over weighted normalisation.** `the workspace memory-core` independently landed
 on RRF too. Confirmed twice, no calibration constants, one line.
 
 ---
 
-## 6. agent-memory, pidag, orki — subsume, embed, or steal
+## 6. the workspace memory, pidag, orki — subsume, embed, or steal
 
 ### 6.1 What "a Pii plugin" actually is — four tiers
 
@@ -1131,13 +1131,13 @@ are side-effect-free expressions. Pass 1 already has this. Keep it.
 untouched until Pii clears Phase 2 exit; then it retires. It is not a dependency, not a
 plugin, and not a subgraph — it is a predecessor.
 
-### 6.3 `agent-memory` → **T1, embedded** (see §5)
+### 6.3 `the workspace memory` → **T1, embedded** (see §5)
 
 Not a WASM plugin: it needs tantivy, HNSW, redb and (optionally) ONNX — none of which belong
 inside a sandbox, and all of which are trusted first-party code. Not a T4 external process
 by default either, because a second process holding a second redb file defeats the
 single-binary claim. **But keep the `Remote` backend** — the existing server at
-`10.10.10.217:7420` (REST + MCP, `GET /v1/memory/<topic>/search?q=&k=`,
+`<host>` (REST + MCP, `GET /v1/memory/<topic>/search?q=&k=`,
 `POST /v1/memory/<topic>/insights`, `GET /v1/memory/_topics`, plus a web UI) is both a
 migration path and the multi-site read path (§7).
 
@@ -1204,8 +1204,8 @@ every run *and fabricated provenance*. The workaround was to force a linear chai
 
 | Tool | Verdict | Action |
 |---|---|---|
-| `agent-memory-core` | **Embed (T1)** | Workspace dependency; `Memory` trait wraps it; keep `Remote` backend |
-| the agent-memory server | **Keep as T4** | `MemoryBackend::Remote`; also the sync target (§7) |
+| `the workspace memory-core` | **Embed (T1)** | Workspace dependency; `Memory` trait wraps it; keep `Remote` backend |
+| the the workspace memory server | **Keep as T4** | `MemoryBackend::Remote`; also the sync target (§7) |
 | `pidag` | **Subsume** | Steal `verify`/`after`/budget-terminal/quorum; write an importer; retire it after Phase 2 |
 | `orki` | **Do not adopt** | Steal `race`; adopt the blackboard measurement; **write the diamond test** |
 
@@ -1283,7 +1283,7 @@ Two options:
   version, cursor positions, last error, lag.
 
 **The failure mode to design against, from this workspace's own history:** a three-machine
-topology (lnx build host / container / mac) where a Containerfile `COPY`ed from a stale
+topology (the host build host / container / mac) where a Containerfile `COPY`ed from a stale
 snapshot missing a whole `src/` directory — so rebuilds silently compiled old code and
 reported success. The generalisation:
 
@@ -1482,7 +1482,7 @@ the marketing meets the oscilloscope:
 | Confidence | Reported per call, observed 0.46–0.98, **measures groundedness, not correctness**; unit conversions score lower | Usable as an escalation signal, **not** as a correctness proof |
 | I/O in the demo | Serial console over the UART bridge; no Wi-Fi, no MQTT | Pii must supply the transport |
 
-**Hardware reality check for this user:** the primary board in `/projects/nrf52-lab` is a
+**Hardware reality check for this user:** the primary board in `<workspace>/<project>` is a
 Pro Micro **nRF52840** — 1 MB flash, 256 KB RAM, Cortex-M4F, embassy + `defmt` + probe-rs.
 **Needle 2 cannot run on it**, not close. Using Needle 2 requires buying an ESP32-S3-N16R8
 (~$10). That is a decision, not a detail (§14, decision 6). The nRF52840 remains excellent
@@ -1944,7 +1944,7 @@ pii/
     ├── pii-graph/     # Spec, validator, scheduler, journal, snapshot, resume, node kinds.
     ├── pii-model/     # ModelProvider impls + SSE. QUARANTINES reqwest/rustls.
     ├── pii-tools/     # Native tools: fs, edit, bash, glob, grep, http.
-    ├── pii-memory/    # Wraps agent-memory-core (memory.redb) + Embedder + L0–L3 policy.
+    ├── pii-memory/    # Wraps the workspace memory-core (memory.redb) + Embedder + L0–L3 policy.
     ├── pii-net/       # NetService, egress, grants, protocol handlers.
     │                  #   QUARANTINES axum / rumqttd / hickory-resolver.
     ├── pii-worker/    # WireTransport, supervisor, UDS JSON-RPC half, MCU transports (§9.4).
@@ -2118,7 +2118,7 @@ context compaction as a graph node.
 
 `pii-net` (egress with the resolve-once-pin discipline; `Http` + `Mqtt` listeners; grants),
 `pii-channels` (cli, webhook, telegram), `pii-worker` (UDS protocol, supervisor, hot reload),
-`pii-memory` (agent-memory-core embedded + `OllamaEmbedder` + L0/L1 + retrieval), `pii-obs`
+`pii-memory` (the workspace memory-core embedded + `OllamaEmbedder` + L0/L1 + retrieval), `pii-obs`
 stage 2 (rotation, reader, broadcast, `/metrics`), gateway (axum: REST + WS + minimal
 dashboard), `pii-mcp`.
 
@@ -2133,7 +2133,7 @@ dashboard), `pii-mcp`.
    address (assert against a controlled resolver).
 5. Hybrid retrieval beats BM25-alone on a 20-query hand-labelled set (recall@10).
 6. **The persistence test**: write 1,000 docs, restart the daemon, assert vector-lane recall
-   is unchanged (the `agent-memory-core` HNSW-not-persisted bug class, §5.3).
+   is unchanged (the `the workspace memory-core` HNSW-not-persisted bug class, §5.3).
 7. `starter/consolidate` on a 5,000-doc corpus completes within its declared `max_llm_calls`
    or terminates `BudgetBreach` — it never runs unbounded (the ConflictDetector incident, §5.4).
 8. `pii logs -f` streams live with **no gateway running** (control protocol only).
@@ -2206,12 +2206,12 @@ doubt about the graph substrate itself.
 ## 15. New open decisions
 
 Pass 1 left three (redb vs SQLite → **redb**, still right and now reinforced by
-`agent-memory-core` and `pidag` both being redb-based; first milestone; drop
+`the workspace memory-core` and `pidag` both being redb-based; first milestone; drop
 `pii worker --graph` as a default → **yes, still**). Pass 2 adds eight.
 
 | # | Decision | Options | My recommendation |
 |---|---|---|---|
-| **1** | **Memory backend** | (a) embed `agent-memory-core` as a workspace dep; (b) talk to the existing server at `:7420` over REST; (c) reimplement per pass 1 §6.2/6.3 | **(a) embed, with (b) available as `MemoryBackend::Remote`.** (c) costs ~600 LOC of BM25 and re-derives a +11%-NDCG result you already have. Blocker to check first: does `agent-memory-core`'s redb version match the workspace pin? |
+| **1** | **Memory backend** | (a) embed `the workspace memory-core` as a workspace dep; (b) talk to the existing server at `:7420` over REST; (c) reimplement per pass 1 §6.2/6.3 | **(a) embed, with (b) available as `MemoryBackend::Remote`.** (c) costs ~600 LOC of BM25 and re-derives a +11%-NDCG result you already have. Blocker to check first: does `the workspace memory-core`'s redb version match the workspace pin? |
 | **2** | **450-line gate semantics** | (a) raw lines; (b) **effective** lines (minus blank/comment/`#[cfg(test)]`) | **(b).** Counting tests against the budget punishes testing. |
 | **3** | **WASI 0.2 vs 0.3** | (a) p2 now, mechanical port later; (b) p3 now on the experimental host impl | **(a).** The spec is stable; `wasmtime-wasi`'s `p3` is "experimental, unstable and incomplete". Avoid `wasi:io` types in Pii's own WIT so the port stays mechanical. |
 | **4** | **Protocol encoding** | (a) JSON only; (b) JSON + negotiated postcard for local UDS | **(a) for Phase 2, (b) if delta streaming shows up in a profile.** Do not pre-optimise the wire before the TUI exists. |
@@ -2231,7 +2231,7 @@ Pass 1 left three (redb vs SQLite → **redb**, still right and now reinforced b
 | **1** | **Scope.** Pass 2 grew the plan from ~17 to ~27 weeks. A solo project that never ships Phase 1 has produced nothing. | **High** | **Fatal** | Phase 1 slipping past week 7 | §13.1's MVP cut is the pressure valve. Phases 3–6 are each independently droppable; **Phases 0–2 are not.** |
 | **2** | **`wasmtime` churn.** 47 → 48 in the time between pass 1 and pass 2. `bindgen!` output changes on majors; p2→p3 is coming. | High | Medium | A `cargo update` breaking `pii-wasm` | Exact-pin. Feature-gate. Nothing in Phases 1–4 links it. `xtask wit-check` catches WIT drift. |
 | **3** | **Observability overhead on the reactive path.** Phase 4 targets p95 < 100 ms; a naive `record!` on every node could eat a meaningful slice. | Medium | Medium | The `record!` microbench regressing | Gate it (< 250 ns / < 40 ns filtered). Bounded queue, drop-on-full with a counter. Level-filter *before* building the event. |
-| **4** | **`agent-memory-core` coupling.** It is external to this repo (lives on another machine's checkout), and Pii would take a hard dependency on a crate with its own redb version and its own release cadence. | **Medium-High** | High | A redb version conflict at first `cargo build` | Vendor it as a **workspace path dependency or a pinned git rev**, never a floating one. `cargo deny bans` enforces a single redb. The `Memory` trait keeps a hand-rolled fallback possible. **Verify the redb version before committing to decision 1.** |
+| **4** | **`the workspace memory-core` coupling.** It is external to this repo (lives on another machine's checkout), and Pii would take a hard dependency on a crate with its own redb version and its own release cadence. | **Medium-High** | High | A redb version conflict at first `cargo build` | Vendor it as a **workspace path dependency or a pinned git rev**, never a floating one. `cargo deny bans` enforces a single redb. The `Memory` trait keeps a hand-rolled fallback possible. **Verify the redb version before committing to decision 1.** |
 | **5** | **The client/server boundary leaking.** The temptation to let `pii-tui` "just import one type" from `pii-graph` is enormous and it destroys the whole design. | **High** | High | Any PR adding a dep to `pii-tui` | The CI assertion (`cargo tree -p pii-tui` must not contain `pii-graph`) is non-negotiable and must exist from the first commit of Phase 2. |
 | **6** | **redb single-writer.** All writes serialise; a write transaction held across `.await` deadlocks the daemon. | Medium | **High** | Latency spikes correlated with journal writes | `clippy::await_holding_lock` is deny; `pii-store` is the only writer; batch journal appends; **never** hold a txn across an await. Add a debug-build assertion that a write txn's lifetime contains no yield point. |
 | **7** | **Egress policy bugs.** The resolve-once-pin logic is subtle and a mistake is an SSRF. | Medium | **High** | — | Port zeroclaw's tests too, not just its code: the deny-by-default test, the mixed-answer test, the metadata-endpoint test. Treat this as security code, review it as such. |
@@ -2245,7 +2245,7 @@ Pass 1 left three (redb vs SQLite → **redb**, still right and now reinforced b
 
 - **"redb single-writer across sites"** — not a risk. Sites never share a file (§7.5). The
   real cost is `SiteId` + HLC on every record, which must go in at Phase 1.
-- **"No FTS in redb, budget 600 LOC of BM25"** — not a cost, given `agent-memory-core` +
+- **"No FTS in redb, budget 600 LOC of BM25"** — not a cost, given `the workspace memory-core` +
   tantivy (§5.1).
 - **"Vector index tuning/corruption problems"** — real, but now a *known* failure mode with
   a specific test (§5.3, Phase 3 exit 6) rather than an unknown.
@@ -2279,20 +2279,20 @@ No code exists, so verification means the claims themselves.
 | `postcard-rpc` 0.12.1, 2026-06-12, `no_std`, Endpoints + Topics, `host_client` | `docs.rs/postcard-rpc` |
 | `tokio-serial` is unmaintained and seeking adoption | crates.io / its README |
 | `rumqttd` is "lightweight and embeddable... use it as a library" | rumqtt docs |
-| zeroclaw: `zeroclaw-log` 6,616 lines; `Observer` at `zeroclaw-api/src/observability_traits.rs:348-380`; gateway is axum 0.8 **TCP-only, no `UnixListener`**; WS frames are untyped `json!({"type":...})`; no shared protocol crate | `sed -n` against `/projects/pi-improved/_repos/zeroclaw/` |
+| zeroclaw: `zeroclaw-log` 6,616 lines; `Observer` at `zeroclaw-api/src/observability_traits.rs:348-380`; gateway is axum 0.8 **TCP-only, no `UnixListener`**; WS frames are untyped `json!({"type":...})`; no shared protocol crate | `sed -n` against `_repos/zeroclaw/` |
 | zeroclaw egress: deny-by-default at `wasi_http.rs:198-208`; resolve-once-pin at `wasi_http.rs:255-336` / `egress.rs:532-631`; `ConnectionRegistry` at `egress.rs:290-337`; wasmtime **47.0.4**, `consume_fuel` only, **no epoch, no pooling** (`component.rs:464-471`); `MAX_HOST_CALLS_PER_FRAME = 1_000` (`component.rs:25`); channels get **no** wasi:http (`wasm_channel.rs:108-133`) | same |
-| zeroclaw WIT worlds are per-role (`channel-plugin`, `tool-plugin`, `memory-plugin`) — a component cannot hold two roles | `/projects/pi-improved/_repos/zeroclaw/wit/v0/*.wit` |
-| hermes: `step_callback(api_call_count, prev_tools)` at `conversation_loop.py:2246-2272`; `thinking_callback` at `:3141`; cron is a 60 s-poll daemon thread with a file lock and **no live progress** (`cron/scheduler_provider.py:552-657`, `cron/scheduler.py`) | `/projects/pi-improved/_repos/hermes-agent/` |
-| pidag: single crate, redb, **8 tables** at `src/store/redb_store.rs:11-34`; budget breach = **exit 3**; `verify` is delta-based; A2A server deliberately deleted | `/projects/pidag/` |
-| `agent-memory-core` layout, 3-lane RRF +11% NDCG, the HNSW-not-persisted bug, the ConflictDetector 3800→18 incident with its exact constants | agent-memory backend, topic `agent-memory` |
-| orki diamond bug (single-task fanout + any-predecessor convergence); blackboard 2310 vs 50279 ops/s | agent-memory backend, topic `orki-orchestration` |
+| zeroclaw WIT worlds are per-role (`channel-plugin`, `tool-plugin`, `memory-plugin`) — a component cannot hold two roles | `_repos/zeroclaw/wit/v0/*.wit` |
+| hermes: `step_callback(api_call_count, prev_tools)` at `conversation_loop.py:2246-2272`; `thinking_callback` at `:3141`; cron is a 60 s-poll daemon thread with a file lock and **no live progress** (`cron/scheduler_provider.py:552-657`, `cron/scheduler.py`) | `_repos/hermes-agent/` |
+| pidag: single crate, redb, **8 tables** at `src/store/redb_store.rs:11-34`; budget breach = **exit 3**; `verify` is delta-based; A2A server deliberately deleted | `<workspace>/<project>/` |
+| `the workspace memory-core` layout, 3-lane RRF +11% NDCG, the HNSW-not-persisted bug, the ConflictDetector 3800→18 incident with its exact constants | the workspace memory backend, topic `the workspace memory` |
+| orki diamond bug (single-task fanout + any-predecessor convergence); blackboard 2310 vs 50279 ops/s | the workspace memory backend, topic `orki-orchestration` |
 | **`rustc` is NOT installed in this container** | `rustc --version` → `command not found`; `~/.cargo/bin` empty |
 
 **Not verified — flagged as assumptions:**
 
-- `agent-memory-core`'s exact redb version and its public API surface. **The source is not on
-  this machine** (it lives on a Mac checkout, deployed to the lnx podman host serving
-  `10.10.10.217:7420`). Everything in §5.1 comes from that system's own stored research
+- `the workspace memory-core`'s exact redb version and its public API surface. **The source is not on
+  this machine** (it lives on a Mac checkout, deployed to the the host podman host serving
+  `<host>`). Everything in §5.1 comes from that system's own stored research
   notes, not from reading the code. **Decision 1 must not be finalised until someone reads
   the crate.**
 - `wasmtime-wasi` p2's exact socket-policy API (`socket_addr_check`, `allow_tcp`/`allow_udp`)
@@ -3680,7 +3680,7 @@ here so they are not buried.
 There is no code yet, so verification here means the plan's own claims:
 
 - **Repo claims**: every citation in §1 and §0 is `path:line` against
-  `/projects/pi-improved/_repos/` and re-checkable with `sed -n '<line>p' <path>`.
+  `_repos/` and re-checkable with `sed -n '<line>p' <path>`.
 - **Version claims**: from the four `Cargo.lock` files — `wasmtime` 47.0.4 (zeroclaw) / 47.0.3
   (pi), `agent-client-protocol` 0.10.4, `rmcp` 2.1.0, `nono` 0.53.0, `ratatui` 0.30.0,
   `rusqlite` 0.37.0, `axum` 0.8.x, `rumqttc` 0.25.1, `landlock` 0.4.5, `petgraph` 0.8.3. **redb
@@ -3699,7 +3699,7 @@ There is no code yet, so verification here means the plan's own claims:
 <!-- Absorbed from `002-pii-architecture-plan-pass2.md` on 2026-09-28T20:00:57Z during the SSOT corpus merge.
      Content preserved verbatim. Original moved to 99-archive/06-research-merged-2026-09-28/. -->
 
-> Extends `/projects/pi-improved/_docs/06-research/002-pii-architecture-plan-pass2.md`.
+> Extends `_docs/06-research/002-pii-architecture-plan-pass2.md`.
 > Where pass 3 and pass 2 disagree, pass 3 wins and says why. Pass 2 §9 is the section
 > that changes most; §3 (pass 1), §6.4 and §14 change materially; everything else stands.
 

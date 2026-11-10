@@ -1,6 +1,6 @@
 # Spec: pii writes the spec it will implement
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"pii should be able to
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"pii should be able to
 write specs (could use other model) and run it! the pii should suffice, in an autonomous way doing the whole flow"*.
 
 ## Verified premises (measured 2026-11-03)

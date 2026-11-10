@@ -1,6 +1,6 @@
 # pi-improved — spec-19: phase4-web-viewer
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: P4.6 — observability: a browser window into the live daemon's runs, sessions, approvals, heals, memory. Worth it for observability, not a second chat UI (opus plan).
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

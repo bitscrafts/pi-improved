@@ -1,6 +1,6 @@
 # pi-improved — spec-50: split `pii-tui/src/lib.rs` into `{state,render,input,driver}.rs` + `lib.rs`
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW — Phase 5.2, remainder of F-12 (warn-band paydown, NOT
   a hard failure). `pii-tui/src/lib.rs` is 435 effective lines, in the
   380-450 warn band. Cosmetic debt reduction, not a blocker.

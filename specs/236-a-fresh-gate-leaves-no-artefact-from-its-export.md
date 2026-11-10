@@ -1,25 +1,25 @@
 # Spec: 236 — a fresh-gate leaves no artefact from its export behind
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T00:35Z by the autonomy orchestrator, from a red measured during a tick's own
 re-verification of HEAD `16236dd`. No worker was dispatched and nothing was spent.
 
 ## Overview
 
-`fresh-gate` exports HEAD with `git archive` to `/projects/_tmp/fresh-gate-<pid>/`, runs `quality-gate.sh`
+`fresh-gate` exports HEAD with `git archive` to `<scratch>/fresh-gate-<pid>/`, runs `quality-gate.sh`
 inside that export, and **removes the export on success**. Its compiler output does not have to be discarded
 with it — on purpose: `FRESH_GATE_TARGET` reuses one warm cache so the tree stays fresh while the build stays
 incremental (40-60 minutes of cold build per attempt was the trap that introduced the export into the loop).
 
 The warm cache is shared with the **routine** gate (`_tmp/gate-target`), and that is the defect. A Rust test
 binary bakes `env!("CARGO_MANIFEST_DIR")` **at compile time**. A binary compiled inside an export therefore
-carries `/projects/_tmp/fresh-gate-<pid>/crates/...` — a path that stops existing the moment the run succeeds.
+carries `<scratch>/fresh-gate-<pid>/crates/...` — a path that stops existing the moment the run succeeds.
 Cargo's fingerprint does not know that: the next run finds the artefact "fresh" and reuses it.
 
 Measured on 2026-10-23, same tree, same HEAD, twice:
 
-- **Run 1** `cargo run -q -p xtask -- fresh-gate` (00:16Z) — export `/projects/_tmp/fresh-gate-73534`,
-  `FRESH_GATE_TARGET` unset, so the gate's test step wrote to `/projects/pi-improved/_tmp/gate-target/test-gate`.
+- **Run 1** `cargo run -q -p xtask -- fresh-gate` (00:16Z) — export `<scratch>/fresh-gate-73534`,
+  `FRESH_GATE_TARGET` unset, so the gate's test step wrote to `_tmp/gate-target/test-gate`.
   **PASS**, `fresh_gate_rc=0`. The export was then removed — as designed.
 - **Run 2** (00:24Z) — `test (lib/bins/tests)` **FAILED** on three `pii-evolve` tests
   (`driver_spawns_no_subprocess`, `launcher_dials_through_the_uds_client`,
@@ -27,9 +27,9 @@ Measured on 2026-10-23, same tree, same HEAD, twice:
   `read driver.rs: Os { code: 2, kind: NotFound }` and `read src: Os { code: 2, ... }`.
   The suite read `1 passed; 3 failed` — **five** tests were collected, so nothing was deleted.
 - The binary behind it: `_tmp/gate-target/test-gate/debug/deps/launcher-02e24e7123aaff6a`, mtime
-  `2026-10-23T00:19:42Z` (i.e. compiled by run 1), `strings` → `/projects/_tmp/fresh-gate-73534/crates/pii-evolve`,
+  `2026-10-23T00:19:42Z` (i.e. compiled by run 1), `strings` → `<scratch>/fresh-gate-73534/crates/pii-evolve`,
   which no longer existed. A freshly compiled binary for the same tests in the same directory
-  (`launcher-5ea7fb6082780f01`, 00:29:00Z) carries `/projects/pi-improved/crates/pii-evolve` and passes 5/5.
+  (`launcher-5ea7fb6082780f01`, 00:29:00Z) carries `crates/pii-evolve` and passes 5/5.
 
 This is worse than a slow gate. A gate that fails on a clean tree at an unchanged HEAD teaches everyone to
 ignore it, and the same mechanism can go the other way: an artefact compiled in the **repo tree** reused by an
@@ -51,14 +51,14 @@ entirely and writes straight into the routine cache.
 - **R1 — the test step's artefacts die with the run that made them.** `fresh-gate` hands the gate child a
   **per-run** target directory for the `test (lib/bins/tests)` step, inside the export it is about to remove
   (a new `TEST_GATE_TARGET`, e.g. `<export>/_tmp/test-gate`). `gate-steps.txt`'s test line reads it with the
-  old value as fallback: `CARGO_TARGET_DIR="${TEST_GATE_TARGET:-${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}/test-gate}"`.
+  old value as fallback: `CARGO_TARGET_DIR="${TEST_GATE_TARGET:-${FRESH_GATE_TARGET:-_tmp/gate-target}/test-gate}"`.
   A run that fails keeps its export, so its test artefacts stay inspectable with it; a run that succeeds
   removes both together.
 - **R2 — the warm cache still carries everything else.** `fmt`, `clippy`, `clippy (hal-gpiod)`, `build`,
   `test (doc)` and the xtask scans keep resolving through `FRESH_GATE_TARGET` exactly as today. The change
   moves ONE step's cache. A fresh-gate must not become a cold workspace build (the measured 40-60 min trap).
 - **R3 — no shared TEST-STEP cache holds an export path after a run.** After `fresh-gate` returns, no file
-  under a shared `_tmp/gate-target*/test-gate` directory names a `/projects/_tmp/fresh-gate-` path. Checked by
+  under a shared `_tmp/gate-target*/test-gate` directory names a `<scratch>/fresh-gate-` path. Checked by
   grepping the binaries, not by trusting the code. **The scope is the test step on purpose, and it was measured
   on 2026-10-23**: `grep -rl` over `_tmp/gate-target` found **13437** files naming an export path, of which
   **3589** were under `test-gate` and the rest under `clippy-gate`/`build-gate` — steps R2 keeps on the warm
@@ -67,11 +67,11 @@ entirely and writes straight into the routine cache.
   clean-after-every-run step the non-goals forbid; the defect under repair is a stale **test binary**, so the
   check owns `*/test-gate` and reports the out-of-scope count rather than hiding it.
   **The pattern is a baked manifest dir, not the bare prefix, and that was measured too.** The first version of
-  the check greped for `/projects/_tmp/fresh-gate-` and flagged **three** files in a correct tree: the `xtask`
+  the check greped for `<scratch>/fresh-gate-` and flagged **three** files in a correct tree: the `xtask`
   test binary and its incremental artefacts, whose string table carries the *sample* path
-  `/projects/_tmp/fresh-gate-7` that the new unit test uses as data (next to
-  `/projects/pi-improved/_tmp/gate-target`, the warm dir). A check that fires on a correct tree teaches
-  everyone to ignore it, so the pattern is `/projects/_tmp/fresh-gate-[0-9]+/(crates|xtask)/` — the manifest
+  `<scratch>/fresh-gate-7` that the new unit test uses as data (next to
+  `_tmp/gate-target`, the warm dir). A check that fires on a correct tree teaches
+  everyone to ignore it, so the pattern is `<scratch>/fresh-gate-[0-9]+/(crates|xtask)/` — the manifest
   dir a binary bakes at compile time, which is exactly the path the three launcher tests then fail to read.
   **The check carries two controls on every run:** it must see a planted baked manifest dir, and it must NOT
   flag the unit test's bare sample path.
@@ -115,7 +115,7 @@ there and nowhere else.
    HEAD and exits non-zero when either run is not `PASS`. It is RED today (run 2 fails three `pii-evolve`
    tests), and this is the reading that names the defect.
 3. **GREEN.** Both criteria above pass; `scripts/orch-236-no-export-path.sh` (written by the same change)
-   finds no `/projects/_tmp/fresh-gate-` string under the shared caches, and the routine launcher lane reads
+   finds no `<scratch>/fresh-gate-` string under the shared caches, and the routine launcher lane reads
    5/5.
 
 ## Exit Criteria
@@ -161,16 +161,16 @@ Readings from the orchestrator's own runs on 2026-10-23, all logs under `_tmp/au
   after each, and the dev-tree `quality-gate.sh` that followed read `ALL PASS` with the launcher lane 5/0.
 - **The check's pattern was made precise by measurement, with both controls.** Greping the bare prefix flagged
   **three files in a correct tree**: the `xtask` test binary and its incremental artefacts, whose string table
-  carries the sample path `/projects/_tmp/fresh-gate-7` used as test data. The pattern is now
-  `/projects/_tmp/fresh-gate-[0-9]+/(crates|xtask)/` — a baked manifest dir — and the script runs two controls
+  carries the sample path `<scratch>/fresh-gate-7` used as test data. The pattern is now
+  `<scratch>/fresh-gate-[0-9]+/(crates|xtask)/` — a baked manifest dir — and the script runs two controls
   on every invocation: it must see a planted baked manifest dir, and must not flag the sample path.
   **Checker mutation:** planting `_tmp/gate-target/test-gate/debug/deps/orch-fake-export-baked.bin` with the
-  string `/projects/_tmp/fresh-gate-424242/crates/pii-evolve/src/driver.rs` read `rc=1`,
+  string `<scratch>/fresh-gate-424242/crates/pii-evolve/src/driver.rs` read `rc=1`,
   `FAIL, 1 test-step file(s) baked a manifest dir inside an export`; removing the planted file (the only file
   deleted, created by this run) read `rc=0`.
 - **Unit mutation (R6):** `TEST_GATE_TARGET` changed from `<export>/_tmp/test-gate` to `warm/test-gate` reddened
   exactly the target assertion — `panicked at xtask/src/fresh_gate.rs:453: lies under the export:
-  /projects/pi-improved/_tmp/gate-target/test-gate`, `0 passed; 1 failed`. Restored byte-identical (`sha256
+  _tmp/gate-target/test-gate`, `0 passed; 1 failed`. Restored byte-identical (`sha256
   5fc2e1e557ad5a8a22ec3e5ca46bbf6e5d379c0575017d0abc9528a6f6b62f9a` before and after, `touch`ed) and green
   again: `1 passed`.
 - **The spec's criteria on the committed tree, `3217788`** (`_tmp/autonomy/logs/orch-236-plain-pair-20261023T072722Z.log`):

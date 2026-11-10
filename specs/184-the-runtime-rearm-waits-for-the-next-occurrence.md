@@ -47,7 +47,7 @@ tree, warm cache `_tmp/gate-target/test-gate`, was **293 s cold** (`-j 2 --works
 despite the name the cache was cold for this source root) and one crate scoped (`-p pii-server --lib --bins`)
 **96 s**. Recorded in `_docs/05-operations/open-items.md` §9b.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

@@ -1,6 +1,6 @@
 # pi-improved — spec-14: phase4-turn-loop-hardening-part2
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: R1 (long-conversation death) is the #1 daily-use killer per the opus Phase-4 review — a long session returns a raw Ollama error or the model silently ignores the start of the conversation.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

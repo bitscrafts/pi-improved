@@ -1,11 +1,11 @@
 # Spec 260: the file-based graph commands expand a `call` like the daemon does
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition (spec 255 follow-up, found 2026-10-24 by running the BUILT binary on a real host graph that calls a sub-graph)
 
 Spec 255 added `kind = "call"`, expanded inline at load by `load_host_with_graphs`. Spec 255 R8 says `pii graph check`, run start and resume all see the same expanded graph. Measured with
-`/projects/_tmp/compose-real.sh` against the built `pii`: only the daemon path (`pii-server` `lib.rs:486`, `engine/dispatch.rs:366`) and `pii graph explain` (`cmd_graph_installed.rs:268`) expand a call.
+`<scratch>/compose-real.sh` against the built `pii`: only the daemon path (`pii-server` `lib.rs:486`, `engine/dispatch.rs:366`) and `pii graph explain` (`cmd_graph_installed.rs:268`) expand a call.
 The three FILE-based commands do not:
 
 | Command | Loader today (`crates/pii-cli/src/`) | Result on a host with a `call` node |

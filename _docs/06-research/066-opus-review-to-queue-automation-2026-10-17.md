@@ -6,7 +6,7 @@ This is a read-only review. The only repo file written is this one, and nothing 
 - **asserted**: from the brief.
 
 Inputs: 064, 065, `specs/158-one-point-of-control.md`, `scripts/autonomy/plan.tsv`, the skill-lane job
-`e36a2afdb65f`, `tick.sh`, `cycle.sh`, `state.py`, `/root/.hermes/scripts/ctl.sh`, and commit `5bf0db7`.
+`e36a2afdb65f`, `tick.sh`, `cycle.sh`, `state.py`, `<agent-host-config>`, and commit `5bf0db7`.
 
 _Written incrementally._
 
@@ -35,7 +35,7 @@ is, in the review. The conversion becomes a mechanical copy that can fail.
 | specs 161-166 | Each has 3 sections (Overview, Exit Criteria, Guardrails). None has a files-to-modify section. So column 6 had **no source** and was typed. Spec 157 for comparison has 5 (Requirement, TDD contract, Exit criteria, Guardrails, Milestone link). | C-run |
 | "11 open question(s) for you" | **This is not the skill lane.** It comes from the tick (`37ff4aecb8b0`, `tick.sh:111-118`). All 11 are "found a leftover … committed it for review" notices from 10-13 to 10-15. **0 of 11 are review items.** | C-run |
 | the skill lane (`e36a2afdb65f`) | Step 4 is hard-wired: "author the next spec from the ranked list in **`059-…` section 4**". 064 and 065 are invisible to every automated reader. | C-run (`jobs.json`) |
-| `ctl.sh` | It lives at `/root/.hermes/scripts/ctl.sh`, and **`/root/.hermes` is not a git repository**. The script is unversioned and ungated. | C-run |
+| `ctl.sh` | It lives at `<agent-host-config>`, and **`<agent-host-config>` is not a git repository**. The script is unversioned and ungated. | C-run |
 
 ## Q1. Where the conversion lives
 
@@ -141,7 +141,7 @@ A34  _docs/06-research/065-…md  065-Q1  block_sha256=<12>  crates/pii-graph/te
 6. no existing row has the same `id` or the same `spec_slug`.
 
 **The decision list.** Any match escalates, whatever `class` says:
-- `deploy/`, `/root/.hermes/`, `~/.pii/`, `*.service`: production and its control;
+- `deploy/`, `<agent-host-config>`, `~/.pii/`, `*.service`: production and its control;
 - `scripts/autonomy/`: the loop itself, which 062 froze;
 - `specs/` other than the one being generated: another item's contract;
 - **budget and limit files**: `crates/pii-graph/tests/write_amp.rs`, `coverage-floor.txt`, `gate-steps.txt`

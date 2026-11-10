@@ -1,6 +1,6 @@
 # Spec: 194 — a rate-limited poll waits for what the provider said
 
-**Project**: /projects/pi-improved · **Phase**: the exercise matrix's E5, inbound half of the 429 class
+**Project**: <repo> · **Phase**: the exercise matrix's E5, inbound half of the 429 class
 **Filed**: 2026-10-19 by the orchestrator, from `_docs/05-operations/EXERCISE-RESULTS-2026-10-19.md` (E5 row).
 
 ## Overview
@@ -116,7 +116,7 @@ both OK), `touch`ed, criteria re-ran green, tree clean.
 scratch daemon, fake Discord answering 429 with `retry_after: 2`, `poll_interval_ms = 100`, nothing repaired
 by the harness):*
 
-- **pre-fix binary** (`/root/.local/bin/pii`, the deployed `121fb6d`): **72 polls in 7 s**, gaps `103–107 ms`,
+- **pre-fix binary** (`~/.local/bin/pii`, the deployed `121fb6d`): **72 polls in 7 s**, gaps `103–107 ms`,
   error text `unavailable: discord: poll status 429` — the exact hammering the E5 row measured in production
   (22 polls in 3 min at the shipped 1.2 s interval).
 - **fixed binary** (`target/release/pii`, `0c1ded6`): **4 polls in 7 s**, gaps `2004 / 2076 / 2081 ms`, error

@@ -10,7 +10,7 @@ This spec is therefore **not** "build inclusion". It closes the four gaps that m
 another graph — output naming, failure attribution, a suspension test that has never existed, and the fixed-id
 reads that break under namespacing — and it records the decision so nobody builds a second include mechanism.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: composability — the night (342) depends on this.
 
 ## Verified premises (from a read-only review of HEAD `79e4262`, 2026-11-02)

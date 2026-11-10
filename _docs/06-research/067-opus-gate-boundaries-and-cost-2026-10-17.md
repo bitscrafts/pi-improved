@@ -55,7 +55,7 @@ the 05:26-07:12 cycle: 1 h 46 min wall.
    and `no_raw_dial_remains_in_pii_evolve` failed in the test step of the 12:00, 12:53 and 13:29 cycles with
    `read driver.rs: NotFound`. `crates/pii-evolve/src/driver.rs` exists.
    - The test binary `_tmp/gate-target/test-gate/debug/deps/launcher-b20b8ddc02b01e72` was built at 10:13 inside
-     the export `/projects/_tmp/fresh-gate-1255751`. It embeds that path as `CARGO_MANIFEST_DIR`, and the export
+     the export `<scratch>/fresh-gate-1255751`. It embeds that path as `CARGO_MANIFEST_DIR`, and the export
      is gone.
    - The main-tree gate reused the binary, because cargo hashes workspace members independently of their absolute
      root, and the sources' mtimes were older than the binary.

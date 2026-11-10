@@ -13,7 +13,7 @@ caller's context, the splice under `<call>__<node>` ids, and the `$.nodes.<call>
 on its exit's ports; a call only narrows the host's ceiling) and the trap that made a real graph
 ship with an empty brief.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: documentation
 
 ## Requirements

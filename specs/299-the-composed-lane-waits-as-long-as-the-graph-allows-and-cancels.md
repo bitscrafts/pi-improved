@@ -1,7 +1,7 @@
 # Spec 299: the composed lane waits as long as the graph allows, and cancels the run when it gives up
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, lane hardening (Opus review 2026-10-27, finding F2)
 `scripts/run-batchC-pii.sh` polls the run for `MAXI = PII_NODE_TIMEOUT_MS/5000 + 120` iterations of (5 s + one ssh/podman call), about 65-75 minutes, while `graphs/spec.toml` allows
 `max_wall_ms = 6_000_000` (100 minutes: code 50 + docs 20 + judges). When the poll expires the lane exits 1 WITHOUT cancelling: the engine never cancels a run because its client stopped

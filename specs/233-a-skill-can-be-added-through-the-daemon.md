@@ -2,10 +2,10 @@
 
 ## Overview
 Spec 227 wired the live registry to `StoreSkills` (the coder node reads its skills from the daemon's own memory
-store), and its six unit criteria are green on the committed tree. Its criterion 7 is live: on lnx, a coder graph
+store), and its six unit criteria are green on the committed tree. Its criterion 7 is live: on the host, a coder graph
 that pins a stored skill journals `coder.spawned` with `skill=<name> sha256=<hex>`, and the same graph after the
-skill is edited refuses with `skill.drift`. M0 now passes on lnx (spec 230, run r258), so the container is no
-longer what blocks it. Measured by the supervisor on 2026-10-20 against the lnx daemon (pid 3539364, binary
+skill is edited refuses with `skill.drift`. M0 now passes on the host (spec 230, run r258), so the container is no
+longer what blocks it. Measured by the supervisor on 2026-10-20 against the the host daemon (pid 3539364, binary
 installed 12:38:35, `PII_RUNTIME_DIR=/run/user/1000/pii`), it cannot be run, for three reasons:
 
 1. **The store holds no skill, and the shipped code cannot write one.** `pii skill list --all` over a copy of
@@ -78,7 +78,7 @@ Write each test first, and record it RED before the fix.
 - [ ] `cargo test -p pii-cli --test skill_list_and_explain && cargo test -p pii-cli --test skill_edit_keeps_the_pin`
 - [ ] `cargo test -p pii-server --test live_registry_supplies_the_skill_source && cargo test -p pii-server --test live_registry_refuses_a_drifted_skill`
 - [ ] `CARGO_TARGET_DIR=_tmp/tools-gate cargo run -q -p xtask -- lint-observability`
-- [ ] on lnx, after a deploy (orchestrator, not the worker): `pii skill add --file <skill>` prints `via daemon`.
+- [ ] on the host, after a deploy (orchestrator, not the worker): `pii skill add --file <skill>` prints `via daemon`.
       Then spec 227's criterion 7 runs as written: a coder graph that pins the skill journals
       `coder.spawned skill=<slug> sha256=<hex>`, and after `pii skill edit` changes the text, the same graph
       refuses `skill.drift`.

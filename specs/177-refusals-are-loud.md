@@ -3,7 +3,7 @@
 ## Overview
 069 item 3: the class that hid fourteen hours of zero runs. A cron entry that cannot start, or a channel run refused, must be an EVENT and not a silence.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 start_cron_entries and poll_once emit cron.start.refused / channel.run.refused; the on-finish re-arm gets a minimum interval.

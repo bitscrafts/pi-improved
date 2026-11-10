@@ -1,7 +1,7 @@
 # Spec 289: a running agent's `coder.spawned` is durable while it runs, so a restart can reap it
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — a defect that spec 285's restart case measured (not a composition defect: it reproduces in a one-node graph). `crates/pii-graph/src/sched/dispatch.rs:276` journals a node's agent-call observations (`coder.spawned`, `coder.exited`) only **after** `node.run` returns (`for observation in recorder.take()`). While the coder runs, its `coder.spawned` — the only record of the agent's pid and argv0 — lives in `CallRecorder.seen`, a memory buffer. Spec 242's orphan reaper (`engine/orphans.rs::reap_orphans`) searches the **store** for a `coder.spawned` without a `coder.exited`; a daemon that dies mid-coder never wrote the spawn, so the reaper finds nothing and the agent keeps running.
 
 Measured 2026-10-26 (the A149 worker's `m2_restart_inside_a_call`, then the orchestrator's controls): the live store journal holds 26 events with `graph.call` and the host's finished `code` coder, and **no** `coder.spawned` for the running docs coder — for 5 s of polling, in the composed graph and in the `docs` graph run alone. Spec 242's own test (`orphans_are_reaped.rs`) builds the `coder.spawned` event by hand and stores it, so it cannot see this: its input came from the test, not from the live path.

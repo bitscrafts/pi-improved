@@ -1,6 +1,6 @@
 # Spec: Tests off the wall clock
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
 workstream **W8** — closes finding 11.
 
 ## Verified premises

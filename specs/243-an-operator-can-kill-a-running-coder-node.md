@@ -1,6 +1,6 @@
 # Spec: 243 — an operator can stop a running coder node explicitly, and the agent dies with it
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T11:40Z by the orchestrator (defect 18 in `_docs/05-operations/agent-management-findings-2026-10-23.md`).
 Premises read, not assumed:
 

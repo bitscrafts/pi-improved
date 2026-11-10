@@ -5,7 +5,7 @@
 - **The tree moved after this brief was written** (docs-only): HEAD is now **`d713593`** — four commits, all
   documentation (research corpus consolidation into canonicals + the staged review's own filing). No code changed
   since the brief. The inventory was **REGENERATED 2026-10-06** against `d713593` (18,929 lines) — use the
-  regenerated `/projects/_tmp/pii-review/codebase-inventory.txt`, and treat doc paths/names below as claims to
+  regenerated `<scratch>/pii-review/codebase-inventory.txt`, and treat doc paths/names below as claims to
   re-check, not facts.
 - **NEW CONTRACT — full documentation review** (user, 2026-10-06): "codebase and documentation must be fully
   reviewed" is a coverage obligation, not flavour. Review the whole `_docs/` tree (01-overview, 02-guides,
@@ -66,10 +66,10 @@ Candidates 5 and 12 were deliberately not specced.
 
 ## The state of the tree today
 
-- Repo `/projects/pi-improved`, branch `master`, **`d713593` at dispatch time (AMENDED banner wins over any
+- Repo `<repo>`, branch `master`, **`d713593` at dispatch time (AMENDED banner wins over any
   stale hash below)**, tree clean at staging.
 - `cargo` works in this session: `PATH` includes `/usr/local/cargo/bin`, and the Rust toolchain is installed.
-- **18,929-line inventory** of every crate, file, surface and doc: `/projects/_tmp/pii-review/codebase-inventory.txt`
+- **18,929-line inventory** of every crate, file, surface and doc: `<scratch>/pii-review/codebase-inventory.txt`
   — an appendix, for LOOKING UP a file you are already interested in. **Do not read it end to end.**
 - 20 crates, ~35,100 lines of `src/`. Largest: `pii-server` 7,821 · `pii-graph` 4,968 · `pii-store` 3,114 ·
   `pii-cli` 2,880 · `pii-net` 2,359 · `pii-core` 2,214 · `pii-model` 1,960 · `pii-tools` 1,954 · `pii-proto` 1,456.

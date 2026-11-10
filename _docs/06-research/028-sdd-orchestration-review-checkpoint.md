@@ -7,7 +7,7 @@
 
 ## 0. What this document is
 
-This is the consolidated SDD orchestration review requested for `/projects/pi-improved`.
+This is the consolidated SDD orchestration review requested for `<repo>`.
 It does not re-litigate prior analysis; it **pins the authoritative map and debt
 assessment to one review, then records what this resumed session verified mechanically
 and what that changes about the next-phase plan.**

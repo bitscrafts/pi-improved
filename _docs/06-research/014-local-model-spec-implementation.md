@@ -22,7 +22,7 @@ laguna as full one-shot specs, failed, was split into two micro-specs
 laguna implemented part 1, committed as `a37ac8a`/`5c9cc74`. That run's logs,
 briefs, and diffs are still in `_tmp/` and are the primary evidence here, not
 a fresh probe. Where the repo lacks direct evidence (pidag's own source is not
-checked out here — this research agent is sandboxed to `/projects/pi-improved`
+checked out here — this research agent is sandboxed to `<repo>`
 and `pidag` is not on `PATH`), that gap is flagged rather than guessed at.
 
 ## 1. Context recap (read, not re-litigated)
@@ -37,7 +37,7 @@ and `pidag` is not on `PATH`), that gap is flagged rather than guessed at.
   llama.cpp **router** (port 8082, `--models-preset llama-models.ini
   --models-max 2 --jinja`) serving both `granite-4.2-3b` and `laguna-xs-2.1`,
   reached through pi's built-in `llamacpp` provider (base URL overridden in
-  `/root/.pi/agent/models.json`).
+  `<agent-config>`).
 - AGENTS.md: the SDD loop is `pidag lint` → `pidag sdd specs/NN-x.md --run
   --concurrency N` → quality-gate → validate, up to `max_iterations = 4`
   (`.pidag/config.toml`). The workhorse today is
@@ -167,20 +167,20 @@ touched file, vs. glm-5.3-flash's 1M-token window).
 1. The llama.cpp **router**, exactly as in
    `_docs/02-guides/pi-local-llamacpp.md`:
    ```bash
-   llama-server --models-preset /projects/_tmp/llama-models.ini \
+   llama-server --models-preset <scratch>/llama-models.ini \
      --host 0.0.0.0 --port 8082 --threads 16 --models-max 2 --jinja
    ```
    Verify: `curl -s http://localhost:8082/v1/models | jq -r '.data[].id'`
    must list `granite-4.2-3b` and/or `laguna-xs-2.1`.
 
-2. `/root/.pi/agent/models.json` must carry the `llamacpp` provider override
+2. `<agent-config>` must carry the `llamacpp` provider override
    (`baseUrl: "http://localhost:8082/v1"`, keyless) with both model ids
    listed with `contextWindow: 32768` — this file is confirmed to exist with
    this shape per `023` (this research agent could not re-read it directly:
-   it is outside the sandboxed `/projects/pi-improved` root for this session,
+   it is outside the sandboxed `<repo>` root for this session,
    so treat "confirmed per doc 023" as the evidence, not a fresh read).
 
-3. `/root/.pi/agent/settings.json` `enabled_models` must include
+3. `<agent-config>` `enabled_models` must include
    `"llamacpp/*"` (same caveat — documented in 023, not re-read here).
 
 ### 3.2 Wiring it as the `pidag` worker
@@ -231,7 +231,7 @@ local model:
 ### 3.3 `bundle/config.env`
 
 No file matching `bundle/*config.env*` or `*.env` exists anywhere under
-`/projects/pi-improved` (checked via `find`). If this is a deployment-bundle
+`<repo>` (checked via `find`). If this is a deployment-bundle
 concept from outside this repo's current state, it isn't present here to
 wire into — flagging rather than guessing at its shape.
 
@@ -262,7 +262,7 @@ run through the *actual* invocation path (agentic, with tools), not a bare
 chat completion:
 
 ```bash
-cat > /projects/_tmp/gate-b-spec.md <<'EOF'
+cat > <scratch>/gate-b-spec.md <<'EOF'
 # gate-b: trivial add function
 
 Create `crates/pii-model/src/gate_probe.rs` with:
@@ -273,7 +273,7 @@ Do not touch any other file. Do not commit.
 EOF
 
 pi --provider llamacpp --model granite-4.2-3b \
-   -p "$(cat /projects/_tmp/gate-b-spec.md)" \
+   -p "$(cat <scratch>/gate-b-spec.md)" \
    --tools read,write,edit,bash,grep,find,ls \
    --max-tool-iterations 60
 
@@ -302,7 +302,7 @@ real spec: rerun the same probe but pointed at editing an *existing*
 actual file-size ceiling on this box before picking spec-split's target
 chunk size for local-model runs.
 
-Clean up: `rm -f /projects/_tmp/gate-b-spec.md` and `git checkout --
+Clean up: `rm -f <scratch>/gate-b-spec.md` and `git checkout --
 crates/pii-model/src/gate_probe.rs crates/pii-model/src/lib.rs` (or `git
 clean` the new file) after recording the result — do not leave probe
 artifacts in the tree.
@@ -413,7 +413,7 @@ Server: `llama-server -m ... -c 4096 --reasoning off` (llama.cpp server build `a
 ## Actionable next steps (not yet done)
 - [ ] Save this as the canonical decision doc; link from `_docs/INDEX.md` / `TOC.md`.
 - [ ] In the Phase-2 `pii-model` spec, keep `ModelProvider` the single pluggable seam (per above).
-- [ ] Keep `granite-4.2-3b-Q4_K_M.gguf` at `/projects/_tmp/` as the verified tier-1 candidate; note in `AGENTS.md`/models config that tier-1 must run via llama.cpp `--reasoning off`, not Ollama.
+- [ ] Keep `granite-4.2-3b-Q4_K_M.gguf` at `<scratch>/` as the verified tier-1 candidate; note in `AGENTS.md`/models config that tier-1 must run via llama.cpp `--reasoning off`, not Ollama.
 - [ ] `ornith-1.5` license + thinking-control: verify before any adoption.
 
 

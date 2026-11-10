@@ -1,10 +1,10 @@
 # Spec 307: a session the daemon starts can be resumed, and the lane only says "found" when the conversation file exists
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, resume (found 2026-10-28 02:0xZ on A168's resume, run r000000000522: `exited 1 (agent failed: No conversation found with session ID: 87830677-...)`)
-The devbox daemon runs under landlock `workspace`: writes are confined to the workspace, the store, the runtime dir and `$TMPDIR` (`crates/pii-tools/src/sandbox.rs`). Claude writes its conversation file under `$HOME/.claude/projects/<cwd>/<sid>.jsonl` (`/root/.claude/projects`, a volume), which that profile refuses, so a coder the daemon starts leaves NO conversation file and `claude --resume <sid>` can never find it.
-MEASURED 2026-10-28: the same `claude --session-id U` then `--resume U`, run directly in the container (no sandbox), writes `/root/.claude/projects/-projects-pi-improved--tmp-devbox-test-probe-session-A/U.jsonl` and resumes ("PONG"). Run by the daemon, sessions `87830677-...` and `48e5b69d-...` left only an empty `tmp/claude-0/<project>/<sid>/tasks` directory and the container's sessions volume holds ONE transcript in total.
+The devbox daemon runs under landlock `workspace`: writes are confined to the workspace, the store, the runtime dir and `$TMPDIR` (`crates/pii-tools/src/sandbox.rs`). Claude writes its conversation file under `$HOME/.claude/projects/<cwd>/<sid>.jsonl` (`<agent-config>`, a volume), which that profile refuses, so a coder the daemon starts leaves NO conversation file and `claude --resume <sid>` can never find it.
+MEASURED 2026-10-28: the same `claude --session-id U` then `--resume U`, run directly in the container (no sandbox), writes `<agent-config>` and resumes ("PONG"). Run by the daemon, sessions `87830677-...` and `48e5b69d-...` left only an empty `tmp/claude-0/<project>/<sid>/tasks` directory and the container's sessions volume holds ONE transcript in total.
 The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches that empty task directory, so it printed `RESUMING ... (found in the devbox)` and spent a run that could only fail. Every resume of a queue row since the composed lane began has been dead for this reason; spec 303's stub tests could not see it.
 
 ## Requirements
@@ -16,7 +16,7 @@ The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches tha
 
 - R7 (found by the host verify, MEASURED 2026-10-28: criterion 6 fails 7/8): `scripts/autonomy/tests/lane-graph-select.test.sh` keeps a golden copy of the coder lane's graph, and R3 adds `CLAUDE_CONFIG_DIR` to that graph's `env_pass`. Exactly ONE line of the golden changes: its `env_pass` line gains `"CLAUDE_CONFIG_DIR"` as the last entry. No assertion, comparison or other golden line changes. The control is the test itself: it must still FAIL when any other part of the graph differs (the worker proves this by changing one other golden byte, seeing the test go red, and restoring it).
 
-- R8 (found by the host verify, MEASURED 2026-10-28: criterion 3 fails): `scripts/autonomy/tests/lane-resume.test.sh` has one assertion, `lookup_uses_the_captured_location`, that greps the lane's commands for the OLD search location `devbox-test/tmp`. R1 moves the lookup to the daemon's config directory (`devbox-test/claude`), so that one assertion must name the new location. It is the only assertion in the repository that names the old one (checked with grep). It becomes: the commands search `devbox-test/claude`, do NOT search `devbox-test/tmp`, and do NOT search `/root/.claude`. No other assertion in the file changes, and the worker's added cases stay.
+- R8 (found by the host verify, MEASURED 2026-10-28: criterion 3 fails): `scripts/autonomy/tests/lane-resume.test.sh` has one assertion, `lookup_uses_the_captured_location`, that greps the lane's commands for the OLD search location `devbox-test/tmp`. R1 moves the lookup to the daemon's config directory (`devbox-test/claude`), so that one assertion must name the new location. It is the only assertion in the repository that names the old one (checked with grep). It becomes: the commands search `devbox-test/claude`, do NOT search `devbox-test/tmp`, and do NOT search `<agent-config>`. No other assertion in the file changes, and the worker's added cases stay.
 
 ### Non-Functional
 - Shell only. Never restart the production daemon from a criterion. No credential value is printed or written to a file in the repository; the symlink target is the image's existing mount.
@@ -24,7 +24,7 @@ The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches tha
 ## Verified Premises
 - **CONFIRMED** (above) direct `--session-id` then `--resume` works; the daemon's spawns leave only an empty `tasks` directory.
 - **CONFIRMED** `daemon.sh:26` sets `CLAUDE_CODE_TMPDIR=$C/tmp TMPDIR=$C/tmp` and no `CLAUDE_CONFIG_DIR`.
-- **CONFIRMED** `/root/.claude/projects` is a volume mounted rw from `devbox_devbox-claude-sessions`; `/root/.claude/.credentials.json` is a symlink to `/run/claude-login/.credentials.json`.
+- **CONFIRMED** `<agent-config>` is a volume mounted rw from `devbox_devbox-claude-sessions`; `<agent-config>` is a symlink to `/run/claude-login/.credentials.json`.
 - **INFERRED, settled by R2's control** that landlock, not the volume, is what stops the write. If R2's control passes with `CLAUDE_CONFIG_DIR` unset, the cause is something else and the worker must say so and stop.
 
 ## TDD Contract
@@ -32,7 +32,7 @@ The lane's check (`run-batchC-pii.sh`, `find $C/tmp -name "<sid>*"`) matches tha
 |---|---|---|
 | `scripts/checks/resume-through-daemon.sh` | real haiku, private daemon | `RESUME-THROUGH-DAEMON: OK`, control row FAILs as designed |
 | `lane-resume.test.sh` empty-tasks case | `$C/tmp/claude-0/p/<sid>/tasks` only | `not found`, no `sid =` line |
-| `lane-resume.test.sh` real-jsonl case | `<config dir>/projects/p/<sid>.jsonl` | `RESUMING`, `sid = "<sid>"` |
+| `lane-resume.test.sh` real-jsonl case | `<config dir><workspace>/<project>/<sid>.jsonl` | `RESUMING`, `sid = "<sid>"` |
 
 ## Exit Criteria
 - [ ] `bash scripts/checks/resume-through-daemon.sh 2>&1 | tail -1 | grep -q "RESUME-THROUGH-DAEMON: OK"`

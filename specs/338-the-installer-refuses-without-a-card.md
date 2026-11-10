@@ -2,7 +2,7 @@
 
 ## Overview
 
-Production on `lnx` was installed on 2026-11-02 by `deploy/install-pii-user.sh` (commit `b6e4f4e`). Opus read that
+Production on `the host` was installed on 2026-11-02 by `deploy/install-pii-user.sh` (commit `b6e4f4e`). Opus read that
 script the same night:
 
 > That script contains **no card check** (`grep -c card` → 0). Lines 52-54 copy the container's
@@ -13,7 +13,7 @@ Both sentences are true and both are worse than the milestone claims: M4 ("one p
 enforced in `deploy/install-pii.sh:151` and bypassed by the installer that actually shipped. And the copy is a data
 loss with no warning — `memory.redb` holds 12.6 MB of what pii has learned.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening (Opus audit, M4 re-scored stale)
 
 ## Requirements

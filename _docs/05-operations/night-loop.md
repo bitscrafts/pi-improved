@@ -75,7 +75,7 @@ bash scripts/night/night.sh --review-now        # refuses if a worker is editing
    the spec's two machine-consumed blocks *from the row*. The row is the contract; a model is never asked to
    reword a criterion, because a model that "fixes" criteria can weaken them.
 2. **A tree that stays dirty across two firings** → `clear-stuck-tree.sh` moves every path to
-   `/projects/_trash/night-stuck-<stamp>/` with a `MANIFEST.txt`. It refuses when a dispatchable row *declares* a
+   `<workspace>/_trash/night-stuck-<stamp>/` with a `MANIFEST.txt`. It refuses when a dispatchable row *declares* a
    dirty path (that is that row's work, not garbage). Nothing is deleted, ever.
 3. **A parked row** → `state.py repair` and back to the dispatcher. Never `skipped`.
 4. **An empty queue** → `night.sh --tick`, detached, which seeds the next tranche or runs the review.
@@ -99,7 +99,7 @@ _trash/night-stuck-*/     a stuck tree, moved, with its manifest
 | an **agent** cron job died at its first firing: `RuntimeError: Gemini HTTP 503` | a cron job does **not** inherit the session's model; it took a default | both night jobs are **scripts**, `no_agent: true`. No model to be unavailable |
 | `night.sh` ran Opus **synchronously** inside a cron | the scheduler kills a long script; the review would die mid-run after being paid for | the review is `setsid nohup … &` from the supervisor, and `night.sh`'s own lock prevents a second |
 | the mover moved a **tracked** file | `mv` on a tracked, modified file leaves it deleted in the index | restore with `git show HEAD:<path> > <path>` (never `git checkout --`), then `chmod` to the mode in `git ls-files -s` |
-| the mover wrote `_trash/` **inside the repo** | `_trash` was taken as relative to the repo root | destinations must be under `/projects/_trash`; a relative path is what created an untracked dir in the tree |
+| the mover wrote `_trash/` **inside the repo** | `_trash` was taken as relative to the repo root | destinations must be under `<workspace>/_trash`; a relative path is what created an untracked dir in the tree |
 | the mover **refused every tree** | it refused when the head row was merely *valid*, and every row is valid | it now compares the dirty paths against the row's **declared** paths |
 | a parked row's abandoned `gates.sh` change turned the **gate red for every row behind it** | a worker's partial work stays in the tree | the mover took it aside (4 paths, manifest), the tree went 6 → 0, the gate went back to 15/15 |
 | rows were refused with `NO-FILES` / `NOT-A-CRITERION` | the spec did not declare the files and criteria its row states | `fix-row.sh`, and the six specs now declare both |

@@ -1,6 +1,6 @@
 # Spec: 90 — the `doctest = false` comments stop overclaiming (N8)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review, candidate 12 (docs half) — correcting a false claim this repo carries 18 times.
 
 ## Context

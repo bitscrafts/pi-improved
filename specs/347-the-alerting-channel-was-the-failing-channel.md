@@ -12,7 +12,7 @@ that for an hour the alerting path was down and the only record of it was a log 
 a transient network fault produced 732 attempts in 57 minutes — about one every 4.7 seconds, which is a retry loop
 without backoff hammering a channel that is already unwell.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening — the failure mode that hides all the others.
 
 ## Verified premises (host log, 2026-11-02)

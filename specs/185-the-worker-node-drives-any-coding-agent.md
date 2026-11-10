@@ -3,14 +3,14 @@
 ## Overview
 
 `worker` exists as a node kind but is bound to no coding agent: nothing in `crates/` spawns `pi` or `claude`, even though
-`pi 0.2.0` sits installed at `/root/.local/bin/pi` and the autonomy loop has been driving `claude --resume … -p` from shell
+`pi 0.2.0` sits installed at `~/.local/bin/pi` and the autonomy loop has been driving `claude --resume … -p` from shell
 scripts all along.
 
 Directive (user, 2026-10-18, verbatim): **"that graph should use any coding agent, pi or claude (and set its model). it
 should learn and heal, sdd+tdd approach we are using so far."** The Claude account is limited; pi is free. A heal or
 exercise graph must therefore pick its worker per node — agent AND model as data — and learn from the outcome.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

@@ -1,6 +1,6 @@
 # Spec: 91 — finish the mutation verification of batches C/D (045 candidate 6)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review, candidate 6 — the reviewer's delegated run was killed before it reported, so
 these guards are still UNVERIFIED. This spec closes that gap with measurements.
 
@@ -36,7 +36,7 @@ R5 (spec 82, store errors): `grep -c 'PiiError::Internal(' crates/pii-store/src/
     any test go red? If not, that is a finding.
 
 ## Exit Criteria
-- [ ] the mutation log exists at `/projects/_tmp/spec91/MUTATION-LOG.md` with one row per mutation: file:line, the edit, the observed result, the test name + assertion, and RESTORED: yes
+- [ ] the mutation log exists at `<scratch>/spec91/MUTATION-LOG.md` with one row per mutation: file:line, the edit, the observed result, the test name + assertion, and RESTORED: yes
 - [ ] every mutation is reverted and `git status --porcelain` shows ONLY files this spec was allowed to touch (report the list)
 - [ ] `bash quality-gate.sh` exits 0 at the end (the tree is back to green)
 - [ ] `cargo run -q -p xtask -- fresh-gate --worktree` prints `fresh-gate: PASS`
@@ -49,12 +49,12 @@ R5 (spec 82, store errors): `grep -c 'PiiError::Internal(' crates/pii-store/src/
   to make a mutation red. Each mutation is applied, observed, reverted.
 - Do NOT re-run the three passes already recorded (78 scope / 79 swallow / 80 is_heavy=false); cite them
   as previously verified instead.
-- Scratch under `/projects/_tmp/` only (the disk floor is enforced; one fresh-gate export ≈ 8G — delete
+- Scratch under `<scratch>/` only (the disk floor is enforced; one fresh-gate export ≈ 8G — delete
   your own scratch when done).
 - Do NOT commit; leave the tree exactly as you found it.
 
 ## Result (2026-10-09) — the gap 045 could not close is now measured
-Mutation log: `/projects/_tmp/spec91/MUTATION-LOG.md` (copy committed to `_docs/06-research/046-`).
+Mutation log: `<scratch>/spec91/MUTATION-LOG.md` (copy committed to `_docs/06-research/046-`).
 Tree left 0 dirty (verification-only respected). Both gates green.
 
 **Guards with teeth (RED under mutation):** spec 77's flush test (drain-before-Ok → red, `left 0 right 3`);

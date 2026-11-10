@@ -41,7 +41,7 @@ Three of these are **specified and queued** (210, 211, 212), one is **proposed b
 
 ### 1.4 Installed graphs — the audit surface (user: "the pii also must be able to list/edit and explain its installed graphs")
 - today `pii graph` = `lint | show | run | resume | trace`; **no list, no edit**
-- installed on lnx: `discord-digest · discord-triage · intervention-report` (3); in the repo: 19 — the two sets have already
+- installed on the host: `discord-digest · discord-triage · intervention-report` (3); in the repo: 19 — the two sets have already
   diverged, and nothing reports it
 - **spec 213** (A81): `list` (sha, nodes, trigger, armed runs, drift `same|DRIFT|repo-only|installed-only`) · `show` · `explain`
   (rendered from the file: TRIGGER, node chain with kinds+ports, EFFECTS, CAPABILITIES, woven fragments, drift + hash) ·
@@ -82,7 +82,7 @@ Open tension worth the reviewer's attention:
 5. What must NEVER be allowed in a user-tier graph (capabilities? agent+model? net grants? memory writes?), given that the
    podman skill is the repair tool and these graphs will run with real capabilities?
 6. What is missing from the four specs that a cheap worker would implement wrongly if it read only the spec?
-7. What must not be claimed until a coder node has run in production on lnx?
+7. What must not be claimed until a coder node has run in production on the host?
 
 ## 4. Hard constraints any proposal must respect
 

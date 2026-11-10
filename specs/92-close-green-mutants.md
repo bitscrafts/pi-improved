@@ -1,6 +1,6 @@
 # Spec: 92 — close the five green mutants (spec 91 findings 1-5)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 follow-through. Spec 91 measured which guards actually bite; five mutants stayed GREEN.
 Each is a test-quality gap (not a production bug) and each gets a test that turns red when the mutant is
 re-applied. The mutation log is the source of truth: `_docs/06-research/046-mutation-verification-batch-cd-2026-10-09.md`.
@@ -28,7 +28,7 @@ R5 (finding 5 — prefix-only assertion): `open_failure_renders_structured_store
     resource is the full path at that site.
 
 ## Exit Criteria
-- [ ] every one of the five mutants from `046-…md` (R2a, R2b, R3b, R5b-1..4, and the prefix-only shape) re-applied ONE AT A TIME turns at least one test RED; the log in `/projects/_tmp/spec92/MUTATION-LOG.md` records the test name and assertion verbatim per mutant
+- [ ] every one of the five mutants from `046-…md` (R2a, R2b, R3b, R5b-1..4, and the prefix-only shape) re-applied ONE AT A TIME turns at least one test RED; the log in `<scratch>/spec92/MUTATION-LOG.md` records the test name and assertion verbatim per mutant
 - [ ] baseline: those same tests are GREEN on HEAD with no mutant applied
 - [ ] `cargo test -p pii-server`, `cargo test -p pii-store`, `cargo test -p pii-graph` all pass
 - [ ] `bash quality-gate.sh` exits 0 and `cargo run -q -p xtask -- fresh-gate --worktree` prints `fresh-gate: PASS`
@@ -42,11 +42,11 @@ R5 (finding 5 — prefix-only assertion): `open_failure_renders_structured_store
   production change, report that instead and leave it as a finding for a separate spec.
 - Do NOT weaken an existing test (e.g. do not relax an assertion or add `#[ignore]`).
 - Do NOT re-litigate spec 91's already-RED rows; they are proven.
-- Scratch under `/projects/_tmp/`; delete your own exports (one ≈ 8G).
+- Scratch under `<scratch>/`; delete your own exports (one ≈ 8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result (2026-10-09) — 4 of 5 findings closed, and the 5th is honestly residual
-Mutation log: `/projects/_tmp/spec92/MUTATION-LOG.md`. Tree had 0 changes under `specs/`; both gates green.
+Mutation log: `<scratch>/spec92/MUTATION-LOG.md`. Tree had 0 changes under `specs/`; both gates green.
 
 **CLOSED (each mutant re-applied → RED, restored → green):**
 - finding 1 — new `get_graph` fault seam + `resume_fail_closed_on_graph_body_fault` and

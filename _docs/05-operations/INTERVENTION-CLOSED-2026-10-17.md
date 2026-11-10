@@ -13,7 +13,7 @@ intervention is closed with two recorded non-blockers.**
 
 ## Final state
 
-- **Product**: `pii` live on lnx, revision **`0e34719dce0d`** — the revision the deploy card approved — no `-dirty`.
+- **Product**: `pii` live on the host, revision **`0e34719dce0d`** — the revision the deploy card approved — no `-dirty`.
   Discord channel live, one post recorded, zero refusals, and `kill -9` returns it under systemd in **8 seconds**.
   This was the first deploy in the project's history that went through the 152 card, with the rollback rehearsed
   against a copy prefix (fails safe with no restore source, restores otherwise; live install untouched).
@@ -58,7 +58,7 @@ intervention is closed with two recorded non-blockers.**
 
 ## Where to look in the morning
 
-- `git log` in `/projects/pi-improved` — the closures.
+- `git log` in `<repo>` — the closures.
 - `_tmp/autonomy/logs/cycle-*.log` — one per cycle, each ending in an `OUTCOME=` line.
 - `_docs/05-operations/INTERVENTION-2026-10-17-review-for-the-morning.md` — the longer account of the day,
   including the measurements behind every number above.

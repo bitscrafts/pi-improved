@@ -6,7 +6,7 @@ workspace into directories created empty for that run. The fresh property exists
 — a real CI property that belongs at a RELEASE boundary, not on every iteration. Routine runs should use the repo and the
 warm target; the fresh export should run only before a deploy.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 - `quality-gate.sh --routine` runs in the repo against the warm `_tmp/gate-target` (minutes, not tens of minutes).

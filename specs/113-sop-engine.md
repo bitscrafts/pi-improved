@@ -1,6 +1,6 @@
 # Spec: 113 — the SOP engine: declarative procedures compiled into the graph
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: Stage A of the vision plan (`057`), third row. The vision's "SOP engine" (pillar 2) — and the
 surface that makes pii useful for repeated work rather than one-off prompts.
 
@@ -66,7 +66,7 @@ R8. **A control for the compiler** (this repo's standing rule): a mutation that 
 - An SOP must never be able to widen its own capabilities: `caps` come from the SOP file and are attenuated
   by `Ctx` as usual — say in the guide that this is where authority comes from.
 - Approval semantics are the existing ones; do not add a second approval store or a second id scheme.
-- Scratch under `/projects/_tmp/`; keep it small, delete your own, no daemon left running.
+- Scratch under `<scratch>/`; keep it small, delete your own, no daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Orchestrator verification (2026-10-10)

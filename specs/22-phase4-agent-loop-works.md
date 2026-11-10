@@ -1,6 +1,6 @@
 # pi-improved — spec-22: phase4-agent-loop-works
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: P4.7.0 — opus's highest-leverage next step. Every P4.7 capability (localize, patch, validate, escalate, promote, research, PR) is a tool loop over `bash`/`grep`/`edit`. The agent loop currently does NOT function against a real model (three code-verified defects).
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

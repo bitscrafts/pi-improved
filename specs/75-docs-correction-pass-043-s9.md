@@ -1,6 +1,6 @@
 # Spec: 75 — documentation correction pass (043 §9, corrections 1–8)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch C — the docs debt from the 043 opus review, corrections 1-8 verbatim.
 
 ## Context

@@ -1,7 +1,7 @@
 # 065: Round 2 on 064, and the production-ready question (Opus, 2026-10-16)
 
 This is a read-only review. The only repo file written is this one, and nothing was committed. Scratch work is in
-`/projects/_tmp/rev065-QS7b/` (copies of the live daemon logs, 35 M). Evidence labels:
+`<scratch>/rev065-QS7b/` (copies of the live daemon logs, 35 M). Evidence labels:
 - **C-run**: I ran it today.
 - **C-read**: I read the lines.
 - **asserted**: from the brief or a commit message.
@@ -142,7 +142,7 @@ wrong, and Q1's design relies on the behaviour, not on the comment.
 | Detection of it | HEAD's reader (156 + 160, `target/debug/pii`, built 10-16 07:31), run on copies of both log files: `starts_considered=6 incidents=0`. The rules cover restarts, unready starts, stalled runs and run/worker refusals. **`channel.poll.failed` and `channel.egress.denied` are not incident sources.** | C-run |
 | Supervision | The daemon's ppid is now 0 (outside the container's pid namespace); on 10-15 it was a Hermes session. In neither case does anything restart it. | C-run |
 | The gate on HEAD | No full gate on disk since D1/D2 (§0). | C-run |
-| Disk | `/projects` is 96% used, 24 G free. `target/` is 57 G, `_tmp/gate-target` 22 G, `/projects/_tmp` 142 G. A coverage-instrumented gate needs about 18 G (asserted, `gate-steps.txt`). A release build with fat LTO on top of that may not fit. | C-run |
+| Disk | `/projects` is 96% used, 24 G free. `target/` is 57 G, `_tmp/gate-target` 22 G, `<scratch>` 142 G. A coverage-instrumented gate needs about 18 G (asserted, `gate-steps.txt`). A release build with fat LTO on top of that may not fit. | C-run |
 | `pii-mcp` | swapped: the installed `pii-mcp` is 2,229,224 bytes, dated 10-15 19:05, the same as yesterday's `.new`. Its effect on Hermes's error share is not measured. | C-run |
 
 **What must be true first.** Each item is a measurement, and each is red today.
@@ -160,7 +160,7 @@ wrong, and Q1's design relies on the behaviour, not on the comment.
 4. **The release is built from a clean tree whose revision has a PASS verdict:** `pii health` `revision` has no
    `-dirty`, and equals the `rev` of a `pass: true` line.
 5. **Supervised:** `kill -9` brings it back within 60 s under a process that is not an agent session.
-6. **Headroom:** at least 40 G free before the release build. That needs a decision on `/projects/_tmp` (142 G),
+6. **Headroom:** at least 40 G free before the release build. That needs a decision on `<scratch>` (142 G),
    which is the operator's call under the no-delete rule.
 7. **The way back is real:** `deploy/rollback-pii.sh` is rehearsed once on the host against the actual previous
    binary, and the deploy itself goes through the 152 card (Q5).
@@ -234,7 +234,7 @@ verdict, with at least 40 G free and a supervisor in place (Q4 items 4-7).
 | Hermes's error share since the `pii-mcp` swap | not queried |
 | The D2 mutation result | proposed, not run: it needs an edit to `heal.rs`, which is outside this read-only brief |
 
-**Scratch:** `/projects/_tmp/rev065-QS7b/` (35 M, log copies) is from this run. **`/projects/_tmp/rev064-4TDe/`
+**Scratch:** `<scratch>/rev065-QS7b/` (35 M, log copies) is from this run. **`<scratch>/rev064-4TDe/`
 (4.5 G)**, from the previous round, holds the export and two build targets. It is mine and can go. I have not
 deleted it; given 24 G free, that is the operator's call. Nothing in the repo changed except this file, and nothing
 was committed.

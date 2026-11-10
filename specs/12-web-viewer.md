@@ -1,6 +1,6 @@
 # Spec: `pii web` — read-only viewer web UI (daemon-proxied, pidag-ui-style)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-3.6 — developer-ergonomics feature (independent of
 `specs/09-global-memory.md`, `specs/10-graph-visualize.md`,
 `specs/11-journal-hardening.md`)
@@ -8,7 +8,7 @@
 decision (2026-09-06, clarify): build the read-only VIEWER first ("ships
 fastest, zero risk to core"), design base = pidag-ui (the proven
 pure-Rust embedded-SPA trace UI in the same family, live at
-http://lnx:4601). Implementation deferred to a future pidag run on
+http://the host:4601). Implementation deferred to a future pidag run on
 greenlight.
 
 ## Overview
@@ -58,7 +58,7 @@ Why this is sound:
   already resolve the socket path exactly like the CLI does.
 - redb single-connection is sidestepped entirely; no store changes, no
   daemon changes beyond one method handler (below).
-- The viewer works against ANY reachable daemon (local dev, the lnx
+- The viewer works against ANY reachable daemon (local dev, the the host
   deployment) with zero file access.
 
 ### Data surface (all READ-ONLY RPC, all already implemented except one)
@@ -175,7 +175,7 @@ with the TUI's no-emoji convention:
 - [ ] `cargo test --workspace` — 0 failures
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` — 0 errors
 - [ ] `cargo fmt --all --check` — clean
-- [ ] Manual live check against the lnx daemon: `pii web` starts,
+- [ ] Manual live check against the the host daemon: `pii web` starts,
       http://127.0.0.1:4602 shows the daemon status card and the run
       list from the live deployment's store; opening a recent run's
       trace shows seq-ordered rows; stopping the daemon flips the

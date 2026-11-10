@@ -15,7 +15,7 @@ deep-dive material, linked below, not required reading.**
 > It must derive from `031`/`032`, verify specs 62-69, and rule on the eight decisions below.
 
 > Workspace-wide, the single entry point for every open topic across *all*
-> projects is `/projects/docs/01-overview/OPEN-REGISTER.md` (rows A2, A4, C10 are this
+> projects is `<workspace>/docs/01-overview/OPEN-REGISTER.md` (rows A2, A4, C10 are this
 > package's). This file remains the full decision detail for the pii items.
 
 **Decision count: 4 original (coding-harness graph shape, F-13 scope,
@@ -74,7 +74,7 @@ now!"** — so this is a TWO-PHASE requirement, not an immediate merge:
   there's a concrete need driving it (e.g. the coding-harness graph in
   §1 below, which would live in whichever project ends up hosting it).
 
-Ground truth already gathered, in `/projects/pidag/docs/`:
+Ground truth already gathered, in `<workspace>/<project>/docs/`:
 
 - `pii-vs-pidag-dag-format-notes.md` — internal comparison: pii uses
   port-based graph routing (declarative pattern-match routes, not
@@ -297,7 +297,7 @@ approximation.
 crates, against a strict `deps-check`, a **450-line effective-size gate**, and
 workspace-wide `#![forbid(unsafe_code)]` (`Cargo.toml:54`). Recommend scope
 **Rust-only** (not graphify's ~40 languages) and prefer reusing **`petgraph`**
-(already in-workspace via amem). If the grammar crates still fail policy, keep
+(already in-workspace via the workspace memory). If the grammar crates still fail policy, keep
 the parser in **`xtask`** — outside `crates/`, and it already hosts every gate.
 **Decide (d)**: expose to agents at **runtime** (a tool — more useful, risks
 becoming a toy) or **gate-time only** (`xtask` — cheaper, cannot drift)?
@@ -443,7 +443,7 @@ c47de9d fix: gate hygiene -- wire lint-files, clippy.toml, line-counter (spec-67
 fe35c37 fix(pii-worker): apply restart_backoff_ms in respawn (spec-64)
 890c285 fix(pii-web): send the correct memory-search param key (spec-63)
 883d768 fix(pii-tools): validate worktree signature, block path escape (spec-62)
-1fc2d00 fix: replace hardcoded /projects/pi-improved/_tmp paths (spec-61)
+1fc2d00 fix: replace hardcoded _tmp paths (spec-61)
 35c4353 docs: mark Phase 5.x complete in HANDOFF.md
 (plus the fable review doc itself: 032-fable-pii-review-2026-09-18.md)
 

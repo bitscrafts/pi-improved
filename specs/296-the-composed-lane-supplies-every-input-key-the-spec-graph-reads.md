@@ -1,7 +1,7 @@
 # Spec 296: the composed lane supplies every input key the spec graph reads
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, drift guard. `scripts/run-batchC-pii.sh` (spec 294) builds the input of the tracked `spec` graph by listing nine keys in a Python snippet.
 `graphs/spec.toml` and `graphs/docs.toml` read their own set (`$.input.<key>`), and nothing ties the two. Add a key to either graph and the composed lane starts every row with a
 missing input: the run is refused at start (spec 288) and every queue row parks, with the cause two files away from the symptom. This spec adds the test that ties them.

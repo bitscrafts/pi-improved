@@ -1,7 +1,7 @@
 # Spec 294: the queue's worker can start the composed `spec` graph, opt in, and says which graph it ran
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the last step before every spec runs composed. `scripts/run-batchC-pii.sh` (the queue's worker, `PII_WORKER=pii`) writes a ONE-node coder
 graph for each row and starts it. The shipped `graphs/spec.toml` (`code`, `verify`, the pinned `docs` call, `reverify`, `done`) has now run end to end with the real
 claude through the production daemon (COMPOSITION-REAL-RUN.md, COMPOSITION-REAL-FAULTS.md), but no queue row has ever used it. This spec adds the opt-in; it does not

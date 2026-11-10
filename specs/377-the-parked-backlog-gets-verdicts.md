@@ -1,6 +1,6 @@
 # Review: the parked backlog
 
-**Project**: /projects/pi-improved · **Mode**: plan only — produce a verdict per row, commit nothing.
+**Project**: <repo> · **Mode**: plan only — produce a verdict per row, commit nothing.
 **Written by**: the queue, because these rows are stuck and a stuck row is not a finished one.
 
 ## Why this exists

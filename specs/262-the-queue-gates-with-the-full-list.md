@@ -1,7 +1,7 @@
 # Spec 262: a queue item's commit is gated by the full gate, not by fmt, clippy and build alone
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's own gate (found 2026-10-24 while reviewing spec 259's commit)
 
 The queue gates each item with `quality-gate.sh --routine`. `scripts/autonomy/env.sh:47` defaults `GATE_STEPS` to `gate-steps-quick.txt`, which runs three steps: `fmt`, `clippy`, `build`. The full list
@@ -15,7 +15,7 @@ The full gate on those trees found the first at once. The orchestrator repaired 
 
 ## Verified Premises
 - **CONFIRMED** (read) `scripts/autonomy/env.sh:46-48`: `: "${GATE_STEPS:=gate-steps-quick.txt}"` then `export GATE_STEPS`; the comment says "Set GATE_STEPS=gate-steps.txt deliberately when a full run is intended."
-- **CONFIRMED** (read) `scripts/autonomy/cycle.sh:339`: `( export PATH=...; CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1`; `GATE_TIMEOUT` defaults to 3600; a rc of 124 is `gate-timeout` (not a failure, attempts not incremented), a nonzero rc is `gate-failed`.
+- **CONFIRMED** (read) `scripts/autonomy/cycle.sh:339`: `( export PATH=...; CARGO_TARGET_DIR=_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1`; `GATE_TIMEOUT` defaults to 3600; a rc of 124 is `gate-timeout` (not a failure, attempts not incremented), a nonzero rc is `gate-failed`.
 - **CONFIRMED** (run, 2026-10-24) the FULL routine gate takes about 10 to 12 minutes on the warm cache (spec 259: 14 steps; spec 260: 15 steps, coverage 82.71 percent), against the "~45-48 min" the cycle comment cites for the FRESH export. So the full routine list fits inside `GATE_TIMEOUT=3600` with room.
 - **CONFIRMED** (read) `quality-gate.sh` selects the list from `$GATE_STEPS` and prints `quality-gate: ALL PASS` only when every listed step passed; an empty list is a failure.
 - **CONFIRMED** (read) `scripts/autonomy/selftest.sh` exists and mentions `gate` seven times; `scripts/autonomy/tests/classify-failure.test.sh` (spec 254) is the idiom for a shell test with controls.

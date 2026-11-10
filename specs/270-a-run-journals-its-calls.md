@@ -1,7 +1,7 @@
 # Spec 270: a run journals each call before any node runs, and `run trace` shows it
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition, auditability (Opus context review 2026-10-24, Q7). Depends on spec 269 (`CallRecord`, A134): queue it after A134.
 
 Spec 269 makes the loader return a `CallRecord` per call and prints it in `pii graph explain`. A RUN still does not say it was composed: the journal holds nodes named `docs__in`, `docs__fmt` and no record of which graph, at which digest, with which `needs`. This spec puts the record into the run's own journal, before any node executes, and renders it in `pii run trace`, using the mechanism `[[attach]]` weaving already uses.

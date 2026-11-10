@@ -1,6 +1,6 @@
 # Spec: Pii Self-Healing — Slice 1 (local-only worktree repair)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 3.6 — Self-healing (Slice 1 of the opus-recommended build order)
 **Spec of record**: `_tmp/phase3/opus-heal-and-rss-response.md` §Part B —
 this spec implements exactly its "Slice 1" paragraph: *"localize + patch

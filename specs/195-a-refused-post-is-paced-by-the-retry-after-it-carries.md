@@ -1,6 +1,6 @@
 # Spec: 195 — a refused post is paced by the retry_after it carries
 
-**Project**: /projects/pi-improved · **Phase**: the exercise matrix's E6, outbound half of the 429 class
+**Project**: <repo> · **Phase**: the exercise matrix's E6, outbound half of the 429 class
 **Filed**: 2026-10-19 by the orchestrator, from `EXERCISE-RESULTS-2026-10-19.md` (E6 row) and 070 §0.1.
 
 ## Overview

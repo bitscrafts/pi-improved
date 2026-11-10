@@ -1,7 +1,7 @@
 # Spec: Phase 0 - Workspace Skeleton
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 0 - Workspace skeleton & CI gate scaffold
 
 Create the Cargo workspace skeleton and the CI/gate scaffold that every later phase compiles and lints against. This phase delivers **no business logic**: it delivers a workspace that builds clean, a kernel-ABI crate whose dependency purity is machine-enforced, an `xtask` gate runner, a `pii --version` binary, and a `quality-gate` entry point.
@@ -14,12 +14,12 @@ Source of truth: `_docs/06-research/002-pii-architecture-plan-pass2.md` §1.3 (l
 - The only installed toolchain is `1.95.0-x86_64-unknown-linux-gnu`. `rust-toolchain.toml` must pin exactly `1.95.0`; any other channel string triggers a toolchain download.
 - crates.io is reachable (sparse index HTTP 200). Current versions: `serde 1.0.229`, `serde_json 1`, `thiserror 2.0.20`, `schemars 1.2.2`.
 - `clippy::integer_arithmetic` **does not exist** in clippy 0.1.95 (verified against `-W help`). Pass-2 §1.3 lists it; it was renamed to `arithmetic_side_effects`. Using the old name makes `-D warnings` fail on an unknown lint.
-- Note for the human operator (not a task for the implementer): `.pidag/config.toml` sets `quality_gate_script` to the global skill at `/root/.pi/agent/skills/quality-gate/run.sh`, which invokes bare `cargo` and will fail with "command not found" in this container. Phase 0 ships a repo-local `quality-gate.sh` that fixes `PATH` itself; repoint `quality_gate_script` at it.
+- Note for the human operator (not a task for the implementer): `.pidag/config.toml` sets `quality_gate_script` to the global skill at `<agent-config>`, which invokes bare `cargo` and will fail with "command not found" in this container. Phase 0 ships a repo-local `quality-gate.sh` that fixes `PATH` itself; repoint `quality_gate_script` at it.
 
 ## Requirements
 
 ### Functional
-- **F1** — Workspace root `Cargo.toml` at `/projects/pi-improved`: virtual manifest with `members = ["crates/pii-abi", "crates/pii-cli", "xtask"]`, `resolver = "2"`, and a `[workspace.package]` block carrying `version = "0.1.0"`, `edition = "2024"`, `rust-version = "1.95"`, `license = "MIT OR Apache-2.0"`, `repository`, `description`. Every member inherits these with `.workspace = true`.
+- **F1** — Workspace root `Cargo.toml` at `<repo>`: virtual manifest with `members = ["crates/pii-abi", "crates/pii-cli", "xtask"]`, `resolver = "2"`, and a `[workspace.package]` block carrying `version = "0.1.0"`, `edition = "2024"`, `rust-version = "1.95"`, `license = "MIT OR Apache-2.0"`, `repository`, `description`. Every member inherits these with `.workspace = true`.
 - **F2** — `[workspace.dependencies]` declares exactly four external crates, used by members via `{ workspace = true }`: `serde = { version = "1", features = ["derive"] }`, `serde_json = "1"`, `thiserror = "2"`, `schemars = { version = "1", features = ["derive"] }`.
 - **F3** — `crates/pii-abi` — the kernel ABI. **Traits and types only.** Contents, all tiny:
   - `src/lib.rs` — `#![forbid(unsafe_code)]`, crate-level `//!` docs, `mod`/`pub use` re-exports.
@@ -32,7 +32,7 @@ Source of truth: `_docs/06-research/002-pii-architecture-plan-pass2.md` §1.3 (l
   - `pii --version` / `pii -V` → prints exactly `pii <version>` on stdout, exit 0, where `<version>` is `env!("CARGO_PKG_VERSION")`.
   - any other argv → prints a one-line usage string, exit code 2.
   - The version string is produced by a testable `fn version_line() -> String`; `main` returns `std::process::ExitCode` (never call `std::process::exit`, which `clippy::exit` denies).
-- **F5** — `xtask` — dev-tools runner at `/projects/pi-improved/xtask`, reachable as `cargo xtask <cmd>` via `.cargo/config.toml` containing `[alias] xtask = "run --package xtask --"`. Subcommands: `deps-check`, `lint-files`, `ci` (runs both in order). Unknown subcommand → usage + exit 2. Only dependency: `serde_json` (workspace).
+- **F5** — `xtask` — dev-tools runner at `xtask`, reachable as `cargo xtask <cmd>` via `.cargo/config.toml` containing `[alias] xtask = "run --package xtask --"`. Subcommands: `deps-check`, `lint-files`, `ci` (runs both in order). Unknown subcommand → usage + exit 2. Only dependency: `serde_json` (workspace).
 - **F6** — `xtask deps-check` enforces ABI purity. It shells out to `cargo metadata --format-version 1` and hands the parsed JSON to a **pure, unit-testable** function:
   ```rust
   pub(crate) fn check_abi_purity(metadata: &serde_json::Value) -> Result<(), Vec<String>>
@@ -116,7 +116,7 @@ Source of truth: `_docs/06-research/002-pii-architecture-plan-pass2.md` §1.3 (l
   [profile.perf]
   inherits = "release"; opt-level = 3; lto = "thin"; debug = 1; strip = false; panic = "unwind"
   ```
-- **F14** — `/projects/pi-improved/quality-gate.sh`, executable (`chmod +x`), `set -uo pipefail`, first line of body `export PATH=/usr/local/cargo/bin:$PATH`, `cd` to its own directory, then run in order: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. Print a one-line PASS/FAIL per step; exit 0 only if all three pass.
+- **F14** — `quality-gate.sh`, executable (`chmod +x`), `set -uo pipefail`, first line of body `export PATH=/usr/local/cargo/bin:$PATH`, `cd` to its own directory, then run in order: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. Print a one-line PASS/FAIL per step; exit 0 only if all three pass.
 - **F15** — `.gitignore` containing at least: `target/`, `.pidag/`, `_tmp/`, `**/*.rs.bk`, `*.profraw`, `_repos/`, `.DS_Store`.
 - **F16** — Tests. Unit tests live **inside the crates** (`#[cfg(test)] mod tests` in the relevant `.rs` file); only test *artifacts* (temp dirs a test creates) go under `_tmp/`. Fixtures for `deps-check` are embedded `const &str` JSON literals — no filesystem, no network. Test module bodies open with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]` so `--all-targets` clippy stays clean. Required test names, referenced verbatim by the exit criteria:
   - `deps_check_accepts_clean_abi`
@@ -139,7 +139,7 @@ Source of truth: `_docs/06-research/002-pii-architecture-plan-pass2.md` §1.3 (l
 ## Architecture
 
 ```
-/projects/pi-improved/
+
 ├── Cargo.toml              # virtual workspace: members, resolver="2", workspace.package,
 │                           #   workspace.dependencies, [workspace.lints], profiles
 ├── rust-toolchain.toml     # channel = "1.95.0"  (the only installed toolchain)
@@ -230,7 +230,7 @@ Gate flow:
 - Do NOT silence lints beyond the allow-list in F8 and the two crate-level allows in F9 plus the test-module allows in F16. If a `pedantic` or `nursery` lint fires on skeleton code, restructure the code. If a lint is a demonstrable false positive, add `#[allow(...)]` at the narrowest possible scope with a `// reason:` comment.
 - Do NOT use `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `dbg!`, or `std::process::exit` in non-test code. Return `Result` and let `main` return `std::process::ExitCode`.
 - Do NOT create a git repository, run `git init`, stage, or commit. File creation only.
-- Do NOT write anything to `/tmp`. Test artifacts go under `/projects/pi-improved/_tmp/`. Rust test *sources* stay inside their crates.
+- Do NOT write anything to `/tmp`. Test artifacts go under `_tmp/`. Rust test *sources* stay inside their crates.
 - Do NOT run `rm -rf` or delete/overwrite anything that already existed before this run. In particular do NOT touch `_repos/`, `_docs/`, `.pidag/`, `specs/`, `AGENTS.md`, or `HANDOFF.md`.
 - Do NOT create crates beyond `pii-abi`, `pii-cli`, and `xtask`. The remaining crates from pass-2 §12.1 arrive in later phases; pass-2 §12.3 is explicit that starting with 18 crates is the wrong move.
 - Do NOT add an async `Node` trait, `async-trait`, `futures-core`, `bitflags`, or `smol_str` to `pii-abi`. Widening the `ABI_ALLOWED_DIRECT` list is a Phase 1 decision and must be made in the spec, not in the implementation.

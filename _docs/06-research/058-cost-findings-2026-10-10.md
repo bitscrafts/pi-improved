@@ -3,7 +3,7 @@
 **Date**: 2026-10-10. Closes spec 110's F2, F3, F8. Debug build, scripted model, shared host (load average
 ~10-15 throughout), one persistent client connection unless stated. Every number below was produced by
 `scripts/archive/leak_bisect.py` or by the named test; the raw per-poll series are in
-`/projects/_tmp/leak-bisect/*/state.json` (scratch, not committed).
+`<scratch>/leak-bisect/*/state.json` (scratch, not committed).
 
 ## R1 — F2: where the RSS growth comes from
 
@@ -190,5 +190,5 @@ path — every daemon here ran `--sandbox off`. Process note: the observer/audit
 metric were written before their tests; the RED-before-GREEN order was observed only for the trajectory leak
 and the body dedup. Every new surface has a mutation that fails its test (detach no-op, audit-off filter,
 switch default, id block = 1, dedup off, trajectory release off, trend feed removed).
-Scratch (`/projects/_tmp/leak-bisect`, ~1.0 GB incl. 50 000 trajectory files, and `/projects/_tmp/trash-116`)
+Scratch (`<scratch>/leak-bisect`, ~1.0 GB incl. 50 000 trajectory files, and `<scratch>/trash-116`)
 is left in place for a human to remove; nothing pre-existing was deleted.

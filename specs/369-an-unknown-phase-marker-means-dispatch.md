@@ -1,6 +1,6 @@
 # Spec: An unknown phase marker means dispatch, not verify
 
-**Project**: /projects/pi-improved · **Measured**: 2026-11-03, row 353.
+**Project**: <repo> · **Measured**: 2026-11-03, row 353.
 
 ## Why this exists
 
@@ -43,7 +43,7 @@ A first implementation was written and rejected: it moved the phase markers into
 update `scripts/autonomy/tests/gate-refusal.test.sh`, which reads the *literal `case` glob* out of `cycle.sh`
 (`GLOB=$(grep -E '^ *\*verified\*.*\) SKIP_DISPATCH=1;' ...)`) and builds `eval "case $1 in $GLOB) ..."`. With the
 glob moved, `$GLOB` is empty and the test dies with a shell syntax error: **32 ok, 4 FAIL**. The work is preserved at
-`/projects/_trash/369-needs-test-update-20261104T024056Z/`.
+`<workspace>/_trash/369-needs-test-update-20261104T024056Z/`.
 
 So R5, and the criteria below, must include the harness: a change that moves the source of truth is not done until
 every reader of the old source is moved with it.

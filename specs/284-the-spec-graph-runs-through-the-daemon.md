@@ -1,7 +1,7 @@
 # Spec 284: the shipped spec graph runs through the daemon's engine, end to end
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, level 1 of 4. The user's verdict: *"if 'has never actually run through the daemon' our composability is useless."* Measured 2026-10-26: `Engine::start_run` has run a `call` only with a one-node toy sub-graph (`daemon_journals_calls.rs`); the real `graphs/spec.toml` — `code → verify → docs (call) → reverify → done`, two coder nodes, two judges, a `[limits]` budget — has run only through the **library** runner (`spec_graph_documents_after_verify.rs`), which builds its own `Ctx`, its own `Budget::unlimited()` and its own registry. Everything the daemon adds — the engine's budget from `[limits]` (`runs.rs:59`), its registry, its capability grant, its journal, the `woven`/`graph.call` events written by `run::run` — has never been exercised on the shipped composed graph.
 
 This spec drives that graph through **`Engine::start_run("spec", input)`**, the function the daemon's `run start` reaches, with stand-in agents (nothing spends), and asserts what the journal says.

@@ -1,7 +1,7 @@
 <!-- Filed 2026-10-09T11:18:27Z from an Opus plan-mode analysis run.
      Produced by: Claude Code + claude-opus-5-5, plan mode, READ-ONLY (no project writes).
-     Brief: /projects/pi-improved/_docs/06-research/044-REREVIEW-BRIEF-2026-10-09.md
-     Inventory the report was measured against: /projects/pi-improved/_docs/06-research/041-APPENDIX-codebase-inventory.txt
+     Brief: _docs/06-research/044-REREVIEW-BRIEF-2026-10-09.md
+     Inventory the report was measured against: _docs/06-research/041-APPENDIX-codebase-inventory.txt
      Repo HEAD at analysis time: f26ee63 (tree: 0 changed paths)
      Run: session ef17e6d6-1741-42d6-87c6-16ffc775d231, stop_reason n/a, turns n/a, cost $n/a
 
@@ -17,7 +17,7 @@
 
 # 044: re-review of batches A to D (2026-10-09)
 
-Provenance: the same reviewer as 043, in read-only test mode, on HEAD `4c52e79`. No repo file was edited and nothing was committed. Scratch work lives under `/projects/_tmp/pii-review/`: `rereview-20261009/`, `rr-ab-CNHj/`, `rr-own-8sQT/` and `dtprobe-xgP6/`.
+Provenance: the same reviewer as 043, in read-only test mode, on HEAD `4c52e79`. No repo file was edited and nothing was committed. Scratch work lives under `<scratch>/pii-review/`: `rereview-20261009/`, `rr-ab-CNHj/`, `rr-own-8sQT/` and `dtprobe-xgP6/`.
 
 Two delegated runs did not finish: mutation of batches C and D, and the E0463 reproduction. Everything that depended on them is in section 4, not asserted here.
 
@@ -76,7 +76,7 @@ Two delegated runs did not finish: mutation of batches C and D, and the E0463 re
 | failed | 0 |
 | ignored | 1 |
 
-Log: `/projects/_tmp/pii-review/rereview-20261009/quality-gate.log`. C-run.
+Log: `<scratch>/pii-review/rereview-20261009/quality-gate.log`. C-run.
 
 The ignored count fell from 10 to 1. The single ignored test is `deadline_override_is_honoured`. The 9 real-model tests no longer compile in the default build, because they sit behind the new `llamacpp` feature (C-run for the count, C-read for the feature gate). See N4.
 
@@ -165,7 +165,7 @@ Not fixed: 041 is still used twice (APPENDIX and BRIEF). Filing this report as `
 - `llama-cpp-2` is optional behind `llamacpp = ["dep:llama-cpp-2"]` (`crates/pii-model/Cargo.toml:19-21`), with `cfg(feature)` gates at `pii-model/src/lib.rs:214-378` (C-read).
 - `llamacpp_spec_errors_when_feature_off` passes in the gate (C-run).
 - `quality-gate.sh` never enables the feature (C-read), so the provider code is no longer compiled, linted or tested by the gate. See N4.
-- The xtask path cleanup (D7) is partly evidenced: in a scratch export, `reachability-check` and the `pii-memory` tests resolved paths inside the export, not inside `/projects/pi-improved` (C-run). The full grep was not re-run (section 4).
+- The xtask path cleanup (D7) is partly evidenced: in a scratch export, `reachability-check` and the `pii-memory` tests resolved paths inside the export, not inside `<repo>` (C-run). The full grep was not re-run (section 4).
 
 **Spec 77, journal flush (D5) and the `let_underscore_must_use` question.** NOT VERIFIED (section 4).
 
@@ -245,7 +245,7 @@ It also follows (I) that `cargo test -p pii-memory --test lanes` alone has faile
 | Spec 80: does each heartbeat test go red when `is_heavy` is false or a method is dropped? Is the light-method control real? Is the flakiness fix holding? | same |
 | Spec 82: `PiiError::Internal(` count in `pii-store/src/lib.rs`; does `open_failure_renders_structured_store_op` pin the full string or a substring? Are call-site argument swaps caught? | same |
 | Whether E0463 reproduces with `doctest = false` removed, under the check-then-`test -j2` sequence; duplicate rlib evidence | the reproduction run stopped |
-| Spec 76: full `grep -rn '/projects/pi-improved' xtask crates` re-run; `cargo tree` llama counts per crate; `--features llamacpp` still compiles | not re-run this pass (partial C-run evidence in section 2) |
+| Spec 76: full `grep -rn '<repo>' xtask crates` re-run; `cargo tree` llama counts per crate; `--features llamacpp` still compiles | not re-run this pass (partial C-run evidence in section 2) |
 | Spec 81: `grep 'crate::daemon' crates/pii-server/src/engine` empty | not re-run |
 | N3 race window in practice | needs a timed test |
 | 043 section-11 carry-overs still open: A2 to A8, B1 to B3, C1 to C6, E1 to E3, F2 and F3; live-daemon behaviour of panics; `cargo audit`/`machete`/`public-api` | not in this batch scope; tools not installed |
@@ -253,7 +253,7 @@ It also follows (I) that `cargo test -p pii-memory --test lanes` alone has faile
 ## 5. Ranked candidates (pre-registered checks)
 
 1. **Make `lanes.rs` hermetic (N1).** Route the three tests at `crates/pii-memory/tests/lanes.rs:123`, `:158`, `:188` through `tempfile::Builder::tempdir_in(tmp_root())`.
-   - Check: `S=$(mktemp -d /projects/_tmp/x-XXXX); git archive HEAD | tar -x -C $S; cd $S && CARGO_TARGET_DIR=$S/t cargo test -p pii-memory` exits 0 with no `_tmp` present.
+   - Check: `S=$(mktemp -d <scratch>/x-XXXX); git archive HEAD | tar -x -C $S; cd $S && CARGO_TARGET_DIR=$S/t cargo test -p pii-memory` exits 0 with no `_tmp` present.
    - Check: `grep -c '"/_tmp/phase3' crates/pii-memory/tests/lanes.rs` is 0.
 2. **Add a fresh-tree gate run** so the N1 class cannot recur. Add `xtask fresh-gate` or a CI job that runs `quality-gate.sh` inside a `git archive` export.
    - Check: on today's HEAD it exits non-zero, naming the three `lanes` tests.

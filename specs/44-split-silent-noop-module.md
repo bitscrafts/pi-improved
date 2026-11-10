@@ -1,6 +1,6 @@
 # pi-improved — spec-44: split `xtask/src/silent_noop.rs` into `silent_noop/{mod,scans,helpers,tests}.rs`
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — `xtask/src/silent_noop.rs` is the ONLY current hard
   `xtask lint-files` failure (458 effective lines, 8 over the 450 cap); every
   other flagged file is in the 380-450 warn band, not a hard failure. Fix

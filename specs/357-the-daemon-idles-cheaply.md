@@ -1,6 +1,6 @@
 # Spec: The daemon idles cheaply
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Source**: Opus optimisation review 2026-11-03,
 workstream **W5** — closes findings 5, 13, 14, 15 and 20.
 
 ## Verified premises

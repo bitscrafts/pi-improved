@@ -1,9 +1,9 @@
 # Spec: the code index is a pii verb, not a companion script
 
 ## Overview
-2026-10-19, user challenge: "how is your intention when deploy the pii? you are building python scripts companion?" — correct and it is a drift I introduced twice today. `scripts/pii-index-code.py` and `scripts/pii-ingest.py` put capability OUTSIDE the product: they cannot ship in the binary, they are invisible to `pii --help`, they break the "everything is a graph" line, and on the lnx host they depend on a python that the daemon does not own. Meanwhile the missing half of graphify — `pii memory link` — is a three-line argument parser in `crates/pii-cli/src/cmd_ctl.rs` and a call to an RPC the server already exposes. A capability that exists as a script is a capability pii does not have.
+2026-10-19, user challenge: "how is your intention when deploy the pii? you are building python scripts companion?" — correct and it is a drift I introduced twice today. `scripts/pii-index-code.py` and `scripts/pii-ingest.py` put capability OUTSIDE the product: they cannot ship in the binary, they are invisible to `pii --help`, they break the "everything is a graph" line, and on the the host host they depend on a python that the daemon does not own. Meanwhile the missing half of graphify — `pii memory link` — is a three-line argument parser in `crates/pii-cli/src/cmd_ctl.rs` and a call to an RPC the server already exposes. A capability that exists as a script is a capability pii does not have.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 ### Functional

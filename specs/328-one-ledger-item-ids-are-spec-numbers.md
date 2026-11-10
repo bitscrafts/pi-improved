@@ -26,7 +26,7 @@ that name. History stays visible; it does not stay a second identity.
 with a number. An item with no `data.spec` is an item nobody can tie to any work.
 
 **R4 — migration is a move, never a delete.** `item-ids.sh --migrate` writes the new file (carrying the
-history), records `data.alias`, **moves** the old file into `/projects/_trash/<date>-item-ids/`, and repoints the
+history), records `data.alias`, **moves** the old file into `<workspace>/_trash/<date>-item-ids/`, and repoints the
 pointer when it names the old id. A collision with an existing item is refused and nothing moves.
 
 **R5 — the gate holds the rule.** `item-ids|bash scripts/autonomy/item-ids.sh --check` is a gate step. The

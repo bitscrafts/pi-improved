@@ -1,6 +1,6 @@
 # Spec: One place names the models
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"the model is
+**Project**: <repo> · **Phase**: 0.2.1 · **Source**: user directive 2026-11-03 — *"the model is
 deepseek-v4.1-flash; we should have all models configured in a single place"*; workhorse implements, planner writes.
 
 ## Verified premises (measured 2026-11-03)
@@ -103,7 +103,7 @@ fix is one of:
 Either way the tests must supply a models table: with `empty_model_roles()` a static `@workhorse`
 refuses at load, which is correct behaviour and is exactly what the test fixture has to state.
 
-WIP: `/projects/_trash/362-needs-spawn-role-resolution-20261104T122618Z` (90 paths).
+WIP: `<workspace>/_trash/362-needs-spawn-role-resolution-20261104T122618Z` (90 paths).
 
 ## Guardrails
 

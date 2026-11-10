@@ -1,6 +1,6 @@
 # pi-improved — spec-41: failover ladder graph (A4)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — Track A4 of research doc 026 §5.1. Depends on A3
   (spec 40, `AgentNode`'s `fail` port + `FailurePayload{status,reason,
   provider}`), already landed in the working tree.

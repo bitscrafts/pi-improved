@@ -1,6 +1,6 @@
 # Spec 152: the deploy card — one permission, five fields, or it is refused
 
-**Project**: /projects/pi-improved · **Phase**: road to production, M4 (Opus 061 order 153 -> 150 -> 154 -> 151 -> 152)
+**Project**: <repo> · **Phase**: road to production, M4 (Opus 061 order 153 -> 150 -> 154 -> 151 -> 152)
 **Why now**: 061 measured the operator's involvement per incident and named the single gate that must remain human: the
 deploy. The deploy scripts exist and have been exercised **0 times**. What is missing is not a mechanism but a *decision
 shaped so it takes five seconds*: everything a person needs, nothing they have to ask for, and a refusal when a field

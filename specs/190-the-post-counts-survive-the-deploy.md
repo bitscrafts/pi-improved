@@ -1,6 +1,6 @@
 # Spec: 190 — the post counts survive the deploy
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after 188 (both from 070 §5). Filed 2026-10-19 by the orchestrator. 188 built the first half of 070 §5's
 instrument (a run names its revision and its process); this is the second half — the posts.
 

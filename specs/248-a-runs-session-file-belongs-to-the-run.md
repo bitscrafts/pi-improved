@@ -1,7 +1,7 @@
 # Spec 248: a run's session file belongs to the run
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening — agent management (defect 19 in `_docs/05-operations/agent-management-findings-2026-10-23.md`)
 
 Two coder runs pointed at one workdir share ONE pi session file. The default is computed twice, from the spec's file stem

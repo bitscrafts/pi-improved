@@ -3,7 +3,7 @@
 ## Overview
 2026-10-19: `scripts/autonomy/learn.sh` recorded each queue outcome into memory by running the CLI from a shell. It worked (two documents, recallable) and it is the wrong shape: the loop is shell, but learning is a product capability. Specs 183 ("learn every outcome to memory") and 184 (effect recorded before and confirmed after) both ask pii to do this itself.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 ### Functional

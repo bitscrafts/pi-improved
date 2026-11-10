@@ -1,7 +1,7 @@
 <!-- Filed 2026-10-11T15:21:50Z from an Opus plan-mode analysis run.
      Produced by: Claude Code + claude-opus-5-5, plan mode, READ-ONLY (no project writes).
-     Brief: /projects/_tmp/pii-review-20261011/brief-does-the-tree-deliver-the-vision.md
-     Inventory the report was measured against: /projects/_tmp/pii-review-20261011/codebase-inventory.txt
+     Brief: <scratch>/pii-review-20261011/brief-does-the-tree-deliver-the-vision.md
+     Inventory the report was measured against: <scratch>/pii-review-20261011/codebase-inventory.txt
      Repo HEAD at analysis time: d2d9ec0 (tree: 0 changed paths)
      Run: session ef17e6d6-1741-42d6-87c6-16ffc775d231, stop_reason end_turn, turns 97, cost $39.76905
 
@@ -15,7 +15,7 @@ I have the evidence I need. HEAD is unchanged (`d2d9ec0`), the tree is clean, an
 
 # pi-improved: does the tree deliver the vision? (Opus judgement, 2026-10-11)
 
-**Provenance.** This is the reviewer of 043 and 045, in a resumed session, in test mode. HEAD is `d2d9ec0` and the working tree is clean before and after (0 changed paths, C-run). Nothing in the repo was edited and nothing was committed. All scratch work is under `/projects/_tmp/pii-review-20261011/`:
+**Provenance.** This is the reviewer of 043 and 045, in a resumed session, in test mode. HEAD is `d2d9ec0` and the working tree is clean before and after (0 changed paths, C-run). Nothing in the repo was edited and nothing was committed. All scratch work is under `<scratch>/pii-review-20261011/`:
 
 | path | what it holds |
 |---|---|
@@ -103,17 +103,17 @@ I have the evidence I need. HEAD is unchanged (`d2d9ec0`), the tree is clean, an
 | deployed `pii -p` | `PII_RUNTIME_DIR=<scratch> ~/.local/bin/pii -p "..."` | rc 5, `no model configured (set PII_MODEL or --model)` | C-run |
 | what the live `pii-mcp` exposes | MCP `initialize` + `tools/list` over stdio | 7 tools: `bash edit fs_read fs_write glob grep multi_edit` | C-run |
 | real use of pii | read-only SQLite query of Hermes `state.db` | `mcp__pii__bash` 171, `grep` 7, `glob` 4, `fs_read` 2 (2026-09-11 to 2026-10-10) | C-run |
-| pillars 1-4 on HEAD | scratch daemon and one-shots, model `llamacpp-server:granite-4.2-3b` at `10.10.10.217:8082` | section 3.1 | C-run |
+| pillars 1-4 on HEAD | scratch daemon and one-shots, model `llamacpp-server:granite-4.2-3b` at `<host>` | section 3.1 | C-run |
 | Q7 race | 300 ms pause inserted between the commit and the event in a scratch copy | red 3 of 3 at `daemon/mod.rs:716:14`; control green 3 of 3 | C-run |
 | fixed-path class | two concurrent runs of the `lanes` test binary, 6 rounds | 2 of 6 rounds fail `Database already open`; solo run 8 of 8 | C-run |
-| learn loop | the orchestrator's `/projects/_tmp/e2e125/run.sh`, retargeted at my HEAD build | L1 refused, L2 applied, L3 reverted, L4 applied, L5 `auto_reverted` (`actor=daemon before=Some(0) after=Some(0)`) | C-run |
+| learn loop | the orchestrator's `<scratch>/e2e125/run.sh`, retargeted at my HEAD build | L1 refused, L2 applied, L3 reverted, L4 applied, L5 `auto_reverted` (`actor=daemon before=Some(0) after=Some(0)`) | C-run |
 
 ### 1.2 The system, explained
 
 **Processes and binaries.** There are four binaries, not "a single binary" as `001:3` says (C-read).
 
 ```
-                         ┌─────────────────────────── host (lnx) ───────────────────────────┐
+                         ┌─────────────────────────── host (the host) ───────────────────────────┐
   person / Hermes  ───►  │ pii  (CLI: -p one-shot, daemon, graph, sop, memory, learn, store, │
                          │      backup, metrics, health, tui, sandbox-exec, worker-exec)     │
   Hermes (MCP stdio) ──► │ pii-mcp  (ToolSet over MCP; the only binary in daily use today)   │
@@ -225,7 +225,7 @@ What the seam cannot see, all measured this session:
 | pii-tui | 237 / 450 | 52.7 |
 
 **What matters in the low-coverage files** (C-run):
-- `crates/pii-cli/src/cmd_learn.rs` has **0%** (0 of 256 executable lines). The CLI that drives all of pillar 4 is never executed by the gate. Its behaviour is proven only by the orchestrator's scratch harnesses, which live in `/projects/_tmp`.
+- `crates/pii-cli/src/cmd_learn.rs` has **0%** (0 of 256 executable lines). The CLI that drives all of pillar 4 is never executed by the gate. Its behaviour is proven only by the orchestrator's scratch harnesses, which live in `<scratch>`.
 - `cmd_sop.rs` 0%, `cmd_backup.rs` 0%, `node_kinds/nodes/worker.rs` 5%, `tools/src/sandbox.rs` 43%, `engine/registry.rs` 48%.
 - `pii-model/src/llamacpp.rs` and `pii-hal/src/gpiod.rs` are compiled by clippy steps and never executed.
 
@@ -243,7 +243,7 @@ What the seam cannot see, all measured this session:
 | repo-root `lint-approval.redb`, `lint-heal.redb`, `lint-memory.redb` | gitignored; created by `engine/registry.rs:174-204` opening lint stores in `runtime_dir` (F11) |
 | content accuracy of every U-doc row | only the documents named in the findings were re-checked against code |
 | the 2 PDFs and `.ipynb` | binary |
-| `/projects/docs/...` (DO-NOT-REPEAT, RESUME-REGISTER) | outside the repo; rows 1.44-1.50 read only |
+| `<workspace>/docs/...` (DO-NOT-REPEAT, RESUME-REGISTER) | outside the repo; rows 1.44-1.50 read only |
 
 ## Part 2: Findings and proposals
 
@@ -270,10 +270,10 @@ What the seam cannot see, all measured this session:
 
 | pillar | real user behaviour on this machine today | reachable at HEAD (command) | used by anything other than its tests |
 |---|---|---|---|
-| 1 | **Yes, partly.** Hermes calls `mcp__pii__bash` about 5 times a day through `pii-mcp` from 2026-09-09. The CLI path is broken (rc 5). | `pii -p "<task>"` with `PII_CONFIG` pointing at a config whose `model = "llamacpp-server:granite-4.2-3b"` and `[llama] host = "http://10.10.10.217:8082/v1"`: an `fs_write` edit lands in 11.5 s (C-run). Code: `crates/pii-cli/src/cmd_oneshot.rs`, `crates/pii-server/src/node_kinds/agent/turn.rs`. | Hermes (C-run) |
+| 1 | **Yes, partly.** Hermes calls `mcp__pii__bash` about 5 times a day through `pii-mcp` from 2026-09-09. The CLI path is broken (rc 5). | `pii -p "<task>"` with `PII_CONFIG` pointing at a config whose `model = "llamacpp-server:granite-4.2-3b"` and `[llama] host = "http://<host>/v1"`: an `fs_write` edit lands in 11.5 s (C-run). Code: `crates/pii-cli/src/cmd_oneshot.rs`, `crates/pii-server/src/node_kinds/agent/turn.rs`. | Hermes (C-run) |
 | 2 | **No.** | `pii daemon` with a `[[channel]] kind="cli"` bound to `starter/assistant`; append `{"chat":"c1","user":"u","text":"...","cursor":1}` to the inbox; the reply appears in the outbox in about 4 s (C-run). Code: `daemon/router.rs`, `pii-channels/src/cli.rs`. The Discord forum path was proven live once by the orchestrator (asserted). | none |
 | 3 | **No.** | `pii run start memory-remember --input '{"note":"..."}'`, then `pii memory tiers --dir <rt>` (C-run). Code: `node_kinds/nodes/entity.rs`, `pii-memory/src/entity/*`. | examples and one unwired graph only |
-| 4 | **No.** | The scripted harness (`/projects/_tmp/e2e125/run.sh` pattern) (C-run). Code: `pii-learn/src/*`, `daemon/mod.rs:49-57`. | none; default config produces no trajectories |
+| 4 | **No.** | The scripted harness (`<scratch>/e2e125/run.sh` pattern) (C-run). Code: `pii-learn/src/*`, `daemon/mod.rs:49-57`. | none; default config produces no trajectories |
 
 Pillars 3 and 4 are substrate with no user. Pillar 2 is substrate on this machine. Pillar 1 is the only one with a user, through a stale binary.
 
@@ -327,7 +327,7 @@ Rewrite, and most of it is already done. `001:23` already says "measured: 5 kind
 | 132: the channel grant is "fail-closed for an undeclared host" | read `allow_declared` and Discord's `egress_hosts` | **holds as stated**, but "declared" includes an env-var-chosen host (C-read, F7) |
 | 131: the ledger accumulates refusals with `attempt_count == attempts.len() + dropped` | read `engine/refusal.rs`; not re-run live | **plausible**; not re-run (section 5) |
 | 128/132 live Discord proofs | **not re-run**: they post into the user's forum and need the token, an outward action I was not authorised to take | section 5 |
-| open-items: "re-verify any of this without me" | the commands point at `/projects/_tmp/verify13{1,2}-live.sh` and `conc-persist.sh` | **fragile**: the re-verification lives in scratch, which the repo's own rules allow to be cleared (C-read) |
+| open-items: "re-verify any of this without me" | the commands point at `<scratch>/verify13{1,2}-live.sh` and `conc-persist.sh` | **fragile**: the re-verification lives in scratch, which the repo's own rules allow to be cleared (C-read) |
 
 **Q6. One audit trail or three?**
 
@@ -379,7 +379,7 @@ What did not change: nothing is deployed, and no person uses pillars 2-4.
 The shortest path to "usable product" on this machine, using only what exists:
 1. Release-build HEAD (`cargo build --release -p pii-cli -p pii-mcp`). Install it with the old binaries moved aside.
 2. Write `/etc/pii/pii.toml` from `examples/pii.production.toml` with `llamacpp-server:granite-4.2-3b`, `trajectory_dir` on, one `[[channel]] kind="discord"` for the forum with the token in a 0600 env file, and one daily `[[cron]]` running `discord-digest`.
-3. Enable `deploy/pii.service` on the lnx host. That is a user action, since a container cannot start host units.
+3. Enable `deploy/pii.service` on the the host host. That is a user action, since a container cannot start host units.
 4. Observe for 7 days with the measurements in 2.3.
 
 **Q10. The single next most valuable change** is in section 4. What I would not do next is in 2.5.
@@ -413,13 +413,13 @@ The shortest path to "usable product" on this machine, using only what exists:
 | Build a second promotion action | 0 runs of the loop on real data; the outcome metric is decided by the window (F8) |
 | Build more channel or provider kinds | 4 of 5 channel kinds and 4 of 5 model kinds have 0 users on this machine; the user's directive is two protocols |
 | Reopen the code-knowledge-graph service | 043 §8 decision 6: the graph lacked both caller edges and would have made `reachability-check` weaker; no new measurement exists |
-| Build a Docker path | user directive (systemd on lnx); `deploy/Dockerfile` is untested here |
+| Build a Docker path | user directive (systemd on the host); `deploy/Dockerfile` is untested here |
 | Raise test timeouts to fix flakes | Q7: the timeout was raised from 2 s to 60 s and the failure was never a timeout |
 | Add more gate steps for substrate no one runs | the HAL `gpiod` clippy step guards 117 lines that have never run on hardware |
 
 ### 2.6 Decisions that are only the user's
 
-1. Deploy HEAD on the lnx host as a systemd service, and allow it to post into the forum unattended (daily digest).
+1. Deploy HEAD on the the host host as a systemd service, and allow it to post into the forum unattended (daily digest).
 2. Swap the `pii-mcp` binary Hermes uses (separately from 1).
 3. The audit trail: option B (recommended), A or C.
 4. Keep or retire `gemini`, the telegram/matrix/webhook channels, and the HAL `gpiod` backend.
@@ -433,7 +433,7 @@ The shortest path to "usable product" on this machine, using only what exists:
 **Pillar 1: coding agent.**
 - *Watch today, at HEAD* (C-run):
   ```
-  PII_CONFIG=<cfg with model = "llamacpp-server:granite-4.2-3b", [llama] host = "http://10.10.10.217:8082/v1">
+  PII_CONFIG=<cfg with model = "llamacpp-server:granite-4.2-3b", [llama] host = "http://<host>/v1">
   pii -p "Use the fs_write tool to create the file note.txt ... pii was here"
   ```
   rc 0 in 11.51 s, with `files_changed: [".../note.txt"]` and the file contents exact.
@@ -487,7 +487,7 @@ All of that against **0 deployed specs since 2026-09-17**. The number that says 
 
 | rank | proposal | finding | cost | pre-registered gate |
 |---|---|---|---|---|
-| 1 | **Deploy HEAD on the lnx host and run one real loop** (section 3.2) | F1 | about 2-3 hours of orchestration plus user host steps; no code | `pii health` identity equals the deployed rev; 24 h up under systemd; `pii_channel_posts_total` ≥ 7 over 7 days; Hermes call and error rate unchanged |
+| 1 | **Deploy HEAD on the the host host and run one real loop** (section 3.2) | F1 | about 2-3 hours of orchestration plus user host steps; no code | `pii health` identity equals the deployed rev; 24 h up under systemd; `pii_channel_posts_total` ≥ 7 over 7 days; Hermes call and error rate unchanged |
 | 2 | Make a panicking node produce a terminal | F2 | 1 spec | `debug_crash` run, then `pii run get` returns `failed` within 5 s; red before the fix |
 | 3 | Fix the Q7 test to wait on the event | F3 | about 10 lines | 10 of 10 green with the 300 ms probe |
 | 4 | Make `lanes.rs:30` hermetic and sweep the class | F4 | minutes | 0 of 10 concurrent rounds collide; `grep -rn 'fn db() ' crates/*/tests` returns nothing |
@@ -498,7 +498,7 @@ All of that against **0 deployed specs since 2026-09-17**. The number that says 
 | 9 | `/tmp` hygiene and widen `lint-scratch` to `temp_dir()` | F6 | small | `grep -rn 'env::temp_dir()' crates --include=*.rs` shows 0 test sites; lint red on a probe |
 | 10 | Retire per 2.2 Q8, rows 4-8 | Q8 | small each | user decisions |
 
-**The single next action.** Deploy HEAD as the running pii on the lnx host:
+**The single next action.** Deploy HEAD as the running pii on the the host host:
 1. Release build, then install with the old binaries moved aside.
 2. Write the config: `llamacpp-server:granite-4.2-3b`, trajectories on, one Discord forum channel, one daily `discord-digest` cron.
 3. Run it under `deploy/pii.service`.
@@ -607,7 +607,7 @@ States: H ≥70% covered · S <70% covered · U-cov not in the llvm-cov report �
 | 105-runbook.md | Pii operator runbook | 398L | U-doc |  |
 | README.md | 05-operations | 3L | U-doc |  |
 | dormant-capabilities.md | Dormant capabilities: what is deliberately NOT wired | 50L | U-doc | candidate home for the telegram/matrix/webhook listing (Q8) |
-| open-items.md | Open items: done and still missing | 99L | U-doc | #2's cause is now established (Q7); #3 incomplete (lanes.rs:30); re-verify scripts live in `/projects/_tmp`, which is not durable |
+| open-items.md | Open items: done and still missing | 99L | U-doc | #2's cause is now established (Q7); #3 incomplete (lanes.rs:30); re-verify scripts live in `<scratch>`, which is not durable |
 
 **_docs/06-research/** (51 files)
 

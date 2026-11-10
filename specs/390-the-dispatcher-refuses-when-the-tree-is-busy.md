@@ -15,7 +15,7 @@ mid-flight. Both were possible because the only collision check was the **tree h
 This row adds the two **measurements** that hold whoever forgot. The cron stays on; it just refuses to
 work when the evidence says the tree is busy.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: autonomy
 
 ## Requirements

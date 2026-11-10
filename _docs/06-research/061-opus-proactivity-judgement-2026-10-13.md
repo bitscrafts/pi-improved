@@ -44,7 +44,7 @@ Two of the three are real problems that a person fixed, and neither needed a mod
 
 # Review: proactivity as pii's self-improvement, and specs 143/144 (2026-10-13)
 
-The repo was not edited and nothing was committed (`git status` showed 0 changed paths after my runs). Scratch work is under `/projects/_tmp/pii-review-20261013-*`. I did not touch the loop's state files. That is also why I did not run its selftest: it writes into them (Part 4).
+The repo was not edited and nothing was committed (`git status` showed 0 changed paths after my runs). Scratch work is under `<scratch>/pii-review-20261013-*`. I did not touch the loop's state files. That is also why I did not run its selftest: it writes into them (Part 4).
 
 **Evidence labels:**
 
@@ -61,7 +61,7 @@ The repo was not edited and nothing was committed (`git status` showed 0 changed
 
 **Where the reading is incomplete for pii, which today has one self-action (a graph quarantine):**
 
-1. **There are no pii production logs to read yet.** pii is not deployed. `/root/.local/bin/pii` dates from 2026-09-17 and `pii-mcp` from 2026-09-09, and no daemon runs (C-run). The deploy script from spec 142 exists (`deploy/install-pii.sh`) and has never been run on the host. The real incidents today live in the builder loop's records and the gate's output. The thesis has to start there, and add pii's runtime logs after the first deploy.
+1. **There are no pii production logs to read yet.** pii is not deployed. `~/.local/bin/pii` dates from 2026-09-17 and `pii-mcp` from 2026-09-09, and no daemon runs (C-run). The deploy script from spec 142 exists (`deploy/install-pii.sh`) and has never been run on the host. The real incidents today live in the builder loop's records and the gate's output. The thesis has to start there, and add pii's runtime logs after the first deploy.
 2. **"One permission at the end" presumes a production to permit into.** That end gate, `install-pii.sh` together with `rollback-pii.sh`, has been exercised zero times. Until it has been, "the operator decides only the end" describes a decision nobody has ever been asked to make.
 3. **A quarantine is a production effect, so it cannot be a self-action.** It stops a graph from running for its users. It must sit behind the permission, as it does today: the learn timer has no path to the promoter (`crates/pii-server/src/daemon/learn_loop.rs:1-4`).
 4. **The operator's only switch is not trustworthy today.** The brief says the control file is deliberately PAUSED. It reads `RUNNING at 2026-10-13T15:13:00Z (resumed by human)` (C-run). Before commit `4cccdd7` (15:13:43), `control.sh` ignored `PII_CONTROL` (C-read, the diff of `4cccdd7`), so every selftest run paused and then resumed the real switch. Selftest runs left notes at 15:07, 15:08, 15:10 and 15:13 (`_tmp/autonomy/notes.md`). Even after the fix, the selftest still writes the real `questions.md`, `notes.md` and `state.json`. Its assertion at `scripts/autonomy/selftest.sh:66` also reads the real control file rather than `$PII_CONTROL` (C-read). An operator-distance metric built on these records would count test noise as operator acts.

@@ -1,6 +1,6 @@
 # Spec: A resumed row may resume its own work
 
-**Project**: /projects/pi-improved · **Measured**: 2026-11-03, row 359.
+**Project**: <repo> · **Measured**: 2026-11-03, row 359.
 
 ## Why this exists
 

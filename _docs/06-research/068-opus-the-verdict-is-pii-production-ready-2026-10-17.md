@@ -20,7 +20,7 @@ in production has ever run.** Measured just now on the deployed daemon:
 |---|---|---|
 | revision | `0e34719dce0d`, no `-dirty`: the card's revision | C-run (`pii health --json`) |
 | uptime | 14.25 h, pid 870350, started 03:46:38 | C-run |
-| argv | exactly the unit's `ExecStart` (`--store /root/.local/state/pii/store.redb --workspace /root/.local/state/pii …`) | C-run (`/proc/<pid>/cmdline`) |
+| argv | exactly the unit's `ExecStart` (`--store ~/.local/state/pii/store.redb --workspace ~/.local/state/pii …`) | C-run (`/proc/<pid>/cmdline`) |
 | **runs** | **0**. The main store holds 0 `run` entries, 0 journal events, 0 graph bodies. | C-run |
 | **the 09:00 UTC digest** | **did not run.** It is the only `[[cron]]` entry (`cron_entries: 1`). The daemon has been up since 03:46, and nothing exists in the store or the log. | C-run |
 | channel | `errors: 57,289`, but that counter is cumulative in `channel.redb` across restarts. The current log shows 2 transient `EAGAIN` poll failures since 03:46 and **no** byte-budget refusal, so `027895e`'s fix holds. `cursor: 0`. | C-run |
@@ -31,8 +31,8 @@ in production has ever run.** Measured just now on the deployed daemon:
   `/run/user/0/pii/graphs`.
 - **That path does not exist.** `ls /run/user/0/pii/` shows `channel.redb channels control.sock learn memory
   timer.redb` and nothing else.
-- The graphs are installed in `/root/.local/state/pii/graphs/`, and the unit's
-  `ExecStartPre=/usr/bin/env ln -sfn /root/.local/state/pii/graphs /run/user/0/pii/graphs` is what should link
+- The graphs are installed in `~/.local/state/pii/graphs/`, and the unit's
+  `ExecStartPre=/usr/bin/env ln -sfn ~/.local/state/pii/graphs /run/user/0/pii/graphs` is what should link
   them.
 - So `start_run("discord-digest")` fails, and `Daemon::start_cron_entries` discards the error with `if let Ok`
   (`crates/pii-server/src/daemon/mod.rs:225`).
@@ -69,7 +69,7 @@ production check is defined by what is installed and identifiable, never by what
    - The deploy log printed `systemctl --user enable --now pii` under "OPERATOR COMMANDS (nothing below was run)"
      (`deploy-0e34719-20261017T034126Z.log`).
    - The unit's `ExecStartPre` symlink is absent, and the process's cwd is `/projects`, not the unit's
-     `WorkingDirectory=/root/.local/state/pii`. **Both are inconsistent with the process having been started by
+     `WorkingDirectory=~/.local/state/pii`. **Both are inconsistent with the process having been started by
      this unit.**
 3. **"pii-mcp"** is **not swapped**: `pii-mcp` is still the 10-15 19:05 binary, and `pii-mcp.new` (10-17 03:45)
    sits beside it. The deploy log says "staged … NOT swapped". The one surface with daily real use runs a binary
@@ -88,7 +88,7 @@ production check is defined by what is installed and identifiable, never by what
 | M5b | the unit survives 24 h on the host | **NOT MET (yet)** | up 14.25 h. The unit cannot be shown to be the supervisor from here (§1 correction 2). |
 | M5c | `pii_channel_posts_total ≥ 7` over 7 days | **NOT MET, and cannot be met as configured** | `channel_posts: 1`, `runs: 0`. The digest's graph is not loadable (§1). |
 | M5d | Hermes' call and error rates unchanged (±50% of 161/30 d) after the swap | **NOT MET** (untestable) | `pii-mcp` not swapped (§1 correction 3) |
-| M6 | the same incident rule over the deployed daemon's events; a real incident from production within a week | **MET-WITH-CAVEAT** | `pii incidents scan --source runtime` on the live log: `incidents=1` (`refusal-repeated:channel.poll.failed`, count 57,287, latency 3 s) (C-run). But nothing schedules it (`grep -rn 'source runtime' scripts/ /root/.hermes/scripts/` matches only `plan.tsv` rows), it re-reports an already-fixed refusal, and it is **blind to today's total failure**, which emits no event. |
+| M6 | the same incident rule over the deployed daemon's events; a real incident from production within a week | **MET-WITH-CAVEAT** | `pii incidents scan --source runtime` on the live log: `incidents=1` (`refusal-repeated:channel.poll.failed`, count 57,287, latency 3 s) (C-run). But nothing schedules it (`grep -rn 'source runtime' scripts/ <agent-host-config>` matches only `plan.tsv` rows), it re-reports an already-fixed refusal, and it is **blind to today's total failure**, which emits no event. |
 | M7 | retire the dormant surface: six decisions | **MET-WITH-CAVEAT** | 155 landed (`c53c813`); `m7-retiring-the-dormant-surface.md` records the decisions. The triage ingress on a forum (spec 165) is still bound. |
 
 **Tally: 1 MET, 5 MET-WITH-CAVEAT, 5 NOT MET.**

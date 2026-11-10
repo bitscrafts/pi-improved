@@ -8,7 +8,7 @@ been implemented (batches A–D), and this pass judges the RESULT — the same w
 
 Read-only. You may (REVIEW_MODE=test) run `cargo`, the gate scripts and the xtask commands.
 You may NOT edit, create or delete any file in the repo tree; scratch work goes under
-`/projects/_tmp/` only. Do not commit.
+`<scratch>/` only. Do not commit.
 
 ## What changed since your review (all committed, tree clean)
 
@@ -22,7 +22,7 @@ You may NOT edit, create or delete any file in the repo tree; scratch work goes 
   each have a mutation-proven guard (62 both-off caller path, 65 hermetic + layer read-back,
   66 message order, 68 exit-255 case).
 - **Batch C** specs 75–78: 75 docs-correction pass (your §9 items 1–8); 76 D7 (all 15
-  `/projects/pi-improved` literals gone from xtask — paths from `CARGO_MANIFEST_DIR`) + F1
+  `<repo>` literals gone from xtask — paths from `CARGO_MANIFEST_DIR`) + F1
   (`llama-cpp-2` behind a `llamacpp` feature; default build does not link llama) + F2 unused-dep
   sweep; 77 D5 journal flush lossless (`pending` survives a failed append; the three discarded
   flush results now report through `report_flush_failure`) + `clippy::let_underscore_must_use`

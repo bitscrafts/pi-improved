@@ -1,6 +1,6 @@
 # pi-improved — spec-53: direct `MemStore` contract tests (F-18/F-19)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — Phase 5.3, closing F-19's specific claim: "no
   tests at all (inline or integration) verified for `pii-store/src/
   mem.rs`". This is a real gap: `MemStore` is exercised only INDIRECTLY
@@ -49,7 +49,7 @@ before starting):
 - R1. New file `crates/pii-store/tests/mem_store_contract.rs`. Each test
   owns its own database file under a `_tmp`-relative path resolved via
   `concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp")` (per F-15's
-  established convention — do NOT hardcode `/projects/pi-improved/_tmp`
+  established convention — do NOT hardcode `_tmp`
   the way `store_contract.rs` does; that's a stale pattern predating the
   F-15 fix, not one to copy).
 - R2. Test `put_then_read_doc_roundtrips`: construct a `PutRows` with a

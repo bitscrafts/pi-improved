@@ -1,6 +1,6 @@
 # Spec: 109 — no hang on the door, and no dead names in the vocabulary
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P3 close-out (the two things spec 108 left open, plus one defect it found by accident).
 
 ## Context — all three are measured, not suspected
@@ -91,7 +91,7 @@ R8. **Tighten the exemption rule so "nothing to observe" is mechanically decidab
 - Coverage must stay at or above the floor (76.99% measured, floor 74.0 in `coverage-floor.txt`); if your
   changes move it, report both numbers.
 - Emit through `pii-observe`; no new raw prints beyond the file's budget.
-- Scratch under `/projects/_tmp/`; the disk is at ~97% used, so keep exports small and delete your own.
+- Scratch under `<scratch>/`; the disk is at ~97% used, so keep exports small and delete your own.
   Do not leave a daemon running.
 - Do NOT commit; leave the tree for the orchestrator.
 

@@ -1,6 +1,6 @@
 # Spec: Pii Self-Healing Module — Slice -1 + Slice 0
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 3.6 — Self-healing foundation (Slice -1: reachability gate;
 Slice 0: detect-and-escalate)
 **Spec of record**: `_tmp/phase3/opus-heal-and-rss-response.md` §Part B

@@ -1,6 +1,6 @@
 # Spec: 188 — a run names the process and the deploy that produced it
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after 187 (both from 070). Filed 2026-10-18 by the orchestrator; 070 §5 names the instrument and this
 spec is its first half.
 
@@ -120,7 +120,7 @@ Four armed digest runs are on disk again for `cron_entries: 1`; the next occurre
 - `quality-gate.sh` on the cycle's own run → ALL PASS (06:44Z per the plan's record; the closure commit touches
   only this spec, so the tree at `121fb6d` is the measured tree).
 
-*The live store agrees with the reader, not with a counter.* Against `/root/.local/state/pii/store.redb` at
+*The live store agrees with the reader, not with a counter.* Against `~/.local/state/pii/store.redb` at
 08:40Z the running daemon's `since_deploy` reads: `runs 5 (succeeded 4, suspended 1), starts 3, hard_deaths 0,
 armed 1, unattributed 1850, unreadable 0`. The 3 starts are real (the 07:07Z deploy restarted with the wheel
 re-arming across processes); the 1,850 unattributed are yesterday's `?`-revision occurrence, correctly counted

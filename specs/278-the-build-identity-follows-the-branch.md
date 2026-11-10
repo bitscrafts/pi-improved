@@ -1,7 +1,7 @@
 # Spec 278: the build identity follows the branch, not only HEAD and the index
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — deploy identity. The daemon's `health` answers `revision`, and the deploy card and my own freshness checks quote it (`crates/pii-server/src/daemon/identity.rs:262`, `REVISION = env!("PII_GIT_REV")`). On 2026-10-25 a daemon refresh built at HEAD `b8358f7` and answered `222f4debf542-dirty`: the PREVIOUS commit. The binary was current (it held strings only spec 276 adds); only the label lied. A label that can be one commit behind makes "which build is this?" unanswerable by the very field built to answer it.
 
 Reading `crates/pii-server/build.rs:43-45`, the script tells cargo to rerun only when `../../.git/HEAD`, `../../.git/index` or `build.rs` change. On a normal checkout `.git/HEAD` holds `ref: refs/heads/master` and a commit rewrites `refs/heads/master`, a file the script does not watch, so a commit that leaves the index untouched never reruns it and the revision cached by the last build is baked in again.
@@ -56,5 +56,5 @@ The spec's own guardrail said: "If the first test passes on today's `build.rs`, 
 - **Measured in the devbox container:** `CARGO_TARGET_DIR=/work-target`; its build-script output `/work-target/debug/build/pii-server-949f31ffae473db6/output` (16:29) says `PII_GIT_REV=b8358f7519f5`, the HEAD that build was made at. The label never lied.
 - **What lied was the binary choice.** The daemon's binary (`_tmp/devbox-test/bin/pii`, sha `fd74ad2c716d`) is byte-identical to the stale host-side `target/debug/pii` (15:38), carrying `222f4debf542`; the freshly built `/work-target/debug/pii` (sha `044152aa9cc1`) carries `b8358f7519f5`. `daemon.sh refresh` built one file and installed another.
 - **Why the string check in the first note misled:** the strings `budget_exhausted` and `graph.call` appear in the stale file too, because that file was built at a commit that already had them. A string is evidence of a feature, not of which build is installed; the sha is.
-- **Superseded by spec 279** (the refresh installs what it built). The worker's test file for this spec was moved to `/projects/_trash` and no source was changed; the stale-`-dirty`-suffix remark in this spec's follow-ups still stands as its own open defect.
+- **Superseded by spec 279** (the refresh installs what it built). The worker's test file for this spec was moved to `<workspace>/_trash` and no source was changed; the stale-`-dirty`-suffix remark in this spec's follow-ups still stands as its own open defect.
 - Cost of the run that found it: claude/haiku, 55 turns, 647 s, `claude_cost_usd` 0.070610 (the first cost the refreshed daemon journalled).

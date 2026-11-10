@@ -55,7 +55,7 @@ marker to `daemon.started`). Rotated siblings `pii.log.N` are read with the curr
 
 ## 0.2.0 is live (2026-11-03)
 
-`pii 0.2.0 (085369902766, x86_64-unknown-linux-gnu)` on `lnx`, `systemd --user`, active from 02:17:51Z, client and
+`pii 0.2.0 (085369902766, x86_64-unknown-linux-gnu)` on `the host`, `systemd --user`, active from 02:17:51Z, client and
 daemon agree, seven stores intact, `HOST-CONFORMANCE: 5 passed, 0 failed`. Card: `_tmp/deploy/card-085369902766.json`.
 
 The release gate ran the FULL list — 20 steps — and the six runs it took to get there are the record of why the

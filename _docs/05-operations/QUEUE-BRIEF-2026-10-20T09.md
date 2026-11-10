@@ -15,7 +15,7 @@ rows in the plan: 93
   A79  [revoked]  211-hooks-are-documents-you-can-audit.md  REVOKED by review 076 §4.6: hooks are attaches (spec 212 / row A80, done), not a separate document k
   A94  [parked]  225-project-scaffold-and-per-run-skills.md  parked on M0 and on an unwired seam: 5/6 criteria green, but criterion 6 needs a spawn and M0 measur
   A95  [needs-review]  227-the-coder-gets-its-skills-from-the-store.md  gate-skipped-disk
-  A96  [queued]  228-the-sandbox-grants-podman-its-state-dirs.md  row created by the orchestrator after measuring M0 root causes on lnx (bolt_state.db / alive.lck EAC
+  A96  [queued]  228-the-sandbox-grants-podman-its-state-dirs.md  row created by the orchestrator after measuring M0 root causes on the host (bolt_state.db / alive.lck EAC
 
 ## Commits: 0 since 2026-10-20
   (since-query returned none — showing the newest commits regardless, because a brief that reports zero

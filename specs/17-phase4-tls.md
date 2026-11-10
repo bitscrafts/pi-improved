@@ -1,6 +1,6 @@
 # pi-improved — spec-17: phase4-tls
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: P4.4 — outbound TLS unblocks the `deepseek:` provider, `DiscordChannel`, and any GitHub/GitLab tool. One missing feature blocks three shipped-looking ones (opus review).
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

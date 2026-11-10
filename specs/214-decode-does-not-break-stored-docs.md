@@ -5,7 +5,7 @@ Review 076 §0 (2026-10-19): the uncommitted 210 work changes how EVERY stored d
 `b.get(1)` at HEAD and the new build reads differently, so adding a `DocKind` silently reinterprets every doc already in
 memory. Measured consequence: the live store holds 279 documents; a mis-decode turns knowledge into noise with no error.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 1. Adding a `DocKind` variant must not change the byte layout or the decode of existing values.
@@ -17,7 +17,7 @@ memory. Measured consequence: the live store holds 279 documents; a mis-decode t
 ## Exit Criteria
 - [ ] `cargo test -p pii-memory --test doc_decode_is_stable`
 - [ ] `cargo test -p pii-memory --test unknown_kind_refuses`
-- [ ] a fixture captured from `/root/.local/state/pii/memory.redb` decodes to the same kinds before and after
+- [ ] a fixture captured from `~/.local/state/pii/memory.redb` decodes to the same kinds before and after
 
 ## Guardrails
 - Do NOT renumber or reorder existing variants.

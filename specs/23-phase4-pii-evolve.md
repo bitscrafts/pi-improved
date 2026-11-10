@@ -1,6 +1,6 @@
 # pi-improved — spec-23: phase4-pii-evolve
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: P4.7 — the self-improving "boss" module. Capstone of Phase 4.
   The user directed: "a pii sub module", "crate!", "pii-evolve", "make it
   pluggable! allowing the installer to include it or not".

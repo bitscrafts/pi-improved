@@ -1,6 +1,6 @@
 # Spec: 98 — `lint-observability`: make the seam and the ban on raw prints FAIL the gate
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1, observability — this is the ENFORCEMENT half of the user's directive
 (*"we must enforce observability! via traits on every crate!"*). Design/analysis:
 `_docs/06-research/053-observability-contract-and-enforcement-2026-10-09.md`.
@@ -71,7 +71,7 @@ R5. Do NOT convert any call site in this spec. The sweep is spec 100; this spec'
 - Do NOT touch `lint-files`, `lint-scratch` or `reachability-check` behaviour, and do not reorder the
   existing gate steps other than inserting the new one.
 - Do NOT edit any file under `specs/`.
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)

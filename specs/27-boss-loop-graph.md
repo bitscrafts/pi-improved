@@ -1,6 +1,6 @@
 # pi-improved — spec-27: boss-loop-graph
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: Make 008 §3/§4's central claim — "the boss runs on the substrate
   it heals" — true. Spec 23 shipped a crate whose `driver::run_cycle` is a
   hand-rolled `for` loop shelling out to `cargo xtask`. This spec replaces it

@@ -1,7 +1,7 @@
 # Spec 293: a run that fails on a limit says which limit
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — observability of terminal failures. Measured 2026-10-27 on the production devbox daemon: run `r000000000386`
 (the shipped `spec` graph with its `max_wall_ms` removed, two real claude coders, both exited 0, 888 774 ms) ended `failed`. The engine
 journalled the reason (`crates/pii-graph/src/run/engine.rs:72-78`, `Terminal::Failure { error: "max_wall_ms exceeded" }`), but `pii run get`,

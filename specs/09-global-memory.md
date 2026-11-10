@@ -1,6 +1,6 @@
 # Spec: Pii Global/Cross-Session Memory v2 (search + write policy)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 4.3 — global memory v2 (opus Phase-4 plan: "REWRITE spec 09 first — 3 concrete defects")
 **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
 on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

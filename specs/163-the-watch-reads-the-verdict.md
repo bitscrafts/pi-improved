@@ -5,7 +5,7 @@ heal_detect shells `cargo xtask <gate>` inside the watch, which builds a second 
 103 s under load) and cannot distinguish working from wedged. It should read the verdict the gate already recorded and
 spawn nothing.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Exit Criteria
 - [ ] `cargo test -p pii-server --test boss_watch`

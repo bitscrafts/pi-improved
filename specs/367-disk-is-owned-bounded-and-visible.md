@@ -1,6 +1,6 @@
 # Spec: Disk is owned, bounded and visible
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 · **Measured**: 2026-11-03, after a full clean.
+**Project**: <repo> · **Phase**: 0.2.1 · **Measured**: 2026-11-03, after a full clean.
 
 ## Why this exists
 
@@ -15,7 +15,7 @@ Four measured mechanisms fill the disk, and **no component owns their total**:
 |---|---|---|
 | the gate's warm cache `_tmp/gate-target` | **105.8 GiB**, 184,639 files, removed by one `cargo clean` | one persistent target holds every crate/feature/profile ever built; a bigger cache is faster, so nothing ever bounds it |
 | one-off experiment targets | `_tmp/tools-gate` 6.7 G · `_tmp/verify-a102-target` 3.6 G · `_tmp/test-gate-repro` 3.3 G · `_tmp/verify-244-main-targ` 2.6 G · `/tmp/gate-cache/gate-llvm-cov-target` **58 G** coverage | each experiment creates a full target and nobody removes it; the oldest are from 21–28 Oct and finished long ago |
-| trash | `/projects/_trash` 57 G · `_tmp/_trash` 48 G · `/tmp/_trash-podman` 33 G · `/tmp/_trash-v234` 7 G ≈ **145 G** | 30-day retention keeps a month of quarantines and moves |
+| trash | `<workspace>/_trash` 57 G · `_tmp/_trash` 48 G · `/tmp/_trash-podman` 33 G · `/tmp/_trash-v234` 7 G ≈ **145 G** | 30-day retention keeps a month of quarantines and moves |
 | gate exports | kept on failure, removed on success (retention landed 2026-11-03) | a failing gate keeps a full repo copy *and* its own test target — and gate failures are common |
 
 The mismatch that hid all of it: **the floor is measured on `/`, but the big artefacts land on `/projects`.** Freeing

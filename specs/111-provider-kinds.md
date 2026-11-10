@@ -1,6 +1,6 @@
 # Spec: 111 — provider kinds: an OpenAI-compatible kind, `anthropic`, `gemini`
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: Stage A of the vision plan (`_docs/06-research/057-vision-implementation-plan-2026-10-10.md`) —
 finish the gateway. First row of the order, because every later stage answers through a provider.
 
@@ -69,7 +69,7 @@ R7. **A config sample** for each kind in `examples/` (or the existing production
 - Never log a key, a header, or an env value; a denial or an auth error names the HOST, never the credential.
 - Do not invent token counts: if a provider does not report them, say so rather than estimating.
 - Reuse `ollama.rs`'s shape; do not fork a second HTTP style into the crate.
-- Scratch under `/projects/_tmp/`; the volume is tight (19G free) — keep it small and delete your own.
+- Scratch under `<scratch>/`; the volume is tight (19G free) — keep it small and delete your own.
   No daemon left running.
 - Do NOT commit; leave the tree for the orchestrator.
 

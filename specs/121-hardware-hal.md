@@ -1,6 +1,6 @@
 # Spec: 121 — the hardware HAL: a contract, a simulated backend, and one real backend behind a feature
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage B** of `057` (vision phase 4's second component). The vision says *"hardware HAL"*; this host
 **has no hardware**, so the deliverable is the contract plus a backend that is provable here — and a real backend
 that is honest about being unverified.
@@ -60,7 +60,7 @@ R8. **Docs**: `_docs/0X-guides/hardware-hal.md` (the traits, the capability scop
 - Do not weaken a refusal to make an end-to-end path simpler; the refusals are the safety surface.
 - Do not add a heavy runtime dependency for the simulated path; the real backend's dependency must be optional and
   feature-gated, with the crates and versions stated.
-- Scratch under `/projects/_tmp/`, delete your own, no daemon left running. Do NOT commit.
+- Scratch under `<scratch>/`, delete your own, no daemon left running. Do NOT commit.
 
 ## Orchestrator verification (2026-10-10) — including the gap the worker said it could not close
 **My controls:**
@@ -71,7 +71,7 @@ R8. **Docs**: `_docs/0X-guides/hardware-hal.md` (the traits, the capability scop
   `an_unclaimed_pin_is_refused_for_write_and_read`, `counters_count_operations_by_kind_and_refusals_actually_move`,
   `every_refusal_emits_an_error_event_with_a_reason`, `i2c_refuses_unclaimed_and_out_of_scope_addresses`; restored →
   18 pass. The refusals are load-bearing, not decoration.
-- **The live surfaces the worker could not check** (`/projects/_tmp/verify121-live.sh`, my own daemon with
+- **The live surfaces the worker could not check** (`<scratch>/verify121-live.sh`, my own daemon with
   `[hal] backend = "sim"`, `pins = [17]`):
   ```
   pii health --json   →  "name":"hal" … "state":"ok"

@@ -7,7 +7,7 @@
 hand edit of the store — which this project refuses — or removing the cron entirely, which is what was done to keep the next
 occurrence from executing all four.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 

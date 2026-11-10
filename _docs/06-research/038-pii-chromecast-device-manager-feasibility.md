@@ -13,7 +13,7 @@ pii!"*
 be a great standalone daemon project as well a pii companion module!
 Chromecast-protocol could be the link to all google home devices at home!"**
 
-Register row: **A10** in `/projects/docs/01-overview/OPEN-REGISTER.md`.
+Register row: **A10** in `<workspace>/docs/01-overview/OPEN-REGISTER.md`.
 
 ---
 
@@ -134,7 +134,7 @@ dependencies, which makes it a policy decision, not just an implementation one.
 The original ask already framed this (029 §5): standalone daemon vs pii companion
 crate vs `pii-worker`-isolated node. Grounded against pii's actual precedents:
 
-- **Standalone daemon** (`/projects/chromecast-hub`) — matches
+- **Standalone daemon** (`<workspace>/<project>`) — matches
   `chromecast-tv-mirror`, which already has a working cast stack (6,135 LOC,
   spec-09 landed) and no reason to be re-implemented in pii. Hermes and pii both
   talk to it. **But**: it duplicates device management outside pii, which is the

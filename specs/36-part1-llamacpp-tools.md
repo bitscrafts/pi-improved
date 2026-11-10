@@ -1,6 +1,6 @@
 # Spec: spec-36 part1 — llamacpp_tools.rs helper functions
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 4 - spec 36 (in-process llama-cpp tool calls), micro-task part 1
 
 ## Overview

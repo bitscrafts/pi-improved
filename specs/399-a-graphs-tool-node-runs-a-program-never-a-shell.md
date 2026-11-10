@@ -20,7 +20,7 @@ The fence (spec 393) says authority comes from the committed spec, not from the 
 row makes that true for `tool` by adding the `run` builtin tool (an argv array, executed without a shell)
 and making `tool = "bash"` a load-time refusal.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 383 follow-up (393 R3, second half)
 **Depends on**: 393
 

@@ -88,7 +88,7 @@ be a fork of `verify-fix.toml` (simplest, already close), extended with:
 
 ## 2. F-13 scope options (recorded 2026-09-17, deferred until now)
 
-Already stored in amem (`pii/phase5.2/f13-scope-options-for-opus`) —
+Already stored in the workspace memory (`pii/phase5.2/f13-scope-options-for-opus`) —
 summarizing here so it's in one document with the rest:
 
 - **Option 1 (CHOSEN, implemented as spec-47)**: module reorganization
@@ -111,7 +111,7 @@ worth revisiting)?
 
 ## 3. Modularity idea (recorded 2026-09-17, "microservices in a single binary")
 
-Already stored in amem (`pii/architecture/microservices-in-single-binary-
+Already stored in the workspace memory (`pii/architecture/microservices-in-single-binary-
 idea-for-opus-review`) — the user's own framing, explicitly flagged for
 opus feasibility analysis, not a committed direction:
 
@@ -200,7 +200,7 @@ A Chromecast-protocol module is:
 (house-wide Cast-protocol control: TTS announcements, media casting,
 device discovery, potentially the voice-INPUT bridge too if IFTTT/
 Wyoming gets built later) — worth scoping as an actual next project
-(new dir, e.g. `/projects/chromecast-hub` or a `pii-cast` crate), or is
+(new dir, e.g. `<workspace>/<project>` or a `pii-cast` crate), or is
 it premature relative to the harness/modularity work in sections 1-3
 above? If worth building, standalone daemon vs. `pii` companion crate
 vs. `pii-worker`-isolated node — which shape, and why?
@@ -212,7 +212,7 @@ vs. `pii-worker`-isolated node — which shape, and why?
 - `~/.pi/agent/skills/validate-exit-criteria/run.sh` — exists, parses
   `## Exit Criteria` checkbox items the same way pidag's spec format
   does (both projects independently converged on this shape).
-- amem keys: `pii/phase5.2/f13-scope-options-for-opus`,
+- the workspace memory keys: `pii/phase5.2/f13-scope-options-for-opus`,
   `pii/architecture/microservices-in-single-binary-idea-for-opus-review`,
   `pii/roadmap/conformance-audit-2026-09-17` (the phase-by-phase
   planned-vs-built audit from earlier this session).

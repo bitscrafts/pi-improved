@@ -1,9 +1,9 @@
 # Spec: 129 — retire the local ollama provider; llama.cpp (the server) is the local kind
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after the `057` plan (111–128). User directive 2026-10-10, verbatim:
 *"ollama wont be part of our setup! only llama.cpp (that will manage all our local models)"*, *"também temos o
-ollama instalado no lnx! e deve ser evitado na versão final"*, and on the granite model specifically:
+ollama instalado no the host! e deve ser evitado na versão final"*, and on the granite model specifically:
 *"exatamente e esse modelo deve correr no llama.cpp"*.
 
 ## Overview
@@ -14,13 +14,13 @@ Two things are called "llama.cpp" here, and this spec must not conflate them:
    `llamacpp` feature). It is not a network provider: it has no host, and `egress_host` returns `None` for it.
    **It stays exactly as it is.**
 2. **The llama.cpp *server*** — an HTTP, OpenAI-compatible endpoint that already serves our local models:
-   the pi/Laguna quadlet on **`http://10.10.10.217:8082/v1`** serves `laguna-xs-2.1` **and `granite-4.2-3b`**
-   (declared in `/root/.pi/agent/models.json` under the `llamacpp` provider), and laya's backbone is served the
+   the pi/Laguna quadlet on **`http://<host>/v1`** serves `laguna-xs-2.1` **and `granite-4.2-3b`**
+   (declared in `<agent-config>` under the `llamacpp` provider), and laya's backbone is served the
    same way on `:8083`. This is what "llama.cpp manages all our local models" means, and `pii` has **no client
    for it today** — which is why the production example still points at the local ollama
    (`examples/pii.production.toml:22` → `model = "ollama:granite4.2:3b"`).
 
-Measured context that motivates the whole directive (amem `hermes-lnx-optimization/validation/llamacpp-vs-ollama`):
+Measured context that motivates the whole directive (the workspace memory `hermes-the host-optimization/validation/llamacpp-vs-ollama`):
 **llama.cpp 12.11 tok/s vs ollama 5.61 tok/s for the same model (2.16×)**, on the same hardware — "always
 serve the local GGUF via llama.cpp, never via ollama".
 
@@ -50,7 +50,7 @@ had assumed `llamacpp:` was already an HTTP provider. It is not. This revision s
   claim (failover, agent-node provider plumbing, tier tool gating). A test that only passes because it was
   re-pointed without keeping its claim is a regression — say so instead of quietly rewriting the assertion.
 - **R5 — the production example stops teaching an ollama model.** `examples/pii.production.toml` uses
-  `llamacpp-server:granite-4.2-3b` with `[llama] host = "http://10.10.10.217:8082/v1"`, and its comment names
+  `llamacpp-server:granite-4.2-3b` with `[llama] host = "http://<host>/v1"`, and its comment names
   the quadlet that serves it (`granite-4.2-3b` + `laguna-xs-2.1`) so the next reader knows where the model
   lives. Docs and `001` updated; state that the host's `ollama.service` (`127.0.0.1:11434`, unreachable from
   the container — measured `000`) must not be depended on and is a user-side deployment step.
@@ -64,7 +64,7 @@ had assumed `llamacpp:` was already an HTTP provider. It is not. This revision s
 | Test Name | Input | Expected Output |
 |---|---|---|
 | `an_ollama_model_is_refused_pointing_at_llamacpp_server` | `PII_MODEL=ollama:granite4.2:3b` | refusal; the message names `llamacpp-server:`; no provider built |
-| `a_llamacpp_server_model_resolves_to_the_configured_host` | `[llama] host = "http://10.10.10.217:8082/v1"`, `PII_MODEL=llamacpp-server:granite-4.2-3b` | provider built; egress scope = that host only |
+| `a_llamacpp_server_model_resolves_to_the_configured_host` | `[llama] host = "http://<host>/v1"`, `PII_MODEL=llamacpp-server:granite-4.2-3b` | provider built; egress scope = that host only |
 | `a_config_with_the_retired_ollama_host_key_is_refused` | `ollama_host = "…"` in the config | loud refusal naming `[llama] host` |
 | `the_in_process_gguf_kind_is_unchanged` | `llamacpp:/path/to/model.gguf` | still the in-process loader; no host, no NetService |
 | `the_failover_graph_still_fails_over` | updated fixture | unchanged claim |
@@ -88,7 +88,7 @@ had assumed `llamacpp:` was already an HTTP provider. It is not. This revision s
 - **Do not delete the loopback scoping** — transfer it to the new kind; it is the security property that made
   a local provider safe.
 - **Do not touch the host's `ollama.service`**, and do not "fix" the unreachable llama.cpp host by inventing a
-  different endpoint: this container cannot reach `10.10.10.217:8082`, so tests stay offline with a mock
+  different endpoint: this container cannot reach `<host>`, so tests stay offline with a mock
   transport and say so.
 - **Do not widen anything** (dependencies, allowlists, budgets). If it seems necessary, stop and report.
 - Do **not** edit `specs/`, do **not** commit — leave the tree for the orchestrator.
@@ -102,7 +102,7 @@ had assumed `llamacpp:` was already an HTTP provider. It is not. This revision s
 - **MUTATION of my choosing, on the property that matters:** ignoring the configured host
   (`observed_provider.rs`, `egress_host_with(model, llama_host)` → `None`) reddens
   `a_llamacpp_server_model_resolves_to_the_configured_host` with
-  `left: Some("127.0.0.1")` vs `right: Some("10.10.10.217")` — i.e. the egress scope really is derived from
+  `left: Some("127.0.0.1")` vs `right: Some("<host>")` — i.e. the egress scope really is derived from
   `[llama] host`, not from a default. Restored byte-identical → 3 pass.
 - **The refusal, live:** `PII_MODEL=ollama:x ./target/debug/pii -p hi` →
   `error: invalid: ollama: is retired (spec 129) — serve the model with llama.cpp and use
@@ -111,7 +111,7 @@ had assumed `llamacpp:` was already an HTTP provider. It is not. This revision s
 - `deps-check`, `net-check`, `doc-drift-check`, `lint-observability` → rc 0 each.
 
 **The concrete dependency the user suspected, now moved:** `examples/pii.production.toml` teaches
-`model = "llamacpp-server:granite-4.2-3b"` with `[llama] host = "http://10.10.10.217:8082/v1"` and a comment
+`model = "llamacpp-server:granite-4.2-3b"` with `[llama] host = "http://<host>/v1"` and a comment
 naming the pi/Laguna quadlet that serves `granite-4.2-3b` + `laguna-xs-2.1`. The remaining `ollama` strings in
 `crates/` are the refusal, its tests and the comments explaining the retirement.
 
@@ -125,7 +125,7 @@ editing xtask.
 
 **One operational consequence, fixed by the orchestrator:** the agent's own `~/.pii/pii.toml` still carried
 `model = "ollama:granite4.2:3b"` and `ollama_host = ...`, so the daemon now refuses to start — updated to the
-llama.cpp server lane ([llama] host = 10.10.10.217:8082), with a dated backup kept beside it.
+llama.cpp server lane ([llama] host = <host>), with a dated backup kept beside it.
 
 **And the flake that failed spec 128's fresh-gate is fixed in the same road** (commit after this one):
 `a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert` polled a terminal run status with a

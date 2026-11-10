@@ -1,6 +1,6 @@
 # Spec: 125 — promotion and lifecycle: the loop closes, and it can be taken back
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: **Stage C** of `057`, last stage — and the first place in this pipeline where the system is allowed to
 **change its own behaviour**. Everything before it proposed or judged; this acts, so it carries the tightest rules
 in the plan: a whitelist, a rollback, a measurement, and an automatic reversal when the change is worse.
@@ -71,7 +71,7 @@ R9. **Docs**: extend `learning-loop.md` with the promotion stage: the whitelist 
 - Never promote from an argument — re-read the verdict from the learn area.
 - Never apply an action whose effect cannot be measured, and never report an outcome you did not compute.
 - Do not add a second promotion kind. Do not edit `specs/`. Do not commit.
-- Scratch under `/projects/_tmp/`, delete only your own, no daemon left running.
+- Scratch under `<scratch>/`, delete only your own, no daemon left running.
 
 ## Orchestrator verification (2026-10-10)
 
@@ -81,7 +81,7 @@ R9. **Docs**: extend `learning-loop.md` with the promotion stage: the whitelist 
 - **Mutation (mine)**: making the engine ignore the quarantine (`quarantine_of` returning `None`, `runs.rs:133-136`)
   turns `daemon::tests::a_quarantined_graph_is_refused_by_the_engine_and_runs_again_after_revert` **red**; restored
   byte-identical → passes. The quarantine is enforced by the engine, not merely recorded.
-- **I re-ran the worker's end-to-end script myself** (`/projects/_tmp/e2e125/run.sh`) and the whole loop reproduced
+- **I re-ran the worker's end-to-end script myself** (`<scratch>/e2e125/run.sh`) and the whole loop reproduced
   on my run: `L1 refused (unmeasurable)` → `L2 applied` → `L3 reverted` → `L4 applied (6 s window)` →
   **`L5 auto_reverted` by the daemon with `actor=daemon before=Some(0) after=Some(0)`**, and the counters after
   `active 0 · auto_reverted 1 · refused 1 · reverted 1`. Earlier in the same run the daemon's log shows the

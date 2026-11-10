@@ -9,13 +9,13 @@ the list can be measured until a real process runs on the host — "a person see
 
 Two constraints shape this spec:
 
-- **The orchestrator has no host access.** Measured: from this container `ssh lnx` is denied and there is no
+- **The orchestrator has no host access.** Measured: from this container `ssh the host` is denied and there is no
   `podman`; the deploy is therefore **a script the operator runs**, and its acceptance is what can be proven
   in a scratch prefix on this side plus a runbook with the exact commands.
 - **The user's directive is systemd, not Docker** (2026-10-10), and `pii-mcp` **is not** part of the same
   change: swapping the binary Hermes calls is a separate, later step behind its own probe (059 §2.4).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (059 rank 1); `RESUME-REGISTER` deployment row
 **Source**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §4, §2.3
 
@@ -28,7 +28,7 @@ Two constraints shape this spec:
   3. install the new binaries to the target prefix (a variable, defaulting to `$HOME/.local/bin`);
   4. write the runtime config from `examples/pii.production.toml` with, explicitly: model
      `llamacpp-server:granite-4.2-3b` and `[llama] host` pointing at the running llama.cpp server
-     (`http://10.10.10.217:8082/v1`), trajectories on, **one** Discord forum channel, and **one** daily
+     (`http://<host>/v1`), trajectories on, **one** Discord forum channel, and **one** daily
      `discord-digest` cron entry;
   5. install the systemd unit (user scope or the documented system scope), and
   6. **print** the exact remaining operator commands (enable/start the unit, place the token) rather than
@@ -64,7 +64,7 @@ Not applicable in the usual sense; the acceptance is the scratch-prefix exercise
 | Exercise | Input | Expected Output |
 |---|---|---|
 | `bash -n` both scripts | — | rc 0 |
-| install into a scratch prefix (`PREFIX=/projects/_tmp/prefix/…`) | a fake "existing" binary placed there first | the old binary is moved aside with a date; the new one is installed; the unit file is written; the printed operator commands are complete |
+| install into a scratch prefix (`PREFIX=<scratch>/prefix/…`) | a fake "existing" binary placed there first | the old binary is moved aside with a date; the new one is installed; the unit file is written; the printed operator commands are complete |
 | the rollback against that prefix | — | the old binary is back and answers; the moved-aside copy is gone from the dated dir (moved back, not copied) |
 | a precondition failure (llama host unreachable) | `LLAMA_HOST=http://127.0.0.1:1/v1` | aborts before moving anything, names the host |
 

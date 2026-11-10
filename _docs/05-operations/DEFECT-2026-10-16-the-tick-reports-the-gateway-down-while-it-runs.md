@@ -10,7 +10,7 @@ At **18:15:20Z** the loop's own heartbeat wrote the phone line
 
 into `_tmp/autonomy/last-reported` (that file's content is now exactly `gw-still-down`, mtime 18:15Z), and its
 start attempt was refused because the gateway was **already running** — the redirect target that `tick.sh` line 38
-writes, `/root/.hermes/logs/gateway-restart.log`:
+writes, `<agent-host-config>`:
 
 ```
 ✗ Another gateway instance is already running (PID 73).
@@ -38,7 +38,7 @@ was refused *because it was up*.
 
 ```sh
 if command -v hermes >/dev/null 2>&1 && ! hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then
-  ... setsid nohup hermes gateway run >/root/.hermes/logs/gateway-restart.log 2>&1 </dev/null &
+  ... setsid nohup hermes gateway run ><agent-host-config> 2>&1 </dev/null &
   sleep 12
   if hermes gateway status 2>/dev/null | grep -q 'Gateway is running'; then say_once "gw-up" ...
   else                                                              say_once "gw-still-down" ...   # line 43

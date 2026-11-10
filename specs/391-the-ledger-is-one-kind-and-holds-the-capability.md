@@ -7,7 +7,7 @@ heal attempt). Each is a separate kind, each is a separate module, and **none of
 capability**: any graph that loads can claim a queue row or write a verdict. Opus 045 and 046 both
 flagged this, and the second finding is the security one.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 383 step 2 of 4
 **Depends on**: 383 step 1 (transform computes) — done
 

@@ -26,13 +26,13 @@ transport"*, so the unit in `~/.config/systemd/user/` is written by the installe
 daemon runs in the foreground under a user scope, with this argv (read it from `/proc/<pid>/cmdline`, never
 retype it):
 
-    /root/.local/bin/pii daemon --foreground --config /root/.config/pii/pii.toml \
-      --store /root/.local/state/pii/store.redb --workspace /root/.local/state/pii \
-      --log-file /root/.local/state/pii/pii.log --log-rotate-bytes 10485760 --log-keep-files 5
+    ~/.local/bin/pii daemon --foreground --config ~/.config/pii/pii.toml \
+      --store ~/.local/state/pii/store.redb --workspace ~/.local/state/pii \
+      --log-file ~/.local/state/pii/pii.log --log-rotate-bytes 10485760 --log-keep-files 5
 
 A deploy onto this host is therefore three steps, and the third is the one that can leave the service down:
 
-    SKIP_BUILD=1 BIN_SRC=<repo>/target/release LLAMA_HOST=http://10.10.10.217:8084/v1 \
+    SKIP_BUILD=1 BIN_SRC=<repo>/target/release LLAMA_HOST=http://<host>/v1 \
       bash deploy/install-pii.sh                 # card-gated (spec 197); moves the old binaries aside
     pii health                                   # 3 + a DRIFT line: the new client vs the OLD daemon
     bash <restart script> <old pid> <aside dir>   # one counted start, rollback armed
@@ -440,16 +440,16 @@ max** at 91 % full, against **0.1 ms** on the overlay that backs `/tmp`. The tes
 pressure — and the pressure is ours:
 
 ```
-/projects/_trash .................. 57 GB   (30-day retention, nothing due until 2026-11-19)
+<workspace>/_trash .................. 57 GB   (30-day retention, nothing due until 2026-11-19)
 pi-improved/_tmp/gate-target ...... 75 GB   (the warm compile cache FRESH_GATE_TARGET points at)
-/projects/_cache/{targets,sccache}  19 GB
+<workspace>/_cache/{targets,sccache}  19 GB
 one kept gate export .............. 28 GB   (a FAILED gate keeps its export)
 ```
 
 **Two rules that follow:**
 
 1. **Run a gate through the loop's environment**, `source scripts/autonomy/env.sh` (it exports
-   `FRESH_GATE_TARGET=/projects/pi-improved/_tmp/gate-target`, spec 174). A gate run that does not source it builds
+   `FRESH_GATE_TARGET=_tmp/gate-target`, spec 174). A gate run that does not source it builds
    its **own** 28 GB target inside the export — that is what filled the volume here, not the loop.
 2. **Before believing a red on a latency or composite assertion, run `df -h /projects`.** If it is above ~88 %, the
    honest next move is space, not a patch: reclaiming one 28 GB export took fsync from 21.9 ms to 3.7 ms and the test

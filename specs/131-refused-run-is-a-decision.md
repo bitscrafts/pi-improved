@@ -1,6 +1,6 @@
 # Spec: 131 — a refused run is a decision, and the ledger must show it
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: after the `057` plan (111–130). Filed 2026-10-10 by the orchestrator while closing spec 125, which
 recorded a deviation: the promotion's audit trail (an append-only `learn/ledger.jsonl`) is **not** the decision
 ledger the spec asked for, because the CLI cannot write the redb the daemon holds open.
@@ -99,7 +99,7 @@ and stop. What is not acceptable is overloading a field with something it does n
 ## Closure (2026-10-11)
 
 **The contract passed on the first implementation while the live path lost data.** My harness
-(`/projects/_tmp/verify131-live.sh`) refused a quarantined graph **three** times:
+(`<scratch>/verify131-live.sh`) refused a quarantined graph **three** times:
 
 ```
 run ids r000000000004 · r000000000005 · r000000000006

@@ -14,7 +14,7 @@ Sites left unchanged because already guarded (create_dir_all in the same fn or i
 
 ## Enforcement
 `cargo run -q -p xtask -- lint-scratch` (xtask/src/lint_scratch.rs, 4 unit tests), wired into quality-gate.sh after lint-files as a failing step.
-Teeth (export /projects/_tmp/spec96/export): reintroduced bare pattern in peercred.rs -> exit 1 (`peercred.rs:42 ... no create_dir_all/tmp_scratch`); restored -> exit 0.
+Teeth (export <scratch>/spec96/export): reintroduced bare pattern in peercred.rs -> exit 1 (`peercred.rs:42 ... no create_dir_all/tmp_scratch`); restored -> exit 0.
 
 ## Proofs
 - `cargo run -q -p xtask -- fresh-gate --worktree` -> `fresh-gate: PASS` (exit 0; log fresh-gate.log)

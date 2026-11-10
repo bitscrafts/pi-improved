@@ -1,6 +1,6 @@
 # pi-improved — spec-51: extract xtask/src/main.rs's arg-parsing helpers into cli_parse.rs
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW — Phase 5.2, final F-12 warn-band item.
   `xtask/src/main.rs` is 411 effective lines, in the 380-450 warn band.
   Cosmetic debt reduction, not a blocker — this closes out F-12's

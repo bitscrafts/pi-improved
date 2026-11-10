@@ -19,7 +19,7 @@ writes the declaration, and for these three graphs that is whoever starts the ru
 The fence (spec 393) says authority comes from the committed file, not from run input. This row makes that true for `programs`:
 it is a literal list in the graph file, and a run input can supply arguments but never the program.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 383 follow-up (399, the programs half)
 **Depends on**: 399
 

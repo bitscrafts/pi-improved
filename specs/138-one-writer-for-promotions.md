@@ -19,7 +19,7 @@ for refusals), and the promotion's own record is the one a person cannot trust w
 applies **and** records, in one step. The daemon already owns the store and is already the only writer of the
 decision ledger; the CLI keeps its command surface but stops writing the ledger directly.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F5, Q6; `RESUME-REGISTER` audit-trail fork)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §2.2 (F5, Q6), §2.3
 
@@ -76,7 +76,7 @@ decision ledger; the CLI keeps its command surface but stops writing the ledger 
   this spec is about **who writes**, not about what is decided.
 - If the daemon cannot own the ledger without a change larger than this spec (a new node kind, a new
   subsystem), **STOP and report** the shape you found instead of forcing it.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

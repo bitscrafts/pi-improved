@@ -11,7 +11,7 @@ That is the only unrecoverable failure in the deployment. A corrupt store, a bad
 someone runs by accident destroys weeks of learned state with no way back. Everything else about the deployment is
 recoverable by re-deploying a binary.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production hardening — the top open item on the readiness list.
 
 ## Requirements

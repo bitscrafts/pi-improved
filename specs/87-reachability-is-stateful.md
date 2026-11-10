@@ -1,6 +1,6 @@
 # Spec: 87 — reachability is stateful: test-only, string and comment references are not callers (N2)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 045 re-review, candidate 3 — the check that is supposed to be the gate's caller detector.
 
 ## Context (measured by the reviewer, reproduced by the orchestrator)
@@ -51,7 +51,7 @@ R4. TDD evidence: for each of the 8 stand-in variants listed above, produce the 
 - Do NOT widen the seed list or relax any rule to make the check pass; the point is that it must FAIL
   on the stand-ins. A check that cannot fail is the defect.
 - Do NOT touch `crates/` production code — `xtask/` only (plus its tests).
-- Scratch exports under `/projects/_tmp/` only; the disk floor is enforced by fresh-gate, mind the
+- Scratch exports under `<scratch>/` only; the disk floor is enforced by fresh-gate, mind the
   space (one export ≈ 8G, and remove your own scratch when done).
 - Do NOT commit; leave the tree for the orchestrator.
 

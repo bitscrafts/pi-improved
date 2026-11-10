@@ -1,7 +1,7 @@
 # Spec 263: a run's captured agent output keeps its head AND its tail
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — observability of the coder node (found 2026-10-24 on queue row A126, run `r000000000108`)
 
 The coder captures an agent's stdout through `capture_bounded` (`crates/pii-server/src/node_kinds/nodes/coder_runtime.rs:267`), which keeps the FIRST `OUTPUT_KEEP_BYTES` (256 KiB) and discards the rest.

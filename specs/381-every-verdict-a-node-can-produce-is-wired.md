@@ -17,7 +17,7 @@ refusal, and the graph that calls it still does not say what to do with one.
 
 Found by documentation work, 2026-11-04 (`manual-audit-20261104.md`, F-1, F-2, F-3).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: graph library integrity
 
 ## Requirements

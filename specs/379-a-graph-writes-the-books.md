@@ -13,7 +13,7 @@ documentation mechanism: `graphs/docs.toml` is already the documentation coder a
 The books are the same shape with a different inventory: instead of "which files are undocumented",
 the question is "which chapters no longer match the code".
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: composability
 
 ## Premises (measured 2026-11-04)

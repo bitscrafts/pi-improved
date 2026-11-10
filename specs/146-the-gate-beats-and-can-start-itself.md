@@ -7,7 +7,7 @@ about pii's code: (a) the gate has **no heartbeat**, so a long step and a hung s
 timeout; (b) the agent **cannot bootstrap the gate that gates it** — the thing that authorises the work needs
 the work to already exist.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: the gate's own robustness (pre-video backlog, specs 145–148)
 
 ## Requirements
@@ -52,4 +52,4 @@ R5. No new dependency. The heartbeat must not change what the gate returns: a st
 - Do NOT let a heartbeat be mistaken for a step's result (R5) — that is the false-green class this project has paid
   for twice.
 - Do NOT invent a second gate implementation in the export path; call the one that exists.
-- Do NOT touch `/tmp`, `/dev`, `/proc`, `/sys`, `/root`; scratch under `/projects/_tmp/`.
+- Do NOT touch `/tmp`, `/dev`, `/proc`, `/sys`, `/root`; scratch under `<scratch>/`.

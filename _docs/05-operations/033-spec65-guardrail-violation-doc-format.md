@@ -5,7 +5,7 @@
 
 > **Status update 2026-10-09:** RESOLVED. The violation was recorded in `ae43145`; spec 65 was then re-landed additively (new `MEM_LAYER` table, `encode` untouched) in `2e47219`.
 
-**Date**: 2026-09-18. **Run**: `95f1d821dc25`, log `/projects/_tmp/spec65-run1.log`.
+**Date**: 2026-09-18. **Run**: `95f1d821dc25`, log `<scratch>/spec65-run1.log`.
 **Status**: changes NOT committed; working tree holds the worker's diff, awaiting re-run.
 
 ## What spec-65 asked for

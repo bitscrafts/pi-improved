@@ -1,7 +1,7 @@
 # Spec 274: the documented-limit control waits for the detached grandchild to leave the group
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — gate reliability. On 2026-10-25 the full gate ran on the combined tree of specs 272+273
 (HEAD `ae276bc`) and failed at `test (lib/bins/tests)` on exactly one test:
 `crates/pii-core/tests/child_group_reaped.rs:131`,

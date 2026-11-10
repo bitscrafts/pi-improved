@@ -1,7 +1,7 @@
 # Spec 308: runs have their own thread pool, so the control plane is never queued behind a run, and a queued run can be cancelled
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, daemon control plane (found by the composition simulations 2026-10-28, ranked and shaped by an Opus review: `_tmp/opus-composability-limits-20261028/opus-review-plan-20261028T103657Z.md`)
 Every run holds one thread of tokio's blocking pool for its whole life (`spawn_blocking`, `crates/pii-server/src/engine/runs.rs:92` and `:481`), and the daemon caps that pool at 8 (`PII_DAEMON_MAX_BLOCKING`, `crates/pii-cli/src/cmd_daemon.rs:171`). The same pool serves the heavy RPCs (`conn.rs:212-228`: `RunTrace`, `EventSubscribe`, `SessionPrompt`, memory and skill calls), channel polls (`daemon/router.rs:44`) and the learn timers. With more than 8 runs in flight those calls queue behind whole runs: measured 12 runs in flight, slowest `pii run get` 19.2 s (the follow-up `RunTrace`), 20 runs with a 45 s docs step, every call blocked 94 s (`/tmp/runget3.out`). Two more defects sit beside it: a run that is queued (registered, header and `Started` written, no node open) cannot be cancelled cleanly, and `run cancel --kill` sleeps up to 30 s on one of only 4 async workers (`runs_cancel.rs:124-134`).
 The cap exists for a real reason (RSS climbed with thread churn, 279 threads under a 3000-run soak: the comment at `cmd_daemon.rs:153-165`), so it is not lifted. Runs move to a fixed-size pool of long-lived threads; the shared pool then serves only short work.

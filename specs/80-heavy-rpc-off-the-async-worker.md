@@ -1,6 +1,6 @@
 # Spec: 80 — heavy RPC methods stop blocking the async worker (A1)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch D — 043 §10 item 10 / §7 A1.
 
 ## Context

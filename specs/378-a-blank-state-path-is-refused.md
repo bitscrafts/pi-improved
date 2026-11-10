@@ -18,7 +18,7 @@ therefore writes the operator's real queue — and does so silently, with exit s
 This is a data-integrity defect, not a cosmetic one: the queue is what the dispatcher acts on, so
 a leaked fixture is a row the lane can claim, work and commit.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: autonomy harness
 
 ## Premises

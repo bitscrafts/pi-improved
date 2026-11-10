@@ -1,7 +1,7 @@
 # Spec 249: the queue's first spec implemented by pii (a smoke test of the lane itself)
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's worker is pii (user directive 2026-10-24)
 
 This spec is deliberately tiny. It exists to prove the new lane (`scripts/run-batchC-pii.sh`: a coder-node graph run by the pii daemon inside the devbox

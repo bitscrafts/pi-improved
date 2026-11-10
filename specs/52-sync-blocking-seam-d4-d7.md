@@ -1,6 +1,6 @@
 # pi-improved — spec-52: D4/D7 sync-blocking seam fixes (channel poll + worker kill)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — Phase 5.2 completion. The 026 report's Phase 5.2
   section (not just F-12/F-13/F-14) lists D4/D5/D7 as required items;
   this spec closes D4 and D7 (D5 — `recv_timeout` join — is already

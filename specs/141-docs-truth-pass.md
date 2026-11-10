@@ -16,7 +16,7 @@ The vision document is the one thing a new reader trusts, and parts of it are un
 A document that overstates the product is how a run ends in the wrong place: it is the same class as a check
 that passes while the live path is broken, one level up.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F10, Q4)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §0.1, §2.2 (Q4, F10)
 

@@ -1,6 +1,6 @@
 # pi-improved — spec-20: phase4-boss-approval-gate-fix
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: P4.7 boss prerequisite — the opus review's blocking finding: the human approval gate is NOT a real gate once a run resumes, which would void the user's "human approves promotions" decision for all of Boss Slice F.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator
@@ -66,7 +66,7 @@ Change `graphs/starter/heal-watch.toml:23` from `gate = "quality-gate"` (NOT an 
 
 ```
 spawn_run (new run)
-  input = { scope_root: "/projects/pi-improved/_tmp/heal-wt-1", ... }
+  input = { scope_root: "_tmp/heal-wt-1", ... }
      |
      v
   ctx = run_caps(workspace, scope_root, net_host)   // fs_write = scope_root only

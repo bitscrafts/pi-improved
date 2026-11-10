@@ -12,7 +12,7 @@ running at 60 s; the same five names red in the gate; the same names red at HEAD
 Why it matters beyond the five: the gate cannot go green while they hang, so every row is blocked behind
 them. A hanging test is worse than a failing one: it spends the wall clock and reports nothing.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: operations (test infrastructure)
 
 ## Requirements

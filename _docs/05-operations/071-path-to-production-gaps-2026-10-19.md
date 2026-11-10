@@ -24,7 +24,7 @@ clock: the pre-fix deployed binary executed and posted 2 runs, this tree execute
 missing is a repeat against the **deployed post-196 binary**, i.e. production terms, not code.
 
 **CLOSED 2026-10-31, against the deployed binary.** The daemon was moved onto `669f5803d90a` (see the runbook's
-"started by hand" section) and the exercise was then run with `PII_BIN=/root/.local/bin/pii`:
+"started by hand" section) and the exercise was then run with `PII_BIN=~/.local/bin/pii`:
 
 ```
 armed: r000000000001 at 00:14:09Z; firing minute: 17
@@ -34,7 +34,7 @@ after the instant: total runs=2, runs that EXECUTED=0, failed-without-executing=
 196 PASS — the cancelled run's instant arrived and nothing fired (pre-fix: the 09:00Z shape)
 ```
 
-Artefact: `/tmp/ex196-deployed.out`; scratch daemon and store kept at `/projects/_tmp/ex196-lxLC7m`. The
+Artefact: `/tmp/ex196-deployed.out`; scratch daemon and store kept at `<scratch>/ex196-lxLC7m`. The
 cancelled instant arrived with the deployed binary serving and nothing fired, twice (the original arm and the
 re-armed occurrence), with zero posts. Section 1's gap is now a property of the deployment, not a claim.
 
@@ -133,7 +133,7 @@ GAP: two of the seven steps depend on my discipline, and my discipline has faile
 ## Where I disagree with 070
 
 070 says "what earns the verdict is steps 2 and 6". I would add a third: **step 1's proof must be a PRODUCTION restart
-test, not a scratch one.** 185/187 changed the daemon's arming logic, and the only way to know it holds on lnx is to restart
+test, not a scratch one.** 185/187 changed the daemon's arming logic, and the only way to know it holds on the host is to restart
 the live unit once and watch the armed count stay at 1. A scratch daemon proves the code; only the live one proves the
 deployment. 070's own step 3 argues against gratuitous production starts — I agree, which is why this should be ONE start,
 counted, not a habit.
@@ -160,7 +160,7 @@ and the operator authorised the ollama-cloud credentials for exactly this.
 
 ```
 deploy/tools/live-hosted-exercise.sh
-  credential  env:OLLAMA_API_KEY (the source /root/.hermes/auth.json names), value never printed
+  credential  env:OLLAMA_API_KEY (the source <agent-host-config> names), value never printed
   endpoint    https://ollama.com/v1   (OpenAI-compatible; pii's provider kind is `openai`)
   transport   the REAL pii-net service with an open egress grant — not a fake
   live        crates/pii-model/tests/live_smoke.rs :: live_openai   → 1 passed, 1.04 s

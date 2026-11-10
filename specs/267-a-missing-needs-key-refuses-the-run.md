@@ -1,7 +1,7 @@
 # Spec 267: a declared `needs` key that resolves to nothing refuses the run, naming the key and the call
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition (spec 261 follow-up, Opus context review 2026-10-24, risk 2: "silent Null for a missing key")
 
 Spec 261 checks `needs` at LOAD: an undeclared read is refused. It does nothing at RUN time. A sub-graph that declares `needs = ["spec"]` and is called from a run whose input has no `spec` still starts, reads `$.input.spec`, gets `Null` (`crates/pii-graph/src/expr.rs`: an unresolvable path is `Null`, not an error) and carries on: a docs coder is briefed about "null". The contract is only worth having if a declared key that is not there stops the run before any sub-graph node runs.

@@ -15,7 +15,7 @@ conflict. In the test suite it cost an afternoon: five test files spawn daemons 
 second daemon hung, and every failure surfaced as
 `connect …/control.sock: No such file or directory` — which reads like a broken client.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: path to production — the daemon must be operable by someone who is not its author.
 
 ## Requirements

@@ -29,7 +29,7 @@ rows in the plan: 99
   a553a3b queue: 233 filed with the live readings (zero skills in the store, the lock, the wrong defau
   3d32079 233: a skill gets into the daemon's store through the daemon - skill.put/skill.list on the e
   035d073 leftover from the previous item, kept for review (cycle 20261020T120419Z; the diff is also a
-  09d1174 233: a skill can be added through the daemon - spec 227 criterion 7 is unreachable on lnx wi
+  09d1174 233: a skill can be added through the daemon - spec 227 criterion 7 is unreachable on the host wi
 
 ## Control and queue state
   == control: RUNNING at 2026-10-19T17:28:22Z (resumed by human)

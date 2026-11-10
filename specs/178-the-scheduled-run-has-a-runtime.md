@@ -8,7 +8,7 @@ MEASURED 2026-10-17 23:05Z on the DEPLOYED daemon: with a [[cron]] entry present
 
 exit status 134 with the restart counter at 5 and climbing: a crash loop. The cron was removed to stop it. runs stood at 71 from that loop. THIS IS WHY the deployed daemon had run nothing for fourteen hours: not only could it not find its graphs, the ONE path configured to run on a schedule had never been executed and has never worked.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 A run started by a [[cron]] timer must execute inside a Tokio runtime, or the daemon must refuse the cron at start naming the defect. A panic that crash-loops the supervisor is not an acceptable failure mode for a scheduled task.

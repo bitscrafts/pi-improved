@@ -5,7 +5,7 @@ Read only; do not edit the tree. Answer in English, in the structure at the end.
 ## What you are reviewing
 
 `_docs/06-research/048-infinity-vs-pii-20261104.md` — my analysis of AWS/Hydro's **Infinity** agent
-runtime against **pii** (the project you are in: `/projects/pi-improved`, a single-binary Rust
+runtime against **pii** (the project you are in: `<repo>`, a single-binary Rust
 personal-information server whose work is expressed as graphs).
 
 Its claims, in the order I want them attacked:

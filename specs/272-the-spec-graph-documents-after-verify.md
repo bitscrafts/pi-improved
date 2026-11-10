@@ -1,7 +1,7 @@
 # Spec 272: the tracked spec graph calls a documentation graph — the first real composed graph
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition, first use (operator, 2026-10-24: *"a node that calls a graph, for instance to document the task/spec"*). Depends on A136 (per-node pi sessions, spec 271) and on the call machinery of specs 255-270.
 
 `graphs/spec.toml` is `code → verify → done`. After the criteria pass nothing documents what was done. This spec adds the documentation as a CALLED graph, `graphs/docs.toml`, so composition is used by a graph that ships, not only by tests: `code → verify → docs (call) → reverify → done`.

@@ -1,6 +1,6 @@
 # F-11 Pass 2: PiiError::store_op Constructor, then session.rs
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `pii-abi`, `pii-store`
 - **Priority**: MEDIUM — continues the F-11 structured-error sweep
   (pilot: commit `c8fb4d9`, `pii-store/src/heal.rs`). Sourced from

@@ -4,15 +4,15 @@
 User directive 2026-10-19: "the pii also must be able to list/edit and explain its installed graphs". Today `pii graph` offers
 `lint | show | run | resume | trace` — there is no way to LIST what is installed in the runtime graphs directory, no way to ask
 what a graph actually does, and no controlled way to change one: editing means opening a TOML in an editor and restarting the
-daemon, with no lint, no hash, no previous version and no record of what changed. The installed set on lnx right now is
+daemon, with no lint, no hash, no previous version and no record of what changed. The installed set on the host right now is
 `discord-digest.toml · discord-triage.toml · intervention-report.toml`, while the repo carries nineteen — so "which graphs are
 live, and do they match the repo?" is currently answered by `ls` and memory.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Verified premises
 - `pii graph` exists with five subcommands; `list` and `edit` are absent.
-- installed graphs live in the runtime graphs dir (`/root/.local/state/pii/graphs`), the repo copy in `graphs/`.
+- installed graphs live in the runtime graphs dir (`~/.local/state/pii/graphs`), the repo copy in `graphs/`.
 - the installer already copies a named subset (`GRAPH_NAMES=(discord-triage discord-digest)`), which is how the two sets diverged.
 - spec 176/177 require a graph that cannot load to REFUSE loudly, and spec 212 requires woven nodes to be printed with origin.
 
@@ -52,7 +52,7 @@ live, and do they match the repo?" is currently answered by `ls` and memory.
 ## Exit Criteria
 - [ ] `cargo test -p pii-cli --test graph_list_and_explain`
 - [ ] `cargo test -p pii-cli --test graph_edit_refuses_and_keeps`
-- [ ] on lnx: `pii graph list` shows the three installed graphs with `same` or `DRIFT` against the repo
+- [ ] on the host: `pii graph list` shows the three installed graphs with `same` or `DRIFT` against the repo
 - [ ] `pii graph explain discord-digest` prints TRIGGER, the node chain, EFFECTS and the file hash
 
 ## Guardrails

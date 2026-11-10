@@ -1,6 +1,6 @@
 # Spec: 97 — `pii-observe`: the observability contract every crate can depend on
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0/P1 (production readiness, `_docs/06-research/052-…md`) — observability first, per the
 user's directive *"observability is a must"* and *"we must enforce observability! via traits on every
 crate!"*. Design: `_docs/06-research/053-observability-contract-and-enforcement-2026-10-09.md`.
@@ -62,7 +62,7 @@ R6. `specs/` is read-only for you; do NOT edit any spec file.
   the whole reason it exists.
 - Do NOT delete the old types; they are the compatibility surface for 101 call sites.
 - Do NOT weaken or delete an existing test.
-- Scratch under `/projects/_tmp/` only; delete your own exports (one fresh-gate export is ~8G).
+- Scratch under `<scratch>/` only; delete your own exports (one fresh-gate export is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)

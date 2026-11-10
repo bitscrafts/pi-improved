@@ -1,7 +1,7 @@
 # Spec 254: an authentication failure parks the lane, it does not burn the row's attempts
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — the queue's worker is pii (user directive 2026-10-24)
 
 The queue gives a row three attempts, then parks it. An attempt that dies on a dead login (HTTP 401, "OAuth token revoked", "Please log in again") is

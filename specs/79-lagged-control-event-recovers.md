@@ -1,6 +1,6 @@
 # Spec: 79 — a lagged control event is never silently dropped (D6)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: batch D — 043 §10 item 8 / §6 D6 (MED-HIGH).
 
 ## Context

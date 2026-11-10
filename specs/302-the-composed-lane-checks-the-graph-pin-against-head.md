@@ -1,7 +1,7 @@
 # Spec 302: the composed lane checks the graph pin against HEAD, not against the working tree
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composability, lane hardening (Opus review 2026-10-27, finding F9)
 `scripts/run-batchC-pii.sh` checks that `graphs/docs.toml`'s sha256 equals the pin in `graphs/spec.toml`, but both files are read from the WORKING TREE, and the lane then copies the working-tree graphs to the daemon.
 A worker that edits `docs.toml` and the pin together passes the check, and if the cycle then refuses its row, the edited graphs stay in the tree and steer the next row's run. The pin is meant to freeze the reviewed graph.

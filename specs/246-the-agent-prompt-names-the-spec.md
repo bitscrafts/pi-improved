@@ -1,7 +1,7 @@
 # Spec 246: the agent's prompt names the spec it implements
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening — agent management (defect 6 in `_docs/05-operations/agent-management-findings-2026-10-23.md`)
 
 A `coder` node has a `spec` field (the path of the spec the agent implements) and a free-text `brief`. Today `spec` is used to

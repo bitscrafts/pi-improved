@@ -1,7 +1,7 @@
 # Spec 282: the shipped spec graph carries a spend limit
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — first real composed run. Spec 276 made a graph's `[limits] max_micro_usd` real for the node that spends the money. Neither tracked graph declares one (`graphs/spec.toml`, `graphs/docs.toml`), so the run's budget is `u64::MAX` and nothing bounds a real run of the composed graph — the last thing standing between this queue and an unattended run of `pii run start spec`.
 
 The figure is a policy number, and this spec fixes it with its derivation rather than leaving it open: **1 000 000 micro-USD (1.00 USD) per run**. Measured basis: one full spec implementation through the queue's own daemon — claude/haiku, 55 turns, 647 s — journalled `claude_cost_usd = 0.070610` (2026-10-26, run `r000000000130`). One US dollar is about fourteen such passes in ONE run, which covers `code` + `docs` + `reverify` and several fix iterations, while making a runaway (a loop that keeps re-running the coder) stop after roughly fourteen instead of never. It is one integer in one file; changing it is a one-line commit, and this spec says so.

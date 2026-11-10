@@ -1,8 +1,8 @@
 # Spec: Journal Hardening — bounded write-behind + interrupted-turn closer
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-3.6 — journal hardening (upgrade items 1+2 from the
-DeepSeek-Harness comparison, 2026-09-06; see agent-memory
+DeepSeek-Harness comparison, 2026-09-06; see the workspace memory
 `pi-improved/research/dsh-vs-pii-harness-comparison`)
 **Status**: DRAFT — spec only, no implementation authorized yet. User
 approved the direction ("so do it 1 and 2 the remaining worth a try?

@@ -1,7 +1,7 @@
 # Spec 258: the run input can never choose the agent's environment — the test that proves it can fail
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — generic spec graph (spec 257 follow-up found by its independent verification, 2026-10-24)
 
 Spec 257 lets `$.input.*` supply `agent`, `model`, `spec`, `workdir`, `brief` and four optional keys, and forbids resolving `env_pass`, `criteria`, `timeout_ms`, `container_image`,

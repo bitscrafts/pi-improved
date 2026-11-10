@@ -1,6 +1,6 @@
 # Spec: Phase 4.1a — Turn-loop hardening: provider options, env scrubbing, process-group, grep/glob tools
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 4 — "daily driver" (opus review 2026-09-07, `_docs/06-research/007-pii-phase4-plan.md`)
 **Status**: DRAFT — spec only, no implementation authorized yet. User approved
 Phase 4 ("so proceed to the phase 4 with pidag!") — this is the first P4.1

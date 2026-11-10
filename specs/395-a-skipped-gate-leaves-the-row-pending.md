@@ -11,7 +11,7 @@ toward the park threshold, and parking quarantines the tree. A skip that moves a
 that reports success — the same shape as `gate-skipped-disk` with 91 GB free, and as a check that is not
 a lock.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: operations (the dispatcher)
 
 ## Requirements

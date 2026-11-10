@@ -77,7 +77,7 @@ pidag sdd specs/01-xxx.md --run --concurrency N
   `tempdir_in(.../_tmp...)` fails `lint-scratch` (a gate step) — this class cost four
   separate fixes because leftover state made the repo gate look green.
 - **Memory + HANDOFF are mandatory:** after any commit, update `HANDOFF.md` and store an
-  agent-memory insight (topic `pii`).
+  the workspace memory insight (topic `pii`).
 - No AI-assistant mentions in commit messages. No `rm -rf`.
 - If pidag itself breaks mid-run, fix pidag first, then resume the implementation.
 

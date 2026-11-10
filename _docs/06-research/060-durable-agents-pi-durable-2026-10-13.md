@@ -102,7 +102,7 @@ them plainly.
 - The review's frame is the point the user took from the video: **proactivity applied to pii's own
   self-improvement** — the loop reads its logs by itself, resolves by itself, and asks permission only to put a
   change into production, with the operator as far from the loop as possible and deciding only the end.
-- Dual agent-memory entries stored: `workspace/research/pi-durable-durable-agents-2026-10-13` (facts) and
+- Dual the workspace memory entries stored: `workspace/research/pi-durable-durable-agents-2026-10-13` (facts) and
   `workspace/insights/pii-from-pi-durable-2026-10-13` (the angle).
 
 ## Update 2026-11-07 — measured against the tree, and a correction

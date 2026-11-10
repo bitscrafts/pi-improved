@@ -31,7 +31,7 @@ Measured on 2026-10-19 at HEAD `85d599b` (commands and outputs pasted, not parap
 7. INFERRED — cost/tokens per call are not available uniformly across agents (`claude -p` reports `total_cost_usd`,
    `pi` does not). Therefore cost is OPTIONAL and must never gate a node's verdict; duration and rc are mandatory.
 
-**Project**: `/projects/pi-improved`
+**Project**: `<repo>`
 **Depends on**: 207 (coder node), 209 (podman, no installs), 215 (criteria are named, not shell)
 
 ## Overview
@@ -146,7 +146,7 @@ N3. Writing an event must not fail a run: a journal error is logged and the node
 - [ ] `cargo test -p pii-server --test orphan_is_countable`
 - [ ] `grep -c 'CODER_EXITED' crates/pii-observe/src/names.rs` is 1
 - [ ] `cargo run -q -p pii-cli -- health` prints `agents_in_flight` and `orphans_since_start`
-- [ ] a live run on lnx: `pii run trace <id>` shows one line with `pid=P image=D` and the summary line `trace: … orphans: 0`
+- [ ] a live run on the host: `pii run trace <id>` shows one line with `pid=P image=D` and the summary line `trace: … orphans: 0`
 
 ## Guardrails
 
@@ -174,5 +174,5 @@ N3. Writing an event must not fail a run: a journal error is logged and the node
 - `crates/pii-cli/src/cmd_sys.rs` — the four counters on `status`
 
 **Forbidden**
-- anything under `specs/`, `deploy/`, `/root/.config/pii/` — a worker never edits its own contract or deployment
+- anything under `specs/`, `deploy/`, `~/.config/pii/` — a worker never edits its own contract or deployment
 - a new crate, a new dependency, a metrics endpoint, or a log shipper

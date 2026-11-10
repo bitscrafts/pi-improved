@@ -5,7 +5,7 @@ Spec 383 step 3, the derivation Opus 046 proved on paper. Seven kinds are each u
 `worker` (2 graphs), `classify` (1), `plan` (1), `memory` (3), `select`/`record`/`enqueue` (the ledger,
 step 2), `heal_detect`/`heal_record` (2). A kind that exists for one graph is a graph written in Rust.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 383 step 3 of 4
 **Depends on**: 391 (the ledger) — the store kinds move there first
 

@@ -10,7 +10,7 @@ kilobyte through one connection's `write_all`, and the five-thousand-poll test's
 which is the same failure shape `180` just closed for reads (`request 487 refused: capability denied: net: byte
 budget exhausted`).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 1. Add a test to `crates/pii-net/tests/budget_survives_a_day.rs`, named exactly

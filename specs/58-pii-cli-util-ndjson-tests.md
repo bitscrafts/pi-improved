@@ -1,6 +1,6 @@
 # pi-improved — spec-58: pii-cli test coverage for cli_util.rs/ndjson.rs (F-20 tidy)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW-MEDIUM — Phase 5.3 tail. `pii-cli` has 3/13 files
   with inline tests. This spec deliberately targets ONLY the two
   smallest, purest files (`cli_util.rs`, 49 lines; `ndjson.rs`, 36

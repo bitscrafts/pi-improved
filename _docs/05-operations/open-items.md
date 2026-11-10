@@ -2,7 +2,7 @@
 
 **As of 2026-10-11.** One place to answer *"where are we and what is left"*. Every closed spec carries its own
 closure section in `specs/`; this file carries only the **open** list, with the evidence path for each, so a
-resume needs no archaeology. Workspace-level mirror: `/projects/docs/05-operations/RESUME-REGISTER.md`.
+resume needs no archaeology. Workspace-level mirror: `<workspace>/docs/05-operations/RESUME-REGISTER.md`.
 
 ## Done, verified, committed (each with `fresh-gate` ALL PASS on its own commit)
 
@@ -44,7 +44,7 @@ not explain it.
 A **deterministic** defect found while hunting #2: `crates/pii-memory/tests/persistence.rs` opened a fixed store
 path, so two concurrent runs of the same tree (a developer's `cargo test` plus a gate run, or a worker's test run)
 collided on the redb lock — **7 of 7** concurrent rounds before, **0 of 4** after (`eac80dc`). The harness is
-`/projects/_tmp/conc-persist.sh`; the lesson is DO-NOT-REPEAT 1.48 (run a suspect test twice concurrently).
+`<scratch>/conc-persist.sh`; the lesson is DO-NOT-REPEAT 1.48 (run a suspect test twice concurrently).
 
 ### 4. `store_op` residual (g4)
 `crates/pii-store/src/lib.rs:96,103,357` — the op/resource swaps need an induced redb failure to be provable, and
@@ -71,7 +71,7 @@ wired into a deployment (they need a `[[channel]]` entry and a token).
 
 ### 8. laya deployment
 The running provider **is** llama.cpp (`laya-Q8_0.gguf` on `:8083`, `/props` → llama.cpp), and lance; there is **no
-Dockerfile** in `/projects/laya-rs` and the deployment is systemd on the lnx host. The local `ollama.service`
+Dockerfile** in `<workspace>/<project>` and the deployment is systemd on the the host host. The local `ollama.service`
 (127.0.0.1:11434, unreachable from this container — measured `000`) is legacy and **must not be part of the final
 version**; disabling it is the user's host action. `ollama-cloud` is a *cloud account* (`https://ollama.com/v1`),
 a separate question.
@@ -128,7 +128,7 @@ measure one overlay gate, then decide between gating the whole pending tree and 
 touches.
 
 **MEASURED 2026-10-30 — the cost, and the decision.** `git archive HEAD` into
-`/projects/_tmp/stage-gate-cost-20261030T002931Z`: `cargo metadata --locked` **0 s**; `cargo check -q --workspace`
+`<scratch>/stage-gate-cost-20261030T002931Z`: `cargo metadata --locked` **0 s**; `cargo check -q --workspace`
 in a **new** target dir **38 s**; the same check of a second export against that target **8 s**. So the affordable
 door is not "a fresh-gate before every commit" (45-48 min, §9b) but the build of the pending tree against the warm
 `_tmp/head-builds-target` spec 245 already keeps: ~8 s per item. The choice between the two options above falls to
@@ -148,10 +148,10 @@ installer says so in its own output (`no pii.env written, the daemon will report
 at all, which is better than one that fires and refuses.
 
 **CORRECTED AGAIN 2026-11-01 (Opus review) — the credential is on disk and I said it was not.**
-`/root/.config/pii/pii.env` exists, mode 0600, 245 bytes, 2026-10-19, and holds **both** `PII_DISCORD_TOKEN`
+`~/.config/pii/pii.env` exists, mode 0600, 245 bytes, 2026-10-19, and holds **both** `PII_DISCORD_TOKEN`
 (72 chars) and `PII_DISCORD_CHANNEL_ID`. So nothing needs to be "placed". Two things are actually missing:
 
-1. **The hand-started daemon has none of it.** The unit carries `EnvironmentFile=-/root/.config/pii/pii.env`, so a
+1. **The hand-started daemon has none of it.** The unit carries `EnvironmentFile=-~/.config/pii/pii.env`, so a
    *systemd* start would load the env; this container has no systemd bus, the daemon is started by hand, and
    `/proc/<pid>/environ` holds no `PII_DISCORD` variable at all (measured). The daemon therefore reports
    `channels: []` and cannot post even though the credential is right there.
@@ -172,15 +172,15 @@ the first digest would post to a real channel — that is the operator's decisio
 ## How to re-verify any of this without me
 
 ```bash
-cd /projects/pi-improved
+cd <repo>
 cargo test -p pii-channels -p pii-server -p pii-store -p pii-learn   # the suites
 cargo run -q -p xtask -- deps-check && cargo run -q -p xtask -- net-check \
   && cargo run -q -p xtask -- doc-drift-check && cargo run -q -p xtask -- lint-observability
 bash quality-gate.sh                                     # the 14-step gate in this tree
 cargo run -q -p xtask -- fresh-gate                      # the CI-equivalent run in an export of HEAD
-bash /projects/_tmp/verify132-live.sh                    # the live Discord proof (needs the token env)
-bash /projects/_tmp/verify131-live.sh                    # three refusals → the ledger row
-bash /projects/_tmp/conc-persist.sh 4                    # must report 0 of 4 collisions
+bash <scratch>/verify132-live.sh                    # the live Discord proof (needs the token env)
+bash <scratch>/verify131-live.sh                    # three refusals → the ledger row
+bash <scratch>/conc-persist.sh 4                    # must report 0 of 4 collisions
 ```
 
 ### 10. Two orphan test daemons from a gate run, nine days old (REAPED 2026-11-01)
@@ -188,7 +188,7 @@ bash /projects/_tmp/conc-persist.sh 4                    # must report 0 of 4 co
 `_tmp/tools-gate/debug/pii daemon` pids 583964 (21 MB) and 585460 (18 MB), started 2026-10-22 by a gate's own test,
 holding their redb stores and no listening sockets. They were not production (pid 1744962 is) and nothing referenced
 them, but a running process must not be killed silently either — so they were reaped with argv, age, socket count and
-the production-survived check written to `/projects/_tmp/reaped-test-daemons-20261101T235957Z.log`. Cause: a gate
+the production-survived check written to `<scratch>/reaped-test-daemons-20261101T235957Z.log`. Cause: a gate
 step starts a daemon and does not reap it. **Follow-up worth one line in that step: kill what you start.**
 
 ### 11. The gate's red was DISK PRESSURE, and the gate was causing it (found and fixed 2026-11-02)
@@ -201,11 +201,11 @@ The cause was the volume's latency under pressure: `/projects` is `ext4` and was
 write+fsync measured **21.9 ms median (69.2 ms max)** against **0.1 ms** on the overlay that backs `/tmp`.
 
 **The gate was filling the volume itself**: a failed gate keeps its export, and one of them
-(`/projects/_tmp/fresh-gate-2106840`) was **28 GB**. So: gate fails → keeps 28 GB → volume slower → the latency
+(`<scratch>/fresh-gate-2106840`) was **28 GB**. So: gate fails → keeps 28 GB → volume slower → the latency
 assertion fails → the next gate runs → and the loop feeds itself.
 
 Two fixes, both verified:
-1. **`FRESH_GATE_TARGET=/projects/_cache/targets`** when running the gate. `fresh_gate.rs:227` documents this as the
+1. **`FRESH_GATE_TARGET=<build-cache>`** when running the gate. `fresh_gate.rs:227` documents this as the
    warm-cache door ("the export's TREE must be fresh; its COMPILER OUTPUT does not have to be"); it stops each run
    from building its own 28 GB target. With it, `fresh-gate --worktree` returned **PASS, rc 0** and the disk *ended
    healthier than it started* (49 G → 76 G free).
@@ -283,12 +283,12 @@ Report: `_docs/06-research/opus-status-and-path-20261102.md` (Opus 5.5, plan-mod
   (`grep -c card` → 0) and **copies the container's `store.redb memory.redb approval.redb heal.redb` over
   production's** (lines 52-54). Re-running it replaces production data with dev data, silently.
 - **M5 → identity only, and only with env.** Plain `pii health` on the host answers *no daemon answered*;
-  `pii.toml:53,63` carry `/root/...` paths, so **every run since deploy logged `trajectory.write.failed`
+  `pii.toml:53,63` carry `~/...` paths, so **every run since deploy logged `trajectory.write.failed`
   (EACCES)** — including the `digest-now` run I cited as proof of delivery. Survival so far is ~1 h.
 - **M6 → unwired and noisy.** `incidents scan --source runtime` on today's production log finds **10**: 1 real
   (`refusal-repeated:channel.poll.failed count=731`), 1 ambiguous, **8 false** `daemon-start-not-ready`
   (including the current, healthy start). Nothing runs it.
-- **M7 → evidenced**, and one row is already done: `ollama.service` on lnx is `disabled`/`inactive`.
+- **M7 → evidenced**, and one row is already done: `ollama.service` on the host is `disabled`/`inactive`.
 - **My own `mqtt` tool ignores its capability context** — `pii-tools/src/mqtt.rs:209` is
   `fn call(&self, _ctx: &Ctx, …)`: any topic, `retain` allowed, no scope, no approval.
 

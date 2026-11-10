@@ -1,6 +1,6 @@
 # pi-improved — spec-15: phase4-streaming
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: R4 (blind waiting) from the opus Phase-4 review — the TUI shows `you> ... [seq 0x1a]` for tens of seconds with no text while a local model thinks. The whole delta pipeline exists; only the producer is missing.
 - **Status**: SPECIFIED — not yet dispatched · *(lifecycle: SPECIFIED → IN PROGRESS
   on dispatch → IMPLEMENTED — awaiting review → DONE after the orchestrator

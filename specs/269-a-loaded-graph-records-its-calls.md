@@ -1,7 +1,7 @@
 # Spec 269: a loaded graph says which graphs it called — the call record, and `graph explain` prints it
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition, auditability (Opus context review 2026-10-24, Q7: "journal one `graph.call` event per call")
 
 After spec 255 expands a `call` node the result is one flat `GraphSpec`; nothing in it says that `docs__fmt` came from graph `note`, at which sha256, with which caps and which `needs`. `Woven` (`crates/pii-graph/src/fragment/weave.rs:36`) carries `sequence: Vec<Inlined>` for `[[attach]]` weaving and nothing for calls, so the three consumers of the loader (`pii graph explain`/`check`/`show` in `crates/pii-cli`, the daemon's run start, resume) cannot tell a composed run from a plain one. This spec adds the RECORD at load and prints it in `pii graph explain`. Journalling it into the run (a `NodeObserved { kind = "graph.call" }`) is the NEXT spec, because the site where the engine appends the first event of a run has not been measured yet (see Follow-ups); this spec does not touch the engine, the journal or `RunEvent`.

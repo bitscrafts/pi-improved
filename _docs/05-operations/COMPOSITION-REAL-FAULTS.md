@@ -17,7 +17,7 @@ PASS repo a: hello.txt PONG and its own NOTES.md
 PASS repo b: hello.txt PONG and its own NOTES.md
 PASS nothing committed in either repo
 PASS each run's trace has its own call docs
-COMPOSED-FAULTS concurrent: 7 pass 0 fail   (log /projects/pi-improved/_tmp/claude-batchC/composed-faults-concurrent-1793093929.log)
+COMPOSED-FAULTS concurrent: 7 pass 0 fail   (log _tmp/claude-batchC/composed-faults-concurrent-1793093929.log)
 ```
 
 ### Cancel while the real docs agent is running
@@ -33,7 +33,7 @@ PASS the real docs agent is GONE after the cancel (pid 525905)
 PASS the host's work survived (hello.txt PONG)
 PASS the docs step did not complete (no NOTES.md)
 PASS run trace: 0 orphans
-COMPOSED-FAULTS cancel: 7 pass 0 fail   (log /projects/pi-improved/_tmp/claude-batchC/composed-faults-cancel-1793094104.log)
+COMPOSED-FAULTS cancel: 7 pass 0 fail   (log _tmp/claude-batchC/composed-faults-cancel-1793094104.log)
 ```
 
 ### SIGKILL the daemon while the real docs agent is running
@@ -50,7 +50,7 @@ PASS a NEW daemon is running (pid 526819, was 524962)
 PASS the run is reconciled to failed (failed)
 PASS the docs agent had NOT finished its work (1 of 20 lines)
 PASS the restart REAPED the real claude (pid 526741 gone)
-COMPOSED-FAULTS restart: 8 pass 0 fail   (log /projects/pi-improved/_tmp/claude-batchC/composed-faults-restart-1793094767.log)
+COMPOSED-FAULTS restart: 8 pass 0 fail   (log _tmp/claude-batchC/composed-faults-restart-1793094767.log)
 ```
 
 ### A real run past 600 s: the shipped limit against the default
@@ -69,7 +69,7 @@ PASS CONTROL: B ran past 600 s before failing (884643 ms)
 PASS CONTROL: the two graphs differ ONLY in the limit; both agents exited 0 in B, so the wall limit is what failed it
 KNOWN GAP (spec 293, not counted): run explain/get/trace do not name why B failed; the engine records 'max_wall_ms exceeded' and the CLI never prints it
 PASS CONTROL: B's host work was complete (hello.txt PONG), the only fault is the limit
-COMPOSED-FAULTS wall: 8 pass 0 fail   (log /projects/pi-improved/_tmp/claude-batchC/composed-faults-wall-1793096192.log)
+COMPOSED-FAULTS wall: 8 pass 0 fail   (log _tmp/claude-batchC/composed-faults-wall-1793096192.log)
 ```
 
 ### A real multi-file implementation, with an unmeetable-criterion control
@@ -91,7 +91,7 @@ PASS CONTROL: B's trace reaches the unverified refusal
 PASS CONTROL: B was stopped at verify, the docs coder never ran (one agent call)
 PASS CONTROL: B's program itself is correct, only the unmeetable criterion failed it
 KNOWN GAP (spec 293, not counted): the judge's per-criterion result (4 of 5) is not printed by run trace, get or explain
-COMPOSED-FAULTS impl: 12 pass 0 fail   (log /projects/pi-improved/_tmp/claude-batchC/composed-faults-impl-1793095888.log)
+COMPOSED-FAULTS impl: 12 pass 0 fail   (log _tmp/claude-batchC/composed-faults-impl-1793095888.log)
 ```
 
 ### pi on ollama-cloud through the composed graph
@@ -104,7 +104,7 @@ PASS the pi/ollama-cloud composed run succeeded
 PASS hello.txt PONG written by pi
 PASS the docs coder (pi) wrote NOTES.md
 PASS two distinct pi sessions (2)
-COMPOSED-FAULTS pi: 5 pass 0 fail   (log /projects/pi-improved/_tmp/claude-batchC/composed-faults-pi-1793093994.log)
+COMPOSED-FAULTS pi: 5 pass 0 fail   (log _tmp/claude-batchC/composed-faults-pi-1793093994.log)
 ```
 
 ## What the scenarios found, including against me

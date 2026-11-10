@@ -14,7 +14,7 @@ queue row: the row is claimed, so no other worker may take it, and no alarm fire
 Measured 2026-11-05: six `gate` nodes ship, none carries a deadline; `pii queue ls` has no column that
 distinguishes "waiting for a human" from "stuck".
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: operations (the queue must not be lost to a silence)
 
 ## Requirements

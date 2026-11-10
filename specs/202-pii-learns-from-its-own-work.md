@@ -3,7 +3,7 @@
 ## Overview
 Measured 2026-10-19: the loop's memory was `state.json` + git + `_docs`, all outside pii. `pii memory search "cancelled run timer"` returned only a round-trip note and an exercise nonce — nothing about 196, 187, the four 09:00 posts, or any spec implementation. The product has a memory subsystem (bm25 + vector, entities, tiers) and it had never once learned from its own operation. Specs 183 ("learn every outcome to memory") and 184 (effect recorded before and confirmed after) require this and nothing implemented it.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 ### Functional

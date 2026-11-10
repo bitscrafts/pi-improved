@@ -6,7 +6,7 @@ Spec 227 criterion 7 has two live halves, and the first deploy that can measure 
 the coder's drift refusal needs a way to change a skill's stored text while the daemon runs. Spec 233 (row A101,
 committed 3d32079) wired `skill.put` / `skill.list` / `pii skill add` through the daemon, but `pii skill edit` still
 opens redb directly (crates/pii-cli/src/cmd_skill.rs:423 `open(&o)`): against the live runtime dir it fails with
-`Database already open. Cannot acquire lock.` — measured on the lnx daemon, pid 3539364. The only producer of a
+`Database already open. Cannot acquire lock.` — measured on the the host daemon, pid 3539364. The only producer of a
 changed `DocKind::Skill` payload on the live path would be a stopped daemon, and stopping the production daemon to
 mutate a store is not an accepted move.
 
@@ -71,7 +71,7 @@ R5. `lint-observability` stays green; `cmd_skill.rs`'s budget line is amended wi
 - [ ] `cargo test -p pii-proto --test wire_roundtrip`
 - [ ] `CARGO_TARGET_DIR=_tmp/tools-gate cargo run -q -p xtask -- lint-observability`
 - [ ] `cargo fmt --all -- --check` and `cargo clippy -p pii-proto -p pii-server -p pii-cli -p pii-memory --all-targets` clean
-- [ ] on lnx, after a deploy: `pii skill edit` on the live store reports `via daemon`, the coder graph pinned at the
+- [ ] on the host, after a deploy: `pii skill edit` on the live store reports `via daemon`, the coder graph pinned at the
       old sha256 refuses `skill.drift`, and the graph pinned at the new sha256 journals `coder.spawned` with the
       skill's name and new hash — together with the spawn half this measures spec 227 criterion 7 in full.
 
@@ -104,7 +104,7 @@ so the uncommitted coder.rs/lib.rs split in the main tree did not take part):
   in this spec's diff. That is the cycle's `gate-failed`; the commit message's "clippy zero on four crates" was
   not true of the tree. Removing that one attribute (committed alone just before this closure) makes
   clippy on pii-graph/proto/server/cli/memory --all-targets rc=0, and pii-graph's tests stay 110/0.
-- criterion 8 (lnx live: `via daemon`, old pin refuses `skill.drift`, new pin journals `coder.spawned`) is NOT
+- criterion 8 (the host live: `via daemon`, old pin refuses `skill.drift`, new pin journals `coder.spawned`) is NOT
   measured here; it needs a deploy of this tree and is carried by row A95 (spec 227 criterion 7).
 
 ### Re-verified at HEAD `c74aa2f`, 2026-10-21T00:20Z (the tree had moved on since `622826e`)
@@ -122,7 +122,7 @@ of `c74aa2f` (`_tmp/verify-a102-20261021T001649Z`, its own `CARGO_TARGET_DIR`), 
   `89e3f57679c4b08d94927bb380d1d6a12dd25f9c59d556ce26487dfe581ec3f8`, the same value measured before the
   mutation, zero mutation markers left in the file, and both tests green again (rc=0).
 - criterion 8 stays unmeasured, and the reason is now a reading rather than an assumption (2026-10-21T00:18Z
-  from the host): the lnx daemon is `active (running)` since 2026-10-20 15:41:08 BST inside the `hermes`
+  from the host): the the host daemon is `active (running)` since 2026-10-20 15:41:08 BST inside the `hermes`
   container (`PII_RUNTIME_DIR=/run/user/0/pii`), and the installed binary is the 2026-10-20T12:38:35Z build
   (11,150,384 bytes) — behind HEAD, so the live half needs that deploy, not code.
 

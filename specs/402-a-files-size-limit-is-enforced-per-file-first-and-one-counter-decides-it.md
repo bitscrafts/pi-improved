@@ -11,7 +11,7 @@ The user's verdict: file lines must be enforced, and folder modules are the way 
 - 60 files are over the limit today (the audit's own total), 19 of them in `pii-server`.
 - Files sit at the limit: `lib.rs`, `validate.rs` and `mqtt.rs` are at exactly 450 effective lines. There is no headroom, so the next edit fails.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: gate discipline (follows 387, which created the crate-level ratchet)
 **Depends on**: 387
 

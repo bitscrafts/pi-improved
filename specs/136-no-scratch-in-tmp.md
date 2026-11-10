@@ -10,7 +10,7 @@ project's rules put it and where `cargo clean` and an operator can see it. Measu
 `/tmp/pii-web-mem-*` directories** had accumulated at the time of measurement. A lint that passes while the
 live path does the forbidden thing is worse than no lint (HARD RULE 0b).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: post-vision hardening (finding 059 F6)
 **Source of the finding**: `_docs/06-research/059-opus-vision-judgement-2026-10-11.md` §0.1, §2.2 (F6), §2.3
 
@@ -60,7 +60,7 @@ live path does the forbidden thing is worse than no lint (HARD RULE 0b).
   report the count instead (R4).
 - Do NOT silence the new rule with a file-wide allowlist entry for the offending file — fix the call site.
 - Do NOT widen the lint into guesswork about every path literal; it is about the scratch **root**.
-- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `/projects/_tmp/`.
+- Do NOT create, edit or rewrite anything under `specs/`; do NOT commit; scratch under `<scratch>/`.
 
 ## Closure
 

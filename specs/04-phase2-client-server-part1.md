@@ -7,7 +7,7 @@ I read the contract sections, the current tree, and verified the environment fac
 
 ## Overview
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: 2 - Client/server split + coding harness
 
 **Spec of record**: `_docs/06-research/002-pii-architecture-plan-pass2.md` §3 (client–server), §12.2 (dependency DAG invariants), §14 Phase 2; `_docs/06-research/001-pii-architecture-plan.md` §3.3 (starter graphs).
@@ -124,7 +124,7 @@ I read the contract sections, the current tree, and verified the environment fac
 - **N5** Never hold a lock across `.await` (`clippy::await_holding_lock` is already `deny`). The run registry uses `parking_lot::Mutex` for short critical sections only; anything that awaits goes through `tokio::sync`.
 - **N6** `pii --version` stays p95 < 20 ms: `main` branches on `argv[1]` before constructing an engine, opening a store, or touching the network.
 - **N7** No panics on the server path. A handler that would panic must return `ErrorCode::Internal` instead; a poisoned run must not take down the daemon.
-- **N8** All artifacts, scratch repos, sockets and logs go under `/projects/pi-improved/_tmp/phase2/`. Never `/tmp`, never `$HOME`.
+- **N8** All artifacts, scratch repos, sockets and logs go under `_tmp/phase2/`. Never `/tmp`, never `$HOME`.
 - **N9** Secrets never cross the wire: `OLLAMA_API_KEY` and any provider credential are read by the server only and must not appear in any `Event`, `session.state` or `run.trace` payload.
 - **N10** New workspace dependencies to add to the root `Cargo.toml` `[workspace.dependencies]`: `tokio = { version = "1.53", default-features = false }`, `ureq = "3.4"`, `rustix = "1.1"`, `ratatui = "=0.30.2"`, `crossterm = "0.29"`, `nono = "=0.75.0"`. *(All except `ureq` and `nono` are already in the local cargo cache; crates.io is reachable from this container — verified. `nono` is exact-pinned because its rule-emission order is load-bearing, per pass-1 §1.4; 0.75.0 is chosen over grok-build's `=0.53.0` because its MSRV 1.95 matches this toolchain exactly and the 0.53 pin was motivated by macOS Seatbelt ordering, which this Linux-only phase does not exercise.)*
 
@@ -267,7 +267,7 @@ session.prompt ──> run_id (< 50 ms) ──> spawn_blocking
 - Do NOT run degraded when a sandbox profile was requested. If enforcement cannot be positively verified by the probe, exit 4 before serving.
 - Do NOT use `unsafe`, and therefore do NOT use `pre_exec` for sandboxing. Confinement is applied process-wide in the re-exec'd `pii sandbox-exec` child and inherited across `execve`.
 - Do NOT call `std::process::Command` anywhere except `ProcCap::run`, and do NOT call `std::fs` from a tool — go through `Ctx::fs()` so capability denial is enforced in one place.
-- Do NOT write outside `/projects/pi-improved/_tmp/phase2/` for any artifact, socket, scratch repo or log. Never `/tmp`.
+- Do NOT write outside `_tmp/phase2/` for any artifact, socket, scratch repo or log. Never `/tmp`.
 - Do NOT delete or `rm -rf` anything that existed before the run. `scripts/phase2/*.sh` must `mv` a stale scratch dir to `<name>.old-$(date +%s)` rather than removing it.
 - Do NOT modify `_repos/`, `_docs/`, `AGENTS.md`, `HANDOFF.md`, or `.pidag/`.
 - Do NOT run `git commit`, `git add`, `git push`, or create branches. Files only.

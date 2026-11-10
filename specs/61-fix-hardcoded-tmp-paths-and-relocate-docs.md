@@ -1,13 +1,13 @@
 # pi-improved — spec-61: fix hardcoded `_tmp` absolute paths + relocate orphaned docs
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — repo hygiene, makes the codebase easier to
   review (explicitly requested ahead of an opus review pass). Two
   independent findings bundled because both surfaced from the same
   session-end audit:
 
   1. **50 hardcoded absolute-path references** to
-     `/projects/pi-improved/_tmp` (or subpaths of it) across ~25 test
+     `_tmp` (or subpaths of it) across ~25 test
      and source files. These break the moment the repo is checked out
      anywhere else, or the container's mount path changes — the EXACT
      class of bug that caused a real test failure tonight
@@ -31,12 +31,12 @@
 ### Part A: hardcoded `_tmp` paths
 
 Ground truth (re-verify the exact current list yourself — this is a
-snapshot from `grep -rn '"/projects/pi-improved/_tmp' crates/*/tests/
+snapshot from `grep -rn '"_tmp' crates/*/tests/
 *.rs crates/*/src/*.rs`, run once, do not assume it is unchanged):
 
 Two distinct patterns exist, needing different fixes:
 
-- **Pattern 1 — bare `tempdir_in("/projects/pi-improved/_tmp")`** (the
+- **Pattern 1 — bare `tempdir_in("_tmp")`** (the
   majority, ~20 sites across `pii-server`, `pii-model`, `pii-mcp`,
   `pii-store`): these create a NEW tempdir inside `_tmp` itself, so
   they only need `_tmp` to exist (which it always does, gitignored but
@@ -50,8 +50,8 @@ Two distinct patterns exist, needing different fixes:
   `crates/pii-server/tests/reattach.rs` (fixed ad hoc tonight) — follow
   those two files as the reference implementation.
 - **Pattern 2 — hardcoded SUBDIRECTORY paths** (e.g.
-  `"/projects/pi-improved/_tmp/phase3/persist-test.redb"`,
-  `"/projects/pi-improved/_tmp/pi-store-test"`, `"/projects/pi-improved/
+  `"_tmp/phase3/persist-test.redb"`,
+  `"_tmp/pi-store-test"`, `"
   _tmp/phase3/scheduler-it"`): these assume a specific named
   subdirectory ALREADY EXISTS, which is exactly what broke tonight.
   Fix: same `CARGO_MANIFEST_DIR`-relative base, PLUS an explicit
@@ -93,7 +93,7 @@ spec-authoring violation from an earlier session, kept for reference).
 
 ### Functional
 
-- R1. For every Pattern-1 site (bare `tempdir_in("/projects/pi-improved/
+- R1. For every Pattern-1 site (bare `tempdir_in("
   _tmp")`): replace with the `CARGO_MANIFEST_DIR`-relative form.
 - R2. For every Pattern-2 site (hardcoded named subdirectory): replace
   the base path the same way, AND ensure the subdirectory exists before

@@ -1,6 +1,6 @@
 # Spec: The daemon's default store is the state dir too
 
-**Project**: /projects/pi-improved · **Phase**: 0.2.1 hardening · **Found**: 2026-11-03 while closing 351
+**Project**: <repo> · **Phase**: 0.2.1 hardening · **Found**: 2026-11-03 while closing 351
 **Blocks**: the night run (a row seeded into the live store must be the store the daemon claims)
 
 ## Verified premises (measured 2026-11-03, on this tree)
@@ -63,7 +63,7 @@ All three must be RED (or the first two) before the change; paste the failing ou
 - Do NOT read config in `pii-core`; the precedence stays `--store` → config → `state_dir()`.
 - Do NOT change the store file name or the durable layout.
 - The gate is the cycle's step, not the implementer's: `cycle.sh` gates this commit with the full list and a
-  measured coverage floor (specs 262/266/315), and a sandboxed implementer cannot write `/projects/_tmp` where
+  measured coverage floor (specs 262/266/315), and a sandboxed implementer cannot write `<scratch>` where
   `fresh-gate` exports. Do not add it as a criterion (measured 2026-11-03, row 351).
 - The worker does not commit.
 

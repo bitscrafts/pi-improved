@@ -1,6 +1,6 @@
 # Spec: 104 — P0: make it deployable
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: P0 of the road to production (`_docs/06-research/052-production-readiness-2026-10-09.md` §8).
 **Goal**: a target host where a user starts pii, it keeps running, and they can see why it died.
 
@@ -62,7 +62,7 @@ R7. **A real deploy artefact**: a `Dockerfile` **and/or** a systemd unit that bu
 - Do not leave a daemon or container running at the end (kill what you start; `pgrep -af 'pii[ ]daemon'`
   must be empty in your report).
 - Secrets (tokens, keys) never go into the config sample, the log file, or the health output.
-- Scratch under `/projects/_tmp/`; delete your own exports (one is ~8G).
+- Scratch under `<scratch>/`; delete your own exports (one is ~8G).
 - Do NOT commit; leave the tree for the orchestrator.
 
 ## Result + orchestrator verification (2026-10-09)
@@ -90,8 +90,8 @@ Gates: `quality-gate.sh` ALL PASS (incl. `PASS: lint-observability`) · `fresh-g
 
 **Limits the worker stated, kept here:** the Dockerfile is UNTESTED (no Docker on this host); the systemd
 unit passed `systemd-analyze verify` but was never run as a service; there is no RED-first evidence for the
-CLI flag-parsing and config-key tests (code written before them). Scratch left: `/projects/_tmp/musl-target`
-(313M, the musl target dir — reusable, left in place deliberately) and `/projects/_tmp/p104`.
+CLI flag-parsing and config-key tests (code written before them). Scratch left: `<scratch>/musl-target`
+(313M, the musl target dir — reusable, left in place deliberately) and `<scratch>/p104`.
 Also recorded from the worker's report: the daemon does NOT create the store's parent directory (the unit
 and the Dockerfile do), and a `kill -9` leaves no `daemon.stopped` line — a log ending on `daemon.started`
 means the daemon died hard. Both are in the sample config's comments.

@@ -12,7 +12,7 @@ It reads the records we already write. It does not read Hermes' logs (that is no
 (every incident on this machine is an exact-match string: 551 rows, 11 distinct values), and it opens a record —
 it does not fix anything.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: proactivity (the Opus 061 judgement; order 153 → 150 → 154 → 151 → 152)
 
 ## Requirements
@@ -60,7 +60,7 @@ R5. Rust, no new dependency, no model call, no network. A scan over a 500-line l
 - Do NOT open an incident per occurrence: R3 is the whole point (497 → 1).
 - Do NOT use a model, a cloud call, or Hermes' logs.
 - Do NOT let a benign fingerprint in through a config default nobody can find: it must be one list, in config.
-- Do NOT touch `/tmp`, `/dev`, `/proc`, `/sys`, `/root`; scratch under `/projects/_tmp/`.
+- Do NOT touch `/tmp`, `/dev`, `/proc`, `/sys`, `/root`; scratch under `<scratch>/`.
 
 ## Closure (2026-11-01)
 

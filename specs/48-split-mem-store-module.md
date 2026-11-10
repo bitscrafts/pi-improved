@@ -1,6 +1,6 @@
 # pi-improved — spec-48: split `pii-store/src/mem.rs` into `mem/{mod,write,read}.rs`
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: LOW — Phase 5.2, remainder of F-12 (warn-band paydown, NOT
   a hard failure). `pii-store/src/mem.rs` is 416 effective lines, in the
   380-450 warn band. This is cosmetic debt reduction, not a blocker.

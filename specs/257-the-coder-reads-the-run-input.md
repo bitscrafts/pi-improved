@@ -1,8 +1,8 @@
 # Spec 257: the coder node reads spec, agent, model and brief from the run input — one tracked graph implements any spec
 
 ## Overview
-**Project**: /projects/pi-improved
-**Phase**: production — generic spec graph, slice 1 (operator, 2026-10-24: "graphs should be reused"; Opus design review `/projects/_tmp/pii-graph-design/pii-graph-design-plan-20261024T155725Z.md`, Verdict 7 and Q10)
+**Project**: <repo>
+**Phase**: production — generic spec graph, slice 1 (operator, 2026-10-24: "graphs should be reused"; Opus design review `<scratch>/pii-graph-design/pii-graph-design-plan-20261024T155725Z.md`, Verdict 7 and Q10)
 
 Today `scripts/run-batchC-pii.sh` WRITES a new one-node graph per dispatch (`_tmp/devbox-test/graphs/q<N>-<ts>.toml`, gitignored) because the coder node cannot take its variable
 parts from the run. The node reads `agent`, `model`, `spec`, `workdir`, `brief` from its own config, or `spec` from `nodes.select.item.spec`. `pii run start <graph> --input <json>` already
@@ -18,7 +18,7 @@ spec run through one tracked graph.)
 - **CONFIRMED** a string `timeout_ms` fails V10: `validate.rs:105` reads it with `as_u64()`, which is `None` for a string, so `timeout_ms` cannot be an expression and stays a literal in the graph. This is wanted: the time bound must be visible in the tracked file.
 - **CONFIRMED** `crates/pii-cli/src/cmd_sys.rs:264-269`: `run_start` does `serde_json::from_str(&raw).unwrap_or(input)`, so malformed `--input` silently becomes `{}`. For a graph whose only variability is its input that is a silent wrong run.
 - **CONFIRMED** `WorkerSpec::from_cfg` (`agent_worker.rs:272`) reads `agent, model, provider(opt), spec, workdir, sid, session(opt), run, max_budget_usd`.
-- **MEASURED 2026-10-24** (`/projects/_tmp/measure-257-premise.sh`): no code outside the coder node reads `agent`, `model`, `provider`, `spec`, `workdir` or `brief` from a node's raw config. The graph-wide readers of a coder node are `validate.rs:100` (V10, `timeout_ms` only), `validate.rs:219` (V11, the `err` edge) and `agent_calls.rs:177` (`expect_spawn`); none touches the keys R1 resolves. Inside the coder, every reader (`WorkerSpec::from_cfg`, `graph_node.rs:33-35`, `coder.rs:226` `resolve_criteria` reading `workdir`) takes the `cfg` that `run()` passes, so resolving once at the top of `run()` reaches all of them. If a reader of the RAW `self.cfg` is found that this measurement missed, make it read the effective cfg; do not resolve in `build`.
+- **MEASURED 2026-10-24** (`<scratch>/measure-257-premise.sh`): no code outside the coder node reads `agent`, `model`, `provider`, `spec`, `workdir` or `brief` from a node's raw config. The graph-wide readers of a coder node are `validate.rs:100` (V10, `timeout_ms` only), `validate.rs:219` (V11, the `err` edge) and `agent_calls.rs:177` (`expect_spawn`); none touches the keys R1 resolves. Inside the coder, every reader (`WorkerSpec::from_cfg`, `graph_node.rs:33-35`, `coder.rs:226` `resolve_criteria` reading `workdir`) takes the `cfg` that `run()` passes, so resolving once at the top of `run()` reaches all of them. If a reader of the RAW `self.cfg` is found that this measurement missed, make it read the effective cfg; do not resolve in `build`.
 
 ## Requirements
 ### Functional

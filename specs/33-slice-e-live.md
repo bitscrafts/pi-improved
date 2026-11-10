@@ -1,6 +1,6 @@
 # pi-improved — spec-33: slice-e-live
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: HIGH — the first spec that lets a model patch with write
   capability (Slice E live). `graphs/starter/heal-fix.toml` is already a
   complete localize→patch→validate→escalate loop (spec 08); what it lacks is

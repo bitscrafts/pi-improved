@@ -1,6 +1,6 @@
 # Spec: 239 — a node whose agent changed nothing fails only when its criterion already passed before the agent ran
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T10:30Z by the orchestrator (defects 7 and 11 in `_docs/05-operations/agent-management-findings-2026-10-23.md`).
 Premises read, not assumed:
 

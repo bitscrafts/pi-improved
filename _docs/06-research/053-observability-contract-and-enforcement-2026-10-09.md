@@ -3,8 +3,8 @@
 **Date**: 2026-10-09 · **Repo HEAD**: `9be2b24` · **Status**: analysis + design (implements nothing)
 **Directives this answers**: *"observability is a must"* (user, 2026-09-20) and the derived finding that
 **a health surface must report IDENTITY, not just liveness** — *"the health endpoint must report store,
-mounts, version, and counts to make divergences visible immediately"* (amem
-`amem/observability/health-must-report-identity-not-just-liveness-2026-09-20`). The user's instruction
+mounts, version, and counts to make divergences visible immediately"* (the workspace memory
+`the workspace memory/observability/health-must-report-identity-not-just-liveness-2026-09-20`). The user's instruction
 for this phase: **"we must enforce observability! via traits on every crate!"**
 
 ---

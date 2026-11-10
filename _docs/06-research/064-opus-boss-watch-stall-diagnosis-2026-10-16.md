@@ -1,7 +1,7 @@
 # 064: The boss watch stall under load, diagnosed (Opus, 2026-10-16)
 
 This is a read-only review. The only repo file written is this one, and nothing was committed. Scratch work is in
-`/projects/_tmp/rev064-4TDe/`. Evidence labels:
+`<scratch>/rev064-4TDe/`. Evidence labels:
 - **C-run**: I ran it today.
 - **C-read**: I read the lines.
 - **asserted**: from the brief or the defect record.
@@ -208,6 +208,6 @@ the **last journal event** it saw.
 | The cause of the 10-15 11:04 hand-gate failure | inferred from its log shape and `1f1f691`; not re-run |
 | Whether cargo would block on the outer `cargo test`'s lock if the nested build shared its target | not reached: the scrub sends the nested build elsewhere |
 
-Scratch: `/projects/_tmp/rev064-4TDe/` holds the export, the `tgt/` and `target*` builds, and `run{1,2,3}.out`. It
+Scratch: `<scratch>/rev064-4TDe/` holds the export, the `tgt/` and `target*` builds, and `run{1,2,3}.out`. It
 is mine from this run and nothing was deleted (the warm target was moved aside, not removed). The repo is unchanged
 except this file. Nothing was committed.

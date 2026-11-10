@@ -134,7 +134,7 @@ Files ≥ 450 physical lines are marked **▲**; files the project's own gate fl
 - **Scripts**: `quality-gate.sh` (fmt → clippy → `cargo test --workspace`), `scripts/archive/mvp-verify.sh`, `scripts/phase2/{selfchange,uds-vs-loopback}.sh`, `scripts/phase3/{crash,cron,discord-e2e,hot-reload,secret-scan,shutdown,worker-kill}.sh`. **No `scripts/phase4.7/`** directory exists.
 - **Docs**: `_docs/01-overview/01-overview/001-pii-vision.md`; `_docs/02-guides/{feature-gating,pi-local-llamacpp,pidag-way-of-work,pii-mcp-bridge}.md`; `_docs/06-research/001…026`; `_docs/manuals/{technical,user}-manual.{tex,pdf}`; `_docs/{INDEX,TOC}.md`.
 - **Specs** `specs/01…37` (+ `36-part1/part2`), read-only for the workhorse per `AGENTS.md:50-55`.
-- **Process state** `.pidag/`: run JSON for specs 01–11, 13–17, 20, 22, 24, 28, 29; **none for 12, 18, 19, 21, 23, 25–27, 30–37**; `config.toml` sets `quality_gate_script = /projects/pi-improved/quality-gate.sh`, `max_iterations = 4`, workhorse `ollama-cloud/glm-5.3-flash:cloud`.
+- **Process state** `.pidag/`: run JSON for specs 01–11, 13–17, 20, 22, 24, 28, 29; **none for 12, 18, 19, 21, 23, 25–27, 30–37**; `config.toml` sets `quality_gate_script = quality-gate.sh`, `max_iterations = 4`, workhorse `ollama-cloud/glm-5.3-flash:cloud`.
 - **HANDOFF.md**: 138,936 bytes, 53 `##` sections, newest-first; uncommitted working-tree edit adds a "CURRENT STATE — 2026-09-15" header (45 lines) pointing at this document.
 
 ---
@@ -168,7 +168,7 @@ Severity: **S1** blocks the SDD process or affects production behaviour · **S2*
 | ID | Sev | Defect | Evidence (re-read this session) |
 |---|---|---|---|
 | **D1** | S2 | **TLS connection-lease leak** (prior review 010 A4, "still open"): lease count is incremented (`*n += 1`, `service.rs:285`), then `dial_tls(stream, &target.host)?` (`service.rs:293`) returns early on failure — the `Err(e)` arm that decrements (`service.rs:305-311`) is only reached when `dial()` itself fails. | `crates/pii-net/src/service.rs:283-318`; `010:139` |
-| **D2** | S1 | **Hard-coded production fs-cap scope.** Every channel-triggered run gets `fs_read`/`fs_write` = `/projects/pi-improved/_tmp/phase3` (literal, four occurrences). Any deployment outside this checkout path either denies all channel fs access or, worse, grants access to an unrelated directory that happens to exist. Not in a test module. | `crates/pii-server/src/daemon/router.rs:46-70` |
+| **D2** | S1 | **Hard-coded production fs-cap scope.** Every channel-triggered run gets `fs_read`/`fs_write` = `_tmp/phase3` (literal, four occurrences). Any deployment outside this checkout path either denies all channel fs access or, worse, grants access to an unrelated directory that happens to exist. Not in a test module. | `crates/pii-server/src/daemon/router.rs:46-70` |
 | **D3** | S2 | **O(n²) session persistence** (prior review 010 A9(a), still open): the whole `Session` is re-serialised on every prompt/append/status change; failures are swallowed (`unwrap_or_default()`, `let _ =`). | `crates/pii-server/src/session_durability.rs:39-45`; `crates/pii-store/src/session.rs:22`; `010:239` |
 | **D4** | S2 | Blocking `poll_once` (→ blocking pii-net HTTP) executed directly on a tokio worker via `tokio::spawn`, not `spawn_blocking`. | `crates/pii-server/src/daemon/router.rs:30-34` |
 | **D5** | S3 | Per-tool-call raw OS thread with a 5 ms busy-poll loop instead of a timed join. | `crates/pii-server/src/agent.rs:551-566` |
@@ -185,7 +185,7 @@ Prior-review items **010 A1, A2, A3, A5, A7** are fixed (verified last session a
 | **F-12** | **Physical file size vs. the gate's metric.** 18 `src` files exceed 450 *physical* lines (largest: `agent.rs` 1,144; `xtask/silent_noop.rs` 701; `ollama.rs` 705; `pii-tui/lib.rs` 679; `service.rs` 675). The gate measures *effective* lines (comments/blanks/`cfg(test)` excluded), so only **1 file fails** (`xtask/src/silent_noop.rs` 458) and 6 sit in the 380–450 warn band (`agent.rs` 432, `pii-tui/lib.rs` 435, `service.rs` 424, `mem.rs` 416, `run.rs` 411, `xtask/main.rs` 411). The gate is technically holding; the debt is that big files are propped up by 22 `too_many_lines` allows and non-counted test bodies. 135 `#[allow]/#[expect]` attribute lines in total. | `cargo xtask lint-files` output; `grep -c` this session |
 | **F-13** | `pii-server` fuses three concerns (engine bridge / server node kinds / daemon app) in one 7,080-line crate — the largest by 45 %. Planned-doc layering (001–003) had these separate. | `wc -l crates/pii-server/src/**`; `lib.rs:1` |
 | **F-14** | `pii-store::heal` bakes product-specific fields (`worktree, branch, patch_hash, model, tokens_in/out, micro_usd`) into the generic persistence crate. | `crates/pii-store/src/heal.rs:66-116` |
-| **F-15** | **Absolute checkout path baked into tests**: 40+ sites of `/projects/pi-improved/_tmp…` in `#[cfg(test)]` bodies across 12 crates (`ctx.rs:389-417`, `fscap.rs:173`, `pii-store/src/{lib,session,heal,timer,channel,approval}.rs`, `pii-model/src/lib.rs:405-406`, `agent.rs:1014-1108`, …). Sanctioned by AGENTS.md:60 ("Tests under `_tmp/`"), but it means the test suite cannot run from any other clone path or CI checkout. | `grep -rn '/projects/pi-improved' crates --include='*.rs'` |
+| **F-15** | **Absolute checkout path baked into tests**: 40+ sites of `_tmp…` in `#[cfg(test)]` bodies across 12 crates (`ctx.rs:389-417`, `fscap.rs:173`, `pii-store/src/{lib,session,heal,timer,channel,approval}.rs`, `pii-model/src/lib.rs:405-406`, `agent.rs:1014-1108`, …). Sanctioned by AGENTS.md:60 ("Tests under `_tmp/`"), but it means the test suite cannot run from any other clone path or CI checkout. | `grep -rn '<repo>' crates --include='*.rs'` |
 | **F-16** | Sync-blocking substrate inside an async daemon: `pii-graph` runs on `std::thread::scope`, bridged through `spawn_blocking` (`runs.rs:1`), while channels/timers are tokio. This is a deliberate design (`pii-core` never depends on tokio) but D4 shows the seam is easy to get wrong. | `crates/pii-server/src/runs.rs:1`, `daemon/router.rs:30-34` |
 | **F-17** | Still-open items from earlier opus reviews (not re-verified this session): snapshots written-never-read (F12 in 009/010 E), `max_steps` counts ticks not nodes (F20), `pii-mcp` client self-test hang (010 §D). | `010:404-472` (§E), `010:346` (§D) |
 
@@ -232,7 +232,7 @@ Ordering: 5.0.1 first (blocking); 5.0.2–5.0.4 next, parallel-safe (disjoint cr
 |---|---|---|
 | **5.0.1 Gate literally green** (F-01) | Root-cause the `pii-abi` doctest E0463 (duplicate `libschemars` rlib from feature unification between the `--all-targets` clippy build and `cargo test`). Fix the cause (e.g. align feature sets, or run `cargo test --workspace --doc` as its own step with a fresh profile), or make the split invocation the script's SSOT. Update `.pidag/config.toml` if the script path/name changes. | `./quality-gate.sh; echo $?` → `0` three consecutive runs, one of them after `cargo clean`. No `"flake"` wording left for this item in HANDOFF's CURRENT STATE. |
 | **5.0.2 D1 TLS lease** | Single exit path: any failure after the increment decrements (wrap dial+TLS in one `Result` before the match, or `Drop`-guard the lease). | New `pii-net` test (feature `testing`, fake TLS handshake failure) asserting `grant_info()` lease returns to 0; **test must be red on pre-fix code** (reviewer reverts and re-runs). |
-| **5.0.3 D2 channel scope** | Channel fs scope comes from `daemon/config.rs` (default `<PII_HOME>/channels/<name>`), never a literal; also fix `resolve` of the scope at daemon start so a missing dir is a config error, not a silent deny. | `grep -rn '/projects/pi-improved' crates --include='*.rs' \| grep -vE 'cfg\(test\)\|tests/'` → 0 hits in non-test code; test: path outside the configured scope is `Denied`, inside is allowed. |
+| **5.0.3 D2 channel scope** | Channel fs scope comes from `daemon/config.rs` (default `<PII_HOME>/channels/<name>`), never a literal; also fix `resolve` of the scope at daemon start so a missing dir is a config error, not a silent deny. | `grep -rn '<repo>' crates --include='*.rs' \| grep -vE 'cfg\(test\)\|tests/'` → 0 hits in non-test code; test: path outside the configured scope is `Denied`, inside is allowed. |
 | **5.0.4 D3/D6 session durability** | Append-per-message keyed `(session_id, seq)` + periodic snapshot; surface persist errors through `Observer`; cap `session_runs` (config key, default e.g. 256 per session, LRU). | Counting-store test: bytes written over 200 appends ≤ 2× final session size; a persist failure emits an `ObsEvent`; `session_runs` length ≤ cap after cap+10 runs. |
 | **5.0.5 First real feature flag** (F-07/F-09) | `pii-model/local-llm` (make `llama-cpp-2` optional) propagated to `pii-server`/`pii-cli`; default **on** only in `pii-cli`. Delete the `.cargo/config.toml` clang requirement for non-default builds if possible. | `cargo tree -p pii-server --no-default-features -e features \| grep -c llama-cpp` → 0; default `./quality-gate.sh` → 0; `cargo build -p pii-cli --no-default-features` succeeds. |
 | **5.0.6 SSOT reconciliation** (planner; F-02, F-05, F-07–F-10) | Rewrite `AGENTS.md` to the *actual* implementer policy (see decision gate below); drop `pii-hw`, fix `crates/ … (when Phase 0 lands)`, `max_iterations` 3→4; `_docs/INDEX.md` status; `feature-gating.md` becomes a target-vs-current table; `pii-mcp-bridge.md` and doc 024 C7 corrected (separate ungated binary); `clippy.toml` `pii_obs` text → the real observer API; `node.rs:64` "four"→"five"; **decide** the orphaned original 35/36 content: author tracking specs 38 (HTTP-fetch tool via pii-net chokepoint) and 39 (research-writes-memory) or record an explicit cut; record the COST RULE 1 reversal. | New `scripts/spec-refs-check.sh` (~20 lines): every backticked path under a spec's *Exit Criteria* exists → exit 0 (fails today on spec 33); `grep -c 'Implementation started: \[ \]' _docs/INDEX.md` → 0; `grep -rn 'pii-hw\|pii_obs' AGENTS.md clippy.toml` → 0. |
@@ -263,7 +263,7 @@ Ordering: 5.0.1 first (blocking); 5.0.2–5.0.4 next, parallel-safe (disjoint cr
 2. D4 `spawn_blocking` for channel polls; D5 `recv_timeout` join; D7 drop the lock before `kill()`; bounded accept pool at `listen.rs:190`.
 3. Tests where blind (F-18–F-20): `pii-proto` round-trip for every `Method`/`Event`; `pii-store` `MemStore` contract; `pii-tools` bash/fs/worktree; `pii-web` handlers.
 4. `heal.rs` (F-14): product-specific fields move into a server-owned `extra: serde_json::Value`; store schema stays generic.
-5. F-15: replace `/projects/pi-improved/_tmp` in tests with `concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp")` or a `pii_core::test_tmp()` helper. Acceptance: `grep -rn '/projects/pi-improved' crates` → 0.
+5. F-15: replace `_tmp` in tests with `concat!(env!("CARGO_MANIFEST_DIR"), "/../../_tmp")` or a `pii_core::test_tmp()` helper. Acceptance: `grep -rn '<repo>' crates` → 0.
 6. **Ratchet rule**: `xtask lint-files` gets a checked-in baseline file; new violations fail; target **0 effective violations** (fix `silent_noop.rs`) and the 6 warn-band files back under 380 effective.
 
 ### Phase 5.3 — Track B routing (plan 025 B1–B3) + old review leftovers
@@ -294,7 +294,7 @@ B1 deterministic escalation ladder (no LLM judge), B2 safety-rule ordering in co
 
 ### A.2 Method (all read-only)
 
-`git status/diff` · `wc -l` over every `src`/`tests` `.rs` · `grep` of `[dependencies]`/`[features]` in every `Cargo.toml` · `//!` header extraction per file · `cargo run -p xtask -- lint-files` and `-- deps-check` (compile xtask only; both read-only) · `grep -rEo 'PiiError::(Internal|Invalid|Unavailable)\(format!'` → 357 · `grep -rn 'classify('` · `grep -rEn '#\[(allow|expect)\('` → 135 · `grep -rn '/projects/pi-improved'` · direct reads of `router.rs:40-72`, `service.rs:283-318`, `node.rs:62-66`, `quality-gate.sh`, `.pidag/config.toml`, `.gitignore` · `du -sh` · citation look-ups in research docs 010, 011, 024, 025 and `_docs/02-guides/*`.
+`git status/diff` · `wc -l` over every `src`/`tests` `.rs` · `grep` of `[dependencies]`/`[features]` in every `Cargo.toml` · `//!` header extraction per file · `cargo run -p xtask -- lint-files` and `-- deps-check` (compile xtask only; both read-only) · `grep -rEo 'PiiError::(Internal|Invalid|Unavailable)\(format!'` → 357 · `grep -rn 'classify('` · `grep -rEn '#\[(allow|expect)\('` → 135 · `grep -rn '<repo>'` · direct reads of `router.rs:40-72`, `service.rs:283-318`, `node.rs:62-66`, `quality-gate.sh`, `.pidag/config.toml`, `.gitignore` · `du -sh` · citation look-ups in research docs 010, 011, 024, 025 and `_docs/02-guides/*`.
 
 ### A.3 Guardrail compliance
 
@@ -312,7 +312,7 @@ B1 deterministic escalation ladder (no LLM judge), B2 safety-rule ordering in co
 <!-- Absorbed from `026-codebase-analysis-and-phase5-plan.md` on 2026-09-28T20:00:57Z during the SSOT corpus merge.
      Content preserved verbatim. Original moved to 99-archive/06-research-merged-2026-09-28/. -->
 
-**Date**: 2026-09-08 · **Reviewer**: claude-opus-5 · **Target**: `/projects/pi-improved` @ `24f6427`
+**Date**: 2026-09-08 · **Reviewer**: claude-opus-5 · **Target**: `<repo>` @ `24f6427`
 **Scope**: 16 crates, Phase 4 (4.1a → 4.7 partial). Every claim below cites `path:line`
 and was checked against the code in this tree — several were checked against a **running
 process** (marked PROVEN) rather than inferred.
@@ -772,8 +772,8 @@ node.
 **E6 — dev/prod runtime-dir vs worktree: constraint recorded, correct, no code.**
 `HANDOFF.md` caveat 7 matches the code: `validate_scope_root`
 (`crates/pii-server/src/runs.rs:237-259`) canonicalises both sides and rejects anything
-not under the workspace, so a `/root/.pii-dev/` worktree can never be a heal
-`scope_root`. Keeping `/root/.pii-dev/` as a runtime/store dir only, with worktrees under
+not under the workspace, so a `~/.pii-dev/` worktree can never be a heal
+`scope_root`. Keeping `~/.pii-dev/` as a runtime/store dir only, with worktrees under
 the workspace, is the right call and remains unimplemented.
 
 **Also still open from the Phase-4 plan itself**: `MicroUsd` never charged (B2),
@@ -837,7 +837,7 @@ because today every autonomous run would report success while doing nothing.
 <!-- Absorbed from `026-codebase-analysis-and-phase5-plan.md` on 2026-09-28T20:00:57Z during the SSOT corpus merge.
      Content preserved verbatim. Original moved to 99-archive/06-research-merged-2026-09-28/. -->
 
-**Reviewer**: claude-opus-5 · **Target**: `/projects/pi-improved` @ `648bf56` (master, clean)
+**Reviewer**: claude-opus-5 · **Target**: `<repo>` @ `648bf56` (master, clean)
 **Ground truth**: `_docs/06-research/001`, `002`, `003` (architecture), `007` (Phase-4 plan), `008`/`009` (boss design + prior review), `010` (prior full review)
 **Method**: every claim below was checked against the code in this tree. No edits, no commits, no builds.
 

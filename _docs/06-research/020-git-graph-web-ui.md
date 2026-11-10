@@ -1,6 +1,6 @@
 # Porting vscode-git-graph to Pii's Web Viewer — Feasibility Study
 
-**Date**: 2026-09-10 · **Author**: research agent (delegated) · **Project**: /projects/pi-improved
+**Date**: 2026-09-10 · **Author**: research agent (delegated) · **Project**: <repo>
 **Status**: DRAFT — research only, no implementation authorized.
 
 ## 0. Summary / Recommendation

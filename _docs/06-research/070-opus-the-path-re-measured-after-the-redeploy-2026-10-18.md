@@ -1,7 +1,7 @@
 # 070: The path, re-measured after the redeploy (Opus, 2026-10-18)
 
 This is a read-only review: the only repo file written is this one, and nothing was committed. Two scratch
-daemons ran under `mktemp -d` (`/projects/_tmp/rev070-*`), with no network; both exited, and the production pid
+daemons ran under `mktemp -d` (`<scratch>/rev070-*`), with no network; both exited, and the production pid
 2139213 was never signalled. On production I used only `pii health`, `pii run ls` and `pii run get`, which are
 read-only RPCs. Evidence labels:
 - **C-run**: I ran it today, 11:54-12:30 UTC.
@@ -22,7 +22,7 @@ _Written incrementally._
 | the digest graph has a timer: installed and repo copies have 1 `timer` node, `cron = "0 9 * * *"` | `grep -c 'kind = "timer"'` → 1 |
 | **the daemon refuses a timer-less cron graph**: on the deployed binary, a scratch config with a `transform`-entry cron exits `invalid: cron 'probe': graph 'loop' must start at a timer node (entry is transform); it would re-run as fast as it finishes` | scratch `rev070-*/notimer` |
 | **a timer cron graph holds**: the same binary, a timer-entry graph, gives `runs` 0 → 1 → 1 at 0, 6 and 10 s, and `run ls` shows it `suspended` | scratch `rev070-*/timer2` |
-| **six installs since 10-17 21:54**, by aside directory: 21:54, 22:04, 22:32, 23:34, 02:08, 11:10 | `ls -d /root/.local/bin.old-*` |
+| **six installs since 10-17 21:54**, by aside directory: 21:54, 22:04, 22:32, 23:34, 02:08, 11:10 | `ls -d ~/.local/bin.old-*` |
 | revisions announced by the daemon's own start post: `b61c65909289-dirty`, `7d2410172f44`, `2ebcf0f8f7f9`, `60553615f85f-dirty`, **`?` (02:08 to 11:10)**, `c0818bfcc898` | `channel.verification_posted` text in `pii.log` and `pii.log.1` |
 | **85 daemon starts since 10-17 21:54, 72 of them with no `daemon.stopped` before the next start**, i.e. hard deaths, 76 of them between 21:00 and 23:00 | `pii.log*` (§0.1) |
 | **the 09:00 UTC digest today**: 10 `channel.posted` (09:00:02-09:00:03), then **1,836 `channel.post_refused` with Discord `429`** (09:00:03-09:02:49) | `pii.log` |
@@ -30,7 +30,7 @@ _Written incrementally._
 | production now: `c0818bfcc898`, no suffix, up 0.6 h, `runs` flat at 1,850 over 10 s, one `daemon.graphs_fallback` at its start | `pii health --json`, `pii.log` |
 | **one deploy card on disk for six installs**: `_tmp/deploy/card-b61c659.json` | `find _tmp -name '*card*'` |
 | **no full-gate PASS recorded since 10-17 02:01.** The last measurement, `measure-gate-tests-20261018T061826Z.log`, reads `MEASURE full-workspace rc=101`; `bb43007` (06:28) says "the suite is red at HEAD and no gate runs it" | `_tmp/autonomy/logs/` |
-| `pii-mcp` still not swapped: `pii-mcp` is 10-15 19:05, and `pii-mcp.new` is 10-18 11:10 | `ls -la /root/.local/bin/pii-mcp*` |
+| `pii-mcp` still not swapped: `pii-mcp` is 10-15 19:05, and `pii-mcp.new` is 10-18 11:10 | `ls -la ~/.local/bin/pii-mcp*` |
 
 ### 0.1 What the 09:00 event was
 
@@ -60,7 +60,7 @@ _Written incrementally._
 
 ### 0.2 The scheduler, tested on the deployed binary (C-run, scratch, no network)
 
-Three scratch daemons, each running `/root/.local/bin/pii` (`c0818bf`), with a `* * * * *` timer cron:
+Three scratch daemons, each running `~/.local/bin/pii` (`c0818bf`), with a `* * * * *` timer cron:
 
 | probe | result |
 |---|---|
@@ -92,7 +92,7 @@ behaviour that has failed twice, in opposite directions: 0 runs in 14 h (068), t
 | 2 | **The occurrence itself: exactly one digest.** This is 184's claim ("re-arm waits for the next occurrence"), and it is unproven at a real occurrence. | at 09:01 UTC: new digest runs **== 1**, new `channel.posted` **== 1**, `channel.post_refused` **== 0**; at 09:05, still 1 | first chance: 2026-10-19 09:00 |
 | 3 | **Production stops being the test bench.** Matrix exercises (E1, E3, …) run on scratch daemons. Today's `cron.start.refused 'no-such-graph'` (11:18:50) and the 5 starts between 11:10 and 11:19 happened on the live one. | production `daemon.started` count over 24 h == installs over 24 h | 85 starts against 6 installs |
 | 4 | **A recorded full gate on the deployed revision**, from a clean export, quoted by its card | a `fresh-gate: PASS` line naming `c0818bf` (or its successor), and the full workspace suite rc=0 | last full PASS 10-17 02:01; full suite rc=101 at 06:18 |
-| 5 | **A card for every install.** `install-pii.sh` refuses to run without `_tmp/deploy/card-<rev>.json` for the rev it builds. | `ls /root/.local/bin.old-* \| wc -l` == number of card files, from now on | 1 card for 6 installs |
+| 5 | **A card for every install.** `install-pii.sh` refuses to run without `_tmp/deploy/card-<rev>.json` for the rev it builds. | `ls ~/.local/bin.old-* \| wc -l` == number of card files, from now on | 1 card for 6 installs |
 | 6 | **The soak: 7 days counted from the store, not from per-process counters** (§5) | over 7 × 24 h: exactly 7 digest posts, 0 refused posts, 0 starts without a prior `daemon.stopped` except for installs | not started |
 | 7 | **The `pii-mcp` swap**, behind its probe | Hermes `mcp__pii__*` error share over 7 days after ≤ 7 days before | `pii-mcp.new` staged, not swapped |
 
@@ -106,7 +106,7 @@ behaviour that has failed twice, in opposite directions: 0 runs in 14 h (068), t
 | B2 digest scheduled by a timer | **PASS** | installed graph: 1 timer, `0 9 * * *` |
 | B3 full fresh-export gate PASS on that revision | **FAIL** | no PASS recorded since 10-17 02:01; full suite rc=101 at 06:18 |
 | B4 the loop reproduction does not loop | **PASS** (C-run today) | timer-less cron refused; timer cron 1 suspended, flat over 10 s |
-| B5 rollback target present | **PASS** | `/root/.local/bin.old-1792321624` (11:10) |
+| B5 rollback target present | **PASS** | `~/.local/bin.old-1792321624` (11:10) |
 | card for the deploy | **FAIL** | no `card-c0818bf*.json` |
 | A1 revision, no suffix | **PASS** | `c0818bfcc898` |
 | A2 `daemon.graphs_fallback` at start | **PASS** | 1 event at 11:19:02 |
@@ -121,10 +121,10 @@ behaviour that has failed twice, in opposite directions: 0 runs in 14 h (068), t
 PII_RUNTIME_DIR=/run/user/0/pii pii run ls | jq '[.[]|select(.status=="suspended")]|length'
 # at 09:01 and 09:05 UTC (carried-the-fix: +1 run, +1 posted, +0 refused, unchanged between the two reads)
 PII_RUNTIME_DIR=/run/user/0/pii pii run ls | jq 'group_by(.status)|map({(.[0].status):length})|add'
-jq -c 'select(.kind=="channel.posted" or .kind=="channel.post_refused")|.kind' /root/.local/state/pii/pii.log | sort | uniq -c
+jq -c 'select(.kind=="channel.posted" or .kind=="channel.post_refused")|.kind' ~/.local/state/pii/pii.log | sort | uniq -c
 # if more than 1 new run, or any post_refused, by 09:05: STOP THE CRON, do not roll back.
-#   The rollback target (/root/.local/bin.old-1792321624) is the `?` build that stormed at 09:00 today.
-#   The safe act is to comment out the [[cron]] block in /root/.config/pii/pii.toml and restart the unit.
+#   The rollback target (~/.local/bin.old-1792321624) is the `?` build that stormed at 09:00 today.
+#   The safe act is to comment out the [[cron]] block in ~/.config/pii/pii.toml and restart the unit.
 ```
 
 **My prediction, to be falsified:** tomorrow's occurrence executes **4** digest runs, one per armed copy, as
@@ -164,7 +164,7 @@ has never run correctly at an occurrence".
 
 ## 4. The remaining risk, in writing (three sentences)
 
-> pii on lnx now runs its graphs (revision `c0818bf`, no suffix), but its first scheduled digest this morning
+> pii on the host now runs its graphs (revision `c0818bf`, no suffix), but its first scheduled digest this morning
 > posted 10 times and was refused 1,836 times by Discord, and the running binary has the same scheduler code
 > with 4 armed copies of that one daily job, so tomorrow's 09:00 UTC run is expected to post at least 4 times
 > (measured in scratch: each start arms one more copy, and all copies fire). Before 09:00, disable the `[[cron]]`
@@ -199,8 +199,8 @@ has never run correctly at an occurrence".
 |---|---|
 | that 184 deduplicates the 4 armed runs at fire time | the first occurrence under `c0818bf` is 2026-10-19 09:00 UTC; I did not read 184's diff to predict it |
 | the forum's actual state (10 threads?) | the Discord API was not called, deliberately |
-| the `pii/` keys in agent-memory | not reachable from this shell, as in 069 |
+| the `pii/` keys in the workspace memory | not reachable from this shell, as in 069 |
 | the supervisor's identity | still outside this container's pid namespace |
 
-**Scratch:** `/projects/_tmp/rev070-*` (this run) and `/projects/_tmp/rev069-8e5o` (the previous run) are mine
+**Scratch:** `<scratch>/rev070-*` (this run) and `<scratch>/rev069-8e5o` (the previous run) are mine
 and can be removed. No scratch daemon is left (`pgrep` → 0). Nothing in the repo changed except this file.

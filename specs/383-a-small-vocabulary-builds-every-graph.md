@@ -20,7 +20,7 @@ This spec is the **umbrella**: it does not implement the refactor in one commit.
 splits the work into rows that can each be verified alone, and owns the lint that keeps the library at
 the target once it is reached.
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: graph vocabulary
 
 ## Target (do not restate it elsewhere)

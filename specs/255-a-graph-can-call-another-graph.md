@@ -1,9 +1,9 @@
 # Spec 255: a graph can call another graph — the `call` node, expanded inline at load
 
 ## Overview
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: production — composition (operator, 2026-10-24: "graph composition is extremely needed"; "a node that calls a graph, for instance to document the task/spec")
-**Advice**: an Opus design review (`/projects/_tmp/pii-graph-design/pii-graph-design-plan-20261024T155725Z.md`, Q1) chose inline expansion at load over a child run.
+**Advice**: an Opus design review (`<scratch>/pii-graph-design/pii-graph-design-plan-20261024T155725Z.md`, Q1) chose inline expansion at load over a child run.
 
 Today a graph cannot use another graph. `spawn` starts a child run but returns before it finishes, so its result cannot feed the next node, and the child's
 caps come from its own file. `[[attach]]` (spec 212) weaves a guard at four surfaces and returns no value. The generic spec-implementation graph and its

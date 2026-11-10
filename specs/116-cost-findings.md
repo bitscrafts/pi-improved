@@ -1,6 +1,6 @@
 # Spec: 116 — the cost findings (spec 110's F2, F3, F8)
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: Stage A2 of `057`, second row. Spec 110 measured a system nobody had ever loaded; three of its
 findings are about what pii SPENDS, and two of them are still unexplained.
 
@@ -94,7 +94,7 @@ sink-only probe 24.15 s pass.
 the sink-only probe suggests the retention index filling toward its 50 000-file bound, not confirmed in the daemon);
 RED-before-GREEN was observed only for the trajectory leak and the body dedup; the RSS gauge is not unit-tested
 live above 4 000 runs; `cmd_daemon.rs` now sits exactly at the 450-line limit; scratch left at
-`/projects/_tmp/leak-bisect` (~1 GB) per the no-delete rule.
+`<scratch>/leak-bisect` (~1 GB) per the no-delete rule.
 
 **One unreported change, recorded here rather than glossed:** the commit also adds a `parking_lot` edge to
 `pii-store` (`run_ids: parking_lot::Mutex<(u64, u64)>`, `lib.rs:50`) — the mutex guarding the batched run-id

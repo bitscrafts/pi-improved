@@ -1,6 +1,6 @@
 # Wire same_layer_only to a Real Layer Check in Memory Consolidation
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Crate**: `pii-memory`
 - **Priority**: MEDIUM — a safety/correctness config flag silently
   does nothing in production, contrary to what its name promises.

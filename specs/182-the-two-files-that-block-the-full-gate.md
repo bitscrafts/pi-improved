@@ -15,7 +15,7 @@ which does not include `lint-files` — so items closed green while the full gat
 quote a `mode=fresh` PASS on this HEAD. Both files grew past the limit in today's commits: `crates/pii-cli/src/cmd_daemon.rs`
 in `7f98624` (175) and `crates/pii-server/src/daemon/mod.rs` in `03e729a` (a cycle's leftover commit).
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 
 ## Requirements
 1. Reduce both files **below** the limit — `crates/pii-server/src/daemon/mod.rs` (468) and

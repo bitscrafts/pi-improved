@@ -1,6 +1,6 @@
 # pi-improved — spec-55: pii-proto JSON round-trip tests (F-18)
 
-- **Project**: `/projects/pi-improved`
+- **Project**: `<repo>`
 - **Priority**: MEDIUM — Phase 5.3, F-18: `pii-proto` has zero tests
   (no `tests/` dir, and only `event.rs`/`lib.rs` have inline
   `#[cfg(test)]`; `client.rs`, `method.rs`, `run.rs`, `session.rs`,

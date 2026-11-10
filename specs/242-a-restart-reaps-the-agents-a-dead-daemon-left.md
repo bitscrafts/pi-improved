@@ -1,6 +1,6 @@
 # Spec: 242 — a restart finds the agents a dead daemon left running, and the run says which
 
-**Project**: /projects/pi-improved
+**Project**: <repo>
 **Phase**: filed 2026-10-23T11:20Z by the orchestrator (defects 20 and 21 in
 `_docs/05-operations/agent-management-findings-2026-10-23.md`). Stage 2: the daemon runs on the host as a systemd service
 (`deploy/pii.service`, restarted by the deploy and by crashes) and the agent runs in a container. A restart is routine there.

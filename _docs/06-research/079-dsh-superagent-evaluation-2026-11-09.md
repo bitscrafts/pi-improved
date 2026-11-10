@@ -4,11 +4,11 @@ Filed 2026-11-09. Evaluation only: nothing here is built or queued as a spec. Fa
 
 ## 0. Evidence and its limits
 
-- READ in full or in large part: the repo README, `docs/002-authorization.md`, `docs/003-execution.md` (head and tail), `docs/007-architecture.md` (head), the offloop.org explainer, amem `research/dsh-superagent-deepseek` and `insights/dsh-superagent-deepseek` (stored today).
+- READ in full or in large part: the repo README, `docs/002-authorization.md`, `docs/003-execution.md` (head and tail), `docs/007-architecture.md` (head), the offloop.org explainer, the workspace memory `research/dsh-superagent-deepseek` and `insights/dsh-superagent-deepseek` (stored today).
 - NOT read: `000`, `004`-`006`, `008`, the middle of `001`/`002`/`003`, the original Chinese article, the code itself. Benchmark figures below come from a third-party summary.
 - The repo says of itself: research prototype, not an official product, much of it written by coding agents, "some designs ... are NOT implemented here".
 - The benchmark is synthetic: coding is replaced with simulated delays, five runs per configuration. It measured scheduling, not code quality. Reported: median completion about 39% lower than a neutral-prompt baseline and about 10% lower than a delegation-first baseline, at about 2.1x the cache-read tokens. I would not use these numbers for any decision.
-- amem check (2026-11-09, five queries): two entries on this exact topic, both stored today (`research/dsh-superagent-deepseek`,
+- the workspace memory check (2026-11-09, five queries): two entries on this exact topic, both stored today (`research/dsh-superagent-deepseek`,
   `insights/dsh-superagent-deepseek`). Nothing newer. Related older entries: `research/deepseek-harness-qwen38` (the harness, not this
   agent; notes a small model looping for hours re-planning on an existing codebase) and `workspace/architecture/append-only-event-log-pattern`.
 - Web check, additional facts (search snippets only; the SMF article and one long page could not be fetched, the extract backend hit its
@@ -106,4 +106,4 @@ Do the four measurements first, as one small row. If 1, 3 and 4 hold, `repo-watc
 - https://github.com/deepseek-ai/dsh-superagent-prototype (README, docs/002, docs/003, docs/007)
 - https://offloop.org/learn/deepseek-super-agent-design (explainer; benchmark figures)
 - https://pragmaticai.substack.com/p/deepseek-superagent-from-a-github (walkthrough)
-- amem: `research/dsh-superagent-deepseek`, `insights/dsh-superagent-deepseek`, `insights/pii-from-pi-durable-2026-10-13`
+- the workspace memory: `research/dsh-superagent-deepseek`, `insights/dsh-superagent-deepseek`, `insights/pii-from-pi-durable-2026-10-13`
