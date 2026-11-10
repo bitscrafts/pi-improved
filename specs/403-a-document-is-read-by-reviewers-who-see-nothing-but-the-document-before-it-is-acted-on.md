@@ -105,12 +105,10 @@ Corpus (R7), exact sources so nothing is chosen by the implementer; each fixture
 ## Exit Criteria
 ### New in this row
 Each is verified to FAIL before the change. A criterion that already passes is a Guardrail, never a criterion.
-- [ ] `test -f graphs/review-one.toml && test -f graphs/review.toml`
 - [ ] `cargo test -q -p pii-server --test review_graph 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
-- [ ] `test "$(ls crates/pii-server/tests/fixtures/review/*.md | wc -l)" -eq 6 && test "$(ls rubrics/*.md | wc -l)" -ge 3`
-- [ ] `test -x scripts/measure-review.sh && bash -n scripts/measure-review.sh`
-
 ## Guardrails
+- Keep green (they pass once the artefacts exist, so they are not criteria: the lane writes them in its first step; measured 2026-11-10, a criterion
+  that passes before the work refuses the row at the RED step): `test -f graphs/review-one.toml && test -f graphs/review.toml`; `test "$(ls crates/pii-server/tests/fixtures/review/*.md | wc -l)" -eq 6 && test "$(ls rubrics/*.md | wc -l)" -ge 3`; `test -x scripts/measure-review.sh && bash -n scripts/measure-review.sh`.
 - Keep green (they pass today, so they are not criteria): `cargo run -q -p xtask -- lint-graph-kinds` and `cargo test -q -p pii-graph --test tool_surface_is_closed`.
 - Do NOT add a node kind, an expression function or a Rust source file: everything here is graphs, rubric files, fixtures, one test file and one script.
 - Do NOT give a reviewer `bash`, `fs_write`, `edit`, `net`, `memory` or any `proc` cap. The only `proc` is the `rubric` node's declared `["cat"]`.
