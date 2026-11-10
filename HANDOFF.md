@@ -34,9 +34,11 @@ row is left `gate-skipped:disk` with its work in the tree; free space (`cargo cl
 - Row 403, as above.
 - A spec for a repository field on a plan row, so the cycle can work in another project's checkout, and a `github` channel that reads
   maintainer-labelled issues. Neither is written; both go through the spec path.
-- The commit history carries two older author identities and some messages that name tools. It is rewritten once, by the owner, together
-  with a force-push; nothing before that rewrite should be treated as the final history.
-- No LICENSE file yet, and `Cargo.toml` names a repository that is not this one.
+- The commit history carries two older author identities (556 commits as a host-local address, 306 as an orchestrator) and 84 commits whose
+  messages name a tool. It is rewritten once, by the owner, together with a force-push; the 14 commits after `0499c09` are local only.
+  `git filter-repo` is not installed here; the laya-rs rewrite used `git filter-branch` with a hash-remapping filter.
+- The repository is public with a CI workflow (`checks.yml`, on every push) that has not yet run on GitHub: the commits that add it are
+  not pushed. The full gate (`gate.yml`) is manual and weekly until it has run on a runner. The licence is MIT (`LICENSE`).
 
 ## Rules that bite
 
