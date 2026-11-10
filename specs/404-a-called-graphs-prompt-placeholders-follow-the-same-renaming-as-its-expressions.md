@@ -60,7 +60,8 @@ renames `nodes` and forgets the call's input mapping.
 ## Exit Criteria
 ### New in this row
 Each is verified to FAIL before the change. A criterion that already passes is a Guardrail, never a criterion.
-- [ ] `test -f crates/pii-graph/tests/call_rewrites_prompt_placeholders.rs`
+Not a criterion: that the test file exists. The lane writes it in its own first step, so a `test -f` on it passes before the
+work and the RED step refuses the row (measured 2026-11-10). The criterion below needs at least one passing test in that file.
 - [ ] `cargo test -q -p pii-graph --test call_rewrites_prompt_placeholders 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
 - [ ] `grep -q 'fn rewrite_prompt' crates/pii-graph/src/fragment/call_rewrite.rs`
 
