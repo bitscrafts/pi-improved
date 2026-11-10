@@ -1,95 +1,48 @@
-# Pii — Project Agents Guide
+# Pii — guide for agents and contributors
 
-**Pii** ("Pi Improved") — a Rust workspace unifying a terminal coding
-agent, a personal assistant daemon, a reactive IoT/automation engine, and a
-self-improving cognitive layer around one event-sourced daemon substrate.
-Four binaries ship today (`pii`, `pii-mcp`, `pii-web`, `pii-evolve`); `pii`
-(from `pii-cli`) is the primary entry point and embeds the daemon in-process.
-This implements the architecture researched in `_docs/06-research/002-pii-architecture-plan-pass2.md`.
+Pii ("pi-improved") is a Rust workspace: a terminal coding agent, an assistant daemon, an automation engine and a learning layer built
+around one event-sourced daemon. Four binaries ship: `pii` (from `crates/pii-cli`, the main entry point, which embeds the daemon),
+`pii-mcp`, `pii-web` and `pii-evolve`. The workspace is 22 crates under `crates/` plus `xtask`.
 
-## SDD/TDD workflow (mandatory)
+Start with [`README.md`](README.md) for the shape of the system and [`HANDOFF.md`](HANDOFF.md) for the current state. Documentation is
+indexed in [`_docs/INDEX.md`](_docs/INDEX.md).
 
-**Spec-driven, test-driven.** Every feature starts as a numbered spec in
-`specs/`, implemented via pidag, validated by exit criteria (TDD).
+## How a change is made
 
-```bash
-# 1. Write the spec (Claude Code / opus = the planner). TDD Contract + Exit Criteria required.
-# 2. Generate + validate DAG
-pidag lint specs/01-xxx.md
-# 3. Execute (pi + glm-5.3-flash workhorse on ollama-cloud)
-pidag sdd specs/01-xxx.md --run --concurrency N
-# 4. Review + commit. Update HANDOFF.md same-turn.
-```
+Every change starts as a numbered spec in [`specs/`](specs/). A spec has a card line under its title (`#: depends= status= block=`), a
+TDD contract, and exit criteria that are runnable commands.
 
-- **Model chain:** `[worker] default_model = "ollama-cloud/glm-5.3-flash:cloud"` in
-  `.pidag/config.toml`. Slash-first form is REQUIRED (pidag split on `:` first broke
-  the `:cloud` suffix — fixed in pidag).
-- **MANDATORY — thinking OFF on the workhorse (verified 2026-09-02):** glm-5.3-flash and
-  deepseek-v4-flash on ollama-cloud are 1M-context **REASONING** models with thinking ON by
-  default. On a large one-shot implement prompt they burn the entire output budget on the
-  reasoning trace and emit **zero content** (verified: glm 62,019 reasoning tokens, content 0).
-  They must be called with `reasoning_effort="none"` on the `/v1/chat/completions` wire
-  (verified fix: glm content 22,669 / reasoning 0; deepseek 21,899 / 0 at `max_tokens=6000`).
-  NOTE: `pi --thinking off` does **NOT** forward `reasoning_effort` to ollama-cloud — the
-  request builder must send it explicitly. See ollama/ollama#18121 (low/high mapping is
-  model-fragile for glm; only "none" is reliable).
-- **2 parallel workers:** `--concurrency 2`. Pidag's `PiBackend` sizes a client pool to
-  concurrency; per-node session dirs (`_tmp/.pidag-worker-sessions/<node_id>/`) isolate
-  parallel workers.
-- **TDD enforced by pidag:** the `quality-gate` step runs the repo gate and the
-  `validate-iter{n}` step runs the spec's exit criteria. The SDD loop implements →
-  quality-gates → validates → re-implements up to `max_iterations` (`.pidag/config.toml`
-  `[sdd]`, currently 2: run 1 free model, run 2 escalates to a paid model, then STOPS —
-  no further auto-escalation).
-- **The gate has two trees and eight reported steps** — `bash quality-gate.sh` runs a `build`
-  prerequisite plus eight checks (fmt · clippy · clippy `llamacpp` · test lib/bins/tests ·
-  test doc · `lint-files` · `lint-scratch` · `reachability-check`); the CI-model variant
-  `cargo run -q -p xtask -- fresh-gate [--worktree] [--overlay src=dest]` exports HEAD
-  with `git archive` and runs the gate in a throwaway directory. When they disagree,
-  **believe `fresh-gate`**: a gate can be green in this tree and red in a clean clone.
-  Full manual: `_docs/02-guides/quality-gate-and-fresh-tree.md`.
+- A criterion must exit 0 when the work is done and non-zero before it. One that already passes is not a criterion: put it under
+  Guardrails. `bash scripts/red-audit.sh <row>` reports how many already pass.
+- A spec becomes a row in `scripts/autonomy/plan.tsv` (id, spec file, brief, title, criteria, paths, lane).
+  `scripts/autonomy/cycle.sh` dispatches one row, gates the result and commits it; `scripts/autonomy/state.py` holds each row's status.
+- The one who writes a spec does not implement it, and an implementer never edits `specs/` and never commits. The work is left in
+  the tree for the gate and the reviewer.
+- A cycle takes a lock about every five minutes. Do not edit the tree while one runs: take the hold (`scripts/autonomy/hold.sh`) or wait.
 
-## Repos
+Outside contributions go through issues and pull requests: see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-- `_repos/` — read-only clones of the 5 reference repos (pi_agent_rust, zeroclaw,
-  yantrikclaw, grok-build, hermes-agent). NEVER modify.
-- `_docs/` — SSOT documentation (01-overview … 06-research).
-- `_tmp/` — test artifacts, sessions, scratch.
-- `crates/` — the Pii Rust workspace (19 crates plus the xtask member; landed, not
-  aspirational — Phase 0 completed 2026-09-02).
+## The gate
 
-## Hard rules
+- `bash quality-gate.sh --routine` runs the steps of [`gate-steps.txt`](gate-steps.txt) (22 steps: formatting, clippy with warnings denied,
+  a workspace build, tests, doc tests, the coverage floor and the repository's own lints) in this checkout. `gate-steps-quick.txt` is the
+  5-step list used per item.
+- `cargo run -q -p xtask -- fresh-gate --worktree` runs the same list in a clean export. When the two disagree, believe the fresh
+  one: a gate can be green in a tree and red in a clone. Manual: [`_docs/02-guides/quality-gate-and-fresh-tree.md`](_docs/02-guides/quality-gate-and-fresh-tree.md).
+- A cold gate needs about 40 GB of build output; the cycle refuses to gate below 20 GB free on `/projects`.
+- `.github/workflows/checks.yml` runs the cheap half of the gate on every push and pull request. `gate.yml` is the full gate, run on demand.
 
-- **NEVER modify `_repos/`** (read-only reference).
-- **MANDATORY: `specs/` are READ-ONLY for the workhorse.** Authoring/editing/creating
-  specs is EXCLUSIVE PLANNER work (Claude Code / opus orchestrator). Pidag `split`
-  may *partition* an existing spec (into numbered parts) but never rewrite its
-  content. If a pi/sonnet/workhorse run writes `specs/`, kill it, `git checkout`
-  the touched specs, and return spec-creation to the planner. Workhorse only
-  *implements* existing specs.
-- **450-line file gate, traits-first, `#![forbid(unsafe_code)]`** — workspace-wide,
-  no per-crate override exists today (`Cargo.toml:56`). Earlier research docs
-  planned an unsafe carve-out for `pii-hw`/`pii-memory`; `pii-hw` was never built
-  and `pii-memory` ships with the same forbid as every other crate.
-- Tests under `_tmp/`, never `/tmp` — and a test must CREATE the scratch it uses:
-  `pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "prefix-")`, or an explicit
-  `create_dir_all` in crates that do not depend on `pii-store`. A bare
-  `tempdir_in(.../_tmp...)` fails `lint-scratch` (a gate step) — this class cost four
-  separate fixes because leftover state made the repo gate look green.
-- **Memory + HANDOFF are mandatory:** after any commit, update `HANDOFF.md` and store an
-  the workspace memory insight (topic `pii`).
-- No AI-assistant mentions in commit messages. No `rm -rf`.
-- If pidag itself breaks mid-run, fix pidag first, then resume the implementation.
+## Rules
 
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- A source file stays under 450 lines. Split into a folder module; do not raise the limit or baseline a new file.
+- `unsafe_code = "forbid"` for the whole workspace (`Cargo.toml:60`), with no per-crate override.
+- Tests keep their scratch under `_tmp/` and create it themselves: `pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "prefix-")`,
+  or an explicit `create_dir_all` in a crate that does not depend on `pii-store`. A bare `tempdir_in(.../_tmp...)` fails the
+  `lint-scratch` step.
+- A test is written first and must fail for the right reason. A rule that skips or suppresses something needs a near-miss case that must
+  still take the normal path.
+- Never weaken a check, lower a floor or skip a step to make a change pass.
+- Never `rm -rf` existing work and never discard changes with `git checkout --`: move things aside. Credentials come from environment
+  variables and are never written to a file, a log or a commit.
+- Commit messages describe the change and are written under your own identity.
+- Update `HANDOFF.md` when a change alters what is open or how the queue works.
