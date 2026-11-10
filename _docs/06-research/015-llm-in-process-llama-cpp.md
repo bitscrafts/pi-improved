@@ -6,9 +6,9 @@
 
 ## Context
 
-Today Pii's only live model backend is [`OllamaProvider`](crates/pii-model/src/ollama.rs)
+Today Pii's only live model backend is `OllamaProvider` (`crates/pii-model/src/ollama.rs`, since removed)
 — an HTTP client (`Arc<dyn HttpTransport>` → `POST {OLLAMA_HOST}/api/chat`)
-implementing the sync [`ModelProvider`](crates/pii-model/src/lib.rs)
+implementing the sync [`ModelProvider`](../../crates/pii-model/src/lib.rs)
 trait. `014-local-model-spec-implementation.md` already established that Granite 4.2's
 thinking-mode toggle (`enable_thinking=False`) is **not controllable through
 Ollama at all** — Ollama replaces the model's own Jinja chat template, so the
