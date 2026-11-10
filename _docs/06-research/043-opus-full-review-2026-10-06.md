@@ -381,7 +381,7 @@ pii's port routing strictly contains pidag's pass/fail `depends_on`, and `failov
 
 ## 9. Documentation review (new contract)
 
-Method: two parallel read-only passes covered every area, with about 85 concrete claims checked by command. I re-checked six of them myself: `HANDOFF.md:188` and `:237` "Nothing is committed" and "No commits"; `AGENTS.md:51` "18 crates"; `.pidag/config.toml:12` `max_iterations = 2` against `pidag-way-of-work.md:91` "4"; `Cargo.toml:56` against cited `:54`; and 030's triple 037 bullets at `:140-145` plus dead `035/036` at `:485`. All six held (C-run). The rest are I.
+Method: two parallel read-only passes covered every area, with about 85 concrete claims checked by command. I re-checked six of them myself: ``_docs/05-operations/BUILD-LOG-2026-09-to-11.md:188`` and `:237` "Nothing is committed" and "No commits"; `AGENTS.md:51` "18 crates"; `.pidag/config.toml:12` `max_iterations = 2` against `pidag-way-of-work.md:91` "4"; `Cargo.toml:56` against cited `:54`; and 030's triple 037 bullets at `:140-145` plus dead `035/036` at `:485`. All six held (C-run). The rest are I.
 
 **Per-area verdicts**
 
