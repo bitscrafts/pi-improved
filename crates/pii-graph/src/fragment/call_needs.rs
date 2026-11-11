@@ -8,6 +8,7 @@ use toml::{Table, Value};
 
 use super::call::{id_of, tables};
 use super::call_record::{CallRecord, call_from_fields};
+use super::call_rewrite::reference_spans;
 
 /// What one call checks in its sub-graph: the sub-graph's name and declaration, the call's `in` table, and the
 /// sub-graph's node ids and nodes as they stand before the rewrite.
@@ -55,27 +56,32 @@ pub(super) fn check(scope: &Scope<'_>, host: &Table, chain: &[String]) -> Result
     for node in scope.nodes {
         let nid = id_of(node).unwrap_or_default();
         for expr in node_exprs(node) {
-            let segs: Vec<&str> = expr[2..].split('.').collect();
-            match segs.as_slice() {
-                ["nodes", m, ..]
-                    if host_ids.iter().any(|h| h == *m) && !scope.ids.iter().any(|s| s == *m) =>
-                {
-                    return Err(PiiError::Invalid(format!(
-                        "graph.call.leak: graph '{}' node '{nid}' reads host node '{m}' through call '{}'; map it with 'in'",
-                        scope.graph, scope.call
-                    )));
-                }
-                ["input"] if scope.needs.is_some() => {
-                    return Err(refusal(scope, &nid, "the whole input", declared));
-                }
-                ["input", key, ..] if scope.needs.is_some() && !scope.input.contains_key(*key) => {
-                    if !declared.iter().any(|d| d == *key) {
-                        let read = format!("input '{key}'");
-                        return Err(refusal(scope, &nid, &read, declared));
+            for span in reference_spans(expr) {
+                let segs: Vec<&str> = expr[span][2..].split('.').collect();
+                match segs.as_slice() {
+                    ["nodes", m, ..]
+                        if host_ids.iter().any(|h| h == *m)
+                            && !scope.ids.iter().any(|s| s == *m) =>
+                    {
+                        return Err(PiiError::Invalid(format!(
+                            "graph.call.leak: graph '{}' node '{nid}' reads host node '{m}' through call '{}'; map it with 'in'",
+                            scope.graph, scope.call
+                        )));
                     }
-                    passed.push((nid.clone(), key.to_string()));
+                    ["input"] if scope.needs.is_some() => {
+                        return Err(refusal(scope, &nid, "the whole input", declared));
+                    }
+                    ["input", key, ..]
+                        if scope.needs.is_some() && !scope.input.contains_key(*key) =>
+                    {
+                        if !declared.iter().any(|d| d == *key) {
+                            let read = format!("input '{key}'");
+                            return Err(refusal(scope, &nid, &read, declared));
+                        }
+                        passed.push((nid.clone(), key.to_string()));
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }
@@ -196,7 +202,8 @@ fn refusal(scope: &Scope<'_>, nid: &str, read: &str, declared: &[String]) -> Pii
     ))
 }
 
-/// The `$.` strings of a node, in the places the rewrite visits them: every key but `id`, nested.
+/// The strings of a node the rewrite reads references in, in the places it visits them (`call.rs`, `rewrite_field`): an
+/// `expr` field whole, wherever its `$.` stands, and every other key but `id` by its nested `$.` strings.
 fn node_exprs(node: &Table) -> Vec<&str> {
     fn walk<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
         match v {
@@ -208,8 +215,10 @@ fn node_exprs(node: &Table) -> Vec<&str> {
     }
     let mut out = Vec::new();
     for (k, v) in node {
-        if k != "id" {
-            walk(v, &mut out);
+        match v {
+            Value::String(s) if k == "expr" => out.push(s.as_str()),
+            _ if k != "id" => walk(v, &mut out),
+            _ => {}
         }
     }
     out
