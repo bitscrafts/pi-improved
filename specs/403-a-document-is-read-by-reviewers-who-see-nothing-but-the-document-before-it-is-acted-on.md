@@ -133,8 +133,6 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `crates/pii-server/tests/review_graph/main.rs`
 - `crates/pii-server/tests/review_graph/recording.rs`
 - `crates/pii-server/tests/review_graph/fan_out.rs`
-- `rubrics/`
-- `crates/pii-server/tests/fixtures/`
 - `crates/pii-server/tests/fixtures/review/bad-399-files.md`
 - `crates/pii-server/tests/fixtures/review/bad-401-size.md`
 - `crates/pii-server/tests/fixtures/review/bad-374-stale.md`
@@ -142,4 +140,3 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `crates/pii-server/tests/fixtures/review/ok-394.md`
 - `crates/pii-server/tests/fixtures/review/ok-398.md`
 - `scripts/measure-review.sh`
-- `crates/pii-server/tests/review_graph/`
