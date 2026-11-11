@@ -142,3 +142,4 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `crates/pii-server/tests/fixtures/review/ok-394.md`
 - `crates/pii-server/tests/fixtures/review/ok-398.md`
 - `scripts/measure-review.sh`
+- `crates/pii-server/tests/review_graph/`
