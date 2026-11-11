@@ -30,6 +30,10 @@ called graph that computes anything from a node or an input is affected, not onl
 - R6 There is ONE renaming rule: the per-reference function stays `rewrite_expr` (it is renamed only if its signature must change), and the new code finds references and calls it. No second copy of the
   nodes/input/payload arms.
 
+- R7 The load-time checks that read a sub-graph's expressions (`graph.call.leak`, `graph.call.undeclared` in `crates/pii-graph/src/fragment/call_needs.rs`) look at EVERY reference of an expression,
+  not only the first: today they split the whole string on `.`, so `$.input.k + $.nodes.host` is checked as if it read `input.k` only, and `$.input.secret + $.input.x` reads the input named `secret + $`.
+  They find references with the SAME scan the renamer uses (one function that returns each reference's span; `rewrite_refs` is built on it), so the validator and the renamer cannot disagree.
+  A `$.` inside a string literal is not a reference there either.
 ## Architecture
 ```
 rewrite(v) for a string that starts with "$."  ->  rewrite_refs(text, refs)
@@ -61,6 +65,17 @@ New test file `crates/pii-graph/tests/call_rewrites_compound_expressions.rs`, in
 | `a_hyphenated_node_id_is_one_reference` | `$.nodes.method-judge + "x"` (node `method-judge`) | renamed as one reference |
 | `the_review_graphs_path_node_evaluates_after_inlining` | `graphs/review-one.toml` called from a one-slot host, `root`=`/w`, `rubric`=`alpha` | the woven `path` node evaluates to `/w/rubrics/alpha.md` |
 
+New test file `crates/pii-graph/tests/call_needs_reads_every_reference.rs` (R7), same weave helpers:
+
+| Test Name | Input | Expected Output |
+|---|---|---|
+| `a_host_node_read_by_a_later_reference_is_a_leak` | sub node expr `$.nodes.a + $.nodes.hostnode` where `hostnode` is a host node the call does not map | refused with `graph.call.leak` naming `hostnode` |
+| `an_undeclared_input_in_a_later_reference_is_refused` | `$.input.k + $.input.secret`, `secret` not declared, not mapped | refused with `graph.call.undeclared` naming input `secret` |
+| `a_declared_input_in_a_later_reference_is_accepted` | the same expr with `secret` declared in `needs` | loads |
+| `a_mapped_input_in_a_later_reference_is_accepted` | `$.nodes.a + $.input.k`, `k` mapped by the call | loads |
+| `CONTROL_a_host_node_named_inside_a_string_literal_is_not_a_leak` | `"$.nodes.hostnode" + $.nodes.a` | loads |
+| `CONTROL_a_single_reference_is_checked_as_before` | `$.nodes.hostnode` alone | refused with `graph.call.leak`, exactly as today |
+
 Acceptance test: `a_concatenation_of_a_node_and_an_input_is_renamed_reference_by_reference`. The dangerous requirement is R2: a plausible implementation renames every `$.` it
 finds with a regex, passes the positive rows, and fails only `CONTROL_a_reference_inside_a_string_literal_is_data`. A second plausible implementation scans correctly but ends a reference at
 the first non-letter, so `method-judge` becomes `method` and the hyphen row catches it.
@@ -69,15 +84,17 @@ the first non-letter, so `method-judge` becomes `method` and the hyphen row catc
 ### New in this row
 Each is verified to FAIL before the change. A criterion that already passes is a Guardrail, never a criterion.
 - [ ] `cargo test -q -p pii-graph --test call_rewrites_compound_expressions 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
-- [ ] `grep -q 'fn rewrite_refs' crates/pii-graph/src/fragment/call_rewrite.rs`
-
+- [ ] `cargo test -q -p pii-graph --test call_needs_reads_every_reference 2>&1 | grep -qE 'test result: ok. [1-9][0-9]* passed'`
+- [ ] `grep -q 'fn reference_spans' crates/pii-graph/src/fragment/call_rewrite.rs`
 ## Guardrails
+- Keep green (it passes now, so it is not a criterion: a criterion that passes before the work refuses the row at the RED step): `grep -q 'fn rewrite_refs' crates/pii-graph/src/fragment/call_rewrite.rs`;
+  `test "$(grep -c 'fn literal_end' crates/pii-graph/src/fragment/call_rewrite.rs)" = 1` (one literal scanner, not two); `cargo test -q -p pii-graph --test call_needs`.
 - Keep green (they pass today): `cargo test -q -p pii-graph --test call_inlines_a_graph`, `cargo test -q -p pii-graph --test call_rewrites_prompt_placeholders`, `cargo test -q -p pii-graph --test call_needs`,
   `cargo test -q -p pii-graph --test call_outputs_and_cycles`.
 - `crates/pii-graph/src/fragment/call.rs` must not get longer: `test "$(wc -l < crates/pii-graph/src/fragment/call.rs)" -le 466`.
 - `crates/pii-graph/src/fragment/call_rewrite.rs` stays under 450 lines: `test "$(wc -l < crates/pii-graph/src/fragment/call_rewrite.rs)" -lt 450`.
 - Do NOT add a second renaming rule: `grep -c 'fn rewrite_expr' crates/pii-graph/src/fragment/call_rewrite.rs` stays 1.
-- Do NOT touch `expr.rs`, `validate.rs` or `template.rs`: the parser and validator are right; the inliner must supply names they can read.
+- Do NOT touch `expr.rs`, `validate.rs` or `template.rs` (`call_needs.rs` IS in scope, for R7): the parser and validator are right; the inliner must supply names they can read.
 - Do NOT edit `graphs/review.toml`, `graphs/review-one.toml` or `crates/pii-server/tests/review_graph.rs`: they belong to row 403 and are parked work, not in the tree.
 - Do NOT add a node kind, an expression function or a dependency.
 - Every dirty path must be listed under Files: list a file before you touch it.
@@ -85,3 +102,5 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 ## Files
 - `crates/pii-graph/src/fragment/call_rewrite.rs`
 - `crates/pii-graph/tests/call_rewrites_compound_expressions.rs`
+- `crates/pii-graph/src/fragment/call_needs.rs`
+- `crates/pii-graph/tests/call_needs_reads_every_reference.rs`
