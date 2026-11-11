@@ -1,0 +1,481 @@
+# Spec 403: the fan-out. Four named reviewer slots, each a pinned call of `review-one`. A slot whose `rubric_N` is absent is
+# skipped: neither a pass nor a failure. Port `ok` only when every requested slot passed; otherwise the run is refused. A
+# slot's refusal is taken back from its call by wiring the refusal's id (`refuse`), so one reviewer's refusal does not end
+# the run before the others have answered. `rubric_1` is required: a review with no reviewer is not a pass. No absolute
+# path, credential, model name or rubric text lives in this file.
+name = "review"
+entry = "need_1"
+exit = "done"
+needs = ["doc", "workdir", "model", "provider"]
+caps = ["fs_read", "fs_write", "proc"]
+
+[limits]
+max_wall_ms = 1800000
+
+# An absent path resolves to null, which no string or number equals: that is how a slot tells "absent" from "given".
+[[node]]
+id = "need_1"
+kind = "route"
+on = "$.input.rubric_1"
+rules = [
+  { when = '$.input.rubric_1 == $.nodes.none', port = "refuse" },
+  { port = "run" },
+]
+
+# The rubric is read through a host transform: a `call` input that names an absent run-input key is refused at start,
+# and a slot whose rubric is absent is skipped by its gate before this call ever runs.
+[[node]]
+id = "pick_1"
+kind = "transform"
+expr = "$.input.rubric_1"
+
+[[node]]
+id = "slot_1"
+kind = "call"
+graph = "review-one"
+sha256 = "1d98e385b5120f34587eac8de848e43733c29bb3c39f25876b699b01e8c4acd3"
+caps = ["fs_read", "proc"]
+
+[node.in]
+doc = "$.input.doc"
+rubric = "$.nodes.pick_1"
+workdir = "$.input.workdir"
+model = "$.input.model"
+provider = "$.input.provider"
+
+[[node]]
+id = "pass_1"
+kind = "transform"
+value = "passed"
+
+[[node]]
+id = "failed_1"
+kind = "transform"
+join = "any"
+expr = '"rubric " + $.input.rubric_1 + " did not pass"'
+
+# Join of this slot's arms: exactly one arm fires, the others are dead, so the join is `any` and it keys its payload by arm.
+[[node]]
+id = "res_1"
+kind = "transform"
+expr = "$.payload"
+join = "any"
+
+[[node]]
+id = "gate_2"
+kind = "route"
+on = "$.input.rubric_2"
+rules = [
+  { when = '$.input.rubric_2 == $.nodes.none', port = "skip" },
+  { port = "run" },
+]
+
+[[node]]
+id = "skip_2"
+kind = "transform"
+value = "skipped"
+
+# The rubric is read through a host transform: a `call` input that names an absent run-input key is refused at start,
+# and a slot whose rubric is absent is skipped by its gate before this call ever runs.
+[[node]]
+id = "pick_2"
+kind = "transform"
+expr = "$.input.rubric_2"
+
+[[node]]
+id = "slot_2"
+kind = "call"
+graph = "review-one"
+sha256 = "1d98e385b5120f34587eac8de848e43733c29bb3c39f25876b699b01e8c4acd3"
+caps = ["fs_read", "proc"]
+
+[node.in]
+doc = "$.input.doc"
+rubric = "$.nodes.pick_2"
+workdir = "$.input.workdir"
+model = "$.input.model"
+provider = "$.input.provider"
+
+[[node]]
+id = "pass_2"
+kind = "transform"
+value = "passed"
+
+[[node]]
+id = "failed_2"
+kind = "transform"
+join = "any"
+expr = '"rubric " + $.input.rubric_2 + " did not pass"'
+
+# Join of this slot's arms: exactly one arm fires, the others are dead, so the join is `any` and it keys its payload by arm.
+[[node]]
+id = "res_2"
+kind = "transform"
+expr = "$.payload"
+join = "any"
+
+[[node]]
+id = "gate_3"
+kind = "route"
+on = "$.input.rubric_3"
+rules = [
+  { when = '$.input.rubric_3 == $.nodes.none', port = "skip" },
+  { port = "run" },
+]
+
+[[node]]
+id = "skip_3"
+kind = "transform"
+value = "skipped"
+
+# The rubric is read through a host transform: a `call` input that names an absent run-input key is refused at start,
+# and a slot whose rubric is absent is skipped by its gate before this call ever runs.
+[[node]]
+id = "pick_3"
+kind = "transform"
+expr = "$.input.rubric_3"
+
+[[node]]
+id = "slot_3"
+kind = "call"
+graph = "review-one"
+sha256 = "1d98e385b5120f34587eac8de848e43733c29bb3c39f25876b699b01e8c4acd3"
+caps = ["fs_read", "proc"]
+
+[node.in]
+doc = "$.input.doc"
+rubric = "$.nodes.pick_3"
+workdir = "$.input.workdir"
+model = "$.input.model"
+provider = "$.input.provider"
+
+[[node]]
+id = "pass_3"
+kind = "transform"
+value = "passed"
+
+[[node]]
+id = "failed_3"
+kind = "transform"
+join = "any"
+expr = '"rubric " + $.input.rubric_3 + " did not pass"'
+
+# Join of this slot's arms: exactly one arm fires, the others are dead, so the join is `any` and it keys its payload by arm.
+[[node]]
+id = "res_3"
+kind = "transform"
+expr = "$.payload"
+join = "any"
+
+[[node]]
+id = "gate_4"
+kind = "route"
+on = "$.input.rubric_4"
+rules = [
+  { when = '$.input.rubric_4 == $.nodes.none', port = "skip" },
+  { port = "run" },
+]
+
+[[node]]
+id = "skip_4"
+kind = "transform"
+value = "skipped"
+
+# The rubric is read through a host transform: a `call` input that names an absent run-input key is refused at start,
+# and a slot whose rubric is absent is skipped by its gate before this call ever runs.
+[[node]]
+id = "pick_4"
+kind = "transform"
+expr = "$.input.rubric_4"
+
+[[node]]
+id = "slot_4"
+kind = "call"
+graph = "review-one"
+sha256 = "1d98e385b5120f34587eac8de848e43733c29bb3c39f25876b699b01e8c4acd3"
+caps = ["fs_read", "proc"]
+
+[node.in]
+doc = "$.input.doc"
+rubric = "$.nodes.pick_4"
+workdir = "$.input.workdir"
+model = "$.input.model"
+provider = "$.input.provider"
+
+[[node]]
+id = "pass_4"
+kind = "transform"
+value = "passed"
+
+[[node]]
+id = "failed_4"
+kind = "transform"
+join = "any"
+expr = '"rubric " + $.input.rubric_4 + " did not pass"'
+
+# Join of this slot's arms: exactly one arm fires, the others are dead, so the join is `any` and it keys its payload by arm.
+[[node]]
+id = "res_4"
+kind = "transform"
+expr = "$.payload"
+join = "any"
+
+# One route for the four slots, fed by every `res_N` (each is keyed by its source). A slot that failed refuses the run; a
+# passed or skipped slot does not. `join = "all"` waits for all four, so no slot is judged before it has answered.
+[[node]]
+id = "check"
+kind = "route"
+on = "$.payload"
+join = "all"
+rules = [
+  { when = '$.payload.res_1.failed_1 != $.nodes.none', port = "refuse" },
+  { when = '$.payload.res_2.failed_2 != $.nodes.none', port = "refuse" },
+  { when = '$.payload.res_3.failed_3 != $.nodes.none', port = "refuse" },
+  { when = '$.payload.res_4.failed_4 != $.nodes.none', port = "refuse" },
+  { port = "next" },
+]
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+# One refusal for every slot that did not pass. The reason names each failing rubric: the join's payload is each slot's
+# arm, and a passed slot's arm carries only "passed", so the rubric names in it are exactly the failing ones. Its id is
+# the host's: the reviewer's own verdicts are in the journal under each slot.
+[[node]]
+id = "refuse"
+kind = "refuse"
+join = "any"
+hook = "review"
+reason = "a requested rubric did not pass: {{payload}}"
+
+# A review with no `rubric_1` is refused by its own node: no slot ran, so there is no arm to name.
+[[node]]
+id = "refuse_none"
+kind = "refuse"
+hook = "review"
+reason = "rubric_1 was not given: a review with no reviewer is not a pass"
+
+# The need edges and gate edges start a slot; a skipped slot feeds its arm to the join.
+[[edge]]
+from = "need_1"
+port = "run"
+to = "slot_1"
+kind = "data"
+
+[[edge]]
+from = "need_1"
+port = "refuse"
+to = "refuse_none"
+kind = "data"
+
+[[edge]]
+from = "gate_2"
+port = "run"
+to = "slot_2"
+kind = "data"
+
+[[edge]]
+from = "gate_2"
+port = "skip"
+to = "skip_2"
+kind = "data"
+
+[[edge]]
+from = "skip_2"
+port = "ok"
+to = "res_2"
+kind = "data"
+
+[[edge]]
+from = "gate_3"
+port = "run"
+to = "slot_3"
+kind = "data"
+
+[[edge]]
+from = "gate_3"
+port = "skip"
+to = "skip_3"
+kind = "data"
+
+[[edge]]
+from = "skip_3"
+port = "ok"
+to = "res_3"
+kind = "data"
+
+[[edge]]
+from = "gate_4"
+port = "run"
+to = "slot_4"
+kind = "data"
+
+[[edge]]
+from = "gate_4"
+port = "skip"
+to = "skip_4"
+kind = "data"
+
+[[edge]]
+from = "skip_4"
+port = "ok"
+to = "res_4"
+kind = "data"
+
+[[edge]]
+from = "slot_1"
+port = "ok"
+to = "pass_1"
+kind = "data"
+
+[[edge]]
+from = "slot_1"
+port = "refuse"
+to = "failed_1"
+kind = "data"
+
+[[edge]]
+from = "slot_1"
+port = "err"
+to = "failed_1"
+kind = "data"
+
+[[edge]]
+from = "pass_1"
+port = "ok"
+to = "res_1"
+kind = "data"
+
+[[edge]]
+from = "failed_1"
+port = "ok"
+to = "res_1"
+kind = "data"
+
+[[edge]]
+from = "res_1"
+port = "ok"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "slot_2"
+port = "ok"
+to = "pass_2"
+kind = "data"
+
+[[edge]]
+from = "slot_2"
+port = "refuse"
+to = "failed_2"
+kind = "data"
+
+[[edge]]
+from = "slot_2"
+port = "err"
+to = "failed_2"
+kind = "data"
+
+[[edge]]
+from = "pass_2"
+port = "ok"
+to = "res_2"
+kind = "data"
+
+[[edge]]
+from = "failed_2"
+port = "ok"
+to = "res_2"
+kind = "data"
+
+[[edge]]
+from = "res_2"
+port = "ok"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "slot_3"
+port = "ok"
+to = "pass_3"
+kind = "data"
+
+[[edge]]
+from = "slot_3"
+port = "refuse"
+to = "failed_3"
+kind = "data"
+
+[[edge]]
+from = "slot_3"
+port = "err"
+to = "failed_3"
+kind = "data"
+
+[[edge]]
+from = "pass_3"
+port = "ok"
+to = "res_3"
+kind = "data"
+
+[[edge]]
+from = "failed_3"
+port = "ok"
+to = "res_3"
+kind = "data"
+
+[[edge]]
+from = "res_3"
+port = "ok"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "slot_4"
+port = "ok"
+to = "pass_4"
+kind = "data"
+
+[[edge]]
+from = "slot_4"
+port = "refuse"
+to = "failed_4"
+kind = "data"
+
+[[edge]]
+from = "slot_4"
+port = "err"
+to = "failed_4"
+kind = "data"
+
+[[edge]]
+from = "pass_4"
+port = "ok"
+to = "res_4"
+kind = "data"
+
+[[edge]]
+from = "failed_4"
+port = "ok"
+to = "res_4"
+kind = "data"
+
+[[edge]]
+from = "res_4"
+port = "ok"
+to = "check"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "refuse"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "next"
+to = "done"
+kind = "data"

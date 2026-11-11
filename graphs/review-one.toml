@@ -1,0 +1,206 @@
+# Spec 403: one reviewer. It judges one document against one rubric, a file under `rubrics/` named by `rubric`, and passes
+# only on `VERDICT: PASS` as the answer's first line. Every other answer is a refusal: a rubric name that leaves
+# `rubrics/`, a missing rubric, a reviewer that did not answer, and `VERDICT: FAIL` alike. The reviewer holds `fs_read`
+# and nothing else. No absolute path, credential, model name or rubric text lives in this file: `doc`, `rubric`,
+# `workdir`, `model` and `provider` arrive through `input`, and the rubric's bytes arrive from its file.
+name = "review-one"
+entry = "name"
+exit = "done"
+needs = ["doc", "rubric", "workdir", "model", "provider"]
+caps = ["fs_read", "fs_write", "proc"]
+
+[limits]
+max_wall_ms = 600000
+
+# The name is read as this node's value, and every rule reads the payload: a called graph's inliner rewrites only a whole
+# `$.input.x` or `$.nodes.x` string, so a `when` that reads `$.input.rubric` would read the host's input instead.
+[[node]]
+id = "name"
+kind = "transform"
+expr = "$.input.rubric"
+
+# R2: a name that is empty, holds `/` or `..`, or starts with `.` is refused before anything is read.
+[[node]]
+id = "check"
+kind = "route"
+on = "$.payload"
+rules = [
+  { when = 'length($.payload) == 0', port = "refuse" },
+  { when = 'contains($.payload, "/")', port = "refuse" },
+  { when = 'contains($.payload, "..")', port = "refuse" },
+  { when = 'starts_with($.payload, ".")', port = "refuse" },
+  { port = "path" },
+]
+
+# The workdir is read on its own: the loader's needs check reads one `$.input` key per expression.
+[[node]]
+id = "root"
+kind = "transform"
+expr = "$.input.workdir"
+
+[[node]]
+id = "path"
+kind = "transform"
+expr = '$.nodes.root + "/rubrics/" + $.input.rubric + ".md"'
+
+# The rubric's text is the file's bytes, read by `cat` (the only program this graph may exec).
+[[node]]
+id = "rubric"
+kind = "tool"
+tool = "run"
+programs = ["cat"]
+args = { argv = ["cat", "$.nodes.path"] }
+caps = ["fs_read", "proc"]
+
+# A missing rubric exits non-zero: that is a refusal, named by the `cat` output the journal keeps.
+[[node]]
+id = "gate"
+kind = "route"
+on = "$.payload.exit_code"
+rules = [
+  { eq = 0, port = "reviewer" },
+  { port = "refuse" },
+]
+
+# R3: read-only by construction. The system line is the one literal every reviewer shares; the rubric text and the
+# document path travel in the prompt, so the rubric is never in this file.
+[[node]]
+id = "reviewer"
+kind = "agent"
+caps = ["fs_read"]
+tools = ["fs_read"]
+max_turns = 12
+system = "You are a read-only reviewer. Judge only the document named below against the rubric below. Answer in the format the rubric requires."
+prompt = """
+Document to judge (repository path): {{input.doc}}
+
+Rubric:
+{{nodes.rubric.stdout}}
+"""
+
+# R4: fail-closed. The answer, trimmed and lower-cased, is exactly `verdict: pass`, or begins with `verdict: pass` and a newline.
+[[node]]
+id = "verdict"
+kind = "route"
+on = "$.payload.text"
+rules = [
+  { when = 'lower(trim($.payload.text)) == "verdict: pass"', port = "done" },
+  { when = 'starts_with(lower(trim($.payload.text)), "verdict: pass\n")', port = "done" },
+  { port = "refuse" },
+]
+
+[[node]]
+id = "done"
+kind = "transform"
+value = "done"
+
+# One refusal for every arm that does not pass. Its id is what a host wires to take the verdict back (spec 364): an
+# unwired refusal fails the run, which is what a standalone run of this graph should do.
+[[node]]
+id = "refuse"
+kind = "refuse"
+join = "any"
+hook = "reviewer"
+reason = "the document does not pass this rubric, or the rubric or its reviewer could not run; the reviewer's answer is in the journal"
+
+[[edge]]
+from = "check"
+port = "path"
+to = "root"
+kind = "data"
+
+[[edge]]
+from = "root"
+port = "ok"
+to = "path"
+kind = "data"
+
+[[edge]]
+from = "check"
+port = "refuse"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "path"
+port = "ok"
+to = "rubric"
+kind = "data"
+
+[[edge]]
+from = "rubric"
+port = "ok"
+to = "gate"
+kind = "data"
+
+[[edge]]
+from = "rubric"
+port = "err"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "gate"
+port = "reviewer"
+to = "reviewer"
+kind = "data"
+
+[[edge]]
+from = "gate"
+port = "refuse"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "reviewer"
+port = "ok"
+to = "verdict"
+kind = "data"
+
+[[edge]]
+from = "reviewer"
+port = "fail"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "reviewer"
+port = "err"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "reviewer"
+port = "budget"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "verdict"
+port = "done"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "verdict"
+port = "refuse"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "path"
+port = "err"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "root"
+port = "err"
+to = "refuse"
+kind = "data"
+
+[[edge]]
+from = "name"
+port = "ok"
+to = "check"
+kind = "data"
