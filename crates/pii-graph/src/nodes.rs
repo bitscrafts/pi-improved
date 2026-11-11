@@ -6,6 +6,9 @@ use pii_core::Ctx;
 
 pub use crate::nodes_route::RouteNode;
 
+mod refuse;
+pub use refuse::RefuseNode;
+
 /// Build the evaluation context object for a node:
 /// `{ "input": ..., "payload": ..., "nodes": ... }`.
 pub(crate) fn eval_ctx(input: &NodeInput) -> serde_json::Value {
@@ -385,81 +388,6 @@ impl super::GraphNode for WaitNode {
         Ok(Outcome::Next {
             port: PortName::from("fired"),
             value: input.payload.clone(),
-        })
-    }
-}
-
-/// `refuse` (spec 212): fails the run by name.
-///
-/// `hook` is stamped by the weave from the attach id; `reason` is declared by the
-/// fragment. `returns` is set by the load when a host wires this refusal (spec 364):
-/// the verdict goes back to the host on `ok`, under that port's name, instead of
-/// failing the run.
-pub struct RefuseNode {
-    hook: String,
-    reason: String,
-    returns: Option<String>,
-}
-
-impl RefuseNode {
-    /// Builds from cfg; both fields default to a placeholder rather than failing.
-    ///
-    /// # Errors
-    /// Never fails today; the `Result` keeps the factory signature uniform.
-    pub fn new(cfg: &serde_json::Value) -> Result<Self, PiiError> {
-        let field = |key: &str, default: &str| {
-            cfg.get(key)
-                .and_then(|v| v.as_str())
-                .unwrap_or(default)
-                .to_owned()
-        };
-        Ok(Self {
-            hook: field("hook", "unnamed"),
-            reason: field("reason", "refused"),
-            returns: cfg
-                .get("returns")
-                .and_then(|v| v.as_str())
-                .map(str::to_owned),
-        })
-    }
-}
-
-impl super::GraphNode for RefuseNode {
-    fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
-        // A join's payload is keyed by source, and the arm that arrived says why.
-        let arm = input
-            .payload
-            .as_object()
-            .and_then(|arms| arms.values().find(|v| v.get("reason").is_some()))
-            .unwrap_or(&input.payload);
-        let why = arm.get("reason").and_then(|v| v.as_str());
-        let Some(port) = &self.returns else {
-            // The configured text is a fallback for a refusal that arrives with no reason (a coder that
-            // really failed). When the verdict that reached this node CARRIES one, it is the answer:
-            // `sdd`'s contract judge refuses a row whose criteria already pass, and the run used to fail
-            // as "the agent failed" for rows that never reached a coder (measured 2026-11-05: eight
-            // dispatches recorded as worker failures, none of them ever spent).
-            let reason = why.map_or_else(
-                || self.reason.clone(),
-                |why| format!("{}: {why}", self.reason),
-            );
-            return Ok(Outcome::Fail {
-                error: format!("run.refused{{hook={}, reason={reason}}}", self.hook),
-            });
-        };
-        let reason = why.map_or_else(
-            || format!("{port}: {}", self.reason),
-            |why| format!("{port}: {}: {why}", self.reason),
-        );
-        let criterion = arm.pointer("/failing/0").cloned();
-        Ok(Outcome::Next {
-            port: PortName::from("ok"),
-            value: serde_json::json!({
-                "verdict": "refused",
-                "port": port,
-                "reason": reason,
-                "criterion": criterion,
-            }),
         })
     }
 }

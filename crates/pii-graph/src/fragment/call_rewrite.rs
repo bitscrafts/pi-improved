@@ -31,12 +31,12 @@ pub(super) fn rewrite(v: &mut Value, refs: &Refs<'_>) {
     }
 }
 
-/// Rewrites one field of an inlined node. Only a `prompt` string takes the placeholder rule and an `expr` takes the
-/// reference scan (its `$.` may stand anywhere in the text); every other field keeps `rewrite`, so a `system` or a
-/// `value` holding braces stays data (R2).
+/// Rewrites one field of an inlined node. Only a `prompt` or a refusal's `reason` string takes the placeholder rule
+/// (spec 410) and an `expr` takes the reference scan (its `$.` may stand anywhere in the text); every other field keeps
+/// `rewrite`, so a `system` or a `value` holding braces stays data (R2).
 pub(super) fn rewrite_field(key: &str, v: &mut Value, refs: &Refs<'_>) {
     match v {
-        Value::String(s) if key == "prompt" => *s = rewrite_prompt(s, refs),
+        Value::String(s) if key == "prompt" || key == "reason" => *s = rewrite_prompt(s, refs),
         Value::String(s) if key == "expr" => *s = rewrite_refs(s, refs),
         _ => rewrite(v, refs),
     }
