@@ -29,6 +29,8 @@ const TOKEN: &str = "ghp_SECRET-TOKEN-123";
 /// 2026-11-10T11:00:00Z in epoch seconds: between the two `updated_at` values used below.
 const CURSOR_1100Z: u64 = 1_794_308_400;
 
+mod event_log;
+
 type Handler = Box<dyn Fn(&HttpRequest) -> HttpResponse + Send + Sync>;
 
 /// A fake transport that answers each request through a closure and records every request.
@@ -235,6 +237,8 @@ fn a_stale_owner_label_does_not_cover_a_later_stranger_label() {
     assert_eq!(ch.counters().unwrap().dropped, 1);
 }
 
+// The labels say `ready` while the event log says otherwise. Only the event-log check can tell these
+// apart from a ready issue, because the current-labels check sees `ready` in both.
 #[test]
 fn CONTROL_an_issue_written_by_the_owner_without_the_label_is_not_returned() {
     let fake = github(
