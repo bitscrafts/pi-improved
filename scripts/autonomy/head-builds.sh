@@ -6,7 +6,7 @@
 # No network, no claude, no gate. Removes only the mktemp -d directory it made in this run, after the verdict.
 . "$(dirname "$(readlink -f "$0")")/env.sh" 2>/dev/null || true
 set -uo pipefail
-ROOT=${HEAD_BUILDS_REPO:-/projects/pi-improved}
+ROOT=${HEAD_BUILDS_REPO:-$PII_ROOT}
 cd "$ROOT" || exit 2
 mkdir -p "$ROOT/_tmp"
 X=$(mktemp -d "$ROOT/_tmp/head-builds-XXXXXX") || exit 2

@@ -7,7 +7,7 @@
 # write, no gate. Removes only the mktemp -d directory it made in this run.
 . "$(dirname "$(readlink -f "$0")")/env.sh" 2>/dev/null || true
 set -uo pipefail
-ROOT=${PRE_COMMIT_REPO:-/projects/pi-improved}
+ROOT=${PRE_COMMIT_REPO:-$PII_ROOT}
 cd "$ROOT" 2>/dev/null || { echo "pre-commit: repository '$ROOT' is not readable"; exit 2; }
 PRINT=0
 case "${1:-}" in "") ;; --print) PRINT=1 ;; *) echo "pre-commit: unknown argument '$1'"; exit 2 ;; esac

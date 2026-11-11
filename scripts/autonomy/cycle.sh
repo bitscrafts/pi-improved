@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-
+. "$(dirname "$(readlink -f "$0")")/env.sh"   # PII_ROOT (spec 405): set before the lock, which is named from it
+[ -f "$PII_ROOT/scripts/autonomy/plan.tsv" ] && git -C "$PII_ROOT" rev-parse --git-dir >/dev/null 2>&1 || { echo "cycle: root '$PII_ROOT' is not a git repository with scripts/autonomy/plan.tsv - nothing spent"; echo "OUTCOME=plan-error"; exit 4; }
 # The tree hold (2026-11-01): a cycle writes the tree -- worker edits, commits, gate exports -- and an interactive
 # turn can be holding it with no lock of its own. A cron-side cycle yields with one line and exit 0, the same benign
 # refusal drain.sh makes for a held lock, so a held tree never looks like a fault.
@@ -18,14 +19,14 @@ if [ -z "${PII_CYCLE_LOCKED:-}" ]; then
   # -o (--close) so a daemonized grandchild cannot keep the lock (measured 2026-11-04): sccache,
   # started by the cycle's own cargo and re-parented to init, inherited this fd and held the lock
   # after the cycle was gone, so every later drain read "a cycle is in flight" and dispatched nothing.
-  flock -n -o -E 75 "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" bash "$0" "$@"; rc=$?
+  mkdir -p "$PII_ROOT/_tmp/autonomy"; flock -n -o -E 75 "${PII_LOCK:-$PII_ROOT/_tmp/autonomy/lock}" bash "$0" "$@"; rc=$?
   [ "$rc" = 75 ] && { echo "OUTCOME=locked ITEM=-"; exit 5; }
   exit "$rc"
 fi
 # The age control.sh reports ("IN FLIGHT for N min") is the lock FILE's mtime, and flock never updates it: on
 # 2026-10-19 it read 6073 min while the lock was free, were it believed. Touch it at the moment this process
 # starts holding the lock, so the number means the age of THIS hold and nothing else.
-touch "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" 2>/dev/null || true
+touch "${PII_LOCK:-$PII_ROOT/_tmp/autonomy/lock}" 2>/dev/null || true
 # cycle.sh — ONE unit of autonomous work, from probe to commit-or-park.
 #
 # What it does, in order, and why in that order:
@@ -41,10 +42,9 @@ touch "${PII_LOCK:-/projects/pi-improved/_tmp/autonomy/lock}" 2>/dev/null || tru
 # belongs to the agent that calls it; the mechanics belong here, where they can be tested.
 #
 # env: PLAN, GATE=1|0 (default 1), DRY=1 prints the plan and stops before dispatching.
-. "$(dirname "$(readlink -f "$0")")/env.sh"   # the loop needs PATH set inside the script
 . "$(dirname "$(readlink -f "$0")")/gate-env.sh"   # spec 262: which step list a queue item's commit is gated with
 set -uo pipefail
-ROOT=/projects/pi-improved; cd "$ROOT" || exit 1
+ROOT=$PII_ROOT; cd "$ROOT" || exit 1
 STATEDIR=$ROOT/_tmp/autonomy; LOGD=$STATEDIR/logs
 mkdir -p "$LOGD" _tmp/claude-batchC
 CID=$(date -u +%Y%m%dT%H%M%SZ)
@@ -439,7 +439,7 @@ if [ -n "$GATE_ON" ]; then
     say "gate steps: $(gate_step_labels "$GLIST" | paste -sd, - | sed 's/,/, /g') ($GCOUNT steps)"
     # 2026-11-06: a PII_BUILD_REVISION left in the launching shell is honoured by pii-server's build.rs BEFORE git, so every
     # binary in the gate was stamped with a stale commit and lane_run_parity (rightly) refused it. The gate stamps from git.
-    ( unset PII_BUILD_REVISION; export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt QG_SKIP_COVERAGE=$(gate_skip_coverage) CARGO_TARGET_DIR=/projects/pi-improved/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
+    ( unset PII_BUILD_REVISION; export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt QG_SKIP_COVERAGE=$(gate_skip_coverage) CARGO_TARGET_DIR=$ROOT/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
     GTRC=$?
     if [ "$GTRC" -eq 0 ]; then
       # spec 266: a green gate that never measured coverage is not a pass for a queue commit

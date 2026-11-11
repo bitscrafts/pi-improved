@@ -27,8 +27,9 @@
 #     aloud — a crashed holder must never wedge the loop, which is the failure mode a pure lock file has.
 #
 # usage: hold.sh take <owner> [ttl_secs] | check | release <owner> | reap | status
+. "$(dirname "$(readlink -f "$0")")/env.sh"   # PII_ROOT: the repository this queue belongs to (spec 405)
 set -uo pipefail
-ROOT=${PII_ROOT:-/projects/pi-improved}
+ROOT=$PII_ROOT
 HOLD=${PII_HOLD:-$ROOT/_tmp/autonomy/hold}
 TTL_DEFAULT=${PII_HOLD_TTL:-2700}          # 45 min: longer than any cycle, shorter than a lost afternoon
 

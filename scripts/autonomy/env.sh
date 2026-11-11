@@ -13,6 +13,15 @@ export PATH="${PATH:-}:/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr
 case ":$PATH:" in *":/root/.local/bin:"*) ;; *) export PATH="$PATH:/root/.local/bin" ;; esac
 export PII_TMP_ROOT="${PII_TMP_ROOT:-/projects/_tmp}"
 
+# THE ROOT (spec 405). The repository these scripts live in: three directories up from this file, never the caller's working
+# directory, because cron and the drain start the loop from anywhere. A PII_ROOT already in the environment wins. A set-but-blank
+# PII_ROOT is refused loudly, the same rule state.py applies to a blank PII_* (row X1), not treated as unset.
+if [ "${PII_ROOT+set}" = set ] && [ -z "${PII_ROOT//[[:space:]]/}" ]; then
+  echo "env.sh: PII_ROOT is set but blank - refusing; set it to a repository or unset it" >&2; exit 2
+fi
+: "${PII_ROOT:=$(dirname "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")")}"
+export PII_ROOT
+
 # root + bypassPermissions also needs the sandbox marker, or the worker dies in one second with
 # "--dangerously-skip-permissions cannot be used with root/sudo privileges".
 export IS_SANDBOX="${IS_SANDBOX:-1}"
@@ -21,7 +30,7 @@ export IS_SANDBOX="${IS_SANDBOX:-1}"
 # reads FRESH_GATE_TARGET - so the export pinned its OWN empty target directory and every attempt paid a full cold
 # workspace build, while _tmp/gate-target never even existed on disk. The gate's TREE stays fresh either way; only the
 # compiler cache is reused. This is the name the gate actually reads.
-export FRESH_GATE_TARGET="${FRESH_GATE_TARGET:-/projects/pi-improved/_tmp/gate-target}"
+export FRESH_GATE_TARGET="${FRESH_GATE_TARGET:-$PII_ROOT/_tmp/gate-target}"
 
 # BUILD PARALLELISM IS CAPPED. Measured 2026-10-17 04:52: load 81-88 on a 32-core machine with several workspace builds in
 # flight (one worker, its clippy/check/test steps, and whatever else was building). Each one was free to claim all 32
@@ -50,14 +59,14 @@ export GATE_STEPS
 # THE DIRECTORIES THE GATE WRITES TO, stated once (spec 273). The disk floor reads each one's REAL volume: the two gate
 # target dirs, the llvm-cov-target links inside them (symlinks into /tmp/gate-cache on the host root, a different volume
 # from /projects), and /tmp. Measured 2026-10-25: a /projects-only check never saw those tens of GB.
-: "${GATE_WRITE_DIRS:=/projects/pi-improved/_tmp/gate-target /projects/pi-improved/_tmp/gate-target/llvm-cov-target /projects/pi-improved/_tmp/tools-gate /projects/pi-improved/_tmp/tools-gate/llvm-cov-target /tmp}"
+: "${GATE_WRITE_DIRS:=$PII_ROOT/_tmp/gate-target $PII_ROOT/_tmp/gate-target/llvm-cov-target $PII_ROOT/_tmp/tools-gate $PII_ROOT/_tmp/tools-gate/llvm-cov-target /tmp}"
 export GATE_WRITE_DIRS
 
 # THE LANE GRAPH IS A ONE-WORD FILE (spec 295, 2026-10-27). The cron tick cannot see a person's shell, so the queue's lane is read
 # from this file: its first line, with spaces and CR stripped, is `spec` (the composed graph of spec 294) or `coder` (the one-node
 # graph). Any other word, an empty file, or no file at all leaves PII_LANE_GRAPH unset, which is the default. A PII_LANE_GRAPH
 # already set in the environment wins over the file. Nothing is printed and nothing in the file is executed.
-: "${PII_LANE_FILE:=/projects/pi-improved/_tmp/autonomy/lane-graph}"
+: "${PII_LANE_FILE:=$PII_ROOT/_tmp/autonomy/lane-graph}"
 if [ -z "${PII_LANE_GRAPH:-}" ] && [ -r "$PII_LANE_FILE" ]; then
   IFS= read -r PII_LANE_LINE < "$PII_LANE_FILE" || true
   PII_LANE_LINE=${PII_LANE_LINE//[ $'\r']/}

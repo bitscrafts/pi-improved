@@ -14,9 +14,10 @@
 #   · otherwise run cycle.sh, up to MAX_CYCLES, stopping early on queue-empty / paused / locked
 #
 # Env: MAX_CYCLES (default 8), PII_DRAIN_QUIET=1 to print only the summary.
+. "$(dirname "$(readlink -f "$0")")/env.sh"   # PII_ROOT: the repository this queue belongs to (spec 405)
 set -uo pipefail
 # PII_DRAIN_ROOT is a seam for tests only (a throwaway repo holding a copy of scripts/autonomy and a stub cycle.sh); the cron never sets it.
-cd "${PII_DRAIN_ROOT:-/projects/pi-improved}" || exit 1
+cd "${PII_DRAIN_ROOT:-$PII_ROOT}" || exit 1
 # The tree hold (2026-11-01): an interactive turn can be editing this tree with no lock of its own, so a dispatcher
 # that only checks the cycle's flock cannot know. Passing --from-cron is what makes this a BACKGROUND caller: it
 # yields and exits 0, which reduces its rights and can never gain any.

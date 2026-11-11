@@ -1,6 +1,9 @@
-import subprocess, sys, pathlib
+import os, subprocess, sys, pathlib
 
-root = pathlib.Path("/projects/pi-improved")
+# The root (spec 405): PII_ROOT when set, else the repository this file lives in. A blank PII_ROOT is refused, as env.sh does.
+if "PII_ROOT" in os.environ and not os.environ["PII_ROOT"].strip():
+    sys.exit("row-run-criteria: PII_ROOT is set but blank - refusing")
+root = pathlib.Path(os.environ.get("PII_ROOT") or pathlib.Path(__file__).resolve().parents[2])
 row_id = sys.argv[1]
 plan = (root / "scripts/autonomy/plan.tsv").read_text().splitlines()
 col = None
