@@ -49,3 +49,5 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 
 ## Files
 - `crates/pii-channels/tests/github.rs`
+- `crates/pii-channels/tests/github/main.rs`
+- `crates/pii-channels/tests/github/event_log.rs`
