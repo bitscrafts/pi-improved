@@ -88,3 +88,4 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `scripts/autonomy/pre-commit-builds.sh`
 - `scripts/autonomy/tests/repo-gate.test.sh`
 - `scripts/autonomy/tests/gate-steps.test.sh`
+- `scripts/autonomy/tests/gate-stamps-from-git.test.sh`
