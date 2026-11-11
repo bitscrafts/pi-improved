@@ -156,6 +156,7 @@ pub(super) fn build_raw_channel(
         "telegram" => adapters::telegram(c, transport),
         "matrix" => adapters::matrix(c, transport),
         "webhook" => adapters::webhook(c, net, transport, log),
+        "github" => adapters::github(c, transport, env),
         "discord" => Ok(Arc::new(
             pii_channels::discord::DiscordChannel::from_lookup(&c.name, transport, env)?,
         )),

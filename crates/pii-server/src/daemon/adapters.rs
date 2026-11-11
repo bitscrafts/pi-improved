@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use pii_abi::{HttpRequest, HttpResponse, PiiError};
+use pii_channels::github::{self, GithubSettings};
 use pii_channels::webhook::{WebhookChannel, WebhookConfig};
 use pii_channels::{Channel, matrix, secret, telegram};
 use pii_core::HttpTransport;
@@ -46,6 +47,24 @@ pub(super) fn matrix(
         c.base_url.as_deref(),
         c.user_id.as_deref(),
     )))
+}
+
+/// Config -> the GitHub channel (spec 406). The repository is required; a missing or malformed one is
+/// refused at build, and the token comes from env or a 0600 file, never the config.
+pub(super) fn github(
+    c: &ChannelSection,
+    transport: Arc<dyn HttpTransport>,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<Arc<dyn Channel>, PiiError> {
+    let settings = GithubSettings {
+        repo: c.repo.clone().unwrap_or_default(),
+        base_url: c.base_url.clone(),
+        token_env: c.token_env.clone(),
+        token_file: c.token_file.clone(),
+    };
+    Ok(Arc::new(github::GithubChannel::build(
+        &c.name, transport, &settings, env,
+    )?))
 }
 
 /// Serves the channel's request handler on the daemon's `NetService`.

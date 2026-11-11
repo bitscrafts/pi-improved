@@ -68,6 +68,7 @@ Common: `name`, `kind`, `graph` (run per message), `poll_interval_ms` (default 5
 | `matrix` | `token_env` (default `PII_MATRIX_TOKEN`), `token_file`, `base_url` (homeserver, required), `user_id` (the bot, required) |
 | `webhook` | `bind` (default `127.0.0.1:8787`), `url` (outbound), `secret_env`, `secret_file` |
 | `discord` | env: `PII_DISCORD_TOKEN`, `PII_DISCORD_CHANNEL_ID`, `PII_DISCORD_API_BASE` |
+| `github` | `repo` (`owner/name`, required), `token_env` (default `PII_GITHUB_TOKEN`), `token_file`, `base_url`; env `PII_GITHUB_ALLOW_USERS` (replaces the owner as the allowed labellers of `ready`) |
 | `cli` | `inbox`, `outbox` |
 
 Secrets come from an env var or a file with mode 0600 (looser is refused at

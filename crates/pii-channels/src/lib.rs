@@ -11,6 +11,7 @@
 
 pub mod cli;
 pub mod discord;
+pub mod github;
 pub mod matrix;
 pub mod mqtt;
 pub mod observe;
