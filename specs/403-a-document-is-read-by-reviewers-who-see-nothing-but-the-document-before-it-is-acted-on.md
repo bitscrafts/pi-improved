@@ -25,8 +25,9 @@ Two measured limits of the graph language decide the shape, so they are decision
 
 **Measured 2026-11-11 (after rows 404 and 409 landed):** the fan-out loads and evaluates; 18 of the 19 `review_graph` tests pass with the parked work in place. The one that fails is
 `review_with_one_failing_slot_names_that_rubric_only`: the run is refused, as it must be, but the refusal reads `a requested rubric did not pass, or rubric_1 was not given; each slot's verdict
-is in the journal` - it does not name the rubric that failed, and the test (line ~515) requires `rubric 2` in the message. The text is yours (`graphs/review.toml`): build the refusal reason from the
-failing slot's own result so it names exactly the rubrics that did not pass, and no other. Do not weaken the test; do not touch the engine (`crates/pii-graph`).
+is in the journal` - it does not name the rubric that failed, and the test (line ~515) requires `rubric 2` in the message. The text is yours (`graphs/review.toml`). The engine now supports it (row 410, `f736d84`): a `refuse` node's `reason` may hold `{{path}}` placeholders, rendered at run time from the node's own context
+with the same renderer a prompt uses; a placeholder that resolves to nothing leaves the reason as written. Build the refusal's reason so it names exactly the rubrics that did not pass, and no other;
+each slot's rubric name is a run input (`rubric_1` .. `rubric_4`). Do not weaken the test; do not touch the engine (`crates/pii-graph`).
 
 ## Requirements
 - R1 `graphs/review-one.toml` (entry `rubric`, exit `done`). Input: `doc` (repo-relative path), `rubric` (a name), `workdir`, `model` (a role such as `@planner`), `provider`.
