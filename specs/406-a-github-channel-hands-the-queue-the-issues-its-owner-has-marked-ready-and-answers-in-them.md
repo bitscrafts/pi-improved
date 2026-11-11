@@ -102,4 +102,5 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `crates/pii-channels/tests/github.rs`
 - `crates/pii-server/src/daemon/channel_wiring.rs`
 - `crates/pii-server/src/daemon/adapters.rs`
+- `crates/pii-server/src/daemon/config.rs`
 - `_docs/02-guides/writing-a-channel.md`
