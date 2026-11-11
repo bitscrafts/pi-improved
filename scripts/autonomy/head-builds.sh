@@ -7,6 +7,7 @@
 . "$(dirname "$(readlink -f "$0")")/env.sh" 2>/dev/null || true
 set -uo pipefail
 ROOT=${HEAD_BUILDS_REPO:-$PII_ROOT}
+BUILD=$(PII_ROOT=$ROOT; . "$(dirname "$(readlink -f "$0")")/gate-env.sh"; gate_build_check) || { echo "head-builds: the .pii/gate of '$ROOT' is refused" >&2; exit 2; }
 cd "$ROOT" || exit 2
 mkdir -p "$ROOT/_tmp"
 X=$(mktemp -d "$ROOT/_tmp/head-builds-XXXXXX") || exit 2
@@ -20,7 +21,7 @@ if [ "${1:-}" = "--worktree" ]; then
 fi
 TARGET=${HEAD_BUILDS_TARGET:-$ROOT/_tmp/head-builds-target}
 ERR="$X/.head-builds.err"
-( cd "$X" && CARGO_TARGET_DIR="$TARGET" cargo check -q --workspace ) >"$ERR" 2>&1
+( cd "$X" && CARGO_TARGET_DIR="$TARGET" bash -c "$BUILD" ) >"$ERR" 2>&1
 RC=$?
 if [ "$RC" -eq 0 ]; then
   echo "HEAD $SHA builds"

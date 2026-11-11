@@ -5,6 +5,7 @@ set -u
 cd "$(dirname "$0")/../../.." || exit 1
 GE=scripts/autonomy/gate-env.sh
 CYCLE=scripts/autonomy/cycle.sh
+PII_ROOT=$(pwd); export PII_ROOT
 [ -f "$GE" ] && . "$GE"
 OK=0
 FAILS=0
@@ -33,6 +34,9 @@ check "the full list names coverage-floor" "$(has "$FULL" coverage-floor)" yes
 check "CONTROL: the quick list lacks lint-observability" "$(has "$QUICK" lint-observability)" no
 # (d) cycle.sh runs the routine gate only with the full list named on the same command
 check "cycle.sh gates with the full list" "$(bare_routine_lines "$CYCLE")" ""
+# (d2) the routine gate is the command gate_command declares (spec 407): cycle.sh names it, and the full list lives in that default
+check "cycle.sh gates through gate_command" "$(grep -qE '^[^#]*gate_command' "$CYCLE" && echo yes || echo no)" yes
+check "the default gate command names the full list" "$(gate_command | grep -c 'GATE_STEPS=gate-steps.txt QG_SKIP_COVERAGE=0 bash quality-gate.sh --routine')" 1
 # (e) CONTROL for (d): a planted bare line makes the same predicate report a violation
 printf '%s\n' '    ( export PATH="/usr/local/cargo/bin:$PATH"; timeout 5 bash quality-gate.sh --routine ) >>"$LOG" 2>&1' >"$T"
 if [ -n "$(bare_routine_lines "$T")" ]; then PLANTED=reported; else PLANTED=silent; fi

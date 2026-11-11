@@ -8,6 +8,7 @@
 . "$(dirname "$(readlink -f "$0")")/env.sh" 2>/dev/null || true
 set -uo pipefail
 ROOT=${PRE_COMMIT_REPO:-$PII_ROOT}
+BUILD=$(PII_ROOT=$ROOT; . "$(dirname "$(readlink -f "$0")")/gate-env.sh"; gate_build_check) || { echo "pre-commit: the .pii/gate of '$ROOT' is refused"; exit 2; }
 cd "$ROOT" 2>/dev/null || { echo "pre-commit: repository '$ROOT' is not readable"; exit 2; }
 PRINT=0
 case "${1:-}" in "") ;; --print) PRINT=1 ;; *) echo "pre-commit: unknown argument '$1'"; exit 2 ;; esac
@@ -24,7 +25,7 @@ if [ "$PRINT" -eq 1 ]; then
   echo "pre-commit: would judge HEAD $SHA + $ADDN staged path(s), $DELN deleted"
   echo "pre-commit: the index is applied onto the export; the worktree is never read"
   echo "pre-commit: cargo metadata --locked --format-version 1"
-  echo "pre-commit: cargo check -q --workspace"
+  echo "pre-commit: $BUILD"
   echo "pre-commit: CARGO_TARGET_DIR=$TARGET (warm: reused across items, ~8s; a cold dir is ~38s)"
   exit 0
 fi
@@ -43,9 +44,10 @@ git diff --cached --no-renames --diff-filter=D --name-only -z >"$X/deleted" || {
 git checkout-index -f -z --stdin --prefix="$X/tree/" <"$X/added" || { echo "pre-commit: cannot read the index content"; exit 2; }
 while IFS= read -r -d '' f; do rm -f -- "$X/tree/$f"; done <"$X/deleted"
 ERR=$X/cargo.log
-( cd "$X/tree" && cargo metadata --locked --format-version 1 ) >/dev/null 2>"$ERR"; RC=$?
+RC=0
+if [ "$BUILD" = "cargo check -q --workspace" ]; then ( cd "$X/tree" && cargo metadata --locked --format-version 1 ) >/dev/null 2>"$ERR"; RC=$?; fi
 if [ "$RC" -eq 0 ]; then
-  ( cd "$X/tree" && CARGO_TARGET_DIR="$TARGET" cargo check -q --workspace ) >"$ERR" 2>&1; RC=$?
+  ( cd "$X/tree" && CARGO_TARGET_DIR="$TARGET" bash -c "$BUILD" ) >"$ERR" 2>&1; RC=$?
 fi
 if [ "$RC" -eq 0 ]; then
   echo "pre-commit: the pending tree builds ($(( $(date +%s) - T0 ))s)"; exit 0

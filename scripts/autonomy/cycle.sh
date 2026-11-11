@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 . "$(dirname "$(readlink -f "$0")")/env.sh"   # PII_ROOT (spec 405): set before the lock, which is named from it
 [ -f "$PII_ROOT/scripts/autonomy/plan.tsv" ] && git -C "$PII_ROOT" rev-parse --git-dir >/dev/null 2>&1 || { echo "cycle: root '$PII_ROOT' is not a git repository with scripts/autonomy/plan.tsv - nothing spent"; echo "OUTCOME=plan-error"; exit 4; }
+. "$(dirname "$(readlink -f "$0")")/gate-env.sh"; gate_check || { echo "OUTCOME=plan-error"; exit 4; }   # spec 262, 407: the gate is read here, and a refused .pii/gate stops before the lock
 # The tree hold (2026-11-01): a cycle writes the tree -- worker edits, commits, gate exports -- and an interactive
 # turn can be holding it with no lock of its own. A cron-side cycle yields with one line and exit 0, the same benign
 # refusal drain.sh makes for a held lock, so a held tree never looks like a fault.
@@ -42,7 +43,6 @@ touch "${PII_LOCK:-$PII_ROOT/_tmp/autonomy/lock}" 2>/dev/null || true
 # belongs to the agent that calls it; the mechanics belong here, where they can be tested.
 #
 # env: PLAN, GATE=1|0 (default 1), DRY=1 prints the plan and stops before dispatching.
-. "$(dirname "$(readlink -f "$0")")/gate-env.sh"   # spec 262: which step list a queue item's commit is gated with
 set -uo pipefail
 ROOT=$PII_ROOT; cd "$ROOT" || exit 1
 STATEDIR=$ROOT/_tmp/autonomy; LOGD=$STATEDIR/logs
@@ -432,18 +432,18 @@ if [ -n "$GATE_ON" ]; then
     # list recompiles the workspace. The old cap was 1780 s — shorter than every run since 2026-10-15 — so each
     # gated item ended `gate-failed` with its tree never judged. 3600 s leaves the measured run room and still
     # bounds a hang: every step also kills itself after QG_STALL_SECS=1800 with no output.
-    GATE_TIMEOUT=${GATE_TIMEOUT:-3600}
+    GATE_TIMEOUT=${GATE_TIMEOUT:-$(gate_timeout)}
     # spec 262: the commit is gated with the FULL list, pinned on this command (env.sh exports the quick list for other callers).
     # spec 266: the skip switch is pinned off here too (gate_skip_coverage prints 0, the QG_SKIP_COVERAGE=0 this line carries).
-    GLIST=$(gate_steps_file); GCOUNT=$(gate_step_labels "$GLIST" | wc -l | tr -d ' ')
+    GLIST=$(gate_steps_file); GCMD=$(gate_command) || { echo "OUTCOME=plan-error ITEM=$ITEM"; exit 4; }; GCOUNT=$(gate_step_labels "$GLIST" | wc -l | tr -d ' ')
     say "gate steps: $(gate_step_labels "$GLIST" | paste -sd, - | sed 's/,/, /g') ($GCOUNT steps)"
     # 2026-11-06: a PII_BUILD_REVISION left in the launching shell is honoured by pii-server's build.rs BEFORE git, so every
     # binary in the gate was stamped with a stale commit and lane_run_parity (rightly) refused it. The gate stamps from git.
-    ( unset PII_BUILD_REVISION; export PATH="/usr/local/cargo/bin:$PATH"; GATE_STEPS=gate-steps.txt QG_SKIP_COVERAGE=$(gate_skip_coverage) CARGO_TARGET_DIR=$ROOT/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=12000 timeout "$GATE_TIMEOUT" bash quality-gate.sh --routine ) >>"$LOG" 2>&1
+    ( unset PII_BUILD_REVISION; export PATH="/usr/local/cargo/bin:$PATH"; CARGO_TARGET_DIR=$ROOT/_tmp/gate-target FRESH_GATE_MIN_FREE_MB=$(gate_min_free_mb) timeout "$GATE_TIMEOUT" bash -c "$GCMD" ) >>"$LOG" 2>&1
     GTRC=$?
     if [ "$GTRC" -eq 0 ]; then
       # spec 266: a green gate that never measured coverage is not a pass for a queue commit
-      COVM=$(coverage_measured "$LOG")
+      COVM=yes; gate_has_coverage && COVM=$(coverage_measured "$LOG")
       if [ "$COVM" = yes ]; then say "gate coverage: measured"; else say "gate coverage: NOT MEASURED"; fi
       if [ "$COVM" = no ]; then
         python3 scripts/autonomy/state.py set "$ITEM" status=needs-review last=gate-coverage-not-measured
