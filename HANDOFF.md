@@ -14,14 +14,24 @@ what pii is, how to build it and how a change is specified is in [`README.md`](R
 - A cycle runs about every five minutes under cron and takes a lock, so nothing may edit the tree while one runs: take the hold first
   (`scripts/autonomy/hold.sh`) or wait for the cycle to end.
 
-## Queue (as last measured, 2026-11-10)
+## Queue (as last measured, 2026-11-12)
 
-- Row 404 landed: a called graph's `{{nodes.X}}` prompt placeholders are renamed with the node, like `$.nodes.X`.
-- Row 403 (a fan-out of read-only reviewers: a one-reviewer graph and a four-slot graph that calls it, with rubrics and fixtures) is parked.
-  Its files are saved outside the tree and in a git stash (`git stash list`, the entry named `row 403 work after attempt 2`). With row 404 in
-  place the graph loads; three of the nineteen tests in its test file (`review_graph`) still fail, and the cause has not been pinned down.
-  Resume with `scripts/resume-row-atomic.sh 403` only after reading those three failures.
+- Landed: 404 (prompt placeholders renamed with their node), 405 (the queue runs in the repository it is started from), 406 (a `github`
+  channel that hands the queue only issues carrying the owner's `ready` label, read from the issue's event log), 407 (a repository declares
+  its own gate in `.pii/gate`; without the file the gate is unchanged), 408 (a test that only the event-log check can satisfy), 409 (an inlined
+  graph's compound expressions are renamed reference by reference), 410 (a refusal's reason can name what was refused, with `{{placeholders}}`),
+  403 (the read-only reviewer fan-out, 19 tests).
 - Rows 354, 366 and 368 are parked or waiting for review.
+
+## Not yet proven
+
+- No real `ready`-labelled GitHub issue has gone through the `github` channel into the queue; its tests use a fake transport.
+- No real row of another repository has run that repository's declared gate through the queue; row 407's tests cover the selectors and a
+  dry-cycle refusal.
+- Three autonomy shell tests (`lane-graph-knob`, `lane-graph-wall`, `lane-preflight`) pass only at `/projects/pi-improved`: the scripts they
+  exercise write under that absolute path. A fresh clone elsewhere fails them, so the full gate cannot be proven from a clone until those
+  scripts find their own root. Specify it as a row; do not edit the tests to pass elsewhere.
+- `control_plane_is_not_behind_runs` (pii-cli) can time out waiting on a lock when the machine is loaded; it passes alone.
 
 ## Disk
 
@@ -29,16 +39,11 @@ A cold gate rebuilds about 38 GB of build output under `_tmp/gate-target`, and t
 row is left `gate-skipped:disk` with its work in the tree; free space (`cargo clean --target-dir` on a target directory) and resume. Moving
 `_tmp/gate-target` to a larger volume needs its own spec.
 
-## Open
+## History
 
-- Row 403, as above.
-- A spec for a repository field on a plan row, so the cycle can work in another project's checkout, and a `github` channel that reads
-  maintainer-labelled issues. Neither is written; both go through the spec path.
-- The commit history carries two older author identities (556 commits as a host-local address, 306 as an orchestrator) and 84 commits whose
-  messages name a tool. It is rewritten once, by the owner, together with a force-push; the 14 commits after `0499c09` are local only.
-  `git filter-repo` is not installed here; the laya-rs rewrite used `git filter-branch` with a hash-remapping filter.
-- The repository is public with a CI workflow (`checks.yml`, on every push) that has not yet run on GitHub: the commits that add it are
-  not pushed. The full gate (`gate.yml`) is manual and weekly until it has run on a runner. The licence is MIT (`LICENSE`).
+The history was rewritten once, on 2026-11-12: one author identity, no commit message naming a tool, commit ids quoted in docs and
+comments carried to the new ids. Test data was left alone, because an id inside a fixture is an opaque value. Clones and forks made before
+that date still hold the old commits, and ids quoted outside the repository will not match.
 
 ## Rules that bite
 
