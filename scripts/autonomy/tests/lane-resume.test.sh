@@ -21,7 +21,7 @@ mkdir -p "$SCRATCH/repo/graphs" "$SCRATCH/repo/specs"
 cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$SCRATCH/repo/graphs/"
 cp "$REPO"/specs/303-*.md "$SCRATCH/repo/specs/"
 sed "s|^REPO=/projects/pi-improved|REPO=$SCRATCH/repo|" "$REPO/scripts/run-batchC-pii.sh" > "$SCRATCH/repo/run.sh"
-S="$SCRATCH/repo/run.sh"
+S="$SCRATCH/repo/run.sh"; export PII_LANE_ROOT="$SCRATCH/repo"   # the copy sits at <repo>/run.sh, not under scripts/ (spec 411)
 
 # the devbox stubs: the transcript lookup succeeds only where STUB_FOUND=yes AND the lookup is under the captured location; every run answers at once
 cat > "$SCRATCH/ssh-stub.sh" <<'STUB'
@@ -31,7 +31,7 @@ printf '%s\n' "$CMD" >> "$SCRATCH_CMDS"
 case "$CMD" in
   *"find "*)
     # STUB_TREE: a real find over a fake devbox tree, the devbox-test path mapped onto it; otherwise STUB_FOUND answers
-    if [ -n "${STUB_TREE:-}" ]; then LOOK=${CMD//\/projects\/pi-improved\/_tmp\/devbox-test/$STUB_TREE}; bash -c "${LOOK#*podman exec pii-devbox }"
+    if [ -n "${STUB_TREE:-}" ]; then LOOK=${CMD//${PII_LANE_ROOT:-/projects/pi-improved}\/_tmp\/devbox-test/$STUB_TREE}; bash -c "${LOOK#*podman exec pii-devbox }"
     else [ "${STUB_FOUND:-yes}" = yes ]; fi ;;
   *"coder.spawned"*) echo '{"kind":"coder.spawned","session":"stub-sid"}' ;;
   *"run start"*|*"/start-"*) echo "run r000000000463 started" ;;

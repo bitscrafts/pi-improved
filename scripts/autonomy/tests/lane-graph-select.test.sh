@@ -19,7 +19,7 @@ bad() { echo "FAIL $1"; FAIL=$((FAIL+1)); }
 SCRATCH=$(mktemp -d "$REPO/_tmp/lane-select-XXXXXX") || exit 2
 trash() { mkdir -p "$REPO/_tmp/_trash"; for f in "$@"; do [ -e "$f" ] && mv "$f" "$REPO/_tmp/_trash/lane-select-$(date +%s)-$(basename "$f")"; done; }
 field() { printf '%s\n' "$1" | sed -n "s/^$2 *: //p" | head -1; } # <output> <KEY> -> the value of a "KEY    : value" line
-norm() { sed 's/^name = "q294-[0-9]*"$/name = "q294-TS"/' "$1"; }
+norm() { sed -e 's/^name = "q294-[0-9]*"$/name = "q294-TS"/' -e "s|$REPO|<ROOT>|g" -e "s|/projects/pi-improved|<ROOT>|g" "$1"; }   # the lane script writes the root it runs in (spec 411): compare with the root masked on both sides
 
 # the graph the script wrote BEFORE the lane existed (captured from the pre-294 script; brief and spec are fixed text)
 cat > "$SCRATCH/golden.toml" <<'GOLDEN'
@@ -114,15 +114,15 @@ trash "$I" "$(field "$OUT" GRAPH)"
 mkdir -p "$SCRATCH/repo/graphs" "$SCRATCH/repo/specs"
 cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$SCRATCH/repo/graphs/"
 cp "$REPO"/specs/294-*.md "$SCRATCH/repo/specs/"
-sed "s|^REPO=/projects/pi-improved|REPO=$SCRATCH/repo|" "$S" > "$SCRATCH/repo/run.sh"
+cp "$S" "$SCRATCH/repo/run.sh"   # the copy takes its root from PII_LANE_ROOT (spec 411), set on each run below, not from a sed on a line that no longer exists
 
 echo "== control: the unchanged pin is accepted (proves the refusal below is not a broken script)"
-OUT=$(PII_LANE_GRAPH=spec timeout 60 bash "$SCRATCH/repo/run.sh" 294 --dry-run 2>&1); RC=$?
+OUT=$(PII_LANE_ROOT="$SCRATCH/repo" PII_LANE_GRAPH=spec timeout 60 bash "$SCRATCH/repo/run.sh" 294 --dry-run 2>&1); RC=$?
 if [ "$RC" = 0 ]; then ok "control_unchanged_pin_is_accepted: exit 0"; else bad "control_unchanged_pin_is_accepted: exit $RC"; printf '%s\n' "$OUT" | head -10; fi
 
 echo "== control: docs.toml with one byte changed"
 printf ' ' >> "$SCRATCH/repo/graphs/docs.toml"
-OUT=$(PII_LANE_GRAPH=spec timeout 60 bash "$SCRATCH/repo/run.sh" 294 --dry-run 2>&1); RC=$?
+OUT=$(PII_LANE_ROOT="$SCRATCH/repo" PII_LANE_GRAPH=spec timeout 60 bash "$SCRATCH/repo/run.sh" 294 --dry-run 2>&1); RC=$?
 if [ "$RC" = 9 ] && printf '%s\n' "$OUT" | grep -q '^ABORT' && ! printf '%s\n' "$OUT" | grep -qE '^(DAEMON|RUN|DRY RUN)'; then ok "CONTROL_a_changed_pin_is_refused: exit 9 (refused before any work), nothing started"
 else bad "CONTROL_a_changed_pin_is_refused: exit $RC"; printf '%s\n' "$OUT" | head -10; fi
 

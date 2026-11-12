@@ -60,7 +60,7 @@ t = s.replace("[limits]\nmax_wall_ms = $WALL_MS\n\n", "")
 assert t != s, "no [limits] block to remove: the control has nothing to remove"
 open(sys.argv[2], "w").write(t)
 PY
-sed -i "s|^REPO=/projects/pi-improved|REPO=$REPO|" "$SCRATCH/no-limits.sh"
+export PII_LANE_ROOT="$REPO"   # the copy sits in a scratch dir, outside scripts/: it takes its root from PII_LANE_ROOT (spec 411); the line it used to rewrite is gone
 check no-limits "$SCRATCH/no-limits.sh" - fail
 trash "$SCRATCH"
 echo "PASS: $PASS FAIL: $FAIL"

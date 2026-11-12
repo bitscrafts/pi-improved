@@ -33,9 +33,10 @@ printf 'rm -rf /\n' > "$SCRATCH/garbage"
 printf 'spec' > "$SCRATCH/nonl"   # `echo -n spec`: read returns 1 at EOF although the variable is set
 G=$(env -u PII_LANE_GRAPH PII_LANE_FILE="$SCRATCH/nonl" bash -e -c 'source "$1"; printf "%s" "${PII_LANE_GRAPH-<unset>}"' _ "$ENV_SH" 2>&1)
 [ "$G" = spec ] && ok no_trailing_newline_works_under_set_e || bad "no_trailing_newline_works_under_set_e (got [$G])"
-# the default path is the one the cron tick reads: it must sit beside the loop's real control file, or the knob is a file nobody looks at
+# the default path is the one the cron tick reads: it must sit in the directory the queue's switch lives in (the ST that control.sh names), or the knob is a file nobody looks at
 DEF=$(env -u PII_LANE_GRAPH -u PII_LANE_FILE bash -c 'source "$1"; printf "%s" "$PII_LANE_FILE"' _ "$ENV_SH" 2>&1)
-if [ -n "$DEF" ] && [ -e "$(dirname "$DEF")/control" ] && [ "$(basename "$DEF")" = lane-graph ]; then ok "default_path_sits_beside_the_control_file ($DEF)"; else bad "default_path_sits_beside_the_control_file (got [$DEF])"; fi
+SW=$(sed -n 's/^ST=\([^;]*\);.*/\1/p' "$REPO/scripts/autonomy/control.sh" | head -1)
+if [ -n "$DEF" ] && [ -n "$SW" ] && [ "$(dirname "$DEF")" = "$REPO/$SW" ] && [ "$(basename "$DEF")" = lane-graph ]; then ok "default_path_sits_beside_the_control_file ($DEF)"; else bad "default_path_sits_beside_the_control_file (got [$DEF], switch [$REPO/$SW])"; fi
 mkdir -p "$REPO/_tmp/_trash" && mv "$SCRATCH" "$REPO/_tmp/_trash/lane-knob-$(date +%s)-$$"
 # the knob must not change what the other lane tests see: the cycle runs a row's criteria with env.sh sourced, so a test that expects the default lane has to pin it itself
 # (measured: lane-graph-select 7 ok 1 FAIL and lane-graph-wall 0 ok 3 FAIL with PII_LANE_GRAPH=spec exported)

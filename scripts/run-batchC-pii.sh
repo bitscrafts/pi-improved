@@ -24,10 +24,12 @@ set -uo pipefail
 # failures, so a stale pin or a stale daemon binary looked like a worker that tried and failed (measured
 # 2026-11-05: 78 firings, every row marked worker-rc=2, three trees swept).
 export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
-REPO=/projects/pi-improved
+# spec 411: the root is PII_LANE_ROOT when set, else the checkout this script sits in (scripts/..), so a clone at any path finds its own graphs.
+# Not PII_ROOT: scripts/autonomy/env.sh exports that (the repository the CYCLE runs in) to everything it starts, a scratch copy of this script included.
+REPO=${PII_LANE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 LOGD=$REPO/_tmp/claude-batchC
 HOST=${DEVBOX_HOST:-mvcorrea@10.10.10.217}
-C=/projects/pi-improved/_tmp/devbox-test
+C=$REPO/_tmp/devbox-test
 # the claude config dir the daemon starts its coders with (modules/devbox/daemon.sh, spec 307): the conversation file is <config dir>/projects/<cwd>/<sid>.jsonl
 CFG=$C/claude
 # PII_SSH names the ssh binary; the lane puts /usr/bin ahead of PATH, so a test cannot shadow `ssh` through PATH (measured: the stub was never run). Default: ssh.
