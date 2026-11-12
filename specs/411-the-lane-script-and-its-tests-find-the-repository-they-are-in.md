@@ -24,7 +24,7 @@ directories instead of requiring a runtime file.
 2. The path of the devbox's own mount, used inside the container (`podman exec -w /projects/pi-improved`), is NOT the repository root of the checkout and stays as it is.
 3. `lane-graph-knob`'s default-path case compares the directory of the default lane file with the directory the queue's switch lives in (the one `scripts/autonomy/control.sh` names),
    and no longer needs the switch file to exist. If `control.sh` moved its switch, the case must fail.
-4. A new test, `scripts/autonomy/tests/lane-scripts-find-their-root.test.sh`, exports the committed tree (`git archive HEAD`) into a scratch directory and runs the three tests there with the
+4. A new test, `scripts/autonomy/tests/lane-scripts-find-their-root.test.sh`, exports the WORKING tree into a scratch directory (every tracked file plus every new file that is not ignored: `git ls-files -z --cached --others --exclude-standard`, copied as the files are on disk, because a worker never commits and the tests must run on the change before it is committed) and runs the three tests there with the
    gate's own environment; all three must pass. Control: a copy of the lane script with the root hard-coded again must make `lane-graph-wall` fail in that scratch tree.
 5. No other test is edited and no check is weakened: a test that passed still passes, and none is excused with a skip.
 
@@ -35,14 +35,14 @@ scripts/run-batchC-pii.sh   REPO=${PII_ROOT:-<script dir>/..}   C=$REPO/_tmp/dev
         ▼
 lane-graph-wall / lane-preflight / lane-graph-knob  (read the graph the script wrote under THEIR checkout)
 
-lane-scripts-find-their-root.test.sh:  git archive HEAD → scratch → the three tests pass there
+lane-scripts-find-their-root.test.sh:  working tree (tracked + new, as on disk) → scratch → the three tests pass there
                                        control: hard-coded root copy → lane-graph-wall fails there
 ```
 
 ## TDD Contract
 | Test Name | Input | Expected Output |
 |---|---|---|
-| `the_three_lane_tests_pass_in_a_copy_of_the_tree` | `git archive HEAD` exported to a scratch dir, the three tests run there | all three exit 0 |
+| `the_three_lane_tests_pass_in_a_copy_of_the_tree` | the working tree exported to a scratch dir (tracked + new files, as on disk), the three tests run there | all three exit 0 |
 | `CONTROL_a_hard_coded_root_fails_in_the_copy` | the lane script with `REPO=/projects/pi-improved` put back, run in the copy | `lane-graph-wall` fails |
 | `the_lane_script_keeps_its_values_at_the_real_path` | the script's resolved `REPO` and `C` when run from `/projects/pi-improved` | `/projects/pi-improved` and `/projects/pi-improved/_tmp/devbox-test` |
 | `the_container_mount_path_is_unchanged` | `grep` of the `podman exec -w` line | still names `/projects/pi-improved` |
@@ -59,6 +59,7 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - Do NOT change the container path in `podman exec -w /projects/pi-improved`.
 - Do NOT edit `lane-graph-wall.test.sh` or `lane-preflight.test.sh`; they must pass as written once the script finds its root.
 - Do NOT skip, delete or weaken a test, and do NOT make a case pass by creating `_tmp/autonomy/control` in the checkout.
+- Do NOT export with `git archive` or any other committed-tree command for the copy test: at verify time the change is uncommitted, so it would test the old tree and pass or fail for the wrong reason.
 - Do NOT touch `/root/.pi`, any credential, or the other scripts under `scripts/` that name the real path (a later row).
 - A file stays under 450 lines.
 
