@@ -19,7 +19,8 @@ directories instead of requiring a runtime file.
 **Phase**: queue portability
 
 ## Requirements
-1. `scripts/run-batchC-pii.sh` takes its repository root from `PII_ROOT` when set, else from its own location (`scripts/..`), and derives `C` from it. Run from `/projects/pi-improved` every
+1. `scripts/run-batchC-pii.sh` takes its repository root from `PII_LANE_ROOT` when set, else from its own location (`scripts/..`), and derives `C` from it. It is NOT `PII_ROOT`: `scripts/autonomy/env.sh` exports `PII_ROOT` (the repository the cycle runs in) to everything a cycle starts, so under the gate a scratch copy of the script would resolve the real repository.
+   A copy at `<dir>/scripts/` finds its own location; a copy elsewhere sets `PII_LANE_ROOT`. Run from `/projects/pi-improved` every
    value it computes is byte-identical to today's.
 2. The path of the devbox's own mount, used inside the container (`podman exec -w /projects/pi-improved`), is NOT the repository root of the checkout and stays as it is.
 3. `lane-graph-knob`'s default-path case compares the directory of the default lane file with the directory the queue's switch lives in (the one `scripts/autonomy/control.sh` names),
@@ -30,7 +31,7 @@ directories instead of requiring a runtime file.
 
 ## Architecture
 ```
-scripts/run-batchC-pii.sh   REPO=${PII_ROOT:-<script dir>/..}   C=$REPO/_tmp/devbox-test      (container path unchanged)
+scripts/run-batchC-pii.sh   REPO=${PII_LANE_ROOT:-<script dir>/..}   C=$REPO/_tmp/devbox-test      (container path unchanged)
         │ run by
         ▼
 lane-graph-wall / lane-preflight / lane-graph-knob  (read the graph the script wrote under THEIR checkout)
@@ -53,11 +54,11 @@ lane-scripts-find-their-root.test.sh:  working tree (tracked + new, as on disk) 
 ### New in this row
 Each is verified to FAIL before the change. A criterion that already passes is a Guardrail, never a criterion.
 - [ ] `bash scripts/autonomy/tests/lane-scripts-find-their-root.test.sh 2>&1 | grep -qE 'PASS: [1-9][0-9]* FAIL: 0'`
-- [ ] `grep -q 'PII_ROOT' scripts/run-batchC-pii.sh && ! grep -q '^REPO=/projects/pi-improved' scripts/run-batchC-pii.sh`
+- [ ] `grep -q 'PII_LANE_ROOT' scripts/run-batchC-pii.sh && ! grep -q '^REPO=/projects/pi-improved' scripts/run-batchC-pii.sh`
 
 ## Guardrails
 - Do NOT change the container path in `podman exec -w /projects/pi-improved`.
-- Do NOT edit `lane-preflight.test.sh`. `lane-graph-wall.test.sh` and `lane-resume.test.sh` change ONLY to give their scratch copy of the lane script its root through `PII_ROOT` (and, in `lane-resume`, the ssh stub's path map);
+- Do NOT edit `lane-preflight.test.sh`. `lane-graph-wall.test.sh` and `lane-resume.test.sh` change ONLY to give their scratch copy of the lane script its root through `PII_LANE_ROOT` (and, in `lane-resume`, the ssh stub's path map);
   no case is removed, skipped or loosened. (Measured 2026-11-12: both rewrote the `REPO=` line this row replaces, and that rewrite matches nothing once the line is gone.)
 - Do NOT skip, delete or weaken a test, and do NOT make a case pass by creating `_tmp/autonomy/control` in the checkout.
 - Do NOT export with `git archive` or any other committed-tree command for the copy test: at verify time the change is uncommitted, so it would test the old tree and pass or fail for the wrong reason.
