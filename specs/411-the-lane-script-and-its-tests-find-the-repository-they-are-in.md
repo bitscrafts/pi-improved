@@ -67,3 +67,4 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `scripts/run-batchC-pii.sh`
 - `scripts/autonomy/tests/lane-graph-knob.test.sh`
 - `scripts/autonomy/tests/lane-scripts-find-their-root.test.sh`
+- `scripts/autonomy/tests/lane-graph-select.test.sh`
