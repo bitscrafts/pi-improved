@@ -99,6 +99,8 @@ check "CONTROL_the_real_repo_still_runs_in_itself: prints an OUTCOME" "$([ "$(pr
 check "CONTROL_the_real_repo_still_runs_in_itself: real lock touched, or held by its own cycle" "$( { [ "$REAL/_tmp/autonomy/lock" -nt "$MARK" ] || printf '%s' "$REAL_OUT" | grep -q 'OUTCOME=locked'; } && echo yes || echo no)" "yes"
 
 # (h) a repository without a plan is refused before the lock and before the probe
+# the call log is reset here: the real-repo control above reaches the probe whenever no other cycle holds the lock, and its call must not count against this case
+rm -f "$T/claude-calls"
 P="$T/noplan"
 make_scratch "$P" --no-plan
 PLAN_OUT=$(cd "$P" && DRY=1 PATH="$T/bin:$PATH" bash "$P/scripts/autonomy/cycle.sh" 2>&1); PLAN_RC=$?
