@@ -73,6 +73,8 @@ struct Event {
     action: String,
     label: Option<Named>,
     actor: Option<Login>,
+    /// ISO 8601 UTC, as GitHub sends it; absent falls back to the issue's `updated_at`.
+    created_at: Option<String>,
 }
 
 /// A GitHub channel for one repository.
@@ -238,21 +240,29 @@ impl GithubChannel {
         }
     }
 
-    /// True when the latest `ready` event on issue `number` is a labelling by an allowed login.
-    /// The event log decides; the issue's author and text do not.
-    fn approved(&self, ctx: &Ctx, number: u64) -> Result<bool, PiiError> {
+    /// The time (epoch seconds) of the latest `ready` event on issue `number` when it is a labelling
+    /// by an allowed login; `None` otherwise. The event log decides; the issue's author and text do not.
+    /// An event without `created_at` takes the issue's `updated` time.
+    fn approval(&self, ctx: &Ctx, number: u64, updated: u64) -> Result<Option<u64>, PiiError> {
         let events: Vec<Event> =
             self.paged(ctx, &format!("issues/{number}/events?per_page=100"))?;
         let latest = events.iter().rev().find(|e| {
             e.label.as_ref().is_some_and(|l| l.name == READY)
                 && matches!(e.action.as_str(), "labeled" | "unlabeled")
         });
-        Ok(latest.is_some_and(|e| {
-            e.action == "labeled"
-                && e.actor
-                    .as_ref()
-                    .is_some_and(|a| self.allow.iter().any(|x| x.eq_ignore_ascii_case(&a.login)))
-        }))
+        Ok(latest
+            .filter(|e| {
+                e.action == "labeled"
+                    && e.actor.as_ref().is_some_and(|a| {
+                        self.allow.iter().any(|x| x.eq_ignore_ascii_case(&a.login))
+                    })
+            })
+            .map(|e| {
+                e.created_at
+                    .as_deref()
+                    .and_then(epoch_secs)
+                    .unwrap_or(updated)
+            }))
     }
 }
 
@@ -335,8 +345,9 @@ impl Channel for GithubChannel {
         })
     }
 
-    /// `cursor` is an issue's `updated_at` in epoch seconds; only issues updated after it are read.
-    /// Each `Incoming` carries its own `updated_at` as its cursor.
+    /// `cursor` is the time an owner last applied `ready`, in epoch seconds. An issue updated at or
+    /// before it is skipped without an events call; otherwise its label time decides. Each `Incoming`
+    /// carries that label time as its cursor; the result is oldest label first.
     fn poll(&self, ctx: &Ctx, cursor: Option<u64>) -> Result<Vec<Incoming>, PiiError> {
         let issues: Vec<Issue> = self.paged(ctx, "issues?labels=ready&state=open&per_page=100")?;
         let mut out = Vec::new();
@@ -353,8 +364,11 @@ impl Channel for GithubChannel {
             if !issue.labels.iter().any(|l| l.name == READY) {
                 continue;
             }
-            if !self.approved(ctx, issue.number)? {
+            let Some(labelled) = self.approval(ctx, issue.number, updated)? else {
                 self.dropped.fetch_add(1, Ordering::Relaxed);
+                continue;
+            };
+            if cursor.is_some_and(|c| labelled <= c) {
                 continue;
             }
             self.received.fetch_add(1, Ordering::Relaxed);
@@ -363,9 +377,10 @@ impl Channel for GithubChannel {
                 chat: issue.number.to_string(),
                 user: issue.user.map(|u| u.login).unwrap_or_default(),
                 text: format!("{}\n\n{}", issue.title, issue.body.unwrap_or_default()),
-                cursor: updated,
+                cursor: labelled,
             });
         }
+        out.sort_by_key(|i| i.cursor);
         Ok(out)
     }
 

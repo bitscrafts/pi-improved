@@ -29,6 +29,7 @@ const TOKEN: &str = "ghp_SECRET-TOKEN-123";
 /// 2026-11-10T11:00:00Z in epoch seconds: between the two `updated_at` values used below.
 const CURSOR_1100Z: u64 = 1_794_308_400;
 
+mod cursor;
 mod event_log;
 
 type Handler = Box<dyn Fn(&HttpRequest) -> HttpResponse + Send + Sync>;
