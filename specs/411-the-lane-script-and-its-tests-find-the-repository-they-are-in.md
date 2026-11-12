@@ -57,7 +57,8 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 
 ## Guardrails
 - Do NOT change the container path in `podman exec -w /projects/pi-improved`.
-- Do NOT edit `lane-graph-wall.test.sh` or `lane-preflight.test.sh`; they must pass as written once the script finds its root.
+- Do NOT edit `lane-preflight.test.sh`. `lane-graph-wall.test.sh` and `lane-resume.test.sh` change ONLY to give their scratch copy of the lane script its root through `PII_ROOT` (and, in `lane-resume`, the ssh stub's path map);
+  no case is removed, skipped or loosened. (Measured 2026-11-12: both rewrote the `REPO=` line this row replaces, and that rewrite matches nothing once the line is gone.)
 - Do NOT skip, delete or weaken a test, and do NOT make a case pass by creating `_tmp/autonomy/control` in the checkout.
 - Do NOT export with `git archive` or any other committed-tree command for the copy test: at verify time the change is uncommitted, so it would test the old tree and pass or fail for the wrong reason.
 - Do NOT touch `/root/.pi`, any credential, or the other scripts under `scripts/` that name the real path (a later row).
@@ -68,3 +69,5 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 - `scripts/autonomy/tests/lane-graph-knob.test.sh`
 - `scripts/autonomy/tests/lane-scripts-find-their-root.test.sh`
 - `scripts/autonomy/tests/lane-graph-select.test.sh`
+- `scripts/autonomy/tests/lane-graph-wall.test.sh`
+- `scripts/autonomy/tests/lane-resume.test.sh`
