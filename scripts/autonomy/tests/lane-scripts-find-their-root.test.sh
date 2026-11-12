@@ -77,8 +77,8 @@ OUT=$(cd "$REAL" && ALLOW_DIRTY=1 PII_SSH=/bin/false bash scripts/run-batchC-pii
 trash_new_graphs "$T/graphs-before-real.txt"
 LOGV=$(printf '%s\n' "$OUT" | sed -n 's/^LOG *: //p' | head -1)
 GRAPHV=$(printf '%s\n' "$OUT" | sed -n 's/^\(GRAPH\|INPUT\) *: //p' | head -1)
-case "$LOGV" in /projects/pi-improved/_tmp/claude-batchC/*) LOGOK=1 ;; *) LOGOK=0 ;; esac
-case "$GRAPHV" in /projects/pi-improved/_tmp/devbox-test/graphs/*) GRAPHOK=1 ;; *) GRAPHOK=0 ;; esac
+case "$LOGV" in "$REAL"/_tmp/claude-batchC/*) LOGOK=1 ;; *) LOGOK=0 ;; esac
+case "$GRAPHV" in "$REAL"/_tmp/devbox-test/graphs/*) GRAPHOK=1 ;; *) GRAPHOK=0 ;; esac
 if [ "$LOGOK" = 1 ] && [ "$GRAPHOK" = 1 ]; then ok "the_lane_script_keeps_its_values_at_the_real_path"
 else bad "the_lane_script_keeps_its_values_at_the_real_path (LOG [$LOGV] GRAPH [$GRAPHV])"; fi
 

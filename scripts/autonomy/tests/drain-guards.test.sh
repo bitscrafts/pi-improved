@@ -5,7 +5,7 @@
 # peek anything from the queue". So the guard is not a pause: it is a measurement taken at the start of
 # every firing. Each rule needs a control that shows the normal path still runs.
 set -uo pipefail
-cd /projects/pi-improved || exit 1
+cd "$(dirname "$0")/../../.." || exit 1   # the checkout this test sits in, at any path (spec 411)
 ok=0; fail=0
 pass(){ ok=$((ok+1)); echo "ok   $1"; }
 bad(){ fail=$((fail+1)); echo "FAIL $1"; }
