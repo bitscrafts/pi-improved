@@ -18,7 +18,8 @@ What it does, in order, for one delivered issue:
 
 ## Requirements
 - R1 `graphs/github-issue.toml`, listed in `graphs/minimal.txt` only if the installer's rules for a shipped graph are met (it lints, its `call`s and pins resolve). Input as the router
-  passes it: `text`, `chat` (the issue number), `channel`, `user`. Capabilities: `post`, `fs_read`, `fs_write`, `net`, `ledger`; no `spawn`, no `proc`.
+  passes it: `text`, `chat` (the issue number), `channel`, `user`. Graph capabilities: `post`, `fs_read`, `fs_write`, `net`, `ledger`, `proc`; NOT `spawn`. `proc` is at graph level only because the `agent` kind requires it there (lint V2 refuses the graph without it,
+  measured 2026-11-12; `graphs/self-improve.toml` grants it the same way). The `plan` node's own `caps` stay `["fs_read", "net"]` and its `tools` stay `["fs_read"]`: no node holds `proc` or `spawn`.
 - R2 Node `ack`: a `post` node, `channel = "$.input.channel"` if the post node accepts an expression there, else the channel named in the config the daemon is given (the test settles which
   and the spec follows it), `to = "$.input.chat"`, `text` a literal, `key = "ack-${run}"`. The literal names no issue text.
 - R3 Node `plan`: an `agent` node, planner role, `max_turns = 1`, `tools = ["fs_read"]`, prompt as in `graphs/self-improve.toml` with `finding = $.input.text`. A `spec.write` ledger node
@@ -52,16 +53,18 @@ Tests in `crates/pii-server/tests/github_issue_graph.rs`, using the planner fake
 | `CONTROL_a_planner_failure_posts_the_fixed_refusal_and_writes_no_file` | planner fake errors | one ack, one refusal post, no file in `specs/` |
 | `CONTROL_a_second_delivery_posts_nothing_twice` | the same run input twice | each `key` posts once |
 | `no_absolute_path_is_written_in_the_graph` | the file | no `/projects`, `/root` or `/home` |
+| `the_planner_node_holds_no_spawn_or_proc_and_only_reads` | the parsed graph | the `plan` node's `caps` hold neither `spawn` nor `proc`; its `tools` are exactly `["fs_read"]`; no node's `caps` hold `spawn` or `proc`; the graph's `caps` do not hold `spawn` |
 
 ## Exit Criteria
 ### New in this row
 Each is verified to FAIL before the change. A criterion that already passes is a Guardrail, never a criterion.
-- [ ] `cargo test -q -p pii-server --test github_issue_graph 2>&1 | grep -qE 'test result: ok. [6-9] passed'`
+- [ ] `cargo test -q -p pii-server --test github_issue_graph 2>&1 | grep -qE 'test result: ok. [7-9] passed'`
 - [ ] `cargo run -q -p pii-cli -- graph lint graphs/github-issue.toml`
 
 ## Guardrails
 - Keep green: `cargo test -q -p pii-server --test plan_writes_a_spec`, `--test self_improve_composes`, `--test github`-side tests in `pii-channels`.
 - Do NOT edit any file under `crates/pii-channels/`. Do NOT edit an existing test.
+- Do NOT grant `spawn`, and do NOT give any node `proc` or `spawn` in its own `caps`; the graph-level `proc` is the one the `agent` kind requires.
 - Do NOT add a node of the kinds in R5. Do NOT write an absolute path or a credential in the graph.
 - A comment never carries text from the issue, the planner or an error: fixed sentences and the drafted path only.
 - Every dirty path must be listed under Files: list a file before you touch it.
