@@ -45,6 +45,7 @@ New tests in `crates/pii-server/tests/spec_write_workspace.rs`, over a daemon wi
 | `CONTROL_a_relative_workdir_that_leaves_the_workspace_is_refused` | `workdir = ".."` | `err` port with the path in the reason; no file written outside `ws` |
 | `CONTROL_a_symlink_out_of_the_workspace_is_refused` | `<ws>/out -> /tmp/x`, `workdir = "out"` | refused; nothing written under `/tmp/x` |
 | `a_missing_workdir_still_refuses_with_the_existing_reason` | no `workdir` | "plan needs a workdir" |
+| `an_absolute_workdir_outside_the_workspace_is_left_to_the_scope_not_refused_as_leaving_it` | absolute `workdir` in another directory | not refused as "leaves the workspace"; the scope denies the write; nothing created there (added after mutation C survived: an absolute path inside the workspace cannot tell the two apart) |
 
 Acceptance: the five pass; each of these mutations makes at least one fail (the mutation script is the orchestrator's): the join removed (relative stays relative); the containment check removed; the absolute case also joined.
 

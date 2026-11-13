@@ -186,6 +186,31 @@ async fn an_absolute_workdir_is_used_as_given() {
     );
 }
 
+/// R2: an absolute `workdir` OUTSIDE the workspace is used as given, not refused as leaving it: the run's `fs_write`
+/// scope decides, so the write is denied there and nothing is created. (An absolute path INSIDE the workspace cannot
+/// tell "used as given" from "joined onto the workspace", because `Path::join` returns an absolute argument unchanged.)
+#[tokio::test]
+async fn an_absolute_workdir_outside_the_workspace_is_left_to_the_scope_not_refused_as_leaving_it() {
+    let outside = tempfile::tempdir().unwrap();
+    let line = format!(r#"workdir = "{}""#, outside.path().display());
+    let draft = run_draft(&line, no_setup).await;
+    let seen = format!("{:?}", draft.journal);
+    assert!(
+        !seen.contains("leaves the workspace"),
+        "an absolute path is not this node's refusal: {seen}"
+    );
+    assert!(
+        matches!(draft.status, RunStatus::Failed),
+        "the scope denies the write: {:?}",
+        draft.status
+    );
+    assert!(
+        spec_files(outside.path()).is_empty(),
+        "nothing is written outside the workspace: {:?}",
+        spec_files(outside.path())
+    );
+}
+
 /// R3: a relative `workdir` that leaves the workspace is refused, naming the path, and nothing is written.
 #[tokio::test]
 #[allow(non_snake_case)] // reason: the name is the spec's contract (a CONTROL test)
