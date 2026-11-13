@@ -88,3 +88,8 @@ install-config|bash deploy/install-config-keeps.test.sh
 
 # Spec 331 R5: a test file that spawns a live `pii daemon` owns it through DaemonGuard and never kills it by hand.
 daemon-guard|bash scripts/checks/daemon-tests-are-guarded.sh
+
+# Spec 417: the owner's own hand on the trust gate. `mark-ready.sh` must work on a repository that never had a
+# `triage` label, create `ready` when the repository lacks it, and print its success line only after reading the
+# labels back. A fake `gh` on PATH is the only GitHub it reaches, so the step is offline and mutates nothing.
+mark-ready|bash scripts/checks/mark-ready-sets-the-label.sh
