@@ -70,4 +70,5 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 ## Files
 - `crates/pii-cli/src/cmd_daemon.rs`
 - `crates/pii-cli/src/cmd_daemon_flags.rs`
-- `crates/pii-cli/tests/store_flag_owns_the_durable_dir.rs`
+- `crates/pii-cli/src/main.rs`
+- `crates/pii-cli/src/daemon_durable.rs`
