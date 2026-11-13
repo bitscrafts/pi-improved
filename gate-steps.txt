@@ -93,3 +93,8 @@ daemon-guard|bash scripts/checks/daemon-tests-are-guarded.sh
 # `triage` label, create `ready` when the repository lacks it, and print its success line only after reading the
 # labels back. A fake `gh` on PATH is the only GitHub it reaches, so the step is offline and mutates nothing.
 mark-ready|bash scripts/checks/mark-ready-sets-the-label.sh
+
+# Spec 419: the last step of the round trip. `report-row.sh` reports a landed row on the issue it came from and closes
+# the issue only when the row is done, reading the comment and the state back. A fake `gh` on PATH is the only GitHub
+# it reaches, so the step is offline and mutates nothing.
+report-row|bash scripts/checks/report-row-comments-and-closes.sh
