@@ -18,7 +18,8 @@ Its own progress is what distinguishes them. This row makes the holder prove it 
 
 ## Requirements
 - R1 A `HeavyGuard` proves it is progressing while it is held: a background thread refreshes the lock file's modification time every `HEARTBEAT`
-  (2 s) using `File::set_modified`, which changes no content and cannot race a reader. It stops when the file no longer names this process, and when
+  using `File::set_modified`, which changes no content and cannot race a reader. The interval is 200 ms because it must be a small fraction of the SHORTEST
+  `give_up` any caller passes (the row's own test waits with 1 s; measured 2026-11-13: with a 2 s interval that waiter panics before the second beat). It stops when the file no longer names this process, and when
   the guard is dropped. A heartbeat that cannot touch the file is ignored: the lock is no longer ours. `Drop` joins the thread, then removes the file.
 - R2 `take` uses the file's age as the **silence** measure, not as the total wait: a holder whose mtime is younger than `give_up` is waited for however
   long it has held the lock, and one whose mtime is older is not. The panic message keeps the holder's pid, the budget and the age it waited.
