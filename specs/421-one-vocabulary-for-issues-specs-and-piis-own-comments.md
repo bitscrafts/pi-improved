@@ -27,8 +27,13 @@ comment pii writes starts with `pii: <kind>` — with room for the instance that
   block=-`, and the sections `## Overview`, `## Requirements`, `## Architecture`, `## TDD Contract`, `## Exit Criteria`, `## Guardrails`, `## Files`. Its Exit
   Criteria section shows one criterion as a backticked shell command, and its text says a criterion must fail before the work and that `## Files` must equal the
   row's paths column.
-- R3 Every comment pii writes matches `pii(@<instance>)?: (received|drafted|refused|row) ` at the start: the graph's three texts and `report-row.sh`'s. The
-  instance form is accepted from day one but not required until a row introduces it (spec 425).
+- R3 Every comment pii writes is TWO lines. The first is the sentence a person reads, starting `pii(@<instance>)?: (received|drafted|refused|row)`; the second is
+  the marker a script reads, `<!-- pii kind=<kind>[ row=<id>][ commit=<sha>][ instance=<name>] -->`, invisible in the rendered comment. The instance form is
+  accepted from day one but not filled until a row introduces it (spec 425).
+- R6 A comment is pii's only when its FIRST line matches the prefix AND its second line is the marker: a reply that quotes a pii comment further down is a
+  human's, so `report-row.sh` keys its "already reported" check on the marker and never on a substring found anywhere in the body. GitHub reports a bot's
+  comment as `author.type == "Bot"`; a comment posted through a user token is `"User"` whether an LLM or a person wrote it, so the marker is the only
+  mechanical answer available without a separate bot identity, and the check states that limit instead of pretending otherwise.
 - R4 The wording stays readable on a phone and states the one thing that matters at that step: nothing runs until the owner has read the draft.
 - R5 One check validates all of it — the issue template's fields and their mapping, the local template's sections and card line, and every pii-authored text in
   the tree — and it has a control that proves the validator can fail.
@@ -54,6 +59,8 @@ New `scripts/checks/comment-and-template-vocabulary.sh`, registered as a gate st
 | `the_local_template_carries_the_sections_the_queue_reads` | specs/TEMPLATE.md | card line matches, and all seven sections are present |
 | `the_local_template_is_not_numbered` | the same file | its name does not match `<N>-*.md` (the dispatcher must never resolve it) |
 | `CONTROL_a_comment_without_the_prefix_is_rejected` | `--control` fixture with `Received. Nothing runs…` | the validator fails, and the check reports the fixture |
+| `CONTROL_a_comment_that_quotes_pii_further_down_is_not_piis` | `--control` fixture with a human sentence, then `pii: row 1 …` on line 3 | the classifier says human: the prefix is not on the first line |
+| `CONTROL_a_prefix_without_the_marker_is_not_piis` | `--control` fixture with a correct first line and no marker | the classifier says human, and the check reports it |
 | `CONTROL_a_template_without_a_card_line_is_rejected` | `--control` fixture missing `#: depends=` | the validator fails |
 | `every_pii_comment_in_the_tree_matches_the_vocabulary` | graph texts + report-row format | each matches `pii(@<instance>)?: (received\|drafted\|refused\|row) ` |
 
