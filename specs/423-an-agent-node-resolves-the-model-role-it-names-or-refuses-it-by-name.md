@@ -67,18 +67,16 @@ Verified to FAIL before the change: no such test file exists, and the agent node
 - Do NOT grow `crates/pii-server/src/lib.rs` (R7).
 
 ## Files
+- `crates/pii-server/src/engine/registry.rs`
 - `crates/pii-server/src/node_kinds/agent/mod.rs`
-- `crates/pii-server/src/lib.rs`
+- `crates/pii-server/src/node_kinds/agent/tests.rs`
 - `crates/pii-server/tests/agent_node_model_roles.rs`
-
-## Notes
-The live symptom to reproduce first: a graph run started by the **channel** path carries `model: "@plan"` into the
-model layer. The test must drive the agent node through the daemon's build path (not the lint registry, which has no
-config and therefore no roles).
-
-Read before writing: `AgentFactory` (`node_kinds/agent/mod.rs:61`) holds **one shared `provider`** for every agent node
-(`engine/registry.rs:47`), and its `resolve_model` (spec 28) looks at the route step, then the `model` key, then the
-provider default — there is no role table on it at all. So the fix is not only "call `resolve_role`": the factory needs
-the role table *and* a way to reach the role's own provider, because the shared provider is the local one. Build one
-provider per configured role at construction (the operator's table is known then), and keep the shared provider for
-nodes that name an explicit model id (R3).
+- `crates/pii-server/tests/cancellation_brake.rs`
+- `crates/pii-server/tests/fail_port.rs`
+- `crates/pii-server/tests/failover_graph.rs`
+- `crates/pii-server/tests/github_issue_graph.rs`
+- `crates/pii-server/tests/github_issue_graph/harness.rs`
+- `crates/pii-server/tests/github_issue_graph/main.rs`
+- `crates/pii-server/tests/model_routing.rs`
+- `crates/pii-server/tests/model_tiers.rs`
+- `crates/pii-server/tests/review_graph/recording.rs`
