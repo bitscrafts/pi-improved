@@ -14,7 +14,7 @@ usage:
   state.py list                           -> every row, TSV, for reporting
 A `plan.tsv` row is: id <tab> spec <tab> brief <tab> title <tab> verify(cmd;cmd) <tab> paths(a;b) <tab> gate
 """
-import importlib, json, os, sys, tempfile
+import importlib, json, os, re, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def _path(var, default):
@@ -106,6 +106,43 @@ def resumable(status, row):
                                                              "park-cause-repaired"))))
 
 
+def specs_dir():
+    """The specs directory the row judges read: `PII_SPECS` when set, else `specs/` beside this script."""
+    return os.environ.get("PII_SPECS") or os.path.join(ROOT, "specs")
+
+
+DEPENDS = re.compile(r"^#:.*\bdepends=([^\s]+)", re.M)
+FINISHED = ("done", "skipped")
+
+
+def card_depends(spec):
+    """The rows this spec's card line names as its dependencies. `-` and an absent key mean none (spec 420)."""
+    try:
+        with open(os.path.join(specs_dir(), os.path.basename(spec)), encoding="utf-8") as f:
+            head = "".join(f.readline() for _ in range(3))
+    except OSError:
+        return []
+    found = DEPENDS.search(head)
+    if not found:
+        return []
+    raw = found.group(1).strip()
+    if raw in ("", "-"):
+        return []
+    return [d for d in re.split(r"[,;]", raw) if d and d != "-"]
+
+
+def waiting_on(row_id, spec, st, plan_ids):
+    """The first dependency that blocks this row, or '' when nothing does."""
+    for dep in card_depends(spec):
+        if dep == row_id:
+            continue
+        if dep not in plan_ids:
+            return f"{dep}:not-in-plan"
+        if st.get(dep, {}).get("status", "pending") not in FINISHED:
+            return dep
+    return ""
+
+
 def load():
     try:
         return json.load(open(STATE))
@@ -165,6 +202,14 @@ def main():
                 skipped.append(f'{r["id"]}({s})')
                 continue
             if s in ("pending", "in-progress") or window:
+                # spec 420: a row whose card line names an unfinished dependency is skipped for dispatch order, the way
+                # a parked row is: its state is not touched and the dispatcher's line says which row it waits for.
+                # `--row` names a row on purpose (the dispatcher forces it when the row owns the tree), so it is exempt.
+                if want is None:
+                    blocked = waiting_on(r["id"], r["spec"], st, {x["id"] for x in rows()})
+                    if blocked:
+                        skipped.append(f'{r["id"]}(waits {blocked})')
+                        continue
                 # spec 283: a row whose column 6 is not its spec's ## Files set is refused before a worker is bought
                 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 rowpaths = importlib.import_module("row-paths")  # hyphenated file: import_module, not `import`
