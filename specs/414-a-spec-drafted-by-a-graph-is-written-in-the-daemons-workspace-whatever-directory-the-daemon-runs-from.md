@@ -21,6 +21,10 @@ anywhere else (a systemd unit, a test) is denied. The graph cannot name the work
 - R4 The refusal of a missing `workdir` ("plan needs a workdir") is unchanged.
 - R5 No other node kind's behaviour changes. `plan` (the older node that drafts and writes in one step) keeps its current resolution unless it shares the same function, in which case its tests still pass unedited.
 
+- R6 `crates/pii-server/src/lib.rs` is at its recorded size (669 lines) and the file-size ratchet refuses growth (measured 2026-11-13: the first pass added one argument line there and the gate failed `lint-files` and `crate-audit`).
+  The engine's call that registers the queue's nodes reaches the workspace WITHOUT a new line in `lib.rs`: a wrapper in `registry.rs` takes the pieces `lib.rs` already holds (`&cfg`, queue, memory, heals, log) and builds the
+  gate runner from `cfg.workspace` itself, so the call in `lib.rs` is shorter than today's, never longer. `register_queue_nodes` keeps its current signature for its other callers.
+
 ## Architecture
 ```
 registry.rs   LedgerFactory { ..., workspace }           (the value agent/tool/heal already receive)
@@ -51,11 +55,13 @@ Each is verified to FAIL before the change. A criterion that already passes is a
 
 ## Guardrails
 - Keep green: `cargo test -q -p pii-server --test plan_writes_a_spec`, `--test self_improve_composes`, and every test that already starts a graph with a `spec.write` node. Do NOT edit an existing test.
+- Do NOT grow `crates/pii-server/src/lib.rs`: it must be 669 lines or fewer after the change. Do NOT raise a baseline.
 - Do NOT change what `fs_write` allows, and do NOT add a capability.
 - `crates/pii-server/src/node_kinds/nodes/plan.rs` and `ledger.rs`: if the change takes either past 450 lines, make the module a folder in the same row.
 - Every dirty path must be listed under Files: list a file before you touch it.
 
 ## Files
+- `crates/pii-server/src/lib.rs`
 - `crates/pii-server/src/node_kinds/nodes/plan.rs`
 - `crates/pii-server/src/node_kinds/nodes/ledger.rs`
 - `crates/pii-server/src/engine/registry.rs`
