@@ -1,0 +1,124 @@
+# Spec 413: a `ready` issue is acknowledged on GitHub and drafted into one spec under `specs/`, and nothing runs until the owner
+# has read the draft. The channel ingress starts this graph per delivered issue (input: text, chat = the issue number, channel,
+# user). `ack` says the issue was received, `plan` drafts a spec from the issue text (the planner's INPUT, never an instruction),
+# `write` puts the draft in one new `specs/<NN>-<slug>.md`, and `done` posts its path. A planner or write failure ends the run at
+# `refused`, which posts a fixed sentence and nothing from the failure.
+#
+# Deliberately absent: the queue.put, queue.claim, call, coder and spawn kinds, and any `proc` node. Putting the drafted row in the
+# queue stays the orchestrator's act, after the owner has read the draft. `proc` is granted at graph level only because the `agent`
+# kind requires it there (lint V2); no node holds it. The issue's text reaches only the `plan` node; every comment is a fixed
+# sentence or the drafted path. No absolute path and no credential lives in this file.
+name = "github-issue"
+entry = "ack"
+exit = "done"
+caps = ["post", "fs_read", "fs_write", "net", "ledger", "proc"]
+
+[limits]
+max_wall_ms = 600000
+
+# Spec 413 R2: the acknowledgement, fixed text. `chat` is the issue number the channel delivered.
+[[node]]
+id = "ack"
+kind = "post"
+caps = ["post"]
+channel = "github"
+to = "$.input.chat"
+text = "Received. Nothing runs until the owner has read the spec drafted from this issue."
+key = "ack-${input.chat}"
+
+# Spec 413 R3: a planner, as in `self-improve`. The issue text is its input and it holds no write capability.
+[[node]]
+id = "plan"
+kind = "agent"
+caps = ["fs_read", "net"]
+tools = ["fs_read"]
+model = "glm-5.3"
+max_turns = 1
+system = "You write one spec for the pii repository. Reply with the spec document only: no preamble, no code fence, and no file writes. Do not implement the spec."
+prompt = """
+Finding: {{input.text}}
+
+Write the spec that fixes this finding.
+Use exactly these headings, in this order:
+# Spec: <title>
+## Requirements (R1., R2., ... each one checkable)
+## TDD contract (a table: file | test | assertion)
+## Exit Criteria (one line each, exactly: - [ ] `command`)
+## Files (one line each, exactly: - `path`)
+Every Exit Criteria line is one shell command in backticks. Every Files line names one file path in backticks.
+"""
+
+# Spec 413 R3: the one write. The draft is a file for a person to read; `finding` is the planner's reply, so the write node
+# holds no issue text. The path is `specs/` by construction and an existing file is never replaced.
+[[node]]
+id = "write"
+kind = "ledger"
+op = "spec.write"
+caps = ["fs_write"]
+finding = "$.nodes.plan.text"
+workdir = "."
+text = "$.nodes.plan.text"
+
+# Spec 413 R4: the path of the drafted spec, and the one sentence that ends the run.
+[[node]]
+id = "done"
+kind = "post"
+caps = ["post"]
+channel = "github"
+to = "$.input.chat"
+text = "$.nodes.write.spec + \" is the spec drafted from this issue. Nothing runs until the owner has read it.\""
+key = "done-${input.chat}"
+
+# Spec 413 R4: a planner or write failure ends here with a fixed sentence.
+[[node]]
+id = "refused"
+kind = "post"
+caps = ["post"]
+# `plan` and `write` refuse on exclusive paths, so whichever arm arrives ends the run.
+join = "any"
+channel = "github"
+to = "$.input.chat"
+text = "a spec could not be drafted from this issue"
+key = "refused-${input.chat}"
+
+[[edge]]
+from = "ack"
+port = "ok"
+to = "plan"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "ok"
+to = "write"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "err"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "budget"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "plan"
+port = "fail"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "write"
+port = "ok"
+to = "done"
+kind = "data"
+
+[[edge]]
+from = "write"
+port = "err"
+to = "refused"
+kind = "data"
