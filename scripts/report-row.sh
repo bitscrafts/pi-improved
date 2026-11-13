@@ -6,8 +6,9 @@
 # This is the orchestrator's command AFTER a landing, not a step inside it: the queue stays offline, and a landing can
 # never be blocked by GitHub. Its guarantee is the one spec 417 learned: the claim is what the read-back says.
 #
-# The comment is one fixed sentence; nothing from the issue's own text and nothing from a worker's output is echoed.
-# A second run with the same row, status and commit posts nothing, so a re-run after a failed call is safe.
+# Spec 421: every comment pii writes is two lines — the sentence a person reads, and a marker a script reads that renders
+# invisible. "Already reported" is decided by the FIRST LINE of a comment, never by a substring found anywhere in the body:
+# a person who quotes pii's comment in a reply must not be mistaken for pii.
 set -eu
 ROW="${1:?usage: report-row.sh <row> --issue <N> [owner/repo]}"; shift
 ISSUE=""; REPO=""
@@ -22,6 +23,7 @@ done
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 2
 cd "$ROOT" || exit 2
 STATE="${PII_STATE:-$ROOT/_tmp/autonomy/state.json}"
+INSTANCE="${PII_INSTANCE:-}"
 REPO="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 
 # R1: the row's own record, read once. An unknown row is refused before anything is posted.
@@ -42,18 +44,22 @@ PY
 STATUS="$(printf '%s\n' "$INFO" | sed -n 1p)"
 COMMIT="$(printf '%s\n' "$INFO" | sed -n 2p)"
 SPEC="$(printf '%s\n' "$INFO" | sed -n 3p)"
-TEXT="pii row $ROW $STATUS at $COMMIT: $SPEC"
-comments() { gh issue view "$ISSUE" --repo "$REPO" --json comments -q '.comments[].body'; }
+
+# The visible sentence, then the machine marker (invisible once rendered).
+TEXT="pii: row $ROW $STATUS at $COMMIT — $SPEC"
+MARKER="<!-- pii kind=row row=$ROW commit=$COMMIT${INSTANCE:+ instance=$INSTANCE} -->"
+BODY="$(printf '%s\n%s' "$TEXT" "$MARKER")"
+# first_lines: the first line of every comment, so "already reported" is a first-line comparison.
+first_lines() { gh issue view "$ISSUE" --repo "$REPO" --json comments -q '.comments[] | .body | split("\n")[0]'; }
 state_of() { gh issue view "$ISSUE" --repo "$REPO" --json state -q .state; }
 
-# R3: at most one comment per (row, status, commit).
-ALREADY="$(comments || true)"
-if printf '%s\n' "$ALREADY" | grep -qxF "$TEXT"; then
+# R3/R6: at most one comment per (row, status, commit), decided on the first line only.
+if first_lines | grep -qxF "$TEXT"; then
   echo "already reported: #$ISSUE <- $TEXT"
 else
-  gh issue comment "$ISSUE" --repo "$REPO" --body "$TEXT" >/dev/null
+  gh issue comment "$ISSUE" --repo "$REPO" --body "$BODY" >/dev/null
   # R4: the claim is the read-back, never the call's exit status.
-  if ! comments | grep -qxF "$TEXT"; then
+  if ! first_lines | grep -qxF "$TEXT"; then
     echo "FAIL: #$ISSUE does not carry the comment after posting"
     exit 5
   fi

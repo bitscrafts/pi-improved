@@ -98,3 +98,7 @@ mark-ready|bash scripts/checks/mark-ready-sets-the-label.sh
 # the issue only when the row is done, reading the comment and the state back. A fake `gh` on PATH is the only GitHub
 # it reaches, so the step is offline and mutates nothing.
 report-row|bash scripts/checks/report-row-comments-and-closes.sh
+
+# Spec 421: the issue template, the local spec template and pii's own comments are one vocabulary. Offline and pure text;
+# `--control` proves the validators can fail, and it runs here so the control cannot rot.
+vocabulary|bash scripts/checks/comment-and-template-vocabulary.sh --control

@@ -23,7 +23,7 @@ kind = "post"
 caps = ["post"]
 channel = "github"
 to = "$.input.chat"
-text = "Received. Nothing runs until the owner has read the spec drafted from this issue."
+text = "pii: received. A spec will be drafted from this issue; nothing runs until the owner has read it.\n<!-- pii kind=received -->"
 key = "ack-${input.chat}"
 
 # Spec 413 R3: a planner, as in `self-improve`. The issue text is its input and it holds no write capability.
@@ -66,7 +66,7 @@ kind = "post"
 caps = ["post"]
 channel = "github"
 to = "$.input.chat"
-text = "$.nodes.write.spec + \" is the spec drafted from this issue. Nothing runs until the owner has read it.\""
+template = "pii: drafted ${nodes.write.spec} — nothing runs until the owner has read it.\n<!-- pii kind=drafted -->"
 key = "done-${input.chat}"
 
 # Spec 413 R4: a planner or write failure ends here with a fixed sentence.
@@ -78,7 +78,7 @@ caps = ["post"]
 join = "any"
 channel = "github"
 to = "$.input.chat"
-text = "a spec could not be drafted from this issue"
+text = "pii: refused — a spec could not be drafted from this issue.\n<!-- pii kind=refused -->"
 key = "refused-${input.chat}"
 
 # Spec 415 R1: the exit. Both ways of ending lead here, so the run's final output is this fixed `text = ""` and the channel

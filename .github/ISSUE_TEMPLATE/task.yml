@@ -6,21 +6,28 @@ body:
     id: change
     attributes:
       label: What changes
-      description: One behaviour, in a sentence or two. Name the crate or file if you know it.
+      description: One behaviour, in a sentence or two. Name the crate or file if you know it. This becomes the spec's `## Overview` and its `## Requirements`.
     validations:
       required: true
   - type: textarea
     id: criteria
     attributes:
       label: Exit criteria
-      description: Shell commands that exit 0 when the change is done and non-zero before it. One per line. A command that already passes today is not a criterion.
-      placeholder: "cargo test -q -p pii-graph --test my_new_test"
+      description: Shell commands that exit 0 when the change is done and non-zero before it. One per line, each in backticks. This becomes the spec's `## Exit Criteria`, command for command.
+      placeholder: "`cargo test -q -p pii-graph --test my_new_test`"
     validations:
       required: true
   - type: textarea
     id: files
     attributes:
       label: Files it may touch
-      description: The paths the change is allowed to edit. Anything else is out of scope.
+      description: The paths the change is allowed to edit. Anything else is out of scope. This becomes the spec's `## Files`, file for file.
     validations:
       required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Optional. Links, what you already tried, what you saw. Prose for the person who drafts the spec; it becomes no section by itself.
+    validations:
+      required: false
