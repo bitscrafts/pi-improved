@@ -190,7 +190,8 @@ async fn an_absolute_workdir_is_used_as_given() {
 /// scope decides, so the write is denied there and nothing is created. (An absolute path INSIDE the workspace cannot
 /// tell "used as given" from "joined onto the workspace", because `Path::join` returns an absolute argument unchanged.)
 #[tokio::test]
-async fn an_absolute_workdir_outside_the_workspace_is_left_to_the_scope_not_refused_as_leaving_it() {
+async fn an_absolute_workdir_outside_the_workspace_is_left_to_the_scope_not_refused_as_leaving_it()
+{
     let outside = tempfile::tempdir().unwrap();
     let line = format!(r#"workdir = "{}""#, outside.path().display());
     let draft = run_draft(&line, no_setup).await;
