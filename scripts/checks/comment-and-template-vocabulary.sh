@@ -105,6 +105,23 @@ else
   no "report-row.sh does not build both lines of its comment"
 fi
 
+# --- the planner names a model ROLE, not a model id (spec 422) ---------------------------------------
+# A shipped graph is part of the repository; the model it runs on is the operator's. `model = "@plan"` is filled by
+# `[models.plan]` in the operator's config (spec 362); a bare id here would tie the repository to one machine.
+plan_model() { awk '/id = "plan"/{seen=1} seen && /^model = /{print; exit}' "$1"; }
+role_of() { printf '%s' "$1" | sed -n 's/^model = "\(@[a-z0-9-]*\)"$/\1/p'; }
+PM="$(plan_model "$G")"
+[ -n "$(role_of "$PM")" ] && pass "the planner node names a model role ($PM)" \
+  || no "the planner node does not name a model role: '${PM:-no model line}'"
+if [ "${1:-}" = "--control" ]; then
+  mkdir -p _tmp/control-422
+  sed 's/^model = "@plan"$/model = "glm-5.3"/' "$G" > _tmp/control-422/graph.toml
+  [ -z "$(role_of "$(plan_model _tmp/control-422/graph.toml)")" ] \
+    && pass "control: a vendor id in a scratch copy is refused" \
+    || no "control: a vendor id in a scratch copy was accepted"
+  rm -f _tmp/control-422/graph.toml; rmdir _tmp/control-422 2>/dev/null
+fi
+
 # --- the control: the validators must be able to fail ------------------------------------------------
 if [ "${1:-}" = "--control" ]; then
   good=$'pii: row 1 done at abc1234 — specs/1-x.md\n<!-- pii kind=row row=1 commit=abc1234 -->'

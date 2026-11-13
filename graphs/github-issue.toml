@@ -32,7 +32,9 @@ id = "plan"
 kind = "agent"
 caps = ["fs_read", "net"]
 tools = ["fs_read"]
-model = "glm-5.3"
+# Spec 422: the ROLE, not a model id. The operator's `[models.plan]` decides which model fills it, so this graph runs on
+# any box; a repository that named a model here would depend on one machine's inventory.
+model = "@plan"
 max_turns = 1
 system = "You write one spec for the pii repository. Reply with the spec document only: no preamble, no code fence, and no file writes. Do not implement the spec."
 prompt = """
