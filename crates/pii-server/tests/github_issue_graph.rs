@@ -191,6 +191,19 @@ fn spec_names(ws: &Path) -> Vec<String> {
     names
 }
 
+fn final_output(trace: &serde_json::Value) -> serde_json::Value {
+    trace["journal"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .rev()
+        .find_map(|e| {
+            e.pointer("/event/Finished/terminal/Success/output")
+                .cloned()
+        })
+        .unwrap_or_default()
+}
+
 #[test]
 fn the_graph_lints_and_has_no_queue_or_coder_node() {
     let src = graph_src();
@@ -242,6 +255,29 @@ async fn a_delivered_issue_gets_an_ack_a_drafted_spec_and_a_path() {
         sent[1].1.contains(&new[0]),
         "the last post names the drafted spec: {sent:?}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_drafted_run_ends_with_an_empty_reply_text() {
+    let dir = scratch("github-issue-end-");
+    let planner = planner_fixture(dir.path(), &[HOUSE_SPEC]);
+    let (d, _github) = daemon_in(dir.path(), &planner);
+
+    let (_, trace) = run_graph(&d.engine, delivery(7, ISSUE_TEXT)).await;
+    assert_eq!(final_output(&trace)["text"], "", "no reply text");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[allow(non_snake_case)] // reason: the name is the spec's contract (a CONTROL test)
+async fn CONTROL_a_refused_run_also_ends_with_an_empty_reply_text() {
+    let dir = scratch("github-issue-end-refused-");
+    let planner = planner_fixture(dir.path(), &[]);
+    let (d, github) = daemon_in(dir.path(), &planner);
+
+    let (_, trace) = run_graph(&d.engine, delivery(7, ISSUE_TEXT)).await;
+    assert_eq!(final_output(&trace)["text"], "", "no reply text");
+    let sent = github.sent.lock().clone();
+    assert_eq!(sent.iter().filter(|(_, t)| t.contains(REFUSAL)).count(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

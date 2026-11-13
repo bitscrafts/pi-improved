@@ -10,7 +10,7 @@
 # sentence or the drafted path. No absolute path and no credential lives in this file.
 name = "github-issue"
 entry = "ack"
-exit = "done"
+exit = "end"
 caps = ["post", "fs_read", "fs_write", "net", "ledger", "proc"]
 
 [limits]
@@ -81,6 +81,14 @@ to = "$.input.chat"
 text = "a spec could not be drafted from this issue"
 key = "refused-${input.chat}"
 
+# Spec 415 R1: the exit. Both ways of ending lead here, so the run's final output is this fixed `text = ""` and the channel
+# sends nothing after the graph's own comments (as `discord-triage` does).
+[[node]]
+id = "end"
+kind = "transform"
+join = "any"
+value = { text = "", outcome = "drafted-or-refused" }
+
 [[edge]]
 from = "ack"
 port = "ok"
@@ -121,4 +129,16 @@ kind = "data"
 from = "write"
 port = "err"
 to = "refused"
+kind = "data"
+
+[[edge]]
+from = "done"
+port = "ok"
+to = "end"
+kind = "data"
+
+[[edge]]
+from = "refused"
+port = "ok"
+to = "end"
 kind = "data"
