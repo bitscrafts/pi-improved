@@ -102,16 +102,21 @@ pub fn register_queue_nodes(
     store: Arc<pii_store::queue::QueueStore>,
     memory: Option<Arc<pii_store::MemStore>>,
     heals: Option<Arc<pii_store::heal::HealStore>>,
-    gates: Option<Arc<dyn nodes::heal::GateRunner>>,
     log: Option<Arc<dyn pii_observe::Observer>>,
+    workspace: &std::path::Path,
 ) {
     reg.register(Arc::new(nodes::queue::JudgeFactory));
-    reg.register(Arc::new(nodes::ledger::LedgerFactory {
-        queue: store,
-        memory,
-        heals,
-        gates,
-        log,
+    reg.register(Arc::new(nodes::ledger::WorkspaceLedgerFactory {
+        ledger: nodes::ledger::LedgerFactory {
+            queue: store,
+            memory,
+            heals,
+            gates: Some(Arc::new(nodes::heal::VerdictRunner {
+                workspace: workspace.to_path_buf(),
+            })),
+            log,
+        },
+        workspace: workspace.to_path_buf(),
     }));
     for retired in nodes::ledger::retired_kinds() {
         reg.register(retired);
@@ -182,13 +187,17 @@ pub fn lint_registry(workspace: &std::path::Path, runtime_dir: &std::path::Path)
 }
 
 /// The lint registry's queue kinds, over an in-memory lint-only store (spec 208, spec 371 R1).
-fn register_lint_queue_nodes(reg: &mut NodeRegistry, log: &Arc<dyn pii_observe::Observer>) {
+fn register_lint_queue_nodes(
+    reg: &mut NodeRegistry,
+    log: &Arc<dyn pii_observe::Observer>,
+    workspace: &std::path::Path,
+) {
     match pii_store::queue::QueueStore::open_in_memory() {
         Ok(queue) => {
             let heals = pii_store::heal::HealStore::open_in_memory()
                 .ok()
                 .map(Arc::new);
-            register_queue_nodes(reg, Arc::new(queue), None, heals, None, None);
+            register_queue_nodes(reg, Arc::new(queue), None, heals, None, workspace);
         }
         Err(e) => store_unavailable(log, "queue", &e),
     }
@@ -271,7 +280,7 @@ pub fn lint_registry_with_log(
         })),
         Err(e) => store_unavailable(&log, "memory", &e),
     }
-    register_lint_queue_nodes(&mut reg, &log);
+    register_lint_queue_nodes(&mut reg, &log, workspace);
     // S0.2: `heal_detect` is a server-owned kind like `gate`/`memory`; the
     // lint registry registers it with a cargo-xtask runner so
     // `graphs/starter/heal-watch.toml` lints (lint never executes nodes).

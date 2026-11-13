@@ -5,6 +5,7 @@
 //! The four kinds it replaces refuse at load and name the op that replaces them. Spec 392 adds `memory.consolidate`,
 //! `spec.write` and `heal.observe`: state a graph changes or observes that no single graph should own a kind for.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use pii_abi::{Effects, PiiError, PortName};
@@ -110,7 +111,10 @@ impl NodeFactory for LedgerFactory {
                 store: queue,
                 cfg: cfg.clone(),
             }),
-            "spec.write" => Box::new(SpecWriteNode { cfg: cfg.clone() }),
+            "spec.write" => Box::new(SpecWriteNode {
+                cfg: cfg.clone(),
+                workspace: None,
+            }),
             "memory.consolidate" => {
                 let (Some(store), Some(log)) = (&self.memory, &self.log) else {
                     return Ok(Box::new(Unavailable(
@@ -164,6 +168,51 @@ impl GraphNode for Unavailable {
         _input: &pii_abi::NodeInput,
     ) -> Result<pii_abi::Outcome, PiiError> {
         Err(PiiError::Invalid(self.0.to_owned()))
+    }
+}
+
+/// The `ledger` kind as the daemon registers it (spec 414): a [`LedgerFactory`], and the daemon's workspace that
+/// `spec.write` writes into. The other ops are built by the inner factory unchanged.
+pub struct WorkspaceLedgerFactory {
+    /// The factory every op but `spec.write` is built by.
+    pub ledger: LedgerFactory,
+    /// The daemon's workspace; a relative `workdir` of `spec.write` is inside it.
+    pub workspace: PathBuf,
+}
+
+impl NodeFactory for WorkspaceLedgerFactory {
+    fn kind(&self) -> &'static str {
+        self.ledger.kind()
+    }
+
+    fn is_effect(&self) -> bool {
+        self.ledger.is_effect()
+    }
+
+    fn is_effect_for(&self, cfg: &serde_json::Value) -> bool {
+        self.ledger.is_effect_for(cfg)
+    }
+
+    fn effects(&self) -> Effects {
+        self.ledger.effects()
+    }
+
+    fn required_caps(&self) -> CapKind {
+        self.ledger.required_caps()
+    }
+
+    fn ports(&self, cfg: &serde_json::Value) -> Result<Vec<PortName>, PiiError> {
+        self.ledger.ports(cfg)
+    }
+
+    fn build(&self, cfg: &serde_json::Value) -> Result<Box<dyn GraphNode>, PiiError> {
+        if cfg.get("op").and_then(serde_json::Value::as_str) == Some("spec.write") {
+            return Ok(Box::new(SpecWriteNode {
+                cfg: cfg.clone(),
+                workspace: Some(self.workspace.clone()),
+            }));
+        }
+        self.ledger.build(cfg)
     }
 }
 

@@ -5,7 +5,7 @@
 //! and writes only through the run's `fs_write` scope, so the planner never writes a file itself. The planner does not
 //! implement the spec it wrote; `enqueue` admits it, and a separate run judges the work.
 
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use pii_abi::{Effects, NodeInput, Outcome, PiiError, PortName};
@@ -157,16 +157,57 @@ impl GraphNode for PlanNode {
             Ok(reply) => reply,
             Err(e) => return Ok(Self::refuse(format!("planner call failed: {e}"))),
         };
-        write_spec(ctx, &finding, &root, &reply.text)
+        write_spec(ctx, &finding, &root, &reply.text, None)
+    }
+}
+
+/// Spec 414 R1-R3: the directory a spec is written into. Without a workspace (`plan`) `root` is used as given. With one
+/// (`spec.write`), a relative `root` is inside the workspace, and a `root` that leaves it (`..`, or a symlink out) is
+/// refused, naming the path. An absolute `root` is used as given; the run's `fs_write` scope still bounds the write.
+fn spec_root(root: &str, workspace: Option<&Path>) -> Result<PathBuf, String> {
+    let Some(workspace) = workspace else {
+        return Ok(PathBuf::from(root));
+    };
+    let rel = Path::new(root);
+    if rel.is_absolute() {
+        return Ok(rel.to_path_buf());
+    }
+    let leaves = || format!("workdir {root} leaves the workspace");
+    if rel.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err(leaves());
+    }
+    let joined = workspace.join(rel);
+    let resolved = match std::fs::canonicalize(&joined) {
+        Ok(resolved) => resolved,
+        // Not there yet, and not a link that could point outside: nothing can escape through it.
+        Err(_) if joined.symlink_metadata().is_err() => return Ok(joined),
+        Err(_) => return Err(leaves()),
+    };
+    let inside = std::fs::canonicalize(workspace)
+        .map_err(|e| format!("workspace {}: {e}", workspace.display()))?;
+    if resolved.starts_with(&inside) {
+        Ok(joined)
+    } else {
+        Err(leaves())
     }
 }
 
 /// Spec 392 R3: the half of a planner that is not a model call. Writes the reply to the next free `specs/<NN>-<slug>.md`.
-fn write_spec(ctx: &Ctx, finding: &str, root: &str, reply: &str) -> Result<Outcome, PiiError> {
+fn write_spec(
+    ctx: &Ctx,
+    finding: &str,
+    root: &str,
+    reply: &str,
+    workspace: Option<&Path>,
+) -> Result<Outcome, PiiError> {
     if reply.trim().is_empty() {
         return Ok(PlanNode::refuse("planner returned no text"));
     }
-    let number = match next_number(&Path::new(root).join("specs")) {
+    let root = match spec_root(root, workspace) {
+        Ok(root) => root,
+        Err(reason) => return Ok(PlanNode::refuse(reason)),
+    };
+    let number = match next_number(&root.join("specs")) {
         Ok(number) => number,
         Err(reason) => return Ok(PlanNode::refuse(reason)),
     };
@@ -174,7 +215,7 @@ fn write_spec(ctx: &Ctx, finding: &str, root: &str, reply: &str) -> Result<Outco
     let body = spec_body(reply);
     // The one write: the path is `specs/` by construction, the run's fs_write scope bounds it, and an existing file
     // is never replaced.
-    let target = Path::new(root).join(&spec);
+    let target = root.join(&spec);
     if target.exists() {
         return Ok(PlanNode::refuse(format!("{spec} already exists")));
     }
@@ -194,8 +235,10 @@ fn write_spec(ctx: &Ctx, finding: &str, root: &str, reply: &str) -> Result<Outco
 }
 
 /// `ledger` op `spec.write` (spec 392 R3): an `agent` node drafts the spec, and this node writes the draft in `text`.
+/// Spec 414: with a `workspace` (the daemon's), a relative `workdir` is inside it; without one, `workdir` is as given.
 pub(super) struct SpecWriteNode {
     pub(super) cfg: serde_json::Value,
+    pub(super) workspace: Option<PathBuf>,
 }
 
 impl GraphNode for SpecWriteNode {
@@ -208,7 +251,7 @@ impl GraphNode for SpecWriteNode {
             return Ok(PlanNode::refuse("plan needs a workdir"));
         };
         let text = resolved_text(&self.cfg, input, "text").unwrap_or_default();
-        write_spec(ctx, &finding, &root, &text)
+        write_spec(ctx, &finding, &root, &text, self.workspace.as_deref())
     }
 }
 
