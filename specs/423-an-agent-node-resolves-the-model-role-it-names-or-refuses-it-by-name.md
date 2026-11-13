@@ -74,9 +74,6 @@ Verified to FAIL before the change: no such test file exists, and the agent node
 - `crates/pii-server/tests/cancellation_brake.rs`
 - `crates/pii-server/tests/fail_port.rs`
 - `crates/pii-server/tests/failover_graph.rs`
-- `crates/pii-server/tests/github_issue_graph.rs`
-- `crates/pii-server/tests/github_issue_graph/harness.rs`
-- `crates/pii-server/tests/github_issue_graph/main.rs`
 - `crates/pii-server/tests/model_routing.rs`
 - `crates/pii-server/tests/model_tiers.rs`
 - `crates/pii-server/tests/review_graph/recording.rs`
