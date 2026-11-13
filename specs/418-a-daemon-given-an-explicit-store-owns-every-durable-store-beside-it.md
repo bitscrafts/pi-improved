@@ -42,7 +42,8 @@ fills it instead of the daemon learning a second rule. Rejected: a new `state_di
 for ever). Rejected: setting `PII_STATE_DIR` from the CLI (process-global, and it would hide the decision from the config it writes).
 
 ## TDD Contract
-New `crates/pii-cli/tests/store_flag_owns_the_durable_dir.rs`, over the pure function (no daemon, no store file opened).
+New unit tests in `crates/pii-cli/src/daemon_durable.rs` — `pii-cli` is a binary crate, so an integration test cannot
+import it; the pure function is tested where it lives (no daemon, no store file opened).
 | Test Name | Input | Expected Output |
 |---|---|---|
 | `an_explicit_store_puts_the_durable_dir_beside_it` | `--store /tmp/x/s.redb`, no `PII_STATE_DIR` | `Some("/tmp/x/durable")` |
@@ -58,7 +59,7 @@ the configured-override branch removed; the empty-string guard dropped; the pare
 ## Exit Criteria
 ### New in this row
 Each is verified to FAIL before the change. A criterion that already passes is a Guardrail, never a criterion.
-- [ ] `cargo test -q -p pii-cli --test store_flag_owns_the_durable_dir 2>&1 | grep -qE 'test result: ok. [6-9] passed'`
+- [ ] `cargo test -q -p pii-cli --bin pii daemon_durable::tests 2>&1 | grep -qE 'test result: ok. [6-9] passed'`
 
 ## Guardrails
 - Keep green, unedited: `cargo test -q -p pii-cli --test daemon_start_mark` and `cargo test -q -p pii-server --test channel_wiring`.
