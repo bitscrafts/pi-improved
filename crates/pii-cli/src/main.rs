@@ -41,6 +41,7 @@ mod cmd_trace;
 mod cmd_treat;
 mod cmd_tui;
 mod cmd_worker_exec;
+pub mod daemon_durable;
 mod daemon_log;
 mod graph_dirs;
 mod ndjson;

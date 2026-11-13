@@ -3,6 +3,7 @@
 
 use crate::cli_util::{CliObserver, fail, fail_to};
 use crate::cmd_daemon_flags::{DaemonFlags, HELP, Parse, parse_flags};
+use crate::daemon_durable;
 use crate::daemon_log::{
     Switches, open_log, resolve_switches, sandbox_event, switch_off_events, wire_observers,
     writable_dirs,
@@ -51,10 +52,8 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
         fail("daemon", "no usable runtime dir (set PII_RUNTIME_DIR)");
         return ExitCode::from(2);
     };
-    let store_path = store.unwrap_or_else(|| runtime_dir.join("store.redb"));
-    let store_parent = store_path
-        .parent()
-        .map_or_else(|| PathBuf::from("."), PathBuf::from);
+    let (store_path, store_parent, store_given) =
+        daemon_durable::store_and_parent(store, &runtime_dir);
     // 2026-09-05: default `config_path` to the SAME unified file `pii -p`/
     // `pii tui` read (`Config::default_path()`, normally `~/.pii/pii.toml`)
     // rather than `<runtime_dir>/pii.toml` — so a single-instance operator
@@ -107,7 +106,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let cfg = match Config::merge_project(cfg, project_cfg) {
+    let mut cfg = match Config::merge_project(cfg, project_cfg) {
         Ok(c) => c,
         Err(e) => {
             fail("daemon", &e);
@@ -164,8 +163,7 @@ pub(crate) fn cmd_daemon(args: &mut std::env::ArgsOs) -> ExitCode {
     // precedence order this restores parity with `pii -p`/`pii tui`).
     // Spec 344: a durable store another daemon holds is refused here, once, by name, before anything is bound.
     // The same state resolution the daemon itself applies (`PII_STATE_DIR` first, then HOME).
-    let state_dir = pii_core::state_dir();
-    let durable_dir = cfg.resolve_durable_dir(&state_dir);
+    let durable_dir = daemon_durable::durable_dir(&mut cfg, store_given, &store_parent);
     if let Err(locked) = pii_store::durable::claim(&durable_dir) {
         let store = locked.path.display().to_string();
         let message = format!("store {store} is locked: another daemon holds it");

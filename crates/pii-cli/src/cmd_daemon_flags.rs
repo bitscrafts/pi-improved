@@ -14,7 +14,8 @@ pii daemon - run the control daemon in the foreground
 USAGE: pii daemon [FLAGS]
 
 FLAGS:
-  --store <path>             redb store file (default: <runtime dir>/store.redb)
+  --store <path>             redb store file (default: <runtime dir>/store.redb); its directory owns the
+                             durable stores (channel, timer) when this flag is given
   --config <path>            config TOML (default: $PII_CONFIG, else ~/.pii/pii.toml)
   --workspace <dir>          workspace root the sandbox and tools are scoped to (default: cwd)
   --sandbox <off|workspace>  sandbox profile (default: workspace; exit 4 if it cannot be enforced;
