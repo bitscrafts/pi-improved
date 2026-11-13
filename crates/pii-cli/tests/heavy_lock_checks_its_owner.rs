@@ -9,7 +9,7 @@
 pub mod heavy_lock;
 
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 fn lock_path(tag: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), tag).unwrap();
@@ -88,4 +88,73 @@ fn a_released_lock_is_taken_by_the_next_caller() {
     let second = heavy_lock::take(&path, Duration::from_secs(5));
     assert_eq!(heavy_lock::holder_pid(&path), Some(std::process::id()));
     drop(second);
+}
+
+fn mtime(path: &std::path::Path) -> SystemTime {
+    std::fs::metadata(path).unwrap().modified().unwrap()
+}
+
+fn set_mtime(path: &std::path::Path, when: SystemTime) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(when)
+        .unwrap();
+}
+
+// A holder that keeps its heartbeat is progressing, so a waiter whose budget is 1 s is waited for past it: the
+// holder holds for 3 s, and the waiter acquires only after the holder drops.
+#[test]
+fn a_holder_that_keeps_its_heartbeat_is_waited_for_past_the_budget() {
+    let (_dir, path) = lock_path("heavy-beat-");
+    let (held_tx, held_rx) = std::sync::mpsc::channel();
+    let holder_path = path.clone();
+    let holder = std::thread::spawn(move || {
+        let guard = heavy_lock::take(&holder_path, Duration::from_secs(5));
+        held_tx.send(()).unwrap();
+        std::thread::sleep(Duration::from_secs(3));
+        drop(guard);
+    });
+    held_rx.recv().unwrap();
+    let started = Instant::now();
+    let second = heavy_lock::take(&path, Duration::from_secs(1));
+    assert!(
+        started.elapsed() >= Duration::from_secs(2),
+        "the waiter must have waited for the holder, took {:?}",
+        started.elapsed()
+    );
+    drop(second);
+    holder.join().unwrap();
+}
+
+// The heartbeat touches the lock only while the file names this process. The first half shows the heartbeat
+// runs at all, so this cannot pass on a lock that never refreshes; the second half shows it stops once another
+// pid is written, by holding the mtime at a marker across three heartbeats.
+#[test]
+fn a_heartbeat_stops_when_the_lock_no_longer_names_this_process() {
+    let (_dir, path) = lock_path("heavy-stop-");
+    let guard = heavy_lock::take(&path, Duration::from_secs(5));
+    let (mut other, other_pid) = sleeper();
+
+    let marker = SystemTime::now() - Duration::from_secs(1000);
+    set_mtime(&path, marker);
+    std::thread::sleep(Duration::from_secs(3));
+    assert!(
+        mtime(&path) > marker,
+        "a held lock that names this process must be refreshed by its heartbeat"
+    );
+
+    std::fs::write(&path, format!("{other_pid}\n")).unwrap();
+    set_mtime(&path, marker);
+    std::thread::sleep(Duration::from_secs(7));
+    assert_eq!(
+        mtime(&path),
+        marker,
+        "the heartbeat must stop once the lock names another process"
+    );
+
+    drop(guard);
+    let _ = other.kill();
+    let _ = other.wait();
 }
