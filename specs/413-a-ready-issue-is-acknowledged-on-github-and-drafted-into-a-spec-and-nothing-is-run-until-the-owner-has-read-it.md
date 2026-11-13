@@ -1,5 +1,5 @@
 # Spec: a ready issue is acknowledged on GitHub and drafted into a spec, and nothing is run until the owner has read it
-#: depends=412 status=pending block=-
+#: depends=414 status=pending block=-
 
 ## Overview
 The `github` channel (spec 406, proven end to end 2026-11-12 after spec 412) delivers an issue the owner labelled `ready` to a graph named in `[[channel]] graph =`. Nothing ships for that
@@ -14,7 +14,7 @@ What it does, in order, for one delivered issue:
 
 **Project**: <repo>
 **Phase**: pii manages its specs through GitHub
-**Depends on**: 412
+**Depends on**: 414 (a relative `workdir` of `spec.write` is the daemon's workspace; measured 2026-11-12, the graph's write node was denied `fs_write` without it)
 
 ## Requirements
 - R1 `graphs/github-issue.toml`, listed in `graphs/minimal.txt` only if the installer's rules for a shipped graph are met (it lints, its `call`s and pins resolve). Input as the router
