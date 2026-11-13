@@ -51,6 +51,7 @@ pub fn registry(
         memory: Some(Arc::clone(&memory)),
         route_policy,
         tiers: Some(tiers),
+        models: Arc::new(cfg.models.clone()),
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(cfg.workspace.clone()),
@@ -258,6 +259,7 @@ pub fn lint_registry_with_log(
         memory: None,
         route_policy: BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
     }));
     reg.register(Arc::new(tool::ToolFactory {
         toolset: ToolSet::builtin(workspace.to_path_buf()),

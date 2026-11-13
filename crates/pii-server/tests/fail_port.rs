@@ -74,6 +74,7 @@ fn fail_port_outcome_is_journaled() {
         provider: Arc::new(ContextOverflowProvider),
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
         workspace: dir.clone(),
         live: None,
         memory: None,

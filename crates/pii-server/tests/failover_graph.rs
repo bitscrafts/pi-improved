@@ -130,6 +130,7 @@ fn run_ladder(dir_name: &str, provider: Arc<LadderProvider>) -> (Terminal, Vec<(
         provider,
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
         workspace: dir.clone(),
         live: None,
         memory: None,

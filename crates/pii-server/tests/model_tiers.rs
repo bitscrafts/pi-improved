@@ -80,17 +80,16 @@ impl ModelProvider for Default_ {
 
 fn factory(tiers: Option<Arc<TierTable>>) -> (AgentFactory, Arc<std::sync::atomic::AtomicUsize>) {
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    (
-        AgentFactory {
-            provider: Arc::new(Default_(Arc::clone(&calls))),
-            workspace: scratch(),
-            live: None,
-            memory: None,
-            route_policy: std::collections::BTreeMap::new(),
-            tiers,
-        },
-        calls,
-    )
+    let factory = AgentFactory {
+        provider: Arc::new(Default_(Arc::clone(&calls))),
+        workspace: scratch(),
+        live: None,
+        memory: None,
+        route_policy: std::collections::BTreeMap::new(),
+        tiers,
+        models: Arc::default(),
+    };
+    (factory, calls)
 }
 
 fn ctx(obs: Arc<RecordingObserver>) -> Ctx {

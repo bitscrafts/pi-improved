@@ -18,7 +18,10 @@ mod turn;
 use std::sync::Arc;
 
 use pii_abi::{Outcome, PiiError, PortName};
-use pii_model::ModelProvider;
+use pii_core::Ctx;
+use pii_model::{ChatRequest, ModelProvider};
+
+use crate::daemon::{ModelRole, resolve_role};
 
 use pii_graph::node::GraphNode;
 
@@ -73,6 +76,52 @@ pub struct AgentFactory {
     /// The `[[model_tier]]` table (spec 114). `None` only in the lint
     /// registry, which has no config: a `tier` key is then not checked.
     pub tiers: Option<Arc<crate::tiers::TierTable>>,
+    /// The `[models.<role>]` table (spec 362, spec 423 R6). Empty in the lint
+    /// registry, which has no config: a `@<role>` model is then refused by name.
+    pub models: Arc<std::collections::BTreeMap<String, ModelRole>>,
+}
+
+/// A role's provider, with its failures named for the role (spec 423 R2): an operator reading one learns which
+/// `[models.<role>]` entry to fix. A failure keeps its kind, so the retry and the `fail` port classify it as before.
+struct RoleProvider {
+    role: String,
+    inner: Arc<dyn ModelProvider>,
+}
+
+impl RoleProvider {
+    fn named(&self, e: PiiError) -> PiiError {
+        match e {
+            PiiError::Provider(mut f) => {
+                f.provider = format!("{} (model role @{})", f.provider, self.role);
+                PiiError::Provider(f)
+            }
+            // Both kinds are retryable, so the retry-once still sees them.
+            PiiError::Timeout { after_ms } => PiiError::Unavailable(format!(
+                "model role '@{}' timed out after {after_ms} ms",
+                self.role
+            )),
+            other => PiiError::Invalid(format!("model role '@{}': {other}", self.role)),
+        }
+    }
+}
+
+impl ModelProvider for RoleProvider {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+    fn chat(&self, ctx: &Ctx, req: &ChatRequest) -> Result<pii_model::ChatResponse, PiiError> {
+        self.inner.chat(ctx, req).map_err(|e| self.named(e))
+    }
+    fn chat_streaming(
+        &self,
+        ctx: &Ctx,
+        req: &ChatRequest,
+        on_delta: &mut dyn FnMut(&str),
+    ) -> Result<pii_model::ChatResponse, PiiError> {
+        self.inner
+            .chat_streaming(ctx, req, on_delta)
+            .map_err(|e| self.named(e))
+    }
 }
 
 /// Resolves an agent node's model (spec 28 R2/R4).
@@ -143,6 +192,42 @@ pub(super) fn route_provider_failure(e: &PiiError) -> Outcome {
 }
 
 impl AgentFactory {
+    /// Spec 423 R1/R2: a node whose model is `@<role>` takes the role's model and provider from the operator's table,
+    /// before any provider is built. An unknown role is refused by name, with the node id, and never defaulted. An
+    /// explicit model id is returned untouched (R3).
+    #[allow(clippy::type_complexity)] // reason: one private pair, used once
+    fn bind_role(
+        &self,
+        cfg: &serde_json::Value,
+        node_model: Option<String>,
+    ) -> Result<(Option<Arc<dyn ModelProvider>>, Option<String>), PiiError> {
+        let Some(role) = node_model
+            .as_deref()
+            .and_then(|m| m.strip_prefix('@'))
+            .map(str::to_owned)
+        else {
+            return Ok((None, node_model));
+        };
+        let node = cfg
+            .get("node-id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let mut named = serde_json::json!({ "model": node_model });
+        resolve_role(&mut named, &self.models)
+            .map_err(|e| PiiError::Invalid(format!("agent node '{node}': {e}")))?;
+        let text = |key: &str| {
+            named
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let (model, spec) = (text("model"), text("provider"));
+        let inner = pii_model::provider_from_spec(&spec)?;
+        let provider: Arc<dyn ModelProvider> = Arc::new(RoleProvider { role, inner });
+        Ok((Some(provider), Some(model)))
+    }
+
     /// Applies the node-level precedence (spec 114 R2: the node's `model`
     /// beats its `tier`, which beats the run's default provider). A named
     /// tier must exist and be available — there is no fallback to another
@@ -240,8 +325,10 @@ impl pii_graph::node::NodeFactory for AgentFactory {
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned);
         let node_model = resolve_model(cfg, &self.route_policy)?;
+        let (role_provider, node_model) = self.bind_role(cfg, node_model)?;
         let tier_name = cfg.get("tier").and_then(serde_json::Value::as_str);
-        let (tier, provider, model) = self.bind_tier(tier_name, node_model)?;
+        let (tier, tier_provider, model) = self.bind_tier(tier_name, node_model)?;
+        let provider = role_provider.unwrap_or(tier_provider);
         Ok(Box::new(AgentNode {
             tier,
             route_step,

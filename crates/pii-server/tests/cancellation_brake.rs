@@ -74,6 +74,7 @@ fn cancel_before_model_call_returns_cancelled() {
         memory: None,
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
     };
     let node = factory
         .build(&serde_json::json!({ "system": "s", "max_turns": 4 }))
@@ -170,6 +171,7 @@ fn cancel_mid_tool_loop_stops() {
         memory: None,
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
     };
     let node = factory
         .build(&serde_json::json!({ "system": "s", "max_turns": 8 }))
@@ -213,6 +215,7 @@ fn tool_calls_budget_exhausts() {
         memory: None,
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
     };
     let node = factory
         .build(&serde_json::json!({ "system": "s", "max_turns": 8 }))
@@ -238,6 +241,7 @@ fn wall_ms_budget_exhausts() {
         memory: None,
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
     };
     let node = factory
         .build(&serde_json::json!({ "system": "s", "max_turns": 8 }))

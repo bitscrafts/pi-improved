@@ -49,6 +49,7 @@ async fn the_rubric_text_reaches_the_agent_and_is_not_in_the_graph() {
         live: None,
         memory: None,
         tiers: None,
+        models: Arc::default(),
     };
     let node = factory.build(&cfg).expect("the reviewer builds");
     let input = serde_json::json!({

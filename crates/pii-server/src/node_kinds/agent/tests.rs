@@ -79,15 +79,15 @@ fn agent_factory_ports_include_fail() {
         }),
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,
+        models: Arc::default(),
         workspace: std::path::PathBuf::from("."),
         live: None,
         memory: None,
     }
     .ports(&serde_json::json!({}))
     .expect("ports");
-    let names: Vec<&str> = ports.iter().map(PortName::as_str).collect();
     assert_eq!(
-        names,
+        ports.iter().map(PortName::as_str).collect::<Vec<_>>(),
         vec!["ok", "err", "budget", "fail"],
         "fail appended last, ok/err/budget order preserved"
     );

@@ -80,6 +80,7 @@ fn route_step_resolves_model() {
         memory: None,
         route_policy: policy.clone(),
         tiers: None,
+        models: Arc::default(),
     };
     let node = factory
         .build(&serde_json::json!({
