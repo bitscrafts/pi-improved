@@ -74,6 +74,7 @@ fn route_step_resolves_model() {
     let policy: std::collections::BTreeMap<String, String> =
         std::iter::once(("patch".to_owned(), "modelX".to_owned())).collect();
     let factory = pii_server::node_kinds::agent::AgentFactory {
+        build_provider: Arc::new(pii_model::provider_from_spec),
         provider: Arc::new(pii_model::ScriptedProvider::empty()),
         workspace: scratch("ws"),
         live: None,

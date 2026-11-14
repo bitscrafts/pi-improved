@@ -127,6 +127,7 @@ fn run_ladder(dir_name: &str, provider: Arc<LadderProvider>) -> (Terminal, Vec<(
     let dir = scratch(dir_name);
     let mut registry = NodeRegistry::builtin();
     registry.register(Arc::new(pii_server::node_kinds::agent::AgentFactory {
+        build_provider: Arc::new(pii_model::provider_from_spec),
         provider,
         route_policy: std::collections::BTreeMap::new(),
         tiers: None,

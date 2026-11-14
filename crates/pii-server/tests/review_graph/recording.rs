@@ -43,6 +43,7 @@ async fn the_rubric_text_reaches_the_agent_and_is_not_in_the_graph() {
 
     let recording = Arc::new(Recording::default());
     let factory = AgentFactory {
+        build_provider: Arc::new(pii_model::provider_from_spec),
         provider: recording.clone(),
         route_policy: BTreeMap::new(),
         workspace: PathBuf::from(WORKDIR),

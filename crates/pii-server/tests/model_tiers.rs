@@ -10,9 +10,8 @@
     clippy::indexing_slicing
 )]
 
-use std::sync::Arc;
-
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 use pii_abi::{NodeInput, Outcome, PiiError};
 use pii_core::{Budget, CapKind, CapSet, Ctx, ObsEvent, PathScope, RecordingObserver, TraceCtx};
@@ -81,6 +80,7 @@ impl ModelProvider for Default_ {
 fn factory(tiers: Option<Arc<TierTable>>) -> (AgentFactory, Arc<std::sync::atomic::AtomicUsize>) {
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let factory = AgentFactory {
+        build_provider: Arc::new(pii_model::provider_from_spec),
         provider: Arc::new(Default_(Arc::clone(&calls))),
         workspace: scratch(),
         live: None,

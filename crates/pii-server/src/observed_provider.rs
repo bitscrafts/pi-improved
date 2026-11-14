@@ -18,6 +18,20 @@ pub fn observed_provider(
     log: &Arc<pii_observe::SwitchObserver>,
     llama_host: Option<&str>,
 ) -> Result<(Arc<dyn ModelProvider>, Option<String>), PiiError> {
+    let log: Arc<dyn pii_observe::Observer> = log.clone();
+    build_observed(model, &log, llama_host)
+}
+
+/// [`observed_provider`] over any observer: the one way the daemon builds a provider, shared by the engine's tiers,
+/// its default provider and the agent factory's role bindings (spec 424 R2).
+///
+/// # Errors
+/// As [`observed_provider`].
+pub fn build_observed(
+    model: &str,
+    log: &Arc<dyn pii_observe::Observer>,
+    llama_host: Option<&str>,
+) -> Result<(Arc<dyn ModelProvider>, Option<String>), PiiError> {
     // The retired `ollama:` kind is refused loudly (spec 129): counted, then
     // the named error from `provider_from_spec`, never a fallback.
     if model.starts_with("ollama:") {

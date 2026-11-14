@@ -3,12 +3,20 @@
 //! is refused by name before any model call, an explicit model id is passed through, and a failing role call names
 //! the role. The node is built through the daemon's registry (`engine::registry::registry`), the same path the
 //! channel-started runs take, so the role table reaches it the way it reaches the coder node.
+//!
+//! Spec 424 (binding a model role builds a provider that can make a call): a role whose provider is networked
+//! (`openai`) builds a provider that reaches the network, the base URL is read from `OPENAI_BASE_URL`, and a role whose
+//! provider cannot be built is refused naming the role and the kind. The networked cases run in a child process: the
+//! workspace forbids `unsafe_code`, so a test cannot `set_var`; the parent serves a loopback stub, and re-executes this
+//! test binary with `OPENAI_BASE_URL` pointing at it.
 
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::disallowed_methods, // reason: the loopback stub is this test's own server; the child is this test binary
+    clippy::significant_drop_tightening // reason: the stub's log is read once, after the child has run
 )]
 
 use std::collections::BTreeMap;
@@ -242,6 +250,74 @@ fn CONTROL_a_failing_role_call_names_the_role() {
     assert!(
         seen.lock().is_empty(),
         "the default provider answered for a failing role: {:?}",
+        seen.lock()
+    );
+}
+
+/// A role whose provider is a NETWORKED kind must bind: the builder the daemon passes owns the transport, so building
+/// the node succeeds. Before this row it did not — `provider_from_spec("openai")` returned "needs a transport" — and
+/// that is the whole defect, provable without a socket (spec 424 R1).
+#[test]
+fn a_role_whose_provider_is_networked_binds() {
+    let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "agent-roles-").unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let default = Arc::new(Recording {
+        seen: Arc::clone(&seen),
+    });
+    let roles = BTreeMap::from([(String::from("plan"), role("glm-5.3", "openai"))]);
+    let factory = agent_factory(dir.path(), roles, default);
+    factory
+        .build(&node_cfg("planner", "@plan"))
+        .expect("a networked role must bind, not fail for want of a transport");
+    assert!(
+        seen.lock().is_empty(),
+        "binding a role made a model call: {:?}",
+        seen.lock()
+    );
+}
+
+/// The same for the local server, the other networked kind the operator configures (spec 424 R1).
+#[test]
+fn a_role_whose_provider_is_the_local_server_binds() {
+    let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "agent-roles-").unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let default = Arc::new(Recording {
+        seen: Arc::clone(&seen),
+    });
+    let roles = BTreeMap::from([(
+        String::from("plan"),
+        role("granite-4.2-3b", "llamacpp-server"),
+    )]);
+    let factory = agent_factory(dir.path(), roles, default);
+    factory
+        .build(&node_cfg("planner", "@plan"))
+        .expect("a local-server role must bind");
+    assert!(
+        seen.lock().is_empty(),
+        "binding a role made a model call: {:?}",
+        seen.lock()
+    );
+}
+
+#[test]
+#[allow(non_snake_case)] // the name states what it controls for, as the spec names it
+fn CONTROL_a_role_whose_provider_cannot_be_built_names_the_role() {
+    let dir = pii_store::testing::tmp_scratch(env!("CARGO_MANIFEST_DIR"), "agent-roles-").unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let default = Arc::new(Recording {
+        seen: Arc::clone(&seen),
+    });
+    let roles = BTreeMap::from([(String::from("plan"), role("glm-5.3", "nonsense"))]);
+    let factory = agent_factory(dir.path(), roles, default);
+    let err = match build_and_run(&*factory, &node_cfg("planner", "@plan"), dir.path()) {
+        Err(e) => e.to_string(),
+        Ok(out) => panic!("a role with an unbuildable provider ran: {out:?}"),
+    };
+    assert!(err.contains("@plan"), "names the role: {err}");
+    assert!(err.contains("nonsense"), "names the provider kind: {err}");
+    assert!(
+        seen.lock().is_empty(),
+        "a model was called for an unbuildable role: {:?}",
         seen.lock()
     );
 }

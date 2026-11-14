@@ -13,10 +13,10 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use pii_abi::{
-    FailoverReason, FailurePayload, NodeInput, Origin, Outcome, PiiError, PortName, ProviderFailure,
+    FailoverReason, FailurePayload, NodeInput, Origin, Outcome, PiiError, ProviderFailure,
 };
 use pii_core::{Budget, CapSet, Ctx};
-use pii_graph::node::{GraphNode, NodeFactory as _};
+use pii_graph::node::GraphNode;
 use pii_model::{ChatRequest, Role};
 
 use super::{AgentNode, ModelProvider};
@@ -66,31 +66,6 @@ fn test_node(provider: Arc<RecordingProvider>) -> AgentNode {
 
 fn test_ctx() -> Ctx {
     Ctx::root(CapSet::empty(), Budget::unlimited())
-}
-
-/// R1 (spec 40): the agent factory advertises the `fail` port after
-/// `ok`/`err`/`budget` (appended last, order-preserving for the existing
-/// positional fixtures).
-#[test]
-fn agent_factory_ports_include_fail() {
-    let ports = crate::node_kinds::agent::AgentFactory {
-        provider: Arc::new(RecordingProvider {
-            seen: Mutex::new(Vec::new()),
-        }),
-        route_policy: std::collections::BTreeMap::new(),
-        tiers: None,
-        models: Arc::default(),
-        workspace: std::path::PathBuf::from("."),
-        live: None,
-        memory: None,
-    }
-    .ports(&serde_json::json!({}))
-    .expect("ports");
-    assert_eq!(
-        ports.iter().map(PortName::as_str).collect::<Vec<_>>(),
-        vec!["ok", "err", "budget", "fail"],
-        "fail appended last, ok/err/budget order preserved"
-    );
 }
 
 /// A provider whose `chat` always returns a fixed error. The default

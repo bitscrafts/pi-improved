@@ -44,8 +44,15 @@ pub fn registry(
     reg.register(Arc::new(nodes::plan::PlanFactory {
         provider: Arc::clone(&provider),
     }));
+    // Spec 424 R2: the agent factory builds role providers through the daemon's one builder, the same one the tiers and
+    // the default provider use, so a role's networked provider reaches the network.
+    let (obs, llama_host) = (Arc::clone(&log), cfg.llama_host.clone());
+    let build_provider: agent::ProviderBuilder = Arc::new(move |spec: &str| {
+        crate::observed_provider::build_observed(spec, &obs, llama_host.as_deref()).map(|(p, _)| p)
+    });
     reg.register(Arc::new(agent::AgentFactory {
         provider,
+        build_provider,
         workspace: cfg.workspace.clone(),
         live: Some(live),
         memory: Some(Arc::clone(&memory)),
@@ -254,6 +261,7 @@ pub fn lint_registry_with_log(
     }));
     reg.register(Arc::new(agent::AgentFactory {
         provider: Arc::new(pii_model::ScriptedProvider::empty()),
+        build_provider: Arc::new(pii_model::provider_from_spec),
         workspace: workspace.to_path_buf(),
         live: None,
         memory: None,

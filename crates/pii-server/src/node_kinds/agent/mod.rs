@@ -11,6 +11,8 @@
 //! types, model resolution and provider-failure routing.
 
 mod memorize;
+#[cfg(test)]
+mod ports_tests;
 mod tests;
 mod tools;
 mod turn;
@@ -60,10 +62,17 @@ pub(crate) struct TierBinding {
     pub(crate) max_tokens: Option<u32>,
 }
 
+/// Builds a provider from a full `kind:model` spec (spec 424 R2).
+pub type ProviderBuilder =
+    Arc<dyn Fn(&str) -> Result<Arc<dyn ModelProvider>, PiiError> + Send + Sync>;
+
 /// Factory registered into the engine's registry.
 pub struct AgentFactory {
     /// Provider all agent nodes share.
     pub provider: Arc<dyn ModelProvider>,
+    /// Builds a role's provider from its spec (spec 424 R1/R2): the daemon passes the transport-owning builder, so a
+    /// networked role is built the way every other networked provider is.
+    pub build_provider: ProviderBuilder,
     /// `[evolve.routing]` step -> model policy (spec 28 R1). Empty = no
     /// routing behavior; agent nodes without `route_step` are unchanged.
     pub route_policy: std::collections::BTreeMap<String, String>,
@@ -194,7 +203,8 @@ pub(super) fn route_provider_failure(e: &PiiError) -> Outcome {
 impl AgentFactory {
     /// Spec 423 R1/R2: a node whose model is `@<role>` takes the role's model and provider from the operator's table,
     /// before any provider is built. An unknown role is refused by name, with the node id, and never defaulted. An
-    /// explicit model id is returned untouched (R3).
+    /// explicit model id is returned untouched (R3). Spec 424 R1/R4: the role's provider is built through
+    /// `build_provider` from `kind:model` (a kind alone takes the model), and a failure names the role and the kind.
     #[allow(clippy::type_complexity)] // reason: one private pair, used once
     fn bind_role(
         &self,
@@ -222,8 +232,15 @@ impl AgentFactory {
                 .unwrap_or_default()
                 .to_owned()
         };
-        let (model, spec) = (text("model"), text("provider"));
-        let inner = pii_model::provider_from_spec(&spec)?;
+        let (model, kind) = (text("model"), text("provider"));
+        let spec = if kind.contains(':') {
+            kind.clone()
+        } else {
+            format!("{kind}:{model}")
+        };
+        let inner = (self.build_provider)(&spec).map_err(|e| {
+            PiiError::Invalid(format!("model role '@{role}' (provider {kind}): {e}"))
+        })?;
         let provider: Arc<dyn ModelProvider> = Arc::new(RoleProvider { role, inner });
         Ok((Some(provider), Some(model)))
     }
