@@ -59,7 +59,7 @@ save(){
 owner(){
   local PLAN=${PII_PLAN:-$ROOT/scripts/autonomy/plan.tsv} STATE=${PII_STATE:-$ROOT/_tmp/autonomy/state.json}
   local -a dirty cols; local -A status session
-  local ROWS STATE_ROWS sid sst sses id paths st ses c d hit hits=0 who="" n
+  local ROWS STATE_ROWS sid sst sses id paths st ses c d hit hits=0 who="" who_ses="" n
   mapfile -t dirty < <(dirty_paths)
   n=${#dirty[@]}
   STATE_ROWS=$(awk -F'"' '/^ "/ && /\{$/ {id=$2} /^  "status"/ {s=$4} /^  "session"/ {e=$4}
@@ -72,7 +72,12 @@ owner(){
     [ -n "$id" ] || continue
     st=${status[$id]:-pending}; ses=${session[$id]:-}
     case "$st" in done|skipped|revoked) continue ;; esac
-    [ -n "$ses" ] || continue
+    # 2026-11-14: the session used to be REQUIRED here, and that made a hand-implemented row unlandable: when the
+    # worker lane refuses before spending, the cycle's own dispatch bookkeeping writes `session: ""`, so the row could
+    # never claim the tree it had just been given (rows 414, 416, 417, 418, 429 - five times). The session stays as
+    # EVIDENCE (it is reported), but ownership rests on the guard below: a row owns this tree only if EVERY dirty path is
+    # one it names, and only one such row may claim it.
+    [ -n "$ses" ] || ses="none"
     # Opus review 2026-11-01: this used to count a row the moment ONE dirty path matched it. A row that names two
     # files of ten said OWNER, and clean() then stashed the other eight -- other people's work. A row owns this
     # tree only if EVERY dirty path is one it names; anything else is FOREIGN and must be left where it is.
@@ -82,9 +87,10 @@ owner(){
       for c in "${cols[@]}"; do [ "$c" = "$d" ] && { found=1; break; }; done
       [ "$found" = 1 ] || { hit=0; break; }
     done
-    [ "$hit" = 1 ] && { hits=$((hits + 1)); who=$id; }
+    [ "$hit" = 1 ] && { hits=$((hits + 1)); who=$id; who_ses=$ses; }
   done <<<"$ROWS"
-  if [ "$n" -gt 0 ] && [ "$hits" -eq 1 ]; then echo "OWNER $who"; return 0; fi
+  if [ "$n" -gt 0 ] && [ "$hits" -eq 1 ]; then echo "OWNER $who"
+    [ -n "$who_ses" ] && [ "$who_ses" != none ] && echo "owner-session: $who_ses"; return 0; fi
   echo "FOREIGN $n"
   return 7
 }

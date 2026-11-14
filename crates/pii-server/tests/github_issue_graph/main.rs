@@ -230,6 +230,16 @@ fn the_planner_node_holds_no_spawn_or_proc_and_only_reads() {
         .iter()
         .find(|n| n.get("id").and_then(|v| v.as_str()) == Some("plan"))
         .expect("a plan node");
+    // Spec 429: a real model offered `fs_read` uses it, so the planner needs a second turn; with one it took the
+    // `budget` port and the draft was refused (measured live: issue #29 refused, #30 drafted with three turns).
+    let turns = plan
+        .get("max_turns")
+        .and_then(|v| v.as_integer())
+        .expect("the plan node declares max_turns");
+    assert!(
+        turns >= 2,
+        "the planner must have room for a tool round trip, got {turns}"
+    );
     let plan_caps = string_list(plan.get("caps"));
     assert!(
         !plan_caps.iter().any(|c| c == "spawn" || c == "proc"),
