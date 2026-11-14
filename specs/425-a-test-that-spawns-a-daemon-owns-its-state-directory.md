@@ -56,7 +56,21 @@ Verified to FAIL before the change: the check does not exist, and with a daemon 
 - Do NOT change spec 418's `--store` behaviour.
 - Do NOT add the check to the gate without `--control` passing (R4).
 
+## Measured before implementing (2026-11-14)
+- `crates/pii-cli/tests/memory_learn.rs` spawns the daemon with `PII_RUNTIME_DIR`, `PII_CONFIG` and `PII_MODEL`, and
+  **not** `PII_STATE_DIR` — that is the collision: the child resolves its durable stores to `$HOME/.local/state/pii`.
+- Every other daemon-spawning test already isolates it (`control_plane_is_not_behind_runs.rs`,
+  `daemon_default_sandbox.rs`, `daemon_guard_reaps.rs`, `daemon_log_wiring.rs`), so the rule is followed by most of the
+  suite already; the check makes it stay true.
+- A scanner that greps one pattern (`arg("daemon")`) MISSED `memory_learn.rs`. The check must cover the spawn forms this
+  suite uses — a `Command` built with `.arg("daemon")`, `.args([... "daemon" ...])`, or a helper that takes the binary —
+  and its `--control` must include a fixture shaped like `memory_learn.rs`, or the check repeats the miss.
+- Two more files were flagged by the naive scan and need the same treatment or an explicit exemption with a reason:
+  `crates/pii-cli/tests/cli_describes_itself.rs`, `crates/pii-cli/tests/graph_catalogue/agent.rs`.
+
 ## Files
 - `scripts/checks/daemon-tests-isolate-state.sh`
 - `gate-steps.txt`
 - `crates/pii-cli/tests/memory_learn.rs`
+- `crates/pii-cli/tests/cli_describes_itself.rs`
+- `crates/pii-cli/tests/graph_catalogue/agent.rs`
