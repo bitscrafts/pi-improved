@@ -70,11 +70,15 @@ Verified to FAIL before the change: the first two tests below cannot pass while 
 - Do NOT exceed the three line baselines (R7). If a file is at its cap, extract rather than grow.
 
 ## Files
-- `crates/pii-server/src/node_kinds/agent/mod.rs`
 - `crates/pii-server/src/engine/registry.rs`
+- `crates/pii-server/src/node_kinds/agent/mod.rs`
+- `crates/pii-server/src/node_kinds/agent/ports_tests.rs`
+- `crates/pii-server/src/node_kinds/agent/tests.rs`
+- `crates/pii-server/src/observed_provider.rs`
 - `crates/pii-server/tests/agent_node_model_roles.rs`
-
-## Notes
-The live symptom to reproduce first: the `github-issue` graph's planner names `@plan`; with the role bound, the run must
-reach the model. Today it fails at build with `unknown model spec 'openai'` (no `:` in the provider field) or
-`openai: needs a transport`.
+- `crates/pii-server/tests/cancellation_brake.rs`
+- `crates/pii-server/tests/fail_port.rs`
+- `crates/pii-server/tests/failover_graph.rs`
+- `crates/pii-server/tests/model_routing.rs`
+- `crates/pii-server/tests/model_tiers.rs`
+- `crates/pii-server/tests/review_graph/recording.rs`
