@@ -234,7 +234,7 @@ fn the_planner_node_holds_no_spawn_or_proc_and_only_reads() {
     // `budget` port and the draft was refused (measured live: issue #29 refused, #30 drafted with three turns).
     let turns = plan
         .get("max_turns")
-        .and_then(|v| v.as_integer())
+        .and_then(toml::Value::as_integer)
         .expect("the plan node declares max_turns");
     assert!(
         turns >= 2,
