@@ -47,6 +47,8 @@ Verified to FAIL before the change: the plan node says `max_turns = 1`.
 - `graphs/github-issue.toml`
 - `crates/pii-server/tests/github_issue_graph/main.rs`
 
+- `scripts/autonomy/leftover.sh`
+
 ## Notes
 The live daemon's installed copy (`$STATE/graphs/github-issue.toml`) was used as the test bed and is now AHEAD of the
 repository (`max_turns = 3`). This row is what closes that gap: after it lands, reinstall the graph from the repo so the
