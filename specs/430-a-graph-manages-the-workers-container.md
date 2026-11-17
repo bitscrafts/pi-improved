@@ -53,10 +53,27 @@ every branch is testable without podman.
 | socket_refusal_names_both_paths | neither set | message names `PII_PODMAN_SOCKET` and `XDG_RUNTIME_DIR` |
 | unreachable_leaves_the_row_pending | no runtime | row `pending`, reason `no container runtime` |
 
+## Composition
+The graph is a unit other graphs compose, not a step bolted onto the lane. That fixes its shape:
+
+R10. **Declared interface, both directions.** Inputs: `instance`, `image`, `host_root`, `probe` (the toolchain list),
+     `repo_subpath`. Outputs, as data on the `end` node: `status` (`ready|unavailable|refused`), `container_id`,
+     `digest`, `reason`. A caller branches on `status`; it never parses prose.
+R11. **No implicit state.** Every input is a node input. The graph reads no daemon-wide config and no environment of its
+     own: the socket path and host root arrive as inputs, so two callers on the same machine can ask for different
+     containers without the graph knowing.
+R12. **Idempotent for a given input.** Running it twice in a row reports `ready` the second time without creating,
+     starting or recreating anything, and returns the same `container_id` and `digest`.
+R13. **Composable by callers that know nothing about podman.** The worker lane, a `judge` graph and any future coder
+     graph invoke the same unit with their own `instance`; none of them contains a podman decision.
+R14. **Pure where it can be.** `decide` is a pure transform, so composition is testable without a runtime: a caller's
+     branch on `status` is exercised by feeding the four outcomes, not by having podman installed.
+
 ## Exit Criteria
 - [ ] `cargo test -q -p pii-server --test worker_runtime 2>&1 | grep -qE 'test result: ok\. ([5-9]|1[0-9]) passed'`
 - [ ] `pii graph lint graphs/worker-runtime.toml`
 - [ ] `bash scripts/checks/worker-runtime-graph.sh`
+- [ ] `pii graph run graphs/worker-runtime.toml --input '{"instance":"a","image":"x","host_root":"/tmp","probe":["true"],"repo_subpath":"."}' --input '{"instance":"a","image":"x","host_root":"/tmp","probe":["true"],"repo_subpath":"."}' 2>&1 | grep -c '"status"' | grep -qx 2`
 
 ## Files
 - `graphs/worker-runtime.toml`
