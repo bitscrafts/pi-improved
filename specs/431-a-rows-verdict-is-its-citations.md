@@ -57,6 +57,9 @@ The queue uses this after a green gate and before `report-row.sh`: `proven` -> r
 `unproven` -> the row goes to `needs-review` with the findings printed. It is never a reason to skip the gate — it is a
 second, independent reader of the same artefact.
 
+### New in this row
+- [ ] `bash scripts/checks/row-verdict-cites.sh`
+
 ## Guardrails
 - Do NOT let the reviewer see the worker's report or the commit message as evidence of the work.
 - Do NOT allow the model's confidence to replace a citation.

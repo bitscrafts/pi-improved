@@ -52,6 +52,9 @@ This is the cheap half of research 084: the five signals and the lifecycle, no m
 Deliberately not included: a cron job. Adding a job to a system whose open-rows list is already full of stale entries is
 how the noise grows (research 084 §5).
 
+### New in this row
+- [ ] `bash scripts/checks/signals-report.sh`
+
 ## Guardrails
 - Do NOT flag a `no_agent`/script lane on speed alone: a fast exit is that lane's healthy result.
 - Do NOT mutate state, close issues or touch the tree.
