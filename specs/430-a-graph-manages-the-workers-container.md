@@ -97,6 +97,9 @@ step with podman's API version, and `--format json` is a documented, stable surf
 Risk noted at write time: this graph has side effects (`create`, `start`), so it is single-writer by construction — the
 queue lock already serialises cycles, and R7 keeps it from touching anything it did not create.
 
+### New in this row
+- [ ] `bash scripts/checks/worker-runtime-graph.sh`
+
 ## Guardrails
 - Do NOT add a container-specific node kind: the owner's decision is that the container is a graph.
 - Do NOT add a dev mode that bypasses the container.
