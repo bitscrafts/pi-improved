@@ -7,37 +7,57 @@ Measured 2026-11-15 on the devbox: the worker lane aborted with
 and the queue recorded the ROW as `needs-review` / `lane-not-started rc=9`. Rows 414, 416, 417, 418 and 429 were
 implemented by hand for that reason, none of them defective.
 
-Owner's decision (2026-11-15): there is no "dev mode". The container is reusable and its lifecycle is pii's own
-responsibility, expressed as a **graph** — the policy lives in `graphs/worker-runtime.toml`, and the primitive it composes
-already exists in Rust (`crates/pii-server/src/node_kinds/nodes/coder_runtime_api.rs`: image inspect `:47`,
-`/containers/create` `:67`, delete `:88`).
+Owner's decision (2026-11-15), in his words: there is no "dev mode"; the container is reusable and pii owns its
+lifecycle; **the container is another graph** — no container-specific node kind — the projects path is an argument,
+and one instance is enough ("simpler better").
+
+So the runtime is two graphs composed of primitives that already exist:
+
+    graphs/podman.toml          the runtime surface: ping, find, start, create, exec, digest — policy only
+    graphs/worker-runtime.toml  composes it for the worker: takes {instance, image, host_root, probe}, returns the verdict
 
 ## Requirements
-R1. A graph `graphs/worker-runtime.toml` decides, in this order, and its outcome is data:
-    `unavailable` (no runtime) | `ready` (container id, image digest) | `refused` (named reason).
-R2. **Identity**: the container is found by label (`pii.role=worker`, `pii.instance=<instance>`), never by name guess.
+R1. `graphs/worker-runtime.toml` returns, as data on its `end` node:
+    `status` (`ready|unavailable|refused`), `container_id`, `digest`, `reason`.
+R2. **Identity**: the container is found by label (`pii.role=worker`, `pii.instance=<instance>`), never by a guessed name.
 R3. **Life**: absent -> create + start; present and stopped -> start; present and running -> reuse.
-R4. **Digest**: if the image digest now differs from the digest the container was created from, the container is
-    recreated. Running an older image is the same defect as the stale installed binary.
-R5. **Tools**: `ready` is only reported after an exec inside the container proves the toolchain is present; the probe
-    list is data in the graph (at minimum `cargo`, `rustc`, `git`), not a hard-coded script.
-R6. **Mounts**: mounts are computed from a configured host root, never from pii's own view of the tree. A path that does
-    not exist under the host root refuses BEFORE any container is created.
-R7. **Property**: the graph never removes a container it did not create (its own are labelled and listed by label).
+R4. **Digest**: if the image digest now differs from the one the container was created from, it is recreated. Running an
+    older image is the same defect as the stale installed binary.
+R5. **Tools**: `ready` is reported only after an exec inside the container proves the toolchain is present; the probe
+    list (`probe`) is an input, not a hard-coded script.
+R6. **Mounts**: mounts are computed from `host_root` (an input; `projects` by default for the repo) and never from pii's
+    own view of the tree. A path missing under `host_root` refuses BEFORE any container is created.
+R7. **Property**: never remove a container, image or volume the graph did not create. Its own are labelled.
 R8. **Failure semantics**: no runtime -> the row stays `pending` with a named reason. An environment limitation is never
     recorded as a row failure.
-R9. The podman socket path is explicit: `PII_PODMAN_SOCKET` wins, `XDG_RUNTIME_DIR/podman/podman.sock` is the default,
-    and an unset XDG without the override refuses with a message naming both.
+R9. **One instance.** A single `instance` (default `worker`) serves the lane, the judge and any coder graph; lanes are
+    not given separate containers until something actually needs it.
+
+## Composition
+The graph is a unit other graphs compose, not a step bolted onto the lane. That fixes its shape:
+
+R10. **Declared interface, both directions.** Inputs: `instance`, `image`, `host_root`, `probe`, `repo_subpath`.
+     Outputs: `status`, `container_id`, `digest`, `reason`. A caller branches on `status`; it never parses prose.
+R11. **No implicit state.** Every input is a node input. The socket path and host root arrive as inputs, so a caller on
+     the same machine can ask for a different container without the graph knowing anything global.
+R12. **Idempotent for a given input.** Running it twice in a row reports `ready` the second time without creating,
+     starting or recreating anything, returning the same `container_id` and `digest`.
+R13. **Composable by callers that know nothing about podman.** The worker lane, a `judge` graph and any future coder
+     graph invoke the same unit with their own inputs; none of them contains a podman decision.
+R14. **Pure where it can be.** `decide` is a pure transform over (found?, state, created_digest, current_digest), so a
+     caller's branch on `status` is exercised by feeding the four outcomes — no runtime needed.
 
 ## Design
-The graph is policy; the primitive is Rust. One node kind `container` is added, wrapping the API client that already
-exists, with actions `inspect | find | start | create | exec | digest`. The graph:
+No new node kind. The graphs use the primitives that already exist — a command node and a transform — and podman's own
+`--format json`, which is structured and stable, so nothing is parsed out of prose:
 
-    socket -> probe -> find -> decide -> act -> tools -> end
-                        \\-> unavailable (named)         \\-> refused (named)
-
-`decide` is a pure transform over (found?, state, created_digest, current_digest) with the four outcomes of R2-R4, so
-every branch is testable without podman.
+    probe   podman version --format json                 -> runtime present?
+    find    podman ps -a --filter label=pii.role=worker --format json
+    digest  podman image inspect <image> --format '{{.Digest}}'
+    decide  transform: reuse | start | create | recreate
+    act     podman start <id> | podman create ... | podman rm -f <own id only>
+    tools   podman exec <id> <probe> (one per entry of `probe`)
+    end     transform -> {status, container_id, digest, reason}
 
 ## TDD Contract
 | Test Name | Input | Expected Output |
@@ -47,54 +67,38 @@ every branch is testable without podman.
 | decide_creates_when_absent | not found | `create` |
 | decide_recreates_on_digest_change | found, running, digest differs | `recreate` |
 | decide_control_same_digest_never_recreates | found, running, same digest | not `recreate` |
-| graph_refuses_before_creating_when_the_host_path_is_missing | host_root without the repo | no `/containers/create` call |
-| graph_never_removes_a_foreign_container | unlabelled container present | no delete call |
-| socket_uses_the_explicit_override_first | both set | the override path is used |
-| socket_refusal_names_both_paths | neither set | message names `PII_PODMAN_SOCKET` and `XDG_RUNTIME_DIR` |
-| unreachable_leaves_the_row_pending | no runtime | row `pending`, reason `no container runtime` |
-
-## Composition
-The graph is a unit other graphs compose, not a step bolted onto the lane. That fixes its shape:
-
-R10. **Declared interface, both directions.** Inputs: `instance`, `image`, `host_root`, `probe` (the toolchain list),
-     `repo_subpath`. Outputs, as data on the `end` node: `status` (`ready|unavailable|refused`), `container_id`,
-     `digest`, `reason`. A caller branches on `status`; it never parses prose.
-R11. **No implicit state.** Every input is a node input. The graph reads no daemon-wide config and no environment of its
-     own: the socket path and host root arrive as inputs, so two callers on the same machine can ask for different
-     containers without the graph knowing.
-R12. **Idempotent for a given input.** Running it twice in a row reports `ready` the second time without creating,
-     starting or recreating anything, and returns the same `container_id` and `digest`.
-R13. **Composable by callers that know nothing about podman.** The worker lane, a `judge` graph and any future coder
-     graph invoke the same unit with their own `instance`; none of them contains a podman decision.
-R14. **Pure where it can be.** `decide` is a pure transform, so composition is testable without a runtime: a caller's
-     branch on `status` is exercised by feeding the four outcomes, not by having podman installed.
+| graph_refuses_before_creating_when_the_host_path_is_missing | host_root without the repo | no create call |
+| graph_never_removes_a_foreign_container | unlabelled container present | no `rm` |
+| a_second_run_is_ready_and_creates_nothing | same input twice | `ready` twice, same ids, no create |
+| unreachable_reports_unavailable_not_refused_by_the_row | no runtime | `status=unavailable`, row `pending` |
 
 ## Exit Criteria
-- [ ] `cargo test -q -p pii-server --test worker_runtime 2>&1 | grep -qE 'test result: ok\. ([5-9]|1[0-9]) passed'`
-- [ ] `pii graph lint graphs/worker-runtime.toml`
+- [ ] `pii graph lint graphs/podman.toml && pii graph lint graphs/worker-runtime.toml`
+- [ ] `cargo test -q -p pii-server --test worker_runtime 2>&1 | grep -qE 'test result: ok\. ([7-9]|1[0-9]) passed'`
 - [ ] `bash scripts/checks/worker-runtime-graph.sh`
-- [ ] `pii graph run graphs/worker-runtime.toml --input '{"instance":"a","image":"x","host_root":"/tmp","probe":["true"],"repo_subpath":"."}' --input '{"instance":"a","image":"x","host_root":"/tmp","probe":["true"],"repo_subpath":"."}' 2>&1 | grep -c '"status"' | grep -qx 2`
+- [ ] `pii graph run graphs/worker-runtime.toml --input '{"instance":"worker","image":"x","host_root":"/tmp","probe":["true"],"repo_subpath":"."}' 2>&1 | grep -q '"status"'`
 
 ## Files
+- `graphs/podman.toml`
 - `graphs/worker-runtime.toml`
-- `crates/pii-server/src/node_kinds/nodes/container.rs`
-- `crates/pii-server/src/node_kinds/nodes/container/decide.rs`
-- `crates/pii-server/src/engine/registry.rs`
 - `crates/pii-server/tests/worker_runtime.rs`
 - `crates/pii-tools/src/sandbox.rs`
 - `scripts/checks/worker-runtime-graph.sh`
 - `gate-steps.txt`
 
 ## Notes
-The lane consumes this graph's outcome and nothing else: `ready` -> dispatch the worker into that container;
-`unavailable`/`refused` -> leave the row `pending` and print the name. The same graph runs on the lnx (socket at the
-default path, host root `/projects`) and on the devbox (explicit socket, host root configured) — one path, two
-configurations.
+The lane consumes this graph's verdict and nothing else: `ready` -> dispatch the worker into that container;
+`unavailable`/`refused` -> leave the row `pending` and print the reason.
 
-Risk noted at write time: this graph has side effects (`create`, `start`), so it is single-writer by construction —
-the queue lock already serialises cycles, and R7 keeps it from touching anything it did not create.
+The same graphs run on the lnx (default socket, `host_root=projects`) and on the devbox (explicit socket, `host_root`
+an argument): one path, two configurations. Choosing the CLI over the HTTP API is deliberate — no new client to keep in
+step with podman's API version, and `--format json` is a documented, stable surface.
+
+Risk noted at write time: this graph has side effects (`create`, `start`), so it is single-writer by construction — the
+queue lock already serialises cycles, and R7 keeps it from touching anything it did not create.
 
 ## Guardrails
-- Do NOT add a "dev mode" that bypasses the container; the owner rejected it (2026-11-15).
+- Do NOT add a container-specific node kind: the owner's decision is that the container is a graph.
+- Do NOT add a dev mode that bypasses the container.
 - Do NOT remove existing containers, images or volumes.
-- Do NOT let the graph construct mounts from the daemon's own filesystem view.
+- Do NOT construct mounts from the daemon's own filesystem view.
