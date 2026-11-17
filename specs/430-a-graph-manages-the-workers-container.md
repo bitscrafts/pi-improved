@@ -28,8 +28,9 @@ R5. **Tools**: `ready` is reported only after an exec inside the container prove
 R6. **Mounts**: mounts are computed from `host_root` (an input; `projects` by default for the repo) and never from pii's
     own view of the tree. A path missing under `host_root` refuses BEFORE any container is created.
 R7. **Property**: never remove a container, image or volume the graph did not create. Its own are labelled.
-R8. **Failure semantics**: no runtime -> the row stays `pending` with a named reason. An environment limitation is never
-    recorded as a row failure.
+R8. **Failure semantics**: no runtime -> the row is **skipped for dispatch** with `blocked=runtime:<reason>`
+    (spec 434). It is neither `pending` — which stalls every row behind it, measured 2026-11-17T14:14:40Z — nor a row
+    failure.
 R9. **One instance.** A single `instance` (default `worker`) serves the lane, the judge and any coder graph; lanes are
     not given separate containers until something actually needs it.
 
@@ -48,16 +49,26 @@ R14. **Pure where it can be.** `decide` is a pure transform over (found?, state,
      caller's branch on `status` is exercised by feeding the four outcomes — no runtime needed.
 
 ## Design
-No new node kind. The graphs use the primitives that already exist — a command node and a transform — and podman's own
-`--format json`, which is structured and stable, so nothing is parsed out of prose:
+No new node kind. The graphs use the primitives that already exist — a command node and a transform — and podman's Go
+templates, because no node can decode JSON: `stdout` is a capped string and the expression grammar (`pii-graph/src/expr.rs`)
+has no JSON function. Templates keep the vocabulary minimal and the parse is one `trim`:
 
-    probe   podman version --format json                 -> runtime present?
-    find    podman ps -a --filter label=pii.role=worker --format json
-    digest  podman image inspect <image> --format '{{.Digest}}'
-    decide  transform: reuse | start | create | recreate
-    act     podman start <id> | podman create ... | podman rm -f <own id only>
+    probe   podman version --format '{{.Version}}'          -> runtime present?
+    find    podman ps -a --filter label=pii.role=worker --filter label=pii.instance=I \
+              --format '{{.State}}|{{.ImageID}}'            -> state and digest of the container it may own
+    digest  podman image inspect <image> --format '{{.Id}}' -> the digest now
+    decide  route with ordered `when` rules (spec 392), first match wins:
+              trim(find) == ""                                 -> create
+              trim(find) == "running|" + trim(digest)          -> reuse
+              ends_with(trim(find), "|" + trim(digest))        -> start
+              fallback                                         -> recreate
+    act     podman start|create|rm -f (only labelled ids)
     tools   podman exec <id> <probe> (one per entry of `probe`)
     end     transform -> {status, container_id, digest, reason}
+
+`decide` needs no new primitive: an ordered `when` list is a decision table, so no conjunction is needed (the analysis
+that established this is `_projects/_tmp/opus-gh-graphs/report.md` F5). Two labelled containers matching falls to
+`recreate`, which may only remove ids it finds by its own label.
 
 ## TDD Contract
 | Test Name | Input | Expected Output |
