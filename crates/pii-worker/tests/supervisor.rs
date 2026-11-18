@@ -187,29 +187,38 @@ fn respawn_honors_configured_backoff() {
 #[test]
 fn respawn_zero_backoff_does_not_sleep() {
     let ctx = full_ctx();
-    let mut spec = worker_spec("wz", "a");
-    spec.restart_backoff_ms = 0;
+    // The property is "a zero backoff does not WAIT THE BACKOFF". A wall-clock bound proves that only on an idle
+    // machine: `took` carries process spawn and scheduling, and this test failed inside a gate that was compiling
+    // coverage beside it (2026-11-18). Proven by contrast instead: with a 400 ms backoff the same kill-and-restart
+    // must be materially slower. A scheduler hiccup adds to both arms and cannot fake the difference, while a real
+    // sleep would make the zero arm as slow as the other and still fail.
+    let took = restart_took(&ctx, "wz", 0).expect("worker restarted within 5s");
+    let slow = restart_took(&ctx, "wz-slow", 400).expect("the 400 ms arm restarted within 5s");
+    assert!(
+        slow >= took + 300,
+        "a 400 ms backoff must be materially slower than a zero one: zero {took}ms, backoff {slow}ms"
+    );
+}
+
+/// Starts a worker, kills it, and returns how long the supervisor says the restart took.
+fn restart_took(ctx: &Ctx, name: &str, backoff_ms: u64) -> Option<u64> {
+    let mut spec = worker_spec(name, "a");
+    spec.restart_backoff_ms = backoff_ms;
     let sup = Supervisor::new(spec);
-    sup.start(&ctx).unwrap();
-
+    sup.start(ctx).ok()?;
     kill9(sup.info().pid);
-
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    let restarted = loop {
+    while std::time::Instant::now() < deadline {
         let evs = sup.events();
         if let Some(WorkerEvent::Restarted { took_ms, .. }) = evs
             .iter()
             .find(|e| matches!(e, WorkerEvent::Restarted { .. }))
         {
-            break Some(*took_ms);
-        }
-        if std::time::Instant::now() >= deadline {
-            break None;
+            return Some(*took_ms);
         }
         std::thread::sleep(Duration::from_millis(20));
-    };
-    let took = restarted.expect("worker restarted within 5s");
-    assert!(took < 100, "zero backoff must not sleep: {took}ms");
+    }
+    None
 }
 
 #[test]

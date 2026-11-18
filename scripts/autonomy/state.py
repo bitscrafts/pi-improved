@@ -186,8 +186,16 @@ def main():
             print(f"no such row: {want}", file=sys.stderr)
             print("NONE")
             return
+        blocked_runtime = []
         for r in rows():
             if want is not None and r["id"] != want:
+                continue
+            # Row 434: a row blocked by the ENVIRONMENT (no container runtime, here) is not "next in line" — the lane
+            # cannot start it, so picking it again every tick is a spin that starves every row behind it. Skipped, with
+            # the reason kept, and the block is cleared by the first lane start that succeeds.
+            blocked = st.get(r["id"], {}).get("blocked", "")
+            if want is None and isinstance(blocked, str) and blocked.startswith("runtime:"):
+                blocked_runtime.append(r["id"])
                 continue
             s = st.get(r["id"], {}).get("status", "pending")
             if want is not None:
@@ -235,6 +243,13 @@ def main():
                                  str(st.get(r["id"], {}).get("attempts", 0)),
                                  st.get(r["id"], {}).get("session", "")]))
                 return
+        if blocked_runtime and not skipped:
+            # Row 434: the environment is the block, not a person. One line, exit 0: a tick that prints this and stops
+            # costs nothing, while a tick that re-picks the row spends a lane start every five minutes and starves
+            # everything behind it.
+            print("pick: every open row is blocked by the environment ("
+                  + ", ".join(blocked_runtime) + "): no container runtime here - the rows keep their place, nothing"
+                  " is spent", file=sys.stderr)
         if skipped:
             print("pick: every open row is parked: " + ", ".join(skipped) + " - waiting for a person", file=sys.stderr)
         print("NONE")

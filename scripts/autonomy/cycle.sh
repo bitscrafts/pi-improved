@@ -359,7 +359,10 @@ else
   # gave eight untouched rows a worker failure, and the queue looked like it had failed eight times.
   case "$WRC" in
     8|9)
-      python3 scripts/autonomy/state.py set "$ITEM" status=pending "session=${NEWSID:-}" last=lane-not-started-rc=$WRC
+      # Row 434: an environment refusal must not look like "this row, next". pending is what pick takes first, so
+      # the tick re-picked it forever and every row behind it never ran. blocked=runtime: is skipped by pick and
+      # cleared by the first lane start; the attempts stay untouched (nothing was spent).
+      python3 scripts/autonomy/state.py set "$ITEM" status=pending "blocked=runtime:lane-not-started-rc=$WRC" ${NEWSID:+session=$NEWSID} last=lane-not-started-rc=$WRC
       say "the lane did not start (rc=$WRC) — the row keeps its place and its attempts; nothing was spent"
       echo "OUTCOME=lane-not-started ITEM=$ITEM RC=$WRC"; exit 8 ;;
   esac
