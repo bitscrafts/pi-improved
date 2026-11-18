@@ -74,7 +74,9 @@ for line in lines:
 for r in broken:
     print(f"SYNC-VERIFY: {r}: its spec has no readable Exit Criteria — a row that cannot be verified")
 for r in narrative:
-    print(f"SYNC-VERIFY: {r}: its spec's criteria are narrative, not executable items -- nothing to derive")
+    # Information, not a defect of the tree: these rows predate the rule and cannot be derived at all.
+    # Failing the step for them makes the gate permanently red on history it is not measuring.
+    print(f"SYNC-VERIFY: {r}: its spec's criteria are narrative, not executable items -- nothing to derive (informational)")
 for r in stale:
     print(f"SYNC-VERIFY: {r}: the stored verify is not its spec's criteria" + (" (--check: not written)" if check else " — regenerated"))
 if not check and stale:

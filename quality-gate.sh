@@ -74,6 +74,11 @@ fi
 unexercised_summary
 if [ "$status" -eq 0 ]; then
     echo "quality-gate: ALL PASS"
+    # The global pre-commit hook refuses a commit unless the exact tree being committed has been gated.
+    # Writing the proof here is what keeps the queue able to commit after its own green gate.
+    if command -v bash >/dev/null && [ -x "$HOME/.config/git/hooks/gate-pass.sh" ]; then
+        bash "$HOME/.config/git/hooks/gate-pass.sh" quality-gate
+    fi
 else
     echo "quality-gate: FAILED"
 fi
