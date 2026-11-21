@@ -76,3 +76,42 @@ that date still hold the old commits, and ids quoted outside the repository will
   `scripts/red-audit.sh <row>` before queueing.
 - A row owns a dirty tree only if the row's paths column names EVERY dirty path (`scripts/autonomy/leftover.sh owner`). A row with no session
   owns nothing, so orchestrator-written work records this session as the row's session before landing, or the tree is treated as a stranger's.
+
+## Ownership, intake and blocking (2026-11-21)
+
+Three rules changed today. Each was found by a row that would not move, not by reading the code.
+
+**The tree is owned by a claim, not by a session** (spec 433, committed 9dece557). `leftover.sh owner` used to require
+the row's `session`, and `cycle.sh` writes `session=""` whenever the worker lane refuses - which is every row on a
+machine without podman. So a row implemented by hand could never own its tree, and `clean` stashed it; rows 414, 416,
+417, 418 and 429 all hit this. The proof is now the state field `tree=claimed`, written by whoever leaves work
+(`pii queue claim` already existed for it). One trap is recorded in the code: the awk printed TAB-separated fields and
+the reader used `IFS=tab`, and because TAB is IFS whitespace an empty field collapses - a row with no session shifted
+every later field left and the claim landed in `session`. Both sides use `|`.
+
+**Intake reads three things it does not document** (spec 439). `/projects/_tmp/pii-add-row.py` - not in the repository,
+which spec 439 exists to end - takes a row's criteria from a `### New in this row` section, counts `- `path`` lines
+under `## Files` as the row's `touches`, and separates criteria with `;` (so a criterion containing a semicolon splits
+in two). A `###` heading after `## Files` also used to be read as part of the Files section, which made every criterion
+a path and refused four rows with `NOT-A-FILE`; fixed in 6f2dcf3b, with a test that was proven by reintroducing the bug.
+
+**An environment block parks the row** (spec 434, committed d0b22c5a, tested c3715cfc). `lane-not-started` writes
+`blocked=runtime:<reason>` instead of `pending`, `pick` skips it, and when every open row is blocked the queue prints
+the block and `NONE` rather than spinning. Measured today: seven rows sit at
+`blocked=runtime:lane-not-started-rc=9`.
+
+### What that leaves open
+
+```
+425 428 435 436 438 439   blocked: no container runtime in this devbox (rc=9)
+430 431 432 437           no state record yet; the first attempt parks them the same way
+429 434 433               done today, each with the test its criterion names
+```
+
+The row that unlocks the rest is **430, the container as a graph**: it builds the lane the blocked rows are waiting for.
+Until it lands, the queue can be read, verified and parked, but not executed - here. On lnx, where podman runs, the same
+queue can dispatch.
+
+Disk, for whoever runs the gate next: a cold gate needs ~37 GB for the coverage step and refuses below 55 GB free. The
+ceilings are in `_docs/05-operations/disk-ceilings.md`; the largest reclaimable item is `_tmp/_trash`, which reached
+73 GB because nothing ever emptied it. Oldest-first trimming freed 20 GB in one pass on 2026-11-21.
