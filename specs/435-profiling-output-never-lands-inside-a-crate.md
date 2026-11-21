@@ -45,7 +45,6 @@ check which only looks at tracked files would not catch.
 
 - [ ] `bash scripts/checks/no-artifacts-in-crates.sh`
 - [ ] `grep -qE '^\*\.pro$' .gitignore`
-- [ ] `find crates -name '*.pro' | wc -l | grep -qx 0`
 
 ## Files
 
@@ -55,6 +54,9 @@ check which only looks at tracked files would not catch.
 
 ## Guardrails
 
+- The tree must end with **no** `*.pro` under `crates/`. This is a guardrail and not a criterion: it already holds today
+  (the files appear during a run and are usually removed), so as a criterion it would pass before any work and prove
+  nothing. The check above is what makes the property endure.
 - Do NOT satisfy R4 by adding `*.pro` to `.gitignore` alone. The artefact being ignored is what made it invisible; the
   check must see it anyway.
 - Do NOT delete the 8 GB before R2 is proven: the verification run would recreate it and the criterion would pass on an

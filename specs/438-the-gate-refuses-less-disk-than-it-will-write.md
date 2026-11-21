@@ -53,8 +53,8 @@ The second row is the control: a floor implemented as an unconditional refusal w
 
 - [ ] `pii gate run --routine --dry-run 2>&1 | grep -qE 'disk|free'`
 - [ ] `pii disk clean --dry-run | grep -q 'would'`
-- [ ] `pii disk clean --path .pii >/dev/null 2>&1; test $? -ne 0`
-- [ ] `grep -qE '60' crates/pii-cli/src/cmd_gate.rs || grep -rqE '\b60\b' crates/pii-server/src/gate/`
+- [ ] `pii disk clean --path .pii 2>&1 | grep -qiE 'refus|outside'`
+- [ ] `grep -rqE 'free_gb|AVAIL_GB|disk_floor' crates/pii-cli/src/ crates/pii-server/src/`
 
 ## Files
 
