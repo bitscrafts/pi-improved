@@ -47,6 +47,10 @@ plan node -> Err(reason)
 Verified to FAIL before the change: no `graph.node.failed` event exists anywhere in the tree or the log.
 - [ ] `cargo test -q -p pii-server --test a_refused_reason_is_recorded 2>&1 | grep -qE 'test result: ok\. [3-9] passed'`
 
+- `crates/pii-core/src/observe/trajectory.rs`
+
+- `crates/pii-observe/src/names/mqtt.rs`
+
 ## Guardrails
 - Do NOT put the reason into a comment, an issue body or a PR body (R4).
 - Do NOT change a run's status to failed for a modelled refusal (R3).
@@ -55,9 +59,16 @@ Verified to FAIL before the change: no `graph.node.failed` event exists anywhere
 - Do NOT weaken spec 421's fixed sentences or its check.
 
 ## Files
+
+- `crates/pii-core/src/observe.rs`
+- `crates/pii-observe/src/names.rs`
 - `crates/pii-server/src/engine/runs.rs`
 - `crates/pii-server/src/node_kinds/agent/mod.rs`
+- `crates/pii-server/src/node_kinds/agent/turn.rs`
 - `crates/pii-server/tests/a_refused_reason_is_recorded.rs`
+- `specs/428-a-refused-draft-records-why-the-planner-failed.md`
+- `scripts/autonomy/plan.tsv`
+- `scripts/autonomy/cycle.sh`
 
 ## Notes
 The node that fails is `kind = "agent"` with `max_turns = 1` and `tools = ["fs_read"]`. Its error is produced after the

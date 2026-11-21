@@ -181,7 +181,8 @@ pub(super) fn resolve_model(
 /// `fail` port; every other error kind keeps the pre-A3 `err` port shape
 /// (`{"error": <Display>}`) — this function narrows, it does not widen,
 /// what counts as a routable failure.
-pub(super) fn route_provider_failure(e: &PiiError) -> Outcome {
+pub(super) fn route_provider_failure(ctx: &Ctx, e: &PiiError) -> Outcome {
+    report_node_failed(ctx, &e.to_string());
     if let PiiError::Provider(pf) = e {
         let reason = pii_abi::classify_provider(pf);
         return Outcome::Next {
@@ -198,6 +199,25 @@ pub(super) fn route_provider_failure(e: &PiiError) -> Outcome {
         port: PortName::from("err"),
         value: serde_json::json!({ "error": e.to_string() }),
     }
+}
+
+/// Spec 428 R1/R2: a node that ends on its failure branch names itself, with its own error text, in one warn log line and
+/// one journal observation. Both are operator-facing; the public refusal comment never carries the text (spec 421 R3).
+fn report_node_failed(ctx: &Ctx, error: &str) {
+    let pii_core::Principal::GraphNode { node, .. } = ctx.principal() else {
+        return;
+    };
+    let run = ctx.trace().run.to_string();
+    let node = node.to_string();
+    ctx.observer().event(&pii_core::ObsEvent::NodeFailed {
+        run,
+        node: node.clone(),
+        error: error.to_owned(),
+    });
+    ctx.observer().event(&pii_core::ObsEvent::NodeObserved {
+        kind: pii_observe::names::GRAPH_NODE_FAILED.to_owned(),
+        fields: serde_json::json!({ "node": node, "error": error }),
+    });
 }
 
 impl AgentFactory {

@@ -174,9 +174,9 @@ impl GraphNode for AgentNode {
                 Ok(r) => r,
                 Err(e) if e.is_retryable() => match self.provider.chat(ctx, &req) {
                     Ok(r) => r,
-                    Err(e2) => return Ok(route_provider_failure(&e2)),
+                    Err(e2) => return Ok(route_provider_failure(ctx, &e2)),
                 },
-                Err(e) => return Ok(route_provider_failure(&e)),
+                Err(e) => return Ok(route_provider_failure(ctx, &e)),
             };
             // B6 (opus review): charge the run's token budget for the model
             // call that just happened. A graph's declared `max_tokens`

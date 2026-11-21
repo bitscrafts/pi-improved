@@ -4,6 +4,19 @@
 //! also be listed in [`ALL`]; a unit test checks the list has no duplicates
 //! or empty names.
 
+/// Metric: the MQTT client connected.
+pub const MQTT_CONNECTED: &str = "mqtt.connected";
+/// Metric: the MQTT connection dropped.
+pub const MQTT_CONNECTION_LOST: &str = "mqtt.connection.lost";
+/// Metric: an MQTT message arrived.
+pub const MQTT_MESSAGE_RECEIVED: &str = "mqtt.message.received";
+/// Metric: an MQTT message was dropped before handling.
+pub const MQTT_MESSAGE_DROPPED: &str = "mqtt.message.dropped";
+/// Metric: a message was published to MQTT.
+pub const MQTT_PUBLISHED: &str = "mqtt.published";
+/// Metric: credentials were sent over a plaintext connection.
+pub const MQTT_PLAINTEXT_CREDENTIALS: &str = "mqtt.plaintext_credentials";
+
 /// Metric: nodes newly marked dead.
 pub const GRAPH_NODE_DEAD: &str = "graph.node.dead";
 /// Metric: a join that can never be satisfied.
@@ -60,8 +73,7 @@ pub const MODEL_PROVIDER_EGRESS_DENIED: &str = "model.provider.egress_denied";
 pub const MODEL_PROVIDER_STREAM_DELTA: &str = "model.provider.stream_delta";
 /// Event: a supervised worker changed state.
 pub const WORKER_STATE_CHANGED: &str = "worker.state.changed";
-/// Event: a request to a worker was refused or cancelled around a drain/reload, with a named error
-/// to its caller (`worker`, `op`, `reason`: `queue_full` | `queue_timeout` | `reload_deadline`).
+/// Event: a request to a worker was refused or cancelled around a drain/reload, with a named error to its caller (`worker`, `op`, `reason`: `queue_full` | `queue_timeout` | `reload_deadline`).
 pub const WORKER_REQUEST_REFUSED: &str = "worker.request.refused";
 /// Event: a worker reload finished (`worker`, `old_pid`, `new_pid`, `in_flight_at_start`,
 /// `queued_flushed`, `aborted`); `0`/`0`/`0` means nothing was in flight.
@@ -76,9 +88,7 @@ pub const CODER_SPAWNED: &str = "coder.spawned";
 pub const CODER_IMAGE_MISSING: &str = "coder.image.missing";
 /// Event: a coder node's criterion is not in the named table (`criterion`); nothing was spawned (spec 215).
 pub const CRITERIA_UNKNOWN: &str = "criteria.unknown";
-/// Event: a coder node's container runtime could not be reached or refused a call (`socket`, `status`, `reason`).
-///
-/// Nothing was spawned (spec 230). Never `coder.image.missing`: a runtime failure is not an absent image.
+/// Event: a coder node's container runtime could not be reached or refused a call (`socket`, `status`, `reason`).  Nothing was spawned (spec 230). Never `coder.image.missing`: a runtime failure is not an absent image.
 pub const CODER_RUNTIME_UNAVAILABLE: &str = "coder.runtime.unavailable";
 /// Event: a coder node ran on the host because it names no `container_image` (`agent`); deprecated (spec 209).
 pub const CODER_HOST_SPAWN_DEPRECATED: &str = "coder.host_spawn.deprecated";
@@ -157,23 +167,8 @@ pub const CHANNEL_POST_REFUSED: &str = "channel.post_refused";
 /// Event: the startup post naming the deployed revision was delivered (`channel`, `text`; spec 157).
 pub const CHANNEL_VERIFICATION_POSTED: &str = "channel.verification_posted";
 
-/// The channel is ready to be talked to, and nothing was written to it.
-///
-/// The startup verification post is opt-in via `PII_VERIFY_POST=1`: a forum turns every message into a thread,
-/// so a restart must not create one.
+/// The channel is ready to be talked to, and nothing was written to it.  The startup verification post is opt-in via `PII_VERIFY_POST=1`: a forum turns every message into a thread, so a restart must not create one.
 pub const CHANNEL_READY: &str = "channel.ready";
-/// Event: an MQTT channel connected to its broker (`channel`, `broker`).
-pub const MQTT_CONNECTED: &str = "mqtt.connected";
-/// Event: an MQTT channel lost or failed to reach its broker (`channel`, `broker`, `error`, `attempt`, `retry_in_ms`).
-pub const MQTT_CONNECTION_LOST: &str = "mqtt.connection.lost";
-/// Event: an MQTT message was accepted into the inbound queue (`channel`, `topic`, `bytes`).
-pub const MQTT_MESSAGE_RECEIVED: &str = "mqtt.message.received";
-/// Event: an MQTT message was dropped and counted (`channel`, `topic`, `reason`).
-pub const MQTT_MESSAGE_DROPPED: &str = "mqtt.message.dropped";
-/// Event: an MQTT message was written to the broker connection (`channel`, `topic`, `qos`, `retain`, `bytes`).
-pub const MQTT_PUBLISHED: &str = "mqtt.published";
-/// Event: credentials are being sent over plaintext to a non-loopback broker because the config opted in (`channel`, `broker`).
-pub const MQTT_PLAINTEXT_CREDENTIALS: &str = "mqtt.plaintext_credentials";
 
 /// Event: a TUI render or attach failure.
 pub const TUI_FAILURE: &str = "tui.failure";
@@ -231,6 +226,8 @@ pub const RUN_RESUME_FAILED: &str = "run.resume.failed";
 pub const RUN_RECONCILED: &str = "run.reconciled";
 /// Event: a node panicked; the run is failed, the daemon survives (`run`, `node`, `message`).
 pub const NODE_PANICKED: &str = "node.panicked";
+/// Event: a node ended on its failure branch; the node's own error text is the reason (`run`, `node`, `error`).
+pub const GRAPH_NODE_FAILED: &str = "graph.node.failed";
 /// Event: the daemon is starting — written before the store opens, the engine is built or the socket
 /// is bound, so a start that dies early still leaves a line (spec 322).
 pub const DAEMON_STARTING: &str = "daemon.starting";
@@ -528,6 +525,7 @@ pub const ALL: &[&str] = &[
     TIMER_FIRED,
     RUN_RESUME_FAILED,
     NODE_PANICKED,
+    GRAPH_NODE_FAILED,
     RUN_RECONCILED,
     DAEMON_STARTING,
     DAEMON_STARTED,

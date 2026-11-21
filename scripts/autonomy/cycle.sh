@@ -43,7 +43,14 @@ touch "${PII_LOCK:-$PII_ROOT/_tmp/autonomy/lock}" 2>/dev/null || true
 # belongs to the agent that calls it; the mechanics belong here, where they can be tested.
 #
 # env: PLAN, GATE=1|0 (default 1), DRY=1 prints the plan and stops before dispatching.
-set -uo pipefail
+set -u
+# The daemon socket lives at $XDG_RUNTIME_DIR/pii/control.sock, and cron does not set XDG_RUNTIME_DIR. Measured
+# 2026-11-21: no autonomy script exported it, so every unattended cycle looked for a socket that was never there and
+# reported `lane-not-started rc=9` - which is how 800 aborts over days were read as "no container runtime" when the
+# runtime existed and a container was merely stopped. Defaulting it here is the fix; exporting it by hand is not.
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+export XDG_RUNTIME_DIR
+o pipefail
 ROOT=$PII_ROOT; cd "$ROOT" || exit 1
 STATEDIR=$ROOT/_tmp/autonomy; LOGD=$STATEDIR/logs
 mkdir -p "$LOGD" _tmp/claude-batchC
