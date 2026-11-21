@@ -63,10 +63,18 @@ refusing would fail.
 ## Files
 
 - `crates/pii-cli/src/cmd_queue.rs`
-- `crates/pii-server/src/queue/` (the store the command writes)
-- `scripts/autonomy/plan.tsv` (the rows added by the run that proves it)
+- `crates/pii-server/src/engine/queue_methods.rs`
+- `scripts/autonomy/tests/intake-attributes-dirty-paths.test.sh`
+- `scripts/autonomy/plan.tsv`
+
+### New in this row
+- [ ] `test ! -e /projects/_tmp/pii-queue-spec.sh`
+- [ ] `pii queue add --id 9999 --spec specs/439-intake-is-in-the-repository.md --title intake-without-a-daemon --criteria true && pii queue ls | grep -q 9999`
 
 ## Guardrails
+- The `### New in this row` list is the same list as `## Exit Criteria`, and it exists only because
+  `pii-add-row.py:13` reads that heading. The duplication is a defect in the intake tool (spec 439's class:
+  a programme outside the repository imposing a format), not an intention of this spec.
 
 - Do NOT keep the helper "for the case where the daemon is down". That case is the norm here, and it is R2's job.
 - Do NOT add the 085 path, or any other, to a tolerated list.

@@ -43,15 +43,23 @@ comparing) would fail to catch.
 
 - [ ] `bash scripts/checks/tree-is-catalogued.sh`
 - [ ] `grep -qx 'tree-is-catalogued' gate-steps.txt`
-- [ ] `bash scripts/checks/tree-is-catalogued.sh --control-uncatalogued >/dev/null 2>&1; test $? -eq 1`
+- [ ] `bash scripts/checks/tree-is-catalogued.sh --selftest`
 
 ## Files
 
 - `scripts/checks/tree-is-catalogued.sh`
 - `gate-steps.txt`
-- `_docs/05-operations/disk-ceilings.md` (the table it parses; read-only for this row)
+- `_docs/05-operations/disk-ceilings.md`
+
+### New in this row
+- [ ] `bash scripts/checks/tree-is-catalogued.sh`
+- [ ] `grep -qx 'tree-is-catalogued' gate-steps.txt`
+- [ ] `bash scripts/checks/tree-is-catalogued.sh --selftest`
 
 ## Guardrails
+- The `### New in this row` list is the same list as `## Exit Criteria`, and it exists only because
+  `pii-add-row.py:13` reads that heading. The duplication is a defect in the intake tool (spec 439's class:
+  a programme outside the repository imposing a format), not an intention of this spec.
 
 - Do NOT add an exemption list to the script. An exemption is a catalogued path with no ceiling, which is the state this
   row exists to remove; the exemption mechanism is the table.

@@ -46,11 +46,19 @@ read is worse than one that is ignored, because it looks like a decision.
 
 ## Files
 
-- `.pii/` (the tracked subset)
 - `.gitignore`
-- `scripts/checks/no-secrets-in-tracked.sh` (or the existing scan, if one exists — read before writing a second)
+- `scripts/checks/no-secrets-in-tracked.sh`
+- `.pii/config.toml`
+
+### New in this row
+- [ ] `git ls-files .pii | grep -q .`
+- [ ] `! git check-ignore -q .pii/config.toml`
+- [ ] `bash scripts/checks/no-secrets-in-tracked.sh .pii`
 
 ## Guardrails
+- The `### New in this row` list is the same list as `## Exit Criteria`, and it exists only because
+  `pii-add-row.py:13` reads that heading. The duplication is a defect in the intake tool (spec 439's class:
+  a programme outside the repository imposing a format), not an intention of this spec.
 
 - Do NOT track anything that fails the secret scan, and do NOT "sanitise" a file by editing a credential out of it: if a
   credential was ever in a file that gets committed, the credential is spent and must be rotated by the owner.

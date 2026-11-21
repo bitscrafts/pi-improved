@@ -55,7 +55,15 @@ def derived_verify(spec_name):
         body = open(os.path.join(SPECS, spec_name)).read()
     except OSError:
         return None
-    crit = re.findall(r"- \[ \] `(.+?)`", body)
+    # Which lines are the row's criteria: `## Exit Criteria` when that section carries any, and otherwise the whole
+    # body. Two tools disagreed about the location and both were right for their half of the rows - measured
+    # 2026-11-21: intake repeats the criteria under `### New in this row` (pii-add-row.py:13), so a spec with both
+    # sections derived each criterion twice (435-439 read stale); but 430-434 keep their checklist ONLY in that section
+    # with prose in Exit Criteria, so dropping it made them read stale instead. Prefer the section, fall back to the
+    # body - the union of the two behaviours, chosen per spec rather than globally.
+    m = re.search(r"^## Exit Criteria\n(.*?)(?=^## )", body, re.S | re.M)
+    in_section = re.findall(r"- \[ \] `(.+?)`", m.group(1)) if m else []
+    crit = in_section or re.findall(r"- \[ \] `(.+?)`", body)
     return ";".join(c.strip() for c in crit) if crit else None
 
 

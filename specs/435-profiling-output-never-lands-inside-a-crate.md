@@ -44,15 +44,22 @@ check which only looks at tracked files would not catch.
 ## Exit Criteria
 
 - [ ] `bash scripts/checks/no-artifacts-in-crates.sh`
-- [ ] `grep -qE '^\*\.pro$' .gitignore`
+- [ ] `grep -qxF '*.pro' .gitignore`
 
 ## Files
 
 - `scripts/checks/no-artifacts-in-crates.sh`
 - `.gitignore`
-- the caller of the profiler, named by R1 (path recorded here once found)
+- `gate-steps.txt`
+
+### New in this row
+- [ ] `bash scripts/checks/no-artifacts-in-crates.sh`
+- [ ] `grep -qxF '*.pro' .gitignore`
 
 ## Guardrails
+- The `### New in this row` list is the same list as `## Exit Criteria`, and it exists only because
+  `pii-add-row.py:13` reads that heading. The duplication is a defect in the intake tool (spec 439's class:
+  a programme outside the repository imposing a format), not an intention of this spec.
 
 - The tree must end with **no** `*.pro` under `crates/`. This is a guardrail and not a criterion: it already holds today
   (the files appear during a run and are usually removed), so as a criterion it would pass before any work and prove

@@ -58,12 +58,21 @@ The second row is the control: a floor implemented as an unconditional refusal w
 
 ## Files
 
-- `crates/pii-cli/src/cmd_gate.rs` (or the gate entry point found by reading before writing)
+- `crates/pii-cli/src/cmd_gate.rs`
 - `crates/pii-cli/src/cmd_disk.rs`
-- `scripts/disk-clean.sh` (deleted once `pii disk clean` exists)
-- `gate-steps.txt` (only if the floor is expressed there)
+- `gate-steps.txt`
+- `scripts/disk-clean.sh`
+
+### New in this row
+- [ ] `pii gate run --routine --dry-run 2>&1 | grep -qE 'disk|free'`
+- [ ] `pii disk clean --dry-run | grep -q 'would'`
+- [ ] `pii disk clean --path .pii 2>&1 | grep -qiE 'refus|outside'`
+- [ ] `grep -rqE 'free_gb|AVAIL_GB|disk_floor' crates/pii-cli/src/ crates/pii-server/src/`
 
 ## Guardrails
+- The `### New in this row` list is the same list as `## Exit Criteria`, and it exists only because
+  `pii-add-row.py:13` reads that heading. The duplication is a defect in the intake tool (spec 439's class:
+  a programme outside the repository imposing a format), not an intention of this spec.
 
 - Do NOT satisfy this by freeing space inside the gate. A gate that cleans caches to fit is a gate that deletes the warm
   cache it depends on, and the next run pays an hour.
