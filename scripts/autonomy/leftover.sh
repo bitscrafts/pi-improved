@@ -3,7 +3,8 @@
 #   save <dir> <cid>  -> <cid>-staged.patch (git diff --cached), <cid>-tracked.patch (git diff),
 #                        <cid>-untracked.tar (only with untracked paths),
 #                        <cid>-paths.txt (git status -z: a rename lists BOTH paths). Creates files in <dir> only.
-#   owner             -> OWNER <row-id> (exit 0) when exactly one open row with a session names a dirty path;
+#   owner             -> OWNER <row-id> (exit 0) when exactly one open row CLAIMS this tree (state field
+#                        `tree=claimed`, spec 433) or carries a session, and names every dirty path;
 #                        FOREIGN <n> (exit 7) otherwise. n is the number of dirty paths (0 = clean).
 #   clean <cid>       -> save first (PII_LEFTOVER_DIR, default _tmp/autonomy/leftovers), then
 #                        git stash push --include-untracked (restore: git stash pop <ref>); NOT-CLEANED (exit 8)
@@ -58,21 +59,25 @@ save(){
 # writes them: the state is indent=1 with sorted keys, so each row's status and session sit on their own lines.
 owner(){
   local PLAN=${PII_PLAN:-$ROOT/scripts/autonomy/plan.tsv} STATE=${PII_STATE:-$ROOT/_tmp/autonomy/state.json}
-  local -a dirty cols; local -A status session
+  local -a dirty cols; local -A status session claim
   local ROWS STATE_ROWS sid sst sses id paths st ses c d hit hits=0 who="" n
   mapfile -t dirty < <(dirty_paths)
   n=${#dirty[@]}
-  STATE_ROWS=$(awk -F'"' '/^ "/ && /\{$/ {id=$2} /^  "status"/ {s=$4} /^  "session"/ {e=$4}
-    /^ \}/ {if (id != "") print id "\t" s "\t" e; id=""; s=""; e=""}' "$STATE" 2>/dev/null)
-  while IFS=$'\t' read -r sid sst sses; do
-    [ -n "$sid" ] && { status[$sid]=$sst; session[$sid]=$sses; }
+  # Four fields, "|"-separated on BOTH sides: TAB is IFS whitespace, so two adjacent tabs collapse and an empty
+  # field (a row with no session) silently shifts every later field left - which put the claim into `session`.
+  STATE_ROWS=$(awk -F'"' '/^ "/ && /\{$/ {id=$2} /^  "status"/ {s=$4} /^  "session"/ {e=$4} /^  "tree"/ {t=$4}
+    /^ \}/ {if (id != "") print id "|" s "|" e "|" t; id=""; s=""; e=""; t=""}' "$STATE" 2>/dev/null)
+  while IFS="|" read -r sid sst sses stree; do
+    [ -n "$sid" ] && { status[$sid]=$sst; session[$sid]=$sses; claim[$sid]=$stree; }
   done <<<"$STATE_ROWS"
   ROWS=$(awk -F'\t' '!/^#/ && NF >= 7 {print $1 "\t" $6}' "$PLAN" 2>/dev/null)
   while IFS=$'\t' read -r id paths; do
     [ -n "$id" ] || continue
-    st=${status[$id]:-pending}; ses=${session[$id]:-}
+    st=${status[$id]:-pending}; ses=${session[$id]:-}; clm=${claim[$id]:-}
     case "$st" in done|skipped|revoked) continue ;; esac
-    [ -n "$ses" ] || continue
+    # Spec 433: the claim is the proof. A session was the old proof and the cycle empties it when the
+    # lane refuses, so a row implemented by hand could never own its tree.
+    { [ "$clm" = claimed ] || [ -n "$ses" ]; } || continue
     # Opus review 2026-11-01: this used to count a row the moment ONE dirty path matched it. A row that names two
     # files of ten said OWNER, and clean() then stashed the other eight -- other people's work. A row owns this
     # tree only if EVERY dirty path is one it names; anything else is FOREIGN and must be left where it is.
