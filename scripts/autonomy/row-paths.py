@@ -22,7 +22,7 @@ def declared(path):
     entries, inside = [], False
     try:
         for line in open(path, encoding="utf-8"):
-            if line.startswith("## "):
+            if line.startswith("#"):
                 inside = line.strip() == "## Files"
             elif inside and line.count("`") >= 2:
                 entries.append(line.split("`")[1].strip())
