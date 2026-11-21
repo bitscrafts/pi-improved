@@ -53,6 +53,7 @@ messaging gateway with one performant, local-first, modular system.
   - [`105-runbook.md`](05-operations/105-runbook.md)
   - [`open-items.md`](05-operations/open-items.md) — **what is done and what is still missing** in one place: the closed specs, the open list with the evidence path for each (the three-trail audit fork, the quarantine flake whose cause is NOT established, g4/g6/g8, the Discord and laya decisions) and the commands that re-verify any claim without the orchestrator
   - [`dormant-capabilities.md`](05-operations/dormant-capabilities.md) — capabilities that exist but are deliberately not wired, each with its reason and the CHECK that keeps it dormant (`pii-http-fetch` first, per the owner decision of 2026-10-10) — operator runbook: start/stop, health, metrics, logs, backup/restore, upgrade, wedged daemon
+  - [`disk-ceilings.md`](05-operations/disk-ceilings.md) — **every path outside git, with its ceiling and why it is not tracked**; anything absent from that table is a defect, not a judgement call
 - [06-research/](06-research/) — research write-ups (numbered)
   - **Start with [`06-research/000-TOPIC-MAP.md`](06-research/000-TOPIC-MAP.md)** — the SSOT topic map for the research tree (canonical / evidence / superseded, per subject). It replaces the per-file list formerly kept here.
   - [`06-research/000-CANDIDATES-INDEX.md`](06-research/000-CANDIDATES-INDEX.md) — the ten "researched, not scheduled" candidates
