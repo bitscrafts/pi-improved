@@ -46,3 +46,6 @@ Outside contributions go through issues and pull requests: see [`CONTRIBUTING.md
   variables and are never written to a file, a log or a commit.
 - Commit messages describe the change and are written under your own identity.
 - Update `HANDOFF.md` when a change alters what is open or how the queue works.
+- A path outside git is either in [`_docs/05-operations/disk-ceilings.md`](_docs/05-operations/disk-ceilings.md) with a
+  ceiling, or it is a defect. Clean is not the same as accounted for: 193 GB once sat behind `.gitignore` and nothing
+  would have noticed it grow. Scratch stays under `_tmp/`, and the gate's warm cache is the only large cache kept.

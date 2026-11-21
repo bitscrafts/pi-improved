@@ -5,7 +5,7 @@
 
 Measured 2026-11-21, three facts in a row that together describe a fork nobody chose:
 
-1. `pii queue-spec.sh 435 3 3` refused with `REFUSE: unexpected dirty paths` because of one document belonging to
+1. `pii-queue-spec.sh 435 3 3` refused with `REFUSE: unexpected dirty paths` because of one document belonging to
    another session. Four rows (435–438) could not enter the queue.
 2. The refusal comes from a helper that **is not in the repository**: it lives at `/projects/_tmp/pii-queue-spec.sh`, and
    `ls scripts/autonomy/queue-spec.sh` says no such file. Unversioned, unreviewed, not in the gate.
@@ -13,16 +13,20 @@ Measured 2026-11-21, three facts in a row that together describe a fork nobody c
    `pii queue` prints
    `usage: pii queue add --id <id> --spec <path> --title <text> --criteria <cmd> ... [--touches <path>]...`.
 
-So there are two intake paths. The one in the repository needs the daemon (`pii queue ls` →
-`uds.connect.failed /run/user/0/pii/control.sock`); the one outside the repository bypasses it by writing
-`scripts/autonomy/plan.tsv` directly, and carries a hard-coded allowlist of tolerated dirty paths
-(`pii-queue-spec.sh:10`) that refuses everything it does not recognise.
+**Two facts that keep this from being a one-line fix.** First, they do not write the same store:
+`crates/pii-server/src/engine/queue_methods.rs:1` calls `queue.add` "the daemon's queue, fed from outside" (spec 352),
+backed by `pii_store::queue`, while the helper appends to `scripts/autonomy/plan.tsv`; and
+`crates/pii-server/src/engine/registry.rs:106` already declares the store "the one source of truth for the development
+queue; the nodes never read `plan.tsv`". So the migration is **half done**: the binary feeds the future, the scripts
+still feed the legacy file, and the helper is a third writer pointed at the past.
 
-That is why the fork exists: **the versioned path requires a daemon that cannot run while a gate runs, and this
-project gates constantly.** The bypass was the workaround, and the workaround is the thing with the allowlist.
+Second, the versioned path needs the daemon (`pii queue ls` → `uds.connect.failed /run/user/0/pii/control.sock`) and the
+daemon cannot run while a gate runs — and this project gates constantly. That is why the bypass exists, and the bypass
+is what carries the allowlist (`pii-queue-spec.sh:10`): a hard-coded list of tolerated dirty paths that refuses
+everything it does not recognise.
 
 `pii queue claim` also already exists (line 22), which is the command spec 433 assumed had to be invented. Any row
-written against an imagined interface must be re-read against the one that exists.
+written against an imagined interface must be re-read against the one that ships.
 
 ## Requirements
 
