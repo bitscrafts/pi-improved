@@ -141,3 +141,108 @@ Plus two provider facts worth keeping: **`think:false` is ignored** on ollama-cl
 ## 10. Status
 
 **RESEARCH — no code, no spec, nothing scheduled.** Installed or changed today: Lean 4.36.0 (`~/.elan`), `ripgrep 14.1.1`, `uvx lean-lsp-mcp`, a core-Lean project at `/tmp/leandemo`, the three-part gate `/tmp/lean-gate.sh` (build ∧ no `sorry` ∧ no `sorryAx`, with a failing control), and the provider fix in §6. Nothing was added to the pii workspace; the gate and drivers live in `/tmp` and would need a home before they are worth keeping.
+
+---
+
+## 11. The loop, run on the whole backlog (2026-11-17, evening)
+
+The loop lives at `/projects/research/lean-autoresearch/`: `program.md` (human brief), `lemmas.tsv`
+(20-lemma backlog), `run_cycle.py` (one cycle: static prior → second free family → laya router →
+cloud, ≤1 call and ≤400 tokens), `gate.sh`, `router_refs.json`, `runs.jsonl`, `proofs/`.
+
+**Result: 20/20 lemmas proved, every one by the free static prior, 0 cloud tokens, 190 s of wall
+clock across 21 cycles.** The one cloud spend of the day (165 tokens) came from the broken-judge
+cycle described below, not from a hard lemma. `omega` solved `∀ n, n + n = 2 * n` — the lemma the
+cloud model failed in experiment 2 — at zero cost.
+
+Two changes were folded in before the run, both from the PDDL-Instruct paper filed the same evening:
+
+1. **Full diagnostics to the generator**, not the first line truncated to 110 characters
+   (their ablation: detailed feedback beat binary feedback by 3–5 points in every domain).
+2. **A second free family** (induction-shaped one-liners) tried before any cloud call, on the
+   reasoning that their loop iterates 10–15 times and ours iterated once.
+
+**The gate certified nothing the first time, and only a control revealed it.** The first version of
+`gate.sh` hard-coded `#print axioms` lines for `L1…L10` — theorems left over from the earlier
+experiment — and relied on `lake build`, which does **not** build a module nothing imports. So
+`Leandemo/Proved.lean` was never compiled by the gate, its `sorry` warnings never existed, its
+axioms were never printed, and `axioms_rc=1` was not checked. The gate printed `VERDICT: PASS` while
+checking nothing about the 20 proofs, and it kept printing PASS when a `sorry` theorem was injected.
+The fix: compile `Proved.lean` **explicitly**, generate the `#print axioms` list from the file at run
+time, and fail when any checker exits non-zero or when zero theorems are checked.
+
+Three controls were then required to pass (all measured, in this order):
+
+| control | result |
+|---|---|
+| 20 real proofs | `build_rc=0 proof_rc=0 sorry_warnings=0 theorems_checked=20 axioms_rc=0 sorry_ax_hits=0` → **PASS** |
+| one injected `sorry` | `sorry_warnings=1 sorry_ax_hits=1` → **FAIL** |
+| false theorem, no `sorry` (`2+2=5 := by decide`) | `proof_rc=1 sorry_ax_hits=1` → **FAIL** |
+| empty proofs file | `build_rc=1 theorems_checked=0` → **FAIL** |
+
+A durability bug fell out of the same run: the loop appended the proof, then ran the gate, then
+marked the lemma `proved`. When a cycle was killed by its own 300 s timeout mid-gate, the lemma went
+back to `todo` and was proved again — producing a **duplicate declaration** that broke the file for
+every later cycle. Fixed by marking the lemma proved before the gate and making the append
+idempotent. That duplicate is what made the gate fail on the clean tree, which is how it was found.
+
+**Status unchanged: RESEARCH.** 20 textbook lemmas, no Mathlib, no premise retrieval. What it
+establishes is narrower and more useful: the free oracles carried the entire backlog, and the gate
+that judges it has now been shown to fail on demand.
+
+---
+
+## 12. The loop, improved and re-run on a harder backlog (2026-11-17, night)
+
+The first backlog was solved entirely by `simp`/`omega`, which meant the router and the paid path
+were never exercised — the loop was measuring the tactic library, not the design. So it was improved
+in six ways and given twelve lemmas that `omega` cannot close (nonlinear arithmetic, witnesses,
+induction over lists):
+
+1. **A self-check before judging anything.** The cycle first proves `1 + 1 = 2` through the same code
+   path and aborts if that fails. This is the direct answer to the afternoon's defect where a judge
+   that could not parse its own theorem name reported every candidate as wrong.
+2. **Three free stages, not two**: static prior → induction family → **router-chosen family**.
+3. **The router now does work.** laya classifies the last diagnostic and the class selects the next
+   tactic family (`ROUTER_FAMILIES`: missing_lemma → `Nat.mul_add`/`Nat.add_mul`/`Nat.mul_succ`
+   rewrites; incomplete → induction templates; wrong_tactic → assumption/constructor; budget →
+   `decide`/`native_decide`; syntax → reset). Previously it only produced a label.
+4. **The generator iterates**, up to two paid rounds, each shown the accumulated diagnostics, with a
+   hard ceiling of 400 tokens per call and **1 200 tokens per cycle**.
+5. **Ordering fixed**: the lemma is marked proved *before* the tree is gated, and the append to
+   `Proved.lean` is idempotent — the crash that produced a duplicate `L02` and broke the file cannot
+   recur.
+6. **`verify_controls.sh`** is now part of the loop, not an ad-hoc command: clean → PASS, injected
+   `sorry` → FAIL, false theorem → FAIL, restored → PASS, and any mismatch exits non-zero.
+
+**Result on the twelve harder lemmas: 12/12 proved. Backlog now 32/32.**
+
+```
+L21 n*n+n = n*(n+1)            prior              8 attempts    0 tok
+L22 a*b+a = a*(b+1)            induction         12 attempts    0 tok
+L23 a*(b+c) = a*b+a*c          induction         12 attempts    0 tok
+L24 (a+b)*c = a*c+b*c          induction         12 attempts    0 tok
+L25 2*n = n+n                  prior              2 attempts    0 tok
+L26 a*b = 0 -> a=0 v b=0       induction         13 attempts    0 tok
+L27 n != 0 -> exists m, n=m+1  induction         11 attempts    0 tok
+L28 exists m, n <= m           CLOUD r1          24 attempts  340 tok
+L29 a<=b -> a<=b+1             prior              2 attempts    0 tok
+L30 (l++l).length = 2*l.length ROUTER missing_lemma 20 attempts  0 tok
+L31 a+b = 0 -> a = 0           prior              1 attempt     0 tok
+L32 n*n*n = n*(n*n)            induction         12 attempts    0 tok
+```
+
+**Cost of the hard batch: 340 tokens, one lemma.** Across the whole day the loop spent **505** paid
+tokens, of which 165 were wasted by the broken-judge cycle; the metric `program.md` asks for is
+therefore **32 lemmas per 505 tokens, or 63 per 1 000** — and 31 of the 32 needed nothing paid at all.
+
+**Gate at the end of the batch**: `build_rc=0 proof_rc=0 sorry_warnings=0 theorems_checked=32
+axioms_rc=0 sorry_ax_hits=0` → **PASS**, and `verify_controls.sh` → `ALL_OK`. No duplicate
+declarations (32 unique of 32), 32 files in `proofs/`.
+
+**What this does and does not show.** The free stages carried 11 of 12 hard lemmas, so the honest
+reading is that **a good induction template is worth more than a generator**, and the router earned
+its place exactly once — on the only lemma where it was consulted (1/1). The one paid lemma, L28
+(`∃ m, n ≤ m`), exposes a real gap: the families contain no **witness-shaped** template, so the
+loop had to buy an answer it could have had for free. Adding an existential family is the next
+cheap improvement, not a new model.
