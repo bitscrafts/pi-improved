@@ -16,6 +16,7 @@ mod cmd_deploy_card;
 mod cmd_disk;
 mod cmd_docs;
 mod cmd_entity;
+mod cmd_gate;
 mod cmd_graph_index;
 mod cmd_graph_installed;
 mod cmd_health;
@@ -240,6 +241,9 @@ fn main() -> ExitCode {
     }
     if cmd == "disk" {
         return cmd_disk::cmd_disk(&mut args);
+    }
+    if cmd == "gate" {
+        return cmd_gate::cmd_gate(&mut args);
     }
     if cmd == "metrics" {
         return cmd_metrics::cmd_metrics(&mut args);

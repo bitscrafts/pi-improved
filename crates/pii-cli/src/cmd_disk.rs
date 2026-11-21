@@ -7,6 +7,7 @@
 // replayed, so the replay-only bans on `SystemTime::now` and `Command::output` do not apply.
 #![allow(clippy::disallowed_methods)]
 
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -38,14 +39,38 @@ struct Row {
     owned: bool,
 }
 
+/// Side caches of runs that already ended, removed whole (disk-ceilings.md: "their own command", ceiling 0).
+const SIDE_CACHES: &[&str] = &[
+    "_tmp/tools-gate",
+    "_tmp/phase4.7",
+    "_tmp/devbox-test",
+    "_tmp/xtask-target",
+    "_tmp/head-builds-target",
+    "_tmp/target-280",
+];
+
+/// The warm gate cache: the clean never removes it or anything inside it (disk-ceilings.md).
+const WARM_CACHE: &str = "_tmp/gate-target";
+
+/// Windows of disk-ceilings.md: `_tmp/_trash` entries older than 7 days, `_tmp/claude-batchC` older than 14.
+const TRASH_DAYS: u64 = 7;
+const BATCH_DAYS: u64 = 14;
+
 #[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
 pub(crate) fn cmd_disk(args: &mut std::env::ArgsOs) -> ExitCode {
+    let rest: Vec<OsString> = args.collect();
+    if rest.first().is_some_and(|a| a == "clean") {
+        return cmd_clean(rest.get(1..).unwrap_or(&[]));
+    }
     let mut root = None;
-    while let Some(arg) = args.next() {
+    let mut it = rest.into_iter();
+    while let Some(arg) = it.next() {
         if arg == "--root" {
-            root = args.next().map(PathBuf::from);
+            root = it.next().map(PathBuf::from);
         } else {
-            warn!("usage: pii disk [--root <repo>]");
+            warn!(
+                "usage: pii disk [--root <repo>] | pii disk clean [--dry-run|--apply] [--path <p>]"
+            );
             return ExitCode::from(2);
         }
     }
@@ -127,8 +152,137 @@ fn free_line(label: &str, free: Option<(String, u64)>) -> String {
     }
 }
 
+/// `pii disk clean [--dry-run|--apply] [--path <p>] [--root <repo>]` (spec 438 R4-R5). Dry-run unless `--apply`. Without
+/// `--path` it removes what disk-ceilings.md says is past its window; with `--path` it removes that one path, which must
+/// be inside `_tmp/` and must not be the warm cache.
+fn cmd_clean(args: &[OsString]) -> ExitCode {
+    let mut apply = false;
+    let mut path = None;
+    let mut root = None;
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        if arg == "--apply" {
+            apply = true;
+        } else if arg == "--dry-run" {
+            apply = false;
+        } else if arg == "--path" {
+            path = it.next().map(PathBuf::from);
+        } else if arg == "--root" {
+            root = it.next().map(PathBuf::from);
+        } else {
+            warn!("usage: pii disk clean [--dry-run|--apply] [--path <p>] [--root <repo>]");
+            return ExitCode::from(2);
+        }
+    }
+    let repo = match root.map_or_else(std::env::current_dir, Ok) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("pii disk clean: cannot read the current directory: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let candidates = match path {
+        Some(p) => match checked_path(&repo, &p) {
+            Ok(real) => vec![real],
+            Err(why) => {
+                warn!("pii disk clean: refused: {why}");
+                return ExitCode::from(2);
+            }
+        },
+        None => windowed(&repo),
+    };
+    let now = SystemTime::now();
+    let verb = if apply { "freed" } else { "would free" };
+    let mut text = String::new();
+    let mut total = 0_u64;
+    for path in &candidates {
+        let bytes = du_bytes(path).unwrap_or(0);
+        total += bytes;
+        let _ = writeln!(
+            text,
+            "{verb} {:>10}  {:>4}d  {}",
+            gib(bytes),
+            age_days(path, now),
+            path.display()
+        );
+    }
+    let _ = writeln!(text, "{verb} {} in {} paths", gib(total), candidates.len());
+    if !apply {
+        let _ = writeln!(text, "dry run: nothing removed; add --apply to remove");
+    }
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(text.as_bytes());
+    if apply {
+        for path in &candidates {
+            let removed = if path.is_dir() {
+                std::fs::remove_dir_all(path)
+            } else {
+                std::fs::remove_file(path)
+            };
+            if let Err(e) = removed {
+                warn!("pii disk clean: {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// `path` resolved, when it is strictly inside `_tmp/` and outside the warm cache; otherwise why it is refused.
+fn checked_path(repo: &Path, path: &Path) -> Result<PathBuf, String> {
+    let tmp = std::fs::canonicalize(repo.join("_tmp"))
+        .map_err(|_| "there is no _tmp/ in this repository".to_owned())?;
+    let real = std::fs::canonicalize(repo.join(path))
+        .map_err(|_| format!("{} does not exist, or is outside _tmp/", path.display()))?;
+    if real == tmp || !real.starts_with(&tmp) {
+        return Err(format!("{} is outside _tmp/", path.display()));
+    }
+    if real.starts_with(repo.join(WARM_CACHE)) {
+        return Err(format!(
+            "{} is the warm gate cache ({WARM_CACHE}), kept",
+            path.display()
+        ));
+    }
+    Ok(real)
+}
+
+/// What the windows of disk-ceilings.md say to remove now.
+fn windowed(repo: &Path) -> Vec<PathBuf> {
+    let now = SystemTime::now();
+    let mut found = Vec::new();
+    for (dir, days) in [
+        ("_tmp/_trash", TRASH_DAYS),
+        ("_tmp/claude-batchC", BATCH_DAYS),
+    ] {
+        if let Ok(rd) = std::fs::read_dir(repo.join(dir)) {
+            found.extend(
+                rd.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| age_days(p, now) >= days),
+            );
+        }
+    }
+    found.extend(
+        SIDE_CACHES
+            .iter()
+            .map(|c| repo.join(c))
+            .filter(|p| p.exists()),
+    );
+    if let Ok(rd) = std::fs::read_dir(repo.join("_tmp")) {
+        found.extend(rd.flatten().map(|e| e.path()).filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("verify-"))
+        }));
+    }
+    if repo.join("target").exists() {
+        found.push(repo.join("target"));
+    }
+    found
+}
+
 /// Bytes under `path` from `du -sb`, or `None` when it cannot be read.
-fn du_bytes(path: &Path) -> Option<u64> {
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn du_bytes(path: &Path) -> Option<u64> {
     let out = Command::new("du").arg("-sb").arg(path).output().ok()?;
     String::from_utf8_lossy(&out.stdout)
         .split_whitespace()
@@ -138,7 +292,8 @@ fn du_bytes(path: &Path) -> Option<u64> {
 }
 
 /// Mount point and available MB of the filesystem holding `path`, from `df -Pm`.
-fn df(path: &Path) -> Option<(String, u64)> {
+#[allow(clippy::redundant_pub_crate)] // bin crate: pub(crate) is the reachable form
+pub(crate) fn df(path: &Path) -> Option<(String, u64)> {
     let out = Command::new("df").args(["-Pm"]).arg(path).output().ok()?;
     let row = String::from_utf8_lossy(&out.stdout)
         .lines()
