@@ -1,0 +1,51 @@
+# Spec 430: the container runtime's reachability, as a graph. The lane composes this; no Rust knows about podman.
+#
+# Two facts about the schema, learned by linting rather than by reading:
+#   * a `tool` node has ports `ok` AND `err` - a non-zero exit fires `err`, so routing on `$.payload.exit_code` (the
+#     shape `books.toml` uses) is redundant here and was removed: `ping.err` goes straight to the refusal;
+#   * a `tool` node must be granted `fs_read` and `fs_write` as well as `proc`.
+# A dangling transform port is a WARNING, not an error: `pii graph lint` returns 0 either way, which is why the ports
+# below are connected explicitly rather than left to the linter's goodwill.
+#
+# The output of every runtime call is parsed with podman's own Go templates, never `--format json`: the expression
+# grammar is closed (`==`, `!=`, `+`, `trim`, `starts_with`, `ends_with`, `contains`) and decodes no JSON, so
+# `state|image-id` on one line is the only shape a `route` can branch on.
+name = "podman"
+entry = "ping"
+caps = ["proc", "fs_read", "fs_write"]
+
+[limits]
+max_wall_ms = 120000
+
+# Is the runtime reachable at all? A lane that cannot answer this parks the row with a named reason instead of failing
+# it: `no container runtime` is an environment fact, not a defect in the work.
+[[node]]
+id = "ping"
+kind = "tool"
+tool = "run"
+programs = ["podman"]
+args = { argv = "$.input.ping_argv", cwd = "$.input.cwd" }
+caps = ["proc", "fs_read", "fs_write"]
+
+[[node]]
+id = "ready"
+kind = "transform"
+value = "ready"
+
+[[node]]
+id = "unavailable"
+kind = "refuse"
+hook = "tool"
+reason = "no container runtime"
+
+[[edge]]
+from = "ping"
+port = "ok"
+to = "ready"
+kind = "data"
+
+[[edge]]
+from = "ping"
+port = "err"
+to = "unavailable"
+kind = "data"

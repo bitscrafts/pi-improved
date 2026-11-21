@@ -1,0 +1,246 @@
+# Spec 430 R10-R14: the decision a lane makes about the worker's container, as a graph.
+#
+# Inputs (R10, R11): instance, image, host_root, repo_subpath, and `probe` - the argv of the command that answers the
+# runtime's questions. `probe` is an input for one reason: the decision must be testable with a stub instead of podman,
+# and a graph that hard-codes the binary cannot be.
+#
+# Outputs (R10): status (ready|unavailable|refused), container_id, digest, reason. A caller branches on `status` and
+# never parses prose.
+#
+# Idempotent (R12): a second run reports ready without creating or starting anything.
+name = "worker-runtime"
+entry = "find"
+caps = ["proc", "fs_read", "fs_write"]
+
+[limits]
+max_wall_ms = 180000
+
+# What exists right now, in one line the grammar can read: the state, a pipe, the image id.
+[[node]]
+id = "find"
+kind = "tool"
+tool = "run"
+programs = ["podman"]
+args = { argv = "$.input.find_argv", cwd = "$.input.cwd" }
+caps = ["proc", "fs_read", "fs_write"]
+
+# What the image we are supposed to run actually is, so a changed image is not silently reused.
+# A runtime that answers with a non-zero exit has NOT said "nothing found": `tool = "run"` returns the exit code as
+# data and takes its `ok` port, so a dead socket would otherwise read as an empty `find` and the graph would create a
+# container into a runtime that cannot accept one. This node is the one place that separates the two.
+[[node]]
+id = "answered"
+kind = "route"
+on = "$.payload.exit_code"
+rules = [
+  { eq = 0, port = "ok" },
+  { port = "failed" },
+]
+
+[[node]]
+id = "unavailable_find"
+kind = "refuse"
+hook = "tool"
+reason = "no container runtime"
+
+[[node]]
+id = "digest"
+kind = "tool"
+tool = "run"
+programs = ["podman"]
+args = { argv = "$.input.digest_argv", cwd = "$.input.cwd" }
+caps = ["proc", "fs_read", "fs_write"]
+
+# The decision, pure: four ordered rules over the two lines above, no new node kind.
+#   nothing found                                   -> create
+#   running and the same image                      -> reuse
+#   stopped but the same image                      -> start
+#   anything else (foreign digest, two containers)  -> recreate
+#
+# The blackboard holds each node's own value, so the two lines are `$.nodes.find.stdout` and
+# `$.nodes.digest.stdout`: a `tool` node answers `{exit_code, stdout, stderr, ...}` and there is no `payload`
+# level above it. (Written as `.payload.stdout` these four rules addressed nothing; `trim` was then handed a
+# null and the run died on the first evaluation — measured 2026-11-21, the first time they were ever run.)
+[[node]]
+id = "decide"
+kind = "route"
+on = "$.nodes.find.stdout"
+rules = [
+  { when = "trim($.nodes.find.stdout) == \"\"", port = "create" },
+  { when = "contains($.nodes.find.stdout, \"running|\" + trim($.nodes.digest.stdout))", port = "reuse" },
+  { when = "ends_with(trim($.nodes.find.stdout), \"|\" + trim($.nodes.digest.stdout))", port = "start" },
+  { port = "recreate" },
+]
+
+[[node]]
+id = "create"
+kind = "tool"
+tool = "run"
+programs = ["podman"]
+args = { argv = "$.input.create_argv", cwd = "$.input.cwd" }
+caps = ["proc", "fs_read", "fs_write"]
+
+[[node]]
+id = "start"
+kind = "tool"
+tool = "run"
+programs = ["podman"]
+args = { argv = "$.input.start_argv", cwd = "$.input.cwd" }
+caps = ["proc", "fs_read", "fs_write"]
+
+[[node]]
+id = "recreate"
+kind = "tool"
+tool = "run"
+programs = ["podman"]
+args = { argv = "$.input.recreate_argv", cwd = "$.input.cwd" }
+caps = ["proc", "fs_read", "fs_write"]
+
+[[node]]
+id = "end_reused"
+kind = "transform"
+value = "ready:reused"
+
+[[node]]
+id = "end_created"
+kind = "transform"
+value = "ready:created"
+
+[[node]]
+id = "end_started"
+kind = "transform"
+value = "ready:started"
+
+[[node]]
+id = "end_recreated"
+kind = "transform"
+value = "ready:recreated"
+
+[[node]]
+id = "unavailable"
+kind = "refuse"
+hook = "tool"
+reason = "no container runtime"
+
+[[node]]
+id = "unavailable_digest"
+kind = "refuse"
+hook = "tool"
+reason = "no container runtime"
+
+[[node]]
+id = "unavailable_create"
+kind = "refuse"
+hook = "tool"
+reason = "no container runtime"
+
+[[node]]
+id = "unavailable_start"
+kind = "refuse"
+hook = "tool"
+reason = "no container runtime"
+
+[[node]]
+id = "unavailable_recreate"
+kind = "refuse"
+hook = "tool"
+reason = "no container runtime"
+
+[[edge]]
+from = "find"
+port = "ok"
+to = "answered"
+kind = "data"
+
+[[edge]]
+from = "find"
+port = "err"
+to = "unavailable"
+kind = "data"
+
+[[edge]]
+from = "answered"
+port = "ok"
+to = "digest"
+kind = "data"
+
+[[edge]]
+from = "answered"
+port = "failed"
+to = "unavailable_find"
+kind = "data"
+
+[[edge]]
+from = "digest"
+port = "ok"
+to = "decide"
+kind = "data"
+
+
+[[edge]]
+from = "decide"
+port = "create"
+to = "create"
+kind = "data"
+
+[[edge]]
+from = "decide"
+port = "reuse"
+to = "end_reused"
+kind = "data"
+
+[[edge]]
+from = "decide"
+port = "start"
+to = "start"
+kind = "data"
+
+[[edge]]
+from = "decide"
+port = "recreate"
+to = "recreate"
+kind = "data"
+
+[[edge]]
+from = "create"
+port = "ok"
+to = "end_created"
+kind = "data"
+
+
+[[edge]]
+from = "start"
+port = "ok"
+to = "end_started"
+kind = "data"
+
+
+[[edge]]
+from = "recreate"
+port = "ok"
+to = "end_recreated"
+kind = "data"
+
+[[edge]]
+from = "digest"
+port = "err"
+to = "unavailable_digest"
+kind = "data"
+
+[[edge]]
+from = "create"
+port = "err"
+to = "unavailable_create"
+kind = "data"
+
+[[edge]]
+from = "start"
+port = "err"
+to = "unavailable_start"
+kind = "data"
+
+[[edge]]
+from = "recreate"
+port = "err"
+to = "unavailable_recreate"
+kind = "data"
