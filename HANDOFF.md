@@ -6,6 +6,11 @@ what pii is, how to build it and how a change is specified is in [`README.md`](R
 
 ## State
 
+The last session's handoff, in template form (status, what failed, next steps, environment), is
+[`_docs/05-operations/HANDOFF-2026-11-22.md`](_docs/05-operations/HANDOFF-2026-11-22.md), and the day's
+defect — a refusal that named the wrong cause, and the six reds behind it — is
+[`_docs/05-operations/DEFECT-2026-11-22-a-refusal-that-named-the-wrong-cause.md`](_docs/05-operations/DEFECT-2026-11-22-a-refusal-that-named-the-wrong-cause.md).
+
 - One binary, `pii`, built from 22 crates under `crates/` plus `xtask`. The gate is `gate-steps.txt`, run by `quality-gate.sh`; a change is
   judged by `cargo run -q -p xtask -- fresh-gate --worktree`, which builds a clean checkout.
 - Work enters as a spec in `specs/` and a row in `scripts/autonomy/plan.tsv` (7 columns: id, spec file, brief, title, criteria, paths, lane).
