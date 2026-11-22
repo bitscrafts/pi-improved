@@ -42,8 +42,8 @@ R9. Pure where it can be: the discard rule (does the citation resolve?) is a tra
 | the_worker_report_is_never_an_input | report file present beside the evidence | not read |
 
 ## Exit Criteria
-- [ ] `pii graph lint graphs/row-verdict.toml`
-- [ ] `bash scripts/checks/row-verdict-cites.sh`
+- [ ] `test -f graphs/row-verdict.toml && pii graph lint graphs/row-verdict.toml`
+- [ ] `test -f scripts/checks/row-verdict-cites.sh && bash scripts/checks/row-verdict-cites.sh`
 - [ ] `cargo test -q -p pii-server --test row_verdict 2>&1 | grep -qE 'test result: ok\. ([6-9]|1[0-9]) passed'`
 
 ## Files
@@ -58,7 +58,7 @@ The queue uses this after a green gate and before `report-row.sh`: `proven` -> r
 second, independent reader of the same artefact.
 
 ### New in this row
-- [ ] `bash scripts/checks/row-verdict-cites.sh`
+- [ ] `test -f scripts/checks/row-verdict-cites.sh && bash scripts/checks/row-verdict-cites.sh`
 
 ## Guardrails
 - Do NOT let the reviewer see the worker's report or the commit message as evidence of the work.

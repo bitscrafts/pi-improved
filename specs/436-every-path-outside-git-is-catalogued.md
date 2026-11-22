@@ -41,9 +41,9 @@ comparing) would fail to catch.
 
 ## Exit Criteria
 
-- [ ] `bash scripts/checks/tree-is-catalogued.sh`
+- [ ] `test -f scripts/checks/tree-is-catalogued.sh && bash scripts/checks/tree-is-catalogued.sh`
 - [ ] `grep -qx 'tree-is-catalogued' gate-steps.txt`
-- [ ] `bash scripts/checks/tree-is-catalogued.sh --selftest`
+- [ ] `test -f scripts/checks/tree-is-catalogued.sh && bash scripts/checks/tree-is-catalogued.sh --selftest`
 
 ## Files
 
@@ -52,9 +52,9 @@ comparing) would fail to catch.
 - `_docs/05-operations/disk-ceilings.md`
 
 ### New in this row
-- [ ] `bash scripts/checks/tree-is-catalogued.sh`
+- [ ] `test -f scripts/checks/tree-is-catalogued.sh && bash scripts/checks/tree-is-catalogued.sh`
 - [ ] `grep -qx 'tree-is-catalogued' gate-steps.txt`
-- [ ] `bash scripts/checks/tree-is-catalogued.sh --selftest`
+- [ ] `test -f scripts/checks/tree-is-catalogued.sh && bash scripts/checks/tree-is-catalogued.sh --selftest`
 
 ## Guardrails
 - The `### New in this row` list is the same list as `## Exit Criteria`, and it exists only because

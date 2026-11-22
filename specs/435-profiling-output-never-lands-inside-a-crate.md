@@ -43,7 +43,7 @@ check which only looks at tracked files would not catch.
 
 ## Exit Criteria
 
-- [ ] `bash scripts/checks/no-artifacts-in-crates.sh`
+- [ ] `test -f scripts/checks/no-artifacts-in-crates.sh && bash scripts/checks/no-artifacts-in-crates.sh`
 - [ ] `grep -qxF '*.pro' .gitignore`
 
 ## Files
@@ -53,7 +53,7 @@ check which only looks at tracked files would not catch.
 - `gate-steps.txt`
 
 ### New in this row
-- [ ] `bash scripts/checks/no-artifacts-in-crates.sh`
+- [ ] `test -f scripts/checks/no-artifacts-in-crates.sh && bash scripts/checks/no-artifacts-in-crates.sh`
 - [ ] `grep -qxF '*.pro' .gitignore`
 
 ## Guardrails
