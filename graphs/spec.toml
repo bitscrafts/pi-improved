@@ -41,7 +41,7 @@ rules = [
 id = "sdd"
 kind = "call"
 graph = "sdd"
-sha256 = "49ede5e3a5dc1533bd52d4ec46df164cbd09ac8db377e1b8586331c43d90c111"
+sha256 = "249bcd4a41b387a3cc2ac80bb82f0c92d555e184f4cfa4797c870d2ee0e7d270"
 caps = ["spawn", "proc", "fs_read", "fs_write"]
 
 [node.in]
@@ -165,7 +165,13 @@ kind = "data"
 
 [[edge]]
 from = "sdd"
-port = "refused"
+port = "refused_failed"
+to = "refused"
+kind = "data"
+
+[[edge]]
+from = "sdd"
+port = "refused_unrunnable"
 to = "refused"
 kind = "data"
 

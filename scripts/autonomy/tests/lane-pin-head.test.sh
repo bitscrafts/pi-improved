@@ -36,9 +36,12 @@ run_dry() {
   echo $? > "$c.rc"
 }
 
-# 1: the real repository's graphs equal HEAD, so the spec lane's dry run passes
-PII_LANE_GRAPH=spec bash "$S" 302 --dry-run > "$SCRATCH/clean.out" 2>&1; CLEAN_RC=$?
-if [ "$CLEAN_RC" = 0 ] && grep -q 'DRY RUN' "$SCRATCH/clean.out" && ! grep -q 'ABORT' "$SCRATCH/clean.out"; then ok "clean_graphs_pass"; else bad "clean_graphs_pass (rc [$CLEAN_RC])"; fi
+# 1: a clean tree's graphs equal HEAD, so the spec lane's dry run passes. A clone, not this checkout:
+# the point of the assertion is "clean graphs pass", and a row that is editing a graph has a dirty
+# checkout by definition. Running it here made the test fail for correct behaviour - measured
+# 2026-11-22, the fifth test of the night that inherited a HEAD it did not own.
+C=$(mkclone clean); run_dry "$C" spec
+if [ "$(cat "$C.rc")" = 0 ] && grep -q 'DRY RUN' "$C.out" && ! grep -q 'ABORT' "$C.out"; then ok "clean_graphs_pass"; else bad "clean_graphs_pass (rc [$(cat "$C.rc")])"; fi
 
 # CONTROL 2: a matching edit of docs.toml and its pin is refused: the pin agrees, HEAD does not
 C=$(mkclone matching); pinned_edit "$C"; run_dry "$C" spec

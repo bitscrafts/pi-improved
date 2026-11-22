@@ -41,7 +41,7 @@ id = "done"
 kind = "transform"
 value = "done"
 
-# `unverified` and `refused` take a route from exclusive ports, so their join is `any`: whichever arm arrives ends the run.
+# These three take a route from exclusive ports, so their join is `any`: whichever arm arrives ends the run.
 [[node]]
 id = "unverified"
 kind = "refuse"
@@ -49,23 +49,33 @@ join = "any"
 hook = "judge"
 reason = "the spec's criteria failed"
 
+# Two causes, two sentences (2026-11-22). `contract` already separates them: `fail` is a criterion that
+# ran and did not pass; `unrunnable` is a criterion that could not run at all. One node with "or" in its
+# reason threw that away, and every reader then had to guess which arm had fired.
 [[node]]
-id = "refused"
+id = "refused_failed"
 kind = "refuse"
 join = "any"
 hook = "coder"
-reason = "the agent failed or the criteria could not run"
+reason = "the criteria ran and did not pass after the agent finished"
+
+[[node]]
+id = "refused_unrunnable"
+kind = "refuse"
+join = "any"
+hook = "coder"
+reason = "the criteria could not run at all, so nothing was verified"
 
 [[edge]]
 from = "contract"
 port = "fail"
-to = "refused"
+to = "refused_failed"
 kind = "data"
 
 [[edge]]
 from = "contract"
 port = "unrunnable"
-to = "refused"
+to = "refused_unrunnable"
 kind = "data"
 
 [[edge]]
