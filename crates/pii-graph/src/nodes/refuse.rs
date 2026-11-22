@@ -40,6 +40,32 @@ impl RefuseNode {
     }
 }
 
+/// Names the arms that reached this node, for a refusal that arrives with no reason of its own.
+///
+/// A join's payload is keyed by source node id (`sched::build_node_input`), so its keys name the arms; the arm's
+/// own `verdict` word names the port it left on, giving `contract.unrunnable`. A payload that is one verdict
+/// already — a judge's `{"verdict": …}`, a coder's `{"agent": …, "reason": …}` — has non-object values, and a
+/// non-object payload has no keys: both yield nothing and the caller keeps the plain configured text.
+fn arriving_arms(payload: &serde_json::Value) -> Vec<String> {
+    let Some(arms) = payload.as_object() else {
+        return Vec::new();
+    };
+    if !arms.values().all(serde_json::Value::is_object) {
+        return Vec::new();
+    }
+    let mut named: Vec<String> = arms
+        .iter()
+        .map(|(source, value)| {
+            value
+                .get("verdict")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(|| source.clone(), |verdict| format!("{source}.{verdict}"))
+        })
+        .collect();
+    named.sort();
+    named
+}
+
 impl crate::GraphNode for RefuseNode {
     fn run(&self, _ctx: &Ctx, input: &NodeInput) -> Result<Outcome, PiiError> {
         // Spec 410: a placeholder is read from this node's own context. A reason that cannot be rendered is used as
@@ -52,19 +78,28 @@ impl crate::GraphNode for RefuseNode {
             .and_then(|arms| arms.values().find(|v| v.get("reason").is_some()))
             .unwrap_or(&input.payload);
         let why = arm.get("reason").and_then(|v| v.as_str());
+        // A verdict with no reason still has to say which arm reached this node (2026-11-22).
+        let arms = arriving_arms(&input.payload);
+        let named = |text: String| -> String {
+            if arms.is_empty() {
+                text
+            } else {
+                format!("{text} (arms: {})", arms.join(", "))
+            }
+        };
         let Some(port) = &self.returns else {
             // The configured text is a fallback for a refusal that arrives with no reason (a coder that
             // really failed). When the verdict that reached this node CARRIES one, it is the answer:
             // `sdd`'s contract judge refuses a row whose criteria already pass, and the run used to fail
             // as "the agent failed" for rows that never reached a coder (measured 2026-11-05: eight
             // dispatches recorded as worker failures, none of them ever spent).
-            let text = why.map_or_else(|| reason.clone(), |why| format!("{reason}: {why}"));
+            let text = why.map_or_else(|| named(reason.clone()), |why| format!("{reason}: {why}"));
             return Ok(Outcome::Fail {
                 error: format!("run.refused{{hook={}, reason={text}}}", self.hook),
             });
         };
         let text = why.map_or_else(
-            || format!("{port}: {reason}"),
+            || named(format!("{port}: {reason}")),
             |why| format!("{port}: {reason}: {why}"),
         );
         let criterion = arm.pointer("/failing/0").cloned();
