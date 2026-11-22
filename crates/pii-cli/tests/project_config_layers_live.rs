@@ -189,6 +189,9 @@ fn a_global_only_setting_in_the_project_file_stops_the_start() {
             .arg("--log-file")
             .arg(&log)
             .env("PII_RUNTIME_DIR", &workspace)
+            // Spec 425: the child owns its durable stores, or it opens the operator's and dies on `channel.redb is
+            // locked` while a real daemon runs.
+            .env("PII_STATE_DIR", &workspace)
             .env("PII_CONFIG", &global)
             .env_remove("PII_MODEL")
             .stdout(std::process::Stdio::null())

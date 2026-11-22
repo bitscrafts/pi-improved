@@ -8,11 +8,13 @@ use std::process::{Command, Stdio};
 mod daemon_guard;
 use std::time::{Duration, Instant};
 
-/// A `pii` command with an isolated runtime dir, so no real daemon is reached.
+/// A `pii` command with an isolated runtime dir and state dir, so no real daemon is reached and none of the
+/// operator's stores are opened.
 fn pii(dir: &std::path::Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_pii"));
     cmd.current_dir(dir)
         .env("PII_RUNTIME_DIR", dir.join("run"))
+        .env("PII_STATE_DIR", dir)
         .env_remove("PII_CONFIG")
         .stdin(Stdio::null());
     cmd
@@ -55,6 +57,10 @@ fn daemon_refuses_a_missing_config_and_names_it() {
     cmd.arg("daemon")
         .arg("--config")
         .arg(&missing)
+        // Spec 425: the daemon child owns its state and runtime dirs. `pii()` isolates the clients; the spawn says
+        // its own isolation here, so a reader (and the check) sees it where the daemon is started.
+        .env("PII_RUNTIME_DIR", dir.path().join("run"))
+        .env("PII_STATE_DIR", dir.path())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     let mut guard = daemon_guard::spawn(&mut cmd);

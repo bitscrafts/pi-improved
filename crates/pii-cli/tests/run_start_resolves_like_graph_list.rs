@@ -63,6 +63,10 @@ fn list_shows_the_graph_and_run_start_finds_it() {
             .arg(root.path())
             .env("HOME", &home)
             .env("PII_RUNTIME_DIR", &runtime)
+            // Spec 425: the daemon child owns its stores. This is the same `<home>/.local/state/pii` the fixture
+            // installed the graph under, named explicitly so the daemon cannot fall back to the operator's state
+            // if the HOME rule ever changes.
+            .env("PII_STATE_DIR", home.join(".local/state/pii"))
             .env("PII_MODEL", format!("scripted:{}", hello.display()))
             .stderr(std::process::Stdio::null()),
     );

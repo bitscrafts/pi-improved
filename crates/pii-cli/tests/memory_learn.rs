@@ -67,6 +67,9 @@ fn an_outcome_is_recorded_once_and_a_repeat_reports_unchanged() {
             .arg("--log-file")
             .arg(d.path().join("daemon.log"))
             .env("PII_RUNTIME_DIR", d.path())
+            // Spec 425: this child OWNS its durable stores too. Without this the daemon resolves them to
+            // $HOME/.local/state/pii and dies on `channel.redb is locked` whenever a real daemon is running.
+            .env("PII_STATE_DIR", d.path())
             .env("PII_CONFIG", &cfg)
             .env("PII_MODEL", format!("scripted:{}", hello.display()))
             .stderr(Stdio::null()),

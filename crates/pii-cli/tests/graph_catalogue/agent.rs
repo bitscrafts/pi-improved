@@ -30,6 +30,9 @@ fn ask_daemon() -> (Fixture, daemon_guard::DaemonGuard, std::path::PathBuf) {
             .arg(fx.root.path())
             .arg("--log-file")
             .arg(&log)
+            // Spec 425: the daemon child owns both paths, stated at the spawn even though `fx.envs` set them for it.
+            .env("PII_RUNTIME_DIR", fx.state())
+            .env("PII_STATE_DIR", fx.state())
             .env("PII_MODEL", format!("scripted:{}", script.display()))
             .stderr(Stdio::null()),
     );
