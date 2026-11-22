@@ -4,6 +4,8 @@
 # why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: the spec lane preflights the devbox before it spends, and logs why a refused run was refused (spec 298). The real lane script runs with a
 # stub `ssh` first on PATH: it records every remote command and answers from a fixture directory, so no daemon starts and nothing is spent.
+# The lane's repository is a scratch git repository of this test's own with its graphs committed (spec 442), so the HEAD comparison
+# is against a HEAD the test made, never the checkout's.
 # The coder lane (PII_LANE_GRAPH unset) must keep today's behaviour: no preflight.
 set -uo pipefail
 cd "$(dirname "$0")/../../.." || exit 2
@@ -48,12 +50,28 @@ echo '"revision":"stub000000000"'
 DSTUB
 chmod +x "$SCRATCH/daemon.sh"
 
+# the repository the lane runs in (spec 442): the script under test is the real one, but REPO must be a tree this test owns — a git
+# repository with the spec, every graph graphs/minimal.txt names, and all of them committed. Without that the lane walks up to the
+# checkout's .git, and a row that edits a graph (which cannot commit before its own gate is green) can never run this test.
+LANE_ROOT="$SCRATCH/repo"
+mkdir -p "$LANE_ROOT/graphs" "$LANE_ROOT/specs"
+cp "$REPO"/graphs/*.toml "$REPO/graphs/minimal.txt" "$LANE_ROOT/graphs/"
+cp "$REPO"/specs/298-*.md "$LANE_ROOT/specs/"
+(
+  cd "$LANE_ROOT" || exit 2
+  git init -q .
+  git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" add -A
+  git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" commit -q --no-verify -m "the tree the lane runs in"
+  git add graphs
+  [ -z "$(git status --porcelain -- graphs/)" ]
+) || { echo "FAIL setup: the scratch repo $LANE_ROOT is not a committed git repository"; exit 2; }
+
 # fx <name> <final status> [trace text] [preflight rc] [preflight judge status]: a fresh fixture directory
 fx() { local d=$SCRATCH/$1; mkdir -p "$d"; : > "$d/argv"; printf '%s\n' "$2" > "$d/status"; printf '%s\n' "${3:-}" > "$d/trace"; printf '%s\n' "${4:-0}" > "$d/preflight_rc"; printf '%s\n' "${5:-succeeded}" > "$d/preflight_status"; echo "$d"; }
 # lane <fixture dir> [args...]: the real lane script (spec lane unless LANE_GRAPH says otherwise); stdout+stderr in <dir>/out, rc in <dir>/rc
 lane() {
   local d=$1; shift
-  STUB_FIX=$d PII_DAEMON_SH="$SCRATCH/daemon.sh" PII_SSH="$SCRATCH/bin/ssh" PATH="$SCRATCH/bin:$PATH" PII_LANE_GRAPH=${LANE_GRAPH-spec} bash "$S" 298 "$@" > "$d/out" 2>&1
+  STUB_FIX=$d PII_LANE_ROOT="$LANE_ROOT" PII_DAEMON_SH="$SCRATCH/daemon.sh" PII_SSH="$SCRATCH/bin/ssh" PATH="$SCRATCH/bin:$PATH" PII_LANE_GRAPH=${LANE_GRAPH-spec} bash "$S" 298 "$@" > "$d/out" 2>&1
   echo $? > "$d/rc"
 }
 TRACE_CRIT='13 verify - crit=7/8 fail=bash scripts/checks/live-orphan-count.sh'
@@ -109,9 +127,9 @@ D=$(fx judge-fails succeeded "$TRACE_CRIT" 0 failed); lane "$D"
 if [ "$(cat "$D/rc")" = 9 ] && grep -q 'ABORT: container preflight failed: the daemon.s judge cannot write' "$D/out" && grep -qF "$TRACE_CRIT" "$D/out" && ! grep -q 'start-' "$D/argv"; then ok "CONTROL_a_failed_preflight_judge_aborts"; else bad "CONTROL_a_failed_preflight_judge_aborts (rc [$(cat "$D/rc")])"; fi
 
 # 12 (spec 301): the preflight graph is tracked with one judge node, and the spec lane copies it to the daemon's graph dir
-rm -f "$REPO/_tmp/devbox-test/graphs/preflight.toml"
+rm -f "$LANE_ROOT/_tmp/devbox-test/graphs/preflight.toml"
 D=$(fx graph succeeded); lane "$D"
-if [ -f graphs/preflight.toml ] && [ "$(grep -c 'kind = "judge"' graphs/preflight.toml)" = 1 ] && [ -f "$REPO/_tmp/devbox-test/graphs/preflight.toml" ]; then ok "preflight_graph_exists_and_is_copied"; else bad "preflight_graph_exists_and_is_copied"; fi
+if [ -f graphs/preflight.toml ] && [ "$(grep -c 'kind = "judge"' graphs/preflight.toml)" = 1 ] && [ -f "$LANE_ROOT/_tmp/devbox-test/graphs/preflight.toml" ]; then ok "preflight_graph_exists_and_is_copied"; else bad "preflight_graph_exists_and_is_copied"; fi
 
 trash
 echo "PASS: $PASS FAIL: $FAIL"

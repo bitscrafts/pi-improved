@@ -3,7 +3,9 @@
 # why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: a quota refusal by EITHER coder of the spec lane reaches the worker log, where window.sh reads it (spec 300, F3). The real lane
 # script runs with a stub `ssh` first on PATH: it answers from a fixture directory, so no daemon starts and nothing is spent. Each case
-# runs a scratch copy of the script whose repo root is a scratch tree. PII_POLL_SECONDS and PII_WAIT_MARGIN_S keep the waits short.
+# runs a scratch copy of the script whose repo root is a scratch tree — a git repository of this test's own, with the graphs
+# committed (spec 442), so the lane compares against a HEAD the test made and not the checkout's. PII_POLL_SECONDS and PII_WAIT_MARGIN_S
+# keep the waits short.
 set -uo pipefail
 # the spec lane is pinned here so a caller's environment cannot change a case
 unset PII_LANE_GRAPH
@@ -57,6 +59,17 @@ mkrepo() {
   cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.toml" "$d/graphs/"
   sed "s|^REPO=/projects/pi-improved|REPO=$d|" "$REPO/scripts/run-batchC-pii.sh" > "$d/scripts/run-batchC-pii.sh"
   printf '#!/usr/bin/env bash\necho "daemon up (test)"\n' > "$d/modules/devbox/daemon.sh"
+  # spec 442: the lane compares its graphs with the git HEAD of the repository it runs in, so this scratch root must own one.
+  # Without it the lane walks up to the checkout's .git, and a row that edits a graph — which cannot commit before its own gate
+  # is green — can never run this test. The graphs are committed here, and the index is proven clean before the lane starts.
+  (
+    cd "$d" || exit 2
+    git init -q .
+    git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" add -A
+    git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" commit -q --no-verify -m "the tree the lane runs in"
+    git add graphs
+    [ -z "$(git status --porcelain -- graphs/)" ]
+  ) || { echo "FAIL setup: the scratch repo $d is not a committed git repository" >&2; exit 2; }
   echo "$d"
 }
 # fx <name> <exits-json-lines>: a fresh fixture directory for the stub, with the coder.exited lines the journal would hold

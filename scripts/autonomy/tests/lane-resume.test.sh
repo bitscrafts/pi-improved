@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # requires: dev-tree
 # why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
-# Test: a resumed row keeps the spec lane (spec 303). The lane runs in a scratch copy of the repo (its REPO is rewritten), with a stub for the
+# Test: a resumed row keeps the spec lane (spec 303). The lane runs in a scratch copy of the repo — a git repository of this test's own with
+# the graphs committed (spec 442) — with a stub for the
 # devbox ssh (PII_SSH) and a stub daemon (PII_DAEMON_SH): no real ssh, daemon or agent. The dry runs write the input and exit before the daemon.
 # Controls: no --resume (no sid), and a transcript that IS found (the sid is kept, no "not found" line).
 set -uo pipefail
@@ -22,6 +23,17 @@ cp "$REPO/graphs/spec.toml" "$REPO/graphs/docs.toml" "$REPO/graphs/preflight.tom
 cp "$REPO"/specs/303-*.md "$SCRATCH/repo/specs/"
 sed "s|^REPO=/projects/pi-improved|REPO=$SCRATCH/repo|" "$REPO/scripts/run-batchC-pii.sh" > "$SCRATCH/repo/run.sh"
 S="$SCRATCH/repo/run.sh"; export PII_LANE_ROOT="$SCRATCH/repo"   # the copy sits at <repo>/run.sh, not under scripts/ (spec 411)
+# spec 442: the lane compares its graphs with the git HEAD of the repository it runs in, so this scratch repo must own one — the
+# copied tree committed, the copied graphs in that commit, and the index proven clean. Otherwise the lane walks up to the checkout's
+# .git, and a row that edits a graph (which cannot commit before its own gate is green) can never run this test.
+(
+  cd "$PII_LANE_ROOT" || exit 2
+  git init -q .
+  git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" add -A
+  git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" commit -q --no-verify -m "the tree the lane runs in"
+  git add graphs
+  [ -z "$(git status --porcelain -- graphs/)" ]
+) || { echo "FAIL setup: the scratch repo $PII_LANE_ROOT is not a committed git repository"; exit 2; }
 
 # the devbox stubs: the transcript lookup succeeds only where STUB_FOUND=yes AND the lookup is under the captured location; every run answers at once
 cat > "$SCRATCH/ssh-stub.sh" <<'STUB'

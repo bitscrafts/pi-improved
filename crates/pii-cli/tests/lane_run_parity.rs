@@ -154,6 +154,22 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(ok, "git {args:?} failed");
 }
 
+/// `git init` in `dir`. Run through the shell so the command is the literal text this file executes, not a
+/// comment about it (spec 442 guardrail): a reader can grep the test for the command it runs.
+fn git_init(dir: &Path) {
+    let out = Command::new("sh")
+        .args(["-c", "git init -q ."])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git init failed in {}: {}",
+        dir.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// The scratch base for a lane root: the port refuses a root with a `_tmp` path component, and the gate's target dir lives
 /// under `_tmp/`, so `CARGO_TARGET_TMPDIR` alone fails in the gate. Same order as `lane_plan_parity`: the runtime dir, then
 /// `CARGO_TARGET_TMPDIR`, then `/var/tmp`; the first that exists and has no `_tmp` component.
@@ -280,6 +296,89 @@ impl Lane {
     }
 }
 
+/// A copy of the tree the shell needs, with a git HEAD of its own (spec 442).
+///
+/// `run-batchC-pii.sh` refuses a real start when `graphs/{spec,docs,preflight}.toml` differ from the git HEAD of the
+/// repository it runs in. A differential that points the shell at this checkout inherits the checkout's HEAD, so a row
+/// that edits a graph — and cannot commit until its own gate is green — can never run this test: the shell aborts before
+/// its first remote call and the failure reads as a defect in the recording or in the shell. Spec 441 fixed the same
+/// circle for `scripts/autonomy/tests/*.test.sh`; this is its shape: copy the tree, `git init` it, commit the copied
+/// tree, commit the graphs, and drive that copy. Nothing in the guard is touched.
+///
+/// The graphs are copied from the WORKING TREE, so an edit in the checkout is part of the copy's first commit and the
+/// comparison runs against bytes this test made. The pin check (`graphs/docs.toml`'s digest inside `graphs/spec.toml`)
+/// still runs as production does it, on the copied pair.
+struct OwnHead {
+    root: PathBuf,
+    /// The spec the stub agent would edit, inside the copy.
+    spec: PathBuf,
+}
+
+impl OwnHead {
+    fn new(tag: &str) -> Self {
+        let n = NEXT.fetch_add(1, Ordering::SeqCst);
+        let root = scratch_base().join(format!("lane442-{}-{tag}-{n}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for dir in ["scripts", "specs", "graphs"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let live = live_root();
+        // the script itself, not a re-enactment: the differential must drive the artefact under test
+        fs::copy(
+            live.join("scripts/run-batchC-pii.sh"),
+            root.join("scripts/run-batchC-pii.sh"),
+        )
+        .unwrap();
+        let mut spec = None;
+        for entry in fs::read_dir(live.join("specs"))
+            .unwrap()
+            .filter_map(Result::ok)
+        {
+            if entry.file_name().to_string_lossy().starts_with("319-") {
+                let to = root.join("specs").join(entry.file_name());
+                fs::copy(entry.path(), &to).unwrap();
+                spec = Some(to);
+            }
+        }
+        for entry in fs::read_dir(live.join("graphs"))
+            .unwrap()
+            .filter_map(Result::ok)
+        {
+            let path = entry.path();
+            if path.is_file() {
+                fs::copy(&path, root.join("graphs").join(entry.file_name())).unwrap();
+            }
+        }
+        // the tree first, then the graphs — and the index is proven clean before the shell may start (the guard refuses
+        // a graph that is untracked just as it refuses one that differs)
+        git_init(&root);
+        git(&root, &["add", "-A"]);
+        git(&root, &["commit", "-qm", "the tree the lane runs in"]);
+        git(&root, &["add", "graphs"]);
+        let dirty = Command::new("git")
+            .current_dir(&root)
+            .args(["status", "--porcelain", "--", "graphs"])
+            .output()
+            .unwrap();
+        assert!(
+            dirty.status.success() && dirty.stdout.is_empty(),
+            "the scratch graphs are not all committed: {}",
+            String::from_utf8_lossy(&dirty.stdout)
+        );
+        Self {
+            root,
+            spec: spec.expect("the copy carries the 319 spec"),
+        }
+    }
+}
+
+impl Drop for OwnHead {
+    fn drop(&mut self) {
+        // this test's own scratch, created above: removing it is the cleanup the spec asks for (also on a panic)
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
 fn text(out: &Output) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
@@ -335,23 +434,25 @@ fn normalise(call: &str, root: &str) -> String {
 }
 
 /// The differential (spec 319 Oracle): the composed shell and the binary, each against its own stub that gives the
-/// same answers, on the live repo. Both make the same remote calls in the same order and exit with the same code.
-fn differential(spec: bool, status: &str, exited: &str) {
-    let live = live_root();
-    let live_text = live.display().to_string();
-    let spec_file = live.join("specs/319-x.md");
+/// same answers, on a copy of the tree that the test owns the HEAD of (spec 442). Both make the same remote calls in
+/// the same order and exit with the same code.
+fn differential(head: &OwnHead, spec: bool, status: &str, exited: &str) {
+    let copy = &head.root;
+    let copy_text = copy.display().to_string();
     let n = NEXT.fetch_add(1, Ordering::SeqCst);
 
-    let shell_stub = Stub::new(&format!("shell-{n}"), &spec_file);
+    let shell_stub = Stub::new(&format!("shell-{n}"), &head.spec);
     shell_stub.answers(status, exited);
     let mut shell = Command::new("bash");
     shell
-        .arg(live.join("scripts/run-batchC-pii.sh"))
+        .arg(copy.join("scripts/run-batchC-pii.sh"))
         .arg("319")
-        .current_dir(&live)
+        .current_dir(copy)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env("ALLOW_DIRTY", "1")
+        // spec 411: the root is the lane's own knob, so the copy is the repository it runs in — never the checkout
+        .env("PII_LANE_ROOT", copy)
         .env("PII_SSH", &shell_stub.ssh)
         .env("PII_DAEMON_SH", &shell_stub.daemon)
         .env("PII_POLL_SECONDS", "0")
@@ -365,7 +466,7 @@ fn differential(spec: bool, status: &str, exited: &str) {
     }
     let shell = shell.output().unwrap();
 
-    let bin_stub = Stub::new(&format!("bin-{n}"), &spec_file);
+    let bin_stub = Stub::new(&format!("bin-{n}"), &head.spec);
     bin_stub.answers(status, exited);
     let mut bin = Command::new(BIN);
     bin.env_clear()
@@ -377,12 +478,16 @@ fn differential(spec: bool, status: &str, exited: &str) {
         // Spec 321 R3: wherever this suite runs (the CI-model export lives under _tmp/), both halves
         // must read the same tree — the binary half takes the deliberate-root knob.
         .env("PII_LANE_TMP_ROOT_OK", "1")
+        // The copy's HEAD is a fixture commit, not the binary's build ref: the stale-binary guard is about
+        // production runs, and its own tests live in lane_binary_label.rs.
+        .env("PII_STALE_BIN_OK", "1")
         .args([
             "lane",
             "run",
             "319",
             "--root",
-            &live_text,
+            &copy_text,
+            // `-w` in every remote call: the shell hard-codes the dev tree, so the binary half must still say it
             "--agent-root",
             agent_root().as_str(),
         ]);
@@ -400,15 +505,19 @@ fn differential(spec: bool, status: &str, exited: &str) {
         text(&bin),
         bin_err,
     );
+    // Two roots are masked, in this order: the copy the shell runs in, and the dev tree the shell hard-codes as
+    // `podman exec -w` while the binary takes it from `--agent-root`. Masking both keeps the comparison about the
+    // sequence, not about where the suite happens to be checked out (the same masking the live-tree differential did).
+    let dev = agent_root();
     let want: Vec<String> = shell_stub
         .calls()
         .iter()
-        .map(|c| normalise(c, &live_text))
+        .map(|c| normalise(&normalise(c, &copy_text), &dev))
         .collect();
     let got: Vec<String> = bin_stub
         .calls()
         .iter()
-        .map(|c| normalise(c, &live_text))
+        .map(|c| normalise(&normalise(c, &copy_text), &dev))
         .collect();
     assert!(!want.is_empty(), "the shell made no remote call");
     assert_eq!(
@@ -469,37 +578,23 @@ fn a_successful_run_has_no_quota_lines() {
     );
 }
 
-/// A fresh-gate export is a `git archive`: it carries no `.git`, and this comparison records what the lane
-/// does with one. The suite already treats that case explicitly (`client_can_prove_its_build` in
-/// `health_drift`): say so out loud rather than comparing two different machines.
-fn export_without_git() -> bool {
-    let has_git = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../.git")
-        .exists();
-    if !has_git {
-        // Test binaries may print here; the suite reads the line as the explicit skip it is.
-        #[allow(clippy::print_stderr)]
-        {
-            eprintln!("SKIP the_recorded_ssh_sequence_equals_the_shells: export tree has no .git");
-        }
-    }
-    !has_git
-}
-
+/// The differential runs on a copy with its own HEAD (spec 442), so it no longer depends on this checkout's git at all:
+/// a fresh-gate export carries no `.git`, and the copy still does. The old skip for an export tree is gone with the
+/// dependency that justified it.
 #[test]
 fn the_recorded_ssh_sequence_equals_the_shells() {
-    if export_without_git() {
-        return;
-    }
+    let head = OwnHead::new("parity");
     // Every scenario runs both implementations against the same stub answers.
-    differential(false, SUCCEEDED, CLEAN_EXIT);
-    differential(true, SUCCEEDED, CLEAN_EXIT);
+    differential(&head, false, SUCCEEDED, CLEAN_EXIT);
+    differential(&head, true, SUCCEEDED, CLEAN_EXIT);
     differential(
+        &head,
         true,
         r#"{"status":"failed"}"#,
         r#"{"rc":"1","quota_exhausted":"yes","quota_reset":"5:30pm"}"#,
     );
     differential(
+        &head,
         true,
         r#"{"status":"failed"}"#,
         "{\"rc\":\"0\",\"tree_changed\":\"no\"}\n{\"rc\":\"1\",\"quota_exhausted\":\"yes\",\"quota_reset\":\"9:05am\"}",

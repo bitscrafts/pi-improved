@@ -4,7 +4,8 @@
 # why: it clones /projects/pi-improved by absolute path, so it only means anything in the dev tree
 # Test: the spec lane waits as long as its graph allows, and cancels the run when it gives up (spec 299). The real lane script runs
 # with a stub `ssh` first on PATH: it records every remote command, and answers from a fixture directory, so no daemon starts and nothing
-# is spent. Each case runs a scratch copy of the script whose repo root is a scratch tree holding a copy of graphs/spec.toml.
+# is spent. Each case runs a scratch copy of the script whose repo root is a scratch tree — a git repository of this test's own,
+# with its graphs committed (spec 442), so the lane's HEAD comparison is against a HEAD this test made.
 # PII_POLL_SECONDS and PII_WAIT_MARGIN_S keep the waits short; the defaults (5 s, 600 s) are the production values.
 set -uo pipefail
 # the spec lane is chosen per case below; the variable is pinned here so a caller's environment cannot change a case
@@ -64,6 +65,16 @@ mkrepo() {
   else sed "s/^max_wall_ms = .*/max_wall_ms = $W/" "$REPO/graphs/spec.toml" > "$d/graphs/spec.toml"; fi
   sed "s|^REPO=/projects/pi-improved|REPO=$d|" "$REPO/scripts/run-batchC-pii.sh" > "$d/scripts/run-batchC-pii.sh"
   printf '#!/usr/bin/env bash\necho "daemon up (test)"\n' > "$d/modules/devbox/daemon.sh"
+  # spec 442: the lane compares its graphs with the git HEAD of the repository it runs in, so this scratch root must own one (the
+  # graphs committed, the index proven clean). Otherwise it walks up to the checkout's .git and a row that edits a graph cannot run it.
+  (
+    cd "$d" || exit 2
+    git init -q .
+    git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" add -A
+    git -c user.name="pii-lane-test" -c user.email="lane-test@localhost" commit -q --no-verify -m "the tree the lane runs in"
+    git add graphs
+    [ -z "$(git status --porcelain -- graphs/)" ]
+  ) || { echo "FAIL setup: the scratch repo $d is not a committed git repository" >&2; exit 2; }
   echo "$d"
 }
 # fx <name> <status> [succeed_at]: a fresh fixture directory for the stub

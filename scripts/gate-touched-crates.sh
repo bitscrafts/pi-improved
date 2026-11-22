@@ -49,9 +49,14 @@ fi
 
 LIST=$(printf '%s\n' $PKGS | sed '/^$/d' | sort -u)
 if [ -z "$LIST" ]; then echo "gate-touched-crates: no crate touched" >&2; exit 0; fi
+# No target flags on purpose (2026-11-22). `--lib --bins --tests` makes cargo demand all three kinds from
+# every package, and a binary-only crate (`pii-cli`) has no lib target: the step died with
+#   error: no library targets found in package `pii-cli`
+# which reads as a test failure of the row being certified. Without the flags cargo tests whatever the
+# package actually has - lib unittests where there is a lib, bins, integration tests, doctests - and a
+# missing kind is not an error.
 CMD=(cargo test -j 2)
 for p in $LIST; do CMD+=(-p "$p"); done
-CMD+=(--lib --bins --tests)
 
 if [ "$MODE" = --print ]; then echo "${CMD[*]}"; exit 0; fi
 echo "gate-touched-crates: ${CMD[*]}"
