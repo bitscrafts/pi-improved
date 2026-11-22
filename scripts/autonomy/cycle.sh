@@ -50,7 +50,7 @@ set -u
 # runtime existed and a container was merely stopped. Defaulting it here is the fix; exporting it by hand is not.
 : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
 export XDG_RUNTIME_DIR
-o pipefail
+set -o pipefail
 ROOT=$PII_ROOT; cd "$ROOT" || exit 1
 STATEDIR=$ROOT/_tmp/autonomy; LOGD=$STATEDIR/logs
 mkdir -p "$LOGD" _tmp/claude-batchC
